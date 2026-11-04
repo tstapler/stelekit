@@ -98,8 +98,14 @@ interface GitRepository {
     /** True where this repository can transfer LFS objects (JVM, Android); drives [dev.stapler.stelekit.git.lfs.LfsPlatformCapabilities]. */
     val lfsTransferSupported: Boolean get() = false
 
+    /** True where the platform can tell a metered connection apart (Android); gates the "wait for unmetered" option. */
+    val lfsMeteredDetectionSupported: Boolean get() = false
+
     /** Supplies the effective [dev.stapler.stelekit.git.lfs.LfsMode] per graph id (null at clone time). No-op where transfer is unsupported. */
     fun setLfsModeProvider(provider: (graphId: String?) -> dev.stapler.stelekit.git.lfs.LfsMode) {}
+
+    /** Where LFS downloads are reported as jobs and which limits apply to them. No-op where transfer is unsupported. */
+    fun setLfsTransferContext(tracker: dev.stapler.stelekit.jobs.JobTracker, policy: () -> dev.stapler.stelekit.git.lfs.LfsTransferPolicy) {}
 
     /**
      * Raw binaries at LFS-tracked paths found in the commits the last [push] sent (detection only: they are

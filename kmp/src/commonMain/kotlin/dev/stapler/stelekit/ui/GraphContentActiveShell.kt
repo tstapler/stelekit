@@ -192,6 +192,7 @@ internal fun GraphContentActiveShell(
         viewModel.openGitSetup()
     }
 
+    val lfsTransferSettings = rememberLfsTransferSettingsState(platformSettings, deps.platformIntegrations.gitRepository)
     val notificationPermission = deps.platformIntegrations.notificationPermission
     val updatesNotificationSettings = remember(platformSettings, notificationPermission) {
         notificationPermission?.let {
@@ -459,6 +460,7 @@ internal fun GraphContentActiveShell(
                     assetIndexing = deps.assets?.indexing,
                     assetPlugins = deps.assets?.plugins,
                     scheduledSync = scheduledSyncSettings,
+                    lfsTransfer = lfsTransferSettings,
                     updatesNotifications = updatesNotificationSettings,
                     voiceSettings = voiceSettings,
                     llmCredentialStore = llmCredentialStore,

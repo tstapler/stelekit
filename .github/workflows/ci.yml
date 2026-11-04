@@ -212,6 +212,10 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      checks: write
+      contents: read
+      pull-requests: write  # benchdiff's sticky memory comment
 
     steps:
       - uses: actions/checkout@v4
@@ -245,10 +249,25 @@ jobs:
       - name: Incremental coverage gate (jvmTest + testDebugUnitTest)
         env:
           BASE_REF: ${{ github.base_ref }}
+        # The wrapper logs whole-machine and per-process memory (with each JVM's -Xmx) to the job log.
         run: >
           xvfb-run --auto-servernum
+          scripts/ci/with-mem-sampler.sh ci-mem-head/metrics.json diff-coverage --
           ./gradlew --no-daemon --build-cache :kmp:diffCoverage
           -PdiffCoverage.selectTests "-PdiffCoverage.base=origin/$BASE_REF"
+
+      - name: Report CI memory on the PR
+        if: always() && hashFiles('ci-mem-head/metrics.json') != ''
+        continue-on-error: true
+        uses: tstapler/benchdiff@3921c948d6d9cbc538a62d3808d979c06cc13a94 # v0.1.0
+        with:
+          head: ci-mem-head/metrics.json
+          base: ''
+          format: benchdiff
+          threshold: 10
+          min-abs: 500
+          title: CI memory (Gradle diff-coverage job, 16 GB runner)
+          tag: ci-memory-diff-coverage
 
       # Report-only: PIT scores whole classes, so a one-line change to a large class is judged on
       # mutants it never touched, and a diff touching GraphLoader/GitSyncService re-runs their large

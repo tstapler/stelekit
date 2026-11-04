@@ -4,10 +4,17 @@ import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.Configuration
+import androidx.work.Data
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import androidx.work.workDataOf
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.CloneProgress
+import dev.stapler.stelekit.git.GitCloneWorkerData
+import dev.stapler.stelekit.git.GitTransportRetryState
 import dev.stapler.stelekit.platform.ml.DepthModelDownloadWorker
 import dev.stapler.stelekit.platform.ml.DepthModelDownloader
 import dev.stapler.stelekit.platform.ml.DepthModelStorage
@@ -21,8 +28,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
@@ -93,5 +102,54 @@ class WorkManagerJobRegistryTest {
 
         assertTrue(withTimeout(5_000) { registry.jobs.first() }.isEmpty())
         assertNotNull(registry)
+    }
+
+    @Test
+    fun `clone progress is shown as a percentage once the total is known`() {
+        val data = GitCloneWorkerData.encodeState(GitTransportRetryState.Attempting(CloneProgress("Receiving objects", 50, 200)))
+
+        assertEquals(25, defaultProgressOf(JobKind.GitClone, data))
+    }
+
+    @Test
+    fun `clone progress stays indeterminate before the total is known`() {
+        val data = GitCloneWorkerData.encodeState(GitTransportRetryState.Attempting(CloneProgress("", 0, 0)))
+
+        assertNull(defaultProgressOf(JobKind.GitClone, data))
+    }
+
+    @Test
+    fun `a failed clone surfaces its error message`() {
+        val output = GitCloneWorkerData.encodeFailure(DomainError.GitError.CloneFailed("repository not found"), null)
+
+        assertEquals("repository not found", defaultErrorOf(JobKind.GitClone, output))
+    }
+
+    @Test
+    fun `depth model download reports its percent and error`() {
+        assertEquals(40, defaultProgressOf(JobKind.ModelDownload, workDataOf(DepthModelDownloadWorker.KEY_PROGRESS to 40)))
+        assertNull(defaultProgressOf(JobKind.ModelDownload, Data.EMPTY))
+        assertEquals("no space", defaultErrorOf(JobKind.ModelDownload, workDataOf(DepthModelDownloadWorker.KEY_ERROR to "no space")))
+        assertNull(defaultProgressOf(JobKind.GitSync, Data.EMPTY))
+        assertNull(defaultErrorOf(JobKind.GitSync, Data.EMPTY))
+    }
+
+    private fun info(state: WorkInfo.State, kind: JobKind, progress: Data = Data.EMPTY, output: Data = Data.EMPTY) =
+        WorkInfo(UUID.randomUUID(), state, setOf(JobTags.ANY, JobTags.kind(kind)), output, progress)
+
+    @Test
+    fun `a running job carries the progress its kind reports`() {
+        val status = info(WorkInfo.State.RUNNING, JobKind.ModelDownload, progress = workDataOf(DepthModelDownloadWorker.KEY_PROGRESS to 70))
+            .toJobStatus(::defaultProgressOf, ::defaultErrorOf)
+
+        assertEquals(JobState.Running(70), status?.state)
+    }
+
+    @Test
+    fun `a failed job carries the error its kind reports`() {
+        val status = info(WorkInfo.State.FAILED, JobKind.ModelDownload, output = workDataOf(DepthModelDownloadWorker.KEY_ERROR to "offline"))
+            .toJobStatus(::defaultProgressOf, ::defaultErrorOf)
+
+        assertEquals(JobState.Failed("offline"), status?.state)
     }
 }

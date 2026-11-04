@@ -1,7 +1,7 @@
 name: Configure Gradle CI memory
 description: >
   Right-sizes Gradle/Kotlin JVM heap and worker parallelism for GitHub-hosted
-  ubuntu-latest runners (2 vCPU / 7 GB RAM). The repo's gradle.properties sets
+  ubuntu-latest runners (public repos: 4 vCPU / 16 GB; private: 2 vCPU / 8 GB — the Kotlin daemon size below assumes the 16 GB case). The repo's gradle.properties sets
   org.gradle.jvmargs to -Xmx4g and org.gradle.workers.max to 4, tuned for a
   local dev workstation. On a 7 GB CI runner the main Gradle build JVM (4g)
   plus the separately-forked Kotlin compile daemon (also 4g, since it inherits
@@ -21,6 +21,6 @@ runs:
         mkdir -p ~/.gradle
         cat >> ~/.gradle/gradle.properties <<'EOF'
         org.gradle.jvmargs=-Xms512m -Xmx2560m -XX:MaxMetaspaceSize=512m -XX:ReservedCodeCacheSize=256m -XX:+HeapDumpOnOutOfMemoryError
-        kotlin.daemon.jvm.options=-Xmx3g
+        kotlin.daemon.jvmargs=-Xmx5g -XX:+HeapDumpOnOutOfMemoryError
         org.gradle.workers.max=2
         EOF

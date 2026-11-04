@@ -64,6 +64,12 @@ class AndroidFileLogSinkTest {
         }
     }
 
+    @Test fun `the default memory note reports java heap and a native heap figure`() {
+        val note = AndroidCrashRecorder.runtimeMemoryNote()
+
+        assertTrue(Regex("""used=\d+MB max=\d+MB native=(\d+MB|n/a)""").matches(note), note)
+    }
+
     @Test fun `replay surfaces the crash and previous session tail in the log buffer`() {
         File(dir, AndroidFileLogSink.LAST_CRASH).writeText("OutOfMemoryError")
         File(dir, AndroidFileLogSink.PREVIOUS).writeText("line one\nline two\n")

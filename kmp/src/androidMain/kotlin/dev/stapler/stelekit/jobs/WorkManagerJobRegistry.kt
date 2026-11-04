@@ -4,8 +4,10 @@
 package dev.stapler.stelekit.jobs
 
 import android.content.Context
+import androidx.work.Data
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import dev.stapler.stelekit.git.GitCloneWorkerData
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.ml.DepthModelDownloadWorker
 import kotlinx.coroutines.flow.Flow
@@ -34,14 +36,14 @@ object JobTags {
 /** Exposes every tagged WorkManager request as a [JobStatus]. Progress and failure copy come from the worker's data keys. */
 class WorkManagerJobRegistry(
     private val context: Context,
-    private val progressKey: (JobKind) -> String? = ::defaultProgressKey,
-    private val errorKey: (JobKind) -> String? = ::defaultErrorKey,
+    private val progressOf: (JobKind, Data) -> Int? = ::defaultProgressOf,
+    private val errorOf: (JobKind, Data) -> String? = ::defaultErrorOf,
 ) : BackgroundJobRegistry {
     private val logger = Logger("WorkManagerJobRegistry")
 
     override val jobs: Flow<List<JobStatus>> =
         workManagerOrNull()?.getWorkInfosByTagFlow(JobTags.ANY)
-            ?.map { infos -> infos.mapNotNull { it.toJobStatus(progressKey, errorKey) }.activeFirst() }
+            ?.map { infos -> infos.mapNotNull { it.toJobStatus(progressOf, errorOf) }.activeFirst() }
             ?: emptyFlow()
 
     override fun cancel(id: String) {
@@ -61,29 +63,32 @@ class WorkManagerJobRegistry(
     }
 }
 
-internal fun defaultProgressKey(kind: JobKind): String? = when (kind) {
-    JobKind.ModelDownload -> DepthModelDownloadWorker.KEY_PROGRESS
+internal fun defaultProgressOf(kind: JobKind, progress: Data): Int? = when (kind) {
+    JobKind.ModelDownload -> progress.getInt(DepthModelDownloadWorker.KEY_PROGRESS, -1).takeIf { it >= 0 }
+    JobKind.GitClone -> GitCloneWorkerData.decodeState(progress)
+        ?.let(GitCloneWorkerData::progressOf)
+        ?.takeIf { it.totalWork > 0 }
+        ?.let { (it.completed * 100L / it.totalWork).toInt().coerceIn(0, 100) }
     else -> null
 }
 
-internal fun defaultErrorKey(kind: JobKind): String? = when (kind) {
-    JobKind.ModelDownload -> DepthModelDownloadWorker.KEY_ERROR
+internal fun defaultErrorOf(kind: JobKind, output: Data): String? = when (kind) {
+    JobKind.ModelDownload -> output.getString(DepthModelDownloadWorker.KEY_ERROR)
+    JobKind.GitClone -> GitCloneWorkerData.decodeFailure(output)?.first?.message
     else -> null
 }
 
 /** Null for work that carries [JobTags.ANY] but no recognisable kind. */
 internal fun WorkInfo.toJobStatus(
-    progressKey: (JobKind) -> String?,
-    errorKey: (JobKind) -> String?,
+    progressOf: (JobKind, Data) -> Int?,
+    errorOf: (JobKind, Data) -> String?,
 ): JobStatus? {
     val kind = JobTags.kindOf(tags) ?: return null
     val state = when (state) {
         WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> JobState.Queued
-        WorkInfo.State.RUNNING -> JobState.Running(
-            progressKey(kind)?.let { progress.getInt(it, -1) }?.takeIf { it >= 0 },
-        )
+        WorkInfo.State.RUNNING -> JobState.Running(progressOf(kind, progress))
         WorkInfo.State.SUCCEEDED -> JobState.Succeeded
-        WorkInfo.State.FAILED -> JobState.Failed(errorKey(kind)?.let { outputData.getString(it) })
+        WorkInfo.State.FAILED -> JobState.Failed(errorOf(kind, outputData))
         WorkInfo.State.CANCELLED -> JobState.Cancelled
     }
     return JobStatus(id.toString(), kind, JobTags.titleOf(tags) ?: kind.label, state)

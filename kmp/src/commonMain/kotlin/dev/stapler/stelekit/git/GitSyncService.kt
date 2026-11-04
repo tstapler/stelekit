@@ -17,6 +17,9 @@ import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.git.merge.JournalMergeService
 import dev.stapler.stelekit.git.lfs.LfsGuardCoordinator
 import dev.stapler.stelekit.git.lfs.LfsGuardedStaging
+import dev.stapler.stelekit.git.lfs.LfsTransferPolicySource
+import dev.stapler.stelekit.jobs.JobTracker
+import dev.stapler.stelekit.jobs.NoJobTracker
 import dev.stapler.stelekit.git.lfs.LfsPlatformCapabilities
 import dev.stapler.stelekit.git.lfs.LfsViolation
 import dev.stapler.stelekit.git.model.CloneDepthState
@@ -82,6 +85,8 @@ class GitSyncService(
     private val periodicSyncContext: kotlin.coroutines.CoroutineContext = kotlin.coroutines.EmptyCoroutineContext,
     /** Wall-clock epoch millis for scheduled-sync bookkeeping; tests inject a fake. */
     private val wallClockMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
+    /** Shows LFS image downloads (including background catch-up) in the jobs list. */
+    jobTracker: JobTracker = NoJobTracker,
     /** Whether the graph sits in a directory this process writes directly; SAF graphs are fetch-only for scheduled work. Throwing counts as false. */
     isAppOwnedPath: (RepoRoot) -> Boolean = { !it.value.startsWith("saf://") && !it.value.startsWith("content://") },
 ) {
@@ -95,6 +100,7 @@ class GitSyncService(
     private val guardedAbort = GuardedMergeAbort.create(gitRepository, fileSystem, wallClockMs)
     private val guards = GitChangeGuards(gitRepository, settings)
     private val lfsStaging = LfsGuardedStaging.create(gitRepository, fileSystem, settings, graphId, lfsCapabilities, lfsGuardCoordinator)
+        .also { gitRepository.setLfsTransferContext(jobTracker) { LfsTransferPolicySource(settings).current() } }
     private val firstSyncConfirmation: FirstSyncConfirmation? = settings?.let { FirstSyncConfirmation(it) }
 
     /** Applies user-confirmed branch repairs; see [repairBranch]. */

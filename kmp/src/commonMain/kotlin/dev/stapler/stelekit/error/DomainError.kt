@@ -195,10 +195,14 @@ sealed interface DomainError {
         }
 
         /** The LFS server rejected the credentials; [readOnly] means a read-only token on upload. */
-        data class LfsAuthFailed(val readOnly: Boolean) : GitError {
-            override val message: String =
-                if (readOnly) "Your token can read but not write LFS files."
-                else "Git LFS rejected your credentials. Reconnect your account to download or upload large files."
+        data class LfsAuthFailed(val readOnly: Boolean, val noCredentialSent: Boolean = false) : GitError {
+            override val message: String = when {
+                noCredentialSent ->
+                    "Git LFS needs an HTTPS access token for this repository, and SSH keys cannot be used for it. " +
+                        "Add a token in the git settings to download or upload large files."
+                readOnly -> "Your token can read but not write LFS files."
+                else -> "Git LFS rejected your credentials. Reconnect your account to download or upload large files."
+            }
         }
 
         data class LfsQuotaExceeded(val detail: String?) : GitError {

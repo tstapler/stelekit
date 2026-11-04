@@ -11,14 +11,25 @@ import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
 import java.io.File
 
+/** [fetched] objects arrived; [skippedOversize] stayed on the server because they exceed the size cap. */
+data class LfsDownloadResult(val fetched: Int, val skippedOversize: Int)
+
 /** Moves LFS objects between the local `.git/lfs` store and the server through [LfsBatchClient]. */
 class LfsTransferService(private val client: LfsBatchClient, private val store: LfsObjectStore, private val gitDir: File) {
     private val logger = Logger("LfsTransferService")
 
-    /** Downloads every object in [pointers] that the store lacks; objects are verified before they become visible. */
-    suspend fun download(pointers: Collection<LfsPointer>): Either<DomainError.GitError, Int> {
-        val missing = pointers.distinctBy { it.oid }.filterNot { store.has(it) }
-        if (missing.isEmpty()) return 0.right()
+    /**
+     * Downloads every object in [pointers] that the store lacks; objects are verified before they become visible.
+     * Objects larger than [maxObjectBytes] are skipped, not failed. [onProgress] gets (done, total) after each object.
+     */
+    suspend fun download(
+        pointers: Collection<LfsPointer>,
+        maxObjectBytes: Long = Long.MAX_VALUE,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): Either<DomainError.GitError, LfsDownloadResult> {
+        val absent = pointers.distinctBy { it.oid }.filterNot { store.has(it) }
+        val (missing, oversize) = absent.partition { it.size <= maxObjectBytes }
+        if (missing.isEmpty()) return LfsDownloadResult(0, oversize.size).right()
         // Store copy plus the materialised working file, so budget twice the payload.
         val needed = missing.sumOf { it.size } * 2
         val available = gitDir.usableSpace
@@ -33,13 +44,14 @@ class LfsTransferService(private val client: LfsBatchClient, private val store: 
                 client.download(obj, temp).onLeft { temp.delete(); return it.left() }
                 if (!store.commit(temp, pointer)) return DomainError.GitError.LfsObjectIntegrityFailed(pointer.oid.hex).left()
                 fetched++
+                onProgress(fetched, missing.size)
             } catch (e: CancellationException) {
                 temp.delete()
                 throw e
             }
         }
-        logger.info("lfs: downloaded $fetched object(s)")
-        return fetched.right()
+        logger.info("lfs: downloaded $fetched object(s), skipped ${oversize.size} over the size cap")
+        return LfsDownloadResult(fetched, oversize.size).right()
     }
 
     /** Uploads [pointers] before a push; any failure aborts so no pointer commit reaches the remote without its object. */
