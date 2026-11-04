@@ -213,7 +213,7 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
-      - uses: ./.github/actions/gradle-ci-memory
+      - uses: tstapler/gha-actions/gradle-ci-memory@a4cb933590e4470b66a09c970e9002e65b6803c4 # v0.1.0
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
