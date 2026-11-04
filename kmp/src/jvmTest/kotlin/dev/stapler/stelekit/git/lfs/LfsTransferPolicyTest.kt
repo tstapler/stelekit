@@ -225,4 +225,20 @@ class LfsTransferPolicyTest {
             assertEquals(LfsTransferPolicy.DEFAULT_MAX_OBJECT_BYTES, LfsTransferPolicySource(settings).current().maxObjectBytes, bad)
         }
     }
+
+    @Test
+    fun service_should_DownloadWithoutCapOrProgressCallback_When_CalledWithDefaults() {
+        val content = "payload".toByteArray()
+        val pointer = LfsPointer(LfsOid(java.security.MessageDigest.getInstance("SHA-256").digest(content).joinToString("") { "%02x".format(it) }), content.size.toLong())
+        server.objects[pointer.oid.hex] = content
+        val gitDir = File(root, "svc").also { it.mkdirs() }
+        val http = HttpClient(OkHttp) { configureLfsTimeouts() }
+        try {
+            val result = runBlocking { LfsTransferService(LfsBatchClient(http, server.url, authHeader = null), LfsObjectStore(gitDir), gitDir).download(listOf(pointer)) }
+
+            assertEquals(LfsDownloadResult(fetched = 1, skippedOversize = 0), result.getOrNull())
+        } finally {
+            http.close()
+        }
+    }
 }

@@ -100,4 +100,15 @@ class GitSyncCoordinatorJobsTest {
         val settled = jobs.jobs.first { list -> list.any { it.state is JobState.Failed } }
         assertIs<JobState.Failed>(settled.single().state)
     }
+
+    @Test
+    fun triggerSync_should_ListSyncJob_When_SyncStarts() = runTest {
+        val repository = ParkedFetchRepository(CompletableDeferred(Unit))
+
+        coordinator(repository).triggerSync()
+
+        val job = jobs.jobs.first { it.isNotEmpty() }.single()
+        assertEquals(JobKind.GitSync, job.kind)
+        assertEquals("Syncing with remote", job.title)
+    }
 }
