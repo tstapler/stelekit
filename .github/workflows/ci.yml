@@ -32,7 +32,7 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - uses: ./.github/actions/gradle-ci-memory
+      - uses: tstapler/gha-actions/gradle-ci-memory@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -91,7 +91,7 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - uses: ./.github/actions/gradle-ci-memory
+      - uses: tstapler/gha-actions/gradle-ci-memory@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -145,7 +145,7 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - uses: ./.github/actions/gradle-ci-memory
+      - uses: tstapler/gha-actions/gradle-ci-memory@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -227,7 +227,13 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - uses: ./.github/actions/gradle-ci-memory
+      - id: mem
+        uses: tstapler/gha-actions/gradle-ci-memory@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
+        with:
+          kotlin-gc-log: 'true'
+          heap-dump-on-oom: 'true'
+
+      - uses: tstapler/gha-actions/mem-sampler@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -252,22 +258,30 @@ jobs:
         # The wrapper logs whole-machine and per-process memory (with each JVM's -Xmx) to the job log.
         run: >
           xvfb-run --auto-servernum
-          scripts/ci/with-mem-sampler.sh ci-mem-head/metrics.json diff-coverage --
+          mem-sampler --out ci-mem-head/metrics.json --label diff-coverage --
           ./gradlew --no-daemon --build-cache :kmp:diffCoverage
           -PdiffCoverage.selectTests "-PdiffCoverage.base=origin/$BASE_REF"
 
       - name: Report CI memory on the PR
-        if: always() && hashFiles('ci-mem-head/metrics.json') != ''
-        continue-on-error: true
-        uses: tstapler/benchdiff@3921c948d6d9cbc538a62d3808d979c06cc13a94 # v0.1.0
+        if: always()
+        uses: tstapler/gha-actions/mem-sampler/report@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
         with:
-          head: ci-mem-head/metrics.json
-          base: ''
-          format: benchdiff
-          threshold: 10
-          min-abs: 500
+          metrics: ci-mem-head/metrics.json
+          baseline-cache: 'false'  # this job is PR-only, so there is no main run to diff against
           title: CI memory (Gradle diff-coverage job, 16 GB runner)
           tag: ci-memory-diff-coverage
+
+      - name: Upload JVM diagnostics (hs_err, heap dumps, GC logs, Gradle reports)
+        if: always()
+        uses: tstapler/gha-actions/jvm-diagnostics-upload@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
+        with:
+          name: diff-coverage-jvm-diagnostics
+          extra-paths: ${{ steps.mem.outputs.diagnostics-dir }}
+          retention-days: '7'
+
+      - name: Effective Gradle/Kotlin daemon flags
+        if: always()
+        uses: tstapler/gha-actions/gradle-ci-memory/effective-flags@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
 
       # Report-only: PIT scores whole classes, so a one-line change to a large class is judged on
       # mutants it never touched, and a diff touching GraphLoader/GitSyncService re-runs their large
@@ -317,7 +331,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - uses: ./.github/actions/gradle-ci-memory
+      - uses: tstapler/gha-actions/gradle-ci-memory@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -390,7 +404,7 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - uses: ./.github/actions/gradle-ci-memory
+      - uses: tstapler/gha-actions/gradle-ci-memory@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -454,7 +468,7 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - uses: ./.github/actions/gradle-ci-memory
+      - uses: tstapler/gha-actions/gradle-ci-memory@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
 
       - uses: gradle/actions/setup-gradle@v4
         with:

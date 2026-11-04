@@ -30,7 +30,7 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - uses: ./.github/actions/gradle-ci-memory
+      - uses: tstapler/gha-actions/gradle-ci-memory@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
 
       - uses: gradle/actions/setup-gradle@v4
         with:

@@ -220,6 +220,12 @@ jobs:
           # harmless — GHA scopes PR caches to the branch, not main.
           cache-save: true
 
+      - uses: tstapler/gha-actions/mem-sampler@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
+
+      - name: Bazel profile (trace + memory profile + resource flags)
+        id: bazel-profile
+        uses: tstapler/gha-actions/bazel-profile@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
+
       - name: Build Android APK
         # nick-fields/retry absorbs transient Bazel external-repository fetch
         # failures (e.g. rules_android's com_android_dex 503) — see bazel-jvm's
@@ -231,37 +237,24 @@ jobs:
           retry_wait_seconds: 30
           # The wrapper logs memory to the job log (survives a killed runner) and writes ci-mem-head/metrics.json.
           command: |
-            scripts/ci/with-mem-sampler.sh ci-mem-head/metrics.json android-build -- \
+            mem-sampler --out ci-mem-head/metrics.json --label android-build -- \
               bash -c 'set -o pipefail; bazel build //kmp:android_app --config=android --config=remote-cache 2>&1 | tee "$RUNNER_TEMP/bazel-android-build.log"'
 
-      # Memory trend: main saves its numbers, PRs diff against the latest main run. Advisory only.
-      - name: Restore main's memory baseline
-        if: github.event_name == 'pull_request'
-        uses: actions/cache/restore@v4
+      # Main saves its numbers; PRs diff against the latest main run. Advisory only.
+      - name: Report CI memory
+        if: always()
+        uses: tstapler/gha-actions/mem-sampler/report@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
         with:
-          path: ci-mem-base
-          key: ci-mem-android-${{ github.sha }}
-          restore-keys: ci-mem-android-
-
-      - name: Save memory baseline (main only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('ci-mem-head/metrics.json') != ''
-        uses: actions/cache/save@v4
-        with:
-          path: ci-mem-head
-          key: ci-mem-android-${{ github.sha }}
-
-      - name: Compare memory to main
-        if: github.event_name == 'pull_request' && hashFiles('ci-mem-head/metrics.json') != ''
-        continue-on-error: true
-        uses: tstapler/benchdiff@3921c948d6d9cbc538a62d3808d979c06cc13a94 # v0.1.0
-        with:
-          head: ci-mem-head/metrics.json
-          base: ${{ hashFiles('ci-mem-base/metrics.json') != '' && 'ci-mem-base/metrics.json' || '' }}
-          format: benchdiff
-          threshold: 10
-          min-abs: 500
+          metrics: ci-mem-head/metrics.json
           title: CI memory (Bazel Android build, 16 GB runner)
           tag: ci-memory-android
+
+      - name: Bazel profile report
+        if: always()
+        uses: tstapler/gha-actions/bazel-profile/report@b365b0a976467f8e22798bb60162bd1de27f6be6 # v0.1.2
+        with:
+          profile-path: ${{ steps.bazel-profile.outputs.profile-path }}
+          name: bazel-android-build-profile
 
       - name: CI job report
         if: always()
