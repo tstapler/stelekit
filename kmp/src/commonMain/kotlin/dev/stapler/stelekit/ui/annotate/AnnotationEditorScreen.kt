@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -1529,6 +1530,8 @@ internal fun DepthEstimationPanel(
     }
 }
 
+internal const val LOUPE_OVERLAY_TAG = "loupe-overlay"
+
 @Composable
 private fun LoupeOverlay(
     imageUri: String,
@@ -1562,6 +1565,7 @@ private fun LoupeOverlay(
         modifier = Modifier
             .offset { IntOffset(loupeXPx.toInt(), loupeYPx.toInt()) }
             .size(loupeSizeDp)
+            .testTag(LOUPE_OVERLAY_TAG)
     ) {
         // Clipped inner area: zoomed image + crosshair
         Box(modifier = Modifier.fillMaxSize().clip(CircleShape)) {

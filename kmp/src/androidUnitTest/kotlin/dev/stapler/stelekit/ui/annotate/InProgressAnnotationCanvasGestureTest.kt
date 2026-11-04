@@ -5,7 +5,9 @@ package dev.stapler.stelekit.ui.annotate
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
 import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationMethod
@@ -33,6 +35,37 @@ class InProgressAnnotationCanvasGestureTest {
         calibration = Calibration(CalibrationMethod.MANUAL_REFERENCE, 100.0, 100),
         unit = MeasurementUnit.METERS,
     )
+
+    @Test
+    fun loupe_isShownWhileHeld_andRemovedOnRelease() {
+        val vm = AnnotationEditorViewModel(
+            measurementRepository = InMemoryMeasurementAnnotationRepository(),
+            imageWidthPx = 1000.0,
+            imageHeightPx = 1000.0,
+        ).also { it.initialize(img) }
+        vm.selectTool(AnnotationTool.DISTANCE)
+        rule.setContent { AnnotationEditorScreen(viewModel = vm, imageAnnotation = img) }
+        rule.waitForIdle()
+
+        val canvas = rule.onNodeWithContentDescription("Annotation canvas — tap to place points")
+        // Same warm-up as above: the first injected gesture is dropped.
+        canvas.performTouchInput { down(Offset(300f, 20f)); up() }
+        rule.waitForIdle()
+        vm.cancelInProgress()
+
+        canvas.performTouchInput {
+            down(Offset(300f, 60f))   // clear of the toolbar/hint overlay surfaces
+            moveTo(Offset(304f, 70f))
+        }
+        rule.waitForIdle()
+        rule.waitUntil(timeoutMillis = 5_000) {
+            rule.onAllNodesWithTag(LOUPE_OVERLAY_TAG).fetchSemanticsNodes().isNotEmpty()
+        }
+
+        canvas.performTouchInput { up() }
+        rule.waitForIdle()
+        rule.onNodeWithTag(LOUPE_OVERLAY_TAG).assertDoesNotExist()
+    }
 
     @Test
     fun downMoveUp_addsPointAtUpPosition_notAnEarlierDragPosition() {
