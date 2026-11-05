@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.106.1](https://github.com/tstapler/stelekit/compare/v0.106.0...v0.106.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **annotate:** loupe inner image clamped to loupe size, crosshair misaligned with placed point ([#556](https://github.com/tstapler/stelekit/issues/556)) ([0be6a65](https://github.com/tstapler/stelekit/commit/0be6a65081e57ecd3411437f44f64a7e0bc61ff5))
+
 ## [0.106.0](https://github.com/tstapler/stelekit/compare/v0.105.0...v0.106.0) (2026-11-04)
 
 
