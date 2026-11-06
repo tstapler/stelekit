@@ -35,10 +35,18 @@ import kotlinx.coroutines.launch
  */
 class DepthEstimationCoordinator(
     private val depthEstimator: MonocularDepthEstimator,
-    private val imageWidthPx: Double,
-    private val imageHeightPx: Double,
+    imageWidthPx: Double,
+    imageHeightPx: Double,
     private val onCalibrationReady: (Calibration) -> Unit,
 ) {
+    @kotlin.concurrent.Volatile private var imageWidthPx: Double = imageWidthPx
+    @kotlin.concurrent.Volatile private var imageHeightPx: Double = imageHeightPx
+
+    fun setImageSize(widthPx: Double, heightPx: Double) {
+        imageWidthPx = widthPx
+        imageHeightPx = heightPx
+    }
+
     // CRITICAL: internal scope — never injected from outside composition.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
