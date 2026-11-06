@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.106.2](https://github.com/tstapler/stelekit/compare/v0.106.1...v0.106.2) (2026-11-06)
+
+
+### Bug Fixes
+
+* **annotate:** real px size, loupe-aligned placement, select and move ([#558](https://github.com/tstapler/stelekit/issues/558)) ([2edea3e](https://github.com/tstapler/stelekit/commit/2edea3e2f0d9ca8df86184fa5fdb3c65ab756ae5))
+
 ## [0.106.1](https://github.com/tstapler/stelekit/compare/v0.106.0...v0.106.1) (2026-11-05)
 
 
