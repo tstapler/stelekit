@@ -148,6 +148,7 @@ data class CalibrationSnapshot(
  * Call [close] when the editor is permanently dismissed (e.g. on back navigation after
  * the composable leaves composition permanently) to cancel in-flight DB writes cleanly.
  */
+@Suppress("LargeClass") // single editor state machine; splitting it is a separate refactor
 class AnnotationEditorViewModel(
     private val measurementRepository: MeasurementAnnotationRepository,
     /** Optional — required for tag persistence. When null, tag changes update state only. */
