@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -53,6 +54,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +67,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntOffset
@@ -73,6 +76,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.geometry.isSpecified
 import coil3.compose.AsyncImage
 import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
@@ -193,6 +197,8 @@ fun AnnotationEditorScreen(
     // Delete annotation confirmation
     var pendingDeleteUuid by remember { mutableStateOf<String?>(null) }
     var loupeOffset by remember { mutableStateOf<Offset?>(null) }
+    // Decoded image aspect; the annotation layers are sized to it so canvas fractions == image fractions.
+    var imageAspect by remember { mutableStateOf<Float?>(null) }
     val rippleAlpha = remember { Animatable(0f) }
     var rippleCanvasOffset by remember { mutableStateOf<Offset?>(null) }
 
@@ -406,6 +412,13 @@ fun AnnotationEditorScreen(
         }
 
         Box(modifier = Modifier.weight(1f)) {
+        // Image-aligned box: without it the Fit-scaled photo is letterboxed inside a full-size canvas,
+        // so touches, drawn points and the loupe's crosshair all map to different image positions.
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .then(imageAspect?.let { Modifier.aspectRatio(it) } ?: Modifier.fillMaxSize()),
+        ) {
             // Layer 1: Zoomed/pannable image
             // We use Coil AsyncImage which handles subsampling for large images.
             // Zoom/pan is achieved via graphicsLayer transform so the Canvas layers are
@@ -418,6 +431,13 @@ fun AnnotationEditorScreen(
                 model = imageUri,
                 imageLoader = rememberSteleKitImageLoader(),
                 contentDescription = "Annotated image",
+                onSuccess = { success ->
+                    val size = success.painter.intrinsicSize
+                    if (size.isSpecified && size.width > 0f && size.height > 0f) {
+                        imageAspect = size.width / size.height
+                        viewModel.setImageSize(size.width.toInt(), size.height.toInt())
+                    }
+                },
                 modifier = Modifier
                     .fillMaxSize()
                     .onGloballyPositioned { coords -> canvasSize = coords.size },
@@ -446,6 +466,11 @@ fun AnnotationEditorScreen(
                 },
                 onLoupeOffset = { offset -> loupeOffset = offset },
                 onRipple = { screenOffset -> rippleCanvasOffset = screenOffset },
+                annotations = state.committedAnnotations,
+                onSelect = { uuid -> if (uuid == null) viewModel.clearSelection() else viewModel.selectAnnotation(uuid) },
+                onEditStart = { viewModel.beginAnnotationEdit() },
+                onEditPoints = { uuid, pts -> viewModel.updateAnnotationPoints(uuid, pts) },
+                onEditEnd = { uuid -> viewModel.commitAnnotationEdit(uuid) },
             )
 
             val currentLoupeOffset = loupeOffset
@@ -509,6 +534,7 @@ fun AnnotationEditorScreen(
                 )
             }
 
+            } // end image-aligned Box
 
             val contextHint: String? = when {
                 state.currentTool == AnnotationTool.SELECT -> null
@@ -953,11 +979,20 @@ private fun InProgressAnnotationCanvas(
     modifier: Modifier = Modifier,
     onLoupeOffset: ((Offset?) -> Unit)? = null,
     onRipple: ((Offset) -> Unit)? = null,
+    annotations: List<MeasurementAnnotation> = emptyList(),
+    onSelect: (String?) -> Unit = {},
+    onEditStart: () -> Unit = {},
+    onEditPoints: (String, List<NormalizedPoint>) -> Unit = { _, _ -> },
+    onEditEnd: (String) -> Unit = {},
 ) {
     DisposableEffect(currentTool) {
         onDispose { onLoupeOffset?.invoke(null) }
     }
     val tapThresholdPx = with(LocalDensity.current) { 16.dp.toPx() }
+    val vertexRadiusPx = with(LocalDensity.current) { 28.dp.toPx() }
+    val edgeRadiusPx = with(LocalDensity.current) { 20.dp.toPx() }
+    val currentAnnotations by rememberUpdatedState(annotations)
+    val currentCanvasSize by rememberUpdatedState(canvasSize)
     Canvas(
         modifier = modifier
             .fillMaxSize()
@@ -966,26 +1001,62 @@ private fun InProgressAnnotationCanvas(
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val downPos = down.position
-                    if (currentTool != AnnotationTool.SELECT) {
+                    if (currentTool == AnnotationTool.SELECT) {
+                        val size = currentCanvasSize
+                        val hit = hitTestAnnotations(currentAnnotations, downPos, size, vertexRadiusPx, edgeRadiusPx)
+                        if (hit == null) {
+                            val up = waitForUpOrCancellation()
+                            if (up != null && (up.position - downPos).getDistance() < tapThresholdPx) onSelect(null)
+                            return@awaitEachGesture
+                        }
                         down.consume()
-                        onLoupeOffset?.invoke(downPos)
+                        onSelect(hit.uuid)
+                        val original = currentAnnotations.first { it.uuid == hit.uuid }.normalizedPoints
+                        var editing = false
+                        while (true) {
+                            val change = awaitPointerEvent().changes.firstOrNull() ?: break
+                            if (!editing && (change.position - downPos).getDistance() >= tapThresholdPx) {
+                                editing = true
+                                onEditStart()
+                            }
+                            if (editing) {
+                                change.consume()
+                                when (hit) {
+                                    is AnnotationHit.Vertex -> {
+                                        change.position.toNormalized(size)?.let { moved ->
+                                            onEditPoints(hit.uuid, original.toMutableList().also { it[hit.index] = moved })
+                                        }
+                                        onLoupeOffset?.invoke(change.position)
+                                    }
+                                    is AnnotationHit.Body -> if (size.width > 0 && size.height > 0) {
+                                        val delta = change.position - downPos
+                                        onEditPoints(
+                                            hit.uuid,
+                                            translateClamped(original, delta.x.toDouble() / size.width, delta.y.toDouble() / size.height),
+                                        )
+                                    }
+                                }
+                            }
+                            if (!change.pressed) break
+                        }
+                        onLoupeOffset?.invoke(null)
+                        if (editing) onEditEnd(hit.uuid)
+                        return@awaitEachGesture
                     }
+                    down.consume()
+                    onLoupeOffset?.invoke(downPos)
                     var lastPos = downPos
                     while (true) {
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull() ?: break
                         lastPos = change.position
-                        if (currentTool != AnnotationTool.SELECT) {
-                            change.consume()
-                            onLoupeOffset?.invoke(lastPos)
-                        }
+                        change.consume()
+                        onLoupeOffset?.invoke(lastPos)
                         if (!change.pressed) break
                     }
-                    val isTap = (lastPos - downPos).getDistance() < tapThresholdPx
-                    if (isTap) {
-                        if (currentTool != AnnotationTool.SELECT) { onRipple?.invoke(lastPos) }
-                        onTap(lastPos)
-                    }
+                    // The loupe is for aiming: drag to the crosshair, release to place — at any distance.
+                    onRipple?.invoke(lastPos)
+                    onTap(lastPos)
                     onLoupeOffset?.invoke(null)
                 }
             },

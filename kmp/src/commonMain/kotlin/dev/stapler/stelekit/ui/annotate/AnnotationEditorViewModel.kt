@@ -150,10 +150,10 @@ class AnnotationEditorViewModel(
     private val measurementRepository: MeasurementAnnotationRepository,
     /** Optional — required for tag persistence. When null, tag changes update state only. */
     private val imageAnnotationRepository: ImageAnnotationRepository? = null,
-    // Image dimensions in native pixels — needed for area and angle computation.
-    // Pass the actual decoded image size; defaults allow unit tests to omit them.
-    private val imageWidthPx: Double = 1.0,
-    private val imageHeightPx: Double = 1.0,
+    // Initial image dimensions in native pixels; the screen replaces them via [setImageSize] once
+    // the image decodes. Defaults allow unit tests to omit them.
+    imageWidthPx: Double = 1.0,
+    imageHeightPx: Double = 1.0,
     /**
      * Story 9.6: Haptic feedback callback invoked on every successful annotation commit.
      *
@@ -199,6 +199,18 @@ class AnnotationEditorViewModel(
     // CRITICAL: internal scope — never injected from outside composition.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val logger = Logger("AnnotationEditorViewModel")
+
+    // Native image size used to denormalize points. Written from the UI thread, read on scope threads.
+    @Volatile private var imageWidthPx: Double = imageWidthPx
+    @Volatile private var imageHeightPx: Double = imageHeightPx
+
+    /** Supplies the decoded image's native size; without it every pixel distance is ~1 px. */
+    fun setImageSize(widthPx: Int, heightPx: Int) {
+        if (widthPx <= 0 || heightPx <= 0) return
+        imageWidthPx = widthPx.toDouble()
+        imageHeightPx = heightPx.toDouble()
+        depthCoordinator.setImageSize(imageWidthPx, imageHeightPx)
+    }
 
     /**
      * Set to true on the first call to [initialize] to prevent a second call from
@@ -655,6 +667,39 @@ class AnnotationEditorViewModel(
     /** Clear the current selection. */
     fun clearSelection() {
         _state.update { it.copy(selectedAnnotationUuid = null) }
+    }
+
+    /** Call once when a move gesture starts moving: records one undo step for the whole drag. */
+    fun beginAnnotationEdit() {
+        pushUndo(_state.value)
+        hasBeenMutated.value = true
+    }
+
+    /** Replaces an annotation's points and re-derives its measurement. UI-state only; see [commitAnnotationEdit]. */
+    fun updateAnnotationPoints(uuid: String, points: List<NormalizedPoint>) {
+        _state.update { st ->
+            val displayUnit = st.imageAnnotation?.unit ?: MeasurementUnit.METERS
+            st.copy(
+                committedAnnotations = st.committedAnnotations.map { a ->
+                    if (a.uuid != uuid || points.size != a.normalizedPoints.size) a
+                    else {
+                        val (meters, display) = computeMeasurement(points, a.annotationType.toTool(), st.calibration, displayUnit)
+                        a.copy(normalizedPoints = points, valueMeters = meters, valueDisplay = display)
+                    }
+                },
+            )
+        }
+    }
+
+    /** Persists the annotation's current state after a move gesture ends. */
+    @OptIn(DirectRepositoryWrite::class)
+    fun commitAnnotationEdit(uuid: String) {
+        val annotation = _state.value.committedAnnotations.firstOrNull { it.uuid == uuid } ?: return
+        scope.launch {
+            measurementRepository.saveMeasurementAnnotation(annotation).onLeft { err ->
+                logger.error("Failed to save moved annotation $uuid: ${err.message}")
+            }
+        }
     }
 
     /** Delete the currently selected annotation. */

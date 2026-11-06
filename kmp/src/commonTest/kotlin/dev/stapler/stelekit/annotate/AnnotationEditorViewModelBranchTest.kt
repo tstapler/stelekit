@@ -534,6 +534,35 @@ class AnnotationEditorViewModelBranchTest {
     }
 
     @Test
+    fun setImageSize_replacesDefaultSoUncalibratedDistanceIsNotZeroPx() {
+        val uncal = image(ppm = 0.0001, method = CalibrationMethod.NONE).copy(
+            calibration = Calibration(CalibrationMethod.NONE, 0.0, 0),
+        )
+        val v = AnnotationEditorViewModel(measurementRepository = InMemoryMeasurementAnnotationRepository())
+            .also { it.initialize(uncal) }
+        v.setImageSize(2000, 1000)
+        v.drawDistance()
+        assertEquals("200 px", v.state.value.committedAnnotations.single().valueDisplay)
+        v.close()
+    }
+
+    @Test
+    fun movingVertex_recomputesMeasurementAndUndoRestores() {
+        val uncal = image(ppm = 0.0001, method = CalibrationMethod.NONE).copy(
+            calibration = Calibration(CalibrationMethod.NONE, 0.0, 0),
+        )
+        val v = vm(uncal)
+        v.drawDistance()
+        val ann = v.state.value.committedAnnotations.single()
+        v.beginAnnotationEdit()
+        v.updateAnnotationPoints(ann.uuid, listOf(ann.normalizedPoints[0], NormalizedPoint(0.3, 0.0)))
+        assertEquals("300 px", v.state.value.committedAnnotations.single().valueDisplay)
+        v.undo()
+        assertEquals("100 px", v.state.value.committedAnnotations.single().valueDisplay)
+        v.close()
+    }
+
+    @Test
     fun distanceTooShort_isDiscarded() {
         val v = vm()
         v.drawDistance(0.001)
