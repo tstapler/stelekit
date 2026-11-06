@@ -39,8 +39,8 @@ class DepthEstimationCoordinator(
     imageHeightPx: Double,
     private val onCalibrationReady: (Calibration) -> Unit,
 ) {
-    @Volatile private var imageWidthPx: Double = imageWidthPx
-    @Volatile private var imageHeightPx: Double = imageHeightPx
+    @kotlin.concurrent.Volatile private var imageWidthPx: Double = imageWidthPx
+    @kotlin.concurrent.Volatile private var imageHeightPx: Double = imageHeightPx
 
     fun setImageSize(widthPx: Double, heightPx: Double) {
         imageWidthPx = widthPx

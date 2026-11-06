@@ -34,6 +34,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import arrow.atomic.Atomic
 import arrow.atomic.AtomicBoolean
 import arrow.atomic.getAndUpdate
@@ -201,8 +203,11 @@ class AnnotationEditorViewModel(
     private val logger = Logger("AnnotationEditorViewModel")
 
     // Native image size used to denormalize points. Written from the UI thread, read on scope threads.
-    @Volatile private var imageWidthPx: Double = imageWidthPx
-    @Volatile private var imageHeightPx: Double = imageHeightPx
+    @kotlin.concurrent.Volatile private var imageWidthPx: Double = imageWidthPx
+    @kotlin.concurrent.Volatile private var imageHeightPx: Double = imageHeightPx
+
+    // Serializes persistence so a slow older save can't land after a newer one; each save re-reads the latest state.
+    private val persistLock = Mutex()
 
     /** Supplies the decoded image's native size; without it every pixel distance is ~1 px. */
     fun setImageSize(widthPx: Int, heightPx: Int) {
@@ -295,6 +300,7 @@ class AnnotationEditorViewModel(
         _state.value = prev
         _canUndo.value = undoStack.isNotEmpty()
         _canRedo.value = redoStack.isNotEmpty()
+        persistCommittedSet()
     }
 
     /** Redo the most recently undone annotation. */
@@ -304,6 +310,7 @@ class AnnotationEditorViewModel(
         _state.value = next
         _canUndo.value = undoStack.isNotEmpty()
         _canRedo.value = redoStack.isNotEmpty()
+        persistCommittedSet()
     }
 
     // ── Tool selection ────────────────────────────────────────────────────────
@@ -694,10 +701,26 @@ class AnnotationEditorViewModel(
     /** Persists the annotation's current state after a move gesture ends. */
     @OptIn(DirectRepositoryWrite::class)
     fun commitAnnotationEdit(uuid: String) {
-        val annotation = _state.value.committedAnnotations.firstOrNull { it.uuid == uuid } ?: return
         scope.launch {
-            measurementRepository.saveMeasurementAnnotation(annotation).onLeft { err ->
-                logger.error("Failed to save moved annotation $uuid: ${err.message}")
+            persistLock.withLock {
+                val annotation = _state.value.committedAnnotations.firstOrNull { it.uuid == uuid } ?: return@withLock
+                measurementRepository.saveMeasurementAnnotation(annotation).onLeft { err ->
+                    logger.error("Failed to save moved annotation $uuid: ${err.message}")
+                }
+            }
+        }
+    }
+
+    /** Re-saves the full committed set so undo/redo of an already-persisted edit reaches the database. */
+    @OptIn(DirectRepositoryWrite::class)
+    private fun persistCommittedSet() {
+        scope.launch {
+            persistLock.withLock {
+                val st = _state.value
+                val imageUuid = st.imageAnnotation?.uuid ?: return@withLock
+                measurementRepository.saveMeasurements(imageUuid, st.committedAnnotations).onLeft { err ->
+                    logger.error("Failed to persist undo/redo: ${err.message}")
+                }
             }
         }
     }

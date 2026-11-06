@@ -13,6 +13,7 @@ import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationMethod
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.MeasurementUnit
+import dev.stapler.stelekit.model.NormalizedPoint
 import dev.stapler.stelekit.repository.InMemoryMeasurementAnnotationRepository
 import org.junit.Rule
 import org.junit.Test
@@ -103,5 +104,71 @@ class InProgressAnnotationCanvasGestureTest {
         assertEquals(1, points.size, "gesture must register exactly one tap")
         assertEquals(upPos.x.toDouble() / size.width, points[0].x, 1e-6)
         assertEquals(upPos.y.toDouble() / size.height, points[0].y, 1e-6)
+    }
+
+    /** A committed horizontal DISTANCE line at y=0.3 from x=0.2 to x=0.8, SELECT tool active. */
+    private fun selectScenario(): Triple<AnnotationEditorViewModel, androidx.compose.ui.test.SemanticsNodeInteraction, androidx.compose.ui.unit.IntSize> {
+        val vm = AnnotationEditorViewModel(
+            measurementRepository = InMemoryMeasurementAnnotationRepository(),
+            imageWidthPx = 1000.0,
+            imageHeightPx = 1000.0,
+        ).also { it.initialize(img) }
+        vm.selectTool(AnnotationTool.DISTANCE)
+        vm.addPoint(NormalizedPoint(0.2, 0.3))
+        vm.addPoint(NormalizedPoint(0.8, 0.3))
+        vm.selectTool(AnnotationTool.SELECT)
+        rule.setContent { AnnotationEditorScreen(viewModel = vm, imageAnnotation = img) }
+        rule.waitForIdle()
+        val canvas = rule.onNodeWithContentDescription("Annotation canvas — tap to place points")
+        // Warm-up: the first injected gesture is dropped (see tests above).
+        canvas.performTouchInput { down(Offset(10f, 10f)); up() }
+        rule.waitForIdle()
+        return Triple(vm, canvas, canvas.fetchSemanticsNode().size)
+    }
+
+    @Test
+    fun select_dragVertex_movesThatPointOnly_andIsOneUndoStep() {
+        val (vm, canvas, size) = selectScenario()
+        val start = Offset(0.2f * size.width, 0.3f * size.height)
+        val end = Offset(0.4f * size.width, 0.5f * size.height)
+        canvas.performTouchInput { down(start); moveTo(Offset(start.x + 60f, start.y + 40f)); moveTo(end); up() }
+        rule.waitForIdle()
+        rule.waitUntil(timeoutMillis = 5_000) { vm.state.value.committedAnnotations.single().normalizedPoints[0].x > 0.3 }
+
+        val ann = vm.state.value.committedAnnotations.single()
+        assertEquals(end.x.toDouble() / size.width, ann.normalizedPoints[0].x, 1e-6)
+        assertEquals(end.y.toDouble() / size.height, ann.normalizedPoints[0].y, 1e-6)
+        assertEquals(0.8, ann.normalizedPoints[1].x, 1e-9)
+        assertEquals(ann.uuid, vm.state.value.selectedAnnotationUuid)
+        vm.undo()
+        assertEquals(0.2, vm.state.value.committedAnnotations.single().normalizedPoints[0].x, 1e-9)
+    }
+
+    @Test
+    fun select_dragLineBody_translatesBothPoints() {
+        val (vm, canvas, size) = selectScenario()
+        val mid = Offset(0.5f * size.width, 0.3f * size.height)
+        canvas.performTouchInput { down(mid); moveTo(Offset(mid.x + 25f, mid.y + 15f)); moveTo(Offset(mid.x + 40f, mid.y + 20f)); up() }
+        rule.waitForIdle()
+        rule.waitUntil(timeoutMillis = 5_000) { vm.state.value.committedAnnotations.single().normalizedPoints[0].x > 0.25 }
+
+        val pts = vm.state.value.committedAnnotations.single().normalizedPoints
+        val dx = 40.0 / size.width
+        assertEquals(0.2 + dx, pts[0].x, 1e-6)
+        assertEquals(0.8 + dx, pts[1].x, 1e-6)
+        assertEquals(pts[0].y, pts[1].y, 1e-9)
+    }
+
+    @Test
+    fun select_tapEmptySpace_clearsSelection() {
+        val (vm, canvas, size) = selectScenario()
+        val onLine = Offset(0.5f * size.width, 0.3f * size.height)
+        canvas.performTouchInput { down(onLine); up() }
+        rule.waitForIdle()
+        rule.waitUntil(timeoutMillis = 5_000) { vm.state.value.selectedAnnotationUuid != null }
+
+        canvas.performTouchInput { down(Offset(0.5f * size.width, 0.45f * size.height)); up() }
+        rule.waitForIdle()
+        rule.waitUntil(timeoutMillis = 5_000) { vm.state.value.selectedAnnotationUuid == null }
     }
 }

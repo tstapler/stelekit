@@ -1013,34 +1013,37 @@ private fun InProgressAnnotationCanvas(
                         onSelect(hit.uuid)
                         val original = currentAnnotations.first { it.uuid == hit.uuid }.normalizedPoints
                         var editing = false
-                        while (true) {
-                            val change = awaitPointerEvent().changes.firstOrNull() ?: break
-                            if (!editing && (change.position - downPos).getDistance() >= tapThresholdPx) {
-                                editing = true
-                                onEditStart()
-                            }
-                            if (editing) {
-                                change.consume()
-                                when (hit) {
-                                    is AnnotationHit.Vertex -> {
-                                        change.position.toNormalized(size)?.let { moved ->
-                                            onEditPoints(hit.uuid, original.toMutableList().also { it[hit.index] = moved })
+                        try {
+                            while (true) {
+                                val change = awaitPointerEvent().changes.firstOrNull() ?: break
+                                if (!editing && (change.position - downPos).getDistance() >= tapThresholdPx) {
+                                    editing = true
+                                    onEditStart()
+                                }
+                                if (editing) {
+                                    change.consume()
+                                    when (hit) {
+                                        is AnnotationHit.Vertex -> {
+                                            change.position.toNormalized(size)?.let { moved ->
+                                                onEditPoints(hit.uuid, original.toMutableList().also { it[hit.index] = moved })
+                                            }
+                                            onLoupeOffset?.invoke(change.position)
                                         }
-                                        onLoupeOffset?.invoke(change.position)
-                                    }
-                                    is AnnotationHit.Body -> if (size.width > 0 && size.height > 0) {
-                                        val delta = change.position - downPos
-                                        onEditPoints(
-                                            hit.uuid,
-                                            translateClamped(original, delta.x.toDouble() / size.width, delta.y.toDouble() / size.height),
-                                        )
+                                        is AnnotationHit.Body -> if (size.width > 0 && size.height > 0) {
+                                            val delta = change.position - downPos
+                                            onEditPoints(
+                                                hit.uuid,
+                                                translateClamped(original, delta.x.toDouble() / size.width, delta.y.toDouble() / size.height),
+                                            )
+                                        }
                                     }
                                 }
+                                if (!change.pressed) break
                             }
-                            if (!change.pressed) break
+                        } finally {
+                            onLoupeOffset?.invoke(null)
+                            if (editing) onEditEnd(hit.uuid)
                         }
-                        onLoupeOffset?.invoke(null)
-                        if (editing) onEditEnd(hit.uuid)
                         return@awaitEachGesture
                     }
                     down.consume()
