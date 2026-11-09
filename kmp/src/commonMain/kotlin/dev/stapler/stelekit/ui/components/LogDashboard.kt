@@ -11,6 +11,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FilterList
@@ -21,12 +22,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.stapler.stelekit.logging.LogEntry
 import dev.stapler.stelekit.logging.LogLevel
 import dev.stapler.stelekit.logging.LogManager
+import dev.stapler.stelekit.platform.diagnostics.LogRedactor
 import dev.stapler.stelekit.ui.rememberShareProvider
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
@@ -42,7 +46,12 @@ fun LogDashboard(
     diagnostics: (suspend () -> String)? = null,
     /** Pre-fills the search box, e.g. [PIPELINE_LOG_FILTER] from Settings > Plugins "View log". */
     initialFilter: String? = null,
+    /** Active graph folder name(s), masked as `<graph>` in the Copy text. */
+    redactionGraphNames: Collection<String> = emptyList(),
+    /** Looks up page and asset names to mask as `<name>` in the Copy text; null masks none. */
+    redactionPageNames: (suspend () -> Collection<String>)? = null,
 ) {
+    val clipboard = LocalClipboardManager.current
     val logs by LogManager.logs.collectAsState()
     var filterLevel by remember { mutableStateOf<LogLevel?>(null) }
     var searchQuery by remember(initialFilter) { mutableStateOf(initialFilter.orEmpty()) }
@@ -146,6 +155,32 @@ fun LogDashboard(
                         )
                     }
                 }
+            }
+
+            // Copy only the visible exit record and up to 3 resource samples, redacted for public posting.
+            IconButton(onClick = {
+                scope.launch {
+                    val pageNames = try {
+                        redactionPageNames?.invoke().orEmpty()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+                    val text = LogRedactor.buildShareText(
+                        displayedMessages = filteredLogs.map { it.message },
+                        graphNames = redactionGraphNames,
+                        pageNames = pageNames,
+                    )
+                    statusMessage = if (text == null) {
+                        LogRedactor.NOTHING_TO_COPY
+                    } else {
+                        clipboard.setText(AnnotatedString(text))
+                        LogRedactor.COPIED_CONFIRMATION
+                    }
+                }
+            }) {
+                Icon(Icons.Default.ContentCopy, contentDescription = "Copy exit info")
             }
 
             // Export (share the currently filtered logs as a text file)

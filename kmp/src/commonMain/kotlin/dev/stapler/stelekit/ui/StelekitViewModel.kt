@@ -1486,9 +1486,9 @@ class StelekitViewModel(
      * (TRIM_MEMORY_RUNNING_CRITICAL). Cancels any in-flight background indexing so the
      * coroutine and its parse buffers can be reclaimed immediately.
      */
-    fun onMemoryPressure() {
+    fun onMemoryPressure(level: MemoryPressureLevel = MemoryPressureLevel.Moderate) {
         graphLoader.cancelBackgroundWork()
-        memoryPressureListeners.notifyListeners()
+        memoryPressureListeners.notifyListeners(level)
     }
 
     /** Other stacks (asset pipeline) subscribe here to shed background work under memory pressure. */

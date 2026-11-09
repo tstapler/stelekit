@@ -79,7 +79,7 @@ import java.io.File
 class MainActivity : ComponentActivity() {
 
     private var graphManager: GraphManager? = null
-    private var onMemoryPressureHandler: (() -> Unit)? = null
+    private var onMemoryPressureHandler: ((dev.stapler.stelekit.ui.MemoryPressureLevel) -> Unit)? = null
     /**
      * Story 4.1.5: graph id read from [GitCloneWorker.EXTRA_OPEN_GIT_SETUP_GRAPH_ID] on a
      * notification tap — either a cold start ([onCreate]) or a warm one ([onNewIntent], since
@@ -538,6 +538,8 @@ class MainActivity : ComponentActivity() {
                         attachmentService = attachmentService,
                         googleAuthManager = googleIntegration?.authManager,
                         google = googleIntegration,
+                        editorDiagnosticsSink = (application as SteleKitApplication).editorDiagnosticsSampler,
+                        postKillBanner = (application as SteleKitApplication).postKillBanner,
                         requestCameraPermission = ::requestCameraPermission,
                         graphMoveQuiesceStrategy = androidGraphMoveQuiesceStrategy,
                         hostLinkStep = androidHostLinkStep,
@@ -589,6 +591,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
+        val pressure = dev.stapler.stelekit.ui.MemoryPressureLevel.fromAndroidTrimLevel(level)
+        logger.info("memory.trim level=$pressure raw=$level")
         val repos = graphManager?.activeRepositorySet?.value ?: return
         lifecycleScope.launch {
             // RUNNING_LOW (10) and above: free page caches (~10 MB on a typical device).
@@ -601,7 +605,7 @@ class MainActivity : ComponentActivity() {
             // cancel background indexing to free parse buffers and coroutine stacks.
             if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
                 repos.blockRepository.cacheEvictAll()
-                onMemoryPressureHandler?.invoke()
+                onMemoryPressureHandler?.invoke(pressure)
             }
         }
     }

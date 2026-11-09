@@ -82,6 +82,9 @@ internal fun sharedImageMemoryCache(context: PlatformContext): MemoryCache =
         .build()
         .also { sharedMemoryCache = it }
 
+/** Bytes held by the shared image memory cache, or null before any loader was built. Diagnostics only. */
+fun sharedImageMemoryCacheSizeBytes(): Long? = sharedMemoryCache?.size?.toLong()
+
 internal fun buildSteleKitImageLoader(
     context: PlatformContext,
     notesPath: EffectiveNotesPath?,
