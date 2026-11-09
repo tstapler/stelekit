@@ -334,6 +334,7 @@ private class SteleDatabaseImpl(
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_asset_unprocessed ON asset_index(ml_processed, ml_failed, imported_at_ms)", 0).await()
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_asset_media_type ON asset_index(media_type)", 0).await()
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_asset_imported_at ON asset_index(imported_at_ms DESC)", 0).await()
+      driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_image_annotations_file_path ON image_annotations(file_path)", 0).await()
       driver.execute(null, """
           |CREATE VIRTUAL TABLE blocks_fts USING fts5(
           |    content,

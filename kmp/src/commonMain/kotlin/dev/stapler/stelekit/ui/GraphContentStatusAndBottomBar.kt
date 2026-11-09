@@ -90,7 +90,8 @@ internal fun GraphContentBottomBar(
             closeSidebarIfMobile()
         },
         onSearch = { viewModel.setSearchDialogVisible(true) },
-        onToggleSidebar = { viewModel.toggleSidebar() },
+        // "More" opens the grouped nav sheet, not the drawer (ADR-007); the sheet links to the drawer.
+        onToggleSidebar = { viewModel.setMoreSheetOpen(true) },
         isLeftHanded = appState.isLeftHanded,
         voiceCaptureButton = {
             VoiceCaptureButton(

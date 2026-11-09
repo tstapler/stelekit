@@ -127,7 +127,7 @@ private fun SearchDialogHost(
                     service = service,
                     onShowAll = { q ->
                         viewModel.setSearchDialogVisible(false)
-                        viewModel.navigateTo(Screen.AssetBrowser(q))
+                        viewModel.navigateTo(Screen.Library(initialSearch = q))
                     },
                     onOpenAsset = { uuid ->
                         viewModel.setSearchDialogVisible(false)

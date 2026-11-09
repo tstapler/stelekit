@@ -1387,3 +1387,12 @@ DELETE FROM storage_locations WHERE graph_id = ?;
 
 selectLastInsertRowId:
 SELECT last_insert_rowid();
+
+-- Library (ADR-006/008): the paged page/count queries are built per request in LibrarySql.kt because the
+-- SQLDelight dialect cannot parse REPLACE() and a fixed text would carry every optional predicate.
+-- This index is the join key of those queries; it is also a MigrationRunner entry.
+CREATE INDEX IF NOT EXISTS idx_image_annotations_file_path ON image_annotations(file_path);
+
+-- Bounded projection for the tag chips: distinct tag sets by usage; tags are flattened in Kotlin.
+selectAnnotationTagSets:
+SELECT tags, COUNT(*) AS uses FROM image_annotations WHERE tags <> '[]' AND tags <> '' GROUP BY tags ORDER BY uses DESC LIMIT :limit;

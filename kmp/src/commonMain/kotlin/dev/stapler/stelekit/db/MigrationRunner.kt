@@ -850,6 +850,14 @@ object MigrationRunner {
                 "ANALYZE blocks",
             )
         ),
+        Migration(
+            name = "idx_image_annotations_file_path",
+            statements = listOf(
+                // Join key of the Library paged queries; without it each correlated sub-select scans the table.
+                "CREATE INDEX IF NOT EXISTS idx_image_annotations_file_path ON image_annotations(file_path)",
+                "ANALYZE image_annotations",
+            )
+        ),
     )
 
     /**

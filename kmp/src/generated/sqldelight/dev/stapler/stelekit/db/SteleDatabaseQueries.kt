@@ -3814,6 +3814,15 @@ public class SteleDatabaseQueries(
     cursor.getLong(0)!!
   }
 
+  public fun <T : Any> selectAnnotationTagSets(limit: Long, mapper: (tags: String, uses: Long) -> T): Query<T> = SelectAnnotationTagSetsQuery(limit) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getLong(1)!!
+    )
+  }
+
+  public fun selectAnnotationTagSets(limit: Long): Query<SelectAnnotationTagSets> = selectAnnotationTagSets(limit, ::SelectAnnotationTagSets)
+
   /**
    * @return The number of rows updated.
    */
@@ -8547,5 +8556,25 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectStorageLocation"
+  }
+
+  private inner class SelectAnnotationTagSetsQuery<out T : Any>(
+    public val limit: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("image_annotations", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("image_annotations", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-2_018_660_065, """SELECT tags, COUNT(*) AS uses FROM image_annotations WHERE tags <> '[]' AND tags <> '' GROUP BY tags ORDER BY uses DESC LIMIT ?""", mapper, 1) {
+      var parameterIndex = 0
+      bindLong(parameterIndex++, limit)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectAnnotationTagSets"
   }
 }
