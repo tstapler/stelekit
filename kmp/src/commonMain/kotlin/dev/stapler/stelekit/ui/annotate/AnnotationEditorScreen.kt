@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -75,6 +74,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntSize
+import kotlin.math.roundToInt
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.geometry.isSpecified
 import coil3.compose.AsyncImage
@@ -1612,7 +1614,6 @@ private fun LoupeOverlay(
     touchOffset: Offset,
     canvasSize: IntSize,
 ) {
-    val density = LocalDensity.current.density
     val zoomFactor = 3f
     val loupeSizeDp = 120.dp
     val loupeSizePx = with(LocalDensity.current) { loupeSizeDp.toPx() }
@@ -1626,8 +1627,8 @@ private fun LoupeOverlay(
     }).coerceIn(marginPx, canvasSize.height - loupeSizePx - marginPx)
     val loupeXPx = (touchOffset.x - loupeSizePx / 2f)
         .coerceIn(marginPx, canvasSize.width - loupeSizePx - marginPx)
-    val innerWidthDp = (canvasSize.width * zoomFactor / density).dp
-    val innerHeightDp = (canvasSize.height * zoomFactor / density).dp
+    val innerWidthPx = (canvasSize.width * zoomFactor).roundToInt()
+    val innerHeightPx = (canvasSize.height * zoomFactor).roundToInt()
     // 3x the canvas decodes to ~85 MB on a tall phone; cap the decode and let FillBounds upscale.
     val platformContext = LocalPlatformContext.current
     val loupeModel = remember(imageUri, canvasSize, zoomFactor, platformContext) {
@@ -1649,11 +1650,13 @@ private fun LoupeOverlay(
                 contentDescription = null,
                 // Must match the main image's Fit scaling, or the letterbox offsets differ and the crosshair misses the tap point.
                 contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    // requiredSize: plain size() is clamped to the 120dp parent, which silently
-                    // collapses the 3x inner image and breaks the offset math.
-                    .requiredSize(innerWidthDp, innerHeightDp)
-                    .offset { innerOffset },
+                modifier = Modifier.layout { measurable, _ ->
+                    // Measure at 3x the canvas (plain size() would clamp to the 120dp parent) and place the
+                    // top-left at innerOffset. requiredSize would centre the oversized child, shifting the
+                    // crosshair target by (loupe - inner)/2.
+                    val inner = measurable.measure(Constraints.fixed(innerWidthPx, innerHeightPx))
+                    layout(loupeSizePx.roundToInt(), loupeSizePx.roundToInt()) { inner.place(innerOffset.x, innerOffset.y) }
+                },
             )
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val halfX = size.width / 2f
