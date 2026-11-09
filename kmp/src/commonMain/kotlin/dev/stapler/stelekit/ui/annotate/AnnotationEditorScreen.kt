@@ -286,6 +286,9 @@ fun AnnotationEditorScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { paddingValues ->
         Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+        if (state.error != null) {
+            EditorErrorBanner(onRetry = viewModel::retryAfterError, onClose = onNavigateBack)
+        }
         // Calibration status indicator bar
         CalibrationConfidenceBadge(
             calibration = state.calibration,

@@ -14,6 +14,8 @@ import dev.stapler.stelekit.model.NormalizedPoint
 import dev.stapler.stelekit.model.angleBetweenThreePoints
 import dev.stapler.stelekit.model.metersToDisplayString
 import dev.stapler.stelekit.model.polygonAreaMeters
+import dev.stapler.stelekit.platform.diagnostics.EditorDiagnosticsSnapshot
+import dev.stapler.stelekit.platform.diagnostics.EditorDiagnosticsSource
 import dev.stapler.stelekit.platform.measurement.DeviceConnectionState
 import dev.stapler.stelekit.platform.measurement.ExternalMeasurementDevice
 import dev.stapler.stelekit.platform.ml.MonocularDepthEstimator
@@ -25,6 +27,7 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.ImageAnnotationRepository
 import dev.stapler.stelekit.repository.MeasurementAnnotationRepository
 import dev.stapler.stelekit.util.UuidGenerator
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -106,7 +109,16 @@ data class AnnotationEditorState(
     val depthEstimationError: String? = null,
     /** Current download/readiness state of the depth model file. */
     val depthModelUiState: DepthModelUiState = DepthModelUiState.Absent,
+    /** Set when a Throwable escaped an editor coroutine; see [EditorError]. Cleared by Retry. */
+    val error: EditorError? = null,
 )
+
+/**
+ * A Throwable caught by the editor's scope handler. [stopsInput] is true for an [Error] (for example
+ * `OutOfMemoryError`): the editor refuses edits until Retry or Close editor, rather than carrying on
+ * in a possibly broken state. Committed measurements are never removed by an error.
+ */
+data class EditorError(val message: String, val stopsInput: Boolean)
 
 /**
  * Platform-independent mirror of [DepthModelDownloader.ModelState] for common UI.
@@ -200,8 +212,44 @@ class AnnotationEditorViewModel(
     private val monocularDepthEstimator: MonocularDepthEstimator = SensorModule.monocularDepthEstimator,
 ) {
     // CRITICAL: internal scope — never injected from outside composition.
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // The handler keeps an uncaught Throwable (notably OutOfMemoryError) from reaching the default
+    // handler, which kills the process on Android; it surfaces as [AnnotationEditorState.error].
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, t -> reportThrowable(t) },
+    )
     private val logger = Logger("AnnotationEditorViewModel")
+
+    private fun reportThrowable(t: Throwable) {
+        // Logging can itself fail under memory pressure; the state update is what the user needs.
+        try {
+            logger.error("Annotation editor coroutine failed: ${t::class.simpleName}: ${t.message}", t)
+        } catch (_: Throwable) {
+            // nothing more to do: the error state below still surfaces the failure
+        }
+        _state.update {
+            it.copy(error = EditorError(message = t.message ?: (t::class.simpleName ?: "unknown"), stopsInput = t is Error))
+        }
+    }
+
+    private fun inputStopped(): Boolean = _state.value.error?.stopsInput == true
+
+    /** Retry after an error: clears the banner and re-saves the committed set (the likeliest failed step). */
+    fun retryAfterError() {
+        _state.update { it.copy(error = null, inProgressPoints = emptyList()) }
+        persistCommittedSet()
+    }
+
+    /** Read-only snapshot for the Android diagnostics sampler (task A.2f). */
+    val diagnosticsSource: EditorDiagnosticsSource = EditorDiagnosticsSource {
+        EditorDiagnosticsSnapshot(
+            tool = _state.value.currentTool.name,
+            screen = "AnnotationEditor",
+            // `this.`: a bare name would bind to the constructor parameter, not the live property.
+            imageWidthPx = this.imageWidthPx.toInt(),
+            imageHeightPx = this.imageHeightPx.toInt(),
+            undoDepth = undoStack.size,
+        )
+    }
 
     // Native image size used to denormalize points. Written from the UI thread, read on scope threads.
     @kotlin.concurrent.Volatile private var imageWidthPx: Double = imageWidthPx
@@ -237,6 +285,7 @@ class AnnotationEditorViewModel(
         imageWidthPx = imageWidthPx,
         imageHeightPx = imageHeightPx,
         onCalibrationReady = { cal -> updateCalibration(cal) },
+        onUnhandledThrowable = { t -> reportThrowable(t) },
     )
 
     private val _state = MutableStateFlow(AnnotationEditorState())
@@ -296,9 +345,10 @@ class AnnotationEditorViewModel(
 
     /** Undo the most recent committed annotation. */
     fun undo() {
+        if (inputStopped()) return
         val prev = undoStack.removeLastOrNull() ?: return
         redoStack.addLast(_state.value)
-        _state.value = prev
+        _state.value = prev.copy(error = _state.value.error)
         _canUndo.value = undoStack.isNotEmpty()
         _canRedo.value = redoStack.isNotEmpty()
         persistCommittedSet()
@@ -306,9 +356,10 @@ class AnnotationEditorViewModel(
 
     /** Redo the most recently undone annotation. */
     fun redo() {
+        if (inputStopped()) return
         val next = redoStack.removeLastOrNull() ?: return
         undoStack.addLast(_state.value)
-        _state.value = next
+        _state.value = next.copy(error = _state.value.error)
         _canUndo.value = undoStack.isNotEmpty()
         _canRedo.value = redoStack.isNotEmpty()
         persistCommittedSet()
@@ -318,6 +369,7 @@ class AnnotationEditorViewModel(
 
     /** Switch the active annotation tool and clear any in-progress points. */
     fun selectTool(tool: AnnotationTool) {
+        if (inputStopped()) return
         _state.update { it.copy(currentTool = tool, inProgressPoints = emptyList()) }
     }
 
@@ -363,6 +415,7 @@ class AnnotationEditorViewModel(
      * "close polygon" UI button.
      */
     fun addPoint(point: NormalizedPoint) {
+        if (inputStopped()) return
         val st = _state.value
         val tool = st.currentTool
 
@@ -403,6 +456,7 @@ class AnnotationEditorViewModel(
 
     /** Explicitly close the in-progress AREA polygon. No-op for other tools. */
     fun closePolygon() {
+        if (inputStopped()) return
         val st = _state.value
         if (st.currentTool != AnnotationTool.AREA || st.inProgressPoints.size < 3) return
         commitAnnotation(st.inProgressPoints, AnnotationTool.AREA)
@@ -422,6 +476,7 @@ class AnnotationEditorViewModel(
 
     /** Confirm the label text and commit the LABEL annotation. */
     fun confirmLabel() {
+        if (inputStopped()) return
         val st = _state.value
         val anchorPoint = st.pendingLabelPoint ?: return
         val label = st.labelInputText
@@ -453,6 +508,7 @@ class AnnotationEditorViewModel(
      * No-op if the length text is blank or non-positive.
      */
     fun confirmGridRefCalibration() {
+        if (inputStopped()) return
         val st = _state.value
         val points = st.pendingGridRefPoints
         if (points.size < 2) return
@@ -596,6 +652,7 @@ class AnnotationEditorViewModel(
      */
     @OptIn(DirectRepositoryWrite::class)
     fun updateCalibration(newCalibration: Calibration) {
+        if (inputStopped()) return
         if (!newCalibration.pixelsPerMeter.isFinite() || newCalibration.pixelsPerMeter <= 0.0) {
             logger.warn("updateCalibration rejected: invalid pixelsPerMeter=${newCalibration.pixelsPerMeter}")
             return
@@ -679,12 +736,14 @@ class AnnotationEditorViewModel(
 
     /** Call once when a move gesture starts moving: records one undo step for the whole drag. */
     fun beginAnnotationEdit() {
+        if (inputStopped()) return
         pushUndo(_state.value)
         hasBeenMutated.value = true
     }
 
     /** Replaces an annotation's points and re-derives its measurement. UI-state only; see [commitAnnotationEdit]. */
     fun updateAnnotationPoints(uuid: String, points: List<NormalizedPoint>) {
+        if (inputStopped()) return
         _state.update { st ->
             val displayUnit = st.imageAnnotation?.unit ?: MeasurementUnit.METERS
             st.copy(
@@ -702,6 +761,7 @@ class AnnotationEditorViewModel(
     /** Persists the annotation's current state after a move gesture ends. */
     @OptIn(DirectRepositoryWrite::class)
     fun commitAnnotationEdit(uuid: String) {
+        if (inputStopped()) return
         scope.launch {
             persistLock.withLock {
                 val annotation = _state.value.committedAnnotations.firstOrNull { it.uuid == uuid } ?: return@withLock
@@ -728,6 +788,7 @@ class AnnotationEditorViewModel(
 
     /** Delete the currently selected annotation. */
     fun deleteSelectedAnnotation() {
+        if (inputStopped()) return
         val selectedUuid = _state.value.selectedAnnotationUuid ?: return
         deleteAnnotation(selectedUuid)
     }
@@ -735,6 +796,7 @@ class AnnotationEditorViewModel(
     /** Delete an annotation by UUID. */
     @OptIn(DirectRepositoryWrite::class)
     fun deleteAnnotation(uuid: String) {
+        if (inputStopped()) return
         val before = _state.value
         pushUndo(before)
         hasBeenMutated.value = true
@@ -824,6 +886,7 @@ class AnnotationEditorViewModel(
      * No-op if [tag] is already present or blank.
      */
     fun addTag(tag: String) {
+        if (inputStopped()) return
         val sanitized = tag.trim().lowercase().replace(Regex("[^a-z0-9-_]"), "-")
         if (sanitized.isBlank()) return
         val current = _state.value.imageAnnotation ?: return
@@ -837,6 +900,7 @@ class AnnotationEditorViewModel(
      * Remove [tag] from the current [ImageAnnotation.tags] list and persist.
      */
     fun removeTag(tag: String) {
+        if (inputStopped()) return
         val current = _state.value.imageAnnotation ?: return
         if (tag !in current.tags) return
         val updated = current.copy(tags = current.tags - tag)
@@ -899,6 +963,7 @@ class AnnotationEditorViewModel(
      * - The device emits no readings within the collection window (caller cancels the scope).
      */
     fun injectMeasurementFromDevice() {
+        if (inputStopped()) return
         val device = _activeDevice.value ?: return
         val st = _state.value
 

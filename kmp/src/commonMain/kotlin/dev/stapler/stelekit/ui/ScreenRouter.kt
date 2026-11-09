@@ -45,6 +45,7 @@ import dev.stapler.stelekit.repository.RepositorySet
 import dev.stapler.stelekit.transfer.qrcode.QrImportService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import dev.stapler.stelekit.platform.openInBrowser
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorScreen
@@ -117,6 +118,8 @@ internal fun ScreenRouter(
     assetPlugins: dev.stapler.stelekit.asset.pipeline.AssetPluginsController? = null,
     /** Google Drive browsing and annotation export; null where this build exposes no Google surfaces. */
     google: dev.stapler.stelekit.platform.google.GoogleIntegration? = null,
+    /** Started while the annotation editor is composed; null samples nothing. */
+    editorDiagnosticsSink: dev.stapler.stelekit.platform.diagnostics.EditorDiagnosticsSink? = null,
 ) {
     if (appState.fatalError != null) {
         FatalErrorScreen(
@@ -241,7 +244,16 @@ internal fun ScreenRouter(
             }
             is Screen.Logs -> {
                 NavigationTracingEffect("Logs")
-                LogDashboard(diagnostics = graphDiagnostics, initialFilter = currentScreen.initialFilter)
+                LogDashboard(
+                    diagnostics = graphDiagnostics,
+                    initialFilter = currentScreen.initialFilter,
+                    redactionGraphNames = listOfNotNull(
+                        appState.currentGraphPath?.trimEnd('/', '\\')?.substringAfterLast('/')?.substringAfterLast('\\'),
+                    ),
+                    redactionPageNames = {
+                        repos.pageRepository.getPageNameEntries().first().getOrNull().orEmpty().map { it.name }
+                    },
+                )
             }
             is Screen.Console -> {
                 NavigationTracingEffect("Console")
@@ -420,6 +432,10 @@ internal fun ScreenRouter(
                 }
                 DisposableEffect(annotationEditorViewModel) {
                     onDispose { annotationEditorViewModel.close() }
+                }
+                DisposableEffect(annotationEditorViewModel, editorDiagnosticsSink) {
+                    editorDiagnosticsSink?.start(annotationEditorViewModel.diagnosticsSource)
+                    onDispose { editorDiagnosticsSink?.stop() }
                 }
                 // depth-model-download-stall: safe cast — only Android's OnnxMonocularDepthEstimator
                 // implements DownloadableDepthModel (ADR-002); NoOp/iOS estimators don't, so the

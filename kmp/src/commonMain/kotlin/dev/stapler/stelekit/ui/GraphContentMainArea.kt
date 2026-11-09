@@ -180,6 +180,12 @@ private fun GraphContentBanners(
     val visibility = computeBannerVisibility(deps, inputs, activeGraphInfo, hostReconnectBannerDismissedFor)
     MisplacedFilesBannerHost(deps, viewModel, activeGraphInfo)
     dev.stapler.stelekit.ui.components.RestoreRecoveryBannerHost()
+    deps.platformIntegrations.postKillBanner?.let { banner ->
+        dev.stapler.stelekit.ui.components.PostKillBannerHost(
+            controller = banner,
+            onViewLog = { viewModel.navigateTo(Screen.Logs()) },
+        )
+    }
 
     val reviewPending by viewModel.firstSyncReviewPending.collectAsState()
     val staleness by viewModel.syncStaleness.collectAsState()

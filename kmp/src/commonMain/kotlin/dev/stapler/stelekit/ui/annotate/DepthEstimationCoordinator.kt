@@ -6,6 +6,8 @@ import dev.stapler.stelekit.calibration.CalibrationService
 import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.NormalizedPoint
 import dev.stapler.stelekit.platform.ml.MonocularDepthEstimator
+import dev.stapler.stelekit.logging.Logger
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -38,7 +40,11 @@ class DepthEstimationCoordinator(
     imageWidthPx: Double,
     imageHeightPx: Double,
     private val onCalibrationReady: (Calibration) -> Unit,
+    /** Told about any Throwable the inference coroutine lets escape, after it is logged and shown as the depth error. */
+    private val onUnhandledThrowable: (Throwable) -> Unit = {},
 ) {
+    private val logger = Logger("DepthEstimationCoordinator")
+
     @kotlin.concurrent.Volatile private var imageWidthPx: Double = imageWidthPx
     @kotlin.concurrent.Volatile private var imageHeightPx: Double = imageHeightPx
 
@@ -48,7 +54,24 @@ class DepthEstimationCoordinator(
     }
 
     // CRITICAL: internal scope — never injected from outside composition.
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, t -> handleThrowable(t) },
+    )
+
+    private fun handleThrowable(t: Throwable) {
+        try {
+            logger.error("Depth estimation failed: ${t::class.simpleName}: ${t.message}", t)
+        } catch (_: Throwable) {
+            // logging must never mask the state update below
+        }
+        _state.update {
+            it.copy(
+                isDepthInferenceRunning = false,
+                depthEstimationError = "Depth estimation failed: ${t.message ?: t::class.simpleName}",
+            )
+        }
+        onUnhandledThrowable(t)
+    }
 
     private val _state = MutableStateFlow(DepthCoordinatorState())
     val state: StateFlow<DepthCoordinatorState> = _state.asStateFlow()

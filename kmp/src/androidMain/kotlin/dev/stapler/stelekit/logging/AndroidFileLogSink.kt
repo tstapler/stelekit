@@ -112,6 +112,12 @@ object PreviousSessionLog {
     private const val TAG = "PrevSession"
     private const val TAIL_LINES = 200
 
+    /** The previous session's last log lines, used to tell whether the editor was open when it ended. */
+    fun tail(logDir: File): List<String> {
+        val previous = File(logDir, AndroidFileLogSink.PREVIOUS)
+        return if (previous.exists()) previous.readLines().takeLast(TAIL_LINES) else emptyList()
+    }
+
     /** Call before registering the file sink so replayed lines are not re-written to disk. */
     fun replay(logDir: File, extraNotes: List<String> = emptyList()) {
         extraNotes.forEach { LogManager.addLog(LogEntry(LogLevel.WARN, TAG, it)) }

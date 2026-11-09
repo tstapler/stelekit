@@ -34,12 +34,12 @@ internal class GraphContentBootstrapEnv(
 @Composable
 internal fun WireGraphContentBootstrapEffects(
     viewModel: StelekitViewModel,
-    onMemoryPressure: (((() -> Unit) -> Unit))?,
+    onMemoryPressure: (((MemoryPressureLevel) -> Unit) -> Unit)?,
     attachmentService: MediaAttachmentService?,
     env: GraphContentBootstrapEnv,
 ) {
     LaunchedEffect(viewModel) {
-        onMemoryPressure?.invoke { viewModel.onMemoryPressure() }
+        onMemoryPressure?.invoke { level -> viewModel.onMemoryPressure(level) }
     }
 
     LaunchedEffect(viewModel, attachmentService) {

@@ -62,10 +62,10 @@ data class StelekitAppLifecycleHooks(
     /** Called once the GraphManager instance is ready, so a host can wire up onTrimMemory handling. */
     val onGraphManagerReady: ((dev.stapler.stelekit.db.GraphManager) -> Unit)? = null,
     /**
-     * Registers a memory-pressure handler. The lambda receives a `() -> Unit` callback to store
-     * and invoke when onTrimMemory fires, mirroring [onGraphManagerReady]'s pattern.
+     * Registers a memory-pressure handler. The lambda receives a `(MemoryPressureLevel) -> Unit`
+     * callback to store and invoke when onTrimMemory fires, mirroring [onGraphManagerReady]'s pattern.
      */
-    val onMemoryPressure: (((() -> Unit) -> Unit))? = null,
+    val onMemoryPressure: (((MemoryPressureLevel) -> Unit) -> Unit)? = null,
     /** Called once the [NotificationManager] instance is ready — Desktop wires this to
      * `CaptureController.attachNotificationManager` so capture saves can surface a toast. */
     val onNotificationManagerReady: ((NotificationManager) -> Unit)? = null,
@@ -197,6 +197,13 @@ data class StelekitAppPlatformIntegrations(
      * supplies one" convention.
      */
     val gitSyncBusyCounter: dev.stapler.stelekit.git.GitSyncBusyCounter? = null,
+    /**
+     * Android's 10 s resource sampler for the annotation editor (diagnostics-first, PR-0). The editor
+     * starts it while composed and stops it on dispose. Null (default) samples nothing.
+     */
+    val editorDiagnosticsSink: dev.stapler.stelekit.platform.diagnostics.EditorDiagnosticsSink? = null,
+    /** Banner state for the launch after an unexpected editor-session death. Null (default) shows none. */
+    val postKillBanner: dev.stapler.stelekit.platform.diagnostics.PostKillBannerController? = null,
 )
 
 /**
@@ -312,7 +319,7 @@ data class GraphContentDeps(
     val platformSettings: Settings,
     val graphManager: GraphManager,
     val notificationManager: NotificationManager,
-    val onMemoryPressure: (((() -> Unit) -> Unit))? = null,
+    val onMemoryPressure: (((MemoryPressureLevel) -> Unit) -> Unit)? = null,
     /** Forwards [StelekitAppLifecycleHooks.onViewModelReady] — see its doc. */
     val onViewModelReady: ((StelekitViewModel) -> Unit)? = null,
     val coreServices: StelekitAppCoreServices = StelekitAppCoreServices(),

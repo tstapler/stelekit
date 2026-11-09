@@ -49,6 +49,16 @@ class SteleKitApplication : Application() {
     /** Process-scoped scope for widget/tile background work (goAsync pattern). */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /** Shows the "closed unexpectedly" banner once per previous-session exit record (PR-0 diagnostics). */
+    @Volatile
+    var postKillBanner: dev.stapler.stelekit.platform.diagnostics.PostKillBannerController? = null
+        private set
+
+    /** 10 s resource sampler the annotation editor starts while it is composed. */
+    val editorDiagnosticsSampler: dev.stapler.stelekit.platform.diagnostics.EditorDiagnosticsSampler by lazy {
+        dev.stapler.stelekit.platform.diagnostics.EditorDiagnosticsSampler.create()
+    }
+
     /** Runs cross-graph copies in an application-owned scope so they survive Activity teardown. */
     val copyRunHost: dev.stapler.stelekit.merge.CopyRunHost = dev.stapler.stelekit.merge.AndroidCopyRunHost()
 
@@ -154,7 +164,23 @@ class SteleKitApplication : Application() {
         try {
             val logDir = java.io.File(filesDir, "logs")
             val sink = dev.stapler.stelekit.logging.AndroidFileLogSink(logDir)
-            dev.stapler.stelekit.logging.PreviousSessionLog.replay(logDir, previousExitNotes())
+            val exitRecords = previousExitRecords()
+            val crashFile = java.io.File(logDir, dev.stapler.stelekit.logging.AndroidFileLogSink.LAST_CRASH)
+            val crashFileId = if (crashFile.exists()) "crash:${crashFile.lastModified()}" else null
+            val previousTail = dev.stapler.stelekit.logging.PreviousSessionLog.tail(logDir)
+            dev.stapler.stelekit.logging.PreviousSessionLog.replay(
+                logDir,
+                exitRecords.map { dev.stapler.stelekit.platform.diagnostics.formatExitRecord(it) },
+            )
+            postKillBanner = dev.stapler.stelekit.platform.diagnostics.PostKillBannerController(
+                dev.stapler.stelekit.platform.diagnostics.FileSeenExitRecordStore(java.io.File(logDir, "seen-exit-record")),
+            ).also {
+                it.offer(
+                    dev.stapler.stelekit.platform.diagnostics.PreviousSessionAssessor.assess(
+                        exitRecords, previousTail, crashFileId,
+                    ),
+                )
+            }
             dev.stapler.stelekit.logging.LogManager.addSink(sink)
             dev.stapler.stelekit.logging.AndroidCrashRecorder.install(logDir)
         } catch (e: Throwable) {
@@ -162,29 +188,25 @@ class SteleKitApplication : Application() {
         }
     }
 
-    /** Why Android ended the previous process (OOM kill, ANR, native crash...); API 30+. */
-    private fun previousExitNotes(): List<String> {
+    /** Why Android ended the previous processes (OOM kill, ANR, excessive CPU...), newest first; API 30+. */
+    private fun previousExitRecords(): List<dev.stapler.stelekit.platform.diagnostics.ExitRecord> {
         if (android.os.Build.VERSION.SDK_INT < 30) return emptyList()
         return runCatching {
             val am = getSystemService(android.app.ActivityManager::class.java)
-            am.getHistoricalProcessExitReasons(packageName, 0, 3).map {
-                "Previous process exit: ${exitReasonName(it.reason)} at=${it.timestamp} " +
-                    "importance=${it.importance} rssKb=${it.rss} ${it.description.orEmpty()}"
+            am.getHistoricalProcessExitReasons(
+                packageName, 0, dev.stapler.stelekit.platform.diagnostics.EXIT_RECORD_REQUEST_COUNT,
+            ).map {
+                dev.stapler.stelekit.platform.diagnostics.ExitRecord(
+                    reason = it.reason,
+                    importance = it.importance,
+                    status = it.status,
+                    pssKb = it.pss,
+                    rssKb = it.rss,
+                    timestampMs = it.timestamp,
+                    description = it.description,
+                )
             }
         }.getOrDefault(emptyList())
-    }
-
-    private fun exitReasonName(reason: Int): String = when (reason) {
-        android.app.ApplicationExitInfo.REASON_CRASH -> "CRASH"
-        android.app.ApplicationExitInfo.REASON_CRASH_NATIVE -> "CRASH_NATIVE"
-        android.app.ApplicationExitInfo.REASON_ANR -> "ANR"
-        android.app.ApplicationExitInfo.REASON_LOW_MEMORY -> "LOW_MEMORY"
-        android.app.ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "EXCESSIVE_RESOURCE_USAGE"
-        android.app.ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> "INITIALIZATION_FAILURE"
-        android.app.ApplicationExitInfo.REASON_SIGNALED -> "SIGNALED"
-        android.app.ApplicationExitInfo.REASON_USER_REQUESTED -> "USER_REQUESTED"
-        android.app.ApplicationExitInfo.REASON_EXIT_SELF -> "EXIT_SELF"
-        else -> "REASON_$reason"
     }
 
     override fun onCreate() {
