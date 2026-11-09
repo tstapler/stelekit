@@ -390,6 +390,9 @@ kotlin {
         }
 
         val androidInstrumentedTest by getting {
+            // Shared synthetic fixture seeds live in commonTest (pinned by FixtureGraphCountsTest);
+            // the instrumented source set does not depend on commonTest, so compile just this directory.
+            kotlin.srcDir("src/commonTest/kotlin/dev/stapler/stelekit/fixtures")
             dependencies {
                 implementation(kotlin("test"))
                 implementation("androidx.benchmark:benchmark-junit4:1.3.4")
