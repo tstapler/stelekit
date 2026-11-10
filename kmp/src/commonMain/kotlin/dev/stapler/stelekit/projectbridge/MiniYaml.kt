@@ -36,7 +36,7 @@ object MiniYaml {
         if (e.unsupported) MiniYamlResult.Unsupported(e.line) else MiniYamlResult.Malformed(e.line)
     }
 
-    private class Fail(val line: Int, val unsupported: Boolean) : RuntimeException(null, null, false, false)
+    private class Fail(val line: Int, val unsupported: Boolean) : RuntimeException()
 
     private class Line(val no: Int, val indent: Int, val body: String)
 
