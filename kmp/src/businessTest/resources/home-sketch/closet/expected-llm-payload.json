@@ -1,0 +1,710 @@
+{
+    "project": "proj-closet-1",
+    "checks": [
+        {
+            "label": "Zones sum to opening",
+            "verdict": "PASS",
+            "summary": "(33 7/16\" + 22 1/2\" + 24 3/16\" + 22 1/2\" + 33 3/8\") = 136\""
+        }
+    ],
+    "dimensions": [
+        {
+            "id": "d-0f5a5433",
+            "label": "Working average height",
+            "status": "SINGLE_SOURCE",
+            "display": "41\"",
+            "num": 41,
+            "den": 1,
+            "sources": [
+                {
+                    "kind": "yaml",
+                    "ref": "yaml:279d8fe6a9c7"
+                }
+            ]
+        },
+        {
+            "id": "d-14180245",
+            "label": "Hang in niche",
+            "status": "SINGLE_SOURCE",
+            "display": "39\"",
+            "num": 39,
+            "den": 1,
+            "sources": [
+                {
+                    "kind": "yaml",
+                    "ref": "yaml:8bf7eb0dff97"
+                }
+            ]
+        },
+        {
+            "id": "d-18a0a128",
+            "label": "Height at rear",
+            "status": "CONFIRMED",
+            "display": "40 7/8\"",
+            "num": 327,
+            "den": 8,
+            "sources": [
+                {
+                    "kind": "svg",
+                    "ref": "svg:35116325c2f9"
+                },
+                {
+                    "kind": "table",
+                    "ref": "table:6797074e6f2e"
+                },
+                {
+                    "kind": "yaml",
+                    "ref": "yaml:4980194be0c8"
+                }
+            ]
+        },
+        {
+            "id": "d-1d535ddf",
+            "label": "d-1d535ddf",
+            "status": "SINGLE_SOURCE",
+            "display": "81 1/2\"",
+            "num": 163,
+            "den": 2,
+            "sources": [
+                {
+                    "kind": "table",
+                    "ref": "table:cfdf3c9fab56"
+                }
+            ]
+        },
+        {
+            "id": "d-243d472d",
+            "label": "d-243d472d",
+            "status": "SINGLE_SOURCE",
+            "display": "1 1/2\"",
+            "num": 3,
+            "den": 2,
+            "sources": [
+                {
+                    "kind": "table",
+                    "ref": "table:1d26f06a09ff"
+                }
+            ]
+        },
+        {
+            "id": "d-24ed6545",
+            "label": "d-24ed6545",
+            "status": "SINGLE_SOURCE",
+            "display": "28\"",
+            "num": 28,
+            "den": 1,
+            "sources": [
+                {
+                    "kind": "prose",
+                    "ref": "prose:76e7da6d6179"
+                }
+            ]
+        },
+        {
+            "id": "d-2d5b1d5a",
+            "label": "d-2d5b1d5a",
+            "status": "SINGLE_SOURCE",
+            "display": "136\"",
+            "num": 136,
+            "den": 1,
+            "sources": [
+                {
+                    "kind": "table",
+                    "ref": "table:f50c6a8cb045"
+                }
+            ]
+        },
+        {
+            "id": "d-3355764e",
+            "label": "Total hang",
+            "status": "SINGLE_SOURCE",
+            "display": "62 1/8\"",
+            "num": 497,
+            "den": 8,
+            "sources": [
+                {
+                    "kind": "yaml",
+                    "ref": "yaml:a281fe407f1c"
+                }
+            ]
+        },
+        {
+            "id": "d-3b5dbe8b",
+            "label": "Right long hang width",
+            "status": "CONFIRMED",
+            "display": "33 3/8\"",
+            "num": 267,
+            "den": 8,
+            "sources": [
+                {
+                    "kind": "svg",
+                    "ref": "svg:c329bbcbb0cc"
+                },
+                {
+                    "kind": "table",
+                    "ref": "table:2750c477bf56"
+                },
+                {
+                    "kind": "yaml",
+                    "ref": "yaml:af7675ac3676"
+                }
+            ]
+        },
+        {
+            "id": "d-43a7bbe6",
+            "label": "Right short hang width",
+            "status": "CONFIRMED",
+            "display": "22 1/2\"",
+            "num": 45,
+            "den": 2,
+            "sources": [
+                {
+                    "kind": "svg",
+                    "ref": "svg:cdcb91d8bbbf"
+                },
+                {
+                    "kind": "table",
+                    "ref": "table:294cdd0d284f"
+                },
+                {
+                    "kind": "yaml",
+                    "ref": "yaml:a3511a4f4df9"
+                }
+            ]
+        },
+        {
+            "id": "d-46cd56ba",
+            "label": "d-46cd56ba",
+            "status": "SINGLE_SOURCE",
+            "display": "113 1/2\"",
+            "num": 227,
+            "den": 2,
+            "sources": [
+                {
+                    "kind": "table",
+                    "ref": "table:2c15c1b590f2"
+                }
+            ]
+        },
+        {
+            "id": "d-508b5c44",
+            "label": "d-508b5c44",
+            "status": "SINGLE_SOURCE",
+            "display": "641/40\"",
+            "num": 641,
+            "den": 40,
+            "sources": [
+                {
+                    "kind": "svg",
+                    "ref": "svg:0a2e948250fa"
+                }
+            ]
+        },
+        {
+            "id": "d-52ab5b1f",
+            "label": "d-52ab5b1f",
+            "status": "CONFIRMED",
+            "display": "80 1/8\"",
+            "num": 641,
+            "den": 8,
+            "sources": [
+                {
+                    "kind": "prose",
+                    "ref": "prose:d9652ba3f535"
+                },
+                {
+                    "kind": "svg",
+                    "ref": "svg:6e98714a0383"
+                },
+                {
+                    "kind": "table",
+                    "ref": "table:589c71d3617d"
+                }
+            ]
+        },
+        {
+            "id": "d-54ba4118",
+            "label": "d-54ba4118",
+            "status": "CONFIRMED",
+            "display": "102 5/8\"",
+            "num": 821,
+            "den": 8,
+            "sources": [
+                {
+                    "kind": "prose",
+                    "ref": "prose:bcc67874ecd5"
+                },
+                {
+                    "kind": "svg",
+                    "ref": "svg:3d38b4ba79b7"
+                },
+                {
+                    "kind": "table",
+                    "ref": "table:a3915229a350"
+                }
+            ]
+        },
+        {
+            "id": "d-5e121453",
+            "label": "Lower cabinet height",
+            "status": "CONFIRMED",
+            "display": "23 1/8\"",
+            "num": 185,
+            "den": 8,
+            "sources": [
+                {
+                    "kind": "svg",
+                    "ref": "svg:808a1b826c74"
+                },
+                {
+                    "kind": "table",
+                    "ref": "table:b6671e6a9b0e"
+                },
+                {
+                    "kind": "yaml",
+                    "ref": "yaml:59b516d117bb"
+                }
+            ]
+        },
+        {
+            "id": "d-6bf227dd",
+            "label": "Shelf zone width",
+            "status": "CONFIRMED",
+            "display": "24 3/16\"",
+            "num": 387,
+            "den": 16,
+            "sources": [
+                {
+                    "kind": "svg",
+                    "ref": "svg:b68e8683ec9a"
+                },
+                {
+                    "kind": "table",
+                    "ref": "table:653097e50078"
+                },
+                {
+                    "kind": "yaml",
+                    "ref": "yaml:291d204f5729"
+                }
+            ]
+        },
+        {
+            "id": "d-7c3b9734",
+            "label": "d-7c3b9734",
+            "status": "SINGLE_SOURCE",
+            "display": "1297/40\"",
+            "num": 1297,
+            "den": 40,
+            "sources": [
+                {
+                    "kind": "svg",
+                    "ref": "svg:447d82fdb4a0"
+                }
+            ]
+        },
+        {
+            "id": "d-7e840ab5",
+            "label": "d-7e840ab5",
+            "status": "SINGLE_SOURCE",
+            "display": "129 1/2\"",
+            "num": 259,
+            "den": 2,
+            "sources": [
+                {
+                    "kind": "table",
+                    "ref": "table:878e07b69458"
+                }
+            ]
+        },
+        {
+            "id": "d-942a1fa3",
+            "label": "Cabinet bay width",
+            "status": "CONFIRMED",
+            "display": "30 7/8\"",
+            "num": 247,
+            "den": 8,
+            "sources": [
+                {
+                    "kind": "prose",
+                    "ref": "prose:94b27d33d3e7"
+                },
+                {
+                    "kind": "yaml",
+                    "ref": "yaml:48611c22b18d"
+                }
+            ]
+        },
+        {
+            "id": "d-9896484d",
+            "label": "d-9896484d",
+            "status": "CONFIRMED",
+            "display": "33 7/16\"",
+            "num": 535,
+            "den": 16,
+            "sources": [
+                {
+                    "kind": "prose",
+                    "ref": "prose:0baaff210188"
+                },
+                {
+                    "kind": "svg",
+                    "ref": "svg:3a79d8febd38"
+                },
+                {
+                    "kind": "table",
+                    "ref": "table:da75e93cea0e"
+                }
+            ]
+        },
+        {
+            "id": "d-9a0d1afb",
+            "label": "Height at front",
+            "status": "CONFIRMED",
+            "display": "43 5/16\"",
+            "num": 693,
+            "den": 16,
+            "sources": [
+                {
+                    "kind": "svg",
+                    "ref": "svg:69b12f927f59"
+                },
+                {
+                    "kind": "table",
+                    "ref": "table:e5f91b3b3865"
+                },
+                {
+                    "kind": "yaml",
+                    "ref": "yaml:a7aeba4baa43"
+                }
+            ]
+        },
+        {
+            "id": "d-9aadd1b0",
+            "label": "Left long hang width",
+            "status": "CONFIRMED",
+            "display": "33 7/16\"",
+            "num": 535,
+            "den": 16,
+            "sources": [
+                {
+                    "kind": "svg",
+                    "ref": "svg:0ff8ee8c585e"
+                },
+                {
+                    "kind": "table",
+                    "ref": "table:56a38e45bbd3"
+                },
+                {
+                    "kind": "yaml",
+                    "ref": "yaml:322f0633a924"
+                }
+            ]
+        },
+        {
+            "id": "d-9ac6520a",
+            "label": "Middle zones width",
+            "status": "SINGLE_SOURCE",
+            "display": "69 3/16\"",
+            "num": 1107,
+            "den": 16,
+            "sources": [
+                {
+                    "kind": "table",
+                    "ref": "table:41ede4aaf790"
+                }
+            ]
+        },
+        {
+            "id": "d-9c4f65a7",
+            "label": "d-9c4f65a7",
+            "status": "SINGLE_SOURCE",
+            "display": "97 1/2\"",
+            "num": 195,
+            "den": 2,
+            "sources": [
+                {
+                    "kind": "table",
+                    "ref": "table:a845a81fd277"
+                }
+            ]
+        },
+        {
+            "id": "d-ac4c5078",
+            "label": "Left short hang width",
+            "status": "CONFIRMED",
+            "display": "22 1/2\"",
+            "num": 45,
+            "den": 2,
+            "sources": [
+                {
+                    "kind": "svg",
+                    "ref": "svg:72d04766bd63"
+                },
+                {
+                    "kind": "table",
+                    "ref": "table:d04bb6965c4c"
+                },
+                {
+                    "kind": "yaml",
+                    "ref": "yaml:cf215684886b"
+                }
+            ]
+        },
+        {
+            "id": "d-ad898524",
+            "label": "d-ad898524",
+            "status": "SINGLE_SOURCE",
+            "display": "49 1/2\"",
+            "num": 99,
+            "den": 2,
+            "sources": [
+                {
+                    "kind": "table",
+                    "ref": "table:f8fb1a32de7c"
+                }
+            ]
+        },
+        {
+            "id": "d-b3e9aa64",
+            "label": "Usable depth",
+            "status": "CONFIRMED",
+            "display": "24\"",
+            "num": 24,
+            "den": 1,
+            "sources": [
+                {
+                    "kind": "svg",
+                    "ref": "svg:6e3c916a7b46"
+                },
+                {
+                    "kind": "table",
+                    "ref": "table:4fbe11efe2ae"
+                },
+                {
+                    "kind": "yaml",
+                    "ref": "yaml:59757302e4b9"
+                }
+            ]
+        },
+        {
+            "id": "d-bb6e8eec",
+            "label": "Opening width",
+            "status": "CONFIRMED",
+            "display": "136\"",
+            "num": 136,
+            "den": 1,
+            "sources": [
+                {
+                    "kind": "svg",
+                    "ref": "svg:57b7300f1281"
+                },
+                {
+                    "kind": "table",
+                    "ref": "table:ba272256a7f4"
+                },
+                {
+                    "kind": "yaml",
+                    "ref": "yaml:525a756004af"
+                }
+            ]
+        },
+        {
+            "id": "d-bcb9fe7b",
+            "label": "d-bcb9fe7b",
+            "status": "CONFIRMED",
+            "display": "0\"",
+            "num": 0,
+            "den": 1,
+            "sources": [
+                {
+                    "kind": "svg",
+                    "ref": "svg:fbf1035d9a34"
+                },
+                {
+                    "kind": "table",
+                    "ref": "table:71d830cb1e86"
+                }
+            ]
+        },
+        {
+            "id": "d-c19cbec7",
+            "label": "d-c19cbec7",
+            "status": "CONFIRMED",
+            "display": "136\"",
+            "num": 136,
+            "den": 1,
+            "sources": [
+                {
+                    "kind": "svg",
+                    "ref": "svg:aa68e98fef68"
+                },
+                {
+                    "kind": "table",
+                    "ref": "table:cff1eadfac9f"
+                }
+            ]
+        },
+        {
+            "id": "d-c1f4dc00",
+            "label": "d-c1f4dc00",
+            "status": "SINGLE_SOURCE",
+            "display": "65 1/2\"",
+            "num": 131,
+            "den": 2,
+            "sources": [
+                {
+                    "kind": "table",
+                    "ref": "table:01d68571a275"
+                }
+            ]
+        },
+        {
+            "id": "d-c4f90460",
+            "label": "Long rod height",
+            "status": "CONFIRMED",
+            "display": "38\"",
+            "num": 38,
+            "den": 1,
+            "sources": [
+                {
+                    "kind": "svg",
+                    "ref": "svg:34d923df5949"
+                },
+                {
+                    "kind": "table",
+                    "ref": "table:3a1f4f05276f"
+                },
+                {
+                    "kind": "yaml",
+                    "ref": "yaml:a58c5b39cb7b"
+                }
+            ]
+        },
+        {
+            "id": "d-c7253f54",
+            "label": "d-c7253f54",
+            "status": "SINGLE_SOURCE",
+            "display": "33 1/2\"",
+            "num": 67,
+            "den": 2,
+            "sources": [
+                {
+                    "kind": "table",
+                    "ref": "table:04ba33e8bc6d"
+                }
+            ]
+        },
+        {
+            "id": "d-c7fff55c",
+            "label": "d-c7fff55c",
+            "status": "SINGLE_SOURCE",
+            "display": "969/40\"",
+            "num": 969,
+            "den": 40,
+            "sources": [
+                {
+                    "kind": "svg",
+                    "ref": "svg:a312d0558293"
+                }
+            ]
+        },
+        {
+            "id": "d-d0a090c9",
+            "label": "Short rod height",
+            "status": "CONFIRMED",
+            "display": "36\"",
+            "num": 36,
+            "den": 1,
+            "sources": [
+                {
+                    "kind": "prose",
+                    "ref": "prose:3f11c247a3ce"
+                },
+                {
+                    "kind": "svg",
+                    "ref": "svg:ad3024c33403"
+                },
+                {
+                    "kind": "table",
+                    "ref": "table:9e14319605a9"
+                },
+                {
+                    "kind": "yaml",
+                    "ref": "yaml:391221b236a5"
+                }
+            ]
+        },
+        {
+            "id": "d-d8e22b57",
+            "label": "d-d8e22b57",
+            "status": "CONFIRMED",
+            "display": "55 15/16\"",
+            "num": 895,
+            "den": 16,
+            "sources": [
+                {
+                    "kind": "prose",
+                    "ref": "prose:0ade3254e3c8"
+                },
+                {
+                    "kind": "svg",
+                    "ref": "svg:19311b6d269b"
+                },
+                {
+                    "kind": "table",
+                    "ref": "table:b2539dcc8d0f"
+                }
+            ]
+        },
+        {
+            "id": "d-dedc7e5d",
+            "label": "d-dedc7e5d",
+            "status": "SINGLE_SOURCE",
+            "display": "17 1/2\"",
+            "num": 35,
+            "den": 2,
+            "sources": [
+                {
+                    "kind": "table",
+                    "ref": "table:a2f0fc4c9b70"
+                }
+            ]
+        },
+        {
+            "id": "d-ed52036d",
+            "label": "d-ed52036d",
+            "status": "SINGLE_SOURCE",
+            "display": "313/40\"",
+            "num": 313,
+            "den": 40,
+            "sources": [
+                {
+                    "kind": "svg",
+                    "ref": "svg:58a4b8ed68a8"
+                }
+            ]
+        },
+        {
+            "id": "d-edf5ac08",
+            "label": "Shelf gap",
+            "status": "CONFIRMED",
+            "display": "41/5\"",
+            "num": 41,
+            "den": 5,
+            "sources": [
+                {
+                    "kind": "prose",
+                    "ref": "prose:3104c856ca80"
+                },
+                {
+                    "kind": "svg",
+                    "ref": "svg:c4c567862007"
+                },
+                {
+                    "kind": "table",
+                    "ref": "table:b3917ea71c71"
+                }
+            ]
+        }
+    ]
+}
