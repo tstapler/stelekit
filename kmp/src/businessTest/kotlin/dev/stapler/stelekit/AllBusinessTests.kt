@@ -696,6 +696,7 @@ import org.junit.runners.Suite
     GooglePhotosFlowTest::class,
     TrackedCopyRunHostTest::class,
     HomeSketchFixtureVisibilityTest::class,
+    dev.stapler.stelekit.fixtures.ClosetFixtureTest::class,
     PrivateStringGuardTest::class,
     GoldenFileGuardTest::class,
     GitSyncCoordinatorJobsTest::class,
