@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.projectbridge
 
 import dev.stapler.stelekit.fusion.Observation
+import dev.stapler.stelekit.jobs.JobHandle
 import dev.stapler.stelekit.jobs.JobKind
 import kotlinx.coroutines.CancellationException
 
@@ -16,6 +17,9 @@ sealed interface PostSyncRunOutcome {
 
     /** Local steps ran, but this platform has no writer for the digest page. */
     data object DigestUnavailable : PostSyncRunOutcome
+
+    /** The digest page was not written (refused, or deferred until the next sync); nothing else is affected. */
+    data class DigestNotWritten(val result: DigestWriteResult) : PostSyncRunOutcome
 
     /** The database had not caught up with the pulled files; retry on the next trigger. */
     data class Unsettled(val result: SettleResult.Unsettled) : PostSyncRunOutcome
@@ -35,6 +39,9 @@ class PostSyncProjectJob(
     private val deps: ProjectBridgeDeps,
     private val collector: ProjectSourceCollector = ProjectSourceCollector(),
     private val barrier: SettleBarrier = SettleBarrier(deps.isGitSyncBusy, deps.pageSettleProbe),
+    private val digestWriter: DigestWriter = DigestWriter(deps.routerProvider),
+    /** The fused digest input for the graph's project; null until fusion is wired (Story 5.8), so nothing is written. */
+    private val digestInput: suspend (graphId: String) -> DigestInput? = { null },
 ) {
     /** [syncLeftLfsFiles] is read after the barrier, when the sync has published its final state. */
     suspend fun run(graphId: String, syncLeftLfsFiles: () -> Boolean): PostSyncRunOutcome {
@@ -54,8 +61,7 @@ class PostSyncProjectJob(
                     handle.fail(UNAVAILABLE)
                     PostSyncRunOutcome.DigestUnavailable
                 } else {
-                    handle.succeed()
-                    PostSyncRunOutcome.Completed(settle.unloaded)
+                    writeDigest(graphId, handle, settle.unloaded)
                 }
             }
         } catch (e: CancellationException) {
@@ -65,6 +71,24 @@ class PostSyncProjectJob(
             val type = e::class.simpleName ?: "Error"
             handle.fail("project digest failed ($type)")
             PostSyncRunOutcome.Failed(type)
+        }
+    }
+
+    /** Runs after the barrier only, so the page is never replaced from a half-settled database. */
+    private suspend fun writeDigest(graphId: String, handle: JobHandle, unloaded: Int): PostSyncRunOutcome {
+        val input = digestInput(graphId)
+        if (input == null) {
+            handle.succeed()
+            return PostSyncRunOutcome.Completed(unloaded)
+        }
+        val result: DigestWriteResult = digestWriter.write(graphId, deps.settings.digestPageTitle(graphId, input.slug), input)
+        val ok = result is DigestWriteResult.Written || result is DigestWriteResult.Unchanged
+        if (ok) handle.succeed() else handle.fail(result.note)
+        return when (result) {
+            is DigestWriteResult.Written, is DigestWriteResult.Unchanged -> PostSyncRunOutcome.Completed(unloaded)
+            is DigestWriteResult.Unavailable -> PostSyncRunOutcome.DigestUnavailable
+            is DigestWriteResult.Failed -> PostSyncRunOutcome.Failed("DigestWriteFailed")
+            is DigestWriteResult.Deferred, is DigestWriteResult.Refused -> PostSyncRunOutcome.DigestNotWritten(result)
         }
     }
 
