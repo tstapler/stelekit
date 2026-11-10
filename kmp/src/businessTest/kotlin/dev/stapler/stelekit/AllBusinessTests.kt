@@ -120,6 +120,7 @@ import dev.stapler.stelekit.asset.AssetMoveServiceTest
 import dev.stapler.stelekit.asset.AssetMoveServiceWalTest
 import dev.stapler.stelekit.asset.AssetIndexServiceTest
 import dev.stapler.stelekit.asset.AssetIndexBackfillBoundedTest
+import dev.stapler.stelekit.asset.DrawingExcludedFromCloudTest
 import dev.stapler.stelekit.asset.AssetIndexedBrowseTest
 import dev.stapler.stelekit.asset.AssetIndexingControllerTest
 import dev.stapler.stelekit.asset.AssetIndexingFailurePathsTest
@@ -426,12 +427,17 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.platform.diagnostics.LogRedactorTest::class,
     dev.stapler.stelekit.ui.annotate.AnnotationEditorCrashGuardTest::class,
     dev.stapler.stelekit.ui.annotate.PostKillBannerControllerTest::class,
+    dev.stapler.stelekit.ui.annotate.UndoDepthTest::class,
+    dev.stapler.stelekit.ui.components.CoilSeamTest::class,
+    dev.stapler.stelekit.ui.components.ImageLoaderConstructionCountTest::class,
+    dev.stapler.stelekit.db.FixtureGraphCountsTest::class,
     AssetFilterTest::class,
     AssetBrowserViewModelTest::class,
     AssetMoveServiceTest::class,
     AssetMoveServiceWalTest::class,
     AssetIndexServiceTest::class,
     AssetIndexBackfillBoundedTest::class,
+    DrawingExcludedFromCloudTest::class,
     AssetIndexedBrowseTest::class,
     AssetIndexingControllerTest::class,
     AssetIndexingFailurePathsTest::class,

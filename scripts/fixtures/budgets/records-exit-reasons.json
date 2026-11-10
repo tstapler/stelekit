@@ -1,0 +1,10 @@
+{
+  "pid": 4242,
+  "scenarioStartMs": 1000,
+  "exitReasons": [
+    { "reason": "USER_REQUESTED", "pid": 4242, "timestamp": 2000 },
+    { "reason": "OTHER", "pid": 4242, "timestamp": 2100 },
+    { "reason": "CRASH", "pid": 31337, "timestamp": 2200 },
+    { "reason": "CRASH", "pid": 4242, "timestamp": 500 }
+  ]
+}

@@ -20,6 +20,28 @@ class CloudStructuralAuditTest {
     }
 
     @Test
+    fun plugins_should_AdmitIMAGEByEqualityOnly_And_NeverMentionDRAWING_When_PipelineSourcesAudited() {
+        val pluginSources = WiringInputs.productionSources
+            .filter { (path, text) -> path.startsWith("${assetPackage}pipeline/") && "AssetPipelinePlugin" in text && "canProcess" in text }
+        assertTrue(pluginSources.size >= 3, "expected the OCR, labeling and cloud plugins, found ${pluginSources.keys}")
+        for ((path, text) in pluginSources) {
+            assertTrue("AssetMediaType.DRAWING" !in text, "$path must not admit DRAWING")
+            // A negated or open-ended IMAGE test (`in`, `else`, `!=` on the admit side) could swallow DRAWING.
+            val imageMentions = Regex("""AssetMediaType\.IMAGE""").findAll(text).count()
+            val equalityMentions = Regex("""mediaType\s*(==|!=)\s*AssetMediaType\.IMAGE""").findAll(text).count()
+            assertEquals(imageMentions, equalityMentions, "$path must test IMAGE by direct equality only")
+        }
+    }
+
+    @Test
+    fun cloudPlugin_should_NotAdmitDRAWING_When_ImageWithSameFieldsIsAdmitted() {
+        val rig = CloudRig().also { it.gate.grant(CloudRig.GRAPH_A, atMs = 5L, scope = CloudBackfillScope.IncludeExisting) }
+        val image = rig.putImage("a")
+        assertTrue(rig.plugin.canProcess(image), "control: the same row as IMAGE is admitted")
+        assertEquals(false, rig.plugin.canProcess(image.copy(mediaType = dev.stapler.stelekit.asset.AssetMediaType.DRAWING)))
+    }
+
+    @Test
     fun cloudVisionPlugin_should_NotExist_When_OwnerGate_OD5Confirmed() {
         val mentions = WiringInputs.productionSources.filterValues { "CloudVision" + "Plugin" in it }.keys
         assertEquals(emptySet(), mentions)

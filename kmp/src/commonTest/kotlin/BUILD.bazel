@@ -111,6 +111,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/db/sidecar/FakeFileSystem.kt",
         "dev/stapler/stelekit/domain/HtmlBlockConverterTest.kt",
         "dev/stapler/stelekit/error/DomainErrorTest.kt",
+        "dev/stapler/stelekit/fixtures/FixtureGraphSeeds.kt",
         "dev/stapler/stelekit/git/BannerPrecedenceTest.kt",
         "dev/stapler/stelekit/git/StalenessChipStateTest.kt",
         "dev/stapler/stelekit/git/SyncNotificationLogicTest.kt",

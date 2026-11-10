@@ -5,6 +5,8 @@ package dev.stapler.stelekit.ui.components
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import arrow.atomic.AtomicInt
+import coil3.EventListener
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.Uri
@@ -85,13 +87,31 @@ internal fun sharedImageMemoryCache(context: PlatformContext): MemoryCache =
 /** Bytes held by the shared image memory cache, or null before any loader was built. Diagnostics only. */
 fun sharedImageMemoryCacheSizeBytes(): Long? = sharedMemoryCache?.size?.toLong()
 
+/** Empties and recreates the shared cache so a benchmark scenario starts cold. Test seam only. */
+internal fun resetSharedImageMemoryCacheForTest() {
+    sharedMemoryCache?.clear()
+    sharedMemoryCache = null
+}
+
+/** How many loaders [buildSteleKitImageLoader] has built; read-only for the benchmark probe. */
+private val loaderConstructionCount = AtomicInt(0)
+
+internal fun imageLoaderConstructions(): Int = loaderConstructionCount.get()
+
+/** Zeroes the construction counter between benchmark scenarios. Test seam only. */
+internal fun resetImageLoaderConstructionsForTest() = loaderConstructionCount.set(0)
+
+/** [eventListenerFactory] stays null in production; the benchmark probe passes a decode counter. */
 internal fun buildSteleKitImageLoader(
     context: PlatformContext,
     notesPath: EffectiveNotesPath?,
     fileSystem: FileSystem?,
-): ImageLoader =
-    ImageLoader.Builder(context)
+    eventListenerFactory: EventListener.Factory? = null,
+): ImageLoader {
+    loaderConstructionCount.incrementAndGet()
+    return ImageLoader.Builder(context)
         .memoryCache(sharedImageMemoryCache(context))
+        .apply { if (eventListenerFactory != null) this.eventListenerFactory(eventListenerFactory) }
         .components {
             if (notesPath != null) {
                 add(SteleKitAssetMapper(notesPath, fileSystem))
@@ -101,6 +121,7 @@ internal fun buildSteleKitImageLoader(
             }
         }
         .build()
+}
 
 /**
  * Returns a Coil [ImageLoader] scoped to the current notes folder.

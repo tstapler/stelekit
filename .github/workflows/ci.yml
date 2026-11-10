@@ -385,6 +385,24 @@ jobs:
           check_name: Android Smoke Test Results
 
   # ── Workflow lint (actionlint + zizmor) ──────────────────────────────────
+  bench-scripts:
+    name: Benchmark Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Node tests (budget checker, calibration, benchdiff export, privacy gate)
+        run: node --test scripts/bench-budget-check.test.js scripts/bench-budget-calibrate.test.js scripts/benchdiff-export.test.js scripts/check-artifact-privacy.test.js
+
+      - name: Python summarizer tests
+        run: python3 scripts/android-benchmark-summarize_test.py
+
+      - name: Budgets file matches the probe catalog
+        run: node scripts/bench-budget-check.js --validate
+
+      - name: No mutation flags in production sources
+        run: scripts/check-no-mutations-in-main.sh
+
   workflow-lint:
     name: Workflow Lint
     runs-on: ubuntu-latest

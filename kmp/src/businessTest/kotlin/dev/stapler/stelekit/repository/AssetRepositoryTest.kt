@@ -140,6 +140,14 @@ class AssetRepositoryTest {
         assertEquals("LOCAL", fetched.mlTagsSource)
     }
 
+    @Test fun `updateMediaType persists the new class`() = runTest {
+        val r = repo()
+        val entry = makeEntry()
+        r.saveAsset(entry)
+        r.updateMediaType(entry.uuid, AssetMediaType.DRAWING)
+        assertEquals(AssetMediaType.DRAWING, r.getAssetByUuid(entry.uuid).first().getOrNull()!!.mediaType)
+    }
+
     @Test fun `updateOcrText persists ocr text`() = runTest {
         val r = repo()
         val entry = makeEntry()
