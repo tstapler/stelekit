@@ -15,6 +15,7 @@ data class BoundPageRef(val pageName: String, val filePath: String)
 /** What one collection pass found. Later stories add fields; today the shell finds nothing. */
 data class CollectedSources(
     val boundPages: List<BoundPageRef> = emptyList(),
+    val yamlObservations: List<Observation> = emptyList(),
     val tableObservations: List<Observation> = emptyList(),
     val tableNeedsMapping: List<NeedsMapping> = emptyList(),
 )
@@ -31,13 +32,23 @@ open class ProjectSourceCollector(
     refTable: RefTable = RefTable(),
 ) {
     private val tableExtractor = TableMeasurementExtractor(registry, refTable)
+    private val yamlExtractor = YamlMeasurementExtractor(registry, refTable)
 
     open suspend fun collect(): CollectedSources {
         val tables = extractTables(emptyList()) // Story 5.9b supplies the bound pages' text
-        return CollectedSources(tableObservations = tables.observations, tableNeedsMapping = tables.needsMapping)
+        val yaml = extractYaml(null) // Story 5.9c supplies the sidecar snapshot
+        return CollectedSources(
+            tableObservations = tables.observations,
+            tableNeedsMapping = tables.needsMapping,
+            yamlObservations = yaml.observations,
+        )
     }
 
     /** Table stage (Story 5.2). */
     internal fun extractTables(pages: List<TablePageText>): TableExtractionResult =
         pages.fold(TableExtractionResult()) { acc, p -> acc + tableExtractor.extract(p.markdown, p.locator, p.origin) }
+
+    /** YAML stage (Story 5.3); [snapshot] is the sidecar's YAML text, never a path (OD-H2). */
+    internal fun extractYaml(snapshot: String?): YamlExtractionResult =
+        if (snapshot == null) YamlExtractionResult() else yamlExtractor.extract(snapshot, "yaml-snapshot")
 }
