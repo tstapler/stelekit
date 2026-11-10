@@ -38,6 +38,35 @@ test('android: writes is higher-is-better, null fields omitted', () => {
   assert.strictEqual(out.env.gitSha, '046fafe1');
 });
 
+test('android-resource: maps Scenario.metric keys to the AnnotateResources group', () => {
+  const out = toBenchdiff({ gitSha: 'abc1234', 'RapidPlacement.cpuMsPerPlacement': 142 }, 'android-resource');
+  assert.deepStrictEqual(out.metrics, [
+    { group: 'android/AnnotateResources', name: 'RapidPlacement.cpuMsPerPlacement', unit: 'ms', better: 'lower', value: 142 },
+  ]);
+  assert.strictEqual(out.env.gitSha, 'abc1234');
+});
+
+test('android-resource: unit and direction follow the metric name; sentinels and non-metrics dropped', () => {
+  const out = toBenchdiff({
+    'RapidPlacement.maxDecodeBytes': 2097152,
+    'LibraryScroll.javaRetainedMb': 40,
+    'BackgroundIdle.idleCpuPct': 3.5,
+    'RapidPlacement.loaderConstructions': 1,
+    'Process.survived': 1,
+    'Export.bakePeakMb': -1,
+    phase1Ms: 12,
+    device: { memoryClass: 192 },
+  }, 'android-resource');
+  const by = Object.fromEntries(out.metrics.map(m => [m.name, m]));
+  assert.strictEqual(by['RapidPlacement.maxDecodeBytes'].unit, 'B');
+  assert.strictEqual(by['LibraryScroll.javaRetainedMb'].unit, 'MB');
+  assert.strictEqual(by['BackgroundIdle.idleCpuPct'].unit, '%');
+  assert.strictEqual(by['RapidPlacement.loaderConstructions'].unit, 'count');
+  assert.strictEqual(by['Process.survived'].better, 'higher');
+  assert.ok(!('Export.bakePeakMb' in by));
+  assert.strictEqual(out.metrics.length, 5);
+});
+
 test('unknown kind throws', () => {
   assert.throws(() => toBenchdiff({}, 'ios'), /unknown kind/);
 });

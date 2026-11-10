@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "globalMode": "enforce",
+  "entries": {
+    "RapidPlacement.maxDecodeBytes": { "budget": 2097152, "comparator": "lte", "mode": "gate", "mutation": "loupeFullDecode", "memory": true },
+    "RapidPlacement.cpuMsPerPlacement": { "budget": 200, "comparator": "lte", "mode": "report-only", "mutation": "busyWaitMove" },
+    "RapidPlacement.loaderConstructions": { "budget": 1, "comparator": "eq", "mode": "gate", "mutation": "loaderPerPress" },
+    "Process.badExitReasons": { "budget": 0, "comparator": "eq", "mode": "gate", "mutation": "oomInjection" }
+  }
+}
