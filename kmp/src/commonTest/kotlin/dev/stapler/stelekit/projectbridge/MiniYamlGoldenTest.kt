@@ -150,4 +150,13 @@ phase2_pass_through:
         assertTrue(result.observations.isEmpty())
         assertNotNull(result)
     }
+
+    @Test
+    fun approxScalar_should_CarryTheQualifier() {
+        val registry = DimensionRegistry(
+            dimensions = listOf(DimensionEntry("d", DimensionKind.LENGTH, "d", DimensionAliases(yaml = listOf("d")))),
+        )
+        val obs = YamlMeasurementExtractor(registry, RefTable()).extract("d: \"~24\\\"\"", "s").observations.single()
+        assertEquals(setOf(dev.stapler.stelekit.units.LengthQualifier.APPROX), obs.qualifiers)
+    }
 }

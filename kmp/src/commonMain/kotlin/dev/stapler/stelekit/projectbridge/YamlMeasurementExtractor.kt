@@ -74,7 +74,7 @@ class YamlMeasurementExtractor(
                     is ParsedLength.Consistency -> parsed.primary
                     else -> return null
                 }
-                Observation(entry.key, measured.value, measured.roundingPrecision, entry.kind, source)
+                Observation(entry.key, measured.value, measured.roundingPrecision, entry.kind, source, parsed.qualifiers)
             }
         }
     }
