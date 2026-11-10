@@ -126,3 +126,15 @@ Recommended metrics (answering requirements Q2, INFERRED pending calibration): g
 - `LoupeAlignmentE2ETest` source is not in this tree (PR #560); its harness details unreviewed.
 - `DepthEstimationCoordinator` scope/CEH and the `runDepthEstimation` real caller not traced.
 - Bazel instrumented support, and exact line numbers marked `~`, should be re-checked at implementation time.
+
+## 10. Allocation-path audit (Task B.2e, 2026-11-09)
+
+Read-only audit of the three paths named in requirements In Scope. Sizes are formulas from the code read, not measurements (the probe scenarios measure the real peaks). "Bounded" means a code-level ceiling exists, independent of input size.
+
+| Path | Owner class | Peak bytes or bound | Bounded |
+|---|---|---|---|
+| Per-capture downscale | `PlatformImageDownscaler.downscale` (`androidMain/.../platform/image/PlatformImageDownscaler.android.kt`) | Decodes once at `inSampleSize` chosen for the largest requested edge (`decodeSampled`), so about `edge^2 * 4` bytes for the sampled bitmap, plus one `createScaledBitmap` copy and one oriented copy when EXIF needs a transform (up to 3 bitmaps of that size live). The input `ByteArray` is held whole. OOM retry doubles the sample size up to 3 times. | Yes for the bitmap (edge-bound); the encoded source bytes are not bounded by this class |
+| Coil disk cache | `buildSteleKitImageLoader` (`commonMain/.../ui/components/SteleKitAssetFetcher.kt`) | No `diskCache` is configured, so Coil's platform default applies; no SteleKit-owned ceiling. Memory cache is bounded: one shared `MemoryCache` at `maxSizePercent(0.10)`, now gated by `cacheOverflowBytes` in the probe. | Memory: yes. Disk: not set by SteleKit (finding for A.4: set an explicit `DiskCache` max size or confirm Coil's default) |
+| Depth-estimation input bitmaps | `OnnxMonocularDepthEstimator` (`androidMain/.../platform/ml/OnnxMonocularDepthEstimator.kt:141-200`), driven by `DepthEstimationCoordinator.runDepthEstimation` | Resizes the caller's `ImageBitmap` to 518x518 (`createScaledBitmap`), then `IntArray(518*518)` (1.07 MB) and `FloatBuffer(518*518*3)` (3.2 MB) plus the `[1,1,518,518]` output (1.07 MB); about 5.4 MB of owned buffers independent of source size. The caller's full-resolution `ImageBitmap` is the unbounded part: it is whatever the editor already holds (a full decode of the source, 48 MB at 4000x3000 ARGB_8888). | Owned buffers: yes (fixed 518x518). Input bitmap: bounded only by the editor's own decode, see C.7b / A.5 |
+
+Findings handed on: (1) A.4 or C.7b should confirm the Coil disk-cache ceiling; (2) the depth input is the editor's full-size bitmap, so A.5's loupe-decode ceiling does not bound it.

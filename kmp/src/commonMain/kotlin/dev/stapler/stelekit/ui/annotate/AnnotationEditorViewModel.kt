@@ -315,6 +315,9 @@ class AnnotationEditorViewModel(
     // undoStack holds previous states (most recent at the end).
     private val undoStack = ArrayDeque<AnnotationEditorState>(maxHistory)
 
+    /** Committed-but-undoable states (capped at [maxHistory]); read by the benchmark probe and tests. */
+    internal val undoDepth: Int get() = undoStack.size
+
     // redoStack holds states available for redo after an undo.
     private val redoStack = ArrayDeque<AnnotationEditorState>(maxHistory)
 
