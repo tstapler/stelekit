@@ -738,6 +738,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.projectbridge.LlmPayloadBuilderTest::class,
     dev.stapler.stelekit.llm.OutboundLlmGateTest::class,
     dev.stapler.stelekit.llm.GateIssuedAuditTest::class,
+    dev.stapler.stelekit.sketch.SnapEnginePropertyTest::class,
+    dev.stapler.stelekit.sketch.ViewTransformTest::class,
     dev.stapler.stelekit.projectbridge.TableParserCharacterizationTest::class,
     dev.stapler.stelekit.projectbridge.TableMeasurementExtractorTest::class,
     dev.stapler.stelekit.projectbridge.TableExtractorPropertyTest::class,
