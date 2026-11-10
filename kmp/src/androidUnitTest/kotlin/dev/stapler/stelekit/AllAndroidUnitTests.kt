@@ -5,6 +5,7 @@ import dev.stapler.stelekit.git.AndroidGitRepositoryLfsGuardTest
 import dev.stapler.stelekit.google.AndroidGoogleSupportTest
 import dev.stapler.stelekit.git.AndroidGitRepositoryTestRemoteTest
 import dev.stapler.stelekit.git.GitSyncBusyCounterSharedWiringTest
+import dev.stapler.stelekit.jobs.schedule.PlatformSettingsColdPathTest
 import dev.stapler.stelekit.jobs.schedule.WorkManagerJitterSpikeTest
 import dev.stapler.stelekit.platform.LegacyPathValidationTest
 import dev.stapler.stelekit.platform.PlatformFileSystemPickerTest
@@ -35,6 +36,7 @@ import org.junit.runners.Suite
 @Suite.SuiteClasses(
     WalConfiguredCallbackTest::class,
     WorkManagerJitterSpikeTest::class,
+    PlatformSettingsColdPathTest::class,
     PlatformCapsRootTest::class,
     AndroidGoogleSupportTest::class,
     GitSyncBusyCounterSharedWiringTest::class,
