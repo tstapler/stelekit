@@ -668,6 +668,10 @@ class RestrictedDatabaseQueries(
         queries.updateAssetAutoLabels(autoLabels, mlTagsSource, uuid)
 
     @DirectSqlWrite
+    suspend fun updateAssetMediaType(mediaType: String, uuid: String): Long =
+        queries.updateAssetMediaType(mediaType, uuid)
+
+    @DirectSqlWrite
     suspend fun updateAssetOcrText(ocrText: String?, uuid: String): Long =
         queries.updateAssetOcrText(ocrText, uuid)
 

@@ -156,6 +156,20 @@ class SqlDelightAssetRepositoryContractTest {
     }
 
     @Test
+    fun `updateMediaType persists and leaves other columns alone`() = runBlocking<Unit> {
+        val r = repo()
+        val id = AssetUuid("a")
+        r.saveAsset(entry("a", tags = listOf("keep")))
+
+        assertTrue(r.updateMediaType(id, AssetMediaType.DRAWING).isRight())
+
+        val got = r.get("a")!!
+        assertEquals(AssetMediaType.DRAWING, got.mediaType)
+        assertEquals(listOf("keep"), got.tags)
+        assertEquals(1L, r.countAssets().getOrNull())
+    }
+
+    @Test
     fun `field updaters persist`() = runBlocking<Unit> {
         val r = repo()
         val id = AssetUuid("a")

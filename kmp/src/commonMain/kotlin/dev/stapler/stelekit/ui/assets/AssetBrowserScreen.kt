@@ -280,7 +280,7 @@ fun AssetBrowserScreen(
 }
 
 private fun mimeTypeFor(mediaType: AssetMediaType): String = when (mediaType) {
-    AssetMediaType.IMAGE -> "image/*"
+    AssetMediaType.IMAGE, AssetMediaType.DRAWING -> "image/*"
     AssetMediaType.PDF -> "application/pdf"
     AssetMediaType.AUDIO -> "audio/*"
     AssetMediaType.VIDEO -> "video/*"
