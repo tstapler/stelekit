@@ -1,0 +1,373 @@
+{
+  "schema": 1,
+  "dimensions": [
+    {
+      "key": "niche.width",
+      "kind": "length",
+      "label": "Opening width",
+      "aliases": {
+        "table": [
+          {
+            "rowKeyPattern": "Opening width",
+            "header": "Value"
+          }
+        ],
+        "yaml": [
+          "niche.width"
+        ],
+        "svgLabel": [
+          "Total Width"
+        ],
+        "prose": [
+          "opening width"
+        ]
+      }
+    },
+    {
+      "key": "zone.left-long.width",
+      "kind": "length",
+      "label": "Left long hang width",
+      "aliases": {
+        "table": [
+          {
+            "rowKeyPattern": "Left - long hang*",
+            "header": "Width"
+          }
+        ],
+        "yaml": [
+          "zones.left-long.width"
+        ],
+        "svgGeom": [
+          "elevation.zone.left-long"
+        ]
+      }
+    },
+    {
+      "key": "zone.left-short.width",
+      "kind": "length",
+      "label": "Left short hang width",
+      "aliases": {
+        "table": [
+          {
+            "rowKeyPattern": "Left - short hang",
+            "header": "Width"
+          }
+        ],
+        "yaml": [
+          "zones.left-short.width"
+        ],
+        "svgGeom": [
+          "elevation.zone.left-short"
+        ]
+      }
+    },
+    {
+      "key": "zone.shelves.width",
+      "kind": "length",
+      "label": "Shelf zone width",
+      "aliases": {
+        "table": [
+          {
+            "rowKeyPattern": "Shelves (shared)",
+            "header": "Width"
+          }
+        ],
+        "yaml": [
+          "zones.shelves.width"
+        ],
+        "svgGeom": [
+          "elevation.zone.shelves"
+        ]
+      }
+    },
+    {
+      "key": "zone.right-short.width",
+      "kind": "length",
+      "label": "Right short hang width",
+      "aliases": {
+        "table": [
+          {
+            "rowKeyPattern": "Right - short hang",
+            "header": "Width"
+          }
+        ],
+        "yaml": [
+          "zones.right-short.width"
+        ],
+        "svgGeom": [
+          "elevation.zone.right-short"
+        ]
+      }
+    },
+    {
+      "key": "zone.right-long.width",
+      "kind": "length",
+      "label": "Right long hang width",
+      "aliases": {
+        "table": [
+          {
+            "rowKeyPattern": "Right - long hang*",
+            "header": "Width"
+          }
+        ],
+        "yaml": [
+          "zones.right-long.width"
+        ],
+        "svgGeom": [
+          "elevation.zone.right-long"
+        ]
+      }
+    },
+    {
+      "key": "zone.middle",
+      "kind": "length",
+      "label": "Middle zones width",
+      "aliases": {
+        "prose": [
+          "three middle zones"
+        ]
+      }
+    },
+    {
+      "key": "niche.height.rear",
+      "kind": "length",
+      "label": "Height at rear",
+      "aliases": {
+        "table": [
+          {
+            "rowKeyPattern": "Height at rear",
+            "header": "Value"
+          }
+        ],
+        "yaml": [
+          "niche.height_rear"
+        ],
+        "svgLabel": [
+          "(Rear)"
+        ]
+      }
+    },
+    {
+      "key": "niche.height.front",
+      "kind": "length",
+      "label": "Height at front",
+      "aliases": {
+        "table": [
+          {
+            "rowKeyPattern": "Height at front",
+            "header": "Value"
+          }
+        ],
+        "yaml": [
+          "niche.height_front"
+        ],
+        "svgLabel": [
+          "(Front)"
+        ]
+      }
+    },
+    {
+      "key": "niche.height.avg",
+      "kind": "length",
+      "label": "Working average height",
+      "aliases": {
+        "yaml": [
+          "niche.height"
+        ],
+        "prose": [
+          "working average"
+        ]
+      }
+    },
+    {
+      "key": "rod.short.height",
+      "kind": "length",
+      "label": "Short rod height",
+      "aliases": {
+        "table": [
+          {
+            "rowKeyPattern": "*short hang*",
+            "header": "Rod height"
+          }
+        ],
+        "yaml": [
+          "zones.left-short.rod_height",
+          "zones.right-short.rod_height"
+        ],
+        "svgLabel": [
+          "36\" Rod"
+        ]
+      }
+    },
+    {
+      "key": "rod.long.height",
+      "kind": "length",
+      "label": "Long rod height",
+      "aliases": {
+        "table": [
+          {
+            "rowKeyPattern": "Left - long hang*",
+            "header": "Rod height"
+          },
+          {
+            "rowKeyPattern": "Right - long hang*",
+            "header": "Rod height"
+          }
+        ],
+        "yaml": [
+          "zones.left-long.rod_height",
+          "zones.right-long.rod_height"
+        ],
+        "svgLabel": [
+          "38\" Rod"
+        ]
+      }
+    },
+    {
+      "key": "niche.depth",
+      "kind": "length",
+      "label": "Usable depth",
+      "aliases": {
+        "table": [
+          {
+            "rowKeyPattern": "Usable depth",
+            "header": "Value"
+          }
+        ],
+        "yaml": [
+          "niche.depth"
+        ],
+        "svgLabel": [
+          "Usable Depth"
+        ]
+      }
+    },
+    {
+      "key": "lowercab.height",
+      "kind": "length",
+      "label": "Lower cabinet height",
+      "aliases": {
+        "table": [
+          {
+            "rowKeyPattern": "+ lower cabinet height",
+            "header": ""
+          }
+        ],
+        "yaml": [
+          "lower_cabinet.height"
+        ],
+        "svgLabel": [
+          "Cabinet H"
+        ]
+      }
+    },
+    {
+      "key": "lowercab.bay",
+      "kind": "length",
+      "label": "Cabinet bay width",
+      "aliases": {
+        "yaml": [
+          "lower_cabinet.bay_width"
+        ],
+        "prose": [
+          "door opening"
+        ]
+      }
+    },
+    {
+      "key": "shelf.gap",
+      "kind": "length",
+      "label": "Shelf gap",
+      "aliases": {
+        "table": [
+          {
+            "rowKeyPattern": "Shelves (shared)",
+            "header": "Contents"
+          }
+        ],
+        "svgGeom": [
+          "elevation.shelf-pitch"
+        ],
+        "prose": [
+          "8.2\" gaps"
+        ]
+      }
+    },
+    {
+      "key": "standards.positions",
+      "kind": "length",
+      "label": "Standard positions",
+      "aliases": {
+        "svgGeom": [
+          "elevation.standards"
+        ],
+        "prose": [
+          "standard positions"
+        ]
+      }
+    },
+    {
+      "key": "hang.niche",
+      "kind": "length",
+      "label": "Hang in niche",
+      "aliases": {
+        "table": [
+          {
+            "rowKeyPattern": "Rod at niche ceiling",
+            "header": ""
+          }
+        ],
+        "yaml": [
+          "phase2_pass_through.niche_hang_depth"
+        ]
+      }
+    },
+    {
+      "key": "hang.total",
+      "kind": "length",
+      "label": "Total hang",
+      "aliases": {
+        "table": [
+          {
+            "rowKeyPattern": "Total hang depth",
+            "header": ""
+          }
+        ],
+        "yaml": [
+          "phase2_pass_through.total_hang"
+        ]
+      }
+    },
+    {
+      "key": "rod.radius",
+      "kind": "length",
+      "label": "Rod radius",
+      "aliases": {
+        "yaml": [
+          "rod.radius"
+        ]
+      }
+    },
+    {
+      "key": "rod.diameter",
+      "kind": "length",
+      "label": "Rod diameter",
+      "aliases": {
+        "prose": [
+          "chrome"
+        ]
+      },
+      "derivation": "rod.radius*2"
+    },
+    {
+      "key": "rod-carrier.count",
+      "kind": "count",
+      "label": "Rod carrier count",
+      "aliases": {
+        "prose": [
+          "rod carriers"
+        ]
+      }
+    }
+  ]
+}
