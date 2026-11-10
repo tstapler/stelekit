@@ -194,6 +194,7 @@ import dev.stapler.stelekit.db.IndexDrainSectionFilterTest
 import dev.stapler.stelekit.db.MigrationRunnerCoverageTest
 import dev.stapler.stelekit.db.MigrationRunnerIndexTest
 import dev.stapler.stelekit.db.MigrationRunnerSchemaSyncTest
+import dev.stapler.stelekit.db.SketchMigrationTest
 import dev.stapler.stelekit.db.RelocationStagingDirectoryTest
 import dev.stapler.stelekit.merge.AssetCopierTest
 import dev.stapler.stelekit.merge.LinkClosureTest
@@ -696,6 +697,7 @@ import org.junit.runners.Suite
     GooglePhotosFlowTest::class,
     TrackedCopyRunHostTest::class,
     HomeSketchFixtureVisibilityTest::class,
+    SketchMigrationTest::class,
     PrivateStringGuardTest::class,
     GoldenFileGuardTest::class,
     GitSyncCoordinatorJobsTest::class,
