@@ -201,6 +201,10 @@ import dev.stapler.stelekit.db.MigrationRunnerCoverageTest
 import dev.stapler.stelekit.db.MigrationRunnerIndexTest
 import dev.stapler.stelekit.db.MigrationRunnerSchemaSyncTest
 import dev.stapler.stelekit.db.SketchMigrationTest
+import dev.stapler.stelekit.db.SketchStubGatingTest
+import dev.stapler.stelekit.repository.SketchDeleteProjectTest
+import dev.stapler.stelekit.repository.SketchRepositoryContractTest
+import dev.stapler.stelekit.repository.SketchStaleEditorTest
 import dev.stapler.stelekit.db.RelocationStagingDirectoryTest
 import dev.stapler.stelekit.merge.AssetCopierTest
 import dev.stapler.stelekit.merge.LinkClosureTest
@@ -710,6 +714,10 @@ import org.junit.runners.Suite
     TrackedCopyRunHostTest::class,
     HomeSketchFixtureVisibilityTest::class,
     SketchMigrationTest::class,
+    SketchStubGatingTest::class,
+    SketchRepositoryContractTest::class,
+    SketchDeleteProjectTest::class,
+    SketchStaleEditorTest::class,
     dev.stapler.stelekit.fixtures.ClosetFixtureTest::class,
     PrivateStringGuardTest::class,
     GoldenFileGuardTest::class,

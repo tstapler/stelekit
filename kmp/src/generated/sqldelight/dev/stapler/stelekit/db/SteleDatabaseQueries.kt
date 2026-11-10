@@ -3814,6 +3814,182 @@ public class SteleDatabaseQueries(
     cursor.getLong(0)!!
   }
 
+  public fun <T : Any> selectSketchProjects(
+    `value`: Long,
+    value_: Long,
+    mapper: (
+      uuid: String,
+      slug: String,
+      name: String,
+      created_at: Long,
+      settings_json: String,
+      fusion_results_json: String,
+      source_hash: String,
+      last_digest_hash: String,
+      model_revision: Long,
+      base_revision: Long,
+      last_synced_sidecar_hash: String?,
+    ) -> T,
+  ): Query<T> = SelectSketchProjectsQuery(value, value_) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getLong(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5)!!,
+      cursor.getString(6)!!,
+      cursor.getString(7)!!,
+      cursor.getLong(8)!!,
+      cursor.getLong(9)!!,
+      cursor.getString(10)
+    )
+  }
+
+  public fun selectSketchProjects(value_: Long, value__: Long): Query<Sketch_projects> = selectSketchProjects(value_, value__, ::Sketch_projects)
+
+  public fun <T : Any> selectSketchProjectByUuid(uuid: String, mapper: (
+    uuid: String,
+    slug: String,
+    name: String,
+    created_at: Long,
+    settings_json: String,
+    fusion_results_json: String,
+    source_hash: String,
+    last_digest_hash: String,
+    model_revision: Long,
+    base_revision: Long,
+    last_synced_sidecar_hash: String?,
+  ) -> T): Query<T> = SelectSketchProjectByUuidQuery(uuid) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getLong(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5)!!,
+      cursor.getString(6)!!,
+      cursor.getString(7)!!,
+      cursor.getLong(8)!!,
+      cursor.getLong(9)!!,
+      cursor.getString(10)
+    )
+  }
+
+  public fun selectSketchProjectByUuid(uuid: String): Query<Sketch_projects> = selectSketchProjectByUuid(uuid, ::Sketch_projects)
+
+  public fun <T : Any> selectSketchSheetsByProject(
+    project_uuid: String,
+    `value`: Long,
+    mapper: (
+      uuid: String,
+      project_uuid: String,
+      kind: String,
+      view_direction: String,
+      unit: String,
+      scale_sixteenths_per_unit: Long,
+      source_asset_uuid: String?,
+      layer_json: String,
+      zones_json: String,
+      position: Long,
+    ) -> T,
+  ): Query<T> = SelectSketchSheetsByProjectQuery(project_uuid, value) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getLong(5)!!,
+      cursor.getString(6),
+      cursor.getString(7)!!,
+      cursor.getString(8)!!,
+      cursor.getLong(9)!!
+    )
+  }
+
+  public fun selectSketchSheetsByProject(project_uuid: String, value_: Long): Query<Sketch_sheets> = selectSketchSheetsByProject(project_uuid, value_, ::Sketch_sheets)
+
+  public fun <T : Any> selectSketchPrimitivesBySheet(
+    sheet_uuid: String,
+    `value`: Long,
+    value_: Long,
+    mapper: (
+      uuid: String,
+      sheet_uuid: String,
+      kind: String,
+      x1: Long,
+      y1: Long,
+      x2: Long,
+      y2: Long,
+      name: String,
+      layer: String,
+      z: Long,
+    ) -> T,
+  ): Query<T> = SelectSketchPrimitivesBySheetQuery(sheet_uuid, value, value_) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getLong(3)!!,
+      cursor.getLong(4)!!,
+      cursor.getLong(5)!!,
+      cursor.getLong(6)!!,
+      cursor.getString(7)!!,
+      cursor.getString(8)!!,
+      cursor.getLong(9)!!
+    )
+  }
+
+  public fun selectSketchPrimitivesBySheet(
+    sheet_uuid: String,
+    value_: Long,
+    value__: Long,
+  ): Query<Sketch_primitives> = selectSketchPrimitivesBySheet(sheet_uuid, value_, value__, ::Sketch_primitives)
+
+  public fun <T : Any> selectSketchDimensionsByProject(
+    project_uuid: String,
+    `value`: Long,
+    value_: Long,
+    mapper: (
+      uuid: String,
+      project_uuid: String,
+      key: String,
+      kind: String,
+      value_num: Long,
+      value_den: Long,
+      precision_num: Long?,
+      precision_den: Long?,
+      source_kind: String,
+      source_ref: String,
+      tolerance_num: Long,
+      tolerance_den: Long,
+      locked: Long,
+    ) -> T,
+  ): Query<T> = SelectSketchDimensionsByProjectQuery(project_uuid, value, value_) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getLong(4)!!,
+      cursor.getLong(5)!!,
+      cursor.getLong(6),
+      cursor.getLong(7),
+      cursor.getString(8)!!,
+      cursor.getString(9)!!,
+      cursor.getLong(10)!!,
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!
+    )
+  }
+
+  public fun selectSketchDimensionsByProject(
+    project_uuid: String,
+    value_: Long,
+    value__: Long,
+  ): Query<Sketch_dimensions> = selectSketchDimensionsByProject(project_uuid, value_, value__, ::Sketch_dimensions)
+
   /**
    * @return The number of rows updated.
    */
@@ -5687,6 +5863,274 @@ public class SteleDatabaseQueries(
         }.await()
     notifyQueries(1_562_946_500) { emit ->
       emit("storage_locations")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun insertSketchProject(
+    uuid: String,
+    slug: String,
+    name: String,
+    created_at: Long,
+    settings_json: String,
+    fusion_results_json: String,
+    source_hash: String,
+    last_digest_hash: String,
+    model_revision: Long,
+    base_revision: Long,
+    last_synced_sidecar_hash: String?,
+  ): Long {
+    val result = driver.execute(-1_791_335_181, """
+        |INSERT OR REPLACE INTO sketch_projects (uuid, slug, name, created_at, settings_json, fusion_results_json, source_hash, last_digest_hash, model_revision, base_revision, last_synced_sidecar_hash)
+        |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """.trimMargin(), 11) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, uuid)
+          bindString(parameterIndex++, slug)
+          bindString(parameterIndex++, name)
+          bindLong(parameterIndex++, created_at)
+          bindString(parameterIndex++, settings_json)
+          bindString(parameterIndex++, fusion_results_json)
+          bindString(parameterIndex++, source_hash)
+          bindString(parameterIndex++, last_digest_hash)
+          bindLong(parameterIndex++, model_revision)
+          bindLong(parameterIndex++, base_revision)
+          bindString(parameterIndex++, last_synced_sidecar_hash)
+        }.await()
+    notifyQueries(-1_791_335_181) { emit ->
+      emit("sketch_projects")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun insertSketchSheet(
+    uuid: String,
+    project_uuid: String,
+    kind: String,
+    view_direction: String,
+    unit: String,
+    scale_sixteenths_per_unit: Long,
+    source_asset_uuid: String?,
+    layer_json: String,
+    zones_json: String,
+    position: Long,
+  ): Long {
+    val result = driver.execute(-1_849_678_407, """
+        |INSERT OR REPLACE INTO sketch_sheets (uuid, project_uuid, kind, view_direction, unit, scale_sixteenths_per_unit, source_asset_uuid, layer_json, zones_json, position)
+        |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """.trimMargin(), 10) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, uuid)
+          bindString(parameterIndex++, project_uuid)
+          bindString(parameterIndex++, kind)
+          bindString(parameterIndex++, view_direction)
+          bindString(parameterIndex++, unit)
+          bindLong(parameterIndex++, scale_sixteenths_per_unit)
+          bindString(parameterIndex++, source_asset_uuid)
+          bindString(parameterIndex++, layer_json)
+          bindString(parameterIndex++, zones_json)
+          bindLong(parameterIndex++, position)
+        }.await()
+    notifyQueries(-1_849_678_407) { emit ->
+      emit("sketch_sheets")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun insertSketchPrimitive(
+    uuid: String,
+    sheet_uuid: String,
+    kind: String,
+    x1: Long,
+    y1: Long,
+    x2: Long,
+    y2: Long,
+    name: String,
+    layer: String,
+    z: Long,
+  ): Long {
+    val result = driver.execute(-131_196_863, """
+        |INSERT OR REPLACE INTO sketch_primitives (uuid, sheet_uuid, kind, x1, y1, x2, y2, name, layer, z)
+        |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """.trimMargin(), 10) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, uuid)
+          bindString(parameterIndex++, sheet_uuid)
+          bindString(parameterIndex++, kind)
+          bindLong(parameterIndex++, x1)
+          bindLong(parameterIndex++, y1)
+          bindLong(parameterIndex++, x2)
+          bindLong(parameterIndex++, y2)
+          bindString(parameterIndex++, name)
+          bindString(parameterIndex++, layer)
+          bindLong(parameterIndex++, z)
+        }.await()
+    notifyQueries(-131_196_863) { emit ->
+      emit("sketch_primitives")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun insertSketchDimension(
+    uuid: String,
+    project_uuid: String,
+    key: String,
+    kind: String,
+    value_num: Long,
+    value_den: Long,
+    precision_num: Long?,
+    precision_den: Long?,
+    source_kind: String,
+    source_ref: String,
+    tolerance_num: Long,
+    tolerance_den: Long,
+    locked: Long,
+  ): Long {
+    val result = driver.execute(608_598_208, """
+        |INSERT OR REPLACE INTO sketch_dimensions (uuid, project_uuid, key, kind, value_num, value_den, precision_num, precision_den, source_kind, source_ref, tolerance_num, tolerance_den, locked)
+        |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """.trimMargin(), 13) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, uuid)
+          bindString(parameterIndex++, project_uuid)
+          bindString(parameterIndex++, key)
+          bindString(parameterIndex++, kind)
+          bindLong(parameterIndex++, value_num)
+          bindLong(parameterIndex++, value_den)
+          bindLong(parameterIndex++, precision_num)
+          bindLong(parameterIndex++, precision_den)
+          bindString(parameterIndex++, source_kind)
+          bindString(parameterIndex++, source_ref)
+          bindLong(parameterIndex++, tolerance_num)
+          bindLong(parameterIndex++, tolerance_den)
+          bindLong(parameterIndex++, locked)
+        }.await()
+    notifyQueries(608_598_208) { emit ->
+      emit("sketch_dimensions")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun deleteSketchPrimitive(uuid: String): Long {
+    val result = driver.execute(1_587_532_559, """DELETE FROM sketch_primitives WHERE uuid = ?""", 1) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(1_587_532_559) { emit ->
+      emit("sketch_primitives")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun deleteSketchPrimitivesBySheet(sheet_uuid: String): Long {
+    val result = driver.execute(-2_015_456_412, """DELETE FROM sketch_primitives WHERE sheet_uuid = ?""", 1) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, sheet_uuid)
+        }.await()
+    notifyQueries(-2_015_456_412) { emit ->
+      emit("sketch_primitives")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun deleteSketchPrimitivesByProject(project_uuid: String): Long {
+    val result = driver.execute(2_104_759_262, """DELETE FROM sketch_primitives WHERE sheet_uuid IN (SELECT uuid FROM sketch_sheets WHERE project_uuid = ?)""", 1) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, project_uuid)
+        }.await()
+    notifyQueries(2_104_759_262) { emit ->
+      emit("sketch_primitives")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun deleteSketchSheet(uuid: String): Long {
+    val result = driver.execute(82_540_423, """DELETE FROM sketch_sheets WHERE uuid = ?""", 1) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(82_540_423) { emit ->
+      emit("sketch_sheets")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun deleteSketchSheetsByProject(project_uuid: String): Long {
+    val result = driver.execute(1_337_360_982, """DELETE FROM sketch_sheets WHERE project_uuid = ?""", 1) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, project_uuid)
+        }.await()
+    notifyQueries(1_337_360_982) { emit ->
+      emit("sketch_sheets")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun deleteSketchDimension(uuid: String): Long {
+    val result = driver.execute(-1_967_639_666, """DELETE FROM sketch_dimensions WHERE uuid = ?""", 1) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(-1_967_639_666) { emit ->
+      emit("sketch_dimensions")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun deleteSketchDimensionsByProject(project_uuid: String): Long {
+    val result = driver.execute(201_925_021, """DELETE FROM sketch_dimensions WHERE project_uuid = ?""", 1) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, project_uuid)
+        }.await()
+    notifyQueries(201_925_021) { emit ->
+      emit("sketch_dimensions")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun deleteSketchProject(uuid: String): Long {
+    val result = driver.execute(-354_911_423, """DELETE FROM sketch_projects WHERE uuid = ?""", 1) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(-354_911_423) { emit ->
+      emit("sketch_projects")
     }
     return result
   }
@@ -8562,5 +9006,117 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectStorageLocation"
+  }
+
+  private inner class SelectSketchProjectsQuery<out T : Any>(
+    public val `value`: Long,
+    public val value_: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("sketch_projects", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("sketch_projects", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(1_272_838_883, """SELECT sketch_projects.uuid, sketch_projects.slug, sketch_projects.name, sketch_projects.created_at, sketch_projects.settings_json, sketch_projects.fusion_results_json, sketch_projects.source_hash, sketch_projects.last_digest_hash, sketch_projects.model_revision, sketch_projects.base_revision, sketch_projects.last_synced_sidecar_hash FROM sketch_projects ORDER BY created_at DESC, uuid LIMIT ? OFFSET ?""", mapper, 2) {
+      var parameterIndex = 0
+      bindLong(parameterIndex++, value)
+      bindLong(parameterIndex++, value_)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectSketchProjects"
+  }
+
+  private inner class SelectSketchProjectByUuidQuery<out T : Any>(
+    public val uuid: String,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("sketch_projects", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("sketch_projects", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(1_751_017_570, """SELECT sketch_projects.uuid, sketch_projects.slug, sketch_projects.name, sketch_projects.created_at, sketch_projects.settings_json, sketch_projects.fusion_results_json, sketch_projects.source_hash, sketch_projects.last_digest_hash, sketch_projects.model_revision, sketch_projects.base_revision, sketch_projects.last_synced_sidecar_hash FROM sketch_projects WHERE uuid = ?""", mapper, 1) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, uuid)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectSketchProjectByUuid"
+  }
+
+  private inner class SelectSketchSheetsByProjectQuery<out T : Any>(
+    public val project_uuid: String,
+    public val `value`: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("sketch_sheets", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("sketch_sheets", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-1_610_530_907, """SELECT sketch_sheets.uuid, sketch_sheets.project_uuid, sketch_sheets.kind, sketch_sheets.view_direction, sketch_sheets.unit, sketch_sheets.scale_sixteenths_per_unit, sketch_sheets.source_asset_uuid, sketch_sheets.layer_json, sketch_sheets.zones_json, sketch_sheets.position FROM sketch_sheets WHERE project_uuid = ? ORDER BY position, uuid LIMIT ?""", mapper, 2) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, project_uuid)
+      bindLong(parameterIndex++, value)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectSketchSheetsByProject"
+  }
+
+  private inner class SelectSketchPrimitivesBySheetQuery<out T : Any>(
+    public val sheet_uuid: String,
+    public val `value`: Long,
+    public val value_: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("sketch_primitives", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("sketch_primitives", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-261_146_381, """SELECT sketch_primitives.uuid, sketch_primitives.sheet_uuid, sketch_primitives.kind, sketch_primitives.x1, sketch_primitives.y1, sketch_primitives.x2, sketch_primitives.y2, sketch_primitives.name, sketch_primitives.layer, sketch_primitives.z FROM sketch_primitives WHERE sheet_uuid = ? ORDER BY z, uuid LIMIT ? OFFSET ?""", mapper, 3) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, sheet_uuid)
+      bindLong(parameterIndex++, value)
+      bindLong(parameterIndex++, value_)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectSketchPrimitivesBySheet"
+  }
+
+  private inner class SelectSketchDimensionsByProjectQuery<out T : Any>(
+    public val project_uuid: String,
+    public val `value`: Long,
+    public val value_: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("sketch_dimensions", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("sketch_dimensions", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-1_828_282_516, """SELECT sketch_dimensions.uuid, sketch_dimensions.project_uuid, sketch_dimensions.key, sketch_dimensions.kind, sketch_dimensions.value_num, sketch_dimensions.value_den, sketch_dimensions.precision_num, sketch_dimensions.precision_den, sketch_dimensions.source_kind, sketch_dimensions.source_ref, sketch_dimensions.tolerance_num, sketch_dimensions.tolerance_den, sketch_dimensions.locked FROM sketch_dimensions WHERE project_uuid = ? ORDER BY key, uuid LIMIT ? OFFSET ?""", mapper, 3) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, project_uuid)
+      bindLong(parameterIndex++, value)
+      bindLong(parameterIndex++, value_)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectSketchDimensionsByProject"
   }
 }
