@@ -72,6 +72,20 @@ class TaskSettingsStore(
         false
     }
 
+    /**
+     * True only when an entry or tombstone is stored AND decodes to disabled (an undecodable value
+     * counts as disabled, fail closed). Absent entries and read failures are false: absence is not
+     * a disable, so a pause snapshot of live work is not discarded on them. Never seeds.
+     */
+    suspend fun isExplicitlyDisabled(key: TaskKey): Boolean = try {
+        val raw = settings.getString(TaskSettingsKeys.entry(key), "")
+        raw.isNotEmpty() && !(TaskConfigCodec.decodeEntry(raw) ?: TaskConfigCodec.DISABLED_ENTRY).enabled
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        false
+    }
+
     /** Null when no defaults are stored or they cannot be read. */
     suspend fun readDefaults(kind: TaskKind): TaskDefaults? = try {
         loadDefaults(kind)
