@@ -34,6 +34,17 @@ class ProjectBridgeSettings(private val settings: Settings) {
 
     fun setAnalyseAfterSync(graphId: String, enabled: Boolean) = settings.putBoolean(analyseKey(graphId), enabled)
 
+    /** SHA-256 of the outbound preview the owner accepted for the graph, or blank when none (Story 5.6c). */
+    fun acceptedOutboundPreviewHash(graphId: String): String = settings.getString(previewHashKey(graphId), "")
+
+    fun acceptOutboundPreview(graphId: String, previewHash: String) = settings.putString(previewHashKey(graphId), previewHash)
+
+    /** True only when the stored acceptance is for exactly this preview text; any change re-prompts. */
+    fun isOutboundPreviewAccepted(graphId: String, previewText: String): Boolean {
+        val accepted = acceptedOutboundPreviewHash(graphId)
+        return accepted.isNotEmpty() && accepted == OutboundPreview.hash(previewText)
+    }
+
     /** True only when both the master flag and this graph's digest opt-in are on. */
     fun isDigestActive(graphId: String): Boolean = homeSketchEnabled && digestEnabled(graphId)
 
@@ -44,6 +55,7 @@ class ProjectBridgeSettings(private val settings: Settings) {
 
         private fun digestEnabledKey(graphId: String) = "home_sketch_digest_enabled_$graphId"
         private fun digestTitleKey(graphId: String) = "home_sketch_digest_title_$graphId"
+        private fun previewHashKey(graphId: String) = "home_sketch_outbound_preview_hash_$graphId"
         private fun analyseKey(graphId: String) = "home_sketch_analyse_after_sync_$graphId"
     }
 }

@@ -115,7 +115,7 @@ class DigestWriter(
             return MergePage(title, blocks = listOf(marker) + body)
         }
 
-        internal fun classify(outcome: Either<DomainError, WriteOutcome>): DigestWriteResult = outcome.fold(
+        fun classify(outcome: Either<DomainError, WriteOutcome>): DigestWriteResult = outcome.fold(
             { error ->
                 when (error) {
                     is DomainError.MergeError.Retryable -> DigestWriteResult.Deferred(error.message)
