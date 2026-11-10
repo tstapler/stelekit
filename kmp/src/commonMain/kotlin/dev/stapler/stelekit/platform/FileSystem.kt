@@ -128,6 +128,12 @@ interface FileSystem {
      */
     fun supportsAtomicReplace(path: String): Boolean = false
 
+    /**
+     * True when [writeFileBytes] plus [renameFile] can stage a temp file next to its destination (JVM, Android).
+     * False on Web (its rename moves text entries only) and iOS (no byte writes): `AtomicFileWriter` refuses there.
+     */
+    val supportsTempRenameWrites: Boolean get() = true
+
     /** Moves [from] over [to], replacing it. Only call when [supportsAtomicReplace] for [to]; false on failure with [to] untouched. */
     fun replaceFileAtomically(from: String, to: String): Boolean = false
 

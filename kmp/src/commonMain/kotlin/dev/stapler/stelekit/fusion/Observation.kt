@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.fusion
 
+import dev.stapler.stelekit.units.LengthQualifier
 import dev.stapler.stelekit.units.Rational
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -60,6 +61,8 @@ data class Observation(
     val precision: Rational,
     val kind: DimensionKind,
     val source: Source,
+    /** Writer's hedges (`~24"` is [LengthQualifier.APPROX]); the engine does not read them yet. */
+    val qualifiers: Set<LengthQualifier> = emptySet(),
 )
 
 /** A drawing label's horizontal position and parsed value, for mirrored-view detection. */

@@ -12,3 +12,13 @@ Answers requirements open questions 1 and 4. The owner's CadQuery SVGs have no `
 
 ## Consequences
 The importer calibrates from the transform scale and a named known dimension (`Total Width: <FC.opening>`), not from `px` size; view direction (x sign) is sheet metadata (discrepancy D1).
+
+## Amendment (Story 4.1a): Ksoup spike outcome
+
+Decision: **keep Ksoup 0.2.6 in XML mode** (`Ksoup.parse(text, parser = Parser.xmlParser())`); no build-file edit, so Story 4.1b does not need the `xmlutil` fallback.
+
+Evidence (`KsoupSvgSpikeTest`, 5 tests, all pass on JVM): attribute-name case (`viewBox`, `text-anchor`) and element-name case survive; `<text>` whitespace is preserved when read with `wholeText()` (not `text()`, which normalises); all 245 `<path>` elements and the `scale(...)` transform string of the closet elevation fixture parse verbatim.
+
+Notes for 4.1b: the sanitised fixtures carry no `viewBox` (only `width`/`height`), so `viewBox` is covered by an inline SVG; read label text with `wholeText()`.
+
+Platform: Ksoup 0.2.6 publishes jvm, android, ios (arm64, x64, simulator), js and wasm-js variants (Gradle module metadata), and `commonMain` already depends on it. The spike test itself is a JVM businessTest; 4.1b's `SvgReaderInlineTest` in commonTest is what makes wasmJs execute the reader.

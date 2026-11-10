@@ -5,20 +5,12 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.platform.FileSystem
-import kotlin.time.Clock
-import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 
 internal fun explicitUuids(blocks: List<MergeBlock>): List<String> =
     blocks.flatMap { b -> listOfNotNull(b.uuid) + explicitUuids(b.children) }
-
-/** A page file that is itself a link resolves elsewhere than its directory entry; the swap would sever it. */
-internal fun isSymlinkFile(path: String, canonicalize: (String) -> String): Boolean {
-    val dir = path.substringBeforeLast('/')
-    return canonicalize(path) != canonicalize(dir).trimEnd('/') + "/" + path.substringAfterLast('/')
-}
 
 /**
  * Which page file owns each `id::` in an off-graph target. A uuid already on another page file would be moved by the
@@ -66,25 +58,5 @@ internal class PageUuidOwnership(
     private companion object {
         val TTL = 30.seconds
         val ID_LINE = Regex("^[ \\t]*id::[ \\t]*(\\S+)", RegexOption.MULTILINE)
-    }
-}
-
-/** Removes crash leftovers once per directory; a temp file younger than [MAX_AGE] may belong to a writer still running. */
-internal class StaleTempSweeper(private val fs: FileSystem, private val suffix: String) {
-    private val swept = HashSet<String>()
-
-    fun sweepOnce(dir: String) {
-        if (!swept.add(dir)) return
-        val now = Clock.System.now().toEpochMilliseconds()
-        for (name in fs.listFiles(dir)) {
-            if (!name.endsWith(suffix)) continue
-            val file = "$dir/$name"
-            val modified = fs.getLastModifiedTime(file) ?: continue
-            if (now - modified > MAX_AGE.inWholeMilliseconds) runCatching { fs.deleteFile(file) }
-        }
-    }
-
-    private companion object {
-        val MAX_AGE = 10.minutes
     }
 }
