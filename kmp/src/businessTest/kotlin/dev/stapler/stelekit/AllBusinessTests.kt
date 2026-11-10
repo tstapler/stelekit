@@ -212,6 +212,11 @@ import dev.stapler.stelekit.merge.MergeManifestTest
 import dev.stapler.stelekit.merge.MergeStagingDirectoryTest
 import dev.stapler.stelekit.merge.MergeUndoTest
 import dev.stapler.stelekit.merge.OwnedPageReplaceSpikeTest
+import dev.stapler.stelekit.merge.ActiveOwnedPageWriterContractTest
+import dev.stapler.stelekit.merge.OwnedFileGuardTest
+import dev.stapler.stelekit.merge.OwnedHashStabilityTest
+import dev.stapler.stelekit.merge.OwnedRefusalMappingTest
+import dev.stapler.stelekit.merge.OwnedReplaceLockOrderTest
 import dev.stapler.stelekit.merge.MetricsLogContractTest
 import dev.stapler.stelekit.merge.SourceReaderParityTest
 import dev.stapler.stelekit.merge.SourceReadCapabilitiesTest
@@ -534,6 +539,11 @@ import org.junit.runners.Suite
     MergeManifestTest::class,
     MergeUndoTest::class,
     OwnedPageReplaceSpikeTest::class,
+    ActiveOwnedPageWriterContractTest::class,
+    OwnedFileGuardTest::class,
+    OwnedHashStabilityTest::class,
+    OwnedRefusalMappingTest::class,
+    OwnedReplaceLockOrderTest::class,
     MetricsLogContractTest::class,
     SourceReaderParityTest::class,
     SourceReadCapabilitiesTest::class,

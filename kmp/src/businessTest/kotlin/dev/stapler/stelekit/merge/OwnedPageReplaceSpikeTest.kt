@@ -240,7 +240,7 @@ class OwnedPageReplaceSpikeTest {
 
         val err = assertIs<DomainError.MergeError.Retryable>((result as Either.Left).value)
         assertEquals(WriteRetryReason.PageBeingEdited.message, err.message)
-        h.flushEditor(key)
+        // No flushEditor: the assertion is done, close() tears the editor down; waiting for the async dirty-clear only added a flaky 10s real-clock wait.
     }
 
     // (b)(iv) raw file write ----------------------------------------------------------------------
