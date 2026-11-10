@@ -718,6 +718,8 @@ import org.junit.runners.Suite
     DomainLayerAuditTest::class,
     dev.stapler.stelekit.units.RationalExamplesTest::class,
     dev.stapler.stelekit.units.RationalPropertyTest::class,
+    dev.stapler.stelekit.platform.AtomicFileWriterTest::class,
+    dev.stapler.stelekit.platform.PlatformLayerAuditTest::class,
     dev.stapler.stelekit.projectbridge.ProjectBridgeSettingsTest::class,
     dev.stapler.stelekit.projectbridge.SettleBarrierTest::class,
     dev.stapler.stelekit.projectbridge.PostSyncProjectCoordinatorTest::class,

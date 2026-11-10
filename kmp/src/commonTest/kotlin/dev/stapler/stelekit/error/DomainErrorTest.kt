@@ -85,6 +85,8 @@ class DomainErrorTest {
             DomainError.QrTransferError.OverwriteFailedPreviousContentAffected("page-uuid-123"),
             DomainError.MergeError.WriteRefused(WriteRefusedReason.InvalidPageName("x")),
             DomainError.MergeError.Retryable("channel closed"),
+            DomainError.FileSystemError.AtomicWriteUnsupported("/path"),
+            DomainError.FileSystemError.SymlinkRefused("/path"),
             DomainError.StorageError.VerificationFailed("/path", "hash mismatch"),
             DomainError.StorageError.SourceInFlight("sync in progress"),
             DomainError.StorageError.DestinationNotWritable("/path"),
@@ -105,6 +107,8 @@ class DomainErrorTest {
                 is DomainError.FileSystemError.WriteFailed -> err.message
                 is DomainError.FileSystemError.ReadFailed -> err.message
                 is DomainError.FileSystemError.DeleteFailed -> err.message
+                is DomainError.FileSystemError.AtomicWriteUnsupported -> err.message
+                is DomainError.FileSystemError.SymlinkRefused -> err.message
                 is DomainError.ParseError.EmptyFile -> err.message
                 is DomainError.ParseError.InvalidSyntax -> err.message
                 is DomainError.ParseError.MalformedMarkdown -> err.message

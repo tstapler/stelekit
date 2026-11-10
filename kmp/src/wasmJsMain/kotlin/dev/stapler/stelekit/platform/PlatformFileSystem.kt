@@ -619,6 +619,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     actual override fun pickDirectory(): String? = null
     override val supportsNativeDirectoryPicker: Boolean get() = showDirectoryPickerSupported()
+    override val supportsTempRenameWrites: Boolean get() = false
     override val supportsHostDirectoryLink: Boolean get() = showDirectoryPickerSupported()
 
     // Epic 2.3 (Story 2.3.1/2.3.2): OPFS is available in every browser (Chromium, Firefox,
