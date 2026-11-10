@@ -28,6 +28,10 @@ package dev.stapler.stelekit
 // runtime classpath for every dev.stapler.stelekit `*Test` class carrying a JUnit `@Test` method
 // and fails if it isn't registered here, so a missing entry is caught by this suite itself
 // instead of relying on someone noticing.
+import dev.stapler.stelekit.projectbridge.SettleBarrierTest
+import dev.stapler.stelekit.projectbridge.ProjectBridgeSettingsTest
+import dev.stapler.stelekit.projectbridge.PostSyncProjectJobEntryPointTest
+import dev.stapler.stelekit.projectbridge.PostSyncProjectCoordinatorTest
 import dev.stapler.stelekit.capture.CaptureTargetResolverTest
 import dev.stapler.stelekit.query.QueryExecutorTest
 import dev.stapler.stelekit.capture.InboxFallbackAppenderTest
@@ -359,6 +363,10 @@ import org.junit.runners.Suite
 
 @RunWith(Suite::class)
 @Suite.SuiteClasses(
+    SettleBarrierTest::class,
+    ProjectBridgeSettingsTest::class,
+    PostSyncProjectJobEntryPointTest::class,
+    PostSyncProjectCoordinatorTest::class,
     AllBusinessTestsCompletenessTest::class,
     BlockClipboardTest::class,
     CaptureTargetResolverTest::class,
