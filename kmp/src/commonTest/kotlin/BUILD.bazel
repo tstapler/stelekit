@@ -139,6 +139,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/platform/diagnostics/ProcStatParserTest.kt",
         "dev/stapler/stelekit/platform/image/ImageSamplingTest.kt",
         "dev/stapler/stelekit/platform/image/ImageTiersTest.kt",
+        "dev/stapler/stelekit/sketchimport/GeometryRulesTest.kt",
         "dev/stapler/stelekit/sketchimport/SvgReaderInlineTest.kt",
         "dev/stapler/stelekit/sketchimport/SvgReaderPropertyTest.kt",
         "dev/stapler/stelekit/sketchimport/SvgTransformTest.kt",

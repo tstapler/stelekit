@@ -756,6 +756,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketchimport.SvgTransformTest::class,
     dev.stapler.stelekit.sketchimport.SvgReaderTest::class,
     dev.stapler.stelekit.sketchimport.SheetCalibrationTest::class,
+    dev.stapler.stelekit.sketchimport.GeometryRulesTest::class,
+    dev.stapler.stelekit.sketchimport.GeometryExtractorTest::class,
     dev.stapler.stelekit.fusion.LinearSolverTest::class,
     dev.stapler.stelekit.fusion.DimensionRegistryTest::class,
     dev.stapler.stelekit.fusion.FusionEngineTest::class,

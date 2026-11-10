@@ -8,6 +8,9 @@ import dev.stapler.stelekit.fusion.DimensionRegistry
 import dev.stapler.stelekit.fusion.Observation
 import dev.stapler.stelekit.fusion.RefTable
 import dev.stapler.stelekit.fusion.SourceOrigin
+import dev.stapler.stelekit.sketchimport.GeometryExtractionResult
+import dev.stapler.stelekit.sketchimport.GeometryExtractor
+import dev.stapler.stelekit.sketchimport.readSvg
 
 /** A wiki page a project is bound to; [filePath] is where the loader reads it from. */
 data class BoundPageRef(val pageName: String, val filePath: String)
@@ -18,6 +21,7 @@ data class CollectedSources(
     val yamlObservations: List<Observation> = emptyList(),
     val tableObservations: List<Observation> = emptyList(),
     val tableNeedsMapping: List<NeedsMapping> = emptyList(),
+    val geometryObservations: List<Observation> = emptyList(),
 )
 
 /** Markdown of one bound table page; [locator] stays device-local in the [RefTable]. */
@@ -33,14 +37,17 @@ open class ProjectSourceCollector(
 ) {
     private val tableExtractor = TableMeasurementExtractor(registry, refTable)
     private val yamlExtractor = YamlMeasurementExtractor(registry, refTable)
+    private val geometryExtractor = GeometryExtractor(registry, refTable)
 
     open suspend fun collect(): CollectedSources {
         val tables = extractTables(emptyList()) // Story 5.9b supplies the bound pages' text
         val yaml = extractYaml(null) // Story 5.9c supplies the sidecar snapshot
+        val geometry = extractGeometry(null) // Story 5.9d supplies the attached sheets' SVG text
         return CollectedSources(
             tableObservations = tables.observations,
             tableNeedsMapping = tables.needsMapping,
             yamlObservations = yaml.observations,
+            geometryObservations = geometry.observations,
         )
     }
 
@@ -51,4 +58,8 @@ open class ProjectSourceCollector(
     /** YAML stage (Story 5.3); [snapshot] is the sidecar's YAML text, never a path (OD-H2). */
     internal fun extractYaml(snapshot: String?): YamlExtractionResult =
         if (snapshot == null) YamlExtractionResult() else yamlExtractor.extract(snapshot, "yaml-snapshot")
+
+    /** Geometry stage (Story 4.8); [svg] is one sheet's text, [sheet] its role, [locator] stays device-local. */
+    internal fun extractGeometry(svg: String?, sheet: String = "elevation", locator: String = "svg-sheet"): GeometryExtractionResult =
+        if (svg == null) GeometryExtractionResult() else geometryExtractor.extract(readSvg(svg), locator, sheet)
 }
