@@ -1,6 +1,6 @@
 # ADR-002: Jitter is a flex window plus a deterministic per-(graph, kind) offset
 
-**Status**: Proposed, gated by Spike 0.1.1 (Robolectric / `WorkManagerTestInitHelper`)
+**Status**: Accepted-with-fallback (Spike 0.1.1 run 2026-11-10; see Spike outcomes)
 **Date**: 2026-11-10
 
 ## Context
@@ -19,3 +19,18 @@
 
 ## Consequences
 Cross-device spread is deterministic and testable; per-run spread on Android is limited to the flex window the OS picks from. The user-visible promise is "about every N" (UX copy), never exact.
+
+## Spike outcomes (Story 0.1.1)
+Evidence: `WorkManagerJitterSpikeTest` (7 tests, 0 failures), run with `./gradlew :kmp:testDebugUnitTest --tests 'dev.stapler.stelekit.jobs.schedule.WorkManagerJitterSpikeTest'` on androidx.work 2.9.1 + work-testing 2.9.1 under Robolectric (sdk 29), with an injected controllable `Clock`. Each outcome is printed as a `SPIKE|` line in the test's stdout. Limit: the `TestDriver` runs work on demand (no OS scheduler, no Doze/standby), so it proves WorkSpec/`WorkInfo` math, not real OS run times.
+
+1. Read-back (VERIFIED): `periodicityInfo.repeatIntervalMillis` = 60 min, `flexIntervalMillis` = 10 min, `WorkInfo.initialDelayMillis` = 7 min, `constraints.requiredNetworkType` = `UNMETERED`, `nextScheduleTimeMillis` all read back on 2.9.1. First `nextScheduleTimeMillis` = enqueue + 57 min = initialDelay (7) + (interval - flex) (50).
+2. `UPDATE` keeps the work id (VERIFIED: the surviving `WorkInfo.id` equals the FIRST request's id, not the second's), a single unique-work entry remains, and it replaces interval (60 -> 120), flex (10 -> 20) and initial delay (7 -> 9) with the new values.
+3. `UPDATE` next-run: NOT retained. `nextScheduleTimeMillis` moved from t0+57 min to t0+109 min (= new initialDelay 9 + (120 - 20) = 109, measured from the ORIGINAL enqueue time t0, not from the time of the update, which was t0+5). So a changed offset/flex/interval takes effect on the pending schedule immediately (anchored at the original period start); it does not wait for the next run. `appliesAfterNextRun = false` for the WorkManager adapter on this evidence. Caveat: not verified against a real OS scheduler.
+4. `UPDATE` across worker class (VERIFIED): `WorkSpec.workerClassName` DOES change from `dev.stapler.stelekit.git.GitSyncWorker` to the new worker class while the work id is kept. A later move of `git-sync` to `TaskWorker` is therefore possible but is not done in this release (decision above stands: `apply`/`resume` enqueue `GitSyncWorker`). Implication for Story 3.1.2: an `UPDATE` that accidentally enqueues a different worker class silently re-points existing jobs, so the shim must always pass `GitSyncWorker`.
+5. `UPDATE` on RUNNING work (VERIFIED): the call returns normally, the running instance is NOT stopped (`isStopped` stayed false, state stayed RUNNING, id kept), and the stored spec is already rewritten to the new values (interval 120 min read back while the old instance still runs). The update is applied in place; the running instance finishes with the old input.
+6. `UPDATE` input data (VERIFIED): the stored input data IS replaced (`network_policy` Any -> Unmetered, `graph_id` kept). A stale-policy risk therefore exists only for an already RUNNING instance, which keeps its old `inputData`; the worker's gate reading `KEY_NETWORK_POLICY` sees the new policy from the next run.
+7. Observed gap (TestDriver, 5 periods, 60 min / flex 10 min / initial delay 7): `nextScheduleTimeMillis` after each run advanced by exactly 60 min, runs at t0+57, 117, 177, 237, 297 (gaps 60, 60, 60, 60). The driver does not model the OS picking a point inside the flex window, so the observed gap is a point (60), not a range. The ADR's analytic range `[interval - flex, interval + flex]` is retained as the user-facing window and is UNVERIFIED on a real OS scheduler (device checklist, Story 5.1.3). Set `TaskScheduleInfo.minGapMinutes/maxGapMinutes` from that analytic range; `appliesAfterNextRun = false` for the WorkManager adapter (point 3).
+8. `WorkInfo.periodicityInfo`, `WorkInfo.nextScheduleTimeMillis`, `WorkInfo.initialDelayMillis`: AVAILABLE on 2.9.1.
+9. `ListenableWorker.setNextScheduleTimeOverride`: UNAVAILABLE on 2.9.1. `javap` of `androidx.work.ListenableWorker` in `work-runtime-2.9.1` lists no such method, and the spike's reflective probe found none (this corrects the earlier note here and in ADR-006 that it exists from 2.9.0; it was not found in 2.9.1). It is not adopted. The deterministic offset + flex design stands, so no bump is needed.
+
+Fallback adopted: none is required for `UPDATE` (it applies flex, initial delay, interval and input data), so the `CANCEL_AND_REENQUEUE` fallback is not needed. The status is "Accepted-with-fallback" only because the observed gap range and next-run behaviour on a real scheduler remain device-verified items, and `setNextScheduleTimeOverride` is dropped.
