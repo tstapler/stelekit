@@ -289,3 +289,7 @@ private fun ZoneSet.Companion.fromJson(array: JsonArray): ZoneSet = ZoneSet(
         Zone(key, o["text"]?.jsonPrimitive?.contentOrNull, o["total"]?.jsonPrimitive?.booleanOrNull == true)
     },
 )
+
+/** Builds the editor for a `Screen.Sketch` route; [projectUuid] null opens the first project. */
+fun sketchViewModelFor(repos: SketchRepositories, writeActor: DatabaseWriteActor?, projectUuid: String?): SketchViewModel =
+    SketchViewModel(repos, projectUuid?.let(::ProjectUuid), writeActor)

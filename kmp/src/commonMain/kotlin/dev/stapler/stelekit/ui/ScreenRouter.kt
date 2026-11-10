@@ -391,11 +391,7 @@ internal fun ScreenRouter(
             is Screen.Sketch -> if (viewModel.homeSketchEnabled) {
                 NavigationTracingEffect("Sketch")
                 val sketchViewModel = remember(currentScreen.projectUuid) {
-                    dev.stapler.stelekit.ui.sketch.SketchViewModel(
-                        repos = repos.sketchRepositories,
-                        projectUuid = currentScreen.projectUuid?.let { dev.stapler.stelekit.model.ProjectUuid(it) },
-                        writeActor = repos.writeActor,
-                    )
+                    dev.stapler.stelekit.ui.sketch.sketchViewModelFor(repos.sketchRepositories, repos.writeActor, currentScreen.projectUuid)
                 }
                 dev.stapler.stelekit.ui.sketch.SketchScreen(viewModel = sketchViewModel, onNavigateBack = { viewModel.goBack() })
             }

@@ -56,3 +56,34 @@ fun factorToRational(factor: Float): Rational = Rational((factor * 10 * MILLI).r
 fun Rational.toFloat(): Float = num.toFloat() / den.toFloat()
 
 fun Inches.toInchesFloat(): Float = sixteenths.toFloat() / Inches.SIXTEENTHS_PER_INCH.toFloat()
+
+/** One-finger drag beyond the slop: the view follows the finger. Unchanged if the arithmetic overflows. */
+fun applyDrag(view: ViewTransform, dxPx: Float, dyPx: Float, density: Float): ViewTransform =
+    view.panBy(pxToDp(dxPx, density), pxToDp(dyPx, density)).getOrNull() ?: view
+
+/** Two-pointer pan and zoom about the centroid. Unchanged if the arithmetic overflows. */
+fun applyPinch(
+    view: ViewTransform,
+    panXPx: Float,
+    panYPx: Float,
+    zoomFactor: Float,
+    centroidXPx: Float,
+    centroidYPx: Float,
+    density: Float,
+): ViewTransform {
+    val panned = applyDrag(view, panXPx, panYPx, density)
+    val target = panned.zoom.multiply(factorToRational(zoomFactor)).getOrNull() ?: panned.zoom
+    val anchor = ScreenPoint(pxToDp(centroidXPx, density), pxToDp(centroidYPx, density))
+    return panned.zoomAt(anchor, target).getOrNull() ?: panned
+}
+
+/** Sheet-inches to pixels: `px = origin + inches * scale`. */
+data class DrawFrame(val originX: Float, val originY: Float, val scale: Float) {
+    fun px(inchesX: Float, inchesY: Float): Pair<Float, Float> = (originX + inchesX * scale) to (originY + inchesY * scale)
+
+    /** A stroke of [dp] device-independent pixels, expressed in the sheet-inch units the paths are drawn in. */
+    fun strokeInSheetUnits(dp: Float, density: Float): Float = dp * density / scale
+}
+
+fun drawFrameOf(view: ViewTransform, density: Float): DrawFrame =
+    DrawFrame(view.origin.x.toFloat() * density, view.origin.y.toFloat() * density, view.dpPerInch.toFloat() * density)

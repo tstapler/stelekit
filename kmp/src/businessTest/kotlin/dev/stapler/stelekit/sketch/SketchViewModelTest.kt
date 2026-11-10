@@ -2,6 +2,8 @@
 
 package dev.stapler.stelekit.sketch
 
+import arrow.core.left
+import dev.stapler.stelekit.model.ProjectUuid
 import dev.stapler.stelekit.model.SheetUuid
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.SketchRepositories
@@ -152,5 +154,130 @@ class SketchViewModelTest {
         assertNull(f.vm.uiState.value.pendingStart)
         runCurrent()
         assertEquals(SheetUuid("id-0").value, repos.sheets.getSheets(SketchTestSupport.P).first().getOrNull()!!.items.single().uuid.value)
+    }
+
+    @Test
+    fun selectAndDeleteSelectedRemovesThePrimitiveAndSavesTheDeletion() = runTest {
+        val f = fixture()
+        f.vm.placePoint(pt(0, 0)); f.vm.placePoint(pt(16, 0))
+        f.vm.select("id-1")
+        assertEquals("id-1", f.vm.uiState.value.selectedId)
+        f.vm.deleteSelected()
+        assertTrue(f.vm.uiState.value.document.scene.primitives.isEmpty())
+        assertNull(f.vm.uiState.value.selectedId)
+        f.vm.flush()
+        assertTrue(f.storedPrimitives().isEmpty())
+    }
+
+    @Test
+    fun deleteSelectedWithNothingSelectedIsANoOp() = runTest {
+        val f = fixture()
+        f.vm.deleteSelected()
+        assertEquals(0, f.vm.uiState.value.history.undoDepth)
+    }
+
+    @Test
+    fun failedCommandSurfacesAnErrorAndKeepsTheDocument() = runTest {
+        val f = fixture()
+        f.vm.commit(dev.stapler.stelekit.sketch.SketchCommand.RemovePrimitive("missing"))
+        assertTrue(f.vm.uiState.value.error!!.contains("missing"))
+        assertEquals(0, f.vm.uiState.value.history.undoDepth)
+    }
+
+    @Test
+    fun zoneSelectToolPlacesNothing() = runTest {
+        val f = fixture()
+        f.vm.setTool(SketchTool.ZONE_SELECT)
+        f.vm.placePoint(pt(0, 0))
+        assertNull(f.vm.uiState.value.pendingStart)
+        f.vm.placePoint(pt(0, 0))
+    }
+
+    @Test
+    fun placingTheAnchorTwiceCommitsNothing() = runTest {
+        val f = fixture()
+        f.vm.placePoint(pt(0, 0)); f.vm.placePoint(pt(0, 0))
+        assertEquals(0, f.vm.uiState.value.history.undoDepth)
+    }
+
+    @Test
+    fun unknownProjectFailsLoading() = runTest {
+        val vm = SketchViewModel(inMemorySketchRepositories(), ProjectUuid("nope"), null, StandardTestDispatcher(testScheduler))
+        runCurrent()
+        assertEquals(SketchPhase.FAILED, vm.uiState.value.phase)
+        vm.onRemembered(); vm.onAbandoned()
+    }
+
+    @Test
+    fun noProjectIdOpensTheFirstProjectOrCreatesOne() = runTest {
+        val repos = inMemorySketchRepositories()
+        var n = 0
+        val created = SketchViewModel(repos, null, null, StandardTestDispatcher(testScheduler)) { "gen-${n++}" }
+        runCurrent()
+        assertEquals(SketchPhase.READY, created.uiState.value.phase)
+        val projects = repos.projects.getProjects(10, 0).first().getOrNull()!!
+        assertEquals(listOf("gen-0"), projects.map { it.uuid.value })
+        assertTrue(projects.single().slug.startsWith("proj-"))
+        val reopened = SketchViewModel(repos, null, null, StandardTestDispatcher(testScheduler)) { "gen-${n++}" }
+        runCurrent()
+        assertEquals(SketchPhase.READY, reopened.uiState.value.phase)
+        assertEquals(1, repos.projects.getProjects(10, 0).first().getOrNull()!!.size)
+        created.onForgotten(); reopened.onForgotten()
+    }
+
+    @Test
+    fun routerFactoryBuildsAViewModelForTheRouteUuid() = runTest {
+        val repos = inMemorySketchRepositories()
+        repos.projects.saveProject(SketchTestSupport.project())
+        val vm = dev.stapler.stelekit.ui.sketch.sketchViewModelFor(repos, null, "p1")
+        vm.onForgotten()
+    }
+
+    @Test
+    fun loadsMoreThanOnePageOfPrimitivesAndSkipsUnknownKindsAndMalformedZones() = runTest {
+        val repos = inMemorySketchRepositories()
+        repos.projects.saveProject(SketchTestSupport.project())
+        val sheet = SketchTestSupport.sheet("s1").copy(
+            zones = kotlinx.serialization.json.JsonArray(
+                listOf(
+                    kotlinx.serialization.json.JsonPrimitive("junk"),
+                    kotlinx.serialization.json.JsonObject(mapOf("nokey" to kotlinx.serialization.json.JsonPrimitive(1))),
+                    kotlinx.serialization.json.JsonObject(mapOf("key" to kotlinx.serialization.json.JsonPrimitive("z"), "total" to kotlinx.serialization.json.JsonPrimitive(true))),
+                ),
+            ),
+        )
+        val prims = (0 until 620).map { SketchTestSupport.primitive("pr$it", "s1", it.toLong()).copy(kind = if (it == 0) "circle" else if (it == 1) "rect" else "line", y1 = it.toLong(), y2 = it.toLong()) }
+        repos.projects.replaceProjectContents(
+            SketchTestSupport.P,
+            dev.stapler.stelekit.model.ProjectBundle(SketchTestSupport.project(), listOf(sheet), prims, emptyList()),
+        )
+        val vm = SketchViewModel(repos, SketchTestSupport.P, null, StandardTestDispatcher(testScheduler))
+        runCurrent()
+        val s = vm.uiState.value
+        assertEquals(619, s.document.scene.size, "the circle is skipped, everything else across two pages loads")
+        assertEquals(listOf(dev.stapler.stelekit.sketch.Zone("z", null, true)), s.document.zones.zones)
+        vm.onForgotten()
+    }
+
+    private class FailingSheets(private val inner: dev.stapler.stelekit.repository.SketchSheetRepository) :
+        dev.stapler.stelekit.repository.SketchSheetRepository by inner {
+        override suspend fun savePrimitives(
+            primitives: List<dev.stapler.stelekit.model.SketchPrimitive>,
+            token: dev.stapler.stelekit.model.RevisionToken,
+        ) = dev.stapler.stelekit.error.DomainError.DatabaseError.WriteFailed("stale-editor").left()
+    }
+
+    @Test
+    fun staleEditorSaveFailureIsSurfacedAndTriggersAReload() = runTest {
+        val base = inMemorySketchRepositories()
+        base.projects.saveProject(SketchTestSupport.project())
+        val vm = SketchViewModel(base.copy(sheets = FailingSheets(base.sheets)), SketchTestSupport.P, null, StandardTestDispatcher(testScheduler))
+        runCurrent()
+        vm.placePoint(pt(0, 0)); vm.placePoint(pt(16, 0))
+        vm.flush()
+        runCurrent()
+        assertEquals(SketchPhase.READY, vm.uiState.value.phase, "reloaded after the stale-editor failure")
+        assertTrue(vm.uiState.value.document.scene.primitives.isEmpty(), "reload discards the unsaved edit")
+        vm.onForgotten()
     }
 }

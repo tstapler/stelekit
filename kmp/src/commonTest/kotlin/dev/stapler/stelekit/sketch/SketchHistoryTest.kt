@@ -101,4 +101,23 @@ class SketchHistoryTest {
         val doc = SketchCommand.SetZoneText("a", "banana").apply(zonesDoc()).ok()
         assertEquals(setOf("a"), ZoneConstraints.resolve(doc.zones).ok().textErrors)
     }
+
+    @Test
+    fun addCommandsReportSceneAndZoneErrors() {
+        val withLine = add(SketchDocument(), "a")
+        val dup = SketchCommand.AddPrimitive(line("a")).apply(withLine)
+        assertIs<CommandError.Scene>(dup.swap().getOrNull())
+        val far = SketchPrimitive.Line("far", pt(0, 0), pt(SketchScene.MAX_COORD_SIXTEENTHS + 1, 0))
+        assertIs<CommandError.Scene>(SketchCommand.AddPrimitive(far).apply(SketchDocument()).swap().getOrNull())
+        val zoned = zonesDoc()
+        assertIs<CommandError.DuplicateZone>(SketchCommand.AddZone(Zone("a")).apply(zoned).swap().getOrNull())
+        assertIs<CommandError.UnknownPrimitive>(SketchCommand.RemovePrimitive("x").apply(zoned).swap().getOrNull())
+        assertIs<CommandError.UnknownZone>(SketchCommand.SetZoneText("x", "1").apply(zoned).swap().getOrNull())
+    }
+
+    @Test
+    fun removeDeletesThePrimitive() {
+        val doc = SketchCommand.RemovePrimitive("a").apply(add(SketchDocument(), "a")).ok()
+        assertTrue(doc.scene.primitives.isEmpty())
+    }
 }

@@ -38,6 +38,7 @@ const val SKETCH_CANVAS_TAG = "sketch-canvas"
 private val GRID_STEP = Inches(Inches.SIXTEENTHS_PER_INCH)
 
 private const val STROKE_DP = 2f
+private const val ANCHOR_RADIUS_DP = 4f
 private const val SELECTED_STROKE_DP = 4f
 private const val LABEL_SKIP_BELOW_DP_PER_INCH = 24f
 
@@ -92,17 +93,14 @@ fun SketchCanvas(
                             val zoom = event.calculateZoom()
                             val pan = event.calculatePan()
                             val centroid = event.calculateCentroid()
-                            view.panBy(pxToDp(pan.x, density), pxToDp(pan.y, density)).onRight { panned ->
-                                val target = panned.zoom.multiply(factorToRational(zoom)).getOrNull() ?: panned.zoom
-                                setView(panned.zoomAt(screenOf(centroid), target).getOrNull() ?: panned)
-                            }
+                            setView(applyPinch(view, pan.x, pan.y, zoom, centroid.x, centroid.y, density))
                             event.changes.forEach { it.consume() }
                         } else if (!transforming) {
                             val change = event.changes.firstOrNull { it.id == down.id } ?: event.changes.first()
                             val moved = change.position - down.position
                             if (classifier.update(moved.x, moved.y)) {
                                 val delta = change.positionChange()
-                                view.panBy(pxToDp(delta.x, density), pxToDp(delta.y, density)).onRight { setView(it) }
+                                setView(applyDrag(view, delta.x, delta.y, density))
                                 hover = null
                                 change.consume()
                             } else {
@@ -125,25 +123,26 @@ fun SketchCanvas(
     ) {
         if (size.width <= 0f || size.height <= 0f) return@Canvas
         val v = view
-        val scale = v.dpPerInch.toFloat() * density
-        val strokeWidth = STROKE_DP * density / scale
+        val frame = drawFrameOf(v, density)
+        val scale = frame.scale
+        val strokeWidth = frame.strokeInSheetUnits(STROKE_DP, density)
         val shapes = cache.shapesFor(state.document.scene)
         withTransform({
-            translate(v.origin.x.toFloat() * density, v.origin.y.toFloat() * density)
+            translate(frame.originX, frame.originY)
             scale(scale, scale, pivot = Offset.Zero)
         }) {
             for (shape in shapes) {
                 val selected = shape.id == state.selectedId
-                drawPath(shape.path, if (selected) accent else ink, style = Stroke(if (selected) SELECTED_STROKE_DP * density / scale else strokeWidth))
+                drawPath(shape.path, if (selected) accent else ink, style = Stroke(if (selected) frame.strokeInSheetUnits(SELECTED_STROKE_DP, density) else strokeWidth))
             }
             state.pendingStart?.let { start ->
                 val a = Offset(start.x.toInchesFloat(), start.y.toInchesFloat())
-                drawCircle(accent, radius = 4f * density / scale, center = a)
+                drawCircle(accent, radius = frame.strokeInSheetUnits(ANCHOR_RADIUS_DP, density), center = a)
                 hover?.let { h -> drawLine(accent, a, Offset(h.x.toInchesFloat(), h.y.toInchesFloat()), strokeWidth) }
             }
         }
         if (v.dpPerInch.toFloat() >= LABEL_SKIP_BELOW_DP_PER_INCH) {
-            drawLabels(shapes, v, density, measurer, labelStyle)
+            drawLabels(shapes, frame, measurer, labelStyle)
         }
     }
 }
@@ -154,16 +153,13 @@ private fun resolveSnap(state: SketchUiState, view: ViewTransform, at: ScreenPoi
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLabels(
     shapes: List<CachedShape>,
-    view: ViewTransform,
-    density: Float,
+    frame: DrawFrame,
     measurer: TextMeasurer,
     style: androidx.compose.ui.text.TextStyle,
 ) {
-    val scale = view.dpPerInch.toFloat() * density
-    val ox = view.origin.x.toFloat() * density
-    val oy = view.origin.y.toFloat() * density
     for (shape in shapes) {
         val text = shape.label ?: continue
-        drawText(measurer, text, Offset(ox + shape.labelX * scale, oy + shape.labelY * scale), style)
+        val (x, y) = frame.px(shape.labelX, shape.labelY)
+        drawText(measurer, text, Offset(x, y), style)
     }
 }
