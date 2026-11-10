@@ -1469,3 +1469,59 @@ CREATE TABLE IF NOT EXISTS sketch_dimensions (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sketch_dimensions_key ON sketch_dimensions(project_uuid, key, source_kind, source_ref);
 CREATE INDEX IF NOT EXISTS idx_sketch_dimensions_project ON sketch_dimensions(project_uuid);
+
+-- home-sketch (Story 2.2/2.3): named queries. Every read is bounded (LIMIT) and index-backed.
+selectSketchProjects:
+SELECT * FROM sketch_projects ORDER BY created_at DESC, uuid LIMIT ? OFFSET ?;
+
+selectSketchProjectByUuid:
+SELECT * FROM sketch_projects WHERE uuid = ?;
+
+selectSketchSheetsByProject:
+SELECT * FROM sketch_sheets WHERE project_uuid = ? ORDER BY position, uuid LIMIT ?;
+
+selectSketchPrimitivesBySheet:
+SELECT * FROM sketch_primitives WHERE sheet_uuid = ? ORDER BY z, uuid LIMIT ? OFFSET ?;
+
+selectSketchDimensionsByProject:
+SELECT * FROM sketch_dimensions WHERE project_uuid = ? ORDER BY key, uuid LIMIT ? OFFSET ?;
+
+insertSketchProject:
+INSERT OR REPLACE INTO sketch_projects (uuid, slug, name, created_at, settings_json, fusion_results_json, source_hash, last_digest_hash, model_revision, base_revision, last_synced_sidecar_hash)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertSketchSheet:
+INSERT OR REPLACE INTO sketch_sheets (uuid, project_uuid, kind, view_direction, unit, scale_sixteenths_per_unit, source_asset_uuid, layer_json, zones_json, position)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertSketchPrimitive:
+INSERT OR REPLACE INTO sketch_primitives (uuid, sheet_uuid, kind, x1, y1, x2, y2, name, layer, z)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertSketchDimension:
+INSERT OR REPLACE INTO sketch_dimensions (uuid, project_uuid, key, kind, value_num, value_den, precision_num, precision_den, source_kind, source_ref, tolerance_num, tolerance_den, locked)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteSketchPrimitive:
+DELETE FROM sketch_primitives WHERE uuid = ?;
+
+deleteSketchPrimitivesBySheet:
+DELETE FROM sketch_primitives WHERE sheet_uuid = ?;
+
+deleteSketchPrimitivesByProject:
+DELETE FROM sketch_primitives WHERE sheet_uuid IN (SELECT uuid FROM sketch_sheets WHERE project_uuid = ?);
+
+deleteSketchSheet:
+DELETE FROM sketch_sheets WHERE uuid = ?;
+
+deleteSketchSheetsByProject:
+DELETE FROM sketch_sheets WHERE project_uuid = ?;
+
+deleteSketchDimension:
+DELETE FROM sketch_dimensions WHERE uuid = ?;
+
+deleteSketchDimensionsByProject:
+DELETE FROM sketch_dimensions WHERE project_uuid = ?;
+
+deleteSketchProject:
+DELETE FROM sketch_projects WHERE uuid = ?;

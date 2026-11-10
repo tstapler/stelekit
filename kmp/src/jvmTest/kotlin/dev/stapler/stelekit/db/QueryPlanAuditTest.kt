@@ -33,7 +33,7 @@ class QueryPlanAuditTest {
         "countAssetsWithCloudDescription",
         // No WHERE clause — full traversal by design
         "selectAllBlocks", "selectAllBlocksPaginated", "countBlocks",
-        "selectAllPagesPaginated", "countPages", "selectPageNameEntries",
+        "selectAllPagesPaginated", "countPages", "selectSketchProjects", "selectPageNameEntries",
         "selectAllMetadata",
         // content LIKE — no index on content; FTS handles production full-text search
         "selectBlocksWithContentLike", "selectBlocksWithContentLikePaginated",
@@ -470,6 +470,18 @@ ORDER BY depth, parent_uuid, position"""),
         // ── pending_asset_moves ────────────────────────────────────────────────────────────────
         AuditQuery("selectAllPendingMoves",
             "SELECT * FROM pending_asset_moves"),
+
+        // ── home sketch (Stories 2.2/2.3): bounded, index-backed reads ─────────────────────────
+        AuditQuery("selectSketchProjects",
+            "SELECT * FROM sketch_projects ORDER BY created_at DESC, uuid LIMIT 10 OFFSET 0"),
+        AuditQuery("selectSketchProjectByUuid",
+            "SELECT * FROM sketch_projects WHERE uuid = 'x'"),
+        AuditQuery("selectSketchSheetsByProject",
+            "SELECT * FROM sketch_sheets WHERE project_uuid = 'x' ORDER BY position, uuid LIMIT 51"),
+        AuditQuery("selectSketchPrimitivesBySheet",
+            "SELECT * FROM sketch_primitives WHERE sheet_uuid = 'x' ORDER BY z, uuid LIMIT 500 OFFSET 0"),
+        AuditQuery("selectSketchDimensionsByProject",
+            "SELECT * FROM sketch_dimensions WHERE project_uuid = 'x' ORDER BY key, uuid LIMIT 500 OFFSET 0"),
 
         // ── built-in rowid helper — no FROM clause, no scan possible ──────────────────────
         AuditQuery("selectLastInsertRowId",

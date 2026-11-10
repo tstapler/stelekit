@@ -74,6 +74,7 @@ data class RepositorySet(
     val assetRepository: dev.stapler.stelekit.repository.AssetRepository = InMemoryAssetRepository(),
     /** Bounded, paged Library reads (assets joined with annotation state); see [LibraryRepository]. */
     val libraryRepository: LibraryRepository = InMemoryLibraryRepository(assetRepository, imageAnnotationRepository, measurementAnnotationRepository),
+    val sketchRepositories: SketchRepositories = inMemorySketchRepositories(),
     /** Console-owned read-only SQL connection; null when the backend has no database file. Never the app pool. */
     val sqlConsole: dev.stapler.stelekit.console.views.SqlConsoleView? = null,
     /** Gated raw-SQL handle for [dev.stapler.stelekit.asset.AssetMoveService]'s WAL; null off the SQLDelight backend. */
@@ -448,6 +449,9 @@ class RepositoryFactoryImpl(
             libraryRepository = if (backend == GraphBackend.SQLDELIGHT)
                 SqlDelightLibraryRepository(database, requireNotNull(wrappedDriver) { "wrappedDriver is null" })
             else InMemoryLibraryRepository(assetRepo, imageAnnotationRepo, measurementAnnotationRepo),
+            sketchRepositories = if (backend == GraphBackend.SQLDELIGHT)
+                sqlDelightSketchRepositories(database)
+            else inMemorySketchRepositories(),
             sqlConsole = if (backend == GraphBackend.SQLDELIGHT)
                 dev.stapler.stelekit.db.SqlConsoleReader(jdbcUrl).also { activeSqlConsole = it }
             else null,

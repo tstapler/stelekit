@@ -51,6 +51,7 @@ search: T2
 sections: T2
 security: T1
 service: T2
+sketch: T2
 stats: T3
 sync: T2
 tags: T2

@@ -7,6 +7,7 @@ package dev.stapler.stelekit.projectbridge
 import dev.stapler.stelekit.jobs.JobTracker
 import dev.stapler.stelekit.merge.TargetWriterRouter
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.repository.SketchRepositories
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -17,7 +18,7 @@ import kotlinx.coroutines.flow.Flow
 class ProjectBridgeDeps(
     /** The one app router (published by `App.kt` through `TargetWriterRouterHolder`); null when absent on this platform. */
     val routerProvider: () -> TargetWriterRouter?,
-    /** Null until Story 2.3 wires the sketch repositories into `RepositoryFactory`. */
+    /** The graph's sketch repositories (wired by `RepositoryFactory`); null where no graph is open. */
     val sketchRepositories: () -> SketchRepositories?,
     val sidecarStore: () -> ProjectSidecarStore?,
     val fileSystem: FileSystem,
