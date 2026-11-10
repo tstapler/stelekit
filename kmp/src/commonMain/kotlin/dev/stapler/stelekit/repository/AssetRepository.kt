@@ -66,6 +66,9 @@ interface AssetRepository {
     suspend fun updateTags(uuid: AssetUuid, tags: List<String>): Either<DomainError, Unit>
     @DirectRepositoryWrite
     suspend fun updateAutoLabels(uuid: AssetUuid, autoLabels: List<String>, mlTagsSource: String): Either<DomainError, Unit>
+    /** Re-classifies an indexed row (the hash-dedupe upgrade of an `IMAGE` row to `DRAWING`). */
+    @DirectRepositoryWrite
+    suspend fun updateMediaType(uuid: AssetUuid, mediaType: AssetMediaType): Either<DomainError, Unit>
     @DirectRepositoryWrite
     suspend fun updateOcrText(uuid: AssetUuid, ocrText: String?): Either<DomainError, Unit>
     @DirectRepositoryWrite
