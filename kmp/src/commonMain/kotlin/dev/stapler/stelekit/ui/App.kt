@@ -125,10 +125,12 @@ private fun rememberCrossGraphUi(
         val services = provided ?: config?.let { createShareCaptureServices(graphManager, graphFileSystem, it, captureDeps.activeWriteHooks) }
         services?.drain?.start()
         services?.let { captureDeps.onShareServicesReady?.invoke(it) }
+        var publishedRouter = services?.router
         val copy = copyHost?.let { host ->
             val capabilities = config?.capabilities ?: dev.stapler.stelekit.merge.TargetWriterCapabilities()
             val router = services?.router
                 ?: createTargetWriterRouter(graphManager, graphFileSystem, capabilities, host.canonicalize, captureDeps.activeWriteHooks)
+            publishedRouter = router
             CopyFlowController(
                 services = createCopyServices(graphManager, graphFileSystem, router, capabilities, host.tracked(jobTracker), platformSettings),
                 graphRegistry = graphManager.graphRegistry,
@@ -136,7 +138,9 @@ private fun rememberCrossGraphUi(
             )
         }
         ui = CrossGraphUi(services?.let { ShareInboxUi(it) }, copy)
+        publishedRouter?.let(captureDeps.routerHolder::publish)
         onDispose {
+            publishedRouter?.let(captureDeps.routerHolder::clear)
             ui = CrossGraphUi(null, null)
             if (provided == null) services?.drain?.close()
             copy?.close()
@@ -194,6 +198,7 @@ private fun MainGraphContentHost(
                 copyFlow = crossGraph.copy,
                 hotkeyComboLabel = deps.captureDeps.hotkeyComboLabel,
                 activeWriteHooks = deps.captureDeps.activeWriteHooks,
+                routerHolder = deps.captureDeps.routerHolder,
                 jobTracker = jobTracker,
                 backgroundJobs = backgroundJobs,
             ))
