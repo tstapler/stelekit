@@ -141,6 +141,8 @@ kt_jvm_library(
         "dev/stapler/stelekit/platform/image/ImageTiersTest.kt",
         "dev/stapler/stelekit/ui/assets/AssetImageReferenceTest.kt",
         "dev/stapler/stelekit/ui/PageSelectionTest.kt",
+        "dev/stapler/stelekit/sketch/SnapEnginePropertyTest.kt",
+        "dev/stapler/stelekit/sketch/ViewTransformTest.kt",
         "dev/stapler/stelekit/units/LengthParserGoldenTest.kt",
         "dev/stapler/stelekit/units/LengthParserPropertyTest.kt",
         "dev/stapler/stelekit/units/RationalExamplesTest.kt",

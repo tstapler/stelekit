@@ -730,5 +730,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.fusion.DimensionRegistryTest::class,
     dev.stapler.stelekit.fusion.FusionEngineTest::class,
     dev.stapler.stelekit.fusion.LinearSolverPropertyTest::class,
+    dev.stapler.stelekit.sketch.SnapEnginePropertyTest::class,
+    dev.stapler.stelekit.sketch.ViewTransformTest::class,
 )
 class AllBusinessTests
