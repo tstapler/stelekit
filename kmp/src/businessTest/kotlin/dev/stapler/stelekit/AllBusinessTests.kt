@@ -698,5 +698,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.units.RationalPropertyTest::class,
     dev.stapler.stelekit.platform.AtomicFileWriterTest::class,
     dev.stapler.stelekit.platform.PlatformLayerAuditTest::class,
+    dev.stapler.stelekit.ui.placement.NudgeStepperPropertyTest::class,
+    dev.stapler.stelekit.ui.placement.InchesPlacementControllerContractTest::class,
+    dev.stapler.stelekit.ui.placement.PixelPlacementControllerContractTest::class,
 )
 class AllBusinessTests
