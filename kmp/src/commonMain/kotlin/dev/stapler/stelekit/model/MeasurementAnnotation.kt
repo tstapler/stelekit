@@ -4,6 +4,9 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.units.Inches
+import dev.stapler.stelekit.units.LengthFormat
+import dev.stapler.stelekit.units.LengthFormatter
 import dev.stapler.stelekit.util.roundTo
 import kotlinx.serialization.Serializable
 
@@ -198,18 +201,8 @@ internal fun formatFeetInches(meters: Double): String {
  * Examples: `4.25` → `"4 1/4\""`, `12.0` → `"12\""`, `0.0625` → `"1/16\""`, `0.9375` → `"15/16\""`.
  */
 internal fun formatFractionalInches(inches: Double): String {
-    fun gcd(a: Long, b: Long): Long = if (b == 0L) a else gcd(b, a % b)
     val sixteenths = kotlin.math.round(inches * 16.0).toLong()
-    val wholeInches = sixteenths / 16L
-    val fracSixteenths = sixteenths % 16L
-    return if (fracSixteenths == 0L) {
-        "$wholeInches\""
-    } else {
-        val g = gcd(fracSixteenths, 16L)
-        val num = fracSixteenths / g
-        val den = 16L / g
-        if (wholeInches == 0L) "$num/$den\"" else "$wholeInches $num/$den\""
-    }
+    return LengthFormatter.format(Inches(sixteenths), LengthFormat.INCHES_MIXED)
 }
 
 /**
