@@ -698,6 +698,7 @@ import org.junit.runners.Suite
     TrackedCopyRunHostTest::class,
     HomeSketchFixtureVisibilityTest::class,
     SketchMigrationTest::class,
+    dev.stapler.stelekit.fixtures.ClosetFixtureTest::class,
     PrivateStringGuardTest::class,
     GoldenFileGuardTest::class,
     GitSyncCoordinatorJobsTest::class,
