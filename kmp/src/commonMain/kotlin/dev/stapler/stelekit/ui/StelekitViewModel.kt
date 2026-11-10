@@ -34,6 +34,7 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.projectbridge.PostSyncProjectCoordinator
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.JournalService
@@ -492,6 +493,10 @@ class StelekitViewModel(
     /** Forwards to [GitSyncCoordinator.gitLastSyncAt] — read directly by Compose call sites. */
     val gitLastSyncAt: StateFlow<Long?> = gitSyncCoordinator.gitLastSyncAt
 
+    private val postSyncProjectCoordinator = deps.projectBridge?.let {
+        PostSyncProjectCoordinator(it, gitLastSyncAt, { activeGitSyncService.value?.syncState?.value }, activeGraphIdProvider, scope.coroutineContext)
+    }
+
     // See SectionManagementCoordinator's class doc for why this shares _uiState directly rather
     // than owning a separate StateFlow: the fields it owns are pre-existing AppState fields read
     // by Compose call sites across the app.
@@ -574,6 +579,7 @@ class StelekitViewModel(
 
         updateCommands()
         gitSyncCoordinator.observeSyncState()
+        postSyncProjectCoordinator?.start()
         llmSuggestionCoordinator.observeLlmSuggestions()
 
         // Initialize graph if path exists

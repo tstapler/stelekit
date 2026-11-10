@@ -266,6 +266,66 @@ private class SteleDatabaseImpl(
           |    )
           |)
           """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE IF NOT EXISTS sketch_projects (
+          |    uuid                     TEXT NOT NULL PRIMARY KEY,
+          |    slug                     TEXT NOT NULL UNIQUE CHECK (slug GLOB 'proj-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'),
+          |    name                     TEXT NOT NULL,
+          |    created_at               INTEGER NOT NULL,
+          |    settings_json            TEXT NOT NULL,
+          |    fusion_results_json      TEXT NOT NULL,
+          |    source_hash              TEXT NOT NULL,
+          |    last_digest_hash         TEXT NOT NULL,
+          |    model_revision           INTEGER NOT NULL,
+          |    base_revision            INTEGER NOT NULL,
+          |    last_synced_sidecar_hash TEXT
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE IF NOT EXISTS sketch_sheets (
+          |    uuid                      TEXT NOT NULL PRIMARY KEY,
+          |    project_uuid              TEXT NOT NULL,
+          |    kind                      TEXT NOT NULL,
+          |    view_direction            TEXT NOT NULL,
+          |    unit                      TEXT NOT NULL,
+          |    scale_sixteenths_per_unit INTEGER NOT NULL,
+          |    source_asset_uuid         TEXT,
+          |    layer_json                TEXT NOT NULL,
+          |    zones_json                TEXT NOT NULL,
+          |    position                  INTEGER NOT NULL
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE IF NOT EXISTS sketch_primitives (
+          |    uuid       TEXT NOT NULL PRIMARY KEY,
+          |    sheet_uuid TEXT NOT NULL,
+          |    kind       TEXT NOT NULL,
+          |    x1         INTEGER NOT NULL,
+          |    y1         INTEGER NOT NULL,
+          |    x2         INTEGER NOT NULL,
+          |    y2         INTEGER NOT NULL,
+          |    name       TEXT NOT NULL,
+          |    layer      TEXT NOT NULL,
+          |    z          INTEGER NOT NULL
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE IF NOT EXISTS sketch_dimensions (
+          |    uuid          TEXT NOT NULL PRIMARY KEY,
+          |    project_uuid  TEXT NOT NULL,
+          |    key           TEXT NOT NULL,
+          |    kind          TEXT NOT NULL,
+          |    value_num     INTEGER NOT NULL,
+          |    value_den     INTEGER NOT NULL,
+          |    precision_num INTEGER,
+          |    precision_den INTEGER,
+          |    source_kind   TEXT NOT NULL,
+          |    source_ref    TEXT NOT NULL DEFAULT '',
+          |    tolerance_num INTEGER NOT NULL,
+          |    tolerance_den INTEGER NOT NULL,
+          |    locked        INTEGER NOT NULL DEFAULT 0
+          |)
+          """.trimMargin(), 0).await()
       driver.execute(null, "CREATE INDEX idx_pages_namespace ON pages(namespace)", 0).await()
       driver.execute(null, "CREATE INDEX idx_blocks_page_position ON blocks(page_uuid, position)", 0).await()
       driver.execute(null, "CREATE INDEX idx_blocks_parent_position ON blocks(parent_uuid, position)", 0).await()
@@ -335,6 +395,10 @@ private class SteleDatabaseImpl(
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_asset_media_type ON asset_index(media_type)", 0).await()
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_asset_imported_at ON asset_index(imported_at_ms DESC)", 0).await()
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_image_annotations_file_path ON image_annotations(file_path)", 0).await()
+      driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_sketch_sheets_project ON sketch_sheets(project_uuid)", 0).await()
+      driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_sketch_primitives_sheet_z ON sketch_primitives(sheet_uuid, z)", 0).await()
+      driver.execute(null, "CREATE UNIQUE INDEX IF NOT EXISTS idx_sketch_dimensions_key ON sketch_dimensions(project_uuid, key, source_kind, source_ref)", 0).await()
+      driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_sketch_dimensions_project ON sketch_dimensions(project_uuid)", 0).await()
       driver.execute(null, """
           |CREATE VIRTUAL TABLE blocks_fts USING fts5(
           |    content,
