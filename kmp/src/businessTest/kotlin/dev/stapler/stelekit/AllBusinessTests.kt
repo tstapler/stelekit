@@ -732,5 +732,9 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.fusion.LinearSolverPropertyTest::class,
     dev.stapler.stelekit.sketch.SnapEnginePropertyTest::class,
     dev.stapler.stelekit.sketch.ViewTransformTest::class,
+    dev.stapler.stelekit.projectbridge.TableParserCharacterizationTest::class,
+    dev.stapler.stelekit.projectbridge.TableMeasurementExtractorTest::class,
+    dev.stapler.stelekit.projectbridge.TableExtractorPropertyTest::class,
+    dev.stapler.stelekit.projectbridge.TableExtractorInlineTest::class,
 )
 class AllBusinessTests
