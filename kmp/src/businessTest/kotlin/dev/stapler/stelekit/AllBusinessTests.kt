@@ -36,6 +36,11 @@ import dev.stapler.stelekit.ui.library.LibraryViewModelStateTest
 import dev.stapler.stelekit.ui.library.LibraryFilterSqlParityTest
 import dev.stapler.stelekit.ui.library.LibraryAnnotatedJoinTest
 import dev.stapler.stelekit.ui.library.LargeLibraryBatchingTest
+import dev.stapler.stelekit.llm.ProjectAnalysisServiceTest
+import dev.stapler.stelekit.llm.ProjectAnalysisGoldenPromptTest
+import dev.stapler.stelekit.llm.ProjectAnalysisInboxVariantTest
+import dev.stapler.stelekit.projectbridge.ProjectAnalysisStepTest
+import dev.stapler.stelekit.projectbridge.OutboundPreviewTest
 import dev.stapler.stelekit.projectbridge.SettleBarrierTest
 import dev.stapler.stelekit.projectbridge.ProjectBridgeSettingsTest
 import dev.stapler.stelekit.projectbridge.PostSyncProjectJobEntryPointTest
@@ -392,6 +397,11 @@ import org.junit.runners.Suite
     LibraryFilterSqlParityTest::class,
     LibraryAnnotatedJoinTest::class,
     LargeLibraryBatchingTest::class,
+    ProjectAnalysisServiceTest::class,
+    ProjectAnalysisGoldenPromptTest::class,
+    ProjectAnalysisInboxVariantTest::class,
+    ProjectAnalysisStepTest::class,
+    OutboundPreviewTest::class,
     SettleBarrierTest::class,
     ProjectBridgeSettingsTest::class,
     PostSyncProjectJobEntryPointTest::class,
