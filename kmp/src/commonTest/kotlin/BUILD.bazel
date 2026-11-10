@@ -139,6 +139,8 @@ kt_jvm_library(
         "dev/stapler/stelekit/platform/diagnostics/ProcStatParserTest.kt",
         "dev/stapler/stelekit/platform/image/ImageSamplingTest.kt",
         "dev/stapler/stelekit/platform/image/ImageTiersTest.kt",
+        "dev/stapler/stelekit/projectbridge/MiniYamlGoldenTest.kt",
+        "dev/stapler/stelekit/projectbridge/MiniYamlPropertyTest.kt",
         "dev/stapler/stelekit/projectbridge/TableExtractorInlineTest.kt",
         "dev/stapler/stelekit/ui/assets/AssetImageReferenceTest.kt",
         "dev/stapler/stelekit/ui/PageSelectionTest.kt",

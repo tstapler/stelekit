@@ -728,6 +728,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.projectbridge.PostSyncProjectJobFailureTest::class,
     dev.stapler.stelekit.capture.TargetWriterRouterHolderTest::class,
     dev.stapler.stelekit.projectbridge.PostSyncProjectJobEntryPointTest::class,
+    dev.stapler.stelekit.projectbridge.MiniYamlGoldenTest::class,
+    dev.stapler.stelekit.projectbridge.MiniYamlPropertyTest::class,
     dev.stapler.stelekit.units.LengthParserGoldenTest::class,
     dev.stapler.stelekit.units.LengthParserPropertyTest::class,
     dev.stapler.stelekit.fusion.LinearSolverTest::class,
