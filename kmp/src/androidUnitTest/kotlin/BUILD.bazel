@@ -24,6 +24,9 @@ kt_android_library(
             "**/*Screenshot*.kt",
             # Composes @Composable lambdas; this target has no Compose compiler plugin (Gradle-only)
             "**/ArchiveUrlEntryPointTest.kt",
+            # Compose gesture/host tests for the flagged Sketch screen (Gradle-only, R-AU)
+            "**/SketchCanvasGestureTest.kt",
+            "**/SketchScreenEntryPointTest.kt",
         ],
     ),
     custom_package = "dev.stapler.stelekit",
