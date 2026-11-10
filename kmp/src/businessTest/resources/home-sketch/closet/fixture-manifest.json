@@ -7,7 +7,8 @@
     "closet.yaml",
     "closet-tables.md",
     "closet-elevation.svg",
-    "closet-section.svg"
+    "closet-section.svg",
+    "dimension-map.json"
   ],
   "dimensionKeyPattern": "^[a-z0-9.-]+$",
   "vocabulary": ["left", "right"],
