@@ -220,6 +220,11 @@ import dev.stapler.stelekit.merge.MergeManifestTest
 import dev.stapler.stelekit.merge.MergeStagingDirectoryTest
 import dev.stapler.stelekit.merge.MergeUndoTest
 import dev.stapler.stelekit.merge.OwnedPageReplaceSpikeTest
+import dev.stapler.stelekit.merge.ActiveOwnedPageWriterContractTest
+import dev.stapler.stelekit.merge.OwnedFileGuardTest
+import dev.stapler.stelekit.merge.OwnedHashStabilityTest
+import dev.stapler.stelekit.merge.OwnedRefusalMappingTest
+import dev.stapler.stelekit.merge.OwnedReplaceLockOrderTest
 import dev.stapler.stelekit.merge.MetricsLogContractTest
 import dev.stapler.stelekit.merge.SourceReaderParityTest
 import dev.stapler.stelekit.merge.SourceReadCapabilitiesTest
@@ -550,6 +555,11 @@ import org.junit.runners.Suite
     MergeManifestTest::class,
     MergeUndoTest::class,
     OwnedPageReplaceSpikeTest::class,
+    ActiveOwnedPageWriterContractTest::class,
+    OwnedFileGuardTest::class,
+    OwnedHashStabilityTest::class,
+    OwnedRefusalMappingTest::class,
+    OwnedReplaceLockOrderTest::class,
     MetricsLogContractTest::class,
     SourceReaderParityTest::class,
     SourceReadCapabilitiesTest::class,
@@ -773,6 +783,11 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.projectbridge.MiniYamlPropertyTest::class,
     dev.stapler.stelekit.units.LengthParserGoldenTest::class,
     dev.stapler.stelekit.units.LengthParserPropertyTest::class,
+    dev.stapler.stelekit.sketchimport.SvgReaderInlineTest::class,
+    dev.stapler.stelekit.sketchimport.SvgReaderPropertyTest::class,
+    dev.stapler.stelekit.sketchimport.SvgTransformTest::class,
+    dev.stapler.stelekit.sketchimport.SvgReaderTest::class,
+    dev.stapler.stelekit.sketchimport.SheetCalibrationTest::class,
     dev.stapler.stelekit.fusion.LinearSolverTest::class,
     dev.stapler.stelekit.fusion.DimensionRegistryTest::class,
     dev.stapler.stelekit.fusion.FusionEngineTest::class,
