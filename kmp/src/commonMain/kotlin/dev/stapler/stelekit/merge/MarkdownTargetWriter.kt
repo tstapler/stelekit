@@ -8,10 +8,10 @@ import dev.stapler.stelekit.db.PageFileError
 import dev.stapler.stelekit.db.PageFileResolver
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.outliner.JournalUtils
+import dev.stapler.stelekit.platform.AtomicFileWriter
 import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
-import dev.stapler.stelekit.util.UuidGenerator
 import okio.ByteString.Companion.toByteString
 
 /**
@@ -39,7 +39,7 @@ class MarkdownTargetWriter(
 ) : TargetWriter {
 
     private val ownership = PageUuidOwnership(fs, target.path.value) { readText(it) }
-    private val tempSweeper = StaleTempSweeper(fs, TMP_SUFFIX)
+    private val atomicWriter = AtomicFileWriter(fs, canonicalize, TMP_SUFFIX, SAF_ATOMIC_REPLACE_VERIFIED)
 
     override suspend fun readExisting(page: PageKey): Either<DomainError, MergePage?> = io {
         val path = resolveWritable(page).getOrReturn { return@io it.left() }
@@ -204,43 +204,10 @@ class MarkdownTargetWriter(
     }
 
     /** [original] is null when [path] does not exist yet. */
-    private fun replaceFile(path: String, bytes: ByteArray, original: ByteArray?): Either<DomainError, Unit> {
-        if (isSymlinkFile(path, canonicalize)) return refuse(NotRoundTrippable.SymlinkTarget(path)).left()
-        tempSweeper.sweepOnce(path.substringBeforeLast('/'))
-        val tmp = "$path.${UuidGenerator.generateV7()}$TMP_SUFFIX"
-        var deletedOriginal = false
-        try {
-            if (!fs.writeFileBytes(tmp, bytes)) return failAndClean(tmp, path, "temp write failed")
-            // Narrows the lost-update window against another app; a rename still cannot make it zero.
-            if (changedSinceRead(path, original).getOrReturn { e -> runCatching { fs.deleteFile(tmp) }; return e.left() }) {
-                runCatching { fs.deleteFile(tmp) }
-                return DomainError.MergeError.Retryable("The page changed while copying; try again.").left()
-            }
-            if (fs.supportsAtomicReplace(path)) {
-                if (!fs.replaceFileAtomically(tmp, path)) return failAndClean(tmp, path, "atomic replace failed")
-                return Unit.right()
-            }
-            if (original != null) {
-                deletedOriginal = fs.deleteFile(path)
-                if (!deletedOriginal) return failAndClean(tmp, path, "could not replace existing file")
-            }
-            if (!fs.renameFile(tmp, path)) {
-                if (original != null) fs.writeFileBytes(path, original)
-                return failAndClean(tmp, path, "rename failed")
-            }
-            return Unit.right()
-        } catch (e: Throwable) {
-            if (deletedOriginal && original != null && !fs.fileExists(path)) runCatching { fs.writeFileBytes(path, original) }
-            runCatching { fs.deleteFile(tmp) }
-            if (e is CancellationException) throw e
-            return DomainError.FileSystemError.WriteFailed(path, e.message ?: "write failed").left()
-        }
-    }
-
-    private fun failAndClean(tmp: String, path: String, why: String): Either<DomainError, Unit> {
-        runCatching { fs.deleteFile(tmp) }
-        return DomainError.FileSystemError.WriteFailed(path, why).left()
-    }
+    private fun replaceFile(path: String, bytes: ByteArray, original: ByteArray?): Either<DomainError, Unit> =
+        // Narrows the lost-update window against another app; a rename still cannot make it zero.
+        atomicWriter.write(path, bytes, original, precondition = { changedSinceRead(path, original).map { !it } })
+            .mapLeft { e -> if (e is DomainError.FileSystemError.SymlinkRefused) refuse(NotRoundTrippable.SymlinkTarget(path)) else e }
 
     // endregion
 
