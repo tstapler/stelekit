@@ -139,6 +139,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/jobs/schedule/BackgroundTaskSchedulerContract.kt",
         "dev/stapler/stelekit/jobs/schedule/FakeBackgroundTaskScheduler.kt",
         "dev/stapler/stelekit/jobs/schedule/FakeBackgroundTaskSchedulerContractTest.kt",
+        "dev/stapler/stelekit/jobs/schedule/GraphRemovalTasksTest.kt",
         "dev/stapler/stelekit/jobs/schedule/JitterPolicyPropertyTest.kt",
         "dev/stapler/stelekit/jobs/schedule/MapSettings.kt",
         "dev/stapler/stelekit/jobs/schedule/TaskConfigCodecTest.kt",
