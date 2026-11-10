@@ -18,6 +18,7 @@ data class CollectedSources(
     val yamlObservations: List<Observation> = emptyList(),
     val tableObservations: List<Observation> = emptyList(),
     val tableNeedsMapping: List<NeedsMapping> = emptyList(),
+    val proseObservations: List<Observation> = emptyList(),
 )
 
 /** Markdown of one bound table page; [locator] stays device-local in the [RefTable]. */
@@ -33,14 +34,18 @@ open class ProjectSourceCollector(
 ) {
     private val tableExtractor = TableMeasurementExtractor(registry, refTable)
     private val yamlExtractor = YamlMeasurementExtractor(registry, refTable)
+    private val proseExtractor = ProseMeasurementExtractor(registry, refTable)
+    private val countExtractor = CountExtractor(registry, refTable)
 
     open suspend fun collect(): CollectedSources {
         val tables = extractTables(emptyList()) // Story 5.9b supplies the bound pages' text
         val yaml = extractYaml(null) // Story 5.9c supplies the sidecar snapshot
+        val prose = extractProse(emptyList()) // Story 5.9b supplies the bound pages' text
         return CollectedSources(
             tableObservations = tables.observations,
             tableNeedsMapping = tables.needsMapping,
             yamlObservations = yaml.observations,
+            proseObservations = prose.observations,
         )
     }
 
@@ -51,4 +56,10 @@ open class ProjectSourceCollector(
     /** YAML stage (Story 5.3); [snapshot] is the sidecar's YAML text, never a path (OD-H2). */
     internal fun extractYaml(snapshot: String?): YamlExtractionResult =
         if (snapshot == null) YamlExtractionResult() else yamlExtractor.extract(snapshot, "yaml-snapshot")
+
+    /** Prose and count stage (Story 5.3b): lengths and counts stated in free text. */
+    internal fun extractProse(pages: List<TablePageText>): ProseExtractionResult =
+        pages.fold(ProseExtractionResult()) { acc, p ->
+            acc + proseExtractor.extract(p.markdown, p.locator, p.origin) + countExtractor.extract(p.markdown, p.locator, p.origin)
+        }
 }
