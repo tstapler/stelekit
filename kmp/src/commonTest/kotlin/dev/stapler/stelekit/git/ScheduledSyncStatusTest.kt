@@ -78,4 +78,12 @@ class ScheduledSyncStatusTest {
     fun `scheduled sync flag key should stay stable`() {
         assertEquals("scheduled_sync_enabled", SCHEDULED_SYNC_ENABLED_KEY)
     }
+
+    @Test
+    fun loopInterval_staysOff_when_configuredIsNotPositive_and_isRaisedToTheFloorOtherwise() {
+        assertEquals(0, scheduledLoopIntervalMinutes(0, 1))
+        assertEquals(-1, scheduledLoopIntervalMinutes(-1, 15))
+        assertEquals(15, scheduledLoopIntervalMinutes(5, 15))
+        assertEquals(30, scheduledLoopIntervalMinutes(30, 15))
+    }
 }

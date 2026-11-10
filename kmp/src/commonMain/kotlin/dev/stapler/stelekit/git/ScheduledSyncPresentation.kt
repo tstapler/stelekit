@@ -10,6 +10,10 @@ val SCHEDULED_SYNC_INTERVAL_OPTIONS: List<Int> = listOf(5, 15, 30, 60)
 fun effectiveScheduledIntervalMinutes(configuredMinutes: Int, minimumMinutes: Int): Int =
     maxOf(configuredMinutes, minimumMinutes)
 
+/** The interval the scheduler loop runs with; a non-positive value means "off" and must not be raised to the floor. */
+fun scheduledLoopIntervalMinutes(configuredMinutes: Int, minimumMinutes: Int): Int =
+    if (configuredMinutes <= 0) configuredMinutes else effectiveScheduledIntervalMinutes(configuredMinutes, minimumMinutes)
+
 /** An option is selectable only when the platform can honour it (Android WorkManager's floor is 15). */
 fun isScheduledIntervalSelectable(optionMinutes: Int, minimumMinutes: Int): Boolean = optionMinutes >= minimumMinutes
 

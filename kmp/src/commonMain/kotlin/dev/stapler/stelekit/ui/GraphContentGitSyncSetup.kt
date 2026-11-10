@@ -29,7 +29,7 @@ import dev.stapler.stelekit.ui.components.settings.LfsTransferSettingsState
 import dev.stapler.stelekit.ui.components.settings.ScheduledSyncSettingsState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
-import dev.stapler.stelekit.git.effectiveScheduledIntervalMinutes
+import dev.stapler.stelekit.git.scheduledLoopIntervalMinutes
 import dev.stapler.stelekit.git.model.GitConfig
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.map
@@ -216,7 +216,7 @@ internal fun rememberGraphContentScheduledSyncControls(
     }.collectAsState(ConfigLoad.Loading)
     val config = (configLoad.value as? ConfigLoad.Loaded)?.config
     val loaded = configLoad.value is ConfigLoad.Loaded
-    val interval = config?.pollIntervalMinutes?.let { if (it <= 0) it else effectiveScheduledIntervalMinutes(it, factory.minimumIntervalMinutes) }
+    val interval = config?.pollIntervalMinutes?.let { scheduledLoopIntervalMinutes(it, factory.minimumIntervalMinutes) }
     val active = enabled && interval != null && interval > 0
 
     val loopRunning = remember(service) { booleanArrayOf(false) }
