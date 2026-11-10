@@ -134,7 +134,7 @@ class LabelBinder(private val registry: DimensionRegistry, private val refTable:
 }
 
 /** A label's exact value, its rounding half-width, and the value in inches for geometry comparison. */
-internal class Measured(val value: Rational, val precision: Rational) {
+class Measured(val value: Rational, val precision: Rational) {
     val inches: Double get() = value.num.toDouble() / value.den.toDouble()
 }
 
@@ -144,7 +144,7 @@ private val UNIT_MARKED = Regex("""\d[\d /.'\-]*["']""")
  * The length a label states, or null for a caption. The whole text is tried first, then the first
  * unit-marked token (`38" Rod`, `Total Width: 136"`); a bare number inside words is not a length.
  */
-internal fun measureLabel(text: String): Measured? {
+fun measureLabel(text: String): Measured? {
     val whole = parseLength(text).getOrNull()
     val parsed = whole ?: UNIT_MARKED.find(text.substringAfter(':', text))?.value?.let { parseLength(it.trim()).getOrNull() }
     val measured = when (parsed) {
