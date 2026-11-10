@@ -398,6 +398,7 @@ import org.junit.runners.Suite
     LlmProviderRegistryFactoryTest::class,
     LlmProviderRegistryTest::class,
     LlmSettingsTest::class,
+    dev.stapler.stelekit.llm.ProjectAnalysisSettingsTest::class,
     HistogramRegressionTest::class,
     HistogramWriterTest::class,
     PerfExporterPickerTest::class,
