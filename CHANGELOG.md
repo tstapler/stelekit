@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.107.0](https://github.com/tstapler/stelekit/compare/v0.106.2...v0.107.0) (2026-11-09)
+
+
+### Features
+
+* **annotate:** diagnostics-first PR-0 (exit records, crash guard, sampler, post-kill banner) ([#562](https://github.com/tstapler/stelekit/issues/562)) ([641a546](https://github.com/tstapler/stelekit/commit/641a546909131a48d75f3e03819c7dd0b0bcadd4))
+
+
+### Bug Fixes
+
+* **annotate:** loupe centre now shows the point under the finger ([#560](https://github.com/tstapler/stelekit/issues/560)) ([2dc338e](https://github.com/tstapler/stelekit/commit/2dc338ec608e4c594574cb0b9073e2eb959cccf8))
+
 ## [0.106.2](https://github.com/tstapler/stelekit/compare/v0.106.1...v0.106.2) (2026-11-06)
 
 

@@ -141,6 +141,7 @@ import dev.stapler.stelekit.asset.pipeline.AssetPipelineCrashLoopBreakerTest
 import dev.stapler.stelekit.asset.pipeline.DefaultAssetPluginsTest
 import dev.stapler.stelekit.asset.pipeline.OcrPluginTest
 import dev.stapler.stelekit.asset.AssetSearchSqlTest
+import dev.stapler.stelekit.repository.ImageAnnotationTagEscapingTest
 import dev.stapler.stelekit.asset.AssetSearchCloudDescriptionTest
 import dev.stapler.stelekit.asset.CloudDescriptionStorageTest
 import dev.stapler.stelekit.asset.CloudKeyLeakageAuditTest
@@ -198,6 +199,7 @@ import dev.stapler.stelekit.merge.LinkClosureTest
 import dev.stapler.stelekit.merge.MergeManifestTest
 import dev.stapler.stelekit.merge.MergeStagingDirectoryTest
 import dev.stapler.stelekit.merge.MergeUndoTest
+import dev.stapler.stelekit.merge.OwnedPageReplaceSpikeTest
 import dev.stapler.stelekit.merge.MetricsLogContractTest
 import dev.stapler.stelekit.merge.SourceReaderParityTest
 import dev.stapler.stelekit.merge.SourceReadCapabilitiesTest
@@ -350,6 +352,7 @@ import dev.stapler.stelekit.wiring.ObservableEffectCatalogTest
 import dev.stapler.stelekit.wiring.PlantedDeadCodeConstructorTest
 import dev.stapler.stelekit.wiring.WiringAllowlistRenewalTest
 import dev.stapler.stelekit.wiring.WiringCompletenessTest
+import dev.stapler.stelekit.testing.GoldenFileGuardTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
 
@@ -423,6 +426,10 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.platform.diagnostics.LogRedactorTest::class,
     dev.stapler.stelekit.ui.annotate.AnnotationEditorCrashGuardTest::class,
     dev.stapler.stelekit.ui.annotate.PostKillBannerControllerTest::class,
+    dev.stapler.stelekit.ui.annotate.UndoDepthTest::class,
+    dev.stapler.stelekit.ui.components.CoilSeamTest::class,
+    dev.stapler.stelekit.ui.components.ImageLoaderConstructionCountTest::class,
+    dev.stapler.stelekit.db.FixtureGraphCountsTest::class,
     AssetFilterTest::class,
     AssetBrowserViewModelTest::class,
     AssetMoveServiceTest::class,
@@ -451,6 +458,7 @@ import org.junit.runners.Suite
     OcrPluginTest::class,
     PluginRegistryTest::class,
     AssetSearchSqlTest::class,
+    ImageAnnotationTagEscapingTest::class,
     AssetSearchCloudDescriptionTest::class,
     CloudDescriptionStorageTest::class,
     CloudKeyLeakageAuditTest::class,
@@ -505,6 +513,7 @@ import org.junit.runners.Suite
     MergeStagingDirectoryTest::class,
     MergeManifestTest::class,
     MergeUndoTest::class,
+    OwnedPageReplaceSpikeTest::class,
     MetricsLogContractTest::class,
     SourceReaderParityTest::class,
     SourceReadCapabilitiesTest::class,
@@ -684,6 +693,9 @@ import org.junit.runners.Suite
     GoogleDriveFlowTest::class,
     GooglePhotosFlowTest::class,
     TrackedCopyRunHostTest::class,
+    HomeSketchFixtureVisibilityTest::class,
+    PrivateStringGuardTest::class,
+    GoldenFileGuardTest::class,
     GitSyncCoordinatorJobsTest::class,
     dev.stapler.stelekit.ui.library.LibraryFilterRulesTest::class,
     dev.stapler.stelekit.ui.library.LibraryFilterRulesPropertyTest::class,
@@ -701,5 +713,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.ui.library.LibraryAnnotatedJoinTest::class,
     dev.stapler.stelekit.ui.library.LargeLibraryBatchingTest::class,
     dev.stapler.stelekit.ui.library.LibraryViewModelStateTest::class,
+    DomainLayerAuditTest::class,
+    dev.stapler.stelekit.units.RationalExamplesTest::class,
+    dev.stapler.stelekit.units.RationalPropertyTest::class,
 )
 class AllBusinessTests

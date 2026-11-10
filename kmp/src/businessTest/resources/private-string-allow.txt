@@ -1,0 +1,12 @@
+# Neutral generic tokens allowed to match a structural pattern (exact match of the matched text).
+# One token per line; `#` starts a comment.
+[[links]]
+[[page]]
+/home/user
+/home/runner
+/Users/me
+123 Main St
+[[^\]]
+# `re:` lines allow a match when the regex matches the whole matched text.
+re:(?:[A-Za-z]+ )*(?:CLAUDE|AGENTS|README|CHANGELOG|SKILL)\.md
+re:~/\.cache/stelekit-private/\S*

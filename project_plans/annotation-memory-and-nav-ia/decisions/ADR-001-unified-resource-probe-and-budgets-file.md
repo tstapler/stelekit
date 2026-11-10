@@ -27,3 +27,36 @@ Option 1. Probe records per scenario: CPU ms per placement, per-thread CPU share
   - The file has a top-level `globalMode` (`"report-only"` | `"enforce"`). While `report-only`, no entry can fail the job, whatever its own `mode`. It starts `report-only` and flips to `enforce` in the B.7b promotion PR after the calibration soak (>= 10 runs). Demotion after a flaky gate is the same one-field edit.
   - Bad exit reasons are an explicit allowlist: `CRASH`, `CRASH_NATIVE`, `ANR`, `EXCESSIVE_RESOURCE_USAGE`, `LOW_MEMORY`, `SIGNALED`, filtered to entries whose `pid` is the test process and `timestamp >=` the scenario start. `REASON_OTHER`, `USER_REQUESTED`, `USER_STOPPED` and reinstall/teardown entries are ignored.
   - Coil bumps (Renovate) must rerun the probe: the Coil version is recorded in `ProbeRecord.device`; `CoilSeamTest` asserts the listener fired at least once (so a `<=` gate cannot pass vacuously on zero decodes).
+
+## Epic B implementation amendments (2026-11-09)
+
+- **Coil 3.2.0 spike (B.2a)**, `javap` on `coil-core-jvm-3.2.0.jar`: `coil3.EventListener` is an open class with `onSuccess(ImageRequest, SuccessResult)` and a nested `EventListener.Factory`; `ImageLoader.Builder.eventListenerFactory(EventListener.Factory)` exists; `coil3.Image` exposes `long getSize()` (bytes), `getWidth()`, `getHeight()`; `coil3.memory.MemoryCache` exposes `long getSize()`, `long getMaxSize()`, `clear()`. These are exactly the members `CoilDecodeStats`, `CoilSeamTest` and `ProbeRun` use. A bump that changes them fails `CoilSeamTest` at compile time.
+- **Record format**: a `ProbeRecord` is `{scenario, pid, scenarioStartMs, device, metrics{bare names}, exitReasons[]}`, logged as `ANDROID_RESOURCE: <json>`. `scripts/android-benchmark-summarize.py` flattens every record of a run into one summary with `Scenario.metric` keys, which `bench-budget-check.js`, `bench-budget-calibrate.js` and `benchdiff-export.js --kind android-resource` all consume.
+- **Budget entry** adds `comparator` (`lte`, `gte`, `eq`) and `memory` (true: skipped, never failing, when the record's `device.invalidDevice` is true). `Process.badExitReasons` is derived by the checker from `exitReasons` (allowlist, pid, timestamp filter); the probe never emits it.
+- **Probe catalog**: `ProbeCatalog.kt` lists every key the probe may emit; `--validate` fails a key without an entry, and `ProbeRun.finish` throws on an uncataloged metric.
+- **Mutation list** is checked for drift between `Mutations.kt` and the checker by a node test; `scripts/check-no-mutations-in-main.sh` (run in `android-benchmark.yml`) fails if a flag name reaches production sources, replacing the planned dex-grep.
+- **Output channel (B.4a)**: logcat `ANDROID_RESOURCE` for CI, plus `probe/<scenario>.json` in the app's external files dir for a local `adb pull`. Host-side retrieval through Gradle's connected-test output was not exercised (no device run in this change).
+
+- **Mutation channel**: `-Pandroid.testInstrumentationRunnerArguments.<custom key>=...` delivered only `class` to the device on the Pixel_Fold run (the test saw `testTimeoutSeconds, class, additionalTestOutputDir`), so a Gradle-passed mutation was a silent no-op. `scripts/ci/run-android-resource-benchmark.sh` therefore installs with `installDebugAndroidTest` and starts `am instrument -e annotateMutation <name> -e expectedRamMb <n>`, which was verified to arrive. `Mutations.active` rejects an unknown name.
+
+### Proof matrix: where each gate's red proof stands
+
+Device runs on the `Pixel_Fold` AVD (API 34, 3.05 GB guest, so tagged `invalidDevice` by the 2 GB pin, as predicted in pitfalls.md), 2026-11-09:
+
+| Gate / entry | Normal run | Mutation run | Evaluator result (enforce) |
+|---|---|---|---|
+| `LibraryScroll.cacheOverflowBytes` (gate) | 0 | `cacheNoLimit`: 60,154,645 | exit 1 |
+| `LibraryScroll.maxDecodeBytes` (report-only, shown promoted) | 1,045,480 | `loupeFullDecode`: 48,000,000 | exit 1 once `mode=gate` |
+| `SwitchChurn.editorReferenceCleared` (report-only) | 1 | `leakStrongRef`: 0 (0 of 30 editors cleared) | warn |
+
+Evaluator-only proofs (no device scenario in this epic; the RapidPlacement and BackgroundIdle scenarios are Epic A.3):
+
+| Gate | Evidence | Instrumented mutation |
+|---|---|---|
+| `RapidPlacement.loaderConstructions` | `ImageLoaderConstructionCountTest` counts 100 builds as 100; the checker exits 1 on 100 | `loaderPerPress`, with the A.3 scenario |
+| `RapidPlacement.decodeCountPerPress` | the checker exits 1 above 1 | `loupeFullDecode`, A.3 |
+| `RapidPlacement.cacheOverflowBytes` | the checker exits 1 on a positive overflow | `cacheNoLimit`, A.3 |
+| `RapidPlacement.undoDepth` | `UndoDepthTest` pins the cap at 50; the checker exits 1 on 51 | `undoUnbounded`, A.3 |
+| `Process.survived`, `Process.badExitReasons` | the checker exits 1 on `survived=0` and on an allowlisted exit reason for this pid | `exitOnBackground` / `oomInjection`, A.3 |
+
+Every `gate` in the budgets file stays evaluated as report-only while `globalMode` is `report-only`; the B.7b promotion PR flips it after the calibration soak. The `cacheNoLimit` and `loupeFullDecode` mutations are deliberately bounded (4x the production cache ceiling; a full-size decode every 400th cell): the first attempt used a truly unbounded cache and full decodes of every cell, which killed the process before the record was written.

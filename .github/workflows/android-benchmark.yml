@@ -1,6 +1,12 @@
 name: Android Benchmark
 
 on:
+  workflow_dispatch:
+    inputs:
+      annotate_mutation:
+        description: Optional mutation flag for a pre-fix / mutation proof run (see Mutations.kt); leave empty for a normal run
+        required: false
+        default: ''
   push:
     branches: [main, master]
   pull_request:
@@ -19,6 +25,8 @@ jobs:
   android-benchmark:
     name: Android Instrumented Benchmark
     runs-on: ubuntu-latest
+    # The resource scenarios add a few minutes on top of the graph benchmark; the cap stops a hung emulator.
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +44,27 @@ jobs:
           gradle-home-cache-cleanup: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
+      - name: Mutation flags must not exist in production sources
+        run: scripts/check-no-mutations-in-main.sh
+
+      - name: Decide whether the annotation resource scenarios run
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          SKIP_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'skip-annotation-gate') }}
+        run: |
+          # Pushes and manual runs always measure; PRs only when they touch the harness or what it measures.
+          run=true
+          if [ "$EVENT" = "pull_request" ]; then
+            if [ "$SKIP_LABEL" = "true" ]; then
+              run=false
+            elif ! git diff --name-only "$BASE_SHA"...HEAD | grep -Eq '(^|/)performance/(probe|annotation)/|/annotate/|SteleKitAssetFetcher\.kt|^benchmarks/budgets/|^scripts/(bench-budget|benchdiff|android-benchmark|check-artifact)|android-benchmark\.yml'; then
+              run=false
+            fi
+          fi
+          echo "run_resource=$run" >> "$GITHUB_OUTPUT"
+
       - name: Enable KVM group permissions
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -48,77 +77,31 @@ jobs:
           api-level: 30
           arch: x86_64
           profile: pixel_3a
+          # Pinned so the memory budgets mean the same thing every run; the probe tags the run
+          # invalid-device when the guest MemTotal does not follow (pitfalls.md: local AVD ignored -memory).
+          ram-size: 2048M
           script: |
             ./gradlew :kmp:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=dev.stapler.stelekit.testing.SqliteCapabilityTest --no-daemon
             ./gradlew :kmp:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=dev.stapler.stelekit.benchmark.AndroidGraphBenchmark --no-daemon
             adb logcat -d -s ANDROID_BENCH:I > /tmp/android-bench-logcat.txt || true
+            RUN_RESOURCE=${{ steps.scope.outputs.run_resource }} EXPECTED_RAM_MB=2048 ANNOTATE_MUTATION=${{ inputs.annotate_mutation }} scripts/ci/run-android-resource-benchmark.sh
 
       - name: Parse results and write summary
+        id: summarize
         run: |
-          python3 - << 'EOF'
-          import json, os, subprocess, datetime, re
-
-          logcat_file = "/tmp/android-bench-logcat.txt"
-          results = {}
-          if os.path.exists(logcat_file):
-              for line in open(logcat_file):
-                  m = re.search(r'ANDROID_BENCH:\s*(\{.*\})', line)
-                  if m:
-                      try:
-                          obj = json.loads(m.group(1))
-                          results[obj.get("metric", "unknown")] = obj
-                      except Exception:
-                          pass
-
-          load = results.get("loadPhase", {})
-          jank = results.get("writeLatency", {})
-          saf  = results.get("safIo", {})
-
-          try:
-              sha = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode().strip()
-          except Exception:
-              sha = "unknown"
-          try:
-              branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).decode().strip()
-          except Exception:
-              branch = "unknown"
-
-          now = datetime.datetime.now(datetime.timezone.utc)
-          summary = {
-              "timestamp": now.strftime("%Y-%m-%d %H:%M:%S UTC"),
-              "gitSha": sha,
-              "branch": branch,
-              "phase1Ms": load.get("phase1Ms"),
-              "phase3Ms": load.get("phase3Ms"),
-              "pageCount": load.get("pageCount"),
-              "baselineP95Ms": jank.get("baselineP95Ms"),
-              "phase3P95Ms": jank.get("phase3P95Ms"),
-              "jankFactor": jank.get("jankFactor"),
-              "writes": jank.get("writes"),
-              "safDirectMs": saf.get("directMs"),
-              "safProviderMs": saf.get("safMs"),
-              "safPerFileMs": saf.get("safPerFileMs"),
-              "safDirectPerFileMs": saf.get("directPerFileMs"),
-              "safOverhead": saf.get("overhead"),
-          }
-
-          history_dir = os.path.join("benchmarks", "android-history")
-          os.makedirs(history_dir, exist_ok=True)
-          slug = now.strftime("%Y-%m-%d_%Hh%Mm%Ss")
-          out = os.path.join(history_dir, f"{slug}_{sha}.json")
-          with open(out, "w") as f:
-              json.dump(summary, f, indent=2)
-          print(out)
-          with open(os.environ.get("GITHUB_ENV", "/dev/null"), "a") as env:
-              env.write(f"ANDROID_BENCH_SUMMARY={out}\n")
-          EOF
+          python3 scripts/android-benchmark-summarize.py \
+            --logcat /tmp/android-bench-logcat.txt \
+            --history-dir benchmarks/android-history \
+            --resource-dir benchmarks/android-resource-history | tee /tmp/summarize-out.txt
+          echo "ANDROID_BENCH_SUMMARY=$(sed -n 1p /tmp/summarize-out.txt)" >> "$GITHUB_ENV"
+          echo "resource_file=$(sed -n 2p /tmp/summarize-out.txt)" >> "$GITHUB_OUTPUT"
 
       - name: Commit benchmark summary (main only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add benchmarks/android-history/
+          git add benchmarks/android-history/ benchmarks/android-resource-history/
           git diff --cached --quiet && exit 0
           git commit -m "chore(bench): android benchmark summary ${{ github.sha }}"
           for i in 1 2 3 4 5; do
@@ -158,11 +141,47 @@ jobs:
           title: Android Load Benchmark (API 30 x86_64 emulator)
           tag: android-load-benchmark
 
-      - uses: actions/upload-artifact@v4
+      - name: Privacy check on everything that leaves the runner
+        id: privacy
         if: always()
+        run: |
+          targets=(/tmp/android-bench-logcat.txt benchmarks/android-history benchmarks/android-resource-history bench-head.json bench-base.json)
+          if [ -n "${RESOURCE_FILE:-}" ]; then
+            node scripts/benchdiff-export.js --kind android-resource --in "$RESOURCE_FILE" --out bench-resource-head.json
+            targets+=(bench-resource-head.json)
+          fi
+          node scripts/check-artifact-privacy.js "${targets[@]}"
+        env:
+          RESOURCE_FILE: ${{ steps.summarize.outputs.resource_file }}
+
+      - name: Compare resource metrics and post PR comment
+        if: always() && github.event_name == 'pull_request' && steps.privacy.outcome == 'success' && steps.summarize.outputs.resource_file != ''
+        uses: tstapler/benchdiff@3921c948d6d9cbc538a62d3808d979c06cc13a94 # v0.1.0
+        with:
+          head: bench-resource-head.json
+          base: ''
+          format: benchdiff
+          title: Annotation Resource Benchmark (API 30 x86_64 emulator, 2 GB)
+          tag: android-resource-benchmark
+
+      # Runs after the comment so a breach is visible in the PR before the job goes red. Advisory
+      # (continue-on-error) for the first 10 runs, and globalMode report-only keeps gates warn-only
+      # until the B.7b promotion PR; remove continue-on-error then.
+      - name: Check annotation resource budgets
+        if: always() && steps.summarize.outputs.resource_file != ''
+        continue-on-error: true
+        run: |
+          node scripts/bench-budget-check.js --validate
+          node scripts/bench-budget-check.js --records "$RESOURCE_FILE"
+        env:
+          RESOURCE_FILE: ${{ steps.summarize.outputs.resource_file }}
+
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.privacy.outcome == 'success'
         with:
           name: android-benchmark-results-${{ github.sha }}
           path: |
             /tmp/android-bench-logcat.txt
             benchmarks/android-history/
+            benchmarks/android-resource-history/
           retention-days: 30

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Usage: node scripts/benchdiff-export.js --kind jvm|android --in <summary.json> --out <benchdiff.json>
+// Usage: node scripts/benchdiff-export.js --kind jvm|android|android-resource --in <summary.json> --out <benchdiff.json>
 //
 // Converts a stelekit benchmark summary (benchmarks/history/*.json for the JVM load benchmark,
 // benchmarks/android-history/*.json for Android) into benchdiff canonical JSON (schema 1).
@@ -34,17 +34,47 @@ const SPECS = {
   ],
 };
 
-const ENV_FIELDS = ['gitSha', 'graphConfig', 'pageCount', 'branch'];
+// android-resource summaries carry flat `Scenario.metric` numbers (ProbeCatalog); the unit and the
+// direction are derived from the metric name so a new probe metric needs no exporter change.
+const RESOURCE_KEY = /^[A-Z][A-Za-z0-9]*\.([a-z][A-Za-z0-9]*)$/;
+const RESOURCE_GROUP = 'android/AnnotateResources';
+const HIGHER_IS_BETTER = new Set(['survived', 'editorReferenceCleared']);
+const UNIT_SUFFIXES = [[/Ms($|[A-Z])/, 'ms'], [/Bytes$/, 'B'], [/Mb($|[A-Z])/, 'MB'], [/Pct$/, '%']];
+
+function resourceUnit(metric) {
+  for (const [re, unit] of UNIT_SUFFIXES) if (re.test(metric)) return unit;
+  return 'count';
+}
+
+function resourceMetrics(summary) {
+  const metrics = [];
+  for (const [key, value] of Object.entries(summary)) {
+    const m = RESOURCE_KEY.exec(key);
+    if (!m || typeof value !== 'number' || !Number.isFinite(value) || value < 0) continue;
+    metrics.push({
+      group: RESOURCE_GROUP, name: key, unit: resourceUnit(m[1]),
+      better: HIGHER_IS_BETTER.has(m[1]) ? 'higher' : 'lower', value,
+    });
+  }
+  return metrics;
+}
+
+const ENV_FIELDS =['gitSha', 'graphConfig', 'pageCount', 'branch'];
 
 function toBenchdiff(summary, kind) {
   const specs = SPECS[kind];
-  if (!specs) throw new Error(`unknown kind '${kind}' (expected jvm or android)`);
+  if (!specs && kind !== 'android-resource') {
+    throw new Error(`unknown kind '${kind}' (expected jvm, android or android-resource)`);
+  }
 
   const metrics = [];
-  for (const [name, group, unit, better] of specs) {
-    const value = summary[name];
-    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) continue;
-    metrics.push({ group, name, unit, better, value });
+  if (kind === 'android-resource') metrics.push(...resourceMetrics(summary));
+  else {
+    for (const [name, group, unit, better] of specs) {
+      const value = summary[name];
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) continue;
+      metrics.push({ group, name, unit, better, value });
+    }
   }
 
   const env = {};
@@ -67,7 +97,7 @@ function parseArgs(argv) {
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args.kind || !args.in || !args.out) {
-    console.error('usage: benchdiff-export.js --kind jvm|android --in <file> --out <file>');
+    console.error('usage: benchdiff-export.js --kind jvm|android|android-resource --in <file> --out <file>');
     process.exit(2);
   }
   const summary = JSON.parse(fs.readFileSync(args.in, 'utf8'));
