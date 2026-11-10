@@ -15,6 +15,21 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.CloneProgress
 import dev.stapler.stelekit.git.GitCloneWorkerData
 import dev.stapler.stelekit.git.GitTransportRetryState
+import dev.stapler.stelekit.jobs.schedule.AppliedConfigLedger
+import dev.stapler.stelekit.jobs.schedule.ContractSettings
+import dev.stapler.stelekit.jobs.schedule.LegacyConfigSeed
+import dev.stapler.stelekit.jobs.schedule.Schedule
+import dev.stapler.stelekit.jobs.schedule.TaskConfig
+import dev.stapler.stelekit.jobs.schedule.TaskConstraints
+import dev.stapler.stelekit.jobs.schedule.TaskKey
+import dev.stapler.stelekit.jobs.schedule.TaskKind
+import dev.stapler.stelekit.jobs.schedule.TaskRegistry
+import dev.stapler.stelekit.jobs.schedule.TaskRunResult
+import dev.stapler.stelekit.jobs.schedule.TaskScope
+import dev.stapler.stelekit.jobs.schedule.TaskShape
+import dev.stapler.stelekit.jobs.schedule.TaskSpec
+import dev.stapler.stelekit.jobs.schedule.TaskSettingsStore
+import dev.stapler.stelekit.jobs.schedule.WorkManagerTaskScheduler
 import dev.stapler.stelekit.platform.ml.DepthModelDownloadWorker
 import dev.stapler.stelekit.platform.ml.DepthModelDownloader
 import dev.stapler.stelekit.platform.ml.DepthModelStorage
@@ -102,6 +117,28 @@ class WorkManagerJobRegistryTest {
 
         assertTrue(withTimeout(5_000) { registry.jobs.first() }.isEmpty())
         assertNotNull(registry)
+    }
+
+    @Test
+    fun `an enabled periodic graph adds no job row but a one-shot does`() = runBlocking<Unit> {
+        val registry = TaskRegistry()
+        val default = TaskConfig(true, Schedule.of(15, 0), TaskConstraints())
+        registry.register(
+            TaskKind("model-download"),
+            TaskSpec(JobKind.ModelDownload, "Depth model download", TaskShape.OneShot, default, false, 0),
+        ) { _, _ -> TaskRunResult.Success }
+        val scheduler = WorkManagerTaskScheduler(
+            context, registry, TaskSettingsStore(ContractSettings(), LegacyConfigSeed.None, registry), AppliedConfigLedger(ContractSettings()),
+        )
+        val jobs = WorkManagerJobRegistry(context)
+
+        scheduler.apply(TaskKey(TaskKind("git-sync"), TaskScope("g1")), TaskConfig(true, Schedule.of(60, 0), TaskConstraints()))
+        assertTrue(withTimeout(5_000) { jobs.jobs.first() }.isEmpty(), "periodic work carries no stelekit-job tag")
+
+        scheduler.runOnce(TaskKey(TaskKind("model-download"), TaskScope("")), TaskConstraints())
+        val row = withTimeout(5_000) { jobs.jobs.first { it.isNotEmpty() } }.single()
+        assertEquals(JobKind.ModelDownload, row.kind)
+        assertEquals("Depth model download", row.title)
     }
 
     @Test
