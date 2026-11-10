@@ -55,6 +55,14 @@ sealed interface ParsedLength {
         override val qualifiers: Set<LengthQualifier> = emptySet(),
     ) : ParsedLength {
         val isApprox: Boolean get() = LengthQualifier.APPROX in qualifiers
+
+        /**
+         * Half-width of the rounding the writer applied. A fraction or an exactly written decimal
+         * states an exact rational, so only decimals with a factor of 5 in their precision (a
+         * rounded `37.9"`) carry tolerance; fusion compares with this, not [precision].
+         */
+        val roundingPrecision: Rational
+            get() = if (precision.den and (precision.den - 1) == 0L) Rational.ZERO else precision
     }
 
     /** `51-54"`; both ends in written order. */

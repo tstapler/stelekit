@@ -699,6 +699,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.units.LengthParserGoldenTest::class,
     dev.stapler.stelekit.units.LengthParserPropertyTest::class,
     dev.stapler.stelekit.fusion.LinearSolverTest::class,
+    dev.stapler.stelekit.fusion.DimensionRegistryTest::class,
+    dev.stapler.stelekit.fusion.FusionEngineTest::class,
     dev.stapler.stelekit.fusion.LinearSolverPropertyTest::class,
 )
 class AllBusinessTests

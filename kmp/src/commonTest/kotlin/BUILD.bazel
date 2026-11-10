@@ -111,6 +111,8 @@ kt_jvm_library(
         "dev/stapler/stelekit/db/sidecar/FakeFileSystem.kt",
         "dev/stapler/stelekit/domain/HtmlBlockConverterTest.kt",
         "dev/stapler/stelekit/error/DomainErrorTest.kt",
+        "dev/stapler/stelekit/fusion/DimensionRegistryTest.kt",
+        "dev/stapler/stelekit/fusion/FusionEngineTest.kt",
         "dev/stapler/stelekit/fusion/LinearSolverPropertyTest.kt",
         "dev/stapler/stelekit/fusion/LinearSolverTest.kt",
         "dev/stapler/stelekit/git/BannerPrecedenceTest.kt",
