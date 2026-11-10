@@ -18,6 +18,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
@@ -51,14 +53,17 @@ class SqlDelightImageAnnotationRepository(
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     override fun getImageAnnotationsByTag(tag: String): Flow<Either<DomainError, List<ImageAnnotation>>> =
-        queries.selectImageAnnotationsByTag(tag)
+        // The SQL LIKE is only a prefilter (a quoted-literal substring can still hit inside another
+        // tag's escaped text, and % / _ in the tag act as wildcards); the exact test is on decoded tags.
+        queries.selectImageAnnotationsByTag(encodeTagContent(tag))
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
+            .map { result -> result.map { rows -> rows.filter { tag in it.tags } } }
 
     @DirectRepositoryWrite
     override suspend fun saveImageAnnotation(annotation: ImageAnnotation): Either<DomainError, Unit> =
         withContext(PlatformDispatcher.DB) {
             try {
-                val tagsJson = annotation.tags.joinToString(",", "[", "]") { "\"$it\"" }
+                val tagsJson = encodeTags(annotation.tags)
                 val latLng = annotation.sensorData.latLng?.let { (lat, lng) -> "$lat,$lng" }
                 queries.insertImageAnnotation(
                     uuid = annotation.uuid,
@@ -120,12 +125,7 @@ private fun dev.stapler.stelekit.db.Image_annotations.toModel(): ImageAnnotation
         } else null
     }
 
-    val tagsList: List<String> = try {
-        val element = Json.parseToJsonElement(tags)
-        element.jsonArray.map { it.jsonPrimitive.content }
-    } catch (_: Exception) {
-        emptyList()
-    }
+    val tagsList: List<String> = decodeTags(tags)
 
     return ImageAnnotation(
         uuid = uuid,
@@ -158,3 +158,25 @@ private fun dev.stapler.stelekit.db.Image_annotations.toModel(): ImageAnnotation
         ),
     )
 }
+
+private val tagListSerializer = ListSerializer(String.serializer())
+
+internal fun encodeTags(tags: List<String>): String = Json.encodeToString(tagListSerializer, tags)
+
+/** The JSON-escaped text of [tag] without its surrounding quotes, as it appears inside the stored array. */
+internal fun encodeTagContent(tag: String): String =
+    Json.encodeToString(String.serializer(), tag).drop(1).dropLast(1)
+
+/**
+ * Decodes the stored tags column. Rows written before escaping was fixed may hold invalid JSON
+ * (an unescaped quote or backslash in a tag); those are salvaged by splitting on the `","` joins
+ * the old writer produced instead of being dropped.
+ */
+internal fun decodeTags(raw: String): List<String> =
+    try {
+        Json.parseToJsonElement(raw).jsonArray.map { it.jsonPrimitive.content }
+    } catch (_: Exception) {
+        val body = raw.trim().removeSurrounding("[", "]").trim()
+        if (body.length < 2 || !body.startsWith('"') || !body.endsWith('"')) emptyList()
+        else body.substring(1, body.length - 1).split("\",\"")
+    }
