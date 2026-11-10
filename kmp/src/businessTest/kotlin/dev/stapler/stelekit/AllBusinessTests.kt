@@ -737,6 +737,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.projectbridge.TableParserCharacterizationTest::class,
     dev.stapler.stelekit.jobs.schedule.TaskKeyTest::class,
     dev.stapler.stelekit.jobs.schedule.JitterPolicyPropertyTest::class,
+    dev.stapler.stelekit.jobs.schedule.NetworkGateTest::class,
+    dev.stapler.stelekit.jobs.schedule.JitterPolicyPropertyTest::class,
     dev.stapler.stelekit.jobs.schedule.JobsScheduleImportDirectionTest::class,
     dev.stapler.stelekit.projectbridge.TableMeasurementExtractorTest::class,
     dev.stapler.stelekit.projectbridge.TableExtractorPropertyTest::class,

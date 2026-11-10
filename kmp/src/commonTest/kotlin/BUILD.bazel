@@ -134,6 +134,8 @@ kt_jvm_library(
         "dev/stapler/stelekit/git/lfs/LfsPointerPropertyTest.kt",
         "dev/stapler/stelekit/git/lfs/LfsPointerTest.kt",
         "dev/stapler/stelekit/jobs/schedule/JitterPolicyPropertyTest.kt",
+        "dev/stapler/stelekit/jobs/schedule/JitterPolicyPropertyTest.kt",
+        "dev/stapler/stelekit/jobs/schedule/NetworkGateTest.kt",
         "dev/stapler/stelekit/jobs/schedule/TaskKeyTest.kt",
         "dev/stapler/stelekit/parser/MarkdownParserInlineStorageTest.kt",
         "dev/stapler/stelekit/platform/diagnostics/ExitRecordFormatterTest.kt",
