@@ -1,5 +1,6 @@
 pluginManagement {
     repositories {
+        maven("https://maven-central.storage-download.googleapis.com/maven2/") // see dependencyResolutionManagement
         google()
         mavenCentral()
         gradlePluginPortal()
@@ -29,6 +30,10 @@ plugins {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
+        // Google's GCS mirror of Maven Central goes FIRST, not as a fallback: Gradle falls through
+        // to the next repository on 404/403 but fails the build on 429/5xx, and 429 is what CI
+        // runners get from repo.maven.apache.org. Mirror misses (404) still fall through.
+        maven("https://maven-central.storage-download.googleapis.com/maven2/")
         google()
         mavenCentral()
         gradlePluginPortal()

@@ -205,6 +205,7 @@ internal fun assetIcon(mediaType: AssetMediaType) = when (mediaType) {
     AssetMediaType.VIDEO -> Icons.Default.VideoFile
     AssetMediaType.DOCUMENT -> Icons.Default.Description
     AssetMediaType.FILE -> Icons.Default.InsertDriveFile
+    AssetMediaType.DRAWING -> Icons.Default.Image
 }
 
 sealed interface AssetAction {
