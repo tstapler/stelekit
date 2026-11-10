@@ -39,6 +39,7 @@ class WorkManagerTaskScheduler(
     private val ledger: AppliedConfigLedger,
     override val capabilities: SchedulerCapabilities = CAPABILITIES,
     private val workers: WorkerClassResolver = WorkerClassResolver.TaskWorkerOnly,
+    private val nowMs: () -> Long = System::currentTimeMillis,
 ) : BackgroundTaskScheduler {
     private val logger = Logger("WorkManagerTaskScheduler")
 
@@ -51,7 +52,7 @@ class WorkManagerTaskScheduler(
         }
         ledger.recordApplied(key, config)
         if (ledger.pausedSnapshot(key) != null) {
-            ledger.snapshotPaused(key, config) // a change during a pause is restored by `resume`, nothing is enqueued
+            ledger.updatePausedConfig(key, config) // a change during a pause is restored by `resume`, nothing is enqueued
             return@guarded
         }
         enqueuePeriodic(key, config, ExistingPeriodicWorkPolicy.UPDATE)
@@ -100,7 +101,7 @@ class WorkManagerTaskScheduler(
             }
             if (live != null) {
                 pausedKeys += key
-                ledger.snapshotPaused(key, configOf(key, live))
+                ledger.snapshotPaused(key, configOf(key, live), remainingDelayMs(live))
             }
             cancelUnique(key)
         }
@@ -121,7 +122,7 @@ class WorkManagerTaskScheduler(
             if (config.enabled) {
                 ledger.recordApplied(key, config)
                 // CANCEL_AND_REENQUEUE: a clone that ran under the shared name leaves finished one-time work UPDATE cannot convert.
-                enqueuePeriodic(key, config, ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE)
+                enqueuePeriodic(key, config, ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE, snapshot?.remainingInitialDelayMs)
             }
         }
     }
@@ -167,7 +168,7 @@ class WorkManagerTaskScheduler(
         return info.id.toString() to network
     }
 
-    private suspend fun enqueuePeriodic(key: TaskKey, config: TaskConfig, policy: ExistingPeriodicWorkPolicy) {
+    private suspend fun enqueuePeriodic(key: TaskKey, config: TaskConfig, policy: ExistingPeriodicWorkPolicy, initialDelayMs: Long? = null) {
         val wm = workManagerOrNull(context) ?: return
         if (policy == ExistingPeriodicWorkPolicy.UPDATE) {
             val holder = blocking { wm.getWorkInfosForUniqueWork(key.workName()).get() }.firstOrNull { !it.state.isFinished }
@@ -181,11 +182,11 @@ class WorkManagerTaskScheduler(
                 return
             }
         }
-        val request = buildPeriodic(key, config, tagged = true)
+        val request = buildPeriodic(key, config, tagged = true, initialDelayMs = initialDelayMs)
         blocking { wm.enqueueUniquePeriodicWork(key.workName(), policy, request).result.get() }
     }
 
-    private fun buildPeriodic(key: TaskKey, config: TaskConfig, tagged: Boolean): PeriodicWorkRequest {
+    private fun buildPeriodic(key: TaskKey, config: TaskConfig, tagged: Boolean, initialDelayMs: Long? = null): PeriodicWorkRequest {
         val effective = config.schedule.clamp(capabilities, JitterSeed.of(key))
         val worker = workerClassFor(key)
         val builder = if (effective.flexMinutes != null) {
@@ -195,7 +196,11 @@ class WorkManagerTaskScheduler(
         }
         builder.setConstraints(constraintsOf(config.constraints))
             .setInputData(inputData(key, config.constraints.network, effective.intervalMinutes))
-        if (effective.offsetMinutes > 0) builder.setInitialDelay(effective.offsetMinutes.toLong(), TimeUnit.MINUTES)
+        if (initialDelayMs != null) {
+            if (initialDelayMs > 0) builder.setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)
+        } else if (effective.offsetMinutes > 0) {
+            builder.setInitialDelay(effective.offsetMinutes.toLong(), TimeUnit.MINUTES)
+        }
         if (tagged) schedTags(key, registry.specFor(key.kind)).forEach(builder::addTag)
         return builder.build()
     }
@@ -232,6 +237,20 @@ class WorkManagerTaskScheduler(
         val wm = workManagerOrNull(context) ?: return null
         return blocking { wm.getWorkInfosForUniqueWork(key.workName()).get() }
             .firstOrNull { !it.state.isFinished && it.periodicityInfo != null }
+    }
+
+    /**
+     * The initial delay that makes a re-enqueued request run when the live one would have. WorkManager reports the
+     * next run as `start + initialDelay + (interval - flex)` (read back in the pause/resume test), so the delay is
+     * that time minus now minus `(interval - flex)`. Falls back to the request's original delay when the next run
+     * is unreadable (running work reports it as unset).
+     */
+    private fun remainingDelayMs(live: WorkInfo): Long {
+        val next = live.nextScheduleTimeMillis
+        val period = live.periodicityInfo ?: return live.initialDelayMillis
+        if (next == Long.MAX_VALUE) return live.initialDelayMillis
+        val windowStartOffset = period.repeatIntervalMillis - period.flexIntervalMillis
+        return (next - nowMs() - windowStartOffset).coerceAtLeast(0L)
     }
 
     /** The config of live work: the last applied one when it still matches, else derived from the request. */

@@ -9,7 +9,9 @@ import dev.stapler.stelekit.jobs.schedule.PlatformSettingsColdPathTest
 import dev.stapler.stelekit.jobs.schedule.WorkManagerJitterSpikeTest
 import dev.stapler.stelekit.jobs.schedule.TaskRegistryBothRootsTest
 import dev.stapler.stelekit.jobs.schedule.TaskWorkerTest
+import dev.stapler.stelekit.jobs.schedule.ScheduledTaskReconcilerTest
 import dev.stapler.stelekit.jobs.schedule.WorkManagerTaskSchedulerConstraintsTest
+import dev.stapler.stelekit.jobs.schedule.WorkManagerTaskSchedulerPauseResumeTest
 import dev.stapler.stelekit.jobs.schedule.WorkManagerTaskSchedulerContractTest
 import dev.stapler.stelekit.platform.LegacyPathValidationTest
 import dev.stapler.stelekit.platform.PlatformFileSystemPickerTest
@@ -42,6 +44,8 @@ import org.junit.runners.Suite
     WorkManagerJitterSpikeTest::class,
     WorkManagerTaskSchedulerContractTest::class,
     WorkManagerTaskSchedulerConstraintsTest::class,
+    WorkManagerTaskSchedulerPauseResumeTest::class,
+    ScheduledTaskReconcilerTest::class,
     TaskWorkerTest::class,
     TaskRegistryBothRootsTest::class,
     PlatformSettingsColdPathTest::class,

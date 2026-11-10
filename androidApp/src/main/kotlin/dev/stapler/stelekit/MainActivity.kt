@@ -348,17 +348,37 @@ class MainActivity : ComponentActivity() {
             val gitCloneWorkerLauncher = remember {
                 dev.stapler.stelekit.git.AndroidGitCloneWorkerLauncher(applicationContext)
             }
+            val taskSettings = remember { PlatformSettings() }
+            val taskSettingsStore = remember {
+                dev.stapler.stelekit.jobs.schedule.TaskSettingsStore(
+                    taskSettings, dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime.legacySeed, app.taskRegistry,
+                )
+            }
             val backgroundTaskScheduler = remember {
-                val settings = PlatformSettings()
                 dev.stapler.stelekit.jobs.schedule.WorkManagerTaskScheduler(
                     context = applicationContext,
                     registry = app.taskRegistry,
-                    store = dev.stapler.stelekit.jobs.schedule.TaskSettingsStore(
-                        settings, dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime.legacySeed, app.taskRegistry,
-                    ),
-                    ledger = dev.stapler.stelekit.jobs.schedule.AppliedConfigLedger(settings),
+                    store = taskSettingsStore,
+                    ledger = dev.stapler.stelekit.jobs.schedule.AppliedConfigLedger(taskSettings),
                     workers = dev.stapler.stelekit.git.GitSyncWorkerBinding.resolver,
                 )
+            }
+            // Graph removal cancels that graph's scheduled work and tombstones it. The scope is guarded
+            // (SupervisorJob + handler) and outlives this composition; startup reconcile backstops a missed run.
+            LaunchedEffect(backgroundTaskScheduler) {
+                val removalScope = kotlinx.coroutines.CoroutineScope(
+                    kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default +
+                        kotlinx.coroutines.CoroutineExceptionHandler { _, t ->
+                            dev.stapler.stelekit.logging.Logger("GraphRemovalTasks").warn("graph removal task cleanup failed", t)
+                        },
+                )
+                val removal = dev.stapler.stelekit.jobs.schedule.GraphRemovalTasks(
+                    backgroundTaskScheduler, taskSettingsStore, app.taskRegistry, removalScope,
+                )
+                app.graphManager?.onGraphRemoved = { id -> removal.onRemoved(dev.stapler.stelekit.jobs.schedule.TaskScope(id.value)) }
+                dev.stapler.stelekit.jobs.schedule.ScheduledTaskReconciler(
+                    applicationContext, dev.stapler.stelekit.db.GraphRegistryKnownScopes(taskSettings),
+                ).reconcile()
             }
             val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity, fileSystem)
             // Null in release variants (GoogleBuildFlags), which hides every Google surface.

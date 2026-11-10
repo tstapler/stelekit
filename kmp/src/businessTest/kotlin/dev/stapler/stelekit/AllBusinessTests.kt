@@ -179,6 +179,7 @@ import dev.stapler.stelekit.db.GraphManagerInitAutoRestoreTest
 import dev.stapler.stelekit.db.GraphManagerOnGraphLocationDeterminedTest
 import dev.stapler.stelekit.db.GraphManagerPendingStorageLocationRemovalTest
 import dev.stapler.stelekit.db.GraphManagerRemoveGraphTest
+import dev.stapler.stelekit.db.GraphManagerRemovalHookTest
 import dev.stapler.stelekit.db.GraphManagerSwitchLockStressTest
 import dev.stapler.stelekit.db.GraphManagerSwitchNotesPathTest
 import dev.stapler.stelekit.db.GraphManagerUpdateGraphPathTest
@@ -503,6 +504,7 @@ import org.junit.runners.Suite
     GraphManagerOnGraphLocationDeterminedTest::class,
     GraphManagerPendingStorageLocationRemovalTest::class,
     GraphManagerRemoveGraphTest::class,
+    GraphManagerRemovalHookTest::class,
     GraphManagerSwitchLockStressTest::class,
     GraphManagerSwitchNotesPathTest::class,
     GraphManagerUpdateGraphPathTest::class,

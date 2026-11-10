@@ -12,7 +12,11 @@ import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 /** What a `pause` took from the live work: the config `resume` restores. */
-data class PausedSnapshot(val config: TaskConfig)
+data class PausedSnapshot(
+    val config: TaskConfig,
+    /** What remained of the first-run delay at pause time, so `resume` does not fire immediately; null when unknown. */
+    val remainingInitialDelayMs: Long? = null,
+)
 
 /**
  * Record, per key, of the last [TaskConfig] an adapter `apply`ed, plus a [PausedSnapshot] taken at
@@ -36,7 +40,16 @@ class AppliedConfigLedger(private val settings: Settings) {
      * Records what `pause` is about to cancel. Writes the process-static copy first, then settings;
      * a settings failure is swallowed so a snapshot problem can never block the cancel.
      */
-    fun snapshotPaused(key: TaskKey, config: TaskConfig) {
+    fun snapshotPaused(key: TaskKey, config: TaskConfig, remainingInitialDelayMs: Long? = null) {
+        val settingsKey = pausedKey(key)
+        updateStatic { it + (settingsKey to config) }
+        updateStaticDelay { if (remainingInitialDelayMs != null) it + (settingsKey to remainingInitialDelayMs) else it - settingsKey }
+        put(settingsKey, encode(config))
+        put(delayKey(key), remainingInitialDelayMs?.toString() ?: "")
+    }
+
+    /** A config change during a pause: replaces the snapshot's config and keeps its remaining initial delay. */
+    fun updatePausedConfig(key: TaskKey, config: TaskConfig) {
         val settingsKey = pausedKey(key)
         updateStatic { it + (settingsKey to config) }
         put(settingsKey, encode(config))
@@ -46,14 +59,27 @@ class AppliedConfigLedger(private val settings: Settings) {
     fun pausedSnapshot(key: TaskKey): PausedSnapshot? {
         val settingsKey = pausedKey(key)
         val config = inMemory.load()[settingsKey] ?: get(settingsKey)
-        return config?.let { PausedSnapshot(it) }
+        val delay = inMemoryDelay.load()[settingsKey] ?: getDelay(key)
+        return config?.let { PausedSnapshot(it, delay) }
     }
 
     fun clearPausedSnapshot(key: TaskKey) {
         val settingsKey = pausedKey(key)
         updateStatic { it - settingsKey }
+        updateStaticDelay { it - settingsKey }
         remove(settingsKey)
+        remove(delayKey(key))
     }
+
+    private fun getDelay(key: TaskKey): Long? = try {
+        settings.getString(delayKey(key), "").toLongOrNull()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
+
+    private fun delayKey(key: TaskKey): String = TaskKeyEncoding.settingsKey(PAUSED_DELAY_PREFIX, key)
 
     /** `cancel` / disable: forgets both the applied record and any snapshot for [key]. */
     fun clear(key: TaskKey) {
@@ -99,9 +125,19 @@ class AppliedConfigLedger(private val settings: Settings) {
     companion object {
         /** Distinct from `task_applied_<kind>.`: a kind never contains `_`, so `paused_` cannot be a kind prefix. */
         private const val PAUSED_PREFIX = "task_applied_paused"
+        private const val PAUSED_DELAY_PREFIX = "task_applied_pauseddelay"
 
         // Copy-on-write; shared by every ledger in the process so a no-op Settings still restores in-process.
         private val inMemory = AtomicReference<Map<String, TaskConfig>>(emptyMap())
+
+        private val inMemoryDelay = AtomicReference<Map<String, Long>>(emptyMap())
+
+        private fun updateStaticDelay(transform: (Map<String, Long>) -> Map<String, Long>) {
+            while (true) {
+                val current = inMemoryDelay.load()
+                if (inMemoryDelay.compareAndSet(current, transform(current))) return
+            }
+        }
 
         private fun updateStatic(transform: (Map<String, TaskConfig>) -> Map<String, TaskConfig>) {
             while (true) {
@@ -111,6 +147,6 @@ class AppliedConfigLedger(private val settings: Settings) {
         }
 
         /** Test hook: drops the process-static snapshot copy so suites do not leak state into each other. */
-        fun clearProcessStatic() { inMemory.store(emptyMap()) }
+        fun clearProcessStatic() { inMemory.store(emptyMap()); inMemoryDelay.store(emptyMap()) }
     }
 }

@@ -18,7 +18,9 @@ import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.model.StorageMoveOperation
 import dev.stapler.stelekit.platform.GitWorktreeLocks
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 
 /** Same read+write flag pair `MainActivity.takePersistableUriPermission` grants a tree URI with. */
@@ -86,7 +88,8 @@ class AndroidGraphMoveQuiesceStrategy(
     private val heldLocks = ConcurrentHashMap<String, Mutex>()
 
     override suspend fun quiesce(op: StorageMoveOperation): Either<DomainError.StorageError, Unit> {
-        pauseBackgroundSync(op.graphId)
+        // The lambda reads WorkInfo with a blocking get(); keep it off the caller's (possibly main) dispatcher.
+        withContext(Dispatchers.IO) { pauseBackgroundSync(op.graphId) }
 
         val target = shadowWorktreeTarget(op)
         if (target != null) {
@@ -160,7 +163,7 @@ class AndroidGraphMoveQuiesceStrategy(
                 if (lock.isLocked) lock.unlock()
             }
         }
-        resumeBackgroundSync(op.graphId)
+        withContext(Dispatchers.IO) { resumeBackgroundSync(op.graphId) }
     }
 
     override suspend fun releaseSourceGrant(source: StorageLocation) {
