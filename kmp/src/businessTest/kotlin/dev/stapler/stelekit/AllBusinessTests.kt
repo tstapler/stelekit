@@ -713,6 +713,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.fixtures.ClosetFixtureTest::class,
     dev.stapler.stelekit.fusion.FixtureRegistryTest::class,
     dev.stapler.stelekit.fusion.ClosetInvariantTest::class,
+    dev.stapler.stelekit.sketchimport.KsoupSvgSpikeTest::class,
     PrivateStringGuardTest::class,
     GoldenFileGuardTest::class,
     GitSyncCoordinatorJobsTest::class,
