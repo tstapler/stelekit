@@ -28,12 +28,13 @@ object CheckedMath {
 
     fun mulExact(a: Long, b: Long): Either<ArithmeticError.Overflow, Long> {
         if (a == 0L || b == 0L) return 0L.right()
-        if ((a == Long.MIN_VALUE && b == -1L) || (b == Long.MIN_VALUE && a == -1L)) {
-            return ArithmeticError.Overflow.left()
-        }
+        if (isMinTimesMinusOne(a, b) || isMinTimesMinusOne(b, a)) return ArithmeticError.Overflow.left()
         val r = a * b
         return if (r / b != a) ArithmeticError.Overflow.left() else r.right()
     }
+
+    /** `Long.MIN_VALUE * -1` overflows but also traps the `r / b` check below on some targets. */
+    private fun isMinTimesMinusOne(x: Long, y: Long): Boolean = x == Long.MIN_VALUE && y == -1L
 
     /** Greatest common divisor of the magnitudes; neither input may be `Long.MIN_VALUE`. */
     fun gcd(a: Long, b: Long): Long {
