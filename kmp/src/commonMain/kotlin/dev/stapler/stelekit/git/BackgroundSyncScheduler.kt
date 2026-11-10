@@ -33,7 +33,5 @@ class BackgroundSyncSchedulerFactory(
     }
 }
 
-/** Reports whether the OS is currently restricting background work (battery saver, restricted standby bucket). */
-fun interface BackgroundRestrictionProbe {
-    fun isRestricted(): Boolean
-}
+/** Moved to `jobs.schedule` (now reports a [dev.stapler.stelekit.jobs.schedule.RestrictionReason]); alias keeps existing hosts compiling. */
+typealias BackgroundRestrictionProbe = dev.stapler.stelekit.jobs.schedule.BackgroundRestrictionProbe

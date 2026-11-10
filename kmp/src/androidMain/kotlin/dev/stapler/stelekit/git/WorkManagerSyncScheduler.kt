@@ -18,6 +18,7 @@ import arrow.core.right
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.jobs.schedule.RestrictionReason
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.security.CredentialStore
@@ -282,7 +283,7 @@ private fun dev.stapler.stelekit.db.Git_config.toGitConfig() =
  * "restricted"; Doze is transient and deliberately not reported (it ends on its own).
  */
 class AndroidBackgroundRestrictionProbe(private val context: Context) : BackgroundRestrictionProbe {
-    override fun isRestricted(): Boolean = runCatching {
+    override fun restriction(): RestrictionReason = runCatching {
         val power = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
         val activity = context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
         val usage = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
@@ -293,8 +294,13 @@ class AndroidBackgroundRestrictionProbe(private val context: Context) : Backgrou
         val bucketRestricted = usage != null && usage.appStandbyBucket >= STANDBY_BUCKET_RESTRICTED
         val appRestricted = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P &&
             activity?.isBackgroundRestricted == true
-        power?.isPowerSaveMode == true || appRestricted || bucketRestricted
-    }.getOrDefault(false)
+        when {
+            appRestricted -> RestrictionReason.AppRestricted
+            bucketRestricted -> RestrictionReason.StandbyRestricted
+            power?.isPowerSaveMode == true -> RestrictionReason.BatterySaver
+            else -> RestrictionReason.None
+        }
+    }.getOrDefault(RestrictionReason.None)
 
     private companion object {
         /** `UsageStatsManager.STANDBY_BUCKET_RESTRICTED` (API 28). */
