@@ -696,5 +696,7 @@ import org.junit.runners.Suite
     DomainLayerAuditTest::class,
     dev.stapler.stelekit.units.RationalExamplesTest::class,
     dev.stapler.stelekit.units.RationalPropertyTest::class,
+    dev.stapler.stelekit.platform.AtomicFileWriterTest::class,
+    dev.stapler.stelekit.platform.PlatformLayerAuditTest::class,
 )
 class AllBusinessTests

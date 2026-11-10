@@ -12,6 +12,7 @@ import platform.Foundation.NSUserDomainMask
 import platform.Foundation.NSURL
 
 actual class PlatformFileSystem actual constructor() : FileSystem {
+    override val supportsTempRenameWrites: Boolean get() = false
     private val maxPathLength = 4096
     private val maxFileSize = 100 * 1024 * 1024
     private val dangerousPatterns = listOf("..", "../", "..\\", "\u0000")
