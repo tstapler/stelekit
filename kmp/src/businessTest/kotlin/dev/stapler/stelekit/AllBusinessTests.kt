@@ -711,6 +711,7 @@ import org.junit.runners.Suite
     HomeSketchFixtureVisibilityTest::class,
     SketchMigrationTest::class,
     dev.stapler.stelekit.fixtures.ClosetFixtureTest::class,
+    dev.stapler.stelekit.sketchimport.KsoupSvgSpikeTest::class,
     PrivateStringGuardTest::class,
     GoldenFileGuardTest::class,
     GitSyncCoordinatorJobsTest::class,
