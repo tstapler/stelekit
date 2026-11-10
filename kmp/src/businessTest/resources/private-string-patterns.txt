@@ -1,0 +1,11 @@
+# Structural patterns for the private-string guard (Story 0.2). No names live here: names are in the
+# local denylist, outside the repo. Format: `<name> = <regex>`; the regex must be valid in both
+# Python `re` and Java/Kotlin `Regex` (scripts/ci/private-string-guard.py, PrivateStringGuardTest).
+street-address-numbered = \b\d{2,5}\s+(?:N|S|E|W|North|South|East|West)\.?\s+\d{1,3}(?:st|nd|rd|th)\b
+street-address-named = \b\d{2,5}\s+(?:[A-Z][a-z]+\s+){1,2}(?:St|Ave|Rd|Blvd|Dr|Ln|Ct)\b
+home-path = /(?:home|Users)/[A-Za-z0-9._-]+
+wiki-root-path = (?i)(?:~|\$HOME)/[^\s"'`]*wiki
+wiki-pages-path = (?i)\blogseq/(?:pages|journals)/
+email = \b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b
+wiki-link = \[\[[^\]]+\]\]
+title-cased-md-file = \b[A-Z][A-Za-z0-9]+(?: [A-Z][A-Za-z0-9]+)+\.md\b

@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "fixture": "closet",
+  "files": ["fixture-manifest.json"],
+  "dimensionKeyPattern": "^[a-z0-9.-]+$",
+  "vocabulary": ["left", "right"]
+}
