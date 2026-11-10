@@ -4,6 +4,7 @@ package dev.stapler.stelekit.llm
 
 import arrow.core.Either
 import arrow.core.left
+import arrow.core.right
 import dev.stapler.stelekit.db.GraphWriterPort
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Block
@@ -72,6 +73,8 @@ class LlmSuggestionWriter(
             newContent = applyUnlinkedRef(suggestion),
             graphPath = graphPath,
         )
+        // Information only: accepting dismisses it; no graph write of any kind.
+        is PendingLlmSuggestion.ProjectAnalysisAnswer -> Unit.right()
     }
 
     /**
