@@ -743,6 +743,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.jobs.schedule.TaskConfigCodecTest::class,
     dev.stapler.stelekit.jobs.schedule.TaskSettingsStoreMigrationTest::class,
     dev.stapler.stelekit.git.LegacyGitSyncMigrationTest::class,
+    dev.stapler.stelekit.jobs.schedule.TaskRunLogTest::class,
     dev.stapler.stelekit.projectbridge.TableMeasurementExtractorTest::class,
     dev.stapler.stelekit.projectbridge.TableExtractorPropertyTest::class,
     dev.stapler.stelekit.projectbridge.TableExtractorInlineTest::class,

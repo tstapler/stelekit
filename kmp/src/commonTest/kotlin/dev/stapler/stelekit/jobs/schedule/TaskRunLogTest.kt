@@ -1,0 +1,120 @@
+// Copyright (c) 2026 Tyler Stapler
+// SPDX-License-Identifier: Elastic-2.0
+
+package dev.stapler.stelekit.jobs.schedule
+
+import dev.stapler.stelekit.logging.LogManager
+import io.kotest.property.Arb
+import io.kotest.property.arbitrary.string
+import io.kotest.property.checkAll
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class TaskRunLogTest {
+    private val key = TaskKey(TaskKind("git-sync"), TaskScope("g1"))
+    private val state = ConstraintState(online = true, isMetered = true, charging = null)
+
+    private fun record(at: Long, result: TaskRunResult, source: RunSource = RunSource.Background, k: TaskKey = key) =
+        TaskRunRecord(k, source, scheduledAtMs = null, startedAtMs = at, result = result, constraintState = state)
+
+    @Test
+    fun recent_should_keepNewest20NewestFirst_When_25Appended() = runTest {
+        val log = SettingsTaskRunLog(MapSettings(), cap = 20)
+        for (i in 1..25) log.append(record(i.toLong(), TaskRunResult.Success))
+        val recent = log.recent(key)
+        assertEquals(20, recent.size)
+        assertEquals((25L downTo 6L).toList(), recent.map { it.startedAtMs })
+    }
+
+    @Test
+    fun append_should_persistAndLogResultAndMeteredState_When_Skipped() = runTest {
+        val settings = MapSettings()
+        val log = SettingsTaskRunLog(settings)
+        log.append(record(100, TaskRunResult.Skipped("metered")))
+        val persisted = settings.store.getValue(TaskKeyEncoding.runLogKey(RunSource.Background, key))
+        assertTrue("result=Skipped:metered" in persisted && "metered=true" in persisted, persisted)
+        assertTrue(LogManager.logs.value.any { "result=Skipped:metered" in it.message && "metered=true" in it.message && "kind=git-sync" in it.message })
+        assertEquals(record(100, TaskRunResult.Skipped("metered")), log.recent(key).single())
+    }
+
+    @Test
+    fun lastSuccessAtMs_should_ignoreLaterSkipsAndFailures_When_OlderSuccessExists() = runTest {
+        val log = SettingsTaskRunLog(MapSettings())
+        log.append(record(50, TaskRunResult.Success))
+        log.append(record(100, TaskRunResult.Skipped("offline")))
+        log.append(record(200, TaskRunResult.Failed("boom", retryable = true)))
+        assertEquals(50L, log.lastSuccessAtMs(key))
+        assertEquals(50L, TaskRunLogLastSuccessSource(log).lastSuccessAtMs(key))
+        assertNull(log.lastSuccessAtMs(TaskKey(TaskKind("git-sync"), TaskScope("other"))))
+    }
+
+    @Test
+    fun recent_should_returnEmptyAndAppendNotThrow_When_SettingsThrow() = runTest {
+        val settings = MapSettings()
+        val log = SettingsTaskRunLog(settings)
+        log.append(record(1, TaskRunResult.Success))
+        settings.failReads = true
+        assertEquals(emptyList(), log.recent(key))
+        assertNull(log.lastSuccessAtMs(key))
+        log.append(record(2, TaskRunResult.Success))
+        settings.failReads = false
+        settings.failWrites = true
+        log.append(record(3, TaskRunResult.Success))
+    }
+
+    @Test
+    fun recent_should_mergeBothSources_When_InterleavedWriters() = runTest {
+        val log = SettingsTaskRunLog(MapSettings())
+        log.append(record(10, TaskRunResult.Success, RunSource.Background))
+        log.append(record(20, TaskRunResult.Success, RunSource.Foreground))
+        log.append(record(30, TaskRunResult.Skipped("x"), RunSource.Background))
+        log.append(record(40, TaskRunResult.Failed("f"), RunSource.Foreground))
+        assertEquals(listOf(40L, 30L, 20L, 10L), log.recent(key).map { it.startedAtMs })
+        assertEquals(setOf(RunSource.Background, RunSource.Foreground), log.recent(key).map { it.source }.toSet())
+        assertEquals(20L, log.lastSuccessAtMs(key))
+    }
+
+    @Test
+    fun recent_should_capMergedListAt20_When_BothSourcesFull() = runTest {
+        val log = SettingsTaskRunLog(MapSettings(), cap = 20)
+        for (i in 1..20) {
+            log.append(record(i * 2L, TaskRunResult.Success, RunSource.Background))
+            log.append(record(i * 2L + 1, TaskRunResult.Success, RunSource.Foreground))
+        }
+        val recent = log.recent(key)
+        assertEquals(20, recent.size)
+        assertEquals((41L downTo 22L).toList(), recent.map { it.startedAtMs })
+    }
+
+    @Test
+    fun runLogKey_should_neverCollide_When_AnyKindScopeAndSource() = runTest {
+        checkAll(Arb.string(0..12), Arb.string(0..12)) { s1, s2 ->
+            val a = TaskKey(TaskKind("git-sync"), TaskScope(s1))
+            val b = TaskKey(TaskKind("git-sync"), TaskScope(s2))
+            for (sa in RunSource.entries) for (sb in RunSource.entries) {
+                if (sa != sb || s1 != s2) assertNotEquals(TaskKeyEncoding.runLogKey(sa, a), TaskKeyEncoding.runLogKey(sb, b))
+            }
+        }
+        val kinds = listOf("a", "fg", "git-sync", "fg-a").map { TaskKind(it) }
+        val keys = kinds.flatMap { k -> listOf("", "x", "fg_x", "1.x").map { TaskKey(k, TaskScope(it)) } }
+        val all = keys.flatMap { k -> RunSource.entries.map { TaskKeyEncoding.runLogKey(it, k) } }
+        assertEquals(all.size, all.toSet().size)
+    }
+
+    @Test
+    fun codec_should_roundTrip_When_FreeTextHasSeparators() = runTest {
+        val log = SettingsTaskRunLog(MapSettings())
+        checkAll(Arb.string(0..20)) { text ->
+            val r = record(7, TaskRunResult.Failed(text, retryable = true))
+            val decoded = TaskRunRecordCodec.decode(TaskRunRecordCodec.encode(r), key)
+            assertEquals(r, decoded)
+            assertTrue('\n' !in TaskRunRecordCodec.encode(r))
+        }
+        log.append(record(1, TaskRunResult.Partial("a b%20c\nd")))
+        assertEquals(TaskRunResult.Partial("a b%20c\nd"), log.recent(key).single().result)
+    }
+}
