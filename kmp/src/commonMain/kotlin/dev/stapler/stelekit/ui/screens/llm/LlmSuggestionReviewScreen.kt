@@ -188,6 +188,10 @@ fun LlmSuggestionReviewScreen(
                         beforeContent = current.currentContentSnapshot,
                         afterContent = applyUnlinkedRefPreview(current),
                     )
+                    is PendingLlmSuggestion.ProjectAnalysisAnswer -> Text(
+                        text = current.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                 }
             }
         }
@@ -220,6 +224,7 @@ private fun typeBadge(suggestion: PendingLlmSuggestion): String = when (suggesti
     is PendingLlmSuggestion.TagChange -> "Tag Change"
     is PendingLlmSuggestion.NewPage -> "New Note"
     is PendingLlmSuggestion.UnlinkedReference -> "Link"
+    is PendingLlmSuggestion.ProjectAnalysisAnswer -> "Project answer"
 }
 
 private fun applyLabel(suggestion: PendingLlmSuggestion): String = when (suggestion) {
@@ -227,6 +232,7 @@ private fun applyLabel(suggestion: PendingLlmSuggestion): String = when (suggest
     is PendingLlmSuggestion.TagChange -> "Apply"
     is PendingLlmSuggestion.NewPage -> "Create"
     is PendingLlmSuggestion.UnlinkedReference -> "Link"
+    is PendingLlmSuggestion.ProjectAnalysisAnswer -> "Done"
 }
 
 private fun applyUnlinkedRefPreview(s: PendingLlmSuggestion.UnlinkedReference): String {

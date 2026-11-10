@@ -35,6 +35,10 @@ class PostSyncProjectJob(
     private val deps: ProjectBridgeDeps,
     private val collector: ProjectSourceCollector = ProjectSourceCollector(),
     private val barrier: SettleBarrier = SettleBarrier(deps.isGitSyncBusy, deps.pageSettleProbe),
+    /** Null until the app wires an LLM; the step itself is also gated per graph (Story 5.6b). */
+    private val analysisStep: ProjectAnalysisStep? = null,
+    /** The fused digest and payload for the graph's project; null while the collector yields nothing. */
+    private val outputsProvider: suspend (graphId: String) -> ProjectOutputs? = { null },
 ) {
     /** [syncLeftLfsFiles] is read after the barrier, when the sync has published its final state. */
     suspend fun run(graphId: String, syncLeftLfsFiles: () -> Boolean): PostSyncRunOutcome {
@@ -54,8 +58,14 @@ class PostSyncProjectJob(
                     handle.fail(UNAVAILABLE)
                     PostSyncRunOutcome.DigestUnavailable
                 } else {
-                    handle.succeed()
-                    PostSyncRunOutcome.Completed(settle.unloaded)
+                    val analysis = runAnalysis(graphId)
+                    if (analysis is AnalysisStepOutcome.Blocked || analysis is AnalysisStepOutcome.Failed) {
+                        handle.fail(analysisReason(analysis))
+                        PostSyncRunOutcome.Failed("project analysis")
+                    } else {
+                        handle.succeed()
+                        PostSyncRunOutcome.Completed(settle.unloaded)
+                    }
                 }
             }
         } catch (e: CancellationException) {
@@ -66,6 +76,18 @@ class PostSyncProjectJob(
             handle.fail("project digest failed ($type)")
             PostSyncRunOutcome.Failed(type)
         }
+    }
+
+    private suspend fun runAnalysis(graphId: String): AnalysisStepOutcome {
+        val step = analysisStep ?: return AnalysisStepOutcome.Skipped
+        val outputs = outputsProvider(graphId) ?: return AnalysisStepOutcome.Skipped
+        return step.run(graphId, outputs)
+    }
+
+    private fun analysisReason(outcome: AnalysisStepOutcome): String = when (outcome) {
+        is AnalysisStepOutcome.Blocked -> outcome.reason
+        is AnalysisStepOutcome.Failed -> "project analysis failed: ${outcome.reason}"
+        else -> ""
     }
 
     companion object {
