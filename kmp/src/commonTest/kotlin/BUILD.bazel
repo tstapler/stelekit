@@ -144,6 +144,8 @@ kt_jvm_library(
         "dev/stapler/stelekit/projectbridge/TableExtractorInlineTest.kt",
         "dev/stapler/stelekit/ui/assets/AssetImageReferenceTest.kt",
         "dev/stapler/stelekit/ui/PageSelectionTest.kt",
+        "dev/stapler/stelekit/sketch/SketchGesturesTest.kt",
+        "dev/stapler/stelekit/sketch/SketchHistoryTest.kt",
         "dev/stapler/stelekit/sketch/SnapEnginePropertyTest.kt",
         "dev/stapler/stelekit/sketch/ViewTransformTest.kt",
         "dev/stapler/stelekit/units/LengthParserGoldenTest.kt",

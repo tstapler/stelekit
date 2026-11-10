@@ -120,6 +120,8 @@ fun LeftSidebar(
     onOpenSyncStatus: (() -> Unit)? = null,
     onSyncClick: () -> Unit = {},
     onGitSetup: () -> Unit = {},
+    /** The `homeSketch` flag; the Sketch entry does not exist while it is off. */
+    homeSketchEnabled: Boolean = false,
     isGitConfigured: Boolean = false,
     onAuthError: (() -> Unit)? = null,
     /** Epic 2.3: current web-local-folder-livesync [HostAccessState]. [HostAccessState.NotApplicable]
@@ -339,6 +341,9 @@ fun LeftSidebar(
             // Media / Library
             NavigationItem("Gallery", Icons.Default.PhotoLibrary, currentScreen is Screen.Gallery) { onNavigate(Screen.Gallery) }
             NavigationItem("Assets", Icons.Default.FolderOpen, currentScreen is Screen.AssetBrowser) { onNavigate(Screen.AssetBrowser()) }
+            if (homeSketchEnabled) {
+                NavigationItem("Sketch", Icons.Default.Edit, currentScreen is Screen.Sketch) { onNavigate(Screen.Sketch()) }
+            }
 
             Spacer(Modifier.height(4.dp))
 

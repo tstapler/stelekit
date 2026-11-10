@@ -1182,8 +1182,12 @@ class StelekitViewModel(
         }
     }
 
+    /** The `homeSketch` flag, read live; off by default. */
+    val homeSketchEnabled: Boolean get() = dev.stapler.stelekit.projectbridge.ProjectBridgeSettings(platformSettings).homeSketchEnabled
+
     @OptIn(DirectRepositoryWrite::class)
     fun navigateTo(screen: Screen, addToHistory: Boolean = true) {
+        if (screen is Screen.Sketch && !homeSketchEnabled) return
         val navStart = kotlin.time.Clock.System.now().toEpochMilliseconds()
         // addToRecent must run outside the update lambda — it has side effects (launches a
         // coroutine, calls platformSettings) and calls _uiState.update itself, which would
@@ -1220,6 +1224,7 @@ class StelekitViewModel(
                     is Screen.VaultUnlock -> "Vault locked"
                     is Screen.Gallery -> "Opened Gallery"
                     is Screen.AssetBrowser -> "Opened Asset Browser"
+                    is Screen.Sketch -> "Opened Sketch"
                     is Screen.DriveBrowser -> "Opened Google Drive"
                     is Screen.AssetDetail -> "Opened Asset: ${screen.assetUuid.value}"
                     is Screen.AnnotationEditor -> "Opened Annotation Editor"
