@@ -41,6 +41,7 @@ parser: T1
 parsing: T1
 performance: T3
 platform: T3
+projectbridge: T2
 query: T1
 repository: T1
 resilience: T2
