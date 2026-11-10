@@ -1,0 +1,30 @@
+{
+  "$comment": "One budget per Scenario.metric. Evaluated only by scripts/bench-budget-check.js. globalMode report-only keeps every gate non-failing until the B.7b calibration soak; flip it to enforce in that PR. Demote one flaky gate by editing its mode. A gate must name its mutation flag (androidInstrumentedTest Mutations).",
+  "version": 1,
+  "globalMode": "report-only",
+  "entries": {
+    "RapidPlacement.loaderConstructions": { "budget": 1, "comparator": "eq", "mode": "gate", "mutation": "loaderPerPress", "calibratedFromRuns": 0 },
+    "RapidPlacement.decodeCountPerPress": { "budget": 1, "comparator": "lte", "mode": "gate", "mutation": "loupeFullDecode", "calibratedFromRuns": 0 },
+    "RapidPlacement.maxDecodeBytes": { "budget": 2097152, "comparator": "lte", "mode": "report-only", "mutation": "loupeFullDecode", "memory": true, "calibratedFromRuns": 0 },
+    "RapidPlacement.cacheOverflowBytes": { "budget": 0, "comparator": "lte", "mode": "gate", "mutation": "cacheNoLimit", "calibratedFromRuns": 0 },
+    "RapidPlacement.undoDepth": { "budget": 50, "comparator": "lte", "mode": "gate", "mutation": "undoUnbounded", "calibratedFromRuns": 0 },
+    "RapidPlacement.cpuMsPerPlacement": { "budget": 200, "comparator": "lte", "mode": "report-only", "mutation": "busyWaitMove", "calibratedFromRuns": 0 },
+    "RapidPlacement.jankyPct": { "budget": 10, "comparator": "lte", "mode": "report-only", "mutation": "perDrawMeasure", "calibratedFromRuns": 0 },
+    "RapidPlacement.javaRetainedMb": { "budget": 64, "comparator": "lte", "mode": "report-only", "memory": true, "calibratedFromRuns": 0 },
+    "RapidPlacement.nativeDeltaMb": { "budget": 64, "comparator": "lte", "mode": "report-only", "memory": true, "calibratedFromRuns": 0 },
+    "BackgroundIdle.idleCpuPct": { "budget": 10, "comparator": "lte", "mode": "report-only", "mutation": "backgroundBusyLoop", "calibratedFromRuns": 0 },
+    "BackgroundIdle.sustainedCpuPct": { "budget": 60, "comparator": "lte", "mode": "report-only", "mutation": "backgroundBusyLoop", "calibratedFromRuns": 0 },
+    "Process.survived": { "budget": 1, "comparator": "eq", "mode": "gate", "mutation": "exitOnBackground", "calibratedFromRuns": 0 },
+    "Process.badExitReasons": { "budget": 0, "comparator": "eq", "mode": "gate", "mutation": "oomInjection", "calibratedFromRuns": 0 },
+    "LibraryScroll.cacheOverflowBytes": { "budget": 0, "comparator": "lte", "mode": "gate", "mutation": "cacheNoLimit", "calibratedFromRuns": 0 },
+    "LibraryScroll.maxDecodeBytes": { "budget": 4194304, "comparator": "lte", "mode": "report-only", "mutation": "loupeFullDecode", "memory": true, "calibratedFromRuns": 0 },
+    "LibraryScroll.cpuMsPerScreenful": { "budget": 400, "comparator": "lte", "mode": "report-only", "calibratedFromRuns": 0 },
+    "LibraryScroll.javaRetainedMb": { "budget": 96, "comparator": "lte", "mode": "report-only", "memory": true, "calibratedFromRuns": 0 },
+    "LibraryScroll.nativeDeltaMb": { "budget": 96, "comparator": "lte", "mode": "report-only", "memory": true, "calibratedFromRuns": 0 },
+    "LibraryScroll.jankyPct": { "budget": 15, "comparator": "lte", "mode": "report-only", "calibratedFromRuns": 0 },
+    "SwitchChurn.editorReferenceCleared": { "budget": 1, "comparator": "eq", "mode": "report-only", "mutation": "leakStrongRef", "calibratedFromRuns": 0 },
+    "SwitchChurn.heapSlopeMbPerCycle": { "budget": 1, "comparator": "lte", "mode": "report-only", "mutation": "leakStrongRef", "memory": true, "calibratedFromRuns": 0 },
+    "Export.exportedBitmapBytes": { "budget": 50331648, "comparator": "lte", "mode": "report-only", "memory": true, "calibratedFromRuns": 0 },
+    "Export.bakePeakMb": { "budget": 256, "comparator": "lte", "mode": "report-only", "memory": true, "calibratedFromRuns": 0 }
+  }
+}
