@@ -5486,6 +5486,21 @@ public class SteleDatabaseQueries(
   /**
    * @return The number of rows updated.
    */
+  public suspend fun updateAssetMediaType(mediaType: String, uuid: String): Long {
+    val result = driver.execute(-1_314_300_968, """UPDATE asset_index SET media_type = ? WHERE uuid = ?""", 2) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, mediaType)
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(-1_314_300_968) { emit ->
+      emit("asset_index")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
   public suspend fun updateAssetOcrText(ocrText: String?, uuid: String): Long {
     val result = driver.execute(1_232_601_221, """UPDATE asset_index SET ocr_text = ? WHERE uuid = ?""", 2) {
           var parameterIndex = 0

@@ -332,7 +332,7 @@ class AssetBrowserViewModel(
         dismissActionMenu()
         val fileName = asset.filePath.substringAfterLast('/')
         val link = when (asset.mediaType) {
-            AssetMediaType.IMAGE -> "![${fileName}](${asset.relativePath})"
+            AssetMediaType.IMAGE, AssetMediaType.DRAWING -> "![${fileName}](${asset.relativePath})"
             else -> "[${fileName}](${asset.relativePath})"
         }
         clipboardProvider.writeText(link)
