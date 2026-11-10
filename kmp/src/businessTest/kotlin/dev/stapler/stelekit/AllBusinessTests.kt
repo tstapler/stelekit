@@ -712,6 +712,7 @@ import org.junit.runners.Suite
     GooglePhotosFlowTest::class,
     TrackedCopyRunHostTest::class,
     HomeSketchFixtureVisibilityTest::class,
+    dev.stapler.stelekit.fixtures.ClosetFixtureTest::class,
     PrivateStringGuardTest::class,
     GoldenFileGuardTest::class,
     GitSyncCoordinatorJobsTest::class,
@@ -734,5 +735,11 @@ import org.junit.runners.Suite
     DomainLayerAuditTest::class,
     dev.stapler.stelekit.units.RationalExamplesTest::class,
     dev.stapler.stelekit.units.RationalPropertyTest::class,
+    dev.stapler.stelekit.units.LengthParserGoldenTest::class,
+    dev.stapler.stelekit.units.LengthParserPropertyTest::class,
+    dev.stapler.stelekit.fusion.LinearSolverTest::class,
+    dev.stapler.stelekit.fusion.DimensionRegistryTest::class,
+    dev.stapler.stelekit.fusion.FusionEngineTest::class,
+    dev.stapler.stelekit.fusion.LinearSolverPropertyTest::class,
 )
 class AllBusinessTests
