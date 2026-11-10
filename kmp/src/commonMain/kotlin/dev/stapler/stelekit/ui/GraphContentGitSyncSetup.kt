@@ -216,7 +216,7 @@ internal fun rememberGraphContentScheduledSyncControls(
     }.collectAsState(ConfigLoad.Loading)
     val config = (configLoad.value as? ConfigLoad.Loaded)?.config
     val loaded = configLoad.value is ConfigLoad.Loaded
-    val interval = config?.pollIntervalMinutes?.let { effectiveScheduledIntervalMinutes(it, factory.minimumIntervalMinutes) }
+    val interval = config?.pollIntervalMinutes?.let { if (it <= 0) it else effectiveScheduledIntervalMinutes(it, factory.minimumIntervalMinutes) }
     val active = enabled && interval != null && interval > 0
 
     val loopRunning = remember(service) { booleanArrayOf(false) }
