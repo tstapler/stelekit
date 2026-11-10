@@ -357,6 +357,7 @@ class MainActivity : ComponentActivity() {
                         settings, dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime.legacySeed, app.taskRegistry,
                     ),
                     ledger = dev.stapler.stelekit.jobs.schedule.AppliedConfigLedger(settings),
+                    workers = dev.stapler.stelekit.git.GitSyncWorkerBinding.resolver,
                 )
             }
             val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity, fileSystem)

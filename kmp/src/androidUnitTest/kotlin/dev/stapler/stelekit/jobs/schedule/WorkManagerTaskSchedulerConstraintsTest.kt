@@ -5,6 +5,7 @@ package dev.stapler.stelekit.jobs.schedule
 
 import androidx.work.NetworkType
 import dev.stapler.stelekit.git.GitSyncWorker
+import dev.stapler.stelekit.git.GitSyncWorkerBinding
 import dev.stapler.stelekit.jobs.JobKind
 import dev.stapler.stelekit.jobs.JobTags
 import dev.stapler.stelekit.platform.ml.DepthModelDownloader
@@ -54,6 +55,7 @@ class WorkManagerTaskSchedulerConstraintsTest {
         val settings = ContractSettings()
         return WorkManagerTaskScheduler(
             h.context, registry, TaskSettingsStore(ContractSettings(), LegacyConfigSeed.None, registry), AppliedConfigLedger(settings),
+            workers = GitSyncWorkerBinding.resolver,
         )
     }
 
@@ -109,7 +111,7 @@ class WorkManagerTaskSchedulerConstraintsTest {
     @Test
     fun apply_should_removeWorkAndClearLedger_When_Disabled() = runBlocking<Unit> {
         val ledger = AppliedConfigLedger(ContractSettings())
-        val s = WorkManagerTaskScheduler(h.context, registry, TaskSettingsStore(ContractSettings(), LegacyConfigSeed.None, registry), ledger)
+        val s = WorkManagerTaskScheduler(h.context, registry, TaskSettingsStore(ContractSettings(), LegacyConfigSeed.None, registry), ledger, workers = GitSyncWorkerBinding.resolver)
         s.apply(g1, cfg(60))
         assertEquals(cfg(60), ledger.lastApplied(g1))
         s.apply(g1, cfg(60, enabled = false))

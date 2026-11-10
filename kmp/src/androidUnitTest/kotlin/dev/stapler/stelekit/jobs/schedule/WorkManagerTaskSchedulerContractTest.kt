@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.jobs.schedule
 
+import dev.stapler.stelekit.git.GitSyncWorkerBinding
 import dev.stapler.stelekit.platform.Settings
 import org.junit.Before
 import org.junit.runner.RunWith
@@ -22,7 +23,7 @@ class WorkManagerTaskSchedulerContractTest : BackgroundTaskSchedulerContract() {
     }
 
     override fun createScheduler(ledgerSettings: Settings, store: TaskSettingsStore, registry: TaskRegistry): BackgroundTaskScheduler =
-        WorkManagerTaskScheduler(harness.context, registry, store, AppliedConfigLedger(ledgerSettings))
+        WorkManagerTaskScheduler(harness.context, registry, store, AppliedConfigLedger(ledgerSettings), workers = GitSyncWorkerBinding.resolver)
 
     override suspend fun seedExternalPeriodic(scheduler: BackgroundTaskScheduler, key: TaskKey, config: TaskConfig) =
         (scheduler as WorkManagerTaskScheduler).seedExternalPeriodic(key, config)

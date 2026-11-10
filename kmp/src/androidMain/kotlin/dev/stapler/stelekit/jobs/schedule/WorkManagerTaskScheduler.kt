@@ -15,7 +15,6 @@ import androidx.work.OneTimeWorkRequest
 import androidx.work.PeriodicWorkRequest
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
-import dev.stapler.stelekit.git.GitSyncWorker
 import dev.stapler.stelekit.jobs.JobTags
 import dev.stapler.stelekit.jobs.workManagerOrNull
 import dev.stapler.stelekit.logging.Logger
@@ -28,8 +27,8 @@ import java.util.concurrent.TimeUnit
 /**
  * Android adapter over `androidx.work` 2.9.1 (ADR-001, ADR-002, ADR-005).
  *
- * `git-sync` is always enqueued as [GitSyncWorker] (a later `UPDATE` with another class would silently
- * re-point existing jobs, ADR-002 outcome 4); every other kind runs as [TaskWorker]. Periodic work uses
+ * A kind bound by [workers] (the host binds `git-sync` to its existing worker, because a later `UPDATE`
+ * with another class would silently re-point jobs, ADR-002 outcome 4) uses that class; every other kind runs as [TaskWorker]. Periodic work uses
  * `UPDATE` (keeps the work id; interval, flex, initial delay and input data are replaced in place).
  * Every method is guarded: a WorkManager failure is logged, never thrown (CLAUDE.md, Android Throwables).
  */
@@ -39,6 +38,7 @@ class WorkManagerTaskScheduler(
     private val store: TaskSettingsStore,
     private val ledger: AppliedConfigLedger,
     override val capabilities: SchedulerCapabilities = CAPABILITIES,
+    private val workers: WorkerClassResolver = WorkerClassResolver.TaskWorkerOnly,
 ) : BackgroundTaskScheduler {
     private val logger = Logger("WorkManagerTaskScheduler")
 
@@ -201,13 +201,13 @@ class WorkManagerTaskScheduler(
     }
 
     private fun workerClassFor(key: TaskKey): Class<out ListenableWorker> =
-        if (key.kind == GIT_SYNC) GitSyncWorker::class.java else TaskWorker::class.java
+        workers.bindingFor(key.kind)?.workerClass ?: TaskWorker::class.java
 
     private fun inputData(key: TaskKey, network: NetworkPolicy, interval: Int?): Data {
         val b = Data.Builder().putString(TaskWorkKeys.KEY_NETWORK_POLICY, TaskWorkKeys.encode(network))
-        if (key.kind == GIT_SYNC) {
-            b.putString(GitSyncWorker.KEY_GRAPH_ID, key.scope.value)
-            if (interval != null) b.putLong(GitSyncWorker.KEY_INTERVAL_MINUTES, interval.toLong())
+        val binding = workers.bindingFor(key.kind)
+        if (binding != null) {
+            b.putAll(binding.input(key, interval))
         } else {
             b.putString(TaskWorkKeys.KEY_TASK_KIND, key.kind.id).putString(TaskWorkKeys.KEY_TASK_SCOPE, key.scope.value)
         }
