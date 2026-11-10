@@ -28,6 +28,12 @@ package dev.stapler.stelekit
 // runtime classpath for every dev.stapler.stelekit `*Test` class carrying a JUnit `@Test` method
 // and fails if it isn't registered here, so a missing entry is caught by this suite itself
 // instead of relying on someone noticing.
+import dev.stapler.stelekit.projectbridge.SettleBarrierTest
+import dev.stapler.stelekit.projectbridge.ProjectBridgeSettingsTest
+import dev.stapler.stelekit.projectbridge.PostSyncProjectJobEntryPointTest
+import dev.stapler.stelekit.projectbridge.PostSyncProjectCoordinatorTest
+import dev.stapler.stelekit.projectbridge.PostSyncProjectJobFailureTest
+import dev.stapler.stelekit.capture.TargetWriterRouterHolderTest
 import dev.stapler.stelekit.capture.CaptureTargetResolverTest
 import dev.stapler.stelekit.query.QueryExecutorTest
 import dev.stapler.stelekit.capture.InboxFallbackAppenderTest
@@ -194,6 +200,7 @@ import dev.stapler.stelekit.db.IndexDrainSectionFilterTest
 import dev.stapler.stelekit.db.MigrationRunnerCoverageTest
 import dev.stapler.stelekit.db.MigrationRunnerIndexTest
 import dev.stapler.stelekit.db.MigrationRunnerSchemaSyncTest
+import dev.stapler.stelekit.db.SketchMigrationTest
 import dev.stapler.stelekit.db.RelocationStagingDirectoryTest
 import dev.stapler.stelekit.merge.AssetCopierTest
 import dev.stapler.stelekit.merge.LinkClosureTest
@@ -359,6 +366,12 @@ import org.junit.runners.Suite
 
 @RunWith(Suite::class)
 @Suite.SuiteClasses(
+    SettleBarrierTest::class,
+    ProjectBridgeSettingsTest::class,
+    PostSyncProjectJobEntryPointTest::class,
+    PostSyncProjectCoordinatorTest::class,
+    PostSyncProjectJobFailureTest::class,
+    TargetWriterRouterHolderTest::class,
     AllBusinessTestsCompletenessTest::class,
     BlockClipboardTest::class,
     CaptureTargetResolverTest::class,
@@ -696,6 +709,7 @@ import org.junit.runners.Suite
     GooglePhotosFlowTest::class,
     TrackedCopyRunHostTest::class,
     HomeSketchFixtureVisibilityTest::class,
+    SketchMigrationTest::class,
     dev.stapler.stelekit.fixtures.ClosetFixtureTest::class,
     PrivateStringGuardTest::class,
     GoldenFileGuardTest::class,
@@ -705,6 +719,12 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.units.RationalPropertyTest::class,
     dev.stapler.stelekit.platform.AtomicFileWriterTest::class,
     dev.stapler.stelekit.platform.PlatformLayerAuditTest::class,
+    dev.stapler.stelekit.projectbridge.ProjectBridgeSettingsTest::class,
+    dev.stapler.stelekit.projectbridge.SettleBarrierTest::class,
+    dev.stapler.stelekit.projectbridge.PostSyncProjectCoordinatorTest::class,
+    dev.stapler.stelekit.projectbridge.PostSyncProjectJobFailureTest::class,
+    dev.stapler.stelekit.capture.TargetWriterRouterHolderTest::class,
+    dev.stapler.stelekit.projectbridge.PostSyncProjectJobEntryPointTest::class,
     dev.stapler.stelekit.units.LengthParserGoldenTest::class,
     dev.stapler.stelekit.units.LengthParserPropertyTest::class,
     dev.stapler.stelekit.fusion.LinearSolverTest::class,

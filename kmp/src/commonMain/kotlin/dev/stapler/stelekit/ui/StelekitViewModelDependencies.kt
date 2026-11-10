@@ -108,4 +108,8 @@ data class StelekitViewModelDependencies(
      * [blockRepository], and [graphWriter].
      */
     val llmSuggestionWriter: LlmSuggestionWriter? = null,
+
+    // ── Home project sketching (dormant behind the `homeSketch` flag) ────────────
+    /** Null (the default) means no post-sync project job is built. */
+    val projectBridge: dev.stapler.stelekit.projectbridge.ProjectBridgeDeps? = null,
 )

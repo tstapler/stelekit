@@ -13,6 +13,7 @@ enum class JobKind(val label: String) {
     PageCopy("Page copy"),
     StorageMove("Storage move"),
     LfsTransfer("Image transfer"),
+    ProjectDigest("Project digest"),
 }
 
 sealed interface JobState {
