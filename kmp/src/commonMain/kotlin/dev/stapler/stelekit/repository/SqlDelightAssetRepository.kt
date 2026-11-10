@@ -49,7 +49,7 @@ class SqlDelightAssetRepository(
         uuid = AssetUuid(uuid),
         filePath = file_path,
         relativePath = relative_path,
-        mediaType = AssetMediaType.valueOf(media_type),
+        mediaType = AssetMediaType.fromStored(media_type),
         subfolder = subfolder,
         tags = tags.fromJsonList(),
         autoLabels = auto_labels.fromJsonList(),
@@ -88,7 +88,7 @@ class SqlDelightAssetRepository(
         uuid = AssetUuid(uuid),
         filePath = file_path,
         relativePath = relative_path,
-        mediaType = AssetMediaType.valueOf(media_type),
+        mediaType = AssetMediaType.fromStored(media_type),
         subfolder = subfolder,
         tags = tags.fromJsonList(),
         autoLabels = emptyList(),
@@ -303,6 +303,18 @@ class SqlDelightAssetRepository(
         withContext(PlatformDispatcher.DB) {
             try {
                 queries.updateAssetAutoLabels(autoLabels.toJson(), mlTagsSource, uuid.value)
+                Unit.right()
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+            }
+        }
+
+    @DirectRepositoryWrite
+    override suspend fun updateMediaType(uuid: AssetUuid, mediaType: AssetMediaType): Either<DomainError, Unit> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                queries.updateAssetMediaType(mediaType.name, uuid.value)
                 Unit.right()
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {

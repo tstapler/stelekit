@@ -120,6 +120,7 @@ import dev.stapler.stelekit.asset.AssetMoveServiceTest
 import dev.stapler.stelekit.asset.AssetMoveServiceWalTest
 import dev.stapler.stelekit.asset.AssetIndexServiceTest
 import dev.stapler.stelekit.asset.AssetIndexBackfillBoundedTest
+import dev.stapler.stelekit.asset.DrawingExcludedFromCloudTest
 import dev.stapler.stelekit.asset.AssetIndexedBrowseTest
 import dev.stapler.stelekit.asset.AssetIndexingControllerTest
 import dev.stapler.stelekit.asset.AssetIndexingFailurePathsTest
@@ -432,6 +433,7 @@ import org.junit.runners.Suite
     AssetMoveServiceWalTest::class,
     AssetIndexServiceTest::class,
     AssetIndexBackfillBoundedTest::class,
+    DrawingExcludedFromCloudTest::class,
     AssetIndexedBrowseTest::class,
     AssetIndexingControllerTest::class,
     AssetIndexingFailurePathsTest::class,

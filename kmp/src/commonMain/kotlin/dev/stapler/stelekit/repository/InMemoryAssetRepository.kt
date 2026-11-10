@@ -180,6 +180,13 @@ class InMemoryAssetRepository : AssetRepository {
         return Unit.right()
     }
 
+    override suspend fun updateMediaType(uuid: AssetUuid, mediaType: AssetMediaType): Either<DomainError, Unit> {
+        val asset = store.value[uuid.value]
+            ?: return DomainError.DatabaseError.ReadFailed("Asset not found: ${uuid.value}").left()
+        store.value = store.value + (uuid.value to asset.copy(mediaType = mediaType))
+        return Unit.right()
+    }
+
     override suspend fun updateOcrText(uuid: AssetUuid, ocrText: String?): Either<DomainError, Unit> {
         val asset = store.value[uuid.value]
             ?: return DomainError.DatabaseError.ReadFailed("Asset not found: ${uuid.value}").left()
