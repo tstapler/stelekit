@@ -24,7 +24,7 @@ class ClosetFixtureTest {
         val files = Regex("\"files\"\\s*:\\s*\\[([^\\]]*)]").find(manifest)!!.groupValues[1]
             .split(',').map { it.trim().trim('"') }.filter { it.isNotEmpty() }
         assertEquals(
-            setOf("fixture-manifest.json", "closet.yaml", "closet-tables.md", "closet-elevation.svg", "closet-section.svg"),
+            setOf("fixture-manifest.json", "closet.yaml", "closet-tables.md", "closet-elevation.svg", "closet-section.svg", "dimension-map.json"),
             files.toSet(),
         )
         files.forEach { assertTrue(fixture(it).isNotBlank(), "$it is blank") }
