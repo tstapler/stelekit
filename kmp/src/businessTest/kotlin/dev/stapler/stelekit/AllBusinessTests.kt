@@ -685,5 +685,8 @@ import org.junit.runners.Suite
     GooglePhotosFlowTest::class,
     TrackedCopyRunHostTest::class,
     GitSyncCoordinatorJobsTest::class,
+    DomainLayerAuditTest::class,
+    dev.stapler.stelekit.units.RationalExamplesTest::class,
+    dev.stapler.stelekit.units.RationalPropertyTest::class,
 )
 class AllBusinessTests
