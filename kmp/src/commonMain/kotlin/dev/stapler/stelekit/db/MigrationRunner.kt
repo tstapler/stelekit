@@ -850,6 +850,80 @@ object MigrationRunner {
                 "ANALYZE blocks",
             )
         ),
+        // home-sketch Story 2.1: sidecar-backed sketch cache tables (ADR-005). Hash-guarded: a later
+        // column is a NEW migration, never an edit of these.
+        Migration(
+            name = "sketch_tables",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS sketch_projects (
+                    uuid                     TEXT NOT NULL PRIMARY KEY,
+                    slug                     TEXT NOT NULL UNIQUE CHECK (slug GLOB 'proj-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'),
+                    name                     TEXT NOT NULL,
+                    created_at               INTEGER NOT NULL,
+                    settings_json            TEXT NOT NULL,
+                    fusion_results_json      TEXT NOT NULL,
+                    source_hash              TEXT NOT NULL,
+                    last_digest_hash         TEXT NOT NULL,
+                    model_revision           INTEGER NOT NULL,
+                    base_revision            INTEGER NOT NULL,
+                    last_synced_sidecar_hash TEXT
+                )
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS sketch_sheets (
+                    uuid                      TEXT NOT NULL PRIMARY KEY,
+                    project_uuid              TEXT NOT NULL,
+                    kind                      TEXT NOT NULL,
+                    view_direction            TEXT NOT NULL,
+                    unit                      TEXT NOT NULL,
+                    scale_sixteenths_per_unit INTEGER NOT NULL,
+                    source_asset_uuid         TEXT,
+                    layer_json                TEXT NOT NULL,
+                    zones_json                TEXT NOT NULL,
+                    position                  INTEGER NOT NULL
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_sketch_sheets_project ON sketch_sheets(project_uuid)",
+                """
+                CREATE TABLE IF NOT EXISTS sketch_primitives (
+                    uuid       TEXT NOT NULL PRIMARY KEY,
+                    sheet_uuid TEXT NOT NULL,
+                    kind       TEXT NOT NULL,
+                    x1         INTEGER NOT NULL,
+                    y1         INTEGER NOT NULL,
+                    x2         INTEGER NOT NULL,
+                    y2         INTEGER NOT NULL,
+                    name       TEXT NOT NULL,
+                    layer      TEXT NOT NULL,
+                    z          INTEGER NOT NULL
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_sketch_primitives_sheet_z ON sketch_primitives(sheet_uuid, z)",
+                """
+                CREATE TABLE IF NOT EXISTS sketch_dimensions (
+                    uuid          TEXT NOT NULL PRIMARY KEY,
+                    project_uuid  TEXT NOT NULL,
+                    key           TEXT NOT NULL,
+                    kind          TEXT NOT NULL,
+                    value_num     INTEGER NOT NULL,
+                    value_den     INTEGER NOT NULL,
+                    precision_num INTEGER,
+                    precision_den INTEGER,
+                    source_kind   TEXT NOT NULL,
+                    source_ref    TEXT NOT NULL DEFAULT '',
+                    tolerance_num INTEGER NOT NULL,
+                    tolerance_den INTEGER NOT NULL,
+                    locked        INTEGER NOT NULL DEFAULT 0
+                )
+                """,
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_sketch_dimensions_key ON sketch_dimensions(project_uuid, key, source_kind, source_ref)",
+                "CREATE INDEX IF NOT EXISTS idx_sketch_dimensions_project ON sketch_dimensions(project_uuid)",
+                "ANALYZE sketch_sheets",
+                "ANALYZE sketch_primitives",
+                "ANALYZE sketch_dimensions",
+            )
+        ),
     )
 
     /**
