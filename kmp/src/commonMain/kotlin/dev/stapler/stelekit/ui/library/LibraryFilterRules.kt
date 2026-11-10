@@ -1,5 +1,8 @@
 package dev.stapler.stelekit.ui.library
 
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
+
 /** Entry-point filter carried by `Screen.Library` (palette "Show annotated photos", Gallery alias). */
 enum class LibraryFilter { Annotated }
 
@@ -120,10 +123,12 @@ object LibrarySearch {
 
     /**
      * Exact-tag patterns for the tags column, padded with nulls to [LibraryFilterRules.MAX_TAGS]. The column holds
-     * raw `["a","b"]` text written without JSON escaping, so a tag matches as stored.
+     * a JSON array (`encodeTags`), so each tag matches as its JSON-escaped, quoted form: `back\slash` is stored
+     * as `"back\\slash"`.
      */
     fun tagPatterns(tags: Collection<String>): List<String?> {
-        val p = tags.take(LibraryFilterRules.MAX_TAGS).map { "%\"${escapeLike(it)}\"%" }
+        val p = tags.take(LibraryFilterRules.MAX_TAGS)
+            .map { "%${escapeLike(Json.encodeToString(String.serializer(), it))}%" }
         return p + List(LibraryFilterRules.MAX_TAGS - p.size) { null }
     }
 
