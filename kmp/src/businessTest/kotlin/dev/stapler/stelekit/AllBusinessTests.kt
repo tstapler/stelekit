@@ -156,6 +156,7 @@ import dev.stapler.stelekit.asset.pipeline.AssetPipelineCrashLoopBreakerTest
 import dev.stapler.stelekit.asset.pipeline.DefaultAssetPluginsTest
 import dev.stapler.stelekit.asset.pipeline.OcrPluginTest
 import dev.stapler.stelekit.asset.AssetSearchSqlTest
+import dev.stapler.stelekit.asset.AssetTagSearchSqlTest
 import dev.stapler.stelekit.repository.ImageAnnotationTagEscapingTest
 import dev.stapler.stelekit.asset.AssetSearchCloudDescriptionTest
 import dev.stapler.stelekit.asset.CloudDescriptionStorageTest
@@ -499,6 +500,7 @@ import org.junit.runners.Suite
     OcrPluginTest::class,
     PluginRegistryTest::class,
     AssetSearchSqlTest::class,
+    AssetTagSearchSqlTest::class,
     ImageAnnotationTagEscapingTest::class,
     AssetSearchCloudDescriptionTest::class,
     CloudDescriptionStorageTest::class,
