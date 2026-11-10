@@ -136,6 +136,8 @@ kt_jvm_library(
         "dev/stapler/stelekit/platform/image/ImageTiersTest.kt",
         "dev/stapler/stelekit/ui/assets/AssetImageReferenceTest.kt",
         "dev/stapler/stelekit/ui/PageSelectionTest.kt",
+        "dev/stapler/stelekit/units/RationalExamplesTest.kt",
+        "dev/stapler/stelekit/units/RationalPropertyTest.kt",
         "dev/stapler/stelekit/vault/VaultHeaderModelTest.kt",
     ],
     testonly = True,

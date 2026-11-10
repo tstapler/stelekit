@@ -693,5 +693,8 @@ import org.junit.runners.Suite
     PrivateStringGuardTest::class,
     GoldenFileGuardTest::class,
     GitSyncCoordinatorJobsTest::class,
+    DomainLayerAuditTest::class,
+    dev.stapler.stelekit.units.RationalExamplesTest::class,
+    dev.stapler.stelekit.units.RationalPropertyTest::class,
 )
 class AllBusinessTests
