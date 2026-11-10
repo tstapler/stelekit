@@ -687,5 +687,7 @@ import org.junit.runners.Suite
     ScheduledSyncOriginE2ETest::class,
     GitSyncServiceRegistryBalanceTest::class,
     JvmPlatformCapsRootTest::class,
+    dev.stapler.stelekit.jobs.schedule.InProcessTaskSchedulerContractTest::class,
+    dev.stapler.stelekit.jobs.schedule.InProcessTaskSchedulerTest::class,
 )
 class AllJvmTests
