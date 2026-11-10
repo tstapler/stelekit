@@ -114,6 +114,13 @@ java_library(
     resource_strip_prefix = "kmp/src/businessTest/resources",
 )
 
+# Home-sketch fixtures/goldens ("home-sketch/closet/..."), R-FIX; the strip prefix keeps the "home-sketch/" dir.
+java_library(
+    name = "home_sketch_data_as_resources",
+    resources = ["//kmp/src/businessTest/resources:home_sketch_data"],
+    resource_strip_prefix = "kmp/src/businessTest/resources",
+)
+
 # The ReachabilityBaseline copy ("reachability-baseline.txt"); a second strip prefix, so a second library.
 java_library(
     name = "reachability_baseline_as_resource",
@@ -163,6 +170,7 @@ kt_jvm_test(
         ":wiring_kmp_sources_as_resources",
         ":wiring_androidapp_sources_as_resources",
         ":business_test_data_as_resources",
+        ":home_sketch_data_as_resources",
         ":reachability_baseline_as_resource",
         ":observable_effect",
     ],

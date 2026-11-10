@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Pre-commit hook (installed by `make install-private-string-hook`): scans the staged additions with
+# --require-denylist, so a commit touching the covered paths is refused (exit 2) when the local
+# denylist is missing, and refused (exit 1) on a finding.
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+exec python3 "$root/scripts/ci/private-string-guard.py" --root "$root" --require-denylist --staged

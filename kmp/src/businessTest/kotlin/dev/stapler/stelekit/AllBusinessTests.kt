@@ -350,6 +350,7 @@ import dev.stapler.stelekit.wiring.ObservableEffectCatalogTest
 import dev.stapler.stelekit.wiring.PlantedDeadCodeConstructorTest
 import dev.stapler.stelekit.wiring.WiringAllowlistRenewalTest
 import dev.stapler.stelekit.wiring.WiringCompletenessTest
+import dev.stapler.stelekit.testing.GoldenFileGuardTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
 
@@ -684,6 +685,9 @@ import org.junit.runners.Suite
     GoogleDriveFlowTest::class,
     GooglePhotosFlowTest::class,
     TrackedCopyRunHostTest::class,
+    HomeSketchFixtureVisibilityTest::class,
+    PrivateStringGuardTest::class,
+    GoldenFileGuardTest::class,
     GitSyncCoordinatorJobsTest::class,
 )
 class AllBusinessTests

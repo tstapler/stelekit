@@ -5,3 +5,10 @@ filegroup(
     srcs = glob(["*.txt"]),
     visibility = ["//kmp/src/businessTest/kotlin:__pkg__"],
 )
+
+# Home-sketch fixtures and goldens (Story 0.1); bundled by home_sketch_data_as_resources.
+filegroup(
+    name = "home_sketch_data",
+    srcs = glob(["home-sketch/**/*"]),
+    visibility = ["//kmp/src/businessTest/kotlin:__pkg__"],
+)

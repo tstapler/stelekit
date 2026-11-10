@@ -178,6 +178,26 @@ jobs:
   # The name-based scan fails on a new unreferenced type and prints "baseline can shrink" for a
   # removed one (ADR-002 layer 2). --allowlist ties it to wiring-allowlist.txt: an awaiting-unit
   # class the scan reports must also be in the baseline, and a PR may not lower an entry's renewals.
+  # Structural patterns only here; the title denylist is local (`make ready`), so
+  # titles are unchecked in CI and the local denylist is the control.
+  private-string-guard:
+    name: Private-string guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # merge-base diff against the PR base
+
+      - name: Guard script mutation tests
+        run: python3 -m unittest scripts/ci/private_string_guard_test.py -v
+
+      - name: Scan added lines
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then BASE_SHA=HEAD~1; fi
+          python3 scripts/ci/private-string-guard.py --diff-base "$BASE_SHA"
+
   reachability:
     name: Reachability (baseline ratchet)
     runs-on: ubuntu-latest
