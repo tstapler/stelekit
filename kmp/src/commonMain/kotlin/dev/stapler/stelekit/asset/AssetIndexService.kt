@@ -2,6 +2,7 @@ package dev.stapler.stelekit.asset
 import dev.stapler.stelekit.model.EffectiveNotesPath
 
 import arrow.core.Either
+import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.DatabaseWriteActor
@@ -73,14 +74,18 @@ class AssetIndexService(
         pageUuid: String? = null,
         writeActor: DatabaseWriteActor?,
         fileSystem: FileSystem,
+        intent: AssetIntent = AssetIntent.AUTO,
     ): Either<DomainError, AssetEntry> {
-        val entry = buildAssetEntry(filePath, notesPath, mimeHint, pageUuid, fileSystem)
+        if (DrawingLocationRule.classify(filePath, notesPath) == DrawingLocation.Skip) {
+            return DomainError.ValidationError.ConstraintViolation("sketch-managed file is not an asset").left()
+        }
+        val entry = buildAssetEntry(filePath, notesPath, mimeHint, pageUuid, fileSystem, intent)
         val hash = entry.contentHash
         if (hash != null) {
             val existing = assetRepository.findUuidByContentHash(hash).getOrNull()
             if (existing != null) {
                 val row = assetRepository.getAssetByUuidOnce(existing)
-                if (row != null) return row.right()
+                if (row != null) return upgradeToDrawing(row, entry, writeActor)
             }
         }
         val result = if (writeActor != null) {
@@ -91,12 +96,28 @@ class AssetIndexService(
         return result.map { entry }
     }
 
+    /** Same bytes already indexed as another class: a drawing never stays (or becomes) an `IMAGE` row. */
+    private suspend fun upgradeToDrawing(
+        row: AssetEntry,
+        incoming: AssetEntry,
+        writeActor: DatabaseWriteActor?,
+    ): Either<DomainError, AssetEntry> {
+        if (incoming.mediaType != AssetMediaType.DRAWING || row.mediaType == AssetMediaType.DRAWING) return row.right()
+        val result = if (writeActor != null) {
+            writeActor.execute { @OptIn(DirectRepositoryWrite::class) assetRepository.updateMediaType(row.uuid, AssetMediaType.DRAWING) }
+        } else {
+            @OptIn(DirectRepositoryWrite::class) assetRepository.updateMediaType(row.uuid, AssetMediaType.DRAWING)
+        }
+        return result.map { row.copy(mediaType = AssetMediaType.DRAWING) }
+    }
+
     private fun buildAssetEntry(
         filePath: String,
         notesPath: EffectiveNotesPath,
         mimeHint: String? = null,
         pageUuid: String? = null,
         fileSystem: FileSystem,
+        intent: AssetIntent = AssetIntent.AUTO,
     ): AssetEntry {
         val filename = filePath.substringAfterLast('/')
         val knownSize = try { fileSystem.getFileSize(filePath) } catch (_: Exception) { null }
@@ -107,7 +128,10 @@ class AssetIndexService(
         }
         val head = fileBytes?.copyOf(minOf(MIME_SNIFF_BYTES, fileBytes.size)) ?: ByteArray(0)
         val mime = mimeHint ?: MimeTypeDetector.detect(head, filename)
-        val mediaType = AssetMediaType.fromMimeType(mime)
+        val isDrawing = intent == AssetIntent.DRAWING ||
+            DrawingLocationRule.classify(filePath, notesPath) == DrawingLocation.Drawing ||
+            DrawingContentSniffer.isSketchExport(fileBytes, filename, mime)
+        val mediaType = if (isDrawing) AssetMediaType.DRAWING else AssetMediaType.fromMimeType(mime)
         val subfolder = AssetStoragePathResolver.resolveSubfolder(mime)
         // The row mirrors where the file really is (attachments land flat in assets/), so a later
         // move rewrites the reference the pages actually contain.
@@ -192,10 +216,11 @@ class AssetIndexService(
             return
         }
 
-        val total = walkFiles(assetsDir, fileSystem).count()
+        val indexable = { path: String -> DrawingLocationRule.classify(path, notesPath) != DrawingLocation.Skip }
+        val total = walkFiles(assetsDir, fileSystem).count(indexable)
         var done = 0
         publish(run, AssetIndexProgress.Indexing(done, total))
-        for (batch in walkFiles(assetsDir, fileSystem).chunked(BACKFILL_BATCH_SIZE)) {
+        for (batch in walkFiles(assetsDir, fileSystem).filter(indexable).chunked(BACKFILL_BATCH_SIZE)) {
             processBatch(batch, notesPath, writeActor, fileSystem)
             done += batch.size
             publish(run, AssetIndexProgress.Indexing(done, maxOf(total, done)))

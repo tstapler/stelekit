@@ -1228,6 +1228,9 @@ UPDATE asset_index SET tags = :tags WHERE uuid = :uuid;
 updateAssetAutoLabels:
 UPDATE asset_index SET auto_labels = :autoLabels, ml_tags_source = :mlTagsSource WHERE uuid = :uuid;
 
+updateAssetMediaType:
+UPDATE asset_index SET media_type = :mediaType WHERE uuid = :uuid;
+
 updateAssetOcrText:
 UPDATE asset_index SET ocr_text = :ocrText WHERE uuid = :uuid;
 
