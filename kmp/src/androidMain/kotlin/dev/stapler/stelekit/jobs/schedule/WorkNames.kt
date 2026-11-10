@@ -31,6 +31,9 @@ object TaskWorkKeys {
     const val KEY_TASK_KIND = "task_kind"
     const val KEY_TASK_SCOPE = "task_scope"
 
+    /** Failure output-data key a one-shot's terminal failure carries; same value `DepthModelDownloader` already reads. */
+    const val KEY_ERROR = "error"
+
     fun encode(policy: NetworkPolicy): String = when (policy) {
         NetworkPolicy.Any -> "any"
         NetworkPolicy.Unmetered -> "unmetered"

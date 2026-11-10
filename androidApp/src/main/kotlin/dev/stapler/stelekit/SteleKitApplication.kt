@@ -59,6 +59,12 @@ class SteleKitApplication : Application() {
         dev.stapler.stelekit.platform.diagnostics.EditorDiagnosticsSampler.create()
     }
 
+    /**
+     * The one [dev.stapler.stelekit.jobs.schedule.TaskRegistry] for the process, shared with MainActivity's
+     * scheduler. Populated only in [onCreate]; a worker cold-started by WorkManager sees it after that runs.
+     */
+    val taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry()
+
     /** Runs cross-graph copies in an application-owned scope so they survive Activity teardown. */
     val copyRunHost: dev.stapler.stelekit.merge.CopyRunHost = dev.stapler.stelekit.merge.AndroidCopyRunHost()
 
@@ -217,6 +223,8 @@ class SteleKitApplication : Application() {
         installPersistentLogging()
         try {
             dev.stapler.stelekit.platform.NetworkMonitor.init(this)
+            dev.stapler.stelekit.jobs.schedule.registerAndroidTasks(taskRegistry)
+            dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime.knownScopes = dev.stapler.stelekit.db.GraphRegistryKnownScopes(PlatformSettings())
             // Debug/internal builds expose the Asset indexing switch; release variants stay hidden
             // until the heap-gate flip PR (AssetBuildFlags.RELEASE_TOGGLE_VISIBLE).
             dev.stapler.stelekit.asset.pipeline.AssetBuildFlags.internalBuild =

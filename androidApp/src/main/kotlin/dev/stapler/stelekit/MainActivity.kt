@@ -348,6 +348,17 @@ class MainActivity : ComponentActivity() {
             val gitCloneWorkerLauncher = remember {
                 dev.stapler.stelekit.git.AndroidGitCloneWorkerLauncher(applicationContext)
             }
+            val backgroundTaskScheduler = remember {
+                val settings = PlatformSettings()
+                dev.stapler.stelekit.jobs.schedule.WorkManagerTaskScheduler(
+                    context = applicationContext,
+                    registry = app.taskRegistry,
+                    store = dev.stapler.stelekit.jobs.schedule.TaskSettingsStore(
+                        settings, dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime.legacySeed, app.taskRegistry,
+                    ),
+                    ledger = dev.stapler.stelekit.jobs.schedule.AppliedConfigLedger(settings),
+                )
+            }
             val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity, fileSystem)
             // Null in release variants (GoogleBuildFlags), which hides every Google surface.
             val googleIntegration = remember {
@@ -516,9 +527,9 @@ class MainActivity : ComponentActivity() {
                         onViewModelReady = { vm -> activeViewModel = vm },
                     ),
                     platformIntegrations = StelekitAppPlatformIntegrations(
-                        // Interim: Story 2.2.x replaces this with WorkManagerTaskScheduler.
-                        backgroundTaskScheduler = dev.stapler.stelekit.jobs.schedule.NoopTaskScheduler(),
-                        taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry(),
+                        // The Application's registry is shared, never rebuilt here: kinds register only in onCreate.
+                        backgroundTaskScheduler = backgroundTaskScheduler,
+                        taskRegistry = app.taskRegistry,
                         backgroundSyncSchedulerFactory = BackgroundSyncSchedulerFactory(
                             minimumIntervalMinutes = WorkManagerSyncScheduler.MIN_PERIODIC_INTERVAL_MINUTES.toInt(),
                         ) { graphId -> WorkManagerSyncScheduler(applicationContext, graphId) },

@@ -108,6 +108,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/capture/CaptureTargetResolverTest.kt",
         # PullIndexingTest's fake. Not the whole common_test_fixtures target: it bundles unregistered @Test
         # classes that AllBusinessTestsCompletenessTest would then find on the classpath.
+        "dev/stapler/stelekit/db/GraphRegistryKnownScopesTest.kt",
         "dev/stapler/stelekit/db/sidecar/FakeFileSystem.kt",
         "dev/stapler/stelekit/domain/HtmlBlockConverterTest.kt",
         "dev/stapler/stelekit/error/DomainErrorTest.kt",
