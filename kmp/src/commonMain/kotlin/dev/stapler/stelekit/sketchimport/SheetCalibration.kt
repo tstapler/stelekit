@@ -34,7 +34,7 @@ data class SheetCalibration(
     val viewDirection: ViewDirection,
 )
 
-private val LABEL_LENGTH = Regex("""\d[\d /.'\-]*["']?""")
+internal val LABEL_LENGTH = Regex("""\d[\d /.'\-]*["']?""")
 
 /** Known length from a label such as `Total Width: 136"` or `24" Usable Depth`, in inches. */
 private fun knownInches(label: String): Double? {
