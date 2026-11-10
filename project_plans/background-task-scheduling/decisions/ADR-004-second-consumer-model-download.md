@@ -1,0 +1,21 @@
+# ADR-004: Model download is the second consumer; LFS shares `NetworkPolicy`; port has periodic and one-shot shapes
+
+**Status**: Proposed, revised in repair loop 1
+**Date**: 2026-11-10
+
+## Context
+`DepthModelDownloader` / `DepthModelDownloadWorker` are already standalone WorkManager work tagged `JobKind.ModelDownload`, one-time with `KEEP` and `CONNECTED` (`androidMain/.../platform/ml/DepthModelDownloader.kt:74-87`). LFS transfer runs inside a sync call and consults `LfsTransferPolicy.deferOnMetered`; it is not scheduled work (research/features.md section 2).
+
+## Decision
+- `model-download` (app-wide scope `""`) is scheduled through `BackgroundTaskScheduler.runOnce(key, constraints)`; default `NetworkPolicy.Unmetered` with a "Download now anyway" action that calls `runOnce` with `Any`. Its legacy unique name (`DepthModelDownloader.UNIQUE_WORK_NAME`, `KEEP`) is retained.
+- Periodic shape is proven by `git-sync` plus the contract suite; one-shot shape by `model-download` plus the contract suite. The port offers both.
+- `TaskRunResult.Failed(retryable = true)` maps to `Result.retry()` with WorkManager backoff (model download keeps its attempt cap). Git always returns `retryable = false` (git-sync-resilience ADR-002).
+- A gate `Skipped` on a one-shot is never `Result.success()`: it is `Result.retry()` up to `TaskSpec.oneShotRetryCap`, then `Result.failure(workDataOf(KEY_ERROR to ...))`. There is no callback: `ModelState` is derived from the `WorkInfo` flow in `DepthModelDownloader` and a cold worker has no downloader instance, so the existing collector maps the `FAILED` info plus `KEY_ERROR` to `ModelState.Failed(reason)` and `downloadModel()`'s `awaitTerminal()` always resolves. Skips and real download failures share ONE attempt budget (`runAttemptCount`), with `oneShotRetryCap = DepthModelDownloadWorker.MAX_ATTEMPTS` (5), so the combined worst case is 5 attempts. Periodic skips stay `Result.success()` (the next period retries).
+- `runOnce(key, constraints, onConflict = Keep | Replace)`: "Download now anyway" uses `Replace` (`ExistingWorkPolicy.REPLACE`); the override is per request and never persisted.
+- Owner confirmation pending (non-blocking): default `CONNECTED` -> `UNMETERED`, the "Download now anyway" action and the LFS fail-closed change each land as separate commits.
+- `enabled` is periodic-only (Phase 4 repair, pre-mortem P1-1): `TaskWorker` never consults it for a `OneShot` task, so a fresh install (no store entry, which resolves `enabled=false`) still downloads; an explicit `runOnce` always runs. The one-shot's network policy travels in the enqueue-time input key `KEY_NETWORK_POLICY` (so "Download now anyway" is honoured by the worker's gate), and `DepthModelDownloader` resolves the constraints it passes to `runOnce` from `TaskSettingsStore.read(model-download, "").constraints`, defaulting to `Unmetered` on no entry or a failed read. An end-to-end Robolectric test from empty `Settings` pins this.
+- Foreground notification stays Android-only: an androidMain `TaskForegroundProvider` keyed by kind, honoured only for user-initiated one-shot work; in v1 it only preserves the existing `DepthModelDownloadWorker` notification. It is not in the port, and periodic work never promotes to foreground (Android 14 rule, research/pitfalls.md P9).
+- LFS: `LfsTransferPolicy.deferOnMetered` maps onto the shared `NetworkPolicy` type through `NetworkGate.evaluateMetered` (explicit `online = true`); LFS keeps running inside sync. The change covers `LfsRepositorySupport.kt:45,:144` (`jvmCommonMain`, shared with Desktop) and `AndroidGitRepository.kt`. Unknown fails closed only when `lfsMeteredDetectionSupported` is true (Android); Desktop keeps today's no-defer behaviour because its monitor always returns `null`. Scheduling LFS as its own task is a follow-up.
+
+## Consequences
+`DepthModelDownloadWorkerTest` and the downloader's resume/attempt-cap behaviour must stay green. SAF graphs: model-download is app-wide so unaffected; any future graph-scoped file-writing task must declare `allowedInColdPath = false` in `TaskSpec`.
