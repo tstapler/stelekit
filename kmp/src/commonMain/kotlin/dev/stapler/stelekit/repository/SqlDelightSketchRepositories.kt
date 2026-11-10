@@ -86,7 +86,7 @@ private fun Sketch_primitives.toModel() = SketchPrimitive(
 private fun Sketch_dimensions.toModel() = SketchDimension(
     uuid = uuid, projectUuid = ProjectUuid(project_uuid), key = key, kind = kind,
     value = Rational(value_num, value_den),
-    precision = if (precision_num != null && precision_den != null) Rational(precision_num, precision_den) else null,
+    precision = precision_num?.let { n -> precision_den?.let { d -> Rational(n, d) } },
     sourceKind = source_kind, sourceRef = source_ref, tolerance = Rational(tolerance_num, tolerance_den),
     locked = locked != 0L,
 )
