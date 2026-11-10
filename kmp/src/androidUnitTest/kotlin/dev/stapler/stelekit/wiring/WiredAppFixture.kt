@@ -43,6 +43,8 @@ class WiredAppFixture private constructor(
         notificationManager = NotificationManager(),
         platformIntegrations = StelekitAppPlatformIntegrations(
             backgroundSyncSchedulerFactory = schedulerFactory,
+            backgroundTaskScheduler = dev.stapler.stelekit.jobs.schedule.NoopTaskScheduler(),
+            taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry(),
             platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
             gitRepository = ports.gitRepository,
         ),

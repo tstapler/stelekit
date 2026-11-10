@@ -363,6 +363,8 @@ fun main() {
                     ),
                     platformIntegrations = dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations(
                         backgroundSyncSchedulerFactory = dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory.None,
+                        backgroundTaskScheduler = dev.stapler.stelekit.jobs.schedule.NoopTaskScheduler(),
+                        taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry(),
                         platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
                         // Demo-fallback mode has no persistent OPFS content to write attachments
                         // into (matches graphMoveQuiesceStrategy/hostLinkStep/insufficientSpaceCheck's
@@ -512,6 +514,8 @@ private suspend fun runEphemeralSession() {
                 graphManager = graphManager,
                 platformIntegrations = dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations(
                     backgroundSyncSchedulerFactory = dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory.None,
+                    backgroundTaskScheduler = dev.stapler.stelekit.jobs.schedule.NoopTaskScheduler(),
+                    taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry(),
                         platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
                     attachmentService = WasmMediaAttachmentService(fileSystem),
                     gitRepository = wasmGitRepository,

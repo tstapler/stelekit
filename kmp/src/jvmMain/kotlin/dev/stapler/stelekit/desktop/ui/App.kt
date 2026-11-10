@@ -28,6 +28,8 @@ fun App(
             deps = StelekitAppDeps(
                 platformIntegrations = dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations(
                     backgroundSyncSchedulerFactory = dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory.None,
+                    backgroundTaskScheduler = dev.stapler.stelekit.jobs.schedule.NoopTaskScheduler(),
+                    taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry(),
                     platformCaps = dev.stapler.stelekit.platform.ml.jvmPlatformCaps(),
                 ),
                 coreServices = StelekitAppCoreServices(

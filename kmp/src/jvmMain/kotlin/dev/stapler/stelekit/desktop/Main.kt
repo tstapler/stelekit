@@ -219,6 +219,21 @@ fun main(args: Array<String>) {
             // null and App.kt's onCancelClone silently no-ops. Owns its own CoroutineScope
             // internally (see JvmGitCloneWorkerLauncher's kdoc), so remember-ing it here is safe.
             val gitCloneWorkerLauncher = remember(gitRepository) { JvmGitCloneWorkerLauncher(gitRepository) }
+            // One registry and one in-process scheduler per window; the scheduler owns its scope, stopped on dispose.
+            val taskRegistry = remember { dev.stapler.stelekit.jobs.schedule.TaskRegistry() }
+            val taskScheduler = remember(taskRegistry) {
+                val settings = dev.stapler.stelekit.platform.PlatformSettings()
+                dev.stapler.stelekit.jobs.schedule.InProcessTaskScheduler(
+                    registry = taskRegistry,
+                    store = dev.stapler.stelekit.jobs.schedule.TaskSettingsStore(
+                        settings, dev.stapler.stelekit.jobs.schedule.LegacyConfigSeed.None, taskRegistry,
+                    ),
+                    ledger = dev.stapler.stelekit.jobs.schedule.AppliedConfigLedger(settings),
+                    runLog = dev.stapler.stelekit.jobs.schedule.SettingsTaskRunLog(settings),
+                    clock = System::currentTimeMillis,
+                )
+            }
+            androidx.compose.runtime.DisposableEffect(taskScheduler) { onDispose { taskScheduler.stop() } }
             val copyHost = remember {
                 dev.stapler.stelekit.ui.screens.copy.copyHostConfigFor(
                     dev.stapler.stelekit.db.DriverFactory().getDatabaseDirectory(),
@@ -237,6 +252,8 @@ fun main(args: Array<String>) {
                     ),
                     platformIntegrations = StelekitAppPlatformIntegrations(
                         backgroundSyncSchedulerFactory = dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory.None,
+                        backgroundTaskScheduler = taskScheduler,
+                        taskRegistry = taskRegistry,
                         platformCaps = dev.stapler.stelekit.platform.ml.jvmPlatformCaps(),
                         cryptoEngine = dev.stapler.stelekit.vault.JvmCryptoEngine(),
                         attachmentService = attachmentService,

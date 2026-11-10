@@ -516,6 +516,9 @@ class MainActivity : ComponentActivity() {
                         onViewModelReady = { vm -> activeViewModel = vm },
                     ),
                     platformIntegrations = StelekitAppPlatformIntegrations(
+                        // Interim: Story 2.2.x replaces this with WorkManagerTaskScheduler.
+                        backgroundTaskScheduler = dev.stapler.stelekit.jobs.schedule.NoopTaskScheduler(),
+                        taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry(),
                         backgroundSyncSchedulerFactory = BackgroundSyncSchedulerFactory(
                             minimumIntervalMinutes = WorkManagerSyncScheduler.MIN_PERIODIC_INTERVAL_MINUTES.toInt(),
                         ) { graphId -> WorkManagerSyncScheduler(applicationContext, graphId) },

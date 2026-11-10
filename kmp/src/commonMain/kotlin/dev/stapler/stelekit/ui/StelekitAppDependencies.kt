@@ -92,6 +92,13 @@ data class StelekitAppPlatformIntegrations(
      */
     val backgroundSyncSchedulerFactory: dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory,
     /**
+     * Neutral background-task scheduler port. No default on purpose: every host names its adapter
+     * (`InProcessTaskScheduler` on Desktop, `NoopTaskScheduler()` where nothing can run in the background).
+     */
+    val backgroundTaskScheduler: dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler,
+    /** Kind-to-task lookup the scheduler runs against. No default: every host passes its registry explicitly. */
+    val taskRegistry: dev.stapler.stelekit.jobs.schedule.TaskRegistry,
+    /**
      * Reports OS background restrictions (battery saver, restricted standby bucket) so Settings can
      * say that closed-app checks are limited. Null means the platform has none to report.
      */
