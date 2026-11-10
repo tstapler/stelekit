@@ -32,6 +32,8 @@ import dev.stapler.stelekit.projectbridge.SettleBarrierTest
 import dev.stapler.stelekit.projectbridge.ProjectBridgeSettingsTest
 import dev.stapler.stelekit.projectbridge.PostSyncProjectJobEntryPointTest
 import dev.stapler.stelekit.projectbridge.PostSyncProjectCoordinatorTest
+import dev.stapler.stelekit.projectbridge.PostSyncProjectJobFailureTest
+import dev.stapler.stelekit.capture.TargetWriterRouterHolderTest
 import dev.stapler.stelekit.capture.CaptureTargetResolverTest
 import dev.stapler.stelekit.query.QueryExecutorTest
 import dev.stapler.stelekit.capture.InboxFallbackAppenderTest
@@ -367,6 +369,8 @@ import org.junit.runners.Suite
     ProjectBridgeSettingsTest::class,
     PostSyncProjectJobEntryPointTest::class,
     PostSyncProjectCoordinatorTest::class,
+    PostSyncProjectJobFailureTest::class,
+    TargetWriterRouterHolderTest::class,
     AllBusinessTestsCompletenessTest::class,
     BlockClipboardTest::class,
     CaptureTargetResolverTest::class,
@@ -713,6 +717,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.projectbridge.ProjectBridgeSettingsTest::class,
     dev.stapler.stelekit.projectbridge.SettleBarrierTest::class,
     dev.stapler.stelekit.projectbridge.PostSyncProjectCoordinatorTest::class,
+    dev.stapler.stelekit.projectbridge.PostSyncProjectJobFailureTest::class,
+    dev.stapler.stelekit.capture.TargetWriterRouterHolderTest::class,
     dev.stapler.stelekit.projectbridge.PostSyncProjectJobEntryPointTest::class,
 )
 class AllBusinessTests
