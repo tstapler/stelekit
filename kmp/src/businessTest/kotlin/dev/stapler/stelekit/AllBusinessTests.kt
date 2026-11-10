@@ -28,6 +28,14 @@ package dev.stapler.stelekit
 // runtime classpath for every dev.stapler.stelekit `*Test` class carrying a JUnit `@Test` method
 // and fails if it isn't registered here, so a missing entry is caught by this suite itself
 // instead of relying on someone noticing.
+import dev.stapler.stelekit.ui.nav.PersistedScreenIdTest
+import dev.stapler.stelekit.ui.nav.NavModelExhaustivenessTest
+import dev.stapler.stelekit.ui.nav.NavLabelUniquenessTest
+import dev.stapler.stelekit.ui.nav.LibraryRedirectTest
+import dev.stapler.stelekit.ui.library.LibraryViewModelStateTest
+import dev.stapler.stelekit.ui.library.LibraryFilterSqlParityTest
+import dev.stapler.stelekit.ui.library.LibraryAnnotatedJoinTest
+import dev.stapler.stelekit.ui.library.LargeLibraryBatchingTest
 import dev.stapler.stelekit.capture.CaptureTargetResolverTest
 import dev.stapler.stelekit.query.QueryExecutorTest
 import dev.stapler.stelekit.capture.InboxFallbackAppenderTest
@@ -359,6 +367,14 @@ import org.junit.runners.Suite
 
 @RunWith(Suite::class)
 @Suite.SuiteClasses(
+    PersistedScreenIdTest::class,
+    NavModelExhaustivenessTest::class,
+    NavLabelUniquenessTest::class,
+    LibraryRedirectTest::class,
+    LibraryViewModelStateTest::class,
+    LibraryFilterSqlParityTest::class,
+    LibraryAnnotatedJoinTest::class,
+    LargeLibraryBatchingTest::class,
     AllBusinessTestsCompletenessTest::class,
     BlockClipboardTest::class,
     CaptureTargetResolverTest::class,
