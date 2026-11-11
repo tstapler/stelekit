@@ -17,17 +17,6 @@ import kotlinx.coroutines.runBlocking
 
 class LlmSynthesisServiceTest {
 
-    private class FakeLlmProvider(
-        override val id: String,
-        override val supportsLongFormOutput: Boolean = true,
-        private val response: LlmResult = LlmResult.Success(""),
-    ) : LlmProvider {
-        override val displayName: String = id
-        override val kind: LlmProviderKind = LlmProviderKind.REMOTE
-        override val formatter: LlmFormatterProvider = LlmFormatterProvider { _, _ -> response }
-        override suspend fun checkAvailability(): LlmProviderAvailability = LlmProviderAvailability.Available
-    }
-
     private class MapSettings : Settings {
         private val map = mutableMapOf<String, Any>()
         override fun getBoolean(key: String, defaultValue: Boolean) = map[key] as? Boolean ?: defaultValue
