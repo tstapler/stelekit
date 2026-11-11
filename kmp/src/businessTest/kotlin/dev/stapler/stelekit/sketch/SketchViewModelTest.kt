@@ -14,6 +14,7 @@ import dev.stapler.stelekit.ui.sketch.SketchPhase
 import dev.stapler.stelekit.ui.sketch.SketchTool
 import dev.stapler.stelekit.ui.sketch.SketchViewModel
 import dev.stapler.stelekit.ui.sketch.VertexRef
+import dev.stapler.stelekit.ui.sketch.moveVertex
 import dev.stapler.stelekit.ui.sketch.vertexAt
 import dev.stapler.stelekit.units.Inches
 import kotlinx.coroutines.ExperimentalCoroutinesApi
