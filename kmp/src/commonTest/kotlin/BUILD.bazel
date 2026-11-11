@@ -152,6 +152,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/ui/assets/AssetImageReferenceTest.kt",
         "dev/stapler/stelekit/ui/PageSelectionTest.kt",
         "dev/stapler/stelekit/sketch/SketchGesturesTest.kt",
+        "dev/stapler/stelekit/sketch/export/SketchExportRoundTripTest.kt",
         "dev/stapler/stelekit/sketch/SketchHistoryTest.kt",
         "dev/stapler/stelekit/sketch/SketchSheetPropsTest.kt",
         "dev/stapler/stelekit/ui/library/LibraryFilterRulesPropertyTest.kt",
