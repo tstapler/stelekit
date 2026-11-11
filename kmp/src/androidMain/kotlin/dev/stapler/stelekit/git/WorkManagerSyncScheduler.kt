@@ -204,6 +204,7 @@ class GitSyncWorker(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
+            Logger("GitSyncWorker").error("git-sync worker failed", e)
             // ADR-002: a second WorkManager-level retry would stack on the git layer's own retry.
             recorded = TaskRunResult.Failed(e.message ?: e::class.simpleName ?: "error", retryable = false)
             return Result.failure()
@@ -216,7 +217,8 @@ class GitSyncWorker(
         (snapshotProviderOverride?.invoke(applicationContext) ?: AndroidNetworkSnapshotProvider(applicationContext)).snapshot()
     } catch (e: CancellationException) {
         throw e
-    } catch (_: Throwable) {
+    } catch (e: Throwable) {
+        Logger("GitSyncWorker").warn("network snapshot unavailable", e)
         null
     }
 

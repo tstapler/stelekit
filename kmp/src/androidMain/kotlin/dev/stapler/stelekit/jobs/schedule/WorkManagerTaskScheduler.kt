@@ -66,7 +66,7 @@ class WorkManagerTaskScheduler(
             builder.addTag(JobTags.title(spec?.title ?: key.kind.id))
             if ((spec?.oneShotRetryCap ?: 0) > 0) builder.setBackoffCriteria(BackoffPolicy.EXPONENTIAL, ONE_SHOT_BACKOFF_SECONDS, TimeUnit.SECONDS)
             val policy = if (onConflict == OneShotConflict.Replace) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP
-            wm.enqueueUniqueWork(key.workName(), policy, builder.build()).result.get()
+            blocking { wm.enqueueUniqueWork(key.workName(), policy, builder.build()).result.get() }
         }
 
     override suspend fun cancel(key: TaskKey) = guarded("cancel ${key.workName()}") {

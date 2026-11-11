@@ -223,6 +223,11 @@ class SteleKitApplication : Application() {
         installPersistentLogging()
         try {
             dev.stapler.stelekit.platform.NetworkMonitor.init(this)
+        } catch (e: Throwable) {
+            // Isolated: a connectivity-monitor failure must not skip task registration and the rest of init.
+            logger.warn("NetworkMonitor init failed; continuing startup", e)
+        }
+        try {
             dev.stapler.stelekit.jobs.schedule.registerAndroidTasks(taskRegistry)
             dev.stapler.stelekit.git.registerGitSyncTask(taskRegistry, cold = dev.stapler.stelekit.git.AndroidColdPathRunner(this))
             // Outside jobs.schedule (ADR-001): platform/ml owns the model-download spec, task and foreground notification.

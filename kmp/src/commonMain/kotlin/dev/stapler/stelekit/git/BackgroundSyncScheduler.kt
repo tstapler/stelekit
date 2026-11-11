@@ -19,6 +19,10 @@ interface BackgroundSyncScheduler {
  * names its value explicitly (the field has no default); hosts with no closed-app scheduling pass
  * [None].
  */
+@Deprecated(
+    "Legacy git-only scheduling seam, kept for one release; schedule through dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler.",
+    ReplaceWith("dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler"),
+)
 class BackgroundSyncSchedulerFactory(
     /** Shortest interval the platform honours; the Settings picker disables anything below it. */
     val minimumIntervalMinutes: Int,
@@ -29,6 +33,7 @@ class BackgroundSyncSchedulerFactory(
 
     companion object {
         /** No closed-app scheduling (desktop, web, iOS, tests that do not exercise it). */
+        @Suppress("DEPRECATION")
         val None = BackgroundSyncSchedulerFactory(minimumIntervalMinutes = 1) { null }
     }
 }

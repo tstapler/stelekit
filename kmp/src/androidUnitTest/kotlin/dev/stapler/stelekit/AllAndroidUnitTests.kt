@@ -7,6 +7,7 @@ import dev.stapler.stelekit.google.AndroidGoogleSupportTest
 import dev.stapler.stelekit.git.AndroidBatterySettingsLauncherTest
 import dev.stapler.stelekit.git.AndroidGitRepositoryTestRemoteTest
 import dev.stapler.stelekit.git.GitSyncBusyCounterSharedWiringTest
+import dev.stapler.stelekit.git.GitSyncTaskRegistrationTest
 import dev.stapler.stelekit.git.GitSyncWorkerGateAndRecordTest
 import dev.stapler.stelekit.git.WorkManagerSyncSchedulerPauseTest
 import dev.stapler.stelekit.git.WorkManagerSyncSchedulerRetryOwnerTest
@@ -75,6 +76,7 @@ import org.junit.runners.Suite
     WorkManagerSyncSchedulerWatchdogTest::class,
     LegacyWorkUpgradeTest::class,
     GitSyncWorkerGateAndRecordTest::class,
+    GitSyncTaskRegistrationTest::class,
     AndroidGitLegacyConfigSourceTest::class,
     PlatformSettingsColdPathTest::class,
     PlatformCapsRootTest::class,
@@ -122,5 +124,9 @@ import org.junit.runners.Suite
     // GitSyncSchedulingEntryPointTest is excluded for the same reason (1): it drives
     // rememberGraphContentScheduledSyncControls through composeRule.setContent. Runs under Gradle.
     // TaskSchedulerAndroidEntryPointTest is excluded for the same reason (1).
+    //
+    // BackgroundTasksSectionTest, TaskRunLogRowsTest and ModelDownloadUiTest (background-task scheduling UI)
+    // are excluded for the same reason (1): they drive composables through ComposeContentTestRule.
+    // They run under Gradle's testDebugUnitTest.
 )
 class AllAndroidUnitTests
