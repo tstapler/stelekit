@@ -73,4 +73,12 @@ class SourceBindingTest {
         assertEquals(SourceBindingKind.PROSE, SourceBindingKind.fromWire("prose"))
         assertNull(SourceBindingKind.fromWire(null))
     }
+
+    @Test
+    fun pickerTextNamesKindsAndFlagsMissingPages() {
+        assertEquals("table", SourcePickerText.kindLabel(SourceBindingKind.TABLE))
+        assertEquals("notes", SourcePickerText.kindLabel(SourceBindingKind.PROSE))
+        assertEquals("Plan (table)", SourcePickerText.boundLabel(BoundSourceRow(SourceBindingKind.TABLE, "p", "Plan")))
+        assertEquals("Missing page (notes)", SourcePickerText.boundLabel(BoundSourceRow(SourceBindingKind.PROSE, "p", null)))
+    }
 }

@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.projectbridge.SourceBindingKind
+import dev.stapler.stelekit.projectbridge.SourcePickerText
 
 /** Picks wiki pages a project reads: a bounded search, then "Table" or "Notes" to bind. Titles show on this device only. */
 @Composable
@@ -37,7 +38,7 @@ fun SourcePagePicker(
         Text("Source pages", style = MaterialTheme.typography.titleMedium)
         state.boundSources.forEach { row ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Text("${row.title ?: "Missing page"} (${row.kind.label()})")
+                Text(SourcePickerText.boundLabel(row))
                 TextButton(onClick = { onUnbind(row.kind, row.pageUuid) }) { Text("Remove") }
             }
         }
@@ -58,9 +59,4 @@ fun SourcePagePicker(
             }
         }
     }
-}
-
-internal fun SourceBindingKind.label(): String = when (this) {
-    SourceBindingKind.TABLE -> "table"
-    SourceBindingKind.PROSE -> "notes"
 }

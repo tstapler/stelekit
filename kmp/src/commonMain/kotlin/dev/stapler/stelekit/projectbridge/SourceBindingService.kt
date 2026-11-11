@@ -17,6 +17,18 @@ import kotlinx.coroutines.flow.first
 /** A search hit; [name] is the page title shown on this device only. */
 data class PickerPage(val uuid: String, val name: String)
 
+/** Display text for the picker, kept out of the composable so it is unit-tested. */
+object SourcePickerText {
+    const val MISSING_TITLE = "Missing page"
+
+    fun kindLabel(kind: SourceBindingKind): String = when (kind) {
+        SourceBindingKind.TABLE -> "table"
+        SourceBindingKind.PROSE -> "notes"
+    }
+
+    fun boundLabel(row: BoundSourceRow): String = "${row.title ?: MISSING_TITLE} (${kindLabel(row.kind)})"
+}
+
 /** A bound source as listed to the owner; the title is resolved from the local database, never stored in the sidecar. */
 data class BoundSourceRow(val kind: SourceBindingKind, val pageUuid: String, val title: String?)
 
