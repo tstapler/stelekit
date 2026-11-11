@@ -7,6 +7,7 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationMethod
+import dev.stapler.stelekit.model.DEFAULT_MEASUREMENT_UNIT
 import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.ImageSensorData
@@ -174,7 +175,7 @@ fun SidecarFile.toDomainAnnotation(): ImageAnnotation {
             confidencePercent = ann.calibrationConfidencePct,
             basisVersion = ann.calibrationBasisVersion,
         ),
-        unit = runCatching { MeasurementUnit.valueOf(ann.unit) }.getOrDefault(MeasurementUnit.METERS),
+        unit = runCatching { MeasurementUnit.valueOf(ann.unit) }.getOrDefault(DEFAULT_MEASUREMENT_UNIT),
         tags = ann.tags,
         sensorData = ImageSensorData(
             latLng = latLngPair,

@@ -8,6 +8,7 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.DEFAULT_MEASUREMENT_UNIT
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.model.ImageAnnotation
@@ -56,7 +57,7 @@ class ImageImportService(
     private val measurementAnnotationRepository: MeasurementAnnotationRepository? = null,
     private val derivativeService: ImageDerivativeService? = null,
     /** Unit a newly imported annotation starts in — the user's global default. */
-    private val defaultUnit: () -> MeasurementUnit = { MeasurementUnit.FEET_INCHES },
+    private val defaultUnit: () -> MeasurementUnit = { DEFAULT_MEASUREMENT_UNIT },
 ) {
 
     /**

@@ -26,6 +26,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -58,6 +59,10 @@ class DepthModelDownloader internal constructor(
         SupervisorJob() + PlatformDispatcher.IO +
             CoroutineExceptionHandler { _, e -> logger.warn("Uncaught in DepthModelDownloader scope", e) },
     )
+
+    // Declared before `init`: the collector can reach onWorkSucceeded() before the constructor finishes, and a
+    // later `= null` initializer would otherwise clobber the job it just stored.
+    @Volatile private var settleJob: Job? = null
 
     init {
         scope.launch {
@@ -99,6 +104,7 @@ class DepthModelDownloader internal constructor(
 
     /** User-initiated cancel: stops the job, drops the partial file and resolves any waiting [downloadModel] caller. */
     fun cancelDownload() {
+        settleJob?.cancel()
         workManagerOrNull()?.cancelUniqueWork(UNIQUE_WORK_NAME)
         runCatching { File(modelFile.parentFile, "${modelFile.name}.part").delete() }
         if (!isModelReady()) _modelState.value = ModelState.Absent
@@ -115,8 +121,6 @@ class DepthModelDownloader internal constructor(
     fun modelFilePath(): String = modelFile.absolutePath
 
     fun isModelReady(): Boolean = readyCheck(modelFile)
-
-    private var settleJob: Job? = null
 
     private fun apply(infos: List<WorkInfo>) {
         // An empty list is WorkManager's "nothing yet" and must not abort a settle already under way.
@@ -150,6 +154,7 @@ class DepthModelDownloader internal constructor(
         settleJob = scope.launch {
             var polls = (settleTimeoutMs / settlePollMs).toInt()
             while (!isModelReady() && polls-- > 0) delay(settlePollMs)
+            ensureActive() // a newer WorkManager state or a cancel must not be overwritten by this stale result
             _modelState.value =
                 if (isModelReady()) ModelState.Ready
                 else ModelState.Failed("The model file went missing after downloading. Try again.")

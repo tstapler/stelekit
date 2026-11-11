@@ -4,7 +4,6 @@
 
 package dev.stapler.stelekit.ui
 
-import dev.stapler.stelekit.platform.defaultMeasurementUnit
 import dev.stapler.stelekit.model.EffectiveNotesPath
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -16,6 +15,8 @@ import dev.stapler.stelekit.db.SidecarManager
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.platform.Settings
+import dev.stapler.stelekit.platform.defaultMeasurementUnit
 import dev.stapler.stelekit.repository.RepositorySet
 import dev.stapler.stelekit.repository.createGraphLoader
 import kotlinx.coroutines.flow.first
@@ -89,7 +90,7 @@ private fun rememberImageIoSetup(
     repos: RepositorySet,
     activeGraphPath: String,
     graphContentLogger: Logger,
-    settings: dev.stapler.stelekit.platform.Settings,
+    settings: Settings,
 ): ImageIoSetup {
     val sidecarManager = remember(activeGraphPath, effectiveFileSystem) {
         val graphPath = activeGraphPath.ifEmpty { null }?.let(::EffectiveNotesPath)

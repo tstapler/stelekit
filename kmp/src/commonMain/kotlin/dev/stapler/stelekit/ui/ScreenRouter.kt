@@ -4,7 +4,6 @@
 
 package dev.stapler.stelekit.ui
 
-import dev.stapler.stelekit.platform.defaultMeasurementUnit
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -41,6 +40,7 @@ import dev.stapler.stelekit.performance.NavigationTracingEffect
 import dev.stapler.stelekit.performance.PercentileSummary
 import dev.stapler.stelekit.performance.QueryStat
 import dev.stapler.stelekit.performance.SerializedSpan
+import dev.stapler.stelekit.platform.defaultMeasurementUnit
 import dev.stapler.stelekit.platform.sensor.SensorModule
 import dev.stapler.stelekit.repository.RepositorySet
 import dev.stapler.stelekit.transfer.qrcode.QrImportService
@@ -420,7 +420,7 @@ internal fun ScreenRouter(
                         writeActor = repos.writeActor,
                         graphPath = appState.currentGraphPath.orEmpty(),
                         mover = assetMover,
-                        defaultUnit = { platformSettings?.defaultMeasurementUnit() ?: dev.stapler.stelekit.model.MeasurementUnit.FEET_INCHES },
+                        defaultUnit = { platformSettings.defaultMeasurementUnit() },
                     )
                 }
                 val annotateScope = rememberCoroutineScope()
