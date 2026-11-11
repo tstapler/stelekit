@@ -443,6 +443,7 @@ internal fun ScreenRouter(
                     AnnotationEditorViewModel(
                         measurementRepository = repos.measurementAnnotationRepository,
                         imageAnnotationRepository = repos.imageAnnotationRepository,
+                        settings = platformSettings,
                     )
                 }
                 DisposableEffect(annotationEditorViewModel) {

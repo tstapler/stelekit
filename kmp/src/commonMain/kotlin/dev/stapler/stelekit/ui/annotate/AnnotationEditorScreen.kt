@@ -575,7 +575,8 @@ fun AnnotationEditorScreen(
                 currentTool = state.currentTool,
                 canUndo = canUndo,
                 canRedo = canRedo,
-                displayUnit = state.imageAnnotation?.unit,
+                // Null until an image is loaded keeps the dropdown hidden, as before.
+                displayUnit = state.selectedUnit.takeIf { state.imageAnnotation != null },
                 onToolSelect = { viewModel.selectTool(it) },
                 onUndo = { viewModel.undo() },
                 onRedo = { viewModel.redo() },
@@ -594,10 +595,7 @@ fun AnnotationEditorScreen(
                         showCalibrationSheet = true
                     }
                 },
-                // TODO: add viewModel.setDisplayUnit(unit) when the ViewModel supports unit changes.
-                // Until then this is intentionally a no-op — the unit dropdown is visible but
-                // selecting a unit has no effect. The unit shown reflects imageAnnotation.unit only.
-                onUnitSelect = {},
+                onUnitSelect = { viewModel.setDisplayUnit(it) },
                 showLabels = showToolLabels,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
