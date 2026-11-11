@@ -482,6 +482,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.platform.diagnostics.ProcStatParserTest::class,
     dev.stapler.stelekit.platform.diagnostics.LogRedactorTest::class,
     dev.stapler.stelekit.ui.annotate.AnnotationEditorCrashGuardTest::class,
+    dev.stapler.stelekit.ui.annotate.AnnotationEditorUnitTest::class,
     dev.stapler.stelekit.ui.annotate.PostKillBannerControllerTest::class,
     dev.stapler.stelekit.ui.annotate.UndoDepthTest::class,
     dev.stapler.stelekit.ui.annotate.UndoHistoryTest::class,
