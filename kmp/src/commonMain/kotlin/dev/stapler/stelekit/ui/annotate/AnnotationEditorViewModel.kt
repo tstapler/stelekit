@@ -835,6 +835,8 @@ class AnnotationEditorViewModel(
         val before = _state.value
         pushUndo(before)
 
+        // Before the state change, so a load landing in between can't re-add the row.
+        sessionTouched.getAndUpdate { it + uuid }
         _state.update { currentSt ->
             currentSt.copy(
                 committedAnnotations = currentSt.committedAnnotations.filter { it.uuid != uuid },
@@ -842,7 +844,6 @@ class AnnotationEditorViewModel(
             )
         }
 
-        sessionTouched.getAndUpdate { it + uuid }
         persistence.submit(onResult = { it.onLeft { err -> logger.error("Failed to delete annotation $uuid: ${err.message}") } }) {
             deleteRow(uuid)
         }
