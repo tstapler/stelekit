@@ -70,7 +70,7 @@ class ActiveTargetWriter(
     private val graphPath: EffectiveNotesPath,
     private val encrypted: Boolean = false,
     private val isPageDirty: suspend (PageUuid) -> Boolean = { graphWriter.hasPendingForPage(it) },
-) : TargetWriter {
+) : TargetWriter, OwnedPageWriter {
 
     override suspend fun readExisting(page: PageKey): Either<DomainError, MergePage?> = guarded {
         val row = findPage(page).getOrReturn { return@guarded it.left() } ?: return@guarded null.right()
@@ -128,6 +128,72 @@ class ActiveTargetWriter(
         }
         val hash = hashOf(path).getOrReturn { return@guarded it.left() } ?: ""
         if (isNew) WriteOutcome.Created(path, hash).right() else WriteOutcome.Updated(path, hash, inserts.size).right()
+    }
+
+    /**
+     * Replaces an app-owned page (ADR-006 scoped exception). [OwnedFileGuard] decides first; a replace
+     * deletes the old blocks and inserts the new ones through the actor, then renders once through
+     * [GraphWriter.savePage]. Any failure restores the old blocks, and the file is only touched by the
+     * final save, so there is no empty-page window on disk. The router holds the `GraphWriteLock`.
+     */
+    override suspend fun replaceOwnedPage(
+        page: PageKey,
+        owned: MergePage,
+        expectedPriorHash: String?,
+    ): Either<DomainError, WriteOutcome> = guarded {
+        val row = findPage(page).getOrReturn { return@guarded it.left() }
+        val path = pathFor(page, row).getOrReturn { return@guarded it.left() }
+        if (row != null && isPageDirty(row.uuid)) return@guarded retryable(WriteRetryReason.PageBeingEdited)
+        val loaded = row?.let { loadExisting(it).getOrReturn { e -> return@guarded e.left() } }
+        if (loaded != null && loaded.fromFile.isNotEmpty()) return@guarded retryable(WriteRetryReason.PageNotLoaded)
+        val tree = loaded?.tree.orEmpty()
+        val fileText = withContext(PlatformDispatcher.IO) { if (fs.fileExists(path)) fs.readFile(path) else null }
+        val existing = if (tree.isEmpty() && fileText.isNullOrBlank()) null
+        else MergePage(page.name, page.isJournal, row?.journalDate, loaded?.properties.orEmpty(), tree.map { it.merge })
+
+        when (val decision = OwnedFileGuard.decide(page.name, fileText, existing, owned, expectedPriorHash)) {
+            is OwnedFileGuard.Decision.Refuse -> refuse(decision.reason).left()
+            OwnedFileGuard.Decision.Unchanged -> WriteOutcome.Unchanged.right()
+            OwnedFileGuard.Decision.Create -> write(page, owned)
+            OwnedFileGuard.Decision.Replace -> {
+                val pageRow = row ?: return@guarded refuse(WriteRefusedReason.NotOwned(page.name)).left()
+                replaceBlocks(pageRow, path, tree.flatMap(ActiveWritePlanner::flatten), owned)
+            }
+        }
+    }
+
+    private suspend fun replaceBlocks(pageRow: Page, path: String, old: List<Block>, owned: MergePage): Either<DomainError, WriteOutcome> {
+        val inserts = mutableListOf<Block>()
+        val ctx = ActiveWritePlanner.Ctx(pageRow.uuid, pageRow.filePath ?: path, Clock.System.now())
+        if (!ActiveWritePlanner.plan(emptyList(), owned.blocks, null, ctx, inserts)) {
+            val detail = ctx.unrenderable?.let { "block '$it' does not survive being written and re-read" } ?: "owned page cannot be planned"
+            return refuse(NotRoundTrippable.InsertedContentChanged(detail)).left()
+        }
+        findCollision(inserts, pageRow.uuid).getOrReturn { return it.left() }?.let {
+            return DomainError.DatabaseError.WriteFailed("uuid collision: block $it already exists on another page").left()
+        }
+        val rendered = LogseqPageSerializer.serialize(pageRow.copy(properties = emptyMap()), inserts)
+        RoundTripGuard.verifyRendered(rendered, owned.copy(properties = emptyMap()), path, owned.isJournal)?.let { return refuse(it).left() }
+
+        deleteBlocks(old).onLeft { e ->
+            restoreOld(inserts, old)
+            return e.stopped().left()
+        }
+        writeActor.saveBlocksDiff(inserts, emptyList()).onLeft { e ->
+            restoreOld(inserts, old)
+            return e.stopped().left()
+        }
+        graphWriter.savePage(pageRow.copy(isContentLoaded = true), inserts, graphPath).onLeft { e ->
+            restoreOld(inserts, old)
+            return e.left()
+        }
+        val hash = hashOf(path).getOrReturn { return it.left() } ?: ""
+        return WriteOutcome.Updated(path, hash, inserts.size).right()
+    }
+
+    private suspend fun restoreOld(inserts: List<Block>, old: List<Block>) {
+        deleteBlocks(inserts)
+        writeActor.saveBlocksDiff(old, emptyList())
     }
 
     override suspend fun deletePageFile(page: PageKey, expectedHash: String): Either<DomainError, Unit> = guarded {

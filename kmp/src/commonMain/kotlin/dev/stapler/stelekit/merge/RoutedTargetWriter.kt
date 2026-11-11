@@ -15,7 +15,7 @@ import dev.stapler.stelekit.model.GraphId
 class RoutedTargetWriter(
     private val router: TargetWriterRouter,
     private val target: GraphId,
-) : TargetWriter {
+) : TargetWriter, OwnedPageWriter {
     override suspend fun readExisting(page: PageKey): Either<DomainError, MergePage?> =
         router.withWriter(target) { it.readExisting(page) }
 
@@ -33,4 +33,10 @@ class RoutedTargetWriter(
         uuids: Set<String>,
         expectedContentHashes: Map<String, String>,
     ): Either<DomainError, RemoveReport> = router.withWriter(target) { it.removeBlocks(page, uuids, expectedContentHashes) }
+
+    override suspend fun replaceOwnedPage(
+        page: PageKey,
+        owned: MergePage,
+        expectedPriorHash: String?,
+    ): Either<DomainError, WriteOutcome> = router.replaceOwnedPage(target, page, owned, expectedPriorHash)
 }

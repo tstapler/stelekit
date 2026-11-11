@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.projectbridge
 
+import dev.stapler.stelekit.fusion.Observation
 import dev.stapler.stelekit.jobs.JobKind
 import kotlinx.coroutines.CancellationException
 
@@ -21,6 +22,9 @@ sealed interface PostSyncRunOutcome {
 
     data class Failed(val errorType: String) : PostSyncRunOutcome
 }
+
+/** The digest text and the LLM payload, both projected from one fusion result so they cannot disagree. */
+data class ProjectOutputs(val digest: String, val payload: LlmPayload)
 
 /**
  * One post-sync pass for a graph. Today the shell only collects (nothing), waits for the database to catch up
@@ -67,5 +71,11 @@ class PostSyncProjectJob(
     companion object {
         const val TITLE = "Project digest"
         const val UNAVAILABLE = "digest unavailable: no writer on this platform"
+
+        /** Seam for the digest-write and LLM stages (Stories 5.4c, 5.6b); nothing calls it until they land. */
+        internal fun projectOutputs(input: DigestInput, observations: List<Observation>): ProjectOutputs = ProjectOutputs(
+            digest = DigestRenderer.render(input),
+            payload = LlmPayloadBuilder.build(input.slug, input.result, input.registry, observations, input.checks),
+        )
     }
 }

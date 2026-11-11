@@ -10,7 +10,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -26,15 +28,18 @@ import dev.stapler.stelekit.llm.LlmFeature
 import dev.stapler.stelekit.llm.LlmProvider
 import dev.stapler.stelekit.llm.LlmProviderRegistry
 import dev.stapler.stelekit.llm.LlmSettings
+import dev.stapler.stelekit.llm.ProjectAnalysisAcknowledgement
 
 private const val AUTO_LABEL = "Auto (recommended)"
 private const val DISABLED_LABEL = "Disabled"
+private const val NOT_CONFIGURED_LABEL = "Not configured"
 
 private fun LlmFeature.displayName(): String = when (this) {
     LlmFeature.VOICE_FORMATTING -> "Voice formatting"
     LlmFeature.TAG_SUGGESTION -> "Tag suggestion"
     LlmFeature.GRAPH_EDIT_SYNTHESIS -> "Graph edit synthesis"
     LlmFeature.CAPTURE_ENRICHMENT -> "Capture enrichment"
+    LlmFeature.PROJECT_ANALYSIS -> "Project analysis"
 }
 
 /**
@@ -57,6 +62,8 @@ fun PerFeatureProviderPicker(
     var availableProviders by remember(feature) { mutableStateOf<List<LlmProvider>?>(null) }
     var selectedId by remember(feature) { mutableStateOf(llmSettings.getSelectedProviderId(feature)) }
     var expanded by remember { mutableStateOf(false) }
+    var pendingAck by remember(feature) { mutableStateOf<LlmProvider?>(null) }
+    val optIn = feature == LlmFeature.PROJECT_ANALYSIS
 
     LaunchedEffect(feature, registry) {
         availableProviders = registry.availableForFeature(
@@ -71,7 +78,8 @@ fun PerFeatureProviderPicker(
     // the first available provider; Disabled uses none).
     val selectedLabel = when (selectedId) {
         LlmProviderRegistry.DISABLED_SENTINEL -> DISABLED_LABEL
-        else -> availableProviders?.firstOrNull { it.id == selectedId }?.displayName ?: AUTO_LABEL
+        else -> availableProviders?.firstOrNull { it.id == selectedId }?.displayName
+            ?: if (optIn) NOT_CONFIGURED_LABEL else AUTO_LABEL
     }
 
     Column(modifier = modifier.fillMaxWidth().padding(vertical = 4.dp)) {
@@ -83,14 +91,16 @@ fun PerFeatureProviderPicker(
                 Icon(Icons.Default.ArrowDropDown, contentDescription = null)
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                DropdownMenuItem(
-                    text = { Text(AUTO_LABEL) },
-                    onClick = {
-                        selectedId = null
-                        llmSettings.setSelectedProviderId(feature, null)
-                        expanded = false
-                    },
-                )
+                if (!optIn) {
+                    DropdownMenuItem(
+                        text = { Text(AUTO_LABEL) },
+                        onClick = {
+                            selectedId = null
+                            llmSettings.setSelectedProviderId(feature, null)
+                            expanded = false
+                        },
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text(DISABLED_LABEL) },
                     onClick = {
@@ -103,14 +113,43 @@ fun PerFeatureProviderPicker(
                     DropdownMenuItem(
                         text = { Text(provider.displayName) },
                         onClick = {
-                            selectedId = provider.id
-                            llmSettings.setSelectedProviderId(feature, provider.id)
                             expanded = false
+                            val modelId = llmSettings.acknowledgementModelId(provider.id)
+                            if (optIn && !llmSettings.isAcknowledged(feature, provider.id, modelId)) {
+                                pendingAck = provider
+                            } else {
+                                selectedId = provider.id
+                                llmSettings.setSelectedProviderId(feature, provider.id)
+                            }
                         },
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     )
                 }
             }
         }
+    }
+
+    pendingAck?.let { provider ->
+        AlertDialog(
+            onDismissRequest = { pendingAck = null },
+            title = { Text(ProjectAnalysisAcknowledgement.TITLE) },
+            text = {
+                Text(
+                    ProjectAnalysisAcknowledgement.text(
+                        kind = provider.kind,
+                        isCustomEndpoint = provider.id in llmSettings.getCustomProviderIds(),
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    llmSettings.acknowledge(feature, provider.id, llmSettings.acknowledgementModelId(provider.id))
+                    llmSettings.setSelectedProviderId(feature, provider.id)
+                    selectedId = provider.id
+                    pendingAck = null
+                }) { Text("I understand") }
+            },
+            dismissButton = { TextButton(onClick = { pendingAck = null }) { Text("Cancel") } },
+        )
     }
 }
