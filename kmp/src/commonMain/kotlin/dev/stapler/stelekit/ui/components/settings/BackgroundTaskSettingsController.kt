@@ -212,10 +212,17 @@ class BackgroundTaskSettingsController(
         if (stored == null || applyFailed(key, stored)) {
             // No partially written state: put the previous entry back when the scheduler could not take the change.
             store.write(key, previous)
+            restoreScheduler(key)
             return SaveResult.Failed
         }
         onSaved(key)
         return SaveResult.Saved
+    }
+
+    /** Best effort: re-applies what the restored entry resolves to, so scheduler and stored settings agree again. */
+    private suspend fun restoreScheduler(key: TaskKey) {
+        val restored = (store.readResult(key) as? TaskReadResult.Ok)?.config ?: return
+        if (applyFailed(key, restored)) logger.warn("could not restore scheduler for ${key.kind.id}/${key.scope.value}")
     }
 
     private fun scheduleFor(current: Schedule, minutes: Int): Schedule = scheduleForInterval(current, minutes)

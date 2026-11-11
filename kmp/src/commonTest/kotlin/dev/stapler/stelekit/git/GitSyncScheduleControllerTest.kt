@@ -209,4 +209,29 @@ class GitSyncScheduleControllerTest {
         assertEquals(Schedule.of(60, 10), config.schedule)
         assertEquals(NetworkPolicy.Unmetered, config.constraints.network)
     }
+
+    @Test
+    fun failedApply_should_restoreSchedulerToPreviousConfig_When_PanelChangeCannotBeApplied() = runTest {
+        val registry = TaskRegistry().apply { register(GitSyncTask.KIND, GitSyncTask.spec, GitSyncTask()) }
+        val fake = scheduler(runsWhenClosed = true)
+        val applied = mutableListOf<TaskConfig>()
+        val flaky = object : dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler by fake {
+            override suspend fun apply(key: TaskKey, config: TaskConfig) {
+                if (config.schedule.intervalMinutes == 60) throw IllegalStateException("scheduler rejected")
+                applied += config
+                fake.apply(key, config)
+            }
+        }
+        val panel = BackgroundTaskSettingsController(store, flaky, registry)
+        val previous = TaskConfig(true, Schedule.of(30, 0), TaskConstraints())
+        store.write(g1, TaskEntry(true, TaskOverrides(previous.schedule, previous.constraints)))
+        assertEquals(dev.stapler.stelekit.ui.components.settings.SaveResult.Saved, panel.setNetwork(g1, NetworkPolicy.Any))
+        applied.clear()
+
+        val result = panel.setInterval(g1, 60)
+
+        assertEquals(dev.stapler.stelekit.ui.components.settings.SaveResult.Failed, result)
+        assertEquals(previous, store.read(g1), "stored entry is restored")
+        assertEquals(previous, applied.lastOrNull(), "the scheduler is put back too, not left on a half-applied state")
+    }
 }
