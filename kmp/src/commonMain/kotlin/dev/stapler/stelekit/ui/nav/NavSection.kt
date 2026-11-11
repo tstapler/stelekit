@@ -5,7 +5,7 @@ import dev.stapler.stelekit.ui.i18n.I18n
 import dev.stapler.stelekit.ui.library.LibraryFilter
 
 /** Platform-free icon identity; renderers map it to an `ImageVector` so the model stays in commonMain. */
-enum class NavIconKey { JOURNALS, ALL_PAGES, FLASHCARDS, UNLINKED_REFS, NOTIFICATIONS, LIBRARY, GRAPH_STATS, GIT_SETUP, LOGS, PERFORMANCE }
+enum class NavIconKey { JOURNALS, ALL_PAGES, FLASHCARDS, UNLINKED_REFS, NOTIFICATIONS, LIBRARY, GRAPH_STATS, GIT_SETUP, LOGS, PERFORMANCE, SKETCH }
 
 /** What activating a row does. Git setup is a dialog, not a [Screen]. */
 sealed interface NavAction {
@@ -32,6 +32,7 @@ data class NavDestinationSpec(
         null -> false
         is Screen.AllPages -> current is Screen.AllPages
         is Screen.Library -> current is Screen.Library
+        is Screen.Sketch -> current is Screen.Sketch
         else -> s == current
     }
 }
@@ -63,6 +64,8 @@ object NavModel {
     val library = NavDestinationSpec("library", NavAction.Open(Screen.Library()), I18n.NAV_LIBRARY, I18n.NAV_LIBRARY_DESC, NavIconKey.LIBRARY)
     val graphStats = NavDestinationSpec("graph-stats", NavAction.Open(Screen.LibraryStats), I18n.NAV_GRAPH_STATS, I18n.NAV_GRAPH_STATS_DESC, NavIconKey.GRAPH_STATS)
     val gitSetup = NavDestinationSpec("git-setup", NavAction.GitSetup, I18n.NAV_GIT_SETUP, I18n.NAV_GIT_SETUP_DESC, NavIconKey.GIT_SETUP)
+    /** Not in [allSpecs]: it exists only while the `homeSketch` flag is on, so the palette never lists it. */
+    val sketch = NavDestinationSpec("sketch", NavAction.Open(Screen.Sketch()), I18n.NAV_SKETCH, I18n.NAV_SKETCH_DESC, NavIconKey.SKETCH)
     val logs = NavDestinationSpec("logs", NavAction.Open(Screen.Logs()), I18n.NAV_LOGS, I18n.NAV_LOGS_DESC, NavIconKey.LOGS)
     val performance = NavDestinationSpec("performance", NavAction.Open(Screen.Performance), I18n.NAV_PERFORMANCE, I18n.NAV_PERFORMANCE_DESC, NavIconKey.PERFORMANCE)
 
@@ -83,6 +86,7 @@ object NavModel {
         is Screen.Notifications -> NavEntry.Destination(notifications)
         is Screen.GlobalUnlinkedReferences -> NavEntry.Destination(unlinkedRefs)
         is Screen.Library -> NavEntry.Destination(library)
+        is Screen.Sketch -> NavEntry.Destination(sketch)
         is Screen.Logs -> NavEntry.Destination(logs)
         is Screen.Performance -> NavEntry.Destination(performance)
         is Screen.Gallery -> NavEntry.NonNavRedirect(Screen.Library(initialFilter = LibraryFilter.Annotated))
@@ -98,11 +102,11 @@ object NavModel {
     }
 
     /** Sections for the sidebar and phone sheet. Developer is appended last and only while active. */
-    fun sections(current: Screen): List<NavSection> {
+    fun sections(current: Screen, homeSketchEnabled: Boolean = false): List<NavSection> {
         val base = listOf(
             NavSection("daily", I18n.NAV_SECTION_DAILY, listOf(journals, allPages, flashcards)),
             NavSection("connections", I18n.NAV_SECTION_CONNECTIONS, listOf(unlinkedRefs, notifications)),
-            NavSection("graph", I18n.NAV_SECTION_GRAPH, listOf(library, graphStats, gitSetup)),
+            NavSection("graph", I18n.NAV_SECTION_GRAPH, listOfNotNull(library, sketch.takeIf { homeSketchEnabled }, graphStats, gitSetup)),
         )
         val developerActive = current is Screen.Logs || current is Screen.Performance
         return if (developerActive) base + NavSection("developer", I18n.NAV_SECTION_DEVELOPER, listOf(logs, performance)) else base

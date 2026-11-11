@@ -372,6 +372,15 @@ internal fun ScreenRouter(
                 )
             }
 
+            is Screen.Sketch -> if (viewModel.homeSketchEnabled && platformSettings != null) {
+                NavigationTracingEffect("Sketch")
+                val graphId = appState.currentGraphId.orEmpty()
+                val projectListViewModel = remember(repos, graphId) {
+                    dev.stapler.stelekit.ui.sketch.projectListViewModelFor(repos.sketchRepositories, repos.writeActor, graphId, platformSettings)
+                }
+                dev.stapler.stelekit.ui.sketch.ProjectListScreen(projectListViewModel)
+            }
+
             is Screen.DriveBrowser -> {
                 NavigationTracingEffect("DriveBrowser")
                 DriveBrowserRoute(google = google, onNavigateBack = { viewModel.goBack() })

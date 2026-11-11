@@ -11,7 +11,7 @@ import kotlin.test.assertEquals
 class NavModelExhaustivenessTest {
     private val expectedKinds = mapOf(
         "Journals" to "row", "Flashcards" to "row", "AllPages" to "row", "LibraryStats" to "row",
-        "Notifications" to "row", "GlobalUnlinkedReferences" to "row", "Library" to "row", "Logs" to "row", "Performance" to "row",
+        "Notifications" to "row", "GlobalUnlinkedReferences" to "row", "Library" to "row", "Sketch" to "row", "Logs" to "row", "Performance" to "row",
         "Gallery" to "redirect", "AssetBrowser" to "redirect",
         "BackgroundJobs" to "nonnav", "Console" to "nonnav", "Import" to "nonnav", "VaultUnlock" to "nonnav",
         "PageView" to "nonnav", "DriveBrowser" to "nonnav", "AssetDetail" to "nonnav", "AnnotationEditor" to "nonnav",
