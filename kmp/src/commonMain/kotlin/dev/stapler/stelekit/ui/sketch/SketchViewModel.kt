@@ -70,7 +70,7 @@ data class SketchUiState(
 }
 
 /**
- * Editor state for one sketch sheet. Owns its scope (see AssetBrowserViewModel): store it with
+ * Editor state for one sketch sheet. Owns its scope (never a composition scope): store it with
  * `remember { }` only. Commits go through [SketchHistory]; a debounced autosave writes the diff
  * through the repositories carrying the revision token, and a rebuilt project (the sidecar
  * reconcile) cancels the pending save and reloads.
