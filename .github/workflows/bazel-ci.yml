@@ -355,9 +355,9 @@ jobs:
           distribution: "temurin"
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "24"
 
       # Restore everywhere, save only from main (see the save step below): the key embeds github.sha,
       # so saving on PRs wrote a fresh ~1.3 GB entry per run that no other PR can read.
