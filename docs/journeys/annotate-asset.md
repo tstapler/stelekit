@@ -22,7 +22,7 @@ heuristic_findings: |
   3. Discoverability (P0, now fixed — see Before/After): `TagEditorPanel.kt` is a fully-built,
      backend-wired image-tagging UI (chip row + autocomplete, backed by
      `AnnotationEditorViewModel.addTag()`/`removeTag()`, lines 755-774, persisted via
-     `persistTagsUpdate`, and consumed downstream by `GalleryScreen.kt`/`GalleryViewModel.kt` for
+     `persistTagsUpdate`, and consumed downstream by the Library (formerly `GalleryScreen.kt`) for
      tag-filter chips and per-image tag display) but had **zero call sites** anywhere in the
      codebase (confirmed by a full-repo grep for `TagEditorPanel(`, matching only its own function
      definition). This is not a placement problem — the feature was unreachable by construction.
@@ -86,7 +86,7 @@ the image.
    composed inside `AnnotationEditorScreen.kt` as a persistent info strip (alongside
    `CalibrationConfidenceBadge`/`GpsMetadataRow`'s existing always-visible placement), wired to
    `viewModel.addTag()`/`removeTag()`. **Before this fix, no such call site existed anywhere in the
-   codebase** — see Before/After below. Tags added here are what `GalleryScreen.kt`'s tag-filter
+   codebase** — see Before/After below. Tags added here are what the Library's tag-filter
    chips read from `ImageAnnotation.tags`.
 5. **Undo/Redo** — `AnnotationToolbar.kt`'s Undo/Redo `IconButton`s dispatch to
    `AnnotationEditorViewModel.undo()`/`redo()`, gated by `canUndo`/`canRedo` (independent of

@@ -15,6 +15,8 @@ import dev.stapler.stelekit.db.SidecarManager
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.platform.Settings
+import dev.stapler.stelekit.platform.defaultMeasurementUnit
 import dev.stapler.stelekit.repository.RepositorySet
 import dev.stapler.stelekit.repository.createGraphLoader
 import kotlinx.coroutines.flow.first
@@ -42,7 +44,7 @@ internal fun rememberGraphContentGraphIoStack(
     graphContentLogger: Logger,
 ): GraphContentGraphIoStack {
     val repos = deps.repos
-    val imageIo = rememberImageIoSetup(effectiveFileSystem, repos, activeGraphPath, graphContentLogger)
+    val imageIo = rememberImageIoSetup(effectiveFileSystem, repos, activeGraphPath, graphContentLogger, deps.platformSettings)
 
     val sidecarManager = imageIo.sidecarManager
     val graphLoader = remember(effectiveFileSystem, repos, sidecarManager, activeGraphPath) {
@@ -88,6 +90,7 @@ private fun rememberImageIoSetup(
     repos: RepositorySet,
     activeGraphPath: String,
     graphContentLogger: Logger,
+    settings: Settings,
 ): ImageIoSetup {
     val sidecarManager = remember(activeGraphPath, effectiveFileSystem) {
         val graphPath = activeGraphPath.ifEmpty { null }?.let(::EffectiveNotesPath)
@@ -107,6 +110,7 @@ private fun rememberImageIoSetup(
                 writeActor = repos.writeActor,
                 measurementAnnotationRepository = repos.measurementAnnotationRepository,
                 derivativeService = dev.stapler.stelekit.platform.image.ImageDerivativeService.shared,
+                defaultUnit = { settings.defaultMeasurementUnit() },
             )
         } else null
     }

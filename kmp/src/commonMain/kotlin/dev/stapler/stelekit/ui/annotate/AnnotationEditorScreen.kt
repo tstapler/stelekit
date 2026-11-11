@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -172,8 +173,8 @@ fun AnnotationEditorScreen(
      * When non-null, the "Estimate depth (AI)" button is enabled and tapping it calls this
      * lambda. The caller (Android activity/fragment) should trigger inference and update the
      * ViewModel's [AnnotationEditorState.depthMap] via [AnnotationEditorViewModel.runDepthEstimation].
-     * When null (estimation not wired on this platform/build), the button is shown disabled with
-     * "Estimation coming soon" rather than silently doing nothing when tapped.
+     * When null (estimation not wired on this platform/build), the panel shows
+     * a "Depth model ready" notice instead of a button that would silently do nothing.
      */
     onEstimateDepth: (() -> Unit)? = null,
     peerCalibration: Pair<String, Calibration>? = null,
@@ -293,6 +294,9 @@ fun AnnotationEditorScreen(
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        // The app shell's top bar and bottom nav already own the system-bar insets; applying them again
+        // here left a blank band above the calibration badge.
+        contentWindowInsets = WindowInsets(0),
     ) { paddingValues ->
         Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
         if (state.error != null) {
@@ -582,7 +586,8 @@ fun AnnotationEditorScreen(
                 currentTool = state.currentTool,
                 canUndo = canUndo,
                 canRedo = canRedo,
-                displayUnit = state.imageAnnotation?.unit,
+                // Null until an image is loaded keeps the dropdown hidden, as before.
+                displayUnit = state.selectedUnit.takeIf { state.imageAnnotation != null },
                 onToolSelect = { viewModel.selectTool(it) },
                 onUndo = { viewModel.undo() },
                 onRedo = { viewModel.redo() },
@@ -601,10 +606,7 @@ fun AnnotationEditorScreen(
                         showCalibrationSheet = true
                     }
                 },
-                // TODO: add viewModel.setDisplayUnit(unit) when the ViewModel supports unit changes.
-                // Until then this is intentionally a no-op — the unit dropdown is visible but
-                // selecting a unit has no effect. The unit shown reflects imageAnnotation.unit only.
-                onUnitSelect = {},
+                onUnitSelect = { viewModel.setDisplayUnit(it) },
                 showLabels = showToolLabels,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -1503,17 +1505,33 @@ internal fun DepthEstimationPanel(
                     }
                 }
 
-                // Model ready — show estimate button. Disabled with "coming soon" copy when the
-                // caller hasn't wired real estimation (onEstimate == null) — an enabled button
-                // that silently no-ops on tap would just relocate this ticket's bug one screen
-                // deeper (see adversarial-review.md Blocker 3).
+                // Model ready. With real estimation wired (onEstimate != null) show the estimate button.
+                // Otherwise the model IS downloaded but nothing can use it yet: say so, as a status line
+                // rather than a greyed-out button, so it reads as success and not as a failed download.
                 modelState is DepthModelUiState.Ready -> {
-                    OutlinedButton(onClick = onEstimate ?: {}, enabled = onEstimate != null) {
-                        Text(
-                            text = if (onEstimate != null) "Estimate depth (AI)" else "Estimation coming soon",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (onEstimate != null) Color.White else Color.White.copy(alpha = 0.5f),
-                        )
+                    if (onEstimate != null) {
+                        OutlinedButton(onClick = onEstimate) {
+                            Text(
+                                text = "Estimate depth (AI)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                            )
+                        }
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF81C784),
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = "Depth model ready — estimation coming in a future update",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                            )
+                        }
                     }
                     // ADR-005 low-confidence warning.
                     if (onEstimate != null) {

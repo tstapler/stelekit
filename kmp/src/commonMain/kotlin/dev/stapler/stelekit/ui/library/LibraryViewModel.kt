@@ -1,5 +1,8 @@
 package dev.stapler.stelekit.ui.library
 
+import arrow.core.Either
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.LibraryRepository
@@ -16,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Snapshot rendered by `LibraryScreen`. Items are the pages loaded so far, in sort order. */
 data class LibraryState(
@@ -32,12 +36,16 @@ data class LibraryState(
     val error: String? = null,
     /** Set when a search of 1 character was ignored (LD-3). */
     val searchHint: Boolean = false,
+    /** Ids of loaded items whose file is gone from disk (rendered as "File missing" tiles). */
+    val missingIds: Set<String> = emptySet(),
+    /** Last failed per-item action (delete); null when none or dismissed. */
+    val actionError: String? = null,
 ) {
     val query: LibraryQuery get() = LibraryQuery(filters, sort)
 }
 
 /**
- * One ViewModel for the merged Library (replaces GalleryViewModel and AssetBrowserViewModel).
+ * One ViewModel for the merged Library (replaces the retired Gallery and Assets screens).
  *
  * Owns its scope, guarded by a [CoroutineExceptionHandler] (an uncaught Throwable kills the process on
  * Android). Reads are one paged keyset query per page plus a debounced capped count; filters and search are
@@ -49,6 +57,10 @@ class LibraryViewModel(
     initialFilters: LibraryFilterState = LibraryFilterState(),
     private val pageSize: Int = LibraryRepository.MAX_PAGE,
     private val searchDebounceMs: Long = SEARCH_DEBOUNCE_MS,
+    /** Null where no file system is wired: nothing is then flagged missing. */
+    private val fileExists: ((String) -> Boolean)? = null,
+    /** Null where deletion is not wired: [deleteItem] is then a no-op. Runs through the write actor. */
+    private val deleteAsset: (suspend (String) -> Either<DomainError, Unit>)? = null,
 ) {
     private val logger = Logger("LibraryViewModel")
     private val scope = CoroutineScope(
@@ -130,8 +142,9 @@ class LibraryViewModel(
                 { e -> if (gen == generation) _state.update { it.copy(isLoading = false, error = e.message) } },
                 { items ->
                     if (gen == generation) _state.update {
-                        it.copy(items = items, isLoading = false, hasMore = items.size >= pageSize)
+                        it.copy(items = items, isLoading = false, hasMore = items.size >= pageSize, missingIds = emptySet())
                     }
+                    if (gen == generation) flagMissing(items, gen)
                 },
             )
         }
@@ -155,10 +168,31 @@ class LibraryViewModel(
                     if (gen == generation) _state.update {
                         it.copy(items = it.items + page, isLoadingMore = false, hasMore = page.size >= pageSize)
                     }
+                    if (gen == generation) flagMissing(page, gen)
                 },
             )
         }
     }
+
+    /** One bounded file-existence check per loaded page, off the main thread. */
+    private suspend fun flagMissing(items: List<LibraryItem>, gen: Int) {
+        val exists = fileExists ?: return
+        val gone = withContext(PlatformDispatcher.IO) { items.filterNot { exists(it.filePath) }.mapTo(mutableSetOf()) { it.id } }
+        if (gone.isNotEmpty() && gen == generation) _state.update { it.copy(missingIds = it.missingIds + gone) }
+    }
+
+    /** Deletes the asset (and so its Library row), then reloads. A failure keeps the item and sets [LibraryState.actionError]. */
+    fun deleteItem(id: String) {
+        val delete = deleteAsset ?: return
+        scope.launch {
+            delete(id).fold(
+                { e -> _state.update { it.copy(actionError = e.message) } },
+                { reload() },
+            )
+        }
+    }
+
+    fun dismissActionError() = _state.update { it.copy(actionError = null) }
 
     private fun loadTags() {
         scope.launch {

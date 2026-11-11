@@ -40,6 +40,7 @@ import dev.stapler.stelekit.performance.NavigationTracingEffect
 import dev.stapler.stelekit.performance.PercentileSummary
 import dev.stapler.stelekit.performance.QueryStat
 import dev.stapler.stelekit.performance.SerializedSpan
+import dev.stapler.stelekit.platform.defaultMeasurementUnit
 import dev.stapler.stelekit.platform.sensor.SensorModule
 import dev.stapler.stelekit.repository.RepositorySet
 import dev.stapler.stelekit.transfer.qrcode.QrImportService
@@ -53,6 +54,7 @@ import dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModel
 import dev.stapler.stelekit.ui.components.*
 import dev.stapler.stelekit.ui.library.LibraryRoute
 import dev.stapler.stelekit.ui.library.LibrarySession
+import dev.stapler.stelekit.ui.library.libraryAssetDeleter
 import dev.stapler.stelekit.ui.nav.LegacyScreenAlias
 import dev.stapler.stelekit.ui.screens.AllPagesScreen
 import dev.stapler.stelekit.ui.screens.AllPagesViewModel
@@ -94,6 +96,8 @@ internal fun ScreenRouter(
     capabilities: EditorCapabilities = EditorCapabilities(),
     onImportImage: (() -> Unit)? = null,
     platformSettings: dev.stapler.stelekit.platform.Settings? = null,
+    /** Lets the Library flag items whose file is gone; null flags nothing. */
+    fileSystem: dev.stapler.stelekit.platform.FileSystem? = null,
     perfSpans: StateFlow<List<SerializedSpan>> = MutableStateFlow(emptyList()),
     perfHistograms: StateFlow<Map<String, PercentileSummary>> = MutableStateFlow(emptyMap()),
     perfQueryStats: StateFlow<List<QueryStat>> = MutableStateFlow(emptyList()),
@@ -142,7 +146,14 @@ internal fun ScreenRouter(
     val suggestionMatcher by viewModel.suggestionMatcher.collectAsState()
 
     // One Library session for the router's lifetime so filters and scroll survive Back from the editor.
-    val librarySession = remember(repos) { LibrarySession(repos.libraryRepository, platformSettings) }
+    val librarySession = remember(repos, fileSystem) {
+        LibrarySession(
+            repos.libraryRepository,
+            platformSettings,
+            fileExists = fileSystem?.let { fs -> { path: String -> fs.fileExists(path) } },
+            deleteAsset = libraryAssetDeleter(repos.assetRepository, repos.writeActor),
+        )
+    }
     DisposableEffect(librarySession) { onDispose { librarySession.close() } }
 
     // Track navigation direction for slide transition orientation.
@@ -359,6 +370,7 @@ internal fun ScreenRouter(
             is Screen.Library, is Screen.Gallery, is Screen.AssetBrowser -> {
                 NavigationTracingEffect("Library")
                 val libraryOnboarding by viewModel.libraryOnboarding.collectAsState()
+                val libraryClipboard = LocalClipboardManager.current
                 LibraryRoute(
                     session = librarySession,
                     screen = LegacyScreenAlias.resolve(currentScreen) as Screen.Library,
@@ -369,6 +381,7 @@ internal fun ScreenRouter(
                     onDismissTip = { viewModel.dismissLibraryTip() },
                     onDismissNotice = { viewModel.dismissUpgradeNotice() },
                     onAddPhoto = onImportImage,
+                    onCopyLink = { link -> libraryClipboard.setText(AnnotatedString(link)) },
                 )
             }
 
@@ -407,6 +420,7 @@ internal fun ScreenRouter(
                         writeActor = repos.writeActor,
                         graphPath = appState.currentGraphPath.orEmpty(),
                         mover = assetMover,
+                        defaultUnit = { platformSettings.defaultMeasurementUnit() },
                     )
                 }
                 val annotateScope = rememberCoroutineScope()
@@ -431,6 +445,7 @@ internal fun ScreenRouter(
                     AnnotationEditorViewModel(
                         measurementRepository = repos.measurementAnnotationRepository,
                         imageAnnotationRepository = repos.imageAnnotationRepository,
+                        settings = platformSettings,
                     )
                 }
                 DisposableEffect(annotationEditorViewModel) {

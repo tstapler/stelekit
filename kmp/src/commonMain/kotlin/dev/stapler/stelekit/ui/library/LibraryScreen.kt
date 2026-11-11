@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -65,6 +66,9 @@ fun LibraryScreen(
     onDismissNotice: () -> Unit = {},
     onShowAnnotations: () -> Unit = {},
     onAddPhoto: (() -> Unit)? = null,
+    onCopyLink: (String) -> Unit = {},
+    /** Non-null only while the `homeSketch` flag is on and a sketch screen exists (story 6.8). */
+    onOpenSketch: ((assetUuid: String) -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsState()
     var reason by remember { mutableStateOf<String?>(null) }
@@ -103,7 +107,7 @@ fun LibraryScreen(
                 state.isLoading && state.items.isEmpty() -> LoadingState()
                 state.error != null && state.items.isEmpty() -> ErrorState(state.error.orEmpty(), viewModel::reload)
                 state.items.isEmpty() -> EmptyState(state.filters, onAddPhoto, viewModel::clearFilters)
-                else -> ItemGrid(state, gridState, viewModel, onOpenAnnotationEditor, onOpenAsset)
+                else -> ItemGrid(state, gridState, viewModel, onOpenAnnotationEditor, onOpenAsset, onCopyLink, onOpenSketch)
             }
         }
     }
@@ -153,7 +157,23 @@ private fun ItemGrid(
     viewModel: LibraryViewModel,
     onOpenAnnotationEditor: (String) -> Unit,
     onOpenAsset: (String) -> Unit,
+    onCopyLink: (String) -> Unit,
+    onOpenSketch: ((String) -> Unit)?,
 ) {
+    var deleteTarget by remember { mutableStateOf<LibraryItem?>(null) }
+    Column(Modifier.fillMaxSize()) {
+    deleteTarget?.let { target ->
+        DeleteDialog(
+            onConfirm = { viewModel.deleteItem(target.id); deleteTarget = null },
+            onDismiss = { deleteTarget = null },
+        )
+    }
+    state.actionError?.let { message ->
+        Row(Modifier.fillMaxWidth().testTag("library-action-error"), verticalAlignment = Alignment.CenterVertically) {
+            Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+            TextButton(onClick = viewModel::dismissActionError) { Text(t(I18n.LIBRARY_DELETE_CANCEL)) }
+        }
+    }
     LaunchedEffect(gridState, state.items.size, state.hasMore) {
         snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
             .map { it >= state.items.size - LOAD_MORE_THRESHOLD }
@@ -165,14 +185,29 @@ private fun ItemGrid(
         columns = GridCells.Adaptive(MIN_CARD_DP.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxSize().testTag("library-grid"),
+        modifier = Modifier.weight(1f).fillMaxWidth().testTag("library-grid"),
     ) {
         typedGridItems(state.items, key = { it.id }) { item ->
             val open: () -> Unit = {
-                val annotation = item.annotationUuid
-                if (item.annotated && item.isImage && annotation != null) onOpenAnnotationEditor(annotation) else onOpenAsset(item.id)
+                when (val target = LibraryOpenTarget.of(item, homeSketchEnabled = onOpenSketch != null)) {
+                    is LibraryOpenTarget.Editor -> onOpenAnnotationEditor(target.annotationUuid)
+                    is LibraryOpenTarget.Sketch -> onOpenSketch?.invoke(target.assetUuid)
+                    is LibraryOpenTarget.Detail -> onOpenAsset(target.assetUuid)
+                }
             }
-            LibraryItemCard(item = item, onClick = open, onLongClick = { onOpenAsset(item.id) })
+            LibraryItemCard(
+                item = item,
+                onClick = open,
+                onLongClick = { onOpenAsset(item.id) },
+                missing = item.id in state.missingIds,
+                onAction = { action ->
+                    when (action) {
+                        LibraryAssetAction.Details -> onOpenAsset(item.id)
+                        LibraryAssetAction.CopyLink -> onCopyLink(LibraryItemActions.markdownLink(item))
+                        LibraryAssetAction.Delete -> deleteTarget = item
+                    }
+                },
+            )
         }
         if (state.isLoadingMore || state.loadMoreError != null) {
             item(span = { GridItemSpan(maxLineSpan) }) {
@@ -188,6 +223,18 @@ private fun ItemGrid(
             }
         }
     }
+    }
+}
+
+@Composable
+private fun DeleteDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(t(I18n.LIBRARY_DELETE_TITLE)) },
+        text = { Text(t(I18n.LIBRARY_DELETE_BODY)) },
+        confirmButton = { TextButton(onClick = onConfirm, modifier = Modifier.testTag("library-delete-confirm")) { Text(t(I18n.LIBRARY_DELETE_CONFIRM)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(t(I18n.LIBRARY_DELETE_CANCEL)) } },
+    )
 }
 
 @Composable

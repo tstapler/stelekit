@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.raise.Raise
 import arrow.core.raise.either
 import dev.stapler.stelekit.units.ArithmeticError
+import dev.stapler.stelekit.units.LengthQualifier
 import dev.stapler.stelekit.units.Rational
 
 /**
@@ -40,6 +41,8 @@ object FusionEngine {
         either { with(Fusion(input, registry)) { execute() } }
 }
 
+private val APPROX_PRECISION = Rational(1, 2)
+
 private val READING_ORDER: Comparator<Observation> =
     compareBy<Observation>({ it.dimension }, { it.source.ref.normalised }, { it.value }, { it.precision })
 
@@ -52,7 +55,8 @@ private class Fusion(private val input: FusionInput, private val registry: Dimen
         result.fold({ raise(FusionError.Arithmetic(it)) }, { it })
 
     fun Raise<FusionError>.execute(): FusionResult {
-        val (excludedReadings, kept) = input.observations.partition { it.source.origin.carriesDigestMarker }
+        val (excludedReadings, unmarked) = input.observations.partition { it.source.origin.carriesDigestMarker }
+        val kept = unmarked.map(::widenApprox)
         val sorted = kept.sortedWith(READING_ORDER)
         val mirrored = isMirrored(sorted)
         val usable = if (mirrored) sorted.filterNot { it.source.kind == SourceKind.SVG_LABEL && it.dimension in input.zoneOrder } else sorted
@@ -74,6 +78,14 @@ private class Fusion(private val input: FusionInput, private val registry: Dimen
             excludedSelf = excludedReadings.size,
         )
     }
+
+    /** A hedged value (`~62"`) is an estimate, so it agrees with anything within [APPROX_PRECISION]. */
+    private fun widenApprox(o: Observation): Observation =
+        if (LengthQualifier.APPROX in o.qualifiers && o.kind == DimensionKind.LENGTH && o.precision < APPROX_PRECISION) {
+            o.copy(precision = APPROX_PRECISION)
+        } else {
+            o
+        }
 
     /** One reading per normalised ref (a restated scalar is the same source), in canonical order. */
     private fun independent(list: List<Observation>): List<Observation> =
