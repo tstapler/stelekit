@@ -418,7 +418,19 @@ internal fun ScreenRouter(
                     val sketchViewModel = remember(currentScreen.projectUuid) {
                         dev.stapler.stelekit.ui.sketch.sketchViewModelFor(repos.sketchRepositories, repos.writeActor, currentScreen.projectUuid)
                     }
-                    dev.stapler.stelekit.ui.sketch.SketchScreen(viewModel = sketchViewModel, onNavigateBack = { viewModel.goBack() })
+                    val graphPath = appState.currentGraphPath.orEmpty()
+                    val sketchExporter = remember(fileSystem, graphPath) {
+                        if (fileSystem == null || graphPath.isBlank()) {
+                            null
+                        } else {
+                            dev.stapler.stelekit.sketch.export.SketchExporter(
+                                fileSystem,
+                                dev.stapler.stelekit.platform.AtomicFileWriter(fileSystem, { it }, ".tmp"),
+                                graphPath,
+                            )
+                        }
+                    }
+                    dev.stapler.stelekit.ui.sketch.SketchScreen(viewModel = sketchViewModel, onNavigateBack = { viewModel.goBack() }, exporter = sketchExporter)
                 }
             }
 
