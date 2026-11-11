@@ -814,6 +814,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketchimport.LabelBinderTest::class,
     dev.stapler.stelekit.sketchimport.TaggingModelTest::class,
     dev.stapler.stelekit.sketchimport.ImportFlowTest::class,
+    dev.stapler.stelekit.sketchimport.PngSheetAdapterTest::class,
     dev.stapler.stelekit.sketchimport.SketchImportViewModelTest::class,
     dev.stapler.stelekit.fusion.LinearSolverTest::class,
     dev.stapler.stelekit.fusion.DimensionRegistryTest::class,

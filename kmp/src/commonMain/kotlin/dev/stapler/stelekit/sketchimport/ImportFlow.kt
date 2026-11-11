@@ -47,6 +47,8 @@ class DrawingPreview(
     val labels: LabelBindingResult,
     val viewDirection: ViewDirection?,
     val unsupported: List<String>,
+    /** Native size of a PNG sheet (Story 4.5); null for an SVG. */
+    val raster: PngSize? = null,
 ) {
     val taggingItems: List<TaggingItem> get() = Tagging.items(labels)
 }
@@ -69,9 +71,13 @@ class ImportFlow(
 ) {
     fun prepare(registry: DimensionRegistry, fileName: String, bytes: ByteArray): Either<ImportError, DrawingPreview> {
         val extension = extensionOf(fileName)
-        if (extension != SVG) return ImportError.UnsupportedType(extension).left()
+        if (extension != SVG && extension != PNG) return ImportError.UnsupportedType(extension).left()
         if (bytes.isEmpty()) return ImportError.Empty.left()
         val hash = ContentHasher.sha256(bytes)
+        if (extension == PNG) {
+            val size = PngSheetAdapter.readSize(bytes) ?: return ImportError.Failed("not a valid PNG").left()
+            return DrawingPreview(fileName, extension, bytes, hash, LabelBindingResult(), null, emptyList(), size).right()
+        }
         val doc = readSvg(bytes.decodeToString())
         val labels = LabelBinder(registry, refTable).bind(doc, "drawing:$hash")
         return DrawingPreview(
@@ -96,11 +102,12 @@ class ImportFlow(
         preview: DrawingPreview,
         registry: DimensionRegistry,
         assignments: Map<String, String>,
+        reference: RasterReference? = null,
     ): Either<ImportError, ImportOutcome> {
         val loaded = repos.projects.loadProject(projectUuid).fold({ return fail(it) }, { it })
             ?: return ImportError.ProjectMissing.left()
         val token = loaded.token
-        val dimensions = dimensionsFor(projectUuid, preview, registry, assignments)
+        val dimensions = dimensionsFor(projectUuid, preview, registry, assignments) + rasterDimension(projectUuid, preview, registry, reference)
 
         val dir = "${notesPath.child("assets")}/${DrawingLocationRule.SKETCH_DIR}/${loaded.project.slug}/drawings"
         val path = "$dir/${preview.contentHash.take(HASH_PREFIX)}.${preview.extension}"
@@ -144,12 +151,26 @@ class ImportFlow(
 
     private companion object {
         const val SVG = "svg"
+        const val PNG = "png"
         const val SHEET_KIND = "drawing"
         const val HASH_PREFIX = 8
     }
 }
 
 internal fun extensionOf(fileName: String): String = fileName.substringAfterLast('.', "").lowercase()
+
+/** A raster sheet's only dimension: the user's named known length, when the key is a registered length. */
+internal fun rasterDimension(
+    projectUuid: ProjectUuid,
+    preview: DrawingPreview,
+    registry: DimensionRegistry,
+    reference: RasterReference?,
+): List<SketchDimension> {
+    val size = preview.raster ?: return emptyList()
+    if (reference == null || registry.entry(reference.key)?.kind != DimensionKind.LENGTH) return emptyList()
+    if (PngSheetAdapter.calibrate(size, reference) == null) return emptyList()
+    return listOf(PngSheetAdapter.referenceDimension(projectUuid, UuidGenerator.generateV7(), reference))
+}
 
 /** Bound labels at or above the accept threshold, plus the user-tagged ones; each becomes an `svg` observation. */
 internal fun dimensionsFor(
