@@ -39,6 +39,8 @@ data class SidecarImageAnnotation(
     @SerialName("calibrationConfidencePct") val calibrationConfidencePct: Int = 0,
     /** Pixel basis of [pixelsPerMeter] (0 legacy decode-relative, 1 native). Absent in older sidecars, which read as 0. */
     @SerialName("calibrationBasisVersion") val calibrationBasisVersion: Int = 0,
+    /** Multi-point/lens calibration (basis 2). Additive: absent in older sidecars, which read as null. */
+    @SerialName("calibrationLens") val calibrationLens: dev.stapler.stelekit.model.LensCalibration? = null,
     @SerialName("unit") val unit: String = "METERS",
     @SerialName("tags") val tags: List<String> = emptyList(),
     @SerialName("latLng") val latLng: String? = null,

@@ -1020,7 +1020,8 @@ DELETE FROM git_config WHERE graph_id = ?;
 
 -- Image annotations table: stores one row per imported image with calibration & sensor data.
 -- The authoritative source is the sidecar JSON; this table is a query-optimised cache.
--- calibration_basis_version: 0 = legacy decode-size-relative pixels_per_meter, 1 = native image pixels (ADR-004).
+-- calibration_basis_version: 0 = legacy decode-size-relative pixels_per_meter, 1 = native image pixels (ADR-004),
+-- 2 = native pixels + lens model; calibration_lens_json holds the LensCalibration ('' = none).
 CREATE TABLE IF NOT EXISTS image_annotations (
     uuid                       TEXT NOT NULL PRIMARY KEY,
     block_uuid                 TEXT NOT NULL,
@@ -1046,7 +1047,8 @@ CREATE TABLE IF NOT EXISTS image_annotations (
     focal_length_35mm_eq       REAL,
     camera_make                TEXT,
     camera_model               TEXT,
-    calibration_basis_version  INTEGER NOT NULL DEFAULT 0
+    calibration_basis_version  INTEGER NOT NULL DEFAULT 0,
+    calibration_lens_json      TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_image_annotations_block_uuid ON image_annotations(block_uuid);
@@ -1092,8 +1094,8 @@ INSERT OR REPLACE INTO image_annotations (
     calibration_method, pixels_per_meter, calibration_confidence_pct,
     unit, tags, lat_lng, altitude_m, bearing_deg, pitch_deg, roll_deg,
     focal_length_mm, focal_length_35mm_eq, camera_make, camera_model,
-    calibration_basis_version
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    calibration_basis_version, calibration_lens_json
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateImageAnnotation:
 UPDATE image_annotations SET
@@ -1120,7 +1122,8 @@ UPDATE image_annotations SET
     focal_length_35mm_eq = ?,
     camera_make = ?,
     camera_model = ?,
-    calibration_basis_version = ?
+    calibration_basis_version = ?,
+    calibration_lens_json = ?
 WHERE uuid = ?;
 
 deleteImageAnnotation:
