@@ -24,7 +24,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
@@ -97,14 +96,7 @@ class OneShotSkipTest {
         )
         val result = scope.async { f.downloader.downloadModel() }
         val work = WorkManager.getInstance(context)
-        val id: UUID = withTimeout(5_000) {
-            var found: UUID? = null
-            while (found == null) {
-                found = work.getWorkInfosForUniqueWork(DepthModelDownloader.UNIQUE_WORK_NAME).get().firstOrNull { !it.state.isFinished }?.id
-                if (found == null) delay(20)
-            }
-            found
-        }
+        val id: UUID = awaitActiveWorkId(work, DepthModelDownloader.UNIQUE_WORK_NAME)
         WorkManagerTestInitHelper.getTestDriver(context)!!.setAllConstraintsMet(id)
 
         val outcome = withTimeout(30_000) { result.await() }

@@ -73,15 +73,19 @@ class WorkManagerJitterSpikeTest {
         override fun doWork(): Result {
             started.countDown()
             workerStoppedDuringRun.set(false)
-            // Poll so a stop signal from WorkManager is observable.
-            val deadline = System.currentTimeMillis() + 10_000
-            while (System.currentTimeMillis() < deadline && !release.await(20, TimeUnit.MILLISECONDS)) {
-                if (isStopped) {
-                    workerStoppedDuringRun.set(true)
-                    return Result.success()
+            try {
+                // Poll so a stop signal from WorkManager is observable.
+                val deadline = System.currentTimeMillis() + 10_000
+                while (System.currentTimeMillis() < deadline && !release.await(20, TimeUnit.MILLISECONDS)) {
+                    if (isStopped) {
+                        workerStoppedDuringRun.set(true)
+                        return Result.success()
+                    }
                 }
+                return Result.success()
+            } finally {
+                exited.countDown()
             }
-            return Result.success()
         }
     }
 
@@ -217,6 +221,7 @@ class WorkManagerJitterSpikeTest {
     fun update_should_RecordBehaviour_When_PeriodicWorkIsRunning() {
         release = CountDownLatch(1)
         started = CountDownLatch(1)
+        exited = CountDownLatch(1)
         workerStoppedDuringRun = AtomicBoolean(false)
         val pool = Executors.newFixedThreadPool(4)
         try {
@@ -232,7 +237,8 @@ class WorkManagerJitterSpikeTest {
 
             val second = periodic(120, 20, 9, unmetered = false, worker = BlockingWorker::class.java)
             val updateOutcome = runCatching { enqueue(second) }
-            Thread.sleep(300)
+            // Await the worker leaving doWork (stopped by the update, or not: the bound only caps a no-stop outcome).
+            exited.await(2, TimeUnit.SECONDS)
             val all = wm.getWorkInfosForUniqueWork(name).get()
             record("running.updateCall", updateOutcome.fold({ "ok" }, { "threw ${it::class.simpleName}: ${it.message}" }))
             record("running.workerSawStop(isStopped)", workerStoppedDuringRun.get())
@@ -241,7 +247,7 @@ class WorkManagerJitterSpikeTest {
             record("running.activeId", all.firstOrNull { !it.state.isFinished }?.let { if (it.id == first.id) "first" else "second" })
         } finally {
             release.countDown()
-            Thread.sleep(200)
+            exited.await(2, TimeUnit.SECONDS)
             pool.shutdownNow()
             initWorkManager(SynchronousExecutor())
         }
@@ -317,6 +323,7 @@ class WorkManagerJitterSpikeTest {
         @Volatile var overrideNext: Long? = null
         @Volatile var release = CountDownLatch(1)
         @Volatile var started = CountDownLatch(1)
+        @Volatile var exited = CountDownLatch(1)
         @Volatile var workerStoppedDuringRun = AtomicBoolean(false)
     }
 
