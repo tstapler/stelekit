@@ -119,3 +119,27 @@ test('missing gate metric fails only under --require-all in enforce mode', () =>
 test('unreadable records exit 2', () => {
   assert.strictEqual(run('--records', '/nonexistent.json').status, 2);
 });
+
+test('SketchCanvasPan200: both entries are report-only, name perDrawMeasure and pin the 24 ms / 1.5x budgets', () => {
+  const { entries, globalMode } = load(REPO_BUDGETS);
+  assert.strictEqual(globalMode, 'report-only');
+  const ratio = entries['SketchCanvasPan200.frameP50RatioToEmpty'];
+  const p95 = entries['SketchCanvasPan200.frameP95Ms'];
+  assert.deepStrictEqual([ratio.mode, ratio.mutation, ratio.budget], ['report-only', 'perDrawMeasure', 1.5]);
+  assert.deepStrictEqual([p95.mode, p95.mutation, p95.budget], ['report-only', 'perDrawMeasure', 24]);
+});
+
+test('SketchCanvasPan200 mutation probe: a slow-draw record fails once promoted to enforce+gate, a healthy one passes', () => {
+  const promoted = load(REPO_BUDGETS);
+  promoted.globalMode = 'enforce';
+  for (const k of ['SketchCanvasPan200.frameP50RatioToEmpty', 'SketchCanvasPan200.frameP95Ms']) promoted.entries[k].mode = 'gate';
+  const healthy = { 'SketchCanvasPan200.frameP50RatioToEmpty': 1.2, 'SketchCanvasPan200.frameP95Ms': 16 };
+  const mutated = { 'SketchCanvasPan200.frameP50RatioToEmpty': 4.0, 'SketchCanvasPan200.frameP95Ms': 60 };
+  assert.strictEqual(evaluate(promoted, healthy).failed, false);
+  const res = evaluate(promoted, mutated);
+  assert.strictEqual(res.failed, true);
+  assert.deepStrictEqual(res.rows.filter(r => r.status === 'FAIL').map(r => r.key).sort(),
+    ['SketchCanvasPan200.frameP50RatioToEmpty', 'SketchCanvasPan200.frameP95Ms']);
+  // As checked in (report-only), the same mutated record only warns.
+  assert.strictEqual(evaluate(load(REPO_BUDGETS), mutated).failed, false);
+});

@@ -41,11 +41,8 @@ object ProjectFusionSettings {
     const val FUSION_KEY = "fusion"
 
     /** Null while the project has no registry, or when either part does not decode; the job then writes nothing. */
-    fun setupOf(slug: String, settings: JsonObject): ProjectFusionSetup? {
-        val registry = settings[REGISTRY_KEY]?.let { DimensionRegistry.fromJson(it.toString()).getOrNull() } ?: return null
-        val spec = settings[FUSION_KEY]?.let(FusionSpecJson::decode) ?: FusionSpec()
-        return ProjectFusionSetup(slug, registry, spec)
-    }
+    fun setupOf(slug: String, settings: JsonObject): ProjectFusionSetup? =
+        (FusionSettingsLoader.load(settings) as? FusionSettingsState.Valid)?.let { ProjectFusionSetup(slug, it.registry, it.spec) }
 
     fun with(settings: JsonObject, registry: DimensionRegistry, spec: FusionSpec): JsonObject = JsonObject(
         settings + (REGISTRY_KEY to Json.parseToJsonElement(DimensionRegistry.toJson(registry))) + (FUSION_KEY to FusionSpecJson.encode(spec)),
@@ -60,7 +57,10 @@ suspend fun loadFusionSetup(repositories: SketchRepositories): ProjectFusionSetu
 
 /** Canonical JSON of a [FusionSpec]; decode is all-or-nothing, so a damaged spec never fuses a partial constraint set. */
 object FusionSpecJson {
+    const val SCHEMA = 1
+
     fun encode(spec: FusionSpec): JsonObject = buildJsonObject {
+        put("schema", SCHEMA)
         put("constraints", JsonArray(spec.constraints.map(::constraint)))
         put("checks", JsonArray(spec.checks.map(::check)))
         put("zones", JsonArray(spec.zoneOrder.map(::JsonPrimitive)))
@@ -68,6 +68,7 @@ object FusionSpecJson {
 
     fun decode(element: JsonElement): FusionSpec? = try {
         val o = element.jsonObject
+        require(o["schema"]?.jsonPrimitive?.int.let { it == null || it == SCHEMA }) { "unsupported schema" }
         FusionSpec(
             constraints = o["constraints"]?.jsonArray.orEmpty().map { decodeConstraint(it.jsonObject) },
             checks = o["checks"]?.jsonArray.orEmpty().map { decodeCheck(it.jsonObject) },

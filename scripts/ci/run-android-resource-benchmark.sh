@@ -23,6 +23,7 @@ fi
 classes=(
   dev.stapler.stelekit.performance.annotation.LibraryScrollSwitchResourceTest
   dev.stapler.stelekit.performance.annotation.AnnotationLifecycleResourceTest
+  dev.stapler.stelekit.performance.sketch.SketchCanvasBenchmarkTest
   dev.stapler.stelekit.performance.probe.ResourceProbeSelfTest
   dev.stapler.stelekit.performance.probe.FixtureGraphSmokeTest
   dev.stapler.stelekit.LoupeAlignmentE2ETest

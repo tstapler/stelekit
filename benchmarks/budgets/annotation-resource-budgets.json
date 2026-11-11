@@ -25,6 +25,8 @@
     "SwitchChurn.editorReferenceCleared": { "budget": 1, "comparator": "eq", "mode": "report-only", "mutation": "leakStrongRef", "calibratedFromRuns": 0 },
     "SwitchChurn.heapSlopeMbPerCycle": { "budget": 1, "comparator": "lte", "mode": "report-only", "mutation": "leakStrongRef", "memory": true, "calibratedFromRuns": 0 },
     "Export.exportedBitmapBytes": { "budget": 50331648, "comparator": "lte", "mode": "report-only", "memory": true, "calibratedFromRuns": 0 },
+    "SketchCanvasPan200.frameP50RatioToEmpty": { "budget": 1.5, "comparator": "lte", "mode": "report-only", "mutation": "perDrawMeasure", "calibratedFromRuns": 0 },
+    "SketchCanvasPan200.frameP95Ms": { "budget": 24, "comparator": "lte", "mode": "report-only", "mutation": "perDrawMeasure", "calibratedFromRuns": 0 },
     "Export.bakePeakMb": { "budget": 256, "comparator": "lte", "mode": "report-only", "memory": true, "calibratedFromRuns": 0 }
   }
 }
