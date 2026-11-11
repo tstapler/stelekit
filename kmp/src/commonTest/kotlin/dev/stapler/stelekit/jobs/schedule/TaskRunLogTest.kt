@@ -8,7 +8,11 @@ import dev.stapler.stelekit.security.Redactor
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.string
 import io.kotest.property.checkAll
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -144,5 +148,14 @@ class TaskRunLogTest {
             override fun getString(key: String, defaultValue: String): String = throw NoClassDefFoundError("keystore")
         })
         log.append(record(1, TaskRunResult.Success))
+    }
+
+    @Test
+    fun append_should_loseNoRecord_When_AppendsRace() = runTest {
+        val log = SettingsTaskRunLog(SlowReadSettings(MapSettings(), gapMs = 15), cap = 20)
+        withContext(Dispatchers.Default) {
+            (1..6).map { i -> async { log.append(record(i.toLong(), TaskRunResult.Success)) } }.awaitAll()
+        }
+        assertEquals(6, log.recent(key).size, "every concurrent append must be kept")
     }
 }

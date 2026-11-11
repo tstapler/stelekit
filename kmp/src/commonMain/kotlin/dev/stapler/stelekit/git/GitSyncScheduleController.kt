@@ -73,7 +73,10 @@ class GitSyncScheduleController(
             TaskEntry(entry.enabled, TaskOverrides(current.schedule, current.constraints.copy(network = network)))
         }
 
-    private suspend fun update(graphId: String, change: (TaskEntry, TaskConfig) -> TaskEntry): TaskConfig? {
+    private suspend fun update(graphId: String, change: (TaskEntry, TaskConfig) -> TaskEntry): TaskConfig? =
+        store.serialized { updateLocked(graphId, change) }
+
+    private suspend fun updateLocked(graphId: String, change: (TaskEntry, TaskConfig) -> TaskEntry): TaskConfig? {
         val key = keyOf(graphId)
         val current = (store.readResult(key) as? TaskReadResult.Ok)?.config ?: return null
         val written = store.write(key, change(store.readEntry(key), current))

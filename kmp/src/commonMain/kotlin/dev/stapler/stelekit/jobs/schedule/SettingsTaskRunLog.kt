@@ -7,12 +7,14 @@ import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.security.Redactor
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * [TaskRunLog] over [Settings], one newline-separated string per (key, [RunSource]) under
- * [TaskKeyEncoding.runLogKey]. Append is a read-modify-write of that string, safe because each
- * (key, source) has exactly one writer (worker / in-process loop for Background, the
- * `PeriodicSyncDriver` tick recorder for Foreground). Persists the newest [cap] per source.
+ * [TaskKeyEncoding.runLogKey]. Append is a read-modify-write of that string, serialised by a
+ * process-wide lock (writers in other processes are not covered: each (key, source) has one writer
+ * there). Persists the newest [cap] per source.
  */
 class SettingsTaskRunLog(
     private val settings: Settings,
@@ -24,9 +26,11 @@ class SettingsTaskRunLog(
         logger.info(TaskRunRecordCodec.logLine(record))
         try {
             val settingsKey = TaskKeyEncoding.runLogKey(record.source, record.key)
-            val existing = settings.getString(settingsKey, "").lines().filter { it.isNotEmpty() }
-            val kept = (existing + TaskRunRecordCodec.encode(record)).takeLast(cap)
-            settings.putString(settingsKey, kept.joinToString("\n"))
+            appendLock.withLock {
+                val existing = settings.getString(settingsKey, "").lines().filter { it.isNotEmpty() }
+                val kept = (existing + TaskRunRecordCodec.encode(record)).takeLast(cap)
+                settings.putString(settingsKey, kept.joinToString("\n"))
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
@@ -64,6 +68,9 @@ class SettingsTaskRunLog(
 
     companion object {
         const val DEFAULT_CAP = 20
+
+        /** Process-wide: the in-process loop, the tick recorder and a worker may each hold their own instance over one store. */
+        private val appendLock = Mutex()
     }
 }
 

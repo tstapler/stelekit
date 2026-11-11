@@ -153,7 +153,9 @@ class BackgroundTaskSettingsController(
      * One-shot kinds (model download): only the network choice, stored as `enabled = false` with explicit
      * constraints, and never `apply` (an explicit `runOnce` always runs).
      */
-    suspend fun setOneShotNetwork(key: TaskKey, network: NetworkPolicy): SaveResult = try {
+    suspend fun setOneShotNetwork(key: TaskKey, network: NetworkPolicy): SaveResult = store.serialized { setOneShotNetworkLocked(key, network) }
+
+    private suspend fun setOneShotNetworkLocked(key: TaskKey, network: NetworkPolicy): SaveResult = try {
         val constraints = (store.readEntry(key).overrides?.constraints ?: baseConfig(key.kind).constraints).copy(network = network)
         if (store.write(key, TaskEntry(enabled = false, overrides = TaskOverrides(schedule = null, constraints = constraints)))) {
             SaveResult.Saved
@@ -171,7 +173,10 @@ class BackgroundTaskSettingsController(
      * Writes the "Default for new graphs" record (never a scope), then re-applies the graphs that
      * follow it so their schedule matches what Settings now shows.
      */
-    suspend fun writeDefaults(kind: TaskKind, defaults: TaskDefaults, followingGraphIds: List<String> = emptyList()): SaveResult {
+    suspend fun writeDefaults(kind: TaskKind, defaults: TaskDefaults, followingGraphIds: List<String> = emptyList()): SaveResult =
+        store.serialized { writeDefaultsLocked(kind, defaults, followingGraphIds) }
+
+    private suspend fun writeDefaultsLocked(kind: TaskKind, defaults: TaskDefaults, followingGraphIds: List<String>): SaveResult {
         val written = try {
             store.writeDefaults(kind, defaults)
         } catch (e: CancellationException) {
@@ -189,7 +194,10 @@ class BackgroundTaskSettingsController(
         return SaveResult.Saved
     }
 
-    private suspend fun change(key: TaskKey, edit: (TaskEntry, TaskConfig) -> TaskEntry): SaveResult {
+    private suspend fun change(key: TaskKey, edit: (TaskEntry, TaskConfig) -> TaskEntry): SaveResult =
+        store.serialized { changeLocked(key, edit) }
+
+    private suspend fun changeLocked(key: TaskKey, edit: (TaskEntry, TaskConfig) -> TaskEntry): SaveResult {
         val current = (store.readResult(key) as? TaskReadResult.Ok)?.config ?: return SaveResult.Failed
         val previous = store.readEntry(key)
         val wrote = try {

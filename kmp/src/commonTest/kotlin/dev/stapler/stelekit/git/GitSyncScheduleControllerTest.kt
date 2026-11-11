@@ -18,7 +18,13 @@ import dev.stapler.stelekit.jobs.schedule.TaskRegistry
 import dev.stapler.stelekit.jobs.schedule.TaskScope
 import dev.stapler.stelekit.jobs.schedule.TaskSettingsStore
 import dev.stapler.stelekit.platform.SCHEDULED_SYNC_ENABLED_KEY
+import dev.stapler.stelekit.jobs.schedule.SlowReadSettings
+import dev.stapler.stelekit.ui.components.settings.BackgroundTaskSettingsController
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -144,5 +150,63 @@ class GitSyncScheduleControllerTest {
         assertTrue(config.enabled)
         assertEquals(NetworkPolicy.Unmetered, config.constraints.network)
         assertEquals(Schedule.of(120, 20), config.schedule)
+    }
+
+    @Test
+    fun concurrentEdits_should_loseNoUpdate_When_TwoGitSyncControllerEditsRace() = runTest {
+        val slow = TaskSettingsStore(SlowReadSettings(settings), LegacyGitSyncMigration(settings, source), TaskRegistry())
+        slow.write(g1, TaskEntry(true, TaskOverrides(Schedule.of(30, 0), TaskConstraints())))
+        val c = GitSyncScheduleController(slow, scheduler(runsWhenClosed = false))
+
+        withContext(Dispatchers.Default) {
+            listOf(
+                async { c.setSchedule("g1", Schedule.of(60, 10)) },
+                async { c.setNetwork("g1", NetworkPolicy.Unmetered) },
+            ).awaitAll()
+        }
+
+        val config = slow.read(g1)
+        assertEquals(Schedule.of(60, 10), config.schedule)
+        assertEquals(NetworkPolicy.Unmetered, config.constraints.network)
+    }
+
+    @Test
+    fun concurrentEdits_should_loseNoUpdate_When_SettingsPanelAndGitSyncControllersShareAStore() = runTest {
+        val registry = TaskRegistry().apply { register(GitSyncTask.KIND, GitSyncTask.spec, GitSyncTask()) }
+        val slow = TaskSettingsStore(SlowReadSettings(settings), LegacyGitSyncMigration(settings, source), registry)
+        slow.write(g1, TaskEntry(true, TaskOverrides(Schedule.of(30, 0), TaskConstraints())))
+        val fake = scheduler(runsWhenClosed = false)
+        val git = GitSyncScheduleController(slow, fake)
+        val panel = BackgroundTaskSettingsController(slow, fake, registry)
+
+        withContext(Dispatchers.Default) {
+            listOf(
+                async { git.setSchedule("g1", Schedule.of(60, 10)) },
+                async { panel.setNetwork(g1, NetworkPolicy.Unmetered) },
+            ).awaitAll()
+        }
+
+        val config = slow.read(g1)
+        assertEquals(Schedule.of(60, 10), config.schedule)
+        assertEquals(NetworkPolicy.Unmetered, config.constraints.network)
+    }
+
+    @Test
+    fun concurrentEdits_should_loseNoUpdate_When_TwoPanelEditsRace() = runTest {
+        val registry = TaskRegistry().apply { register(GitSyncTask.KIND, GitSyncTask.spec, GitSyncTask()) }
+        val slow = TaskSettingsStore(SlowReadSettings(settings), LegacyGitSyncMigration(settings, source), registry)
+        slow.write(g1, TaskEntry(true, TaskOverrides(Schedule.of(30, 0), TaskConstraints())))
+        val panel = BackgroundTaskSettingsController(slow, scheduler(runsWhenClosed = false), registry)
+
+        withContext(Dispatchers.Default) {
+            listOf(
+                async { panel.setSpread(g1, Schedule.of(60, 10)) },
+                async { panel.setNetwork(g1, NetworkPolicy.Unmetered) },
+            ).awaitAll()
+        }
+
+        val config = slow.read(g1)
+        assertEquals(Schedule.of(60, 10), config.schedule)
+        assertEquals(NetworkPolicy.Unmetered, config.constraints.network)
     }
 }

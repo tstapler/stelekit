@@ -6,6 +6,8 @@ package dev.stapler.stelekit.jobs.schedule
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.Settings
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /** Outcome of [TaskSettingsStore.readResult]; [ReadFailed] means "cannot read", which is not "disabled". */
 sealed interface TaskReadResult {
@@ -27,6 +29,14 @@ class TaskSettingsStore(
     private val registry: TaskRegistry,
 ) {
     private val logger = Logger("TaskSettingsStore")
+    private val editLock = Mutex()
+
+    /**
+     * Runs a read-modify-write edit of this store's entries one at a time. Every Settings-side editor
+     * (panel controller, git-sync controller) wraps its edit in this so two edits cannot both start from the
+     * same stale entry and lose one change. Not reentrant: [block] must not call [serialized] again.
+     */
+    suspend fun <T> serialized(block: suspend () -> T): T = editLock.withLock { block() }
 
     /** Fail-closed: any read failure resolves to the disabled default. */
     suspend fun read(key: TaskKey): TaskConfig = when (val r = readResult(key)) {
