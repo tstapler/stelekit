@@ -33,6 +33,9 @@ internal class CountingPages(private val inner: InMemoryPageRepository) : PageRe
     }
 }
 
+private fun resolved(kind: SourceBindingKind, pageUuid: String) =
+    BindingResolution.Resolved(SourceBinding(kind, pageUuid.takeLast(8), "x"), pageUuid)
+
 class ProjectSourceReaderTest {
     private val repo = InMemoryPageRepository()
     private val pages = CountingPages(repo)
@@ -49,20 +52,20 @@ class ProjectSourceReaderTest {
         add("00000000-0000-0000-0000-000000000001", "Closet", "| a | b |")
         add("00000000-0000-0000-0000-000000000002", "Notes", "rod is 36 inches")
         val r = reader.read(listOf(
-            SourceBinding(SourceBindingKind.TABLE, "00000000-0000-0000-0000-000000000001", "x"),
-            SourceBinding(SourceBindingKind.PROSE, "00000000-0000-0000-0000-000000000002", "x"),
+            resolved(SourceBindingKind.TABLE, "00000000-0000-0000-0000-000000000001"),
+            resolved(SourceBindingKind.PROSE, "00000000-0000-0000-0000-000000000002"),
         ))
         assertEquals(listOf("| a | b |"), r.tablePages.map { it.markdown })
         assertEquals(listOf("rod is 36 inches"), r.prosePages.map { it.markdown })
         assertEquals(2, r.boundPages.size)
-        assertEquals(ContentHasher.sha256("| a | b |"), r.contentHashes["00000000-0000-0000-0000-000000000001"])
+        assertEquals(ContentHasher.sha256("| a | b |"), r.contentHashes["00000001"])
         assertTrue(r.tablePages.single().locator.startsWith("page:"))
     }
 
     @Test
     fun indexOnlyStubContributesNothingAndIsCountedForRetry() = runTest {
         add("00000000-0000-0000-0000-000000000003", "Stub", "text", loaded = false)
-        val r = reader.read(listOf(SourceBinding(SourceBindingKind.TABLE, "00000000-0000-0000-0000-000000000003", "x")))
+        val r = reader.read(listOf(resolved(SourceBindingKind.TABLE, "00000000-0000-0000-0000-000000000003")))
         assertEquals(1, r.unloaded)
         assertTrue(r.tablePages.isEmpty())
         assertEquals(1, r.boundPages.size)
@@ -71,13 +74,13 @@ class ProjectSourceReaderTest {
     @Test
     fun unreadableFileCountsAsUnloaded() = runTest {
         add("00000000-0000-0000-0000-000000000004", "Gone", null)
-        val r = reader.read(listOf(SourceBinding(SourceBindingKind.PROSE, "00000000-0000-0000-0000-000000000004", "x")))
+        val r = reader.read(listOf(resolved(SourceBindingKind.PROSE, "00000000-0000-0000-0000-000000000004")))
         assertEquals(1, r.unloaded)
     }
 
     @Test
     fun removedPageIsCountedMissing() = runTest {
-        val r = reader.read(listOf(SourceBinding(SourceBindingKind.TABLE, "00000000-0000-0000-0000-0000000000ff", "x")))
+        val r = reader.read(listOf(resolved(SourceBindingKind.TABLE, "00000000-0000-0000-0000-0000000000ff")))
         assertEquals(1, r.missing)
         assertEquals(0, r.unloaded)
     }
@@ -85,17 +88,24 @@ class ProjectSourceReaderTest {
     @Test
     fun pageWithoutAFilePathIsMissing() = runTest {
         repo.savePage(testPage("00000000-0000-0000-0000-000000000005", "NoFile", path = null))
-        val r = reader.read(listOf(SourceBinding(SourceBindingKind.TABLE, "00000000-0000-0000-0000-000000000005", "x")))
+        val r = reader.read(listOf(resolved(SourceBindingKind.TABLE, "00000000-0000-0000-0000-000000000005")))
         assertEquals(1, r.missing)
     }
 
     @Test
     fun largeGraphReadsOnlyTheBoundPages() = runTest {
         repeat(400) { add(uuidOf(it + 100), "P$it", "t$it") }
-        val bound = (0 until 25).map { SourceBinding(SourceBindingKind.TABLE, uuidOf(it + 100), "x") }
+        val bound = (0 until 25).map { resolved(SourceBindingKind.TABLE, uuidOf(it + 100)) }
         val r = reader.read(bound)
         assertEquals(25, r.tablePages.size)
         assertEquals(25, pages.uuidLookups, "one point lookup per bound page, no scan")
+    }
+
+    @Test
+    fun unresolvedBindingsAreCountedNotDropped() = runTest {
+        val r = reader.read(listOf(BindingResolution.NeedsRebind(SourceBinding(SourceBindingKind.TABLE, "0000000a", "h"))))
+        assertEquals(1, r.needsRebind)
+        assertEquals(0, pages.uuidLookups)
     }
 
     @Test

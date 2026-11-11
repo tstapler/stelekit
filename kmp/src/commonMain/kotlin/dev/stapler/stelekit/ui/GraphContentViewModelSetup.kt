@@ -25,6 +25,7 @@ import dev.stapler.stelekit.projectbridge.ProjectBridgeDeps
 import dev.stapler.stelekit.projectbridge.ProjectBridgeSettings
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import dev.stapler.stelekit.projectbridge.LocalBindingTable
 import dev.stapler.stelekit.projectbridge.ProjectSourceReader
 import dev.stapler.stelekit.projectbridge.readBoundSources
 import dev.stapler.stelekit.ui.sketch.hasConfiguredProject
@@ -235,7 +236,7 @@ private fun buildProjectBridgeDeps(
             readBoundSources(deps.repos.sketchRepositories, ProjectSourceReader(deps.repos.pageRepository) { path ->
                 effectiveFileSystem.invalidateShadow(path)
                 effectiveFileSystem.readFileSuspend(path)
-            })
+            }, LocalBindingTable(deps.platformSettings))
         },
         pageSettleProbe = LoaderPageSettleProbe(
             isIndexOnlyStub = { page ->

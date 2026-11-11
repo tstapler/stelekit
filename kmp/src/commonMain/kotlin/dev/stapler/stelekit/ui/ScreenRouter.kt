@@ -395,6 +395,7 @@ internal fun ScreenRouter(
                                 dev.stapler.stelekit.projectbridge.SourceBindingService(
                                     repos.sketchRepositories, repos.pageRepository, loader::readPageText,
                                     { op -> repos.writeActor?.execute(op = op) ?: op() },
+                                    dev.stapler.stelekit.projectbridge.LocalBindingTable(platformSettings),
                                 )
                             },
                         )

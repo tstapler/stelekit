@@ -28,11 +28,11 @@ class SourcePagePickerTest {
 
     private val searches = mutableListOf<String>()
     private val bound = mutableListOf<Pair<SourceBindingKind, String>>()
-    private val removed = mutableListOf<Pair<SourceBindingKind, String>>()
+    private val removed = mutableListOf<String>()
 
     private fun show(state: ProjectListUiState) = rule.setContent {
         MaterialTheme {
-            SourcePagePicker(state, { searches += it }, { k, id -> bound += k to id }, { k, id -> removed += k to id })
+            SourcePagePicker(state, { searches += it }, { k, id -> bound += k to id }, { removed += it })
         }
     }
 
@@ -49,10 +49,10 @@ class SourcePagePickerTest {
 
     @Test
     fun boundSourcesShowTitlesAndCanBeRemoved() {
-        show(ProjectListUiState(boundSources = listOf(BoundSourceRow(SourceBindingKind.TABLE, "u1", "Closet Plan"), BoundSourceRow(SourceBindingKind.PROSE, "u2", null))))
+        show(ProjectListUiState(boundSources = listOf(BoundSourceRow(SourceBindingKind.TABLE, "00000001", "Closet Plan"), BoundSourceRow(SourceBindingKind.PROSE, "00000002", null, needsRebind = true))))
         rule.onNodeWithText("Closet Plan (table)").assertIsDisplayed()
-        rule.onNodeWithText("Missing page (notes)").assertIsDisplayed()
+        rule.onNodeWithText("Needs re-binding (notes): pick the page again").assertIsDisplayed()
         rule.onAllNodesWithText("Remove")[0].performClick()
-        assertEquals(SourceBindingKind.TABLE to "u1", removed.single())
+        assertEquals("00000001", removed.single())
     }
 }

@@ -160,7 +160,12 @@ class ProjectListViewModel(
 
     fun searchSourcePages(query: String) {
         val service = sources ?: return
-        scope.launch { _state.update { it.copy(pickerResults = service.search(query)) } }
+        scope.launch {
+            val hits = service.search(query)
+            _state.update { it.copy(pickerResults = hits) }
+            val project = _state.value.projects.firstOrNull() ?: return@launch
+            if (service.autoRebind(project.uuid, hits) > 0) reloadBound()
+        }
     }
 
     fun bindSource(kind: SourceBindingKind, pageUuid: String) {
@@ -176,11 +181,11 @@ class ProjectListViewModel(
         }
     }
 
-    fun unbindSource(kind: SourceBindingKind, pageUuid: String) {
+    fun unbindSource(bindingId: String) {
         val service = sources ?: return
         val project = _state.value.projects.firstOrNull() ?: return
         scope.launch {
-            service.unbind(project.uuid, kind, pageUuid)
+            service.unbind(project.uuid, bindingId)
             reloadBound()
         }
     }

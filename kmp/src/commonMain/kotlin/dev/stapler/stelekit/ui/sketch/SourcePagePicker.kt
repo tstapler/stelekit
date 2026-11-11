@@ -30,7 +30,7 @@ fun SourcePagePicker(
     state: ProjectListUiState,
     onSearch: (String) -> Unit,
     onBind: (SourceBindingKind, String) -> Unit,
-    onUnbind: (SourceBindingKind, String) -> Unit,
+    onUnbind: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var query by remember { mutableStateOf("") }
@@ -39,7 +39,7 @@ fun SourcePagePicker(
         state.boundSources.forEach { row ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                 Text(SourcePickerText.boundLabel(row))
-                TextButton(onClick = { onUnbind(row.kind, row.pageUuid) }) { Text("Remove") }
+                TextButton(onClick = { onUnbind(row.bindingId) }) { Text("Remove") }
             }
         }
         OutlinedTextField(

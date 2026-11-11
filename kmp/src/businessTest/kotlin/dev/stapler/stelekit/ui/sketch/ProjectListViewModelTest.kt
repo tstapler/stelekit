@@ -46,7 +46,7 @@ class ProjectListViewModelTest {
 
     private fun vm(withSources: Boolean = false, write: ProjectWriteRunner = { it() }) = ProjectListViewModel(
         repos.projects, graphId, bridge, llm, write, { ++tick }, Random(1),
-        sources = if (withSources) dev.stapler.stelekit.projectbridge.SourceBindingService(repos, pageRepo, { files[it] }, { it() }) else null,
+        sources = if (withSources) dev.stapler.stelekit.projectbridge.SourceBindingService(repos, pageRepo, { files[it] }, { it() }, dev.stapler.stelekit.projectbridge.LocalBindingTable(raw)) else null,
         dispatcher = UnconfinedTestDispatcher(),
     ).also { models += it }
 
@@ -229,7 +229,7 @@ class ProjectListViewModelTest {
         assertEquals(listOf(id), vm.state.value.pickerResults.map { it.uuid })
         vm.bindSource(dev.stapler.stelekit.projectbridge.SourceBindingKind.TABLE, id)
         assertEquals("Closet Plan", vm.state.value.boundSources.single().title)
-        vm.unbindSource(dev.stapler.stelekit.projectbridge.SourceBindingKind.TABLE, id)
+        vm.unbindSource(vm.state.value.boundSources.single().bindingId)
         assertTrue(vm.state.value.boundSources.isEmpty())
     }
 
@@ -249,7 +249,7 @@ class ProjectListViewModelTest {
         val vm = vm()
         assertFalse(vm.sourcesAvailable)
         vm.searchSourcePages("clos")
-        vm.unbindSource(dev.stapler.stelekit.projectbridge.SourceBindingKind.TABLE, "x")
+        vm.unbindSource("00000001")
         assertTrue(vm.state.value.pickerResults.isEmpty())
     }
 }

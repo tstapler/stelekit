@@ -19,7 +19,9 @@ data class SourceReadResult(
     val boundPages: List<BoundPageRef> = emptyList(),
     val unloaded: Int = 0,
     val missing: Int = 0,
-    /** Current content hash per page uuid, for the relevance check. */
+    /** Synced bindings with no page on this device yet; the owner re-binds them. */
+    val needsRebind: Int = 0,
+    /** Current content hash per binding id, for the relevance check. */
     val contentHashes: Map<String, String> = emptyMap(),
 ) {
     companion object {
@@ -35,23 +37,28 @@ class ProjectSourceReader(
     private val pages: PageRepository,
     private val readText: suspend (filePath: String) -> String?,
 ) {
-    suspend fun read(bindings: List<SourceBinding>): SourceReadResult {
+    suspend fun read(resolutions: List<BindingResolution>): SourceReadResult {
         var result = SourceReadResult.EMPTY
-        for (chunk in bindings.chunked(CHUNK)) {
-            for (binding in chunk) result = readOne(binding, result)
+        for (chunk in resolutions.chunked(CHUNK)) {
+            for (r in chunk) {
+                result = when (r) {
+                    is BindingResolution.NeedsRebind -> result.copy(needsRebind = result.needsRebind + 1)
+                    is BindingResolution.Resolved -> readOne(r.binding, r.pageUuid, result)
+                }
+            }
         }
         return result
     }
 
-    private suspend fun readOne(binding: SourceBinding, acc: SourceReadResult): SourceReadResult {
-        val page = pages.getPageByUuid(PageUuid(binding.pageUuid)).first().getOrNull()
+    private suspend fun readOne(binding: SourceBinding, pageUuid: String, acc: SourceReadResult): SourceReadResult {
+        val page = pages.getPageByUuid(PageUuid(pageUuid)).first().getOrNull()
         val path = page?.filePath
         if (page == null || path == null) return acc.copy(missing = acc.missing + 1)
         val bound = acc.boundPages + BoundPageRef(page.name, path)
         if (!page.isContentLoaded) return acc.copy(boundPages = bound, unloaded = acc.unloaded + 1)
         val text = readText(path) ?: return acc.copy(boundPages = bound, unloaded = acc.unloaded + 1)
-        val entry = TablePageText(locator = "page:${binding.pageUuid}", markdown = text)
-        val hashes = acc.contentHashes + (binding.pageUuid to ContentHasher.sha256(text))
+        val entry = TablePageText(locator = "page:${binding.bindingId}", markdown = text)
+        val hashes = acc.contentHashes + (binding.bindingId to ContentHasher.sha256(text))
         return when (binding.kind) {
             SourceBindingKind.TABLE -> acc.copy(tablePages = acc.tablePages + entry, boundPages = bound, contentHashes = hashes)
             SourceBindingKind.PROSE -> acc.copy(prosePages = acc.prosePages + entry, boundPages = bound, contentHashes = hashes)
