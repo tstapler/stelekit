@@ -36,8 +36,8 @@ class ExportStyleTest {
     }
 
     @Test
-    fun message_should_BeSpecific_When_EncodingFailsAndPassThroughOtherwise() {
-        assertEquals(DRIVE_ENCODE_FAILED_MESSAGE, driveExportMessage(DomainError.ExportError.EncodingFailed("oom")))
+    fun message_should_BeSpecific_When_PassThroughOtherwise() {
+        assertEquals("oom", driveExportMessage(DomainError.ExportError.EncodingFailed("oom")))
         assertEquals("quota", driveExportMessage(DomainError.NetworkError.HttpError(507, "quota")))
     }
 }

@@ -17,7 +17,6 @@ fun exportScale(imageWidthPx: Int): Float =
 
 const val DRIVE_OFFLINE_MESSAGE = "Offline. Saved on this device. Try again when connected."
 const val DRIVE_SIGN_IN_MESSAGE = "Sign in to Google Drive to export."
-const val DRIVE_ENCODE_FAILED_MESSAGE = "Couldn't export this image."
 
 private const val UNAUTHORIZED = 401
 private const val FORBIDDEN = 403
@@ -33,6 +32,5 @@ fun driveExportMessage(error: DomainError): String = when {
     error is DomainError.NetworkError.HttpError && error.statusCode == TRANSPORT_FAILURE_STATUS -> DRIVE_OFFLINE_MESSAGE
     error is DomainError.NetworkError.HttpError && (error.statusCode == UNAUTHORIZED || error.statusCode == FORBIDDEN) ->
         DRIVE_SIGN_IN_MESSAGE
-    error is DomainError.ExportError.EncodingFailed -> DRIVE_ENCODE_FAILED_MESSAGE
     else -> error.message
 }
