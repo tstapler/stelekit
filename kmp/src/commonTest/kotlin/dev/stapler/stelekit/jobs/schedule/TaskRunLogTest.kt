@@ -151,6 +151,17 @@ class TaskRunLogTest {
     }
 
     @Test
+    fun taskApplyLine_should_carryEffectiveScheduleAndNetwork_When_Enabled() {
+        val config = TaskConfig(true, Schedule.of(60, 10), TaskConstraints(network = NetworkPolicy.Unmetered))
+        val effective = EffectiveSchedule(intervalMinutes = 60, jitterMinutes = 10, flexMinutes = 10, offsetMinutes = 4, clamped = false)
+        assertEquals(
+            "TaskApply key=git-sync.2.g1 enabled=true effectiveInterval=60 flex=10 offset=4 network=unmetered",
+            TaskApplyLog.line(key, config, effective),
+        )
+        assertTrue("effectiveInterval=- flex=- offset=-" in TaskApplyLog.line(key, config.copy(enabled = false), null))
+    }
+
+    @Test
     fun append_should_loseNoRecord_When_AppendsRace() = runTest {
         val log = SettingsTaskRunLog(SlowReadSettings(MapSettings(), gapMs = 15), cap = 20)
         withContext(Dispatchers.Default) {

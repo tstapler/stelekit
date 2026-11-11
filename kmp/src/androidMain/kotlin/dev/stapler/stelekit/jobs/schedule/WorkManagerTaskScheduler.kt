@@ -40,6 +40,7 @@ class WorkManagerTaskScheduler(
     private val requests = TaskRequestFactory(registry, workers, capabilities)
 
     override suspend fun apply(key: TaskKey, config: TaskConfig) = guarded("apply ${key.workName()}") {
+        TaskApplyLog.log(key, config, if (config.enabled) config.schedule.clamp(capabilities, JitterSeed.of(key)) else null)
         if (!config.enabled) {
             ledger.clear(key)
             pausedKeys.remove(key)

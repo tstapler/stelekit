@@ -87,6 +87,7 @@ class InProcessTaskScheduler(
     val status: StateFlow<Map<TaskKey, TaskScheduleStatus>> = _status.asStateFlow()
 
     override suspend fun apply(key: TaskKey, config: TaskConfig) = stateLock.withLock {
+        TaskApplyLog.log(key, config, if (config.enabled) config.schedule.clamp(capabilities, JitterSeed.of(key)) else null)
         if (!config.enabled) {
             stopLoop(key)
             ledger.clear(key)

@@ -118,6 +118,17 @@ class InProcessTaskSchedulerTest {
     }
 
     @Test
+    fun apply_should_logTaskApplyLineWithEffectiveSchedule_When_Enabled() = runTest {
+        val h = Harness(this, key, { _, _ -> TaskRunResult.Success }, online)
+        h.scheduler.apply(key, TaskConfig(true, Schedule.of(15, 5), TaskConstraints(network = NetworkPolicy.Unmetered)))
+        h.scheduler.apply(key, TaskConfig(false, Schedule.of(15, 5), TaskConstraints()))
+        h.scheduler.stop()
+        val lines = dev.stapler.stelekit.logging.LogManager.logs.value.map { it.message }.filter { it.startsWith("TaskApply key=${TaskKeyEncoding.encode(key)}") }
+        assertTrue(lines.any { "enabled=true effectiveInterval=15 flex=" in it && "network=unmetered" in it }, lines.toString())
+        assertTrue(lines.any { "enabled=false effectiveInterval=-" in it }, lines.toString())
+    }
+
+    @Test
     fun tick_should_keepLooping_When_JobTrackerThrows() = runTest {
         var runs = 0
         val tracker = object : JobTracker {
