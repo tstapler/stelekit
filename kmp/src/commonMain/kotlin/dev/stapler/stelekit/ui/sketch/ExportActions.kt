@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.ui.sketch
 
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -13,6 +14,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import arrow.core.Either
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
@@ -35,11 +37,12 @@ fun SketchExportButton(state: SketchUiState, exporter: SketchExporter?, modifier
     if (exporter == null || slug == null) return
     val scope = rememberCoroutineScope()
     var status by remember { mutableStateOf<String?>(null) }
-    TextButton(
-        onClick = {
-            scope.launch { status = exportStatusText(withContext(PlatformDispatcher.IO) { exporter.export(state.document, slug, state.revision) }) }
-        },
-        modifier = modifier,
-    ) { Text("Export") }
-    status?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        TextButton(
+            onClick = {
+                scope.launch { status = exportStatusText(withContext(PlatformDispatcher.IO) { exporter.export(state.document, slug, state.revision) }) }
+            },
+        ) { Text("Export") }
+        status?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
+    }
 }
