@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.ui.sketch
 
 import dev.stapler.stelekit.sketch.SketchCommand
+import dev.stapler.stelekit.sketch.SketchPoint
 import dev.stapler.stelekit.sketch.SketchSheetKind
 import dev.stapler.stelekit.sketch.ViewDirection
 import dev.stapler.stelekit.units.Inches
@@ -29,3 +30,6 @@ fun SketchViewModel.setScale(sixteenths: Long) = commit(SketchCommand.SetScale(s
 fun SketchViewModel.setZoneTotal(key: String, isTotal: Boolean) = commit(SketchCommand.SetZoneTotal(key, isTotal))
 
 fun SketchViewModel.removeZone(key: String) = commit(SketchCommand.RemoveZone(key))
+
+/** Non-drag "Move vertex N": one committed history step. */
+fun SketchViewModel.moveVertex(vertex: VertexRef, to: SketchPoint) = commit(SketchCommand.MoveVertex(vertex.primitiveId, vertex.index, to))

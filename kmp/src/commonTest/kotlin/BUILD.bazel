@@ -164,6 +164,8 @@ kt_jvm_library(
         "dev/stapler/stelekit/ui/nav/NavCommandsTest.kt",
         "dev/stapler/stelekit/ui/nav/NavSectionBuilderTest.kt",
         "dev/stapler/stelekit/sketch/SnapEnginePropertyTest.kt",
+        "dev/stapler/stelekit/sketch/SketchNonDragModeTest.kt",
+        "dev/stapler/stelekit/ui/placement/NudgeStepperPropertyTest.kt",
         "dev/stapler/stelekit/sketch/ViewTransformTest.kt",
         "dev/stapler/stelekit/units/LengthParserGoldenTest.kt",
         "dev/stapler/stelekit/units/LengthParserPropertyTest.kt",
