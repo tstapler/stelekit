@@ -364,7 +364,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
             // Graph removal cancels that graph's scheduled work and tombstones it. The scope is guarded
-            // (SupervisorJob + handler) and outlives this composition; startup reconcile backstops a missed run.
+            // (SupervisorJob + handler) and outlives this composition; ScheduleStartup (Application.onCreate) reconciles at launch and backstops a missed run.
             LaunchedEffect(backgroundTaskScheduler) {
                 val removalScope = kotlinx.coroutines.CoroutineScope(
                     kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default +
@@ -376,9 +376,6 @@ class MainActivity : ComponentActivity() {
                     backgroundTaskScheduler, taskSettingsStore, app.taskRegistry, removalScope,
                 )
                 app.graphManager?.onGraphRemoved = { id -> removal.onRemoved(dev.stapler.stelekit.jobs.schedule.TaskScope(id.value)) }
-                dev.stapler.stelekit.jobs.schedule.ScheduledTaskReconciler(
-                    applicationContext, dev.stapler.stelekit.db.GraphRegistryKnownScopes(taskSettings),
-                ).reconcile()
             }
             val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity, fileSystem)
             // Null in release variants (GoogleBuildFlags), which hides every Google surface.

@@ -280,6 +280,7 @@ class SteleKitApplication : Application() {
                 preFlightJob = startupFlushJob,
             )
             publishShareShortcutsOnRegistryChange(graphManager)
+            startScheduleStartup()
             appScope.launch(Dispatchers.IO) {
                 try {
                     sweepMergeArtifactsOnDisk(filesDir.absolutePath)
@@ -291,6 +292,47 @@ class SteleKitApplication : Application() {
             logger.error("Application init failed — widget/tile/share will show placeholder", e)
             if (!::fileSystem.isInitialized) {
                 fileSystem = PlatformFileSystem()
+            }
+        }
+    }
+
+    /**
+     * Migrate the active graph, reconcile orphaned work and re-apply wiped work from the ledger (Story 3.1.4).
+     * Off the main thread; guarded so it can never fail startup. Replaces MainActivity's own reconcile call.
+     */
+    private fun startScheduleStartup() {
+        appScope.launch(Dispatchers.Default) {
+            try {
+                val settings = PlatformSettings()
+                val knownScopes = dev.stapler.stelekit.db.GraphRegistryKnownScopes(settings)
+                val store = dev.stapler.stelekit.jobs.schedule.TaskSettingsStore(
+                    settings, dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime.legacySeed, taskRegistry,
+                )
+                val ledger = dev.stapler.stelekit.jobs.schedule.AppliedConfigLedger(settings)
+                val health = dev.stapler.stelekit.jobs.schedule.SettingsReadHealth(this@SteleKitApplication)
+                dev.stapler.stelekit.jobs.schedule.ScheduleStartup(
+                    store = store,
+                    scheduler = dev.stapler.stelekit.jobs.schedule.WorkManagerTaskScheduler(
+                        context = this@SteleKitApplication,
+                        registry = taskRegistry,
+                        store = store,
+                        ledger = ledger,
+                        workers = dev.stapler.stelekit.git.GitSyncWorkerBinding.resolver,
+                    ),
+                    registry = taskRegistry,
+                    ledger = ledger,
+                    knownScopes = knownScopes,
+                    activeGraphId = { dev.stapler.stelekit.db.readActiveGraphId(settings) },
+                    reconcile = {
+                        dev.stapler.stelekit.jobs.schedule.ScheduledTaskReconciler(this@SteleKitApplication, knownScopes).reconcile()
+                    },
+                    workManagerReady = { dev.stapler.stelekit.jobs.schedule.isWorkManagerReady(this@SteleKitApplication) },
+                    onSettingsUnreadable = health::recordFailure,
+                ).run()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                logger.warn("Schedule startup failed", e)
             }
         }
     }
