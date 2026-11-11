@@ -20,11 +20,11 @@ Derived from `git log --oneline -60` on `stelekit-background-sync` (commit subje
 | 2.1.1, 2.1.2 | Done | dde7d51280, 30903a6ed8 |
 | 2.2.1, 2.2.2, 2.2.3 | Done in code; Task 2.2.2h (owner Keystore checkpoint) not run | ee07bac73a, 1909f1a084, 0ad685453b, b6d337e2f3 |
 | 3.1.1 - 3.1.4 | Done | 2aa6d09079, 0badec9629, d90b5c9657, 84271b25de, 974927f9d3, ead2dc0fa2, 2d06afa45f, 3948153a6a |
-| 3.2.1 | Done for tasks a-d, g, h (2050e8ed27) plus the owner-confirm (a)/(b) commits 64e0614861, ea721910ed; tasks e and f have no commit naming them, so check they are covered by ea721910ed before closing | 2050e8ed27, 64e0614861, ea721910ed |
+| 3.2.1 | Done. Tasks a-d, g, h in 2050e8ed27; tasks e and f in ea721910ed (`ModelDownloadPresentation` + `ModelDownloadPresentationTest`, "Download now anyway" and queued/failed states in `DepthEstimationPanel`, `ModelDownloadUiTest`), though its subject names owner-confirm (b) rather than the task ids. S6 follow-ups: "Download cancelled." with "Download again" in 2cfb810292, polite live region on download state changes (UX-38) in 3229e32b9e. Cancel calls `DepthModelDownloader.cancelDownload()`; whether that is the same path as the jobs-list cancel was not re-checked here | 2050e8ed27, 64e0614861, ea721910ed, 2cfb810292, 3229e32b9e |
 | 3.2.2 | Done | b1217df238 |
 | 4.1.1, 4.1.2, 4.1.3 | Done | c02cb050e6, 15e534e98c, 9e0db3a857 |
 | 5.1.1 | Done | a19a457d5d (plus 901f8e5d65 fixing MainActivity scope disposal) |
-| 5.1.2 | Done | this commit |
+| 5.1.2 | Done: `CLAUDE.md` "Background task scheduling" rule block and ADR-001..006 status lines (each ADR states what is still PENDING OWNER or unrun) | 10736f03c6 |
 | 5.1.3 | PENDING OWNER; checklist written, nothing run | [owner-verification.md](owner-verification.md) |
 
 PR-stack note: no open git-sync PRs; #591 (`7b6a356bc6`) is merged into this branch locally, so the Story 3.1.2 wall-clock blocker is cleared.
