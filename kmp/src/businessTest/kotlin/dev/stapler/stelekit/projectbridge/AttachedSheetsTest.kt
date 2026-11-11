@@ -29,6 +29,9 @@ import dev.stapler.stelekit.ui.sketch.DrawingStart
 import dev.stapler.stelekit.ui.sketch.DrawingText
 import dev.stapler.stelekit.ui.sketch.PickedDrawing
 import dev.stapler.stelekit.ui.sketch.ProjectListViewModel
+import dev.stapler.stelekit.ui.sketch.addDrawing
+import dev.stapler.stelekit.ui.sketch.finishDrawing
+import dev.stapler.stelekit.ui.sketch.removeDrawing
 import dev.stapler.stelekit.ui.sketchimport.ImportPhase
 import dev.stapler.stelekit.sketchimport.TagChoice
 import dev.stapler.stelekit.util.ContentHasher

@@ -8,7 +8,6 @@ import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.llm.LlmFeature
 import dev.stapler.stelekit.llm.LlmSettings
-import dev.stapler.stelekit.fusion.DimensionRegistry
 import dev.stapler.stelekit.projectbridge.AnalyseToggleDecision
 import dev.stapler.stelekit.projectbridge.AttachedSheetRow
 import dev.stapler.stelekit.projectbridge.AttachedSheetService
@@ -17,7 +16,6 @@ import dev.stapler.stelekit.projectbridge.BoundSourceRow
 import dev.stapler.stelekit.projectbridge.PickerPage
 import dev.stapler.stelekit.projectbridge.SourceBindingKind
 import dev.stapler.stelekit.projectbridge.SourceBindingService
-import dev.stapler.stelekit.ui.sketchimport.ImportPhase
 import dev.stapler.stelekit.projectbridge.AnalyseToggleRules
 import dev.stapler.stelekit.projectbridge.OutboundPreview
 import dev.stapler.stelekit.projectbridge.ProjectBridgeSettings
@@ -79,11 +77,11 @@ class ProjectListViewModel(
     private val random: Random = Random.Default,
     private val sources: SourceBindingService? = null,
     private val yaml: YamlPickerAction? = null,
-    private val drawings: DrawingAttachAction? = null,
-    private val sheets: AttachedSheetService? = null,
+    internal val drawings: DrawingAttachAction? = null,
+    internal val sheets: AttachedSheetService? = null,
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
-    private val scope = CoroutineScope(
+    internal val scope = CoroutineScope(
         SupervisorJob() + dispatcher + CoroutineExceptionHandler { _, e -> setMessage("Something went wrong (${e::class.simpleName})") },
     )
     private val _state = MutableStateFlow(snapshot(emptyList(), false))
@@ -91,8 +89,8 @@ class ProjectListViewModel(
     val sourcesAvailable: Boolean = sources != null
     val yamlAvailable: Boolean = yaml != null
     val drawingsAvailable: Boolean = drawings != null
-    private val _session = MutableStateFlow<DrawingSession?>(null)
-    val importSession: StateFlow<DrawingSession?> = _session
+    internal val drawingSession = MutableStateFlow<DrawingSession?>(null)
+    val importSession: StateFlow<DrawingSession?> = drawingSession
 
     init {
         scope.launch {
@@ -214,55 +212,16 @@ class ProjectListViewModel(
         }
     }
 
-    /** Picks a drawing and opens the existing import flow for it (Story 5.9d). */
-    fun addDrawing() {
-        val action = drawings ?: return
-        val project = _state.value.projects.firstOrNull() ?: return setMessage("Create a project first")
-        if (_session.value != null) return
-        scope.launch {
-            when (val start = action.start(project.uuid)) {
-                DrawingStart.Cancelled -> Unit
-                is DrawingStart.Refused -> setMessage(start.message)
-                is DrawingStart.Started -> _session.value = start.session
-            }
-        }
-    }
-
-    /** Called once the import screen reports Save or Cancel; only a saved drawing is recorded. */
-    fun finishDrawing(phase: ImportPhase, registry: DimensionRegistry?) {
-        val session = _session.value ?: return
-        _session.value = null
-        val action = drawings
-        if (phase != ImportPhase.Done || action == null) return
-        scope.launch {
-            action.finish(session, registry)?.let(::setMessage)
-            reloadBound()
-        }
-    }
-
-    fun removeDrawing(contentHash: String) {
-        val service = sheets ?: return
-        val project = _state.value.projects.firstOrNull() ?: return
-        scope.launch {
-            service.detach(project.uuid, contentHash)
-            reloadBound()
-        }
-    }
-
-    private suspend fun reloadBound() {
+    internal suspend fun reloadBound() {
         refreshYamlFlag()
-        refreshSheets()
+        sheets?.let { service ->
+            val rows = _state.value.projects.firstOrNull()?.let { service.list(it.uuid) }.orEmpty()
+            _state.update { it.copy(attachedSheets = rows) }
+        }
         val service = sources ?: return
         val project = _state.value.projects.firstOrNull() ?: return _state.update { it.copy(boundSources = emptyList()) }
         val rows = service.listBound(project.uuid)
         _state.update { it.copy(boundSources = rows) }
-    }
-
-    private suspend fun refreshSheets() {
-        val service = sheets ?: return
-        val project = _state.value.projects.firstOrNull()
-        val rows = project?.let { service.list(it.uuid) }.orEmpty()
-        _state.update { it.copy(attachedSheets = rows) }
     }
 
     private suspend fun refreshYamlFlag() {
@@ -279,7 +238,7 @@ class ProjectListViewModel(
 
     private fun refresh() = _state.update { snapshot(it.projects, it.hasMore, it) }
 
-    private fun setMessage(text: String) = _state.update { it.copy(message = text) }
+    internal fun setMessage(text: String) = _state.update { it.copy(message = text) }
 
     private fun snapshot(rows: List<ProjectRow>, hasMore: Boolean, previous: ProjectListUiState? = null) = ProjectListUiState(
         projects = rows,
