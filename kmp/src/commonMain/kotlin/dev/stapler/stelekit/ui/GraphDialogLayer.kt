@@ -151,6 +151,7 @@ private fun SettingsDialogHost(
     }
     val console = LocalConsole.current
     val developerModeOn = rememberDeveloperModeEnabled()
+    val homeSketchOn by viewModel.homeSketchEnabledState.collectAsState()
     SettingsDialog(
         assetIndexing = settings.assetIndexing,
         assetPlugins = settings.assetPlugins,
@@ -161,6 +162,8 @@ private fun SettingsDialogHost(
         visible = appState.shouldShowSettingsDialog(),
         isDeveloperModeEnabled = developerModeOn,
         onDeveloperModeToggle = console?.let { c -> { on: Boolean -> c.developerMode.set(on) } },
+        homeSketchEnabled = homeSketchOn,
+        onHomeSketchToggle = { on -> viewModel.setHomeSketchEnabled(on) },
         onOpenConsole = console?.let {
             {
                 viewModel.setSettingsVisible(false)

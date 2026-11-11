@@ -38,6 +38,8 @@ kt_android_library(
             "**/DimensionFieldTest.kt",
             "**/SketchSheetPanelsTest.kt",
             "**/SketchA11yTest.kt",
+            # Compose host test for the Labs settings toggle (Gradle-only, R-AU)
+            "**/LabsFlagToggleTest.kt",
             # Compose host test for the annotate non-drag placement UI (Gradle-only, no Compose plugin here)
             "**/AnnotationNonDragModeTest.kt",
             # Compose host test for the PNG calibration step (Gradle-only, no Compose plugin here)
