@@ -210,8 +210,15 @@ class InProcessTaskScheduler(
             var wait = firstWait
             while (true) {
                 delay(wait)
-                val scheduledAt = clock()
-                tick(key, loop, scheduledAt)
+                // A throw here would end this job while loops[key] still holds it, and the idempotent
+                // startLoop would then refuse to restart it: the schedule would be dead until the config changes.
+                try {
+                    tick(key, loop, clock())
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    logger.error("scheduled tick failed for ${TaskKeyEncoding.encode(key)}; the loop continues", t)
+                }
                 wait = nextWaitMs(effective)
                 setNextRun(key, clock() + wait)
             }

@@ -155,6 +155,18 @@ class InProcessTaskSchedulerTest {
     }
 
     @Test
+    fun tick_should_keepLooping_When_ConstraintProbeThrowsOnce() = runTest {
+        var runs = 0
+        var probes = 0
+        val h = Harness(this, key, { _, _ -> runs++; TaskRunResult.Success }, { if (probes++ == 0) throw IllegalStateException("probe down") else ConstraintState(true, false, null) })
+        h.scheduler.apply(key, TaskConfig(true, Schedule.of(15, 0), TaskConstraints()))
+        advanceTimeBy(45 * minute)
+        runCurrent()
+        h.scheduler.stop()
+        assertEquals(2, runs, "a throwing constraint probe must cost one tick, not the whole schedule")
+    }
+
+    @Test
     fun tick_should_stopLoop_When_TaskThrowsCancellation() = runTest {
         var calls = 0
         val h = Harness(this, key, { _, _ -> calls++; throw CancellationException("cancelled") }, online)

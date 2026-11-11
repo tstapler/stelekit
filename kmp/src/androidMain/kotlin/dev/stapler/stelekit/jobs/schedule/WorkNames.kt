@@ -43,5 +43,6 @@ object TaskWorkKeys {
         NetworkPolicy.Unmetered -> "unmetered"
     }
 
-    fun decode(raw: String?): NetworkPolicy = if (raw == "unmetered") NetworkPolicy.Unmetered else NetworkPolicy.Any
+    /** Fail-closed: only an absent key (pre-upgrade job) or exactly `"any"` runs on any network; an unrecognised value waits for Wi-Fi. */
+    fun decode(raw: String?): NetworkPolicy = if (raw == null || raw == "any") NetworkPolicy.Any else NetworkPolicy.Unmetered
 }
