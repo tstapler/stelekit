@@ -97,8 +97,23 @@ class GitSyncWorkerGateAndRecordTest {
         GitSyncWorker.runLogOverride = { log }
     }
 
+    private val events = mutableListOf<String>()
+
+    /** Records the order of the worker's hook calls; [postRunFails] makes postRun throw after the fetch succeeded. */
+    private fun recordingHooks(postRunFails: Boolean = false, yield: Boolean = false) {
+        GitSyncWorker.hooksOverride = object : GitSyncWorkerHooks {
+            override suspend fun runWatchdog(context: Context, graphId: String) { events += "watchdog" }
+            override suspend fun shouldYieldToCloneWorker(context: Context, graphId: String): Boolean { events += "yield-check"; return yield }
+            override suspend fun postRun(context: Context, key: TaskKey, input: androidx.work.Data, result: TaskRunResult) {
+                events += "postRun:${result::class.simpleName}"
+                if (postRunFails) throw IllegalStateException("notifier exploded")
+            }
+        }
+    }
+
     @After
     fun tearDown() {
+        GitSyncWorker.hooksOverride = null
         GitSyncWorker.snapshotProviderOverride = null
         GitSyncWorker.runLogOverride = null
         GitSyncServiceRegistry.unregister(graphId)
@@ -311,6 +326,49 @@ class GitSyncWorkerGateAndRecordTest {
             GitCloneWorkTracker.clear(context, graphId)
             BlockedCloneStandIn.release.countDown()
         }
+    }
+
+    @Test
+    fun doWork_should_runWatchdogThenBodyThenPostRun_When_FetchSucceeds() {
+        registerService(); provider(metered = false); recordingHooks()
+
+        assertIs<ListenableWorker.Result.Success>(run())
+
+        assertEquals(1, fetches)
+        assertEquals(listOf("watchdog", "yield-check", "postRun:Partial"), events)
+        assertEquals(1, log.records.size)
+    }
+
+    @Test
+    fun doWork_should_runWatchdogButSkipPostRun_When_NetworkGateSkips() {
+        registerService(); provider(metered = true); recordingHooks()
+
+        assertIs<ListenableWorker.Result.Success>(run(policy = "unmetered"))
+
+        assertEquals(listOf("watchdog"), events, "postRun (the notifier) must not run on a skipped tick")
+        assertEquals(TaskRunResult.Skipped("metered"), onlyRecord().result)
+    }
+
+    @Test
+    fun doWork_should_skipPostRun_When_CloneYieldSkips() {
+        provider(metered = false); recordingHooks(yield = true)
+
+        assertIs<ListenableWorker.Result.Success>(run())
+
+        assertEquals(listOf("watchdog", "yield-check"), events)
+        assertEquals(TaskRunResult.Skipped("clone-running"), onlyRecord().result)
+        assertEquals(0, fetches)
+    }
+
+    @Test
+    fun doWork_should_stayRecordedSuccessAndSucceed_When_PostRunThrowsAfterGoodFetch() {
+        registerService(); provider(metered = false); recordingHooks(postRunFails = true)
+
+        val result = run()
+
+        assertIs<ListenableWorker.Result.Success>(result, "a notifier failure must not turn a successful fetch into Failed")
+        assertEquals(1, fetches)
+        assertTrue(onlyRecord().result !is TaskRunResult.Failed, "recorded: ${log.records}")
     }
 
     /** Runs the worker with no live service and returns the cumulative record count after asserting the newest skip reason. */

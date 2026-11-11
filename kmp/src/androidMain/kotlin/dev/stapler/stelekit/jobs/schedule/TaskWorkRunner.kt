@@ -7,8 +7,6 @@ import android.content.Context
 import androidx.work.Data
 import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.withContext
 
 /** Everything a cold [TaskWorker] needs, built from a `Context` and process statics (no UI state). */
 class TaskWorkerDeps(
@@ -140,14 +138,7 @@ internal suspend fun runTaskWork(
         }
 
         val ctx = TaskRunContext(scheduledAtMs = null, startedAtMs = startedAtMs, appOpen = false, constraintState = constraintState, reportProgress = reportProgress)
-        val bodyResult = try {
-            task.run(key, ctx)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            logger.error("task ${key.kind.id} threw", e)
-            TaskRunResult.Failed(redactedFailureMessage(e), retryable = false)
-        }
+        val bodyResult = runTaskBody(task, key, ctx)
         result = bodyResult
         return mapResult(oneShot, spec, bodyResult, runAttemptCount)
     } catch (e: CancellationException) {
@@ -161,16 +152,12 @@ internal suspend fun runTaskWork(
     } finally {
         val final = result
         if (final != null) {
-            // NonCancellable: a cancelled worker still has to leave its run record (a suspending append would throw).
-            withContext(NonCancellable) {
-                recordRun(
-                    deps.runLog,
-                    TaskRunRecord(key, RunSource.Background, scheduledAtMs = null, startedAtMs = startedAtMs, result = final, constraintState = constraintState),
-                )
-                if (spec != null) {
-                    deps.hooks(key.kind)?.let { hooks -> guardedSideEffect("postRun hook") { hooks.postRun(context, key, input, final) } }
-                }
-            }
+            val hooks = if (spec != null) deps.hooks(key.kind) else null
+            recordThenPostRun(
+                deps.runLog,
+                TaskRunRecord(key, RunSource.Background, scheduledAtMs = null, startedAtMs = startedAtMs, result = final, constraintState = constraintState),
+                postRun = hooks?.let { h -> { r -> h.postRun(context, key, input, r) } },
+            )
         }
     }
 }
@@ -205,15 +192,5 @@ private fun mapResult(oneShot: Boolean, spec: TaskSpec, result: TaskRunResult, r
         // Only a one-shot has a retry budget; a failed periodic run waits for its next period (ADR-002).
         val canRetry = result.retryable && oneShot && runAttemptCount + 1 < spec.oneShotRetryCap
         if (canRetry) TaskWorkOutcome.Retry else TaskWorkOutcome.Failure(result.message)
-    }
-}
-
-private inline fun guardedSideEffect(what: String, block: () -> Unit) {
-    try {
-        block()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Throwable) {
-        logger.warn("$what failed", e)
     }
 }

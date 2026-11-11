@@ -4,10 +4,9 @@
 package dev.stapler.stelekit.git
 
 import dev.stapler.stelekit.jobs.schedule.TaskRegistry
-import dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime
 
 /**
- * Registers `git-sync` and its adapter hooks. Called only from `SteleKitApplication.onCreate`, right after
+ * Registers `git-sync`. Its hooks are not registered with `TaskWorkerRuntime`: `GitSyncWorker` (not `TaskWorker`) runs it and calls [GitSyncAdapterHooks] directly. Called only from `SteleKitApplication.onCreate`, right after
  * `registerAndroidTasks`; `jobs.schedule` stays git-free (ADR-001), so git-sync lives here instead. Idempotent:
  * an identical spec re-registers as a no-op. Desktop registers via [registerGitSync] too, but `PeriodicSyncDriver` stays its executor.
  *
@@ -16,5 +15,4 @@ import dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime
  */
 fun registerGitSyncTask(registry: TaskRegistry, cold: ColdPathRunner? = null) {
     registry.registerGitSync(GitSyncTask(cold = cold))
-    TaskWorkerRuntime.registerHooks(GitSyncTask.KIND, GitSyncAdapterHooks)
 }

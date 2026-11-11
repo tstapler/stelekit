@@ -37,7 +37,8 @@ import dev.stapler.stelekit.jobs.schedule.TaskSettingsStore
 import dev.stapler.stelekit.jobs.schedule.TaskWorkKeys
 import dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime
 import dev.stapler.stelekit.jobs.schedule.WorkManagerTaskScheduler
-import dev.stapler.stelekit.jobs.schedule.recordRun
+import dev.stapler.stelekit.jobs.schedule.recordThenPostRun
+import dev.stapler.stelekit.jobs.schedule.runTaskBody
 import dev.stapler.stelekit.jobs.schedule.toTaskRunResult
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.RepoRoot
@@ -138,6 +139,21 @@ class WorkManagerSyncScheduler(
     }
 }
 
+/** The androidMain side effects around a git-sync tick; [Default] is [GitSyncAdapterHooks]. A seam so tests can observe order and inject failures. */
+internal interface GitSyncWorkerHooks {
+    suspend fun runWatchdog(context: Context, graphId: String)
+    suspend fun shouldYieldToCloneWorker(context: Context, graphId: String): Boolean
+    suspend fun postRun(context: Context, key: TaskKey, input: androidx.work.Data, result: TaskRunResult)
+
+    object Default : GitSyncWorkerHooks {
+        override suspend fun runWatchdog(context: Context, graphId: String) = GitSyncAdapterHooks.runWatchdog(context, graphId)
+        override suspend fun shouldYieldToCloneWorker(context: Context, graphId: String) =
+            GitSyncAdapterHooks.shouldYieldToCloneWorker(context, graphId)
+        override suspend fun postRun(context: Context, key: TaskKey, input: androidx.work.Data, result: TaskRunResult) =
+            GitSyncAdapterHooks.postRun(context, key, input, result)
+    }
+}
+
 /**
  * WorkManager worker for scheduled git sync: a THIN WRAPPER (Story 3.1.2, ADR-001). With the app alive it
  * runs the policy-gated [ScheduledSyncRunner] tick on the registered service; with no live service it
@@ -163,6 +179,7 @@ class GitSyncWorker(
         @Volatile internal var snapshotProviderOverride: ((Context) -> NetworkSnapshotProvider)? = null
         @Volatile internal var runLogOverride: ((Context) -> TaskRunLog)? = null
         @Volatile internal var coldPathOverride: ColdPathRunner? = null
+        @Volatile internal var hooksOverride: GitSyncWorkerHooks? = null
     }
 
     override suspend fun doWork(): Result {
@@ -170,13 +187,15 @@ class GitSyncWorker(
         val startedAtMs = System.currentTimeMillis()
         var constraintState = ConstraintState(online = false, isMetered = null, charging = null)
         var recorded: TaskRunResult? = null
+        var bodyRan = false
+        val hooks = hooksOverride ?: GitSyncWorkerHooks.Default
         try {
             SteleKitContext.init(applicationContext)
             val key = TaskKey(GitSyncTask.KIND, TaskScope(graphId))
             val policy = TaskWorkKeys.decode(inputData.getString(KEY_NETWORK_POLICY))
 
             // A side-effecting observation only: never allowed to affect this worker's own Result.
-            GitSyncAdapterHooks.runWatchdog(applicationContext, graphId)
+            hooks.runWatchdog(applicationContext, graphId)
 
             val snapshot = readSnapshot()
             if (snapshot != null) constraintState = ConstraintState(snapshot.online, snapshot.isMetered, charging = null)
@@ -191,16 +210,16 @@ class GitSyncWorker(
                 return Result.success()
             }
 
-            if (GitSyncAdapterHooks.shouldYieldToCloneWorker(applicationContext, graphId)) {
+            if (hooks.shouldYieldToCloneWorker(applicationContext, graphId)) {
                 recorded = TaskRunResult.Skipped(GitSyncAdapterHooks.YIELD_REASON)
                 return Result.success()
             }
 
             val liveService = GitSyncServiceRegistry.getService(graphId)
             val ctx = TaskRunContext(scheduledAtMs = null, startedAtMs = startedAtMs, appOpen = liveService != null, constraintState = constraintState)
-            val result = GitSyncTask(cold = coldPathOverride ?: AndroidColdPathRunner(applicationContext)).run(key, ctx)
+            val result = runTaskBody(GitSyncTask(cold = coldPathOverride ?: AndroidColdPathRunner(applicationContext)), key, ctx)
             recorded = result
-            GitSyncAdapterHooks.postRun(applicationContext, key, inputData, result)
+            bodyRan = true
             return if (result is TaskRunResult.Failed) Result.failure() else Result.success()
         } catch (e: CancellationException) {
             throw e
@@ -210,7 +229,15 @@ class GitSyncWorker(
             recorded = TaskRunResult.Failed(redactedFailureMessage(e), retryable = false)
             return Result.failure()
         } finally {
-            recorded?.let { final -> recordOnce(graphId, startedAtMs, final, constraintState) }
+            recorded?.let { final ->
+                val key = TaskKey(GitSyncTask.KIND, TaskScope(graphId))
+                // postRun (the notifier) only follows a body that ran: a skipped tick has nothing new to announce.
+                recordThenPostRun(
+                    buildRunLog(graphId),
+                    TaskRunRecord(key, RunSource.Background, scheduledAtMs = null, startedAtMs = startedAtMs, result = final, constraintState = constraintState),
+                    postRun = if (bodyRan) { r -> hooks.postRun(applicationContext, key, inputData, r) } else null,
+                )
+            }
         }
     }
 
@@ -223,20 +250,14 @@ class GitSyncWorker(
         null
     }
 
-    /** The log write can never change the worker's Result: building the log or appending may fail. */
-    private suspend fun recordOnce(graphId: String, startedAtMs: Long, result: TaskRunResult, state: ConstraintState) {
-        val runLog = try {
-            runLogOverride?.invoke(applicationContext) ?: SettingsTaskRunLog(PlatformSettings())
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            Logger("GitSyncWorker").warn("run log unavailable for $graphId", e)
-            return
-        }
-        recordRun(
-            runLog,
-            TaskRunRecord(TaskKey(GitSyncTask.KIND, TaskScope(graphId)), RunSource.Background, scheduledAtMs = null, startedAtMs = startedAtMs, result = result, constraintState = state),
-        )
+    /** Building the log may fail (settings unavailable); that must never change the worker's Result. */
+    private fun buildRunLog(graphId: String): TaskRunLog? = try {
+        runLogOverride?.invoke(applicationContext) ?: SettingsTaskRunLog(PlatformSettings())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        Logger("GitSyncWorker").warn("run log unavailable for $graphId", e)
+        null
     }
 }
 
