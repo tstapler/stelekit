@@ -67,7 +67,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
+import dev.stapler.stelekit.ui.placement.crosshairPoint
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -181,6 +184,8 @@ fun AnnotationEditorScreen(
 ) {
     val state by viewModel.state.collectAsState()
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    val placementSpace = AnnotationPlacementSpace(canvasSize.width, canvasSize.height)
+    val haptic = LocalHapticFeedback.current
     var showCalibrationSheet by remember { mutableStateOf(false) }
     var showCalibrationChangeWarning by remember { mutableStateOf(false) }
     var isFirstCalibrationUse by remember {
@@ -477,7 +482,8 @@ fun AnnotationEditorScreen(
                 onTap = { offset ->
                     val normalized = offset.toNormalized(canvasSize)
                     if (normalized != null) {
-                        viewModel.addPoint(normalized)
+                        if (state.placement.active) viewModel.tapCrosshair(placementSpace, normalized)
+                        else viewModel.addPoint(normalized)
                     }
                 },
                 onLoupeOffset = { offset -> loupeOffset = offset },
@@ -488,6 +494,8 @@ fun AnnotationEditorScreen(
                 onEditPoints = { uuid, pts -> viewModel.updateAnnotationPoints(uuid, pts) },
                 onEditEnd = { uuid -> viewModel.commitAnnotationEdit(uuid) },
             )
+
+            AnnotationCrosshairLayer(state.placement.state.crosshairPoint, canvasSize)
 
             val currentLoupeOffset = loupeOffset
             if (currentLoupeOffset != null && canvasSize != IntSize.Zero) {
@@ -522,6 +530,7 @@ fun AnnotationEditorScreen(
                 annotations = state.committedAnnotations,
                 canvasSize = canvasSize,
                 onAnnotationSelect = { uuid -> viewModel.selectAnnotation(uuid) },
+                onMoveVertex = { uuid, index -> viewModel.beginVertexMove(placementSpace, uuid, index) },
                 modifier = Modifier.fillMaxSize(),
             )
 
@@ -579,6 +588,19 @@ fun AnnotationEditorScreen(
                         )
                     }
                 }
+            }
+
+            if (state.currentTool != AnnotationTool.SELECT) {
+                AnnotationPlacementControls(
+                    session = state.placement,
+                    onToggle = { viewModel.togglePlacementMode(placementSpace) },
+                    onNudge = { direction, step -> viewModel.nudgeCrosshair(placementSpace, direction, step) },
+                    onConfirm = {
+                        if (viewModel.confirmCrosshair(placementSpace)) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    },
+                    onCancel = { viewModel.cancelPlacement() },
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 150.dp),
+                )
             }
 
             // Layer 5: Annotation toolbar (bottom)

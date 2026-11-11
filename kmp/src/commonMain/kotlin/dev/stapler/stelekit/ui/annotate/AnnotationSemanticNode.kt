@@ -12,7 +12,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -21,6 +23,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.MeasurementAnnotation
+import dev.stapler.stelekit.ui.sketch.moveVertexLabel
 import kotlin.math.roundToInt
 
 /**
@@ -44,6 +47,8 @@ fun AnnotationSemanticOverlay(
     canvasSize: IntSize,
     onAnnotationSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
+    /** TalkBack "Move vertex N" (non-drag placement); null omits the actions. */
+    onMoveVertex: ((String, Int) -> Unit)? = null,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
         for (annotation in annotations) {
@@ -51,6 +56,7 @@ fun AnnotationSemanticOverlay(
                 annotation = annotation,
                 canvasSize = canvasSize,
                 onSelect = { onAnnotationSelect(annotation.uuid) },
+                onMoveVertex = onMoveVertex?.let { move -> { index: Int -> move(annotation.uuid, index) } },
             )
         }
     }
@@ -67,6 +73,7 @@ private fun AnnotationSemanticNode(
     annotation: MeasurementAnnotation,
     canvasSize: IntSize,
     onSelect: () -> Unit,
+    onMoveVertex: ((Int) -> Unit)?,
 ) {
     val density = LocalDensity.current
     val minTouchTargetPx = with(density) { 44.dp.toPx() }
@@ -106,6 +113,11 @@ private fun AnnotationSemanticNode(
                 contentDescription = annotation.toAccessibleDescription()
                 role = Role.Button
                 onClick(label = "Select annotation") { onSelect(); true }
+                if (onMoveVertex != null) {
+                    customActions = points.indices.map { index ->
+                        CustomAccessibilityAction(moveVertexLabel(index)) { onMoveVertex(index); true }
+                    }
+                }
             },
     )
 }

@@ -45,6 +45,7 @@ fun AnnotationEditorState.restoredOver(current: AnnotationEditorState): Annotati
         currentTool = current.currentTool,
         inProgressPoints = emptyList(),
         error = current.error,
+        placement = current.placement,
         // A unit change is not an undoable step: keep the chosen unit and show restored measurements in it.
         selectedUnit = current.selectedUnit,
         imageAnnotation = imageAnnotation?.copy(unit = current.selectedUnit),

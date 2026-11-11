@@ -35,6 +35,8 @@ kt_android_library(
             "**/DimensionFieldTest.kt",
             "**/SketchSheetPanelsTest.kt",
             "**/SketchA11yTest.kt",
+            # Compose host test for the annotate non-drag placement UI (Gradle-only, no Compose plugin here)
+            "**/AnnotationNonDragModeTest.kt",
         ],
     ),
     custom_package = "dev.stapler.stelekit",
