@@ -75,6 +75,8 @@ class AndroidGitRepository(
 
     override fun setCredentialAccess(access: CredentialAccess) { credentialAccess = access }
 
+    private val networkSnapshots by lazy { dev.stapler.stelekit.jobs.schedule.AndroidNetworkSnapshotProvider(context) }
+
     private val lfs = LfsRepositorySupport(
         credentialAccess = { this.credentialAccess },
         httpClientFactory = { HttpClient(OkHttp) { configureLfsTimeouts() } },
@@ -87,10 +89,8 @@ class AndroidGitRepository(
     override fun setLfsTransferContext(tracker: dev.stapler.stelekit.jobs.JobTracker, policy: () -> dev.stapler.stelekit.git.lfs.LfsTransferPolicy) {
         lfs.jobTracker = tracker
         lfs.policy = policy
-        lfs.isMetered = {
-            (context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager)
-                ?.isActiveNetworkMetered ?: false
-        }
+        lfs.meteredDetectionSupported = lfsMeteredDetectionSupported
+        lfs.isMetered = { networkSnapshots.snapshot().isMetered }
     }
 
     /**

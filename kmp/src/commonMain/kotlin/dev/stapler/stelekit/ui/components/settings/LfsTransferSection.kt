@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.jobs.schedule.NetworkPolicyCopy
 
 /** Everything [LfsTransferSection] shows and can change; the stack builds it. */
 data class LfsTransferSettingsState(
@@ -34,13 +35,13 @@ data class LfsTransferSettingsState(
 /** Largest-image choices, in MB. A stored value outside this list is shown as an extra choice so it is never hidden. */
 internal val LFS_MAX_OBJECT_MB_OPTIONS = listOf(50, 100, 256, 512, 1024)
 internal const val LFS_SIZE_HELPER = "Images larger than this stay on the server and are listed under Background jobs."
-internal const val LFS_METERED_LABEL = "Wait for Wi-Fi before downloading images"
-internal const val LFS_METERED_HELPER = "Large images are held on mobile data and downloaded once the connection is unmetered."
+internal const val LFS_METERED_LABEL = NetworkPolicyCopy.UNMETERED_ONLY_LABEL
+internal const val LFS_METERED_HELPER = NetworkPolicyCopy.UNMETERED_ONLY_HELPER
 private const val MIN_TARGET_DP = 48
 
 internal fun lfsSizeLabel(mb: Int): String = if (mb >= 1024 && mb % 1024 == 0) "${mb / 1024} GB" else "$mb MB"
 
-/** Settings > Large files (Git LFS): the biggest image to download automatically, and whether to wait for Wi-Fi. */
+/** Settings > Large files (Git LFS): the biggest image to download automatically, and whether to wait for an unmetered network. */
 @Composable
 fun LfsTransferSection(state: LfsTransferSettingsState, modifier: Modifier = Modifier) {
     SettingsSection("Large files (Git LFS)") {
