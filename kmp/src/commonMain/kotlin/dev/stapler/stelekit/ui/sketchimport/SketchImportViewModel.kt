@@ -38,6 +38,8 @@ data class SketchImportUiState(
     val error: String? = null,
     /** The registry with any keys created while tagging; the host persists it when [phase] is [ImportPhase.Done]. */
     val registry: DimensionRegistry? = null,
+    /** The calibration step of a PNG sheet (Story 4.5b); null for an SVG. */
+    val raster: RasterState? = null,
 )
 
 /** Owns its scope (never a composition scope); `cancel()` writes nothing because `ImportFlow.prepare` only reads. */
@@ -70,7 +72,34 @@ class SketchImportViewModel(
                     items = p.taggingItems,
                     boundCount = p.labels.bound.size,
                     registryKeys = registry.dimensions.map { it.key },
+                    raster = p.raster?.let { RasterState(it).toggled() },
                 )
+            },
+        )
+    }
+
+    /** The picked PNG's bytes for the calibration image; null for an SVG or before a file is open. */
+    fun rasterImage(): ByteArray? = preview?.takeIf { it.raster != null }?.bytes
+
+    /** Applies a pure [RasterState] edit (placing points, typing the length, calibrating, ...). */
+    fun editRaster(edit: (RasterState) -> RasterState) {
+        _state.update { s -> s.raster?.let { s.copy(raster = edit(it)) } ?: s }
+    }
+
+    /** Binds the current line (or, with [toReference], the typed reference line) to the dimension chosen by [choice]. */
+    fun bindRaster(choice: TagChoice, toReference: Boolean = false) {
+        val current = _state.value.raster ?: return
+        val outcome = Tagging.apply(registry, mapOf(RASTER_REF to choice)).fold(
+            { e -> _state.update { it.copy(keyError = e) }; return },
+            { it },
+        )
+        val key = outcome.assignments[RASTER_REF] ?: return editRaster { it.clearedLine() }
+        val bound = if (toReference) current.referenceTagged(outcome.registry, key) else current.tagged(outcome.registry, key)
+        bound.fold(
+            { e -> editRaster { it.failed(e) } },
+            { next ->
+                registry = outcome.registry
+                _state.update { it.copy(raster = next, keyError = null, registryKeys = registry.dimensions.map { d -> d.key }) }
             },
         )
     }
@@ -87,7 +116,7 @@ class SketchImportViewModel(
         )
         _state.update { it.copy(phase = ImportPhase.Saving, keyError = null) }
         scope.launch {
-            flow.commit(projectUuid, p, outcome.registry, outcome.assignments).fold(
+            flow.commit(projectUuid, p.withRasterSession(_state.value.raster?.session), outcome.registry, outcome.assignments).fold(
                 { e -> _state.update { it.copy(phase = ImportPhase.Failed, error = describe(e)) } },
                 {
                     registry = outcome.registry
@@ -99,10 +128,14 @@ class SketchImportViewModel(
 
     fun cancel() {
         preview = null
-        _state.update { it.copy(phase = ImportPhase.Cancelled, choices = emptyMap(), items = emptyList()) }
+        _state.update { it.copy(phase = ImportPhase.Cancelled, choices = emptyMap(), items = emptyList(), raster = null) }
     }
 
     fun close() = scope.cancel()
+
+    private companion object {
+        const val RASTER_REF = "raster"
+    }
 
     private fun describe(e: ImportError): String = when (e) {
         is ImportError.UnsupportedType -> "Unsupported file type: ${e.extension.ifEmpty { "none" }}"

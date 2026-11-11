@@ -49,7 +49,13 @@ class DrawingPreview(
     val unsupported: List<String>,
     /** Native size of a PNG sheet (Story 4.5); null for an SVG. */
     val raster: PngSize? = null,
+    /** The calibration and tags the user made on a PNG sheet (Story 4.5b); null for an SVG or an untagged PNG. */
+    val rasterSession: RasterSession? = null,
 ) {
+    /** This preview carrying the user's PNG [session]; [ImportFlow.commit] then saves the tags and the calibration record. */
+    fun withRasterSession(session: RasterSession?): DrawingPreview =
+        DrawingPreview(fileName, extension, bytes, contentHash, labels, viewDirection, unsupported, raster, session)
+
     val taggingItems: List<TaggingItem> get() = Tagging.items(labels)
 }
 
@@ -107,7 +113,10 @@ class ImportFlow(
         val loaded = repos.projects.loadProject(projectUuid).fold({ return fail(it) }, { it })
             ?: return ImportError.ProjectMissing.left()
         val token = loaded.token
-        val dimensions = dimensionsFor(projectUuid, preview, registry, assignments) + rasterDimension(projectUuid, preview, registry, reference)
+        val tags = preview.rasterSession?.tagsIn(registry).orEmpty()
+        val dimensions = dimensionsFor(projectUuid, preview, registry, assignments) +
+            rasterDimension(projectUuid, preview, registry, reference) +
+            tags.map { PngSheetAdapter.tagDimension(projectUuid, UuidGenerator.generateV7(), it, preview.contentHash) }
 
         val dir = "${notesPath.child("assets")}/${DrawingLocationRule.SKETCH_DIR}/${loaded.project.slug}/drawings"
         val path = "$dir/${preview.contentHash.take(HASH_PREFIX)}.${preview.extension}"
@@ -129,7 +138,19 @@ class ImportFlow(
             position = position,
         )
         writeAll(token, sheet, dimensions).fold({ return fail(it) }, { })
+        preview.rasterSession?.let { recordCalibration(projectUuid, it.record(preview.contentHash, tags)).fold({ e -> return fail(e) }, { }) }
         return ImportOutcome(sheet.uuid, path, dimensions.size).right()
+    }
+
+    /** Adds the sheet's calibration record to the project's synced `sources[]`; the grown registry is persisted by the host, as for SVG tagging. */
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun recordCalibration(projectUuid: ProjectUuid, record: PngCalibrationRecord): Either<DomainError, Unit> {
+        val project = repos.projects.loadProject(projectUuid).fold({ return it.left() }, { it })?.project
+            ?: return DomainError.DatabaseError.WriteFailed("project missing").left()
+        val settings = PngTagSources.with(project.settings, record)
+            ?: return DomainError.DatabaseError.WriteFailed("calibration record rejected").left()
+        val updated = project.copy(settings = settings, modelRevision = project.modelRevision + 1)
+        return writeActor?.execute { repos.projects.saveProject(updated) } ?: repos.projects.saveProject(updated)
     }
 
     @OptIn(DirectRepositoryWrite::class)
