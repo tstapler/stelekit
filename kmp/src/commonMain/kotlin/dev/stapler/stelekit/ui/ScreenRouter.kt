@@ -148,12 +148,13 @@ internal fun ScreenRouter(
     val suggestionMatcher by viewModel.suggestionMatcher.collectAsState()
 
     // One Library session for the router's lifetime so filters and scroll survive Back from the editor.
-    val librarySession = remember(repos, fileSystem) {
+    val librarySession = remember(repos, fileSystem, assetPlugins) {
         LibrarySession(
             repos.libraryRepository,
             platformSettings,
             fileExists = fileSystem?.let { fs -> { path: String -> fs.fileExists(path) } },
             deleteAsset = libraryAssetDeleter(repos.assetRepository, repos.writeActor),
+            indexProgress = assetPlugins?.indexing?.progress,
         )
     }
     DisposableEffect(librarySession) { onDispose { librarySession.close() } }

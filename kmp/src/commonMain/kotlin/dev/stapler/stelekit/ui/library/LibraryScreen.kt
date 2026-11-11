@@ -110,7 +110,7 @@ fun LibraryScreen(
             when {
                 state.isLoading && state.items.isEmpty() -> LoadingState()
                 state.error != null && state.items.isEmpty() -> ErrorState(state.error.orEmpty(), viewModel::reload)
-                state.items.isEmpty() -> EmptyState(state.filters, onAddPhoto, viewModel::clearFilters)
+                state.items.isEmpty() -> EmptyState(state.filters, state.indexing, onAddPhoto, viewModel::clearFilters)
                 else -> ItemGrid(state, gridState, viewModel, onOpenAnnotationEditor, onOpenAsset, onCopyLink, onOpenSketch, onAnnotate)
             }
         }
@@ -290,7 +290,7 @@ private fun ErrorState(message: String, onRetry: () -> Unit) {
 }
 
 @Composable
-private fun EmptyState(filters: LibraryFilterState, onAddPhoto: (() -> Unit)?, onClear: () -> Unit) {
+private fun EmptyState(filters: LibraryFilterState, indexing: Boolean, onAddPhoto: (() -> Unit)?, onClear: () -> Unit) {
     val filtered = !filters.isDefault
     Column(
         Modifier.fillMaxSize().testTag("library-empty"),
@@ -300,6 +300,7 @@ private fun EmptyState(filters: LibraryFilterState, onAddPhoto: (() -> Unit)?, o
         val (titleKey, bodyKey) = when {
             filters.annotated && filters == LibraryFilterState(annotated = true) -> I18n.LIBRARY_EMPTY_FILTERED to I18n.LIBRARY_EMPTY_ANNOTATED
             filtered -> I18n.LIBRARY_EMPTY_FILTERED to null
+            indexing -> I18n.LIBRARY_INDEXING to null
             else -> I18n.LIBRARY_EMPTY_TITLE to I18n.LIBRARY_EMPTY_BODY
         }
         Text(t(titleKey), style = MaterialTheme.typography.titleMedium)

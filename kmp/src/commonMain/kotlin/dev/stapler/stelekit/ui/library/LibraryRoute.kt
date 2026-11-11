@@ -17,11 +17,12 @@ class LibrarySession(
     private val settings: Settings?,
     private val fileExists: ((String) -> Boolean)? = null,
     private val deleteAsset: (suspend (String) -> arrow.core.Either<dev.stapler.stelekit.error.DomainError, Unit>)? = null,
+    private val indexProgress: kotlinx.coroutines.flow.StateFlow<dev.stapler.stelekit.asset.AssetIndexProgress>? = null,
 ) {
     private var viewModel: LibraryViewModel? = null
 
     fun viewModel(): LibraryViewModel =
-        viewModel ?: LibraryViewModel(repository, settings, fileExists = fileExists, deleteAsset = deleteAsset).also { viewModel = it }
+        viewModel ?: LibraryViewModel(repository, settings, fileExists = fileExists, deleteAsset = deleteAsset, indexProgress = indexProgress).also { viewModel = it }
 
     fun close() {
         viewModel?.close()

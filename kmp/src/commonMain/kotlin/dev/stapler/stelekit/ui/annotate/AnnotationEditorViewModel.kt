@@ -6,10 +6,15 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import androidx.compose.ui.graphics.ImageBitmap
 import dev.stapler.stelekit.calibration.CalibrationService
+import dev.stapler.stelekit.calibration.LensMeasurement
+import dev.stapler.stelekit.calibration.LensMode
+import dev.stapler.stelekit.calibration.MeasurementReliability
+import dev.stapler.stelekit.calibration.MultiPointCalibration
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationMethod
+import dev.stapler.stelekit.model.CalibrationTick
 import dev.stapler.stelekit.model.DEFAULT_MEASUREMENT_UNIT
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.MeasurementAnnotation
@@ -602,6 +607,27 @@ class AnnotationEditorViewModel(
         logger.info("GRID_REF calibration applied: ${calibration.pixelsPerMeter} px/m from ${lengthMeters}m reference")
     }
 
+    /**
+     * Applies a multi-point (basis v2) ruler calibration from 2+ marked ticks and re-derives all
+     * committed measurements. [mode] picks no correction, a preset k, or automatic estimation.
+     * No-op when the ticks cannot define a scale.
+     */
+    fun confirmMultiPointCalibration(ticks: List<CalibrationTick>, mode: LensMode) {
+        if (inputStopped()) return
+        val calibration = MultiPointCalibration.calibrate(ticks, imageWidthPx, imageHeightPx, mode) ?: return
+        updateCalibration(calibration)
+        logger.info("Multi-point calibration applied: ${ticks.size} ticks, k=${calibration.lens?.k}")
+    }
+
+    /** Warnings for the committed annotation [uuid]; empty when it is unknown or the calibration has no ruler marks. */
+    fun reliabilityOf(uuid: String): MeasurementReliability {
+        val st = _state.value
+        val annotation = st.committedAnnotations.firstOrNull { it.uuid == uuid }
+        val calibration = st.calibration
+        if (annotation == null || calibration == null) return MeasurementReliability(0.0, emptyList())
+        return LensMeasurement.assess(annotation.normalizedPoints, calibration, imageWidthPx, imageHeightPx)
+    }
+
     /** Dismiss the GRID_REF dialog without applying calibration. */
     fun dismissGridRefDialog() {
         _state.update {
@@ -883,6 +909,10 @@ class AnnotationEditorViewModel(
                 if (points.size < 2) return null to null
                 val p1 = points[0]
                 val p2 = points[1]
+                if (calibration?.lens != null) {
+                    val lensMeters = LensMeasurement.distanceMeters(p1, p2, calibration, imageWidthPx, imageHeightPx)
+                    return lensMeters to lensMeters?.let { metersToDisplayString(it, displayUnit) }
+                }
                 val dx = (p2.x - p1.x) * imageWidthPx
                 val dy = (p2.y - p1.y) * imageHeightPx
                 val pixelDist = sqrt(dx * dx + dy * dy)
@@ -899,7 +929,11 @@ class AnnotationEditorViewModel(
                 if (ppm == 0.0) {
                     null to "uncalibrated"
                 } else {
-                    val area = polygonAreaMeters(points, ppm, imageWidthPx, imageHeightPx)
+                    val area = if (calibration?.lens != null) {
+                        LensMeasurement.areaSquareMeters(points, calibration, imageWidthPx, imageHeightPx) ?: 0.0
+                    } else {
+                        polygonAreaMeters(points, ppm, imageWidthPx, imageHeightPx)
+                    }
                     area to "${metersToDisplayString(area, displayUnit)}²"
                 }
             }

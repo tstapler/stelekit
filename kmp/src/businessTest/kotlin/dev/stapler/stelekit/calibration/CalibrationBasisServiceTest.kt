@@ -69,8 +69,9 @@ class CalibrationBasisServiceTest {
 
     @Test
     fun isKnown_should_AcceptOnlyDefinedVersions() {
-        assertTrue(CalibrationBasis.isKnown(0) && CalibrationBasis.isKnown(1))
-        assertFalse(CalibrationBasis.isKnown(2))
+        // 2 became a defined basis (native pixels + lens model); the first undefined version is now 3.
+        assertTrue(CalibrationBasis.isKnown(0) && CalibrationBasis.isKnown(1) && CalibrationBasis.isKnown(2))
+        assertFalse(CalibrationBasis.isKnown(3))
         assertFalse(CalibrationBasis.isKnown(-1))
     }
 }

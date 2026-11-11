@@ -3,6 +3,7 @@ package dev.stapler.stelekit.ui.library
 import arrow.core.Either
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.asset.AssetIndexProgress
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.LibraryRepository
@@ -41,6 +42,8 @@ data class LibraryState(
     val missingIds: Set<String> = emptySet(),
     /** Last failed per-item action (delete); null when none or dismissed. */
     val actionError: String? = null,
+    /** True while the asset file walk is filling the index, so an empty list reads as "not yet" (not "none"). */
+    val indexing: Boolean = false,
 ) {
     val query: LibraryQuery get() = LibraryQuery(filters, sort)
 }
@@ -62,6 +65,8 @@ class LibraryViewModel(
     private val fileExists: ((String) -> Boolean)? = null,
     /** Null where deletion is not wired: [deleteItem] is then a no-op. Runs through the write actor. */
     private val deleteAsset: (suspend (String) -> Either<DomainError, Unit>)? = null,
+    /** Null where no index walk is wired. A finished walk reloads the list; a running one shows "Indexing". */
+    private val indexProgress: StateFlow<AssetIndexProgress>? = null,
 ) {
     private val logger = Logger("LibraryViewModel")
     private val scope = CoroutineScope(
@@ -84,6 +89,24 @@ class LibraryViewModel(
     init {
         reload()
         loadTags()
+        observeIndexing()
+    }
+
+    private fun observeIndexing() {
+        val progress = indexProgress ?: return
+        scope.launch {
+            var wasRunning = false
+            progress.collect { p ->
+                val running = isRunning(p)
+                _state.update { it.copy(indexing = running) }
+                if (wasRunning && p is AssetIndexProgress.Finished) {
+                    logger.info("Library reload after index walk finished (${p.total} files)")
+                    reload()
+                    loadTags()
+                }
+                wasRunning = running
+            }
+        }
     }
 
     // -- Filters and sort -------------------------------------------------------------------------------
@@ -142,6 +165,7 @@ class LibraryViewModel(
             repository.getLibraryPage(query, null, pageSize).fold(
                 { e -> if (gen == generation) _state.update { it.copy(isLoading = false, error = e.message) } },
                 { items ->
+                    if (gen == generation) logger.info("Library page loaded: ${items.size} items")
                     if (gen == generation) _state.update {
                         it.copy(items = items, isLoading = false, hasMore = items.size >= pageSize, missingIds = emptySet())
                     }
@@ -237,3 +261,6 @@ class LibraryViewModel(
         const val SEARCH_DEBOUNCE_MS = 300L
     }
 }
+
+internal fun isRunning(p: AssetIndexProgress): Boolean =
+    p is AssetIndexProgress.Counting || p is AssetIndexProgress.Indexing

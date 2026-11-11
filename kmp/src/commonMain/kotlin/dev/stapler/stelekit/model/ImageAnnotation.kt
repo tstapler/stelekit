@@ -57,6 +57,8 @@ data class Calibration(
      * [CalibrationBasis.LEGACY_DECODE_RELATIVE] so every code path that does not opt in stays legacy.
      */
     val basisVersion: Int = CalibrationBasis.LEGACY_DECODE_RELATIVE,
+    /** Multi-point / lens-correction data; non-null only for [CalibrationBasis.NATIVE_PIXELS_LENS]. */
+    val lens: LensCalibration? = null,
 ) {
     /** True when [pixelsPerMeter] is decode-size-relative and must never be rescaled. */
     val isLegacyBasis: Boolean get() = basisVersion == CalibrationBasis.LEGACY_DECODE_RELATIVE
@@ -68,8 +70,14 @@ object CalibrationBasis {
     const val LEGACY_DECODE_RELATIVE = 0
     /** [Calibration.pixelsPerMeter] is relative to the image's native pixel dimensions. */
     const val NATIVE_PIXELS = 1
+    /** Native pixels plus a [LensCalibration]: distances are measured after radial undistortion. */
+    const val NATIVE_PIXELS_LENS = 2
 
-    fun isKnown(version: Int): Boolean = version == LEGACY_DECODE_RELATIVE || version == NATIVE_PIXELS
+    fun isKnown(version: Int): Boolean =
+        version == LEGACY_DECODE_RELATIVE || version == NATIVE_PIXELS || version == NATIVE_PIXELS_LENS
+
+    /** True for bases whose [Calibration.pixelsPerMeter] scales with the rendered/native width ratio. */
+    fun isNativeRelative(version: Int): Boolean = version == NATIVE_PIXELS || version == NATIVE_PIXELS_LENS
 }
 
 /**

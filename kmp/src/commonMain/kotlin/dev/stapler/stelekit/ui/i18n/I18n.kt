@@ -153,6 +153,7 @@ private val translations = mapOf(
         "library.sort.recently_annotated" to "Recently annotated",
         "library.sort.most_measurements" to "Most measurements",
         "library.sort.name" to "Name A-Z",
+        "library.indexing" to "Indexing your images…",
         "library.empty.title" to "Nothing in your library yet",
         "library.empty.body" to "Capture a photo or attach a file; it is added to the page you were last on.",
         "library.empty.filtered" to "No items match these filters",
@@ -327,6 +328,7 @@ class I18n(val language: Language) {
         const val LIBRARY_SORT_RECENTLY_ANNOTATED = "library.sort.recently_annotated"
         const val LIBRARY_SORT_MOST_MEASUREMENTS = "library.sort.most_measurements"
         const val LIBRARY_SORT_NAME = "library.sort.name"
+        const val LIBRARY_INDEXING = "library.indexing"
         const val LIBRARY_EMPTY_TITLE = "library.empty.title"
         const val LIBRARY_EMPTY_BODY = "library.empty.body"
         const val LIBRARY_EMPTY_FILTERED = "library.empty.filtered"

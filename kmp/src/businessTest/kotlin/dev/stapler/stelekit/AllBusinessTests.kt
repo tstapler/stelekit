@@ -35,6 +35,7 @@ import dev.stapler.stelekit.ui.nav.LibraryRedirectTest
 import dev.stapler.stelekit.ui.library.LibraryViewModelStateTest
 import dev.stapler.stelekit.ui.library.LibraryFilterSqlParityTest
 import dev.stapler.stelekit.ui.library.LibraryAnnotatedJoinTest
+import dev.stapler.stelekit.ui.library.LibraryLegacyAnnotatedImagesTest
 import dev.stapler.stelekit.ui.library.LargeLibraryBatchingTest
 import dev.stapler.stelekit.ui.library.LibrarySketchFilterTest
 import dev.stapler.stelekit.ui.library.LibrarySessionTest
@@ -165,6 +166,8 @@ import dev.stapler.stelekit.asset.AssetSearchSqlTest
 import dev.stapler.stelekit.asset.AssetTagSearchSqlTest
 import dev.stapler.stelekit.repository.ImageAnnotationTagEscapingTest
 import dev.stapler.stelekit.calibration.CalibrationBasisServiceTest
+import dev.stapler.stelekit.calibration.LensDistortionSimulationTest
+import dev.stapler.stelekit.db.CalibrationLensPersistenceTest
 import dev.stapler.stelekit.db.CalibrationBasisMigrationTest
 import dev.stapler.stelekit.asset.AssetSearchCloudDescriptionTest
 import dev.stapler.stelekit.asset.CloudDescriptionStorageTest
@@ -404,6 +407,7 @@ import org.junit.runners.Suite
     LibraryViewModelActionsTest::class,
     LibraryFilterSqlParityTest::class,
     LibraryAnnotatedJoinTest::class,
+    LibraryLegacyAnnotatedImagesTest::class,
     LargeLibraryBatchingTest::class,
     ProjectAnalysisServiceTest::class,
     ProjectAnalysisGoldenPromptTest::class,
@@ -531,6 +535,8 @@ import org.junit.runners.Suite
     AssetTagSearchSqlTest::class,
     ImageAnnotationTagEscapingTest::class,
     CalibrationBasisServiceTest::class,
+    LensDistortionSimulationTest::class,
+    CalibrationLensPersistenceTest::class,
     CalibrationBasisMigrationTest::class,
     AssetSearchCloudDescriptionTest::class,
     CloudDescriptionStorageTest::class,

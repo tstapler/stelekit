@@ -251,7 +251,16 @@ class SketchViewModel(
     private fun fail(message: String) = _uiState.update { it.copy(phase = SketchPhase.FAILED, error = message) }
 
     override fun onRemembered() { /* scope already started */ }
-    override fun onForgotten() { scope.cancel() }
+    /** Leaving the screen inside the autosave debounce must not drop the last edit: save it, then cancel. */
+    override fun onForgotten() {
+        if (_uiState.value.saveStatus != SaveStatus.PENDING) {
+            scope.cancel()
+            return
+        }
+        saveJob?.cancel()
+        scope.launch { try { save() } finally { scope.cancel() } }
+    }
+
     override fun onAbandoned() { scope.cancel() }
 
     companion object {
