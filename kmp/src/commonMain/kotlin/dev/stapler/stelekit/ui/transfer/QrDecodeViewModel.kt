@@ -15,6 +15,7 @@ import dev.stapler.stelekit.transfer.qrcode.QrTransferCoordinator
 import dev.stapler.stelekit.transfer.qrcode.QrTransferSettings
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -179,7 +180,9 @@ class QrDecodeViewModel(
 
         val coordinator = coordinatorFactory()
         activeCoordinator = coordinator
-        collectJob = scope.launch {
+        // UNDISPATCHED: subscribe to the replay=1 events flow before coordinator.start() emits;
+        // a dispatched launch on Default can attach late and miss FragmentAdmitted events.
+        collectJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             coordinator.events.collect { event -> _state.value = applyEvent(event) }
         }
         coordinator.start()
