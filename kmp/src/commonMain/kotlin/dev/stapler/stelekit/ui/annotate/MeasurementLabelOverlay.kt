@@ -38,6 +38,7 @@ fun MeasurementLabelOverlay(
     annotations: List<MeasurementAnnotation>,
     canvasSize: IntSize,
     modifier: Modifier = Modifier,
+    view: () -> AnnotationViewTransform = { AnnotationViewTransform.Fit },
 ) {
     val textMeasurer = rememberTextMeasurer()
     // Retain leader-line path to avoid per-frame allocation
@@ -47,12 +48,14 @@ fun MeasurementLabelOverlay(
         if (canvasSize == IntSize.Zero) return@Canvas
 
         val placedLabelCenters = mutableListOf<Offset>()
+        // Read in the draw phase: anchors follow the view, pills keep their on-screen size.
+        val currentView = view()
 
         annotations.forEach { annotation ->
             val label = annotation.valueDisplay ?: annotation.label ?: return@forEach
             if (label.isBlank()) return@forEach
 
-            val screenPoints = annotation.normalizedPoints.map { it.toScreen(canvasSize) }
+            val screenPoints = annotation.normalizedPoints.map { currentView.toView(it.toScreen(canvasSize)) }
             if (screenPoints.isEmpty()) return@forEach
 
             val anchorPoint = annotationMidpoint(screenPoints, annotation.annotationType)

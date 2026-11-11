@@ -167,7 +167,8 @@ class InProgressAnnotationCanvasGestureTest {
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 5_000) { vm.state.value.selectedAnnotationUuid != null }
 
-        canvas.performTouchInput { down(Offset(0.5f * size.width, 0.45f * size.height)); up() }
+        // Far below the line: the viewport is short on the small test screen (toolbar clearance), so 0.45h would be inside the edge grab radius.
+        canvas.performTouchInput { down(Offset(0.5f * size.width, 0.9f * size.height)); up() }
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 5_000) { vm.state.value.selectedAnnotationUuid == null }
     }

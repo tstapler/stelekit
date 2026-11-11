@@ -38,6 +38,7 @@ import kotlin.math.roundToInt
 private val PAD_CELL = 48.dp
 private val CROSSHAIR_COLOR = Color(0xFFFF9800)
 private const val PERCENT = 100
+private const val CROSSHAIR_REACH = 50_000f
 
 /** TalkBack description of the crosshair position, in whole percent of the image. */
 fun crosshairDescription(point: NormalizedPoint): String =
@@ -45,13 +46,19 @@ fun crosshairDescription(point: NormalizedPoint): String =
 
 /** The crosshair lines over the image; draws nothing when [point] is null. */
 @Composable
-fun AnnotationCrosshairLayer(point: NormalizedPoint?, canvasSize: IntSize, modifier: Modifier = Modifier) {
+fun AnnotationCrosshairLayer(
+    point: NormalizedPoint?,
+    canvasSize: IntSize,
+    modifier: Modifier = Modifier,
+    view: () -> AnnotationViewTransform = { AnnotationViewTransform.Fit },
+) {
     if (point == null || canvasSize == IntSize.Zero) return
     Canvas(modifier.fillMaxSize().semantics { contentDescription = crosshairDescription(point) }) {
-        val center = point.toScreen(canvasSize)
+        val center = view().toView(point.toScreen(canvasSize))
         val stroke = 2.dp.toPx()
-        drawLine(CROSSHAIR_COLOR, Offset(0f, center.y), Offset(size.width, center.y), strokeWidth = stroke)
-        drawLine(CROSSHAIR_COLOR, Offset(center.x, 0f), Offset(center.x, size.height), strokeWidth = stroke)
+        // The lines run past the canvas box so they span the whole viewport when zoomed.
+        drawLine(CROSSHAIR_COLOR, Offset(-CROSSHAIR_REACH, center.y), Offset(CROSSHAIR_REACH, center.y), strokeWidth = stroke)
+        drawLine(CROSSHAIR_COLOR, Offset(center.x, -CROSSHAIR_REACH), Offset(center.x, CROSSHAIR_REACH), strokeWidth = stroke)
         drawCircle(CROSSHAIR_COLOR, radius = 10.dp.toPx(), center = center, style = Stroke(width = stroke))
     }
 }
