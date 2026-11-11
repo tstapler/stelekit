@@ -32,8 +32,8 @@ class DirectSqlWriteOptInAllowlistTest {
         "commonMain/dev/stapler/stelekit/performance/QueryStatsRepository.kt" to 2,
         "commonMain/dev/stapler/stelekit/performance/HistogramRetentionJob.kt" to 1,
         "commonMain/dev/stapler/stelekit/repository/SqlDelightBlockRepository.kt" to 8,
-        // Writes run inside MeasurementWrites -> DatabaseWriteActor.execute (HIGH); class-level opt-in plus the insert helper.
-        "commonMain/dev/stapler/stelekit/repository/SqlDelightMeasurementAnnotationRepository.kt" to 2,
+        // Writes run inside MeasurementWrites -> DatabaseWriteActor.execute (HIGH); the single private apply() function.
+        "commonMain/dev/stapler/stelekit/repository/SqlDelightMeasurementAnnotationRepository.kt" to 1,
         "commonMain/dev/stapler/stelekit/repository/SqlDelightSpanRepository.kt" to 4,
         "commonMain/dev/stapler/stelekit/repository/SqlDelightSearchRepository.kt" to 6,
     )
@@ -57,7 +57,7 @@ class DirectSqlWriteOptInAllowlistTest {
     }
 
     @Test
-    fun baseline_should_BeFortyThree_When_MeasurementRepositorySitesAreCounted() {
-        assertEquals(43, expected.values.sum())
+    fun baseline_should_BeFortyTwo_When_MeasurementRepositorySiteIsCounted() {
+        assertEquals(42, expected.values.sum())
     }
 }

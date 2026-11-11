@@ -27,7 +27,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * Reads use [PlatformDispatcher.DB]; writes use [withContext] with [PlatformDispatcher.DB].
  * Writes go through [MeasurementWrites] (DatabaseWriteActor, HIGH priority).
  */
-@OptIn(DirectSqlWrite::class, DirectRepositoryWrite::class)
+@OptIn(DirectRepositoryWrite::class)
 class SqlDelightMeasurementAnnotationRepository(
     private val database: SteleDatabase,
     private val writes: MeasurementWrites = MeasurementWrites(null),
@@ -36,12 +36,12 @@ class SqlDelightMeasurementAnnotationRepository(
     private val queries = database.steleDatabaseQueries
     private val restricted = RestrictedDatabaseQueries(queries)
 
-    /** Runs [body] as one actor-serialized write on the DB dispatcher, mapping failures to WriteFailed. */
-    private suspend fun write(body: suspend () -> Unit): Either<DomainError, Unit> =
+    /** Runs [op] as one actor-serialized write on the DB dispatcher, mapping failures to WriteFailed. */
+    private suspend fun write(op: WriteOp): Either<DomainError, Unit> =
         writes.execute {
             withContext(PlatformDispatcher.DB) {
                 try {
-                    body()
+                    apply(op)
                     Unit.right()
                 } catch (e: CancellationException) {
                     throw e
@@ -51,45 +51,57 @@ class SqlDelightMeasurementAnnotationRepository(
             }
         }
 
+    /** The only place this repository touches mutating queries; always called inside an actor op. */
+    @OptIn(DirectSqlWrite::class)
+    private suspend fun apply(op: WriteOp) {
+        suspend fun insert(m: MeasurementAnnotation) = restricted.insertMeasurementAnnotation(
+            uuid = m.uuid,
+            image_uuid = m.imageUuid,
+            annotation_type = m.annotationType.name,
+            normalized_points = m.normalizedPoints.toJson(),
+            value_meters = m.valueMeters,
+            value_display = m.valueDisplay,
+            label = m.label,
+            color_hex = m.colorHex,
+            ble_device_id = m.bleDeviceId,
+        )
+        when (op) {
+            is WriteOp.Save -> insert(op.measurement)
+            is WriteOp.ReplaceForImage -> restricted.transaction {
+                restricted.deleteMeasurementsForImage(op.imageUuid)
+                op.measurements.forEach { insert(it) }
+            }
+            is WriteOp.Delete -> restricted.deleteMeasurementAnnotation(op.uuid)
+            is WriteOp.DeleteForImage -> restricted.deleteMeasurementsForImage(op.imageUuid)
+        }
+    }
+
+    private sealed interface WriteOp {
+        class Save(val measurement: MeasurementAnnotation) : WriteOp
+        class ReplaceForImage(val imageUuid: String, val measurements: List<MeasurementAnnotation>) : WriteOp
+        class Delete(val uuid: String) : WriteOp
+        class DeleteForImage(val imageUuid: String) : WriteOp
+    }
+
     override fun getMeasurementsForImage(imageUuid: String): Flow<Either<DomainError, List<MeasurementAnnotation>>> =
         queries.selectMeasurementsForImage(imageUuid)
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     @DirectRepositoryWrite
     override suspend fun saveMeasurementAnnotation(measurement: MeasurementAnnotation): Either<DomainError, Unit> =
-        write { restricted.insertMeasurement(measurement) }
+        write(WriteOp.Save(measurement))
 
     @DirectRepositoryWrite
     override suspend fun saveMeasurements(imageUuid: String, measurements: List<MeasurementAnnotation>): Either<DomainError, Unit> =
-        write {
-            restricted.transaction {
-                restricted.deleteMeasurementsForImage(imageUuid)
-                measurements.forEach { restricted.insertMeasurement(it) }
-            }
-        }
+        write(WriteOp.ReplaceForImage(imageUuid, measurements))
 
     @DirectRepositoryWrite
     override suspend fun deleteMeasurementAnnotation(uuid: String): Either<DomainError, Unit> =
-        write { restricted.deleteMeasurementAnnotation(uuid) }
+        write(WriteOp.Delete(uuid))
 
     @DirectRepositoryWrite
     override suspend fun deleteMeasurementsForImage(imageUuid: String): Either<DomainError, Unit> =
-        write { restricted.deleteMeasurementsForImage(imageUuid) }
-}
-
-@OptIn(DirectSqlWrite::class)
-private suspend fun RestrictedDatabaseQueries.insertMeasurement(m: MeasurementAnnotation) {
-    insertMeasurementAnnotation(
-        uuid = m.uuid,
-        image_uuid = m.imageUuid,
-        annotation_type = m.annotationType.name,
-        normalized_points = m.normalizedPoints.toJson(),
-        value_meters = m.valueMeters,
-        value_display = m.valueDisplay,
-        label = m.label,
-        color_hex = m.colorHex,
-        ble_device_id = m.bleDeviceId,
-    )
+        write(WriteOp.DeleteForImage(imageUuid))
 }
 
 
