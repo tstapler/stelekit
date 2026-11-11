@@ -39,6 +39,12 @@ object MultiPointCalibration {
     private const val REFINE_ITERATIONS = 40
     private const val GOLDEN = 0.6180339887498949
     private const val MIN_VISIBLE_RESIDUAL_PX = 1.0
+
+    /** Auto only searches phone-plausible lenses; a larger fitted k means the ticks are not a straight ruler. */
+    private const val AUTO_MAX_ABS_K = 0.05
+
+    /** A genuine ruler leaves at most tap noise after correction; more means the model does not explain the ticks. */
+    private const val MAX_RESIDUAL_AFTER_CORRECTION_PX = 4.0
     private const val REQUIRED_COST_REDUCTION = 0.6
     private const val MIN_TICKS_FOR_ESTIMATE = 3
     private const val PERCENT = 100.0
@@ -79,18 +85,19 @@ object MultiPointCalibration {
 
     /**
      * Estimates k by grid search plus golden-section refinement of the fit cost. Returns 0 unless there
-     * are 3+ ticks, the uncorrected marks disagree by at least a pixel, and the fit removes most of that error.
+     * are 3+ ticks, the uncorrected marks disagree by at least a pixel, the fit removes most of that error and leaves at most tap noise.
      */
     fun estimateK(ticks: List<CalibrationTick>, widthPx: Double, heightPx: Double): Double {
         if (ticks.size < MIN_TICKS_FOR_ESTIMATE) return 0.0
         val base = fitScale(ticks, 0.0, widthPx, heightPx) ?: return 0.0
         fun cost(k: Double) = fitScale(ticks, k, widthPx, heightPx)?.cost ?: Double.MAX_VALUE
-        val steps = (RadialLens.MAX_ABS_K / K_STEP).toInt()
+        val steps = (AUTO_MAX_ABS_K / K_STEP).toInt()
         val best = (-steps..steps).map { it * K_STEP }.minBy { cost(it) }
         val refined = refine(best - K_STEP, best + K_STEP, ::cost)
-        val improved = cost(refined)
+        val corrected = fitScale(ticks, refined, widthPx, heightPx) ?: return 0.0
         val accept = base.maxResidualPx >= MIN_VISIBLE_RESIDUAL_PX &&
-            improved <= base.cost * (1.0 - REQUIRED_COST_REDUCTION)
+            corrected.cost <= base.cost * (1.0 - REQUIRED_COST_REDUCTION) &&
+            corrected.maxResidualPx <= MAX_RESIDUAL_AFTER_CORRECTION_PX
         return if (accept) refined else 0.0
     }
 

@@ -38,7 +38,11 @@ class LensDistortionSimulationTest {
         val dx = x - w / 2
         val dy = y - h / 2
         val f = 1 + a * (hypot(dx, dy) / halfDiag).let { it * it }
-        return NormalizedPoint(((w / 2 + dx * f) / w).coerceIn(0.0, 1.0), ((h / 2 + dy * f) / h).coerceIn(0.0, 1.0))
+        val nx = (w / 2 + dx * f) / w
+        val ny = (h / 2 + dy * f) / h
+        // Clamping into the frame would fabricate bent rulers; a physical photo cannot contain such a point.
+        require(nx in 0.0..1.0 && ny in 0.0..1.0) { "synthetic point ($x,$y) falls outside the frame" }
+        return NormalizedPoint(nx, ny)
     }
 
     /** Photo of a straight segment of [lengthM] centred at world-pixel ([cx],[cy]) at [angle]. */
@@ -96,7 +100,8 @@ class LensDistortionSimulationTest {
         val rnd = Random(20261111)
         repeat(150) {
             val a = -(0.004 + rnd.nextDouble() * 0.021)
-            val angle = rnd.nextDouble() * 3.14159
+            // |angle| <= 0.8 rad keeps the 55 cm ruler (3667 px) inside the 3000 px tall frame.
+            val angle = (rnd.nextDouble() - 0.5) * 1.6
             val t = ticks(1900.0 + rnd.nextDouble() * 200, 1450.0 + rnd.nextDouble() * 100, angle, 0.55, 6, a)
             val cal = assertNotNull(MultiPointCalibration.calibrate(t, w, h, LensMode.Auto))
             val x = 900.0 + rnd.nextDouble() * 2200
@@ -104,6 +109,16 @@ class LensDistortionSimulationTest {
             val err = abs(knifeCm(cal, x, y, rnd.nextDouble() * 3.14159, a) - 18.0)
             assertTrue(err <= 0.08, "a=$a err=$err cm at ($x,$y)")
         }
+    }
+
+    @Test
+    fun auto_should_FallBackToNoCorrection_When_TicksAreNotAStraightRuler() {
+        // Ruler through the image centre with one tick 50 px off the line: radial correction cannot straighten it.
+        val bent = (0..5).map { i ->
+            CalibrationTick(0.2 + 0.12 * i, 0.5 + (if (i == 2) 50.0 / h else 0.0), 0.1 * i)
+        }
+        val cal = assertNotNull(MultiPointCalibration.calibrate(bent, w, h, LensMode.Auto))
+        assertEquals(0.0, cal.lens!!.k, "inconsistent ticks must not produce a lens correction")
     }
 
     @Test
