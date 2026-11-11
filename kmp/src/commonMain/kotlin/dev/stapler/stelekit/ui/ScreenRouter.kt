@@ -40,6 +40,7 @@ import dev.stapler.stelekit.performance.NavigationTracingEffect
 import dev.stapler.stelekit.performance.PercentileSummary
 import dev.stapler.stelekit.performance.QueryStat
 import dev.stapler.stelekit.performance.SerializedSpan
+import dev.stapler.stelekit.platform.defaultMeasurementUnit
 import dev.stapler.stelekit.platform.sensor.SensorModule
 import dev.stapler.stelekit.repository.RepositorySet
 import dev.stapler.stelekit.transfer.qrcode.QrImportService
@@ -389,7 +390,16 @@ internal fun ScreenRouter(
                 if (currentScreen.projectUuid == null && platformSettings != null) {
                     val graphId = appState.currentGraphId.orEmpty()
                     val projectListViewModel = remember(repos, graphId) {
-                        dev.stapler.stelekit.ui.sketch.projectListViewModelFor(repos.sketchRepositories, repos.writeActor, graphId, platformSettings)
+                        dev.stapler.stelekit.ui.sketch.projectListViewModelFor(
+                            repos.sketchRepositories, repos.writeActor, graphId, platformSettings,
+                            graphLoader?.let { loader ->
+                                dev.stapler.stelekit.projectbridge.SourceBindingService(
+                                    repos.sketchRepositories, repos.pageRepository, loader::readPageText,
+                                    { op -> repos.writeActor?.execute(op = op) ?: op() },
+                                    dev.stapler.stelekit.projectbridge.LocalBindingTable(platformSettings),
+                                )
+                            },
+                        )
                     }
                     dev.stapler.stelekit.ui.sketch.ProjectListScreen(
                         projectListViewModel,
@@ -431,6 +441,7 @@ internal fun ScreenRouter(
                         writeActor = repos.writeActor,
                         graphPath = appState.currentGraphPath.orEmpty(),
                         mover = assetMover,
+                        defaultUnit = { platformSettings.defaultMeasurementUnit() },
                     )
                 }
                 val annotateScope = rememberCoroutineScope()
@@ -455,6 +466,7 @@ internal fun ScreenRouter(
                     AnnotationEditorViewModel(
                         measurementRepository = repos.measurementAnnotationRepository,
                         imageAnnotationRepository = repos.imageAnnotationRepository,
+                        settings = platformSettings,
                     )
                 }
                 DisposableEffect(annotationEditorViewModel) {

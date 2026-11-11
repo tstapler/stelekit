@@ -10,6 +10,7 @@ import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.DEFAULT_MEASUREMENT_UNIT
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.MeasurementUnit
 import dev.stapler.stelekit.model.PageUuid
@@ -52,6 +53,8 @@ class AssetDetailViewModel(
     private val graphPath: String = "",
     /** Moves the asset into an `assets/` subfolder; null hides the Move action. */
     private val mover: (suspend (AssetEntry, String) -> Either<DomainError, Unit>)? = null,
+    /** Unit a newly created annotation starts in — the user's global default. */
+    private val defaultUnit: () -> MeasurementUnit = { DEFAULT_MEASUREMENT_UNIT },
 ) : RememberObserver {
     private val logger = Logger("AssetDetailViewModel")
     private val scope = CoroutineScope(
@@ -182,6 +185,7 @@ class AssetDetailViewModel(
             graphPath = graphPath,
             filePath = asset.filePath,
             tags = asset.tags,
+            unit = defaultUnit(),
         )
         return imageAnnotationRepository.saveImageAnnotation(annotation).fold(
             ifLeft = { err ->

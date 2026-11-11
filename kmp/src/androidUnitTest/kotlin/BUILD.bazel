@@ -22,10 +22,13 @@ kt_android_library(
             # Roborazzi screenshot tests — no Bazel integration; kept in Gradle
             "**/*Roborazzi*.kt",
             "**/*Screenshot*.kt",
+            # Uses Roborazzi captureRoboImage (no Bazel integration; Gradle-only)
+            "**/AnnotationEditorInsetsLayoutTest.kt",
             # Composes @Composable lambdas; this target has no Compose compiler plugin (Gradle-only)
             "**/ArchiveUrlEntryPointTest.kt",
             # Compose host tests for the flagged project list and settings panel (Gradle-only, R-AU)
             "**/ProjectSettingsPanelTest.kt",
+            "**/SourcePagePickerTest.kt",
             # Compose gesture/host tests for the flagged Sketch screen (Gradle-only, R-AU)
             "**/SketchCanvasGestureTest.kt",
             "**/SketchScreenEntryPointTest.kt",

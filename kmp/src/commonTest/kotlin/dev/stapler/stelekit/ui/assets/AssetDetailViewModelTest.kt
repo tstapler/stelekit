@@ -61,6 +61,7 @@ class AssetDetailViewModelTest {
         imageAnnotationRepository: ImageAnnotationRepository = InMemoryImageAnnotationRepository(),
         blockRepository: InMemoryBlockRepository = InMemoryBlockRepository(),
         graphPath: String = "/graph",
+        defaultUnit: () -> dev.stapler.stelekit.model.MeasurementUnit = { dev.stapler.stelekit.model.MeasurementUnit.FEET_INCHES },
     ) = AssetDetailViewModel(
         assetRepository = InMemoryAssetRepository(),
         assetUuid = AssetUuid("asset-001"),
@@ -68,6 +69,7 @@ class AssetDetailViewModelTest {
         blockRepository = blockRepository,
         writeActor = null,
         graphPath = graphPath,
+        defaultUnit = defaultUnit,
     )
 
     /** Always fails [saveImageAnnotation]; delegates every read to [delegate]. */
@@ -125,6 +127,21 @@ class AssetDetailViewModelTest {
         assertEquals("![](${asset.relativePath})", block.content)
         assertEquals(result, block.properties["image-id"])
         assertEquals(savedAnnotation.blockUuid, block.uuid.value)
+    }
+
+    @Test
+    fun resolveOrCreateAnnotation_startsInTheUsersDefaultUnit() = runTest {
+        val annotationRepo = InMemoryImageAnnotationRepository()
+        val vm = makeViewModel(
+            imageAnnotationRepository = annotationRepo,
+            defaultUnit = { dev.stapler.stelekit.model.MeasurementUnit.INCHES },
+        )
+
+        val uuid = vm.resolveOrCreateAnnotation(makeAsset())
+
+        assertNotNull(uuid)
+        val saved = annotationRepo.getImageAnnotationByUuid(uuid).first().getOrNull()
+        assertEquals(dev.stapler.stelekit.model.MeasurementUnit.INCHES, saved?.unit)
     }
 
     @Test

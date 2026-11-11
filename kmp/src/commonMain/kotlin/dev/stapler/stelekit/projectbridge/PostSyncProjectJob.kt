@@ -13,6 +13,9 @@ sealed interface PostSyncRunOutcome {
     /** Flag, digest opt-in or project missing: nothing ran and nothing was read. */
     data object Inactive : PostSyncRunOutcome
 
+    /** The bound source inputs are unchanged since the last digest, so nothing ran and nothing was written. */
+    data object NotRelevant : PostSyncRunOutcome
+
     data class Completed(val unloadedPages: Int) : PostSyncRunOutcome
 
     /** Local steps ran, but this platform has no writer for the digest page. */
@@ -37,7 +40,7 @@ data class ProjectOutputs(val digest: String, val payload: LlmPayload)
  */
 class PostSyncProjectJob(
     private val deps: ProjectBridgeDeps,
-    private val collector: ProjectSourceCollector = ProjectSourceCollector(),
+    private val collector: ProjectSourceCollector = ProjectSourceCollector(reader = ProjectSourceReader { deps.boundSources().toTexts() }),
     private val barrier: SettleBarrier = SettleBarrier(deps.isGitSyncBusy, deps.pageSettleProbe),
     private val digestWriter: DigestWriter = DigestWriter(deps.routerProvider),
     /** The fused digest input for the graph's project; null (the default) defers to [fusion], so nothing is written without either. */
@@ -56,6 +59,10 @@ class PostSyncProjectJob(
         }
         val reconcile = reconcileSidecars()
         val collected = collector.collect()
+        val inputHash = ProjectRelevanceHasher.hash(collected)
+        if (ProjectRelevanceHasher.isUnchanged(inputHash, deps.settings.lastDigestInputHash(graphId))) {
+            return PostSyncRunOutcome.NotRelevant
+        }
         val settle = barrier.awaitSettled(collected.boundPages)
         val base = if (syncLeftLfsFiles()) "$TITLE (sync left LFS files held)" else TITLE
         val title = if (reconcile?.needsResolution == true) "$base ($RESOLVE_CONFLICT)" else base
@@ -70,7 +77,7 @@ class PostSyncProjectJob(
                     handle.fail(UNAVAILABLE)
                     PostSyncRunOutcome.DigestUnavailable
                 } else {
-                    finish(graphId, handle, settle.unloaded, collected)
+                    finish(graphId, handle, settle.unloaded, collected, inputHash)
                 }
             }
         } catch (e: CancellationException) {
@@ -100,7 +107,7 @@ class PostSyncProjectJob(
     }
 
     /** Digest page first (a local, loop-safe write), then the gated analysis; an analysis failure is reported first. */
-    private suspend fun finish(graphId: String, handle: JobHandle, unloaded: Int, collected: CollectedSources): PostSyncRunOutcome {
+    private suspend fun finish(graphId: String, handle: JobHandle, unloaded: Int, collected: CollectedSources, inputHash: String): PostSyncRunOutcome {
         val digest = writeDigest(graphId, collected)
         val analysis = runAnalysis(graphId, collected)
         if (analysis is AnalysisStepOutcome.Blocked || analysis is AnalysisStepOutcome.Failed) {
@@ -109,6 +116,8 @@ class PostSyncProjectJob(
         }
         val ok = digest == null || digest is DigestWriteResult.Written || digest is DigestWriteResult.Unchanged
         if (ok) handle.succeed() else handle.fail(digest?.note)
+        // Remembered only after a complete, settled write so a deferred, refused or partial run retries on the next trigger.
+        if (digest != null && ok && unloaded == 0) deps.settings.setLastDigestInputHash(graphId, inputHash)
         return when (digest) {
             null, is DigestWriteResult.Written, is DigestWriteResult.Unchanged -> PostSyncRunOutcome.Completed(unloaded)
             is DigestWriteResult.Unavailable -> PostSyncRunOutcome.DigestUnavailable
