@@ -91,7 +91,22 @@ class DesktopWiredAppFixture private constructor(
     private val dataDir: File,
     seams: GitSyncServiceSeams,
     busyCounter: GitSyncBusyCounter?,
+    taskScheduler: dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler?,
 ) {
+    val taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry()
+
+    /** The scheduler the root names: Desktop's `InProcessTaskScheduler` unless a test substitutes its own (e.g. a counting one). */
+    val backgroundTaskScheduler: dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler = taskScheduler
+        ?: dev.stapler.stelekit.jobs.schedule.InProcessTaskScheduler(
+            registry = taskRegistry,
+            store = dev.stapler.stelekit.jobs.schedule.TaskSettingsStore(
+                ports.settings, dev.stapler.stelekit.jobs.schedule.LegacyConfigSeed.None, taskRegistry,
+            ),
+            ledger = dev.stapler.stelekit.jobs.schedule.AppliedConfigLedger(ports.settings),
+            runLog = dev.stapler.stelekit.jobs.schedule.SettingsTaskRunLog(ports.settings),
+            clock = System::currentTimeMillis,
+        )
+
     internal val deps = GraphContentDeps(
         repos = repos,
         fileSystem = ports.fileSystem,
@@ -100,8 +115,8 @@ class DesktopWiredAppFixture private constructor(
         notificationManager = NotificationManager(),
         platformIntegrations = StelekitAppPlatformIntegrations(
             backgroundSyncSchedulerFactory = BackgroundSyncSchedulerFactory.None,
-            backgroundTaskScheduler = dev.stapler.stelekit.jobs.schedule.NoopTaskScheduler(),
-            taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry(),
+            backgroundTaskScheduler = backgroundTaskScheduler,
+            taskRegistry = taskRegistry,
             platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
             gitRepository = ports.gitRepository,
             gitSyncBusyCounter = busyCounter,
@@ -121,6 +136,7 @@ class DesktopWiredAppFixture private constructor(
     }
 
     suspend fun close() {
+        (backgroundTaskScheduler as? dev.stapler.stelekit.jobs.schedule.InProcessTaskScheduler)?.stop()
         graphManager.shutdown()
         dataDir.deleteRecursively()
         System.clearProperty("stelekit.devDataDir")
@@ -133,6 +149,7 @@ class DesktopWiredAppFixture private constructor(
             graphPath: String = "/test/wired-graph",
             seams: GitSyncServiceSeams = GitSyncServiceSeams(),
             busyCounter: GitSyncBusyCounter? = null,
+            taskScheduler: dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler? = null,
         ): DesktopWiredAppFixture {
             System.setProperty("stelekit.devDataDir", dataDir.absolutePath)
             val manager = GraphManager(
@@ -141,7 +158,7 @@ class DesktopWiredAppFixture private constructor(
                 fileSystem = ports.fileSystem,
                 defaultBackend = GraphBackend.SQLDELIGHT,
             )
-            return DesktopWiredAppFixture(manager, manager.openGraph(graphPath), ports, dataDir, seams, busyCounter)
+            return DesktopWiredAppFixture(manager, manager.openGraph(graphPath), ports, dataDir, seams, busyCounter, taskScheduler)
         }
     }
 }
