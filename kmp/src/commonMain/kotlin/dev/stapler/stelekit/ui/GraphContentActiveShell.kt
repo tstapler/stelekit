@@ -242,6 +242,12 @@ internal fun GraphContentActiveShell(
         val demoBannerDismissedState = remember { mutableStateOf(false) }
         // See GraphContentNewGraphFlow.kt for the "New graph…" flow's state/dialogs.
         val newGraphFlowController = rememberGraphContentNewGraphFlowController(deps)
+        val backgroundTasksSettings = rememberBackgroundTasksSettingsState(
+            deps, inputs.gitSyncStack, graphRegistry.graphs,
+        ) {
+            viewModel.setSettingsVisible(false)
+            newGraphFlowController.onStartNewGraphFlow()
+        }
         LaunchedEffect(Unit) {
             viewModel.snackbarEvents.collect { msg ->
                 try {
@@ -460,6 +466,7 @@ internal fun GraphContentActiveShell(
                     assetIndexing = deps.assets?.indexing,
                     assetPlugins = deps.assets?.plugins,
                     scheduledSync = scheduledSyncSettings,
+                    backgroundTasks = backgroundTasksSettings,
                     lfsTransfer = lfsTransferSettings,
                     updatesNotifications = updatesNotificationSettings,
                     voiceSettings = voiceSettings,

@@ -691,5 +691,6 @@ import org.junit.runners.Suite
     JvmPlatformCapsRootTest::class,
     dev.stapler.stelekit.jobs.schedule.InProcessTaskSchedulerContractTest::class,
     dev.stapler.stelekit.jobs.schedule.InProcessTaskSchedulerTest::class,
+    dev.stapler.stelekit.ui.settings.ScheduledSyncRadioKeyboardTest::class,
 )
 class AllJvmTests

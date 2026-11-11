@@ -85,6 +85,8 @@ data class SettingsDialogDeps(
     val assetPlugins: dev.stapler.stelekit.asset.pipeline.AssetPluginsController? = null,
     /** Scheduled-sync switch, interval and status; null hides the Settings section (no git on this platform). */
     val scheduledSync: dev.stapler.stelekit.ui.components.settings.ScheduledSyncSettingsState? = null,
+    /** Per-graph, per-kind background task schedules; null hides the section (no git config, or the scheduler cannot schedule work). */
+    val backgroundTasks: dev.stapler.stelekit.ui.components.settings.BackgroundTasksSettingsState? = null,
     /** Largest-image cap and wait-for-Wi-Fi switch for LFS downloads; null hides the section (no LFS transfer here). */
     val lfsTransfer: dev.stapler.stelekit.ui.components.settings.LfsTransferSettingsState? = null,
     /** "Notify me when updates are waiting" toggle; null hides it (no notification permission seam on this platform). */

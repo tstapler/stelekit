@@ -128,6 +128,8 @@ fun SettingsDialog(
     onViewPipelineLog: () -> Unit = {},
     // Scheduled sync switch + interval (git-backed graphs only); null hides the section.
     scheduledSync: ScheduledSyncSettingsState? = null,
+    // Per-graph, per-kind background task schedules; null hides the section.
+    backgroundTasks: BackgroundTasksSettingsState? = null,
     // Large files (Git LFS) size cap and metered switch; null hides the section.
     lfsTransfer: LfsTransferSettingsState? = null,
     // "Notify me when updates are waiting" toggle; null where the platform has no notification permission seam.
@@ -207,6 +209,10 @@ fun SettingsDialog(
                             Spacer(modifier = Modifier.height(16.dp))
                             ScheduledSyncSection(scheduledSync)
                             if (updatesNotifications != null) UpdatesNotificationSection(updatesNotifications)
+                        }
+                        if (backgroundTasks != null) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            BackgroundTasksSection(backgroundTasks.controller, backgroundTasks.graphs, backgroundTasks.onAddGraph)
                         }
                         if (lfsTransfer != null) {
                             Spacer(modifier = Modifier.height(16.dp))

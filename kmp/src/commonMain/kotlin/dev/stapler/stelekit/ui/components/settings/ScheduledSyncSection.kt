@@ -32,6 +32,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.git.ANDROID_MIN_INTERVAL_HELPER
 import dev.stapler.stelekit.git.SCHEDULED_SYNC_INTERVAL_OPTIONS
 import dev.stapler.stelekit.git.ScheduledSyncLine
 import dev.stapler.stelekit.git.ScheduledSyncStatus
@@ -145,32 +146,25 @@ private fun switchEnabled(state: ScheduledSyncSettingsState): Boolean =
 @Composable
 private fun IntervalPicker(state: ScheduledSyncSettingsState, effective: Int) {
     Column(modifier = Modifier.selectableGroup()) {
-        SCHEDULED_SYNC_INTERVAL_OPTIONS.forEach { minutes ->
-            val selectable = isScheduledIntervalSelectable(minutes, state.minimumIntervalMinutes)
+        // No permanently disabled control: options below the platform floor are not listed, a helper line says why.
+        SCHEDULED_SYNC_INTERVAL_OPTIONS.filter { isScheduledIntervalSelectable(it, state.minimumIntervalMinutes) }.forEach { minutes ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = MIN_TARGET_DP.dp)
                     .selectable(
                         selected = effective == minutes,
-                        enabled = selectable,
                         role = Role.RadioButton,
                         onClick = { state.onIntervalChange(minutes) },
                     ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                RadioButton(selected = effective == minutes, onClick = null, enabled = selectable)
-                Column(modifier = Modifier.padding(start = 12.dp)) {
-                    Text("$minutes minutes", style = MaterialTheme.typography.bodyLarge)
-                    if (!selectable) {
-                        Text(
-                            ANDROID_FIVE_MINUTE_REASON,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                RadioButton(selected = effective == minutes, onClick = null)
+                Text("$minutes minutes", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 12.dp))
             }
+        }
+        if (SCHEDULED_SYNC_INTERVAL_OPTIONS.any { !isScheduledIntervalSelectable(it, state.minimumIntervalMinutes) }) {
+            Text(ANDROID_MIN_INTERVAL_HELPER, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (isScheduledIntervalClamped(state.configuredIntervalMinutes, state.minimumIntervalMinutes)) {
             Text("Runs every $effective min on this device", style = MaterialTheme.typography.bodySmall)

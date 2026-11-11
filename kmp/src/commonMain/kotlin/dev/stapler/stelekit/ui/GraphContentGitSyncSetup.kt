@@ -176,6 +176,32 @@ internal fun rememberScheduledSyncSettingsState(
 }
 
 /**
+ * Settings model for Background tasks, or null when git config is unavailable on this platform (the
+ * legacy seed needs it, and a graph first read without it would record a wrong "nothing to migrate" marker).
+ */
+@Composable
+internal fun rememberBackgroundTasksSettingsState(
+    deps: GraphContentDeps,
+    stack: GraphContentGitSyncStack,
+    graphs: List<dev.stapler.stelekit.model.GraphInfo>,
+    onAddGraph: () -> Unit,
+): dev.stapler.stelekit.ui.components.settings.BackgroundTasksSettingsState? {
+    val configRepository = stack.gitConfigRepository ?: return null
+    val scheduler = deps.platformIntegrations.backgroundTaskScheduler
+    val registry = deps.platformIntegrations.taskRegistry
+    val controller = remember(deps.platformSettings, configRepository, scheduler, registry) {
+        val seed = LegacyGitSyncMigration(deps.platformSettings, ConfigRepositoryLegacyConfigSource(configRepository))
+        dev.stapler.stelekit.ui.components.settings.BackgroundTaskSettingsController(
+            TaskSettingsStore(deps.platformSettings, seed, registry), scheduler, registry,
+        )
+    }
+    val rows = graphs.map { dev.stapler.stelekit.ui.components.settings.BackgroundTaskGraph(it.id.value, it.displayName) }
+    return remember(controller, rows, onAddGraph) {
+        dev.stapler.stelekit.ui.components.settings.BackgroundTasksSettingsState(controller, rows, onAddGraph)
+    }
+}
+
+/**
  * Settings model for the Large files (Git LFS) section, or null when this platform cannot transfer LFS objects.
  * Writes go straight to [settings]; the transfer code re-reads them on every download, so a change applies at once.
  */
