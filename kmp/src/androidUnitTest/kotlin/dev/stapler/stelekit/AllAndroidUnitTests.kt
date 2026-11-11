@@ -1,10 +1,18 @@
 package dev.stapler.stelekit
 
 import dev.stapler.stelekit.db.WalConfiguredCallbackTest
+import dev.stapler.stelekit.git.AndroidGitLegacyConfigSourceTest
 import dev.stapler.stelekit.git.AndroidGitRepositoryLfsGuardTest
 import dev.stapler.stelekit.google.AndroidGoogleSupportTest
 import dev.stapler.stelekit.git.AndroidGitRepositoryTestRemoteTest
 import dev.stapler.stelekit.git.GitSyncBusyCounterSharedWiringTest
+import dev.stapler.stelekit.git.GitSyncWorkerGateAndRecordTest
+import dev.stapler.stelekit.git.WorkManagerSyncSchedulerPauseTest
+import dev.stapler.stelekit.git.WorkManagerSyncSchedulerRetryOwnerTest
+import dev.stapler.stelekit.git.WorkManagerSyncSchedulerSlowPathYieldTest
+import dev.stapler.stelekit.git.WorkManagerSyncSchedulerUniqueWorkTest
+import dev.stapler.stelekit.git.WorkManagerSyncSchedulerWatchdogTest
+import dev.stapler.stelekit.jobs.schedule.LegacyWorkUpgradeTest
 import dev.stapler.stelekit.jobs.schedule.PlatformSettingsColdPathTest
 import dev.stapler.stelekit.jobs.schedule.WorkManagerJitterSpikeTest
 import dev.stapler.stelekit.jobs.schedule.TaskRegistryBothRootsTest
@@ -48,6 +56,14 @@ import org.junit.runners.Suite
     ScheduledTaskReconcilerTest::class,
     TaskWorkerTest::class,
     TaskRegistryBothRootsTest::class,
+    WorkManagerSyncSchedulerPauseTest::class,
+    WorkManagerSyncSchedulerRetryOwnerTest::class,
+    WorkManagerSyncSchedulerSlowPathYieldTest::class,
+    WorkManagerSyncSchedulerUniqueWorkTest::class,
+    WorkManagerSyncSchedulerWatchdogTest::class,
+    LegacyWorkUpgradeTest::class,
+    GitSyncWorkerGateAndRecordTest::class,
+    AndroidGitLegacyConfigSourceTest::class,
     PlatformSettingsColdPathTest::class,
     PlatformCapsRootTest::class,
     AndroidGoogleSupportTest::class,
@@ -90,5 +106,8 @@ import org.junit.runners.Suite
     // Runs fine under Gradle's testDebugUnitTest.
     //
     // LfsHeldFilesSheetTest is excluded for the same reason (1).
+    //
+    // GitSyncSchedulingEntryPointTest is excluded for the same reason (1): it drives
+    // rememberGraphContentScheduledSyncControls through composeRule.setContent. Runs under Gradle.
 )
 class AllAndroidUnitTests
