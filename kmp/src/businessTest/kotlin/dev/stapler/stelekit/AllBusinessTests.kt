@@ -218,6 +218,7 @@ import dev.stapler.stelekit.db.MigrationRunnerCoverageTest
 import dev.stapler.stelekit.db.MigrationRunnerIndexTest
 import dev.stapler.stelekit.db.MigrationRunnerSchemaSyncTest
 import dev.stapler.stelekit.db.SketchMigrationTest
+import dev.stapler.stelekit.sketch.export.SketchExporterTest
 import dev.stapler.stelekit.db.SketchStubGatingTest
 import dev.stapler.stelekit.repository.SketchDeleteProjectTest
 import dev.stapler.stelekit.repository.SketchRepositoryContractTest
@@ -760,6 +761,7 @@ import org.junit.runners.Suite
     TrackedCopyRunHostTest::class,
     HomeSketchFixtureVisibilityTest::class,
     SketchMigrationTest::class,
+    SketchExporterTest::class,
     SketchStubGatingTest::class,
     SketchRepositoryContractTest::class,
     SketchDeleteProjectTest::class,

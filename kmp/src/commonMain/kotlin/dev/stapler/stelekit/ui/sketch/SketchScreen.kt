@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import dev.stapler.stelekit.sketch.SketchPrimitive
+import dev.stapler.stelekit.sketch.export.SketchExporter
 import dev.stapler.stelekit.sketch.Zone
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -36,6 +37,7 @@ fun SketchScreen(
     viewModel: SketchViewModel,
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier,
+    exporter: SketchExporter? = null,
 ) {
     val state by viewModel.uiState.collectAsState()
     var panelsOpen by remember { mutableStateOf(false) }
@@ -52,6 +54,7 @@ fun SketchScreen(
             TextButton(onClick = viewModel::undo, enabled = state.canUndo) { Text("Undo") }
             TextButton(onClick = viewModel::redo, enabled = state.canRedo) { Text("Redo") }
             TextButton(onClick = viewModel::deleteSelected, enabled = state.selectedId != null) { Text("Delete") }
+            SketchExportButton(state.document, exporter)
             TextButton(onClick = { panelsOpen = !panelsOpen }) { Text(if (panelsOpen) "Hide sheet panels" else "Sheet panels") }
             Text(state.statusText(), style = MaterialTheme.typography.labelMedium)
         }
