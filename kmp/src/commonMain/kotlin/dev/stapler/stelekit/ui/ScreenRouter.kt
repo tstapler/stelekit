@@ -389,7 +389,12 @@ internal fun ScreenRouter(
                 NavigationTracingEffect("Sketch")
                 if (currentScreen.projectUuid == null && platformSettings != null) {
                     val graphId = appState.currentGraphId.orEmpty()
+                    val notesPath = appState.currentNotesPath
                     val projectListViewModel = remember(repos, graphId) {
+                        val wiring = dev.stapler.stelekit.ui.sketch.drawingWiringFor(
+                            repos.sketchRepositories, { dev.stapler.stelekit.asset.AssetIndexService(repos.assetRepository) },
+                            fileSystem, notesPath, repos.writeActor,
+                        )
                         dev.stapler.stelekit.ui.sketch.projectListViewModelFor(
                             repos.sketchRepositories, repos.writeActor, graphId, platformSettings,
                             graphLoader?.let { loader ->
@@ -408,6 +413,8 @@ internal fun ScreenRouter(
                                     repos.sketchRepositories,
                                 ) { fs.pickFileAsync()?.let { path -> fs.readFileSuspend(path) } }
                             },
+                            wiring?.action,
+                            wiring?.sheets,
                         )
                     }
                     dev.stapler.stelekit.ui.sketch.ProjectListScreen(

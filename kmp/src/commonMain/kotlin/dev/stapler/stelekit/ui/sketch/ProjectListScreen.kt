@@ -36,6 +36,7 @@ fun ProjectListScreen(
 ) {
     DisposableEffect(viewModel) { onDispose { viewModel.close() } }
     val state by viewModel.state.collectAsState()
+    val session by viewModel.importSession.collectAsState()
     var editing by remember { mutableStateOf(false) }
     if (editing && registryEditor != null) {
         val editorViewModel = remember { registryEditor() }
@@ -66,6 +67,10 @@ fun ProjectListScreen(
                     onChooseYaml = if (viewModel.yamlAvailable) viewModel::chooseYaml else null,
                 )
             }
+            if (viewModel.drawingsAvailable && state.projects.isNotEmpty()) {
+                AttachSheetsPanel(state.attachedSheets, viewModel::addDrawing, viewModel::removeDrawing)
+            }
+            session?.let { DrawingImportSession(it, viewModel::finishDrawing) }
         },
         modifier = modifier,
     )

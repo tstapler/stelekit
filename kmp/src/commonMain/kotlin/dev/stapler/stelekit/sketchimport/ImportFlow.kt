@@ -9,7 +9,6 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.asset.AssetIndexService
 import dev.stapler.stelekit.asset.AssetIntent
-import dev.stapler.stelekit.asset.DrawingLocationRule
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.fusion.DimensionKind
@@ -118,8 +117,8 @@ class ImportFlow(
             rasterDimension(projectUuid, preview, registry, reference) +
             tags.map { PngSheetAdapter.tagDimension(projectUuid, UuidGenerator.generateV7(), it, preview.contentHash) }
 
-        val dir = "${notesPath.child("assets")}/${DrawingLocationRule.SKETCH_DIR}/${loaded.project.slug}/drawings"
-        val path = "$dir/${preview.contentHash.take(HASH_PREFIX)}.${preview.extension}"
+        val dir = DrawingPaths.directory(notesPath.child("assets"), loaded.project.slug)
+        val path = DrawingPaths.file(notesPath.child("assets"), loaded.project.slug, preview.contentHash, preview.extension)
         fileSystem.createDirectory(dir)
         if (!fileSystem.writeFileBytes(path, preview.bytes)) return ImportError.Failed("could not write the drawing").left()
 
@@ -174,7 +173,6 @@ class ImportFlow(
         const val SVG = "svg"
         const val PNG = "png"
         const val SHEET_KIND = "drawing"
-        const val HASH_PREFIX = 8
     }
 }
 

@@ -26,6 +26,7 @@ import dev.stapler.stelekit.projectbridge.ProjectBridgeSettings
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import dev.stapler.stelekit.projectbridge.LocalBindingTable
+import dev.stapler.stelekit.projectbridge.readAttachedSvgSheets
 import dev.stapler.stelekit.projectbridge.BoundPagesReader
 import dev.stapler.stelekit.projectbridge.loadFusionSetup
 import dev.stapler.stelekit.sketchimport.readPngTags
@@ -243,6 +244,12 @@ private fun buildProjectBridgeDeps(
             }, LocalBindingTable(deps.platformSettings))
         },
         yamlSnapshot = { sidecarStore()?.let { readYamlSnapshot(deps.repos.sketchRepositories, it) } },
+        attachedSheets = {
+            readAttachedSvgSheets(
+                deps.repos.sketchRepositories, effectiveFileSystem,
+                graphManager.getActiveGraphInfo()?.takeIf { !it.isDemo }?.effectiveNotesPath,
+            ) { op -> deps.repos.writeActor?.execute(op = op) ?: op() }
+        },
         fusionSetup = { loadFusionSetup(deps.repos.sketchRepositories) },
         pngTags = { readPngTags(deps.repos.sketchRepositories) },
         pageSettleProbe = LoaderPageSettleProbe(

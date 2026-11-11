@@ -9,6 +9,8 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.llm.LlmFeature
 import dev.stapler.stelekit.llm.LlmSettings
 import dev.stapler.stelekit.projectbridge.AnalyseToggleDecision
+import dev.stapler.stelekit.projectbridge.AttachedSheetRow
+import dev.stapler.stelekit.projectbridge.AttachedSheetService
 import dev.stapler.stelekit.projectbridge.BindOutcome
 import dev.stapler.stelekit.projectbridge.BoundSourceRow
 import dev.stapler.stelekit.projectbridge.PickerPage
@@ -54,6 +56,7 @@ data class ProjectListUiState(
     val boundSources: List<BoundSourceRow> = emptyList(),
     /** True once the project records a YAML snapshot; the file itself is never shown. */
     val yamlSnapshotSet: Boolean = false,
+    val attachedSheets: List<AttachedSheetRow> = emptyList(),
     val message: String? = null,
 )
 
@@ -74,15 +77,20 @@ class ProjectListViewModel(
     private val random: Random = Random.Default,
     private val sources: SourceBindingService? = null,
     private val yaml: YamlPickerAction? = null,
+    internal val drawings: DrawingAttachAction? = null,
+    internal val sheets: AttachedSheetService? = null,
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
-    private val scope = CoroutineScope(
+    internal val scope = CoroutineScope(
         SupervisorJob() + dispatcher + CoroutineExceptionHandler { _, e -> setMessage("Something went wrong (${e::class.simpleName})") },
     )
     private val _state = MutableStateFlow(snapshot(emptyList(), false))
     val state: StateFlow<ProjectListUiState> = _state
     val sourcesAvailable: Boolean = sources != null
     val yamlAvailable: Boolean = yaml != null
+    val drawingsAvailable: Boolean = drawings != null
+    internal val drawingSession = MutableStateFlow<DrawingSession?>(null)
+    val importSession: StateFlow<DrawingSession?> = drawingSession
 
     init {
         scope.launch {
@@ -204,8 +212,12 @@ class ProjectListViewModel(
         }
     }
 
-    private suspend fun reloadBound() {
+    internal suspend fun reloadBound() {
         refreshYamlFlag()
+        sheets?.let { service ->
+            val rows = _state.value.projects.firstOrNull()?.let { service.list(it.uuid) }.orEmpty()
+            _state.update { it.copy(attachedSheets = rows) }
+        }
         val service = sources ?: return
         val project = _state.value.projects.firstOrNull() ?: return _state.update { it.copy(boundSources = emptyList()) }
         val rows = service.listBound(project.uuid)
@@ -226,7 +238,7 @@ class ProjectListViewModel(
 
     private fun refresh() = _state.update { snapshot(it.projects, it.hasMore, it) }
 
-    private fun setMessage(text: String) = _state.update { it.copy(message = text) }
+    internal fun setMessage(text: String) = _state.update { it.copy(message = text) }
 
     private fun snapshot(rows: List<ProjectRow>, hasMore: Boolean, previous: ProjectListUiState? = null) = ProjectListUiState(
         projects = rows,
@@ -239,6 +251,7 @@ class ProjectListViewModel(
         pickerResults = previous?.pickerResults.orEmpty(),
         boundSources = previous?.boundSources.orEmpty(),
         yamlSnapshotSet = previous?.yamlSnapshotSet == true,
+        attachedSheets = previous?.attachedSheets.orEmpty(),
         privateTerms = settings.outboundPrivateTerms(graphId),
         message = previous?.message,
     )
@@ -258,6 +271,8 @@ fun projectListViewModelFor(
     settings: dev.stapler.stelekit.platform.Settings,
     sources: SourceBindingService? = null,
     yaml: YamlPickerAction? = null,
+    drawings: DrawingAttachAction? = null,
+    sheets: AttachedSheetService? = null,
 ): ProjectListViewModel = ProjectListViewModel(
     projects = repositories.projects,
     graphId = graphId,
@@ -267,6 +282,8 @@ fun projectListViewModelFor(
     clock = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
     sources = sources,
     yaml = yaml,
+    drawings = drawings,
+    sheets = sheets,
 )
 
 /** True when the graph has at least one project (the post-sync job's `hasConfiguredProject`). */

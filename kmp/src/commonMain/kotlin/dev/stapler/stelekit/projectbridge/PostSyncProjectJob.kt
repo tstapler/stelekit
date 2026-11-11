@@ -152,7 +152,10 @@ class PostSyncProjectJob(
     /** Reads bound pages and the YAML snapshot through the registry; with no registry the stages find nothing (as before). */
     private fun defaultCollector(setup: ProjectFusionSetup?) = ProjectSourceCollector(
         registry = setup?.registry ?: DimensionRegistry(dimensions = emptyList()),
-        reader = ProjectSourceReader { deps.boundSources().toTexts().copy(yamlSnapshot = deps.yamlSnapshot(), pngTags = deps.pngTags()) },
+        reader = ProjectSourceReader {
+            deps.boundSources().toTexts()
+                .copy(yamlSnapshot = deps.yamlSnapshot(), sheets = deps.attachedSheets(), pngTags = deps.pngTags())
+        },
     )
 
     private fun analysisReason(outcome: AnalysisStepOutcome): String = when (outcome) {
