@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.calibration
 
 import dev.stapler.stelekit.model.Calibration
+import dev.stapler.stelekit.model.CalibrationBasis
 import dev.stapler.stelekit.model.CalibrationMethod
 import dev.stapler.stelekit.model.ImageSensorData
 import dev.stapler.stelekit.model.NormalizedPoint
@@ -29,8 +30,11 @@ object CalibrationService {
      * @param imageWidthPx  image native width in pixels
      * @param imageHeightPx image native height in pixels
      * @param knownLengthMeters real-world length of the reference object in meters
-     * @return [Calibration] with [CalibrationMethod.MANUAL_REFERENCE] and
-     *         [Calibration.confidencePercent] = 100, or null if the pixel distance is zero.
+     * @param basisVersion      the [CalibrationBasis] that [imageWidthPx]/[imageHeightPx] are expressed in.
+     *        Pass [CalibrationBasis.NATIVE_PIXELS] only with the image's native dimensions; the default
+     *        keeps the legacy decode-relative basis so callers that have not adopted native sizes are unchanged.
+     * @return [Calibration] with [CalibrationMethod.MANUAL_REFERENCE], [Calibration.confidencePercent] = 100
+     *         and [Calibration.basisVersion] = [basisVersion], or null if the pixel distance is zero.
      */
     fun computeFromReference(
         pixelStart: NormalizedPoint,
@@ -38,7 +42,9 @@ object CalibrationService {
         imageWidthPx: Double,
         imageHeightPx: Double,
         knownLengthMeters: Double,
+        basisVersion: Int = CalibrationBasis.LEGACY_DECODE_RELATIVE,
     ): Calibration? {
+        require(CalibrationBasis.isKnown(basisVersion)) { "unknown calibration basis version $basisVersion" }
         require(knownLengthMeters > 0.0) { "knownLengthMeters must be positive, got $knownLengthMeters" }
         require(imageWidthPx > 0.0) { "imageWidthPx must be positive" }
         require(imageHeightPx > 0.0) { "imageHeightPx must be positive" }
@@ -54,8 +60,27 @@ object CalibrationService {
             method = CalibrationMethod.MANUAL_REFERENCE,
             pixelsPerMeter = pixelsPerMeter,
             confidencePercent = 100,
+            basisVersion = basisVersion,
         )
     }
+
+    /**
+     * Pixels-per-meter to use when the image is currently [renderedWidthPx] wide, honouring the
+     * calibration's basis so a decode-size change can never rescale a stored measurement.
+     *
+     * - Legacy ([CalibrationBasis.LEGACY_DECODE_RELATIVE]): returned unchanged, exactly as before.
+     * - Native ([CalibrationBasis.NATIVE_PIXELS]): scaled by [renderedWidthPx] / [nativeWidthPx].
+     *
+     * Falls back to the stored value when either width is non-positive or non-finite.
+     */
+    fun pixelsPerMeterAt(calibration: Calibration, nativeWidthPx: Double, renderedWidthPx: Double): Double {
+        val stored = calibration.pixelsPerMeter
+        if (calibration.basisVersion != CalibrationBasis.NATIVE_PIXELS) return stored
+        if (!isUsableWidth(nativeWidthPx) || !isUsableWidth(renderedWidthPx)) return stored
+        return stored * renderedWidthPx / nativeWidthPx
+    }
+
+    private fun isUsableWidth(widthPx: Double): Boolean = widthPx.isFinite() && widthPx > 0.0
 
     /**
      * Compute a [Calibration] by sampling depth from an [DepthFrame] at a normalized tap point.
