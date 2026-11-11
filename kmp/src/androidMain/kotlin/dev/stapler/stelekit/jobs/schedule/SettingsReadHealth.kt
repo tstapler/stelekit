@@ -10,7 +10,7 @@ import android.content.SharedPreferences
  * Plain (non-Keystore) record of the last time a worker could not read task settings, so the status
  * line can say "Can't read settings" instead of a false Late. Holds a timestamp only, never user data.
  */
-class SettingsReadHealth(private val prefs: SharedPreferences) {
+class SettingsReadHealth(private val prefs: SharedPreferences) : SettingsReadHealthSource {
     constructor(context: Context) : this(context.getSharedPreferences(FILE, Context.MODE_PRIVATE))
 
     fun recordFailure(nowMs: Long) {
@@ -18,9 +18,9 @@ class SettingsReadHealth(private val prefs: SharedPreferences) {
     }
 
     /** Epoch millis of the last unreadable-settings failure, or null if none since the last [clear]. */
-    fun lastFailureMs(): Long? = if (prefs.contains(KEY_LAST_FAILURE_MS)) prefs.getLong(KEY_LAST_FAILURE_MS, 0L) else null
+    override fun lastFailureMs(): Long? = if (prefs.contains(KEY_LAST_FAILURE_MS)) prefs.getLong(KEY_LAST_FAILURE_MS, 0L) else null
 
-    fun clear() {
+    override fun clear() {
         if (prefs.contains(KEY_LAST_FAILURE_MS)) prefs.edit().remove(KEY_LAST_FAILURE_MS).apply()
     }
 

@@ -187,6 +187,17 @@ internal fun GraphContentActiveShell(
         inputs.gitSyncStack,
         onReviewFirstSync = viewModel::reviewFirstSyncFromSettings,
         onOpenStatus = viewModel::openSyncStatusFromSettings,
+        // Existing flows, reused: the sidebar's vault re-lock shows the unlock screen; Review conflict opens the
+        // same conflict resolution a sync badge tap does (after closing Settings).
+        onUnlock = {
+            viewModel.setSettingsVisible(false)
+            vaultManager?.lock()
+        },
+        onReviewConflict = {
+            viewModel.setSettingsVisible(false)
+            viewModel.openSyncDetails()
+        },
+        batterySettingsLauncher = deps.platformIntegrations.batterySettingsLauncher,
     ) {
         viewModel.setSettingsVisible(false)
         viewModel.openGitSetup()
@@ -244,6 +255,11 @@ internal fun GraphContentActiveShell(
         val newGraphFlowController = rememberGraphContentNewGraphFlowController(deps)
         val backgroundTasksSettings = rememberBackgroundTasksSettingsState(
             deps, inputs.gitSyncStack, graphRegistry.graphs,
+            onSetUpGit = {
+                viewModel.setSettingsVisible(false)
+                viewModel.openGitSetup()
+            },
+            onReviewFirstSync = viewModel::reviewFirstSyncFromSettings,
         ) {
             viewModel.setSettingsVisible(false)
             newGraphFlowController.onStartNewGraphFlow()

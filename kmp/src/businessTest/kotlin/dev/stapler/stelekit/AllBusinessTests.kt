@@ -781,6 +781,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.jobs.schedule.NetworkGateTest::class,
     dev.stapler.stelekit.git.lfs.LfsNetworkGateTest::class,
     dev.stapler.stelekit.git.ScheduledSyncPresentationTest::class,
+    dev.stapler.stelekit.git.ScheduleHealthTest::class,
     dev.stapler.stelekit.jobs.schedule.NoopTaskSchedulerTest::class,
     dev.stapler.stelekit.jobs.schedule.ScheduleLatenessTest::class,
     dev.stapler.stelekit.jobs.schedule.JobsScheduleImportDirectionTest::class,

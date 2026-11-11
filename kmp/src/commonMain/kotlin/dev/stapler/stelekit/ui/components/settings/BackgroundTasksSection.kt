@@ -55,6 +55,11 @@ data class BackgroundTasksSettingsState(
     val controller: BackgroundTaskSettingsController,
     val graphs: List<BackgroundTaskGraph>,
     val onAddGraph: () -> Unit,
+    /**
+     * Why a graph's switch cannot be turned on. Only the active graph's remote and first-sync review are
+     * knowable (the config repository is single-open), so other graphs return null and show no reason.
+     */
+    val switchGate: (kind: TaskKind, graphId: String) -> SwitchGate? = { _, _ -> null },
 )
 
 internal const val BACKGROUND_TASKS_TITLE = "Background tasks"
@@ -97,6 +102,7 @@ fun BackgroundTasksSection(
     graphs: List<BackgroundTaskGraph>,
     onAddGraph: () -> Unit,
     modifier: Modifier = Modifier,
+    switchGate: (kind: TaskKind, graphId: String) -> SwitchGate? = { _, _ -> null },
 ) {
     if (!controller.capabilities.schedulesWork) return
     var destination by remember { mutableStateOf<Destination>(Destination.List) }
@@ -131,6 +137,7 @@ fun BackgroundTasksSection(
                     BackRow { back(Destination.Kind(d.kind)) }
                     TaskSettingsPanel(
                         controller, TaskKey(d.kind, TaskScope(d.graph.id)), "${controller.titleOf(d.kind)} - ${d.graph.name}",
+                        switchGate = switchGate(d.kind, d.graph.id),
                         onChanged = { refresh++ },
                     )
                 }

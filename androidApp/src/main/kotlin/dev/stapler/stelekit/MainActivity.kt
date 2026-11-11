@@ -43,6 +43,8 @@ import dev.stapler.stelekit.git.SyncNotifier
 import dev.stapler.stelekit.git.GitShadowWorktree
 import dev.stapler.stelekit.git.GitSyncBusyCounter
 import dev.stapler.stelekit.git.AndroidBackgroundRestrictionProbe
+import dev.stapler.stelekit.git.AndroidBatterySettingsLauncher
+import dev.stapler.stelekit.jobs.schedule.SettingsReadHealth
 import dev.stapler.stelekit.git.AndroidNotificationPermissionAccess
 import dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory
 import dev.stapler.stelekit.git.WorkManagerSyncScheduler
@@ -552,6 +554,8 @@ class MainActivity : ComponentActivity() {
                             minimumIntervalMinutes = WorkManagerSyncScheduler.MIN_PERIODIC_INTERVAL_MINUTES.toInt(),
                         ) { graphId -> WorkManagerSyncScheduler(applicationContext, graphId) },
                         backgroundRestrictionProbe = AndroidBackgroundRestrictionProbe(applicationContext),
+                        batterySettingsLauncher = AndroidBatterySettingsLauncher(applicationContext),
+                        settingsReadHealth = SettingsReadHealth(applicationContext),
                         notificationPermission = remember {
                             AndroidNotificationPermissionAccess(
                                 context = applicationContext,

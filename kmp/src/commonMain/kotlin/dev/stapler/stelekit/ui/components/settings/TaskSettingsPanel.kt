@@ -87,6 +87,29 @@ sealed interface PanelTarget {
     data class Defaults(val followingGraphIds: List<String>) : PanelTarget
 }
 
+/**
+ * Why a graph's "Sync automatically" switch cannot be turned on, with the existing fix action. An
+ * already-on switch ignores it so the user can always turn sync off (UX-4).
+ */
+sealed interface SwitchGate {
+    val reason: String
+    val actionLabel: String
+    val onFix: () -> Unit
+
+    data class NoRemote(override val onFix: () -> Unit) : SwitchGate {
+        override val reason = NO_REMOTE_REASON
+        override val actionLabel = SET_UP_GIT_LABEL
+    }
+
+    data class FirstSyncReview(override val onFix: () -> Unit) : SwitchGate {
+        override val reason = REVIEW_FIRST_SYNC_REASON
+        override val actionLabel = REVIEW_FIRST_SYNC_LABEL
+    }
+}
+
+internal const val SET_UP_GIT_LABEL = "Set up Git sync"
+internal const val REVIEW_FIRST_SYNC_LABEL = "Review first sync"
+
 private sealed interface PanelLoad {
     data object Loading : PanelLoad
     data object Failed : PanelLoad
@@ -113,6 +136,7 @@ fun TaskSettingsPanel(
     title: String,
     modifier: Modifier = Modifier,
     target: PanelTarget = PanelTarget.Entry,
+    switchGate: SwitchGate? = null,
     onChanged: () -> Unit = {},
 ) {
     val caps = controller.capabilities
@@ -166,7 +190,7 @@ fun TaskSettingsPanel(
             }
             is PanelLoad.Ready -> {
                 if (!oneShot && !isDefaults) {
-                    SwitchBlock(state, caps.minIntervalMinutes, firstCheck, failed == ChangedControl.Switch) {
+                    SwitchBlock(state, caps.minIntervalMinutes, firstCheck, failed == ChangedControl.Switch, switchGate) {
                         submit(ChangedControl.Switch, PanelEdit.Enabled(it))
                     }
                 }
@@ -259,16 +283,29 @@ private fun SkeletonBar(width: Int, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SwitchBlock(state: PanelLoad.Ready, minInterval: Int, firstCheck: Int?, showError: Boolean, onToggle: (Boolean) -> Unit) {
+private fun SwitchBlock(
+    state: PanelLoad.Ready,
+    minInterval: Int,
+    firstCheck: Int?,
+    showError: Boolean,
+    gate: SwitchGate?,
+    onToggle: (Boolean) -> Unit,
+) {
+    val blocked = gate != null && !state.enabled
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = TARGET_DP.dp)
-            .toggleable(value = state.enabled, role = Role.Switch, onValueChange = onToggle),
+            .toggleable(value = state.enabled, enabled = !blocked, role = Role.Switch, onValueChange = onToggle)
+            .semantics { if (blocked) stateDescription = "Disabled, ${gate?.reason}" },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(SWITCH_LABEL, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        Switch(checked = state.enabled, onCheckedChange = null)
+        Switch(checked = state.enabled, onCheckedChange = null, enabled = !blocked)
+    }
+    if (blocked && gate != null) {
+        Text(gate.reason, style = MaterialTheme.typography.bodyMedium)
+        Button(onClick = gate.onFix, modifier = Modifier.heightIn(min = TARGET_DP.dp)) { Text(gate.actionLabel) }
     }
     val effective = maxOf(state.schedule.intervalMinutes, minInterval)
     Text(

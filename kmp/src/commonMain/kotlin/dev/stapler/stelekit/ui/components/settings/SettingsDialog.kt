@@ -212,7 +212,7 @@ fun SettingsDialog(
                         }
                         if (backgroundTasks != null) {
                             Spacer(modifier = Modifier.height(16.dp))
-                            BackgroundTasksSection(backgroundTasks.controller, backgroundTasks.graphs, backgroundTasks.onAddGraph)
+                            BackgroundTasksSection(backgroundTasks.controller, backgroundTasks.graphs, backgroundTasks.onAddGraph, switchGate = backgroundTasks.switchGate)
                         }
                         if (lfsTransfer != null) {
                             Spacer(modifier = Modifier.height(16.dp))

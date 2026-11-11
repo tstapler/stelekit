@@ -4,12 +4,16 @@
 package dev.stapler.stelekit.git
 
 import dev.stapler.stelekit.jobs.schedule.JitterPreset
+import dev.stapler.stelekit.jobs.schedule.LateCause
 import dev.stapler.stelekit.jobs.schedule.NetworkPolicy
 import dev.stapler.stelekit.jobs.schedule.NetworkPolicyCopy
+import dev.stapler.stelekit.jobs.schedule.RestrictionReason
+import dev.stapler.stelekit.jobs.schedule.ScheduleLateness
 import dev.stapler.stelekit.jobs.schedule.Schedule
 import dev.stapler.stelekit.jobs.schedule.SchedulerCapabilities
 import dev.stapler.stelekit.jobs.schedule.TaskConfig
 import dev.stapler.stelekit.jobs.schedule.TaskOverrides
+import dev.stapler.stelekit.jobs.schedule.TaskRunResult
 import dev.stapler.stelekit.jobs.schedule.TaskScheduleInfo
 
 /** The interval choices the Settings picker offers, in minutes. */
@@ -40,22 +44,163 @@ sealed interface ScheduledSyncLine {
     /** Only fetches have run (SAF graph or merge withheld): never worded as "synced". */
     data class FetchedOnly(val lastFetchedMinutesAgo: Long, val nextInMinutes: Long?) : ScheduledSyncLine
     data class Paused(val failures: Int, val lastFailure: String?) : ScheduledSyncLine
+
+    /** The schedule slipped: nothing succeeded for [sinceMs] (a closed-app notion, see [lateStatusAllowed]). */
+    data class Late(val sinceMs: Long, val cause: LateCause) : ScheduledSyncLine
+
+    /** The newest runs were skipped on purpose for [reason]; the OS is not blamed. */
+    data class SkippedBecause(val reason: StatusSkip) : ScheduledSyncLine
+
+    /** A background process could not read task settings; never worded as Late. */
+    data object SettingsUnreadable : ScheduledSyncLine
+}
+
+/** The deliberate skip causes the status line names. */
+enum class StatusSkip { Editing, AnotherSyncRunning, VaultLocked, ConflictPending }
+
+/** The status-line skip for a run-log skip code (see `TaskOutcomeMapping`), or null when it has no dedicated copy. */
+fun statusSkipFor(code: String): StatusSkip? = when (code) {
+    "vault-locked" -> StatusSkip.VaultLocked
+    "conflict-pending" -> StatusSkip.ConflictPending
+    "editing-in-progress" -> StatusSkip.Editing
+    "busy" -> StatusSkip.AnotherSyncRunning
+    else -> null
+}
+
+private fun statusSkipFor(reason: ScheduledSkipReason): StatusSkip? = when (reason) {
+    ScheduledSkipReason.EditingInProgress -> StatusSkip.Editing
+    ScheduledSkipReason.VaultLocked -> StatusSkip.VaultLocked
+    ScheduledSkipReason.ConflictPending -> StatusSkip.ConflictPending
+    else -> null
+}
+
+const val SETTINGS_UNREADABLE_TEXT = "Can't read settings. Background sync may be paused."
+const val OPEN_BATTERY_SETTINGS_LABEL = "Open battery settings"
+const val BATTERY_SETTINGS_MANUAL_PATH = "Open Android Settings > Apps > SteleKit > Battery."
+
+fun skipText(reason: StatusSkip): String = when (reason) {
+    StatusSkip.Editing -> "Sync paused while you edit. It continues when you stop."
+    StatusSkip.AnotherSyncRunning -> "Another sync is running."
+    StatusSkip.VaultLocked -> "Locked. Sync resumes after you unlock."
+    StatusSkip.ConflictPending -> "Resolve the conflict to resume."
+}
+
+private const val MS_PER_HOUR = 3_600_000L
+private const val HOURS_BEFORE_DAYS = 48L
+private const val HOURS_PER_DAY = 24L
+
+/** "Hasn't run in 45 min" under an hour, in hours up to 48 h, then whole days. Never says "behind". */
+fun lateText(sinceMs: Long): String {
+    val hours = sinceMs / MS_PER_HOUR
+    val span = when {
+        hours < 1 -> "${(sinceMs / MILLIS_PER_MINUTE).coerceAtLeast(1)} min"
+        hours <= HOURS_BEFORE_DAYS -> "$hours h"
+        else -> "${hours / HOURS_PER_DAY} days"
+    }
+    return "Hasn't run in $span"
 }
 
 /**
+ * True when a background process could not read task settings more recently than the last success and
+ * the newest run record is the matching skip (or there is none), so the UI says "Can't read settings"
+ * instead of a false Late.
+ */
+fun isSettingsUnreadable(lastFailureMs: Long?, lastSuccessMs: Long?, lastRun: TaskRunResult?): Boolean {
+    if (lastFailureMs == null) return false
+    if (lastSuccessMs != null && lastFailureMs <= lastSuccessMs) return false
+    return lastRun == null || lastRun == TaskRunResult.Skipped("settings-unreadable")
+}
+
+/** The one-line status text for every [ScheduledSyncLine]; the Paused line is also rendered with its own actions. */
+fun statusLineText(line: ScheduledSyncLine): String = when (line) {
+    ScheduledSyncLine.NotScheduled -> "Not scheduled"
+    ScheduledSyncLine.Stopping -> "Stopping..."
+    ScheduledSyncLine.NeverChecked -> "Not synced yet"
+    ScheduledSyncLine.CheckInProgress -> "Sync in progress"
+    ScheduledSyncLine.Offline -> "Offline - will sync when you are back online"
+    is ScheduledSyncLine.Checked -> {
+        val ago = if (line.lastCheckedMinutesAgo < 1) "just now" else "${line.lastCheckedMinutesAgo} min ago"
+        val next = line.nextInMinutes?.let { " · next in $it min" }.orEmpty()
+        "Last synced $ago$next"
+    }
+    is ScheduledSyncLine.FetchedOnly -> {
+        val ago = if (line.lastFetchedMinutesAgo < 1) "just now" else "${line.lastFetchedMinutesAgo} min ago"
+        val next = line.nextInMinutes?.let { " · next in $it min" }.orEmpty()
+        "Checked $ago, updates not merged yet$next"
+    }
+    is ScheduledSyncLine.Paused -> "Paused after ${line.failures} failures - tap to fix"
+    is ScheduledSyncLine.Late -> lateText(line.sinceMs)
+    is ScheduledSyncLine.SkippedBecause -> skipText(line.reason)
+    ScheduledSyncLine.SettingsUnreadable -> SETTINGS_UNREADABLE_TEXT
+}
+
+/** What the restricted-background hint row (S4) says and whether it carries the "Open battery settings" button. */
+sealed interface RestrictedHint {
+    val text: String
+    val hasSettingsButton: Boolean
+
+    data object BatterySaver : RestrictedHint {
+        override val text = "Battery saver is on. Background sync resumes when you turn it off or charge."
+        override val hasSettingsButton = false
+    }
+
+    data object Restricted : RestrictedHint {
+        override val text = "Android is restricting this app."
+        override val hasSettingsButton = true
+    }
+
+    /** Late with no probe signal: some vendors stop background apps without telling the app. */
+    data object OemSuspected : RestrictedHint {
+        override val text = "Some phones stop background apps. Check battery settings."
+        override val hasSettingsButton = true
+    }
+}
+
+/**
+ * The hint row for the current [line], or null. Hidden on a platform that cannot run closed (Desktop),
+ * when the task is off, and whenever the line already names a different cause (a deliberate skip,
+ * unreadable settings), so Android is never blamed for a skip the app chose.
+ */
+fun restrictedHint(line: ScheduledSyncLine, restriction: RestrictionReason, enabled: Boolean, caps: SchedulerCapabilities?): RestrictedHint? {
+    if (!enabled || caps == null || !lateStatusAllowed(caps)) return null
+    val otherCause = when (line) {
+        is ScheduledSyncLine.SkippedBecause, ScheduledSyncLine.SettingsUnreadable -> true
+        is ScheduledSyncLine.Late -> line.cause is LateCause.DeliberateSkip
+        else -> false
+    }
+    if (otherCause) return null
+    return when (restriction) {
+        RestrictionReason.BatterySaver -> RestrictedHint.BatterySaver
+        RestrictionReason.AppRestricted, RestrictionReason.StandbyRestricted -> RestrictedHint.Restricted
+        RestrictionReason.None -> if (line is ScheduledSyncLine.Late) RestrictedHint.OemSuspected else null
+    }
+}
+
+/**
+ * Precedence: Paused > Disabled (not scheduled) > Can't-read-settings > Late > check in progress > Checked.
+ *
  * @param stoppingVisible the switch went off while a tick was running and that has lasted over 2 s.
+ * @param lateness from `lateness(key, schedule, GitLastSuccessSource, now)`, the only source of "last success" for Late.
+ * @param capabilities Late shows only where [lateStatusAllowed]; null (unknown) never shows Late.
  */
 fun scheduledSyncLine(
     enabled: Boolean,
     status: ScheduledSyncStatus,
     nowMs: Long,
     stoppingVisible: Boolean,
+    lateness: ScheduleLateness = ScheduleLateness.OnTime,
+    capabilities: SchedulerCapabilities? = null,
+    settingsUnreadable: Boolean = false,
 ): ScheduledSyncLine = when {
     !enabled && stoppingVisible && status.tickInFlight -> ScheduledSyncLine.Stopping
     !enabled -> ScheduledSyncLine.NotScheduled
     status.paused -> ScheduledSyncLine.Paused(status.consecutiveFailures, status.lastFailure)
+    settingsUnreadable -> ScheduledSyncLine.SettingsUnreadable
+    lateness is ScheduleLateness.Late && capabilities != null && lateStatusAllowed(capabilities) -> lateLine(lateness)
     status.tickInFlight -> ScheduledSyncLine.CheckInProgress
     status.lastSkip == SkipReason.Busy -> ScheduledSyncLine.CheckInProgress
+    status.lastSkip is SkipReason.Policy && statusSkipFor(status.lastSkip.reason) != null ->
+        ScheduledSyncLine.SkippedBecause(checkNotNull(statusSkipFor(status.lastSkip.reason)))
     status.lastSkip == SkipReason.Offline -> ScheduledSyncLine.Offline
     status.lastSuccessAtMs == null && status.lastFetchedAtMs != null -> ScheduledSyncLine.FetchedOnly(
         lastFetchedMinutesAgo = minutesBetween(status.lastFetchedAtMs, nowMs),
@@ -66,6 +211,12 @@ fun scheduledSyncLine(
         lastCheckedMinutesAgo = minutesBetween(status.lastSuccessAtMs, nowMs),
         nextInMinutes = status.nextAtMs?.let { minutesBetween(nowMs, it) },
     )
+}
+
+private fun lateLine(late: ScheduleLateness.Late): ScheduledSyncLine {
+    val cause = late.cause
+    val skip = if (cause is LateCause.DeliberateSkip) statusSkipFor(cause.reason) else null
+    return if (skip != null) ScheduledSyncLine.SkippedBecause(skip) else ScheduledSyncLine.Late(late.sinceMs, cause)
 }
 
 /** Whole minutes from [fromMs] to [toMs], never negative. */

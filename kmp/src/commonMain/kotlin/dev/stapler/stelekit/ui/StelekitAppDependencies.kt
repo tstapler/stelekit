@@ -103,6 +103,10 @@ data class StelekitAppPlatformIntegrations(
      * say that closed-app checks are limited. Null means the platform has none to report.
      */
     val backgroundRestrictionProbe: dev.stapler.stelekit.git.BackgroundRestrictionProbe? = null,
+    /** Opens the app's system battery settings from the restricted-background hint; null shows the manual path instead. */
+    val batterySettingsLauncher: dev.stapler.stelekit.git.BatterySettingsLauncher? = null,
+    /** Whether a background process recently failed to read task settings; null (Desktop) never reports it. */
+    val settingsReadHealth: dev.stapler.stelekit.jobs.schedule.SettingsReadHealthSource? = null,
     /** Android 13+ `POST_NOTIFICATIONS` access for the Settings "Notify me" toggle; null hides that toggle. */
     val notificationPermission: dev.stapler.stelekit.git.NotificationPermissionAccess? = null,
     /**

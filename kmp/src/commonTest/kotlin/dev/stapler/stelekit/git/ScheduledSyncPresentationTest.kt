@@ -5,7 +5,11 @@ package dev.stapler.stelekit.git
 
 import dev.stapler.stelekit.jobs.schedule.JitterPreset
 import dev.stapler.stelekit.jobs.schedule.NetworkPolicy
+import dev.stapler.stelekit.jobs.schedule.LateCause
 import dev.stapler.stelekit.jobs.schedule.NetworkPolicyCopy
+import dev.stapler.stelekit.jobs.schedule.RestrictionReason
+import dev.stapler.stelekit.jobs.schedule.ScheduleLateness
+import dev.stapler.stelekit.jobs.schedule.TaskRunResult
 import dev.stapler.stelekit.jobs.schedule.Schedule
 import dev.stapler.stelekit.jobs.schedule.SchedulerCapabilities
 import dev.stapler.stelekit.jobs.schedule.TaskConfig
@@ -203,5 +207,169 @@ class ScheduledSyncPresentationTest {
     fun lateStatus_should_neverBeAllowed_When_DesktopCapabilities() {
         assertFalse(lateStatusAllowed(desktop))
         assertTrue(lateStatusAllowed(android))
+    }
+
+    // ---- Story 4.1.2: Late, skip reasons, restricted-background hint ----
+
+    private val hour = 3_600_000L
+    private val statusNow = 100 * hour
+    private fun lateOf(ms: Long, cause: LateCause = LateCause.Unattributed) = ScheduleLateness.Late(ms, cause)
+
+    private fun line(
+        status: ScheduledSyncStatus = ScheduledSyncStatus(lastSuccessAtMs = statusNow - 3 * hour),
+        lateness: ScheduleLateness = ScheduleLateness.OnTime,
+        caps: SchedulerCapabilities? = android,
+        unreadable: Boolean = false,
+        enabled: Boolean = true,
+    ) = scheduledSyncLine(enabled, status, statusNow, false, lateness, caps, unreadable)
+
+    @Test
+    fun statusLine_should_sayHasntRunInHours_When_LastSuccess3hAgoAndIntervalOneHour() {
+        val result = line(lateness = lateOf(3 * hour))
+        assertEquals(ScheduledSyncLine.Late(3 * hour, LateCause.Unattributed), result)
+        assertEquals("Hasn't run in 3 h", lateText(3 * hour))
+        assertFalse(lateText(3 * hour).contains("behind", ignoreCase = true))
+    }
+
+    @Test
+    fun lateText_should_useMinutesHoursThenDays_When_DurationCrossesThresholds() {
+        assertEquals("Hasn't run in 45 min", lateText(45 * 60_000L))
+        assertEquals("Hasn't run in 1 h", lateText(hour))
+        assertEquals("Hasn't run in 48 h", lateText(48 * hour))
+        assertEquals("Hasn't run in 2 days", lateText(49 * hour))
+        assertEquals("Hasn't run in 3 days", lateText(72 * hour))
+        assertEquals("Hasn't run in 3 days", lateText(80 * hour))
+    }
+
+    @Test
+    fun statusLine_should_followPrecedence_PausedThenDisabledThenUnreadableThenLateThenInProgressThenChecked() {
+        val late = lateOf(5 * hour)
+        val paused = ScheduledSyncStatus(paused = true, consecutiveFailures = 3, lastFailure = "x", tickInFlight = true)
+        // Paused beats unreadable, Late and in-progress.
+        assertEquals(ScheduledSyncLine.Paused(3, "x"), line(paused, late, unreadable = true))
+        // Disabled (not scheduled) beats everything below it.
+        assertEquals(ScheduledSyncLine.NotScheduled, line(paused, late, unreadable = true, enabled = false))
+        val running = ScheduledSyncStatus(tickInFlight = true, lastSuccessAtMs = statusNow - 5 * hour)
+        // Unreadable beats Late.
+        assertEquals(ScheduledSyncLine.SettingsUnreadable, line(running, late, unreadable = true))
+        // Late beats in-progress.
+        assertEquals(ScheduledSyncLine.Late(5 * hour, LateCause.Unattributed), line(running, late))
+        // In-progress beats Checked.
+        assertEquals(ScheduledSyncLine.CheckInProgress, line(running, ScheduleLateness.OnTime))
+        assertTrue(line(ScheduledSyncStatus(lastSuccessAtMs = statusNow - 10 * 60_000L)) is ScheduledSyncLine.Checked)
+    }
+
+    @Test
+    fun statusLine_should_neverShowLate_When_DesktopCapabilitiesOrNoCapabilities() {
+        val late = lateOf(9 * hour)
+        val status = ScheduledSyncStatus(lastSuccessAtMs = statusNow - 9 * hour)
+        assertTrue(line(status, late, caps = desktop) is ScheduledSyncLine.Checked)
+        assertTrue(line(status, late, caps = null) is ScheduledSyncLine.Checked)
+        assertEquals(ScheduledSyncLine.Late(9 * hour, LateCause.Unattributed), line(status, late, caps = android))
+    }
+
+    @Test
+    fun statusLine_should_showCheckedNotLate_When_ForegroundSuccessIsRecentAndRunLogHasOnlyOldSkips() {
+        // lateness() already folded the foreground merge time in, so it reports OnTime.
+        val status = ScheduledSyncStatus(lastSuccessAtMs = statusNow - 10 * 60_000L)
+        val result = line(status, ScheduleLateness.OnTime)
+        assertEquals(ScheduledSyncLine.Checked(10, null), result)
+    }
+
+    @Test
+    fun statusLine_should_nameDeliberateSkip_When_LateCauseIsVaultLockedConflictEditingOrBusy() {
+        val cases = mapOf(
+            "vault-locked" to StatusSkip.VaultLocked,
+            "conflict-pending" to StatusSkip.ConflictPending,
+            "editing-in-progress" to StatusSkip.Editing,
+            "busy" to StatusSkip.AnotherSyncRunning,
+        )
+        for ((code, expected) in cases) {
+            assertEquals(ScheduledSyncLine.SkippedBecause(expected), line(lateness = lateOf(5 * hour, LateCause.DeliberateSkip(code))), code)
+        }
+        // An unmapped deliberate skip stays Late (blamed on neither Android nor a named cause).
+        assertEquals(
+            ScheduledSyncLine.Late(5 * hour, LateCause.DeliberateSkip("metered")),
+            line(lateness = lateOf(5 * hour, LateCause.DeliberateSkip("metered"))),
+        )
+    }
+
+    @Test
+    fun statusLine_should_showEditingAndConflictSkipsFromTheInAppLoop_When_MostRecentTickWasSkipped() {
+        fun skip(r: ScheduledSkipReason) = ScheduledSyncStatus(lastSuccessAtMs = statusNow - 5 * 60_000L, lastSkip = SkipReason.Policy(r))
+        assertEquals(ScheduledSyncLine.SkippedBecause(StatusSkip.Editing), line(skip(ScheduledSkipReason.EditingInProgress)))
+        assertEquals(ScheduledSyncLine.SkippedBecause(StatusSkip.ConflictPending), line(skip(ScheduledSkipReason.ConflictPending)))
+        assertEquals(ScheduledSyncLine.SkippedBecause(StatusSkip.VaultLocked), line(skip(ScheduledSkipReason.VaultLocked)))
+        // Falls back to Checked once the cause clears (lastSkip is reset by the next tick).
+        assertTrue(line(ScheduledSyncStatus(lastSuccessAtMs = statusNow - 60_000L)) is ScheduledSyncLine.Checked)
+    }
+
+    @Test
+    fun skipCopy_should_matchTheSpec_When_RenderedForEachReason() {
+        assertEquals("Sync paused while you edit. It continues when you stop.", skipText(StatusSkip.Editing))
+        assertEquals("Another sync is running.", skipText(StatusSkip.AnotherSyncRunning))
+        assertEquals("Locked. Sync resumes after you unlock.", skipText(StatusSkip.VaultLocked))
+        assertEquals("Resolve the conflict to resume.", skipText(StatusSkip.ConflictPending))
+        assertEquals("Can't read settings. Background sync may be paused.", SETTINGS_UNREADABLE_TEXT)
+    }
+
+    @Test
+    fun settingsUnreadable_should_holdOnlyWhenFailureIsNewerThanSuccessAndLastRunIsUnreadableOrAbsent() {
+        val unreadableRun = TaskRunResult.Skipped("settings-unreadable")
+        assertTrue(isSettingsUnreadable(lastFailureMs = 10, lastSuccessMs = 5, lastRun = unreadableRun))
+        assertTrue(isSettingsUnreadable(lastFailureMs = 10, lastSuccessMs = null, lastRun = null))
+        assertFalse(isSettingsUnreadable(lastFailureMs = null, lastSuccessMs = 5, lastRun = unreadableRun))
+        assertFalse(isSettingsUnreadable(lastFailureMs = 4, lastSuccessMs = 5, lastRun = unreadableRun))
+        assertFalse(isSettingsUnreadable(lastFailureMs = 10, lastSuccessMs = 5, lastRun = TaskRunResult.Skipped("metered")))
+        assertFalse(isSettingsUnreadable(lastFailureMs = 10, lastSuccessMs = 5, lastRun = TaskRunResult.Success))
+    }
+
+    @Test
+    fun hint_should_followRestrictionReason_When_AndroidAndEnabled() {
+        val unattributedLate = ScheduledSyncLine.Late(3 * hour, LateCause.Unattributed)
+        val checked = ScheduledSyncLine.Checked(5, null)
+        // Battery saver: text only.
+        val saver = restrictedHint(checked, RestrictionReason.BatterySaver, enabled = true, caps = android)
+        assertEquals(RestrictedHint.BatterySaver, saver)
+        assertFalse(saver!!.hasSettingsButton)
+        assertEquals("Battery saver is on. Background sync resumes when you turn it off or charge.", saver.text)
+        // Standby and app-restricted: text plus button.
+        for (reason in listOf(RestrictionReason.StandbyRestricted, RestrictionReason.AppRestricted)) {
+            val hint = restrictedHint(checked, reason, enabled = true, caps = android)
+            assertEquals(RestrictedHint.Restricted, hint)
+            assertTrue(hint!!.hasSettingsButton)
+        }
+        // Late with probe None: softer OEM wording plus button.
+        val oem = restrictedHint(unattributedLate, RestrictionReason.None, enabled = true, caps = android)
+        assertEquals(RestrictedHint.OemSuspected, oem)
+        assertEquals("Some phones stop background apps. Check battery settings.", oem!!.text)
+        assertTrue(oem.hasSettingsButton)
+        // Nothing to say: on time and unrestricted.
+        assertNull(restrictedHint(checked, RestrictionReason.None, enabled = true, caps = android))
+        assertEquals("Open battery settings", OPEN_BATTERY_SETTINGS_LABEL)
+    }
+
+    @Test
+    fun hint_should_beHidden_When_DesktopDisabledOrCauseIsDeliberateSkip() {
+        val checked = ScheduledSyncLine.Checked(5, null)
+        assertNull(restrictedHint(checked, RestrictionReason.BatterySaver, enabled = true, caps = desktop))
+        assertNull(restrictedHint(checked, RestrictionReason.BatterySaver, enabled = false, caps = android))
+        assertNull(restrictedHint(checked, RestrictionReason.BatterySaver, enabled = true, caps = null))
+        // UX-9: a deliberate skip is not blamed on Android, whatever the probe says.
+        for (reason in RestrictionReason.entries) {
+            assertNull(restrictedHint(ScheduledSyncLine.SkippedBecause(StatusSkip.VaultLocked), reason, enabled = true, caps = android))
+            assertNull(restrictedHint(ScheduledSyncLine.Late(hour, LateCause.DeliberateSkip("metered")), reason, enabled = true, caps = android))
+            assertNull(restrictedHint(ScheduledSyncLine.SettingsUnreadable, reason, enabled = true, caps = android))
+        }
+    }
+
+    @Test
+    fun statusCopy_should_neverStateAClockTime_When_AnyLineRenders() {
+        val clock = Regex("\\d{1,2}:\\d{2}")
+        val lines = listOf(
+            ScheduledSyncLine.Late(3 * hour, LateCause.Unattributed),
+            ScheduledSyncLine.SettingsUnreadable,
+        ) + StatusSkip.entries.map { ScheduledSyncLine.SkippedBecause(it) }
+        lines.forEach { assertFalse(clock.containsMatchIn(statusLineText(it)), statusLineText(it)) }
     }
 }
