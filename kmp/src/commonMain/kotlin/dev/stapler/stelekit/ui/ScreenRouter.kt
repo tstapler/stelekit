@@ -585,4 +585,3 @@ private fun FatalErrorScreen(
         }
     }
 }
-
