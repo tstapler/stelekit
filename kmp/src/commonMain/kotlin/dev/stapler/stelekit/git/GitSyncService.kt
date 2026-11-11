@@ -89,6 +89,10 @@ class GitSyncService(
     jobTracker: JobTracker = NoJobTracker,
     /** Whether the graph sits in a directory this process writes directly; SAF graphs are fetch-only for scheduled work. Throwing counts as false. */
     isAppOwnedPath: (RepoRoot) -> Boolean = { !it.value.startsWith("saf://") && !it.value.startsWith("content://") },
+    /** Write-only record of each in-app tick for the Logs screen; the default records nothing. */
+    tickRunRecorder: TickRunRecorder = TickRunRecorder.None,
+    /** Jitter source for the periodic loop; tests inject a seeded one. */
+    periodicRandom: kotlin.random.Random = kotlin.random.Random.Default,
 ) {
     private val logger = Logger("GitSyncService")
     private val markerGuard = ConflictMarkerGuard(fileSystem)
@@ -228,6 +232,8 @@ class GitSyncService(
         tick = { refreshLocalStatus(periodicGraphId); scheduled.run(periodicGraphId) },
         scope = scope, clock = wallClockMs, isBusy = { gitSyncBusyCounter.isBusy.value },
         label = graphId, decision = "scheduled", launchContext = periodicSyncContext,
+        random = periodicRandom, recorder = tickRunRecorder,
+        constraintState = { dev.stapler.stelekit.jobs.schedule.ConstraintState(online = isOnline(), isMetered = null, charging = null) },
     )
 
     /** Observable state of the scheduled-sync loop (last check, next check, pause); see [PeriodicSyncDriver]. */
@@ -766,9 +772,9 @@ class GitSyncService(
      * Starts a periodic sync loop that calls [fetchOnly] every [intervalMinutes] minutes.
      * Cancels any existing periodic sync before starting.
      */
-    fun startPeriodicSync(graphId: String, intervalMinutes: Int, immediateFirstTick: Boolean = false) {
+    fun startPeriodicSync(graphId: String, intervalMinutes: Int, immediateFirstTick: Boolean = false, jitterMinutes: Int = 0) {
         periodicGraphId = graphId
-        periodicDriver.start(intervalMinutes, immediateFirstTick)
+        periodicDriver.start(intervalMinutes, immediateFirstTick, jitterMinutes)
     }
 
     /** Cancels the periodic sync loop without shutting down the service. */

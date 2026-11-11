@@ -5,6 +5,8 @@ package dev.stapler.stelekit.git
 
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.jobs.schedule.ConstraintState
+import dev.stapler.stelekit.jobs.schedule.JitterPolicy
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.security.Redactor
 import kotlinx.coroutines.CancellationException
@@ -20,6 +22,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.random.Random
 import kotlin.time.Clock
 
 /** Why a scheduled tick did not run its body. */
@@ -88,6 +91,9 @@ data class ScheduledSyncStatus(
  * @param clock wall-clock epoch millis.
  * @param label graph id shown in the `SyncTick` log line.
  * @param decision what a tick does, for the log line (`fetch` until the full-sync cutover).
+ * @param random source of the per-cycle jitter; only consulted when a jitter window is set.
+ * @param recorder write-only hook called once after each tick that ran; a throwing recorder is logged and ignored.
+ * @param constraintState the in-app constraint snapshot handed to [recorder].
  */
 class PeriodicSyncDriver(
     private val tick: suspend () -> TickOutcome,
@@ -97,6 +103,9 @@ class PeriodicSyncDriver(
     private val label: String = "",
     private val decision: String = "fetch",
     private val launchContext: CoroutineContext = EmptyCoroutineContext,
+    private val random: Random = Random.Default,
+    private val recorder: TickRunRecorder = TickRunRecorder.None,
+    private val constraintState: () -> ConstraintState = { ConstraintState(online = true, isMetered = null, charging = null) },
 ) {
     private val logger = Logger("PeriodicSyncDriver")
     private val tickLock = Mutex()
@@ -105,16 +114,19 @@ class PeriodicSyncDriver(
 
     @kotlin.concurrent.Volatile private var job: Job? = null
     @kotlin.concurrent.Volatile private var intervalMinutes: Int = 0
+    @kotlin.concurrent.Volatile private var jitterMinutes: Int = 0
 
     /**
      * Cancels any running loop, then starts one ticking every [intervalMinutes]; with
      * [immediateFirstTick] one tick runs right away instead of after a full interval.
+     * Each cycle waits between [intervalMinutes] and `intervalMinutes + jitterMinutes`; 0 is exactly the interval.
      * No-op for `intervalMinutes <= 0`. A fresh start clears a previous pause.
      */
-    fun start(intervalMinutes: Int, immediateFirstTick: Boolean = false) {
+    fun start(intervalMinutes: Int, immediateFirstTick: Boolean = false, jitterMinutes: Int = 0) {
         stop()
         if (intervalMinutes <= 0) return
         this.intervalMinutes = intervalMinutes
+        this.jitterMinutes = maxOf(0, jitterMinutes)
         _status.update {
             it.copy(
                 running = true,
@@ -130,6 +142,7 @@ class PeriodicSyncDriver(
         job?.cancel()
         job = null
         intervalMinutes = 0
+        jitterMinutes = 0
         _status.update { it.copy(running = false, nextAtMs = null) }
     }
 
@@ -170,10 +183,21 @@ class PeriodicSyncDriver(
             }
             val safe = if (outcome is TickOutcome.Failure) outcome.copy(message = Redactor.redactGitMessage(outcome.message)) else outcome
             record(safe, attemptAt)
+            recordRun(safe, attemptAt)
             return safe
         } finally {
             _status.update { it.copy(tickInFlight = false) }
             tickLock.unlock()
+        }
+    }
+
+    private suspend fun recordRun(outcome: TickOutcome, startedAtMs: Long) {
+        try {
+            recorder.record(startedAtMs, outcome.toTaskRunResult(), constraintState())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            logger.warn("tick run record failed graph=$label", t)
         }
     }
 
@@ -242,11 +266,10 @@ class PeriodicSyncDriver(
 
     private fun describe(t: Throwable): String = Redactor.redactGitMessage("${t::class.simpleName}: ${t.message ?: "no message"}")
 
-    private fun intervalMs() = intervalMinutes * MILLIS_PER_MINUTE
+    private fun intervalMs() = JitterPolicy.nextDelayMs(intervalMinutes, jitterMinutes, random)
 
     companion object {
         /** Consecutive failed ticks before the loop pauses. */
         const val PAUSE_AFTER_FAILURES = 3
-        private const val MILLIS_PER_MINUTE = 60_000L
     }
 }
