@@ -260,6 +260,13 @@ class ScheduledSyncPresentationTest {
     }
 
     @Test
+    fun statusLine_should_sayAnotherSyncRunning_When_LastSkipBusyAndNoTickInFlight() {
+        val line = line(ScheduledSyncStatus(lastSkip = SkipReason.Busy), ScheduleLateness.OnTime)
+        assertEquals(ScheduledSyncLine.SkippedBecause(StatusSkip.AnotherSyncRunning), line)
+        assertEquals("Another sync is running.", skipText(StatusSkip.AnotherSyncRunning))
+    }
+
+    @Test
     fun statusLine_should_neverShowLate_When_DesktopCapabilitiesOrNoCapabilities() {
         val late = lateOf(9 * hour)
         val status = ScheduledSyncStatus(lastSuccessAtMs = statusNow - 9 * hour)

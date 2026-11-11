@@ -233,9 +233,9 @@ class ScheduledSyncSettingsTest {
     }
 
     @Test
-    fun tick_should_BeSkippedShowCheckInProgressAndNeverQueued_When_PreviousTickRunning() {
+    fun tick_should_BeSkippedShowAnotherSyncRunningAndNeverQueued_When_PreviousTickRunning() {
         show(state(enabled = true, status = ScheduledSyncStatus(lastSkip = SkipReason.Busy)))
-        composeTestRule.onNodeWithText("Sync in progress").assertExists()
+        composeTestRule.onNodeWithText("Another sync is running.").assertExists()
     }
 
     @Test

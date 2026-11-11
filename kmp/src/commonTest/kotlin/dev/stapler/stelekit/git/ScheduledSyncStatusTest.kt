@@ -67,7 +67,7 @@ class ScheduledSyncStatusTest {
 
     @Test
     fun `line should report busy offline paused and never synced`() {
-        assertEquals(ScheduledSyncLine.CheckInProgress, scheduledSyncLine(true, ScheduledSyncStatus(lastSkip = SkipReason.Busy), 0, false))
+        assertEquals(ScheduledSyncLine.SkippedBecause(StatusSkip.AnotherSyncRunning), scheduledSyncLine(true, ScheduledSyncStatus(lastSkip = SkipReason.Busy), 0, false))
         assertEquals(ScheduledSyncLine.Offline, scheduledSyncLine(true, ScheduledSyncStatus(lastSkip = SkipReason.Offline), 0, false))
         assertEquals(ScheduledSyncLine.NeverChecked, scheduledSyncLine(true, ScheduledSyncStatus(), 0, false))
         val paused = ScheduledSyncStatus(paused = true, consecutiveFailures = 3, lastFailure = "auth")

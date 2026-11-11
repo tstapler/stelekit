@@ -198,7 +198,7 @@ fun scheduledSyncLine(
     settingsUnreadable -> ScheduledSyncLine.SettingsUnreadable
     lateness is ScheduleLateness.Late && capabilities != null && lateStatusAllowed(capabilities) -> lateLine(lateness)
     status.tickInFlight -> ScheduledSyncLine.CheckInProgress
-    status.lastSkip == SkipReason.Busy -> ScheduledSyncLine.CheckInProgress
+    status.lastSkip == SkipReason.Busy -> ScheduledSyncLine.SkippedBecause(StatusSkip.AnotherSyncRunning)
     status.lastSkip is SkipReason.Policy && statusSkipFor(status.lastSkip.reason) != null ->
         ScheduledSyncLine.SkippedBecause(checkNotNull(statusSkipFor(status.lastSkip.reason)))
     status.lastSkip == SkipReason.Offline -> ScheduledSyncLine.Offline
