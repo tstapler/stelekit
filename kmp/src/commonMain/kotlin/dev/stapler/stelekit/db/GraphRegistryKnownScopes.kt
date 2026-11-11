@@ -42,3 +42,23 @@ class GraphRegistryKnownScopes(private val settings: Settings) : KnownScopes {
         const val REGISTRY_KEY = "graph_registry"
     }
 }
+
+/**
+ * The persisted registry's active graph id, or null when blank, corrupt, demo, or unreadable. Reads settings
+ * only (never opens a graph), so startup can migrate the active graph without a DB fan-out.
+ */
+@OptIn(RegistryRootPath::class)
+fun readActiveGraphId(settings: Settings): String? = try {
+    val raw = settings.getString("graph_registry", "")
+    if (raw.isEmpty()) {
+        null
+    } else {
+        val registry = Json { ignoreUnknownKeys = true }.decodeFromString<GraphRegistry>(raw)
+        val id = registry.activeGraphId
+        registry.graphs.firstOrNull { it.id == id }?.takeIf { !it.isDemo && it.path != "/demo" }?.id?.value
+    }
+} catch (e: CancellationException) {
+    throw e
+} catch (_: Throwable) {
+    null
+}

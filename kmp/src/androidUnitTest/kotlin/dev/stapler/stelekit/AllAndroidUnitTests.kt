@@ -17,6 +17,7 @@ import dev.stapler.stelekit.jobs.schedule.PlatformSettingsColdPathTest
 import dev.stapler.stelekit.jobs.schedule.WorkManagerJitterSpikeTest
 import dev.stapler.stelekit.jobs.schedule.TaskRegistryBothRootsTest
 import dev.stapler.stelekit.jobs.schedule.TaskWorkerTest
+import dev.stapler.stelekit.jobs.schedule.ScheduleStartupTest
 import dev.stapler.stelekit.jobs.schedule.ScheduledTaskReconcilerTest
 import dev.stapler.stelekit.jobs.schedule.WorkManagerTaskSchedulerConstraintsTest
 import dev.stapler.stelekit.jobs.schedule.WorkManagerTaskSchedulerPauseResumeTest
@@ -54,6 +55,7 @@ import org.junit.runners.Suite
     WorkManagerTaskSchedulerConstraintsTest::class,
     WorkManagerTaskSchedulerPauseResumeTest::class,
     ScheduledTaskReconcilerTest::class,
+    ScheduleStartupTest::class,
     TaskWorkerTest::class,
     TaskRegistryBothRootsTest::class,
     WorkManagerSyncSchedulerPauseTest::class,
