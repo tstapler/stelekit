@@ -10,6 +10,7 @@ import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationMethod
+import dev.stapler.stelekit.model.DEFAULT_MEASUREMENT_UNIT
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.ImageSensorData
 import dev.stapler.stelekit.model.ImageSource
@@ -145,7 +146,7 @@ private fun dev.stapler.stelekit.db.Image_annotations.toModel(): ImageAnnotation
             confidencePercent = calibration_confidence_pct.toInt(),
             basisVersion = calibration_basis_version.toInt(),
         ),
-        unit = runCatching { MeasurementUnit.valueOf(unit) }.getOrDefault(MeasurementUnit.METERS),
+        unit = runCatching { MeasurementUnit.valueOf(unit) }.getOrDefault(DEFAULT_MEASUREMENT_UNIT),
         tags = tagsList,
         sensorData = ImageSensorData(
             latLng = latLngPair,

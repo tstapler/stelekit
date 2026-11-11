@@ -9,6 +9,11 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.llm.LlmFeature
 import dev.stapler.stelekit.llm.LlmSettings
 import dev.stapler.stelekit.projectbridge.AnalyseToggleDecision
+import dev.stapler.stelekit.projectbridge.BindOutcome
+import dev.stapler.stelekit.projectbridge.BoundSourceRow
+import dev.stapler.stelekit.projectbridge.PickerPage
+import dev.stapler.stelekit.projectbridge.SourceBindingKind
+import dev.stapler.stelekit.projectbridge.SourceBindingService
 import dev.stapler.stelekit.projectbridge.AnalyseToggleRules
 import dev.stapler.stelekit.projectbridge.OutboundPreview
 import dev.stapler.stelekit.projectbridge.ProjectBridgeSettings
@@ -45,6 +50,8 @@ data class ProjectListUiState(
     /** The exact outbound text awaiting the owner's approval; non-null while the preview dialog is open. */
     val pendingPreview: String? = null,
     val privateTerms: List<String> = emptyList(),
+    val pickerResults: List<PickerPage> = emptyList(),
+    val boundSources: List<BoundSourceRow> = emptyList(),
     val message: String? = null,
 )
 
@@ -63,6 +70,7 @@ class ProjectListViewModel(
     private val write: ProjectWriteRunner,
     private val clock: () -> Long,
     private val random: Random = Random.Default,
+    private val sources: SourceBindingService? = null,
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     private val scope = CoroutineScope(
@@ -70,6 +78,7 @@ class ProjectListViewModel(
     )
     private val _state = MutableStateFlow(snapshot(emptyList(), false))
     val state: StateFlow<ProjectListUiState> = _state
+    val sourcesAvailable: Boolean = sources != null
 
     init {
         scope.launch {
@@ -77,6 +86,7 @@ class ProjectListViewModel(
                 result.onRight { rows ->
                     val shown = rows.take(PAGE_SIZE).map { ProjectRow(it.uuid.value, it.slug, it.name) }
                     _state.update { snapshot(shown, rows.size > PAGE_SIZE, it) }
+                    reloadBound()
                 }.onLeft { setMessage("Could not load projects") }
             }
         }
@@ -148,6 +158,45 @@ class ProjectListViewModel(
         refresh()
     }
 
+    fun searchSourcePages(query: String) {
+        val service = sources ?: return
+        scope.launch {
+            val hits = service.search(query)
+            _state.update { it.copy(pickerResults = hits) }
+            val project = _state.value.projects.firstOrNull() ?: return@launch
+            if (service.autoRebind(project.uuid, hits) > 0) reloadBound()
+        }
+    }
+
+    fun bindSource(kind: SourceBindingKind, pageUuid: String) {
+        val service = sources ?: return
+        val project = _state.value.projects.firstOrNull() ?: return setMessage("Create a project first")
+        scope.launch {
+            when (service.bind(project.uuid, kind, pageUuid)) {
+                BindOutcome.Bound -> reloadBound()
+                BindOutcome.NotReadable -> setMessage("That page is not loaded yet; try again after it syncs")
+                BindOutcome.LimitReached -> setMessage("This project already has the maximum number of source pages")
+                else -> setMessage("Could not use that page")
+            }
+        }
+    }
+
+    fun unbindSource(bindingId: String) {
+        val service = sources ?: return
+        val project = _state.value.projects.firstOrNull() ?: return
+        scope.launch {
+            service.unbind(project.uuid, bindingId)
+            reloadBound()
+        }
+    }
+
+    private suspend fun reloadBound() {
+        val service = sources ?: return
+        val project = _state.value.projects.firstOrNull() ?: return _state.update { it.copy(boundSources = emptyList()) }
+        val rows = service.listBound(project.uuid)
+        _state.update { it.copy(boundSources = rows) }
+    }
+
     fun dismissMessage() = _state.update { it.copy(message = null) }
 
     fun close() = scope.cancel()
@@ -166,6 +215,8 @@ class ProjectListViewModel(
         analyseAfterSync = settings.analyseAfterSync(graphId),
         analyseOffered = providerConfigured(),
         pendingPreview = previous?.pendingPreview,
+        pickerResults = previous?.pickerResults.orEmpty(),
+        boundSources = previous?.boundSources.orEmpty(),
         privateTerms = settings.outboundPrivateTerms(graphId),
         message = previous?.message,
     )
@@ -183,6 +234,7 @@ fun projectListViewModelFor(
     writeActor: dev.stapler.stelekit.db.DatabaseWriteActor?,
     graphId: String,
     settings: dev.stapler.stelekit.platform.Settings,
+    sources: SourceBindingService? = null,
 ): ProjectListViewModel = ProjectListViewModel(
     projects = repositories.projects,
     graphId = graphId,
@@ -190,6 +242,7 @@ fun projectListViewModelFor(
     llmSettings = LlmSettings(settings),
     write = { op -> writeActor?.execute(op = op) ?: op() },
     clock = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+    sources = sources,
 )
 
 /** True when the graph has at least one project (the post-sync job's `hasConfiguredProject`). */

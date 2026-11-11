@@ -88,6 +88,12 @@ class GraphLoader(
     /** Directory scanning cache for wiki-subdir-UX detection. */
     private val candidateCache: dev.stapler.stelekit.diagnostics.CandidateCache = dev.stapler.stelekit.diagnostics.CandidateCache(),
 ) : GraphLoaderPort {
+    /** Current markdown of a page file for read-only consumers (project source binding); never writes. */
+    suspend fun readPageText(path: String): String? {
+        fileSystem.invalidateShadow(path)
+        return fileSystem.readFileSuspend(path)
+    }
+
     private val logger = Logger("GraphLoader")
     private val markdownParser = MarkdownParser()
 

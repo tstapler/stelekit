@@ -33,4 +33,6 @@ class ProjectBridgeDeps(
     val pageSettleProbe: PageSettleProbe,
     /** The graph's write actor; sidecar pulls write the sketch cache rows through it. */
     val writeActor: () -> DatabaseWriteActor? = { null },
+    /** The bound pages' text for the graph's project (Story 5.9b); empty when nothing is bound. */
+    val boundSources: suspend () -> SourceReadResult = { SourceReadResult.EMPTY },
 )

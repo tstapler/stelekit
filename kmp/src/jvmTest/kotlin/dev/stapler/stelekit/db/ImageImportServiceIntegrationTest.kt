@@ -67,6 +67,35 @@ class ImageImportServiceIntegrationTest {
     }
 
     @Test
+    fun `import starts the annotation in feet-inches by default`() = runBlocking<Unit> {
+        val (service, _, _, fs) = build()
+        fs.writeFileBytes("/tmp/photo.jpg", fakePngBytes)
+
+        val annotation = service.import(PlatformImageFile("/tmp/photo.jpg"), EffectiveNotesPath(graphPath), PageUuid(pageUuid))
+            .requireSuccess()
+
+        assertEquals(dev.stapler.stelekit.model.MeasurementUnit.FEET_INCHES, annotation.unit)
+    }
+
+    @Test
+    fun `import starts the annotation in the user's default unit`() = runBlocking<Unit> {
+        val fs = FakeFileSystem()
+        val service = ImageImportService(
+            fileSystem = fs,
+            imageAnnotationRepository = InMemoryImageAnnotationRepository(),
+            blockRepository = InMemoryBlockRepository(),
+            sidecarManager = ImageSidecarManager(fs),
+            defaultUnit = { dev.stapler.stelekit.model.MeasurementUnit.CENTIMETERS },
+        )
+        fs.writeFileBytes("/tmp/photo.jpg", fakePngBytes)
+
+        val annotation = service.import(PlatformImageFile("/tmp/photo.jpg"), EffectiveNotesPath(graphPath), PageUuid(pageUuid))
+            .requireSuccess()
+
+        assertEquals(dev.stapler.stelekit.model.MeasurementUnit.CENTIMETERS, annotation.unit)
+    }
+
+    @Test
     fun `import writes image bytes to assets-images directory`() = runBlocking<Unit> {
         val (service, _, _, fs) = build()
         fs.writeFileBytes("/tmp/photo.jpg", fakePngBytes)

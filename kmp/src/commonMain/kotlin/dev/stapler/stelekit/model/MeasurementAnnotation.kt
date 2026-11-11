@@ -22,6 +22,9 @@ enum class AnnotationType {
     GRID_REF,
 }
 
+/** Unit a measurement starts in until the user picks another (US construction: feet and inches). */
+val DEFAULT_MEASUREMENT_UNIT: MeasurementUnit = MeasurementUnit.FEET_INCHES
+
 /**
  * Display unit for measurement values.
  */
