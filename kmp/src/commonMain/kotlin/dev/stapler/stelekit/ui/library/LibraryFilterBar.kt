@@ -53,6 +53,7 @@ internal fun mediaClassLabelKey(c: LibraryMediaClass) = when (c) {
     LibraryMediaClass.AUDIO -> I18n.LIBRARY_FILTER_AUDIO
     LibraryMediaClass.VIDEO -> I18n.LIBRARY_FILTER_VIDEO
     LibraryMediaClass.DOCS -> I18n.LIBRARY_FILTER_DOCUMENTS
+    LibraryMediaClass.SKETCHES -> I18n.LIBRARY_FILTER_SKETCHES
     LibraryMediaClass.OTHER -> I18n.LIBRARY_FILTER_OTHER
 }
 

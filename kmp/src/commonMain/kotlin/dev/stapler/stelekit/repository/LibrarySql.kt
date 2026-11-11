@@ -47,7 +47,7 @@ FROM asset_index a"""
     private fun addFilterClauses(clauses: MutableList<String>, args: MutableList<Any?>, query: LibraryQuery) {
         val f = query.filters
         if (f.types.isNotEmpty()) {
-            val known = listOf("IMAGE", "PDF", "AUDIO", "VIDEO", "DOCUMENT")
+            val known = listOf("IMAGE", "PDF", "AUDIO", "VIDEO", "DOCUMENT", "DRAWING")
             val parts = f.types.map { cls ->
                 when (cls) {
                     LibraryMediaClass.IMAGES -> "t.media_type = 'IMAGE'"
@@ -55,6 +55,7 @@ FROM asset_index a"""
                     LibraryMediaClass.AUDIO -> "t.media_type = 'AUDIO'"
                     LibraryMediaClass.VIDEO -> "t.media_type = 'VIDEO'"
                     LibraryMediaClass.DOCS -> "t.media_type = 'DOCUMENT'"
+                    LibraryMediaClass.SKETCHES -> "t.media_type = 'DRAWING'"
                     LibraryMediaClass.OTHER -> "t.media_type NOT IN (${known.joinToString { "'$it'" }})"
                 }
             }

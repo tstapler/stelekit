@@ -11,6 +11,7 @@ class LibraryMediaClassTest {
         assertEquals(LibraryMediaClass.AUDIO, LibraryMediaClass.of("AUDIO"))
         assertEquals(LibraryMediaClass.VIDEO, LibraryMediaClass.of("VIDEO"))
         assertEquals(LibraryMediaClass.DOCS, LibraryMediaClass.of("DOCUMENT"))
+        assertEquals(LibraryMediaClass.SKETCHES, LibraryMediaClass.of("DRAWING"))
     }
 
     @Test

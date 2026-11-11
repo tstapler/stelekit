@@ -157,6 +157,7 @@ class InMemoryLibraryRepository(
                         isOrphan = a.isOrphan, pageUuids = a.pageUuids, annotated = rows.isNotEmpty(),
                         measurementCount = ms.size, lastAnnotatedAtMs = rows.maxOfOrNull { it.importedAtMs },
                         annotationUuid = rows.minOfOrNull { it.uuid }, thumbnailPath = rows.firstNotNullOfOrNull { it.thumbnailPath },
+                        relativePath = a.relativePath,
                     ),
                     annotationTags = rows.flatMap { it.tags },
                     measurementLabels = ms.mapNotNull { it.label },

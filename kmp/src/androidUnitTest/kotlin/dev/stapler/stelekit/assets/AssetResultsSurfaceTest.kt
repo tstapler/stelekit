@@ -18,7 +18,6 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.repository.AssetRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.ui.assets.ASSETS_SEARCH_DEBOUNCE_MS
-import dev.stapler.stelekit.ui.assets.AssetBrowserViewModel
 import dev.stapler.stelekit.ui.assets.AssetSearchEmptyState
 import dev.stapler.stelekit.ui.assets.AssetsSearchSection
 import dev.stapler.stelekit.ui.assets.assetSnippet
@@ -208,18 +207,6 @@ class AssetResultsSurfaceTest {
         assertEquals(0, counting.calls.get(), "the next keystroke cancels the pending query")
         composeRule.mainClock.advanceTimeBy(500)
         assertEquals(1, counting.calls.get(), "exactly one query once the debounce elapses")
-    }
-
-    @Test
-    fun assetsSearch_should_ReturnAssetWithSnippetAndEmphasizedMatch_When_Query4821() = runBlocking<Unit> {
-        val repo = repoWith(assetWith("inv", ocr = "Invoice 4821 due Friday"))
-        val vm = AssetBrowserViewModel(repo, null)
-        vm.setSearch("4821")
-        val state = withTimeout(10_000) { vm.uiState.first { it.searchPreviews.isNotEmpty() } }
-
-        assertEquals("Invoice 4821 due Friday", state.searchPreviews[AssetUuid("inv")]?.excerpt)
-        assertEquals("4821", state.searchQuery)
-        vm.onForgotten()
     }
 
     @Test

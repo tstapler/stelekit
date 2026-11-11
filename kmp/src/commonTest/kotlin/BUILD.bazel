@@ -158,6 +158,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/ui/library/LibraryMediaClassTest.kt",
         "dev/stapler/stelekit/ui/library/LibrarySearchTest.kt",
         "dev/stapler/stelekit/ui/library/LibraryStatusLineTest.kt",
+        "dev/stapler/stelekit/ui/library/LibraryItemActionsTest.kt",
         "dev/stapler/stelekit/ui/library/UpgradeNoticeStateMachineTest.kt",
         "dev/stapler/stelekit/ui/nav/NavCommandsTest.kt",
         "dev/stapler/stelekit/ui/nav/NavSectionBuilderTest.kt",

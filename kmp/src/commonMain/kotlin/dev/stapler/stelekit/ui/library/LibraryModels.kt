@@ -109,3 +109,21 @@ object LibraryReference {
 
     const val COUNT_CAP = 10_000
 }
+
+/** Where tapping a card goes (plan decision 7; sketches only while the `homeSketch` flag is on, story 6.8). */
+sealed interface LibraryOpenTarget {
+    data class Editor(val annotationUuid: String) : LibraryOpenTarget
+    data class Sketch(val assetUuid: String) : LibraryOpenTarget
+    data class Detail(val assetUuid: String) : LibraryOpenTarget
+
+    companion object {
+        fun of(item: LibraryItem, homeSketchEnabled: Boolean): LibraryOpenTarget {
+            val annotation = item.annotationUuid
+            return when {
+                item.annotated && item.isImage && annotation != null -> Editor(annotation)
+                item.mediaClass == LibraryMediaClass.SKETCHES && homeSketchEnabled -> Sketch(item.id)
+                else -> Detail(item.id)
+            }
+        }
+    }
+}

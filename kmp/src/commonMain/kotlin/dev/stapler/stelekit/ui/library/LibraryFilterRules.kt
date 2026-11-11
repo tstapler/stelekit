@@ -6,9 +6,9 @@ import kotlinx.serialization.json.Json
 /** Entry-point filter carried by `Screen.Library` (palette "Show annotated photos", Gallery alias). */
 enum class LibraryFilter { Annotated }
 
-/** Type chips (LD-11). `FILE` and any unrecognised stored media type are [OTHER]. */
+/** Type chips (LD-11). Sketches are the `DRAWING` class (story 6.8). `FILE` and any unrecognised stored media type are [OTHER]. */
 enum class LibraryMediaClass {
-    IMAGES, PDFS, AUDIO, VIDEO, DOCS, OTHER;
+    IMAGES, PDFS, AUDIO, VIDEO, DOCS, SKETCHES, OTHER;
 
     companion object {
         fun of(mediaType: String): LibraryMediaClass = when (mediaType) {
@@ -17,6 +17,7 @@ enum class LibraryMediaClass {
             "AUDIO" -> AUDIO
             "VIDEO" -> VIDEO
             "DOCUMENT" -> DOCS
+            "DRAWING" -> SKETCHES
             else -> OTHER
         }
     }
