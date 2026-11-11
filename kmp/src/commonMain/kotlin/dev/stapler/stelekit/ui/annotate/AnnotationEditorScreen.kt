@@ -1623,13 +1623,18 @@ private fun LoupeOverlay(
     val marginPx = with(LocalDensity.current) { 16.dp.toPx() }
     val topThresholdPx = with(LocalDensity.current) { 140.dp.toPx() }
     val gapPx = with(LocalDensity.current) { 16.dp.toPx() }
-    val loupeYPx = (if (touchOffset.y > topThresholdPx) {
-        touchOffset.y - loupeSizePx - gapPx
-    } else {
-        touchOffset.y + gapPx
-    }).coerceIn(marginPx, canvasSize.height - loupeSizePx - marginPx)
-    val loupeXPx = (touchOffset.x - loupeSizePx / 2f)
-        .coerceIn(marginPx, canvasSize.width - loupeSizePx - marginPx)
+    val loupeYPx = clampLoupeOffset(
+        value = if (touchOffset.y > topThresholdPx) touchOffset.y - loupeSizePx - gapPx else touchOffset.y + gapPx,
+        extent = canvasSize.height.toFloat(),
+        loupeSize = loupeSizePx,
+        margin = marginPx,
+    )
+    val loupeXPx = clampLoupeOffset(
+        value = touchOffset.x - loupeSizePx / 2f,
+        extent = canvasSize.width.toFloat(),
+        loupeSize = loupeSizePx,
+        margin = marginPx,
+    )
     val innerWidthPx = (canvasSize.width * zoomFactor).roundToInt()
     val innerHeightPx = (canvasSize.height * zoomFactor).roundToInt()
     // 3x the canvas decodes to ~85 MB on a tall phone; cap the decode and let FillBounds upscale.

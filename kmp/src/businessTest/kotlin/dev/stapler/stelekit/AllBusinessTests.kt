@@ -480,6 +480,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.ui.annotate.AnnotationEditorCrashGuardTest::class,
     dev.stapler.stelekit.ui.annotate.PostKillBannerControllerTest::class,
     dev.stapler.stelekit.ui.annotate.UndoDepthTest::class,
+    dev.stapler.stelekit.ui.annotate.UndoHistoryTest::class,
     dev.stapler.stelekit.ui.components.CoilSeamTest::class,
     dev.stapler.stelekit.ui.components.ImageLoaderConstructionCountTest::class,
     dev.stapler.stelekit.db.FixtureGraphCountsTest::class,
