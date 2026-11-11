@@ -13,7 +13,7 @@ Standard Markdown links, `[label](https://example.com)` and `[label](url "title"
 - Support the optional title (`"title"`) as a tooltip or long-press hint where the platform has one.
 - Handle edge cases: URLs containing parentheses, escaped brackets in the label, empty label, relative paths and `file:` links, labels that contain inline formatting (bold/italic/code), and links inside list items and tables.
 - Editor: entering edit mode shows the raw Markdown unchanged; saving must not rewrite or re-escape the link (no round-trip drift).
-- Do not change `[[wiki links]]`, `#tags` or bare-URL autolinks.
+- Do not change double-bracket page links, `#tags` or bare-URL autolinks.
 
 ## Acceptance criteria
 
