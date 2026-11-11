@@ -51,6 +51,8 @@ import kotlinx.coroutines.launch
 import dev.stapler.stelekit.platform.openInBrowser
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorScreen
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModel
+import dev.stapler.stelekit.ui.annotate.ExistingImageAnnotationOpener
+import dev.stapler.stelekit.ui.annotate.ExistingImageRequest
 import dev.stapler.stelekit.ui.components.*
 import dev.stapler.stelekit.ui.library.LibraryRoute
 import dev.stapler.stelekit.ui.library.LibrarySession
@@ -382,6 +384,16 @@ internal fun ScreenRouter(
                     onDismissNotice = { viewModel.dismissUpgradeNotice() },
                     onAddPhoto = onImportImage,
                     onCopyLink = { link -> libraryClipboard.setText(AnnotatedString(link)) },
+                    onAnnotate = { item ->
+                        ExistingImageAnnotationOpener(
+                            imageAnnotationRepository = repos.imageAnnotationRepository,
+                            blockRepository = repos.blockRepository,
+                            writeActor = repos.writeActor,
+                            graphPath = appState.currentGraphPath.orEmpty(),
+                            defaultUnit = { platformSettings.defaultMeasurementUnit() },
+                            fileExists = { path -> fileSystem?.fileExists(path) ?: true },
+                        ).open(ExistingImageRequest(item.pageUuids.firstOrNull(), item.filePath, sourceBlock = null))
+                    },
                 )
             }
 

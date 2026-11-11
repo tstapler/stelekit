@@ -491,6 +491,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.ui.annotate.ExportStyleTest::class,
     dev.stapler.stelekit.ui.annotate.ExportLabelFontTest::class,
     dev.stapler.stelekit.ui.annotate.ExifOrientationTest::class,
+    dev.stapler.stelekit.ui.annotate.ExistingImageAnnotationOpenerTest::class,
     dev.stapler.stelekit.repository.RealActorOrderingTest::class,
     dev.stapler.stelekit.ui.annotate.LeavePolicyTest::class,
     dev.stapler.stelekit.ui.annotate.AnnotationEditorUnitTest::class,

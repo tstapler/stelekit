@@ -42,6 +42,7 @@ fun LibraryRoute(
     onDismissNotice: () -> Unit,
     onAddPhoto: (() -> Unit)?,
     onCopyLink: (String) -> Unit = {},
+    onAnnotate: (suspend (LibraryItem) -> arrow.core.Either<dev.stapler.stelekit.ui.annotate.OpenForAnnotationError, String>)? = null,
 ) {
     val viewModel = remember(session) { session.viewModel() }
     val currentOnLibraryOpen by rememberUpdatedState(onLibraryOpen)
@@ -60,6 +61,7 @@ fun LibraryRoute(
         onShowAnnotations = { viewModel.applyEntryPoint(LibraryFilter.Annotated, null) },
         onAddPhoto = onAddPhoto,
         onCopyLink = onCopyLink,
+        onAnnotate = onAnnotate,
     )
 }
 

@@ -44,6 +44,7 @@ import dev.stapler.stelekit.ui.screens.copy.CopyFlowHost
 import dev.stapler.stelekit.ui.screens.copy.CopyGraphBinding
 import dev.stapler.stelekit.ui.screens.copy.LocalCopyFlow
 import dev.stapler.stelekit.ui.screens.copy.conflictPagePersister
+import dev.stapler.stelekit.platform.defaultMeasurementUnit
 import kotlinx.coroutines.launch
 
 /**
@@ -276,8 +277,34 @@ internal fun GraphContentActiveShell(
             blockStateManager.appendToBlock(dev.stapler.stelekit.model.BlockUuid(blockUuid), appendText)
         }
 
+        val annotateImageAction = remember(repos, activeGraphPath, effectiveFileSystem) {
+            val opener = dev.stapler.stelekit.ui.annotate.ExistingImageAnnotationOpener(
+                imageAnnotationRepository = repos.imageAnnotationRepository,
+                blockRepository = repos.blockRepository,
+                writeActor = repos.writeActor,
+                graphPath = activeGraphPath,
+                defaultUnit = { platformSettings.defaultMeasurementUnit() },
+                fileExists = effectiveFileSystem::fileExists,
+            )
+            val action: (String, dev.stapler.stelekit.model.Block) -> Unit = { imageRef, block ->
+                scope.launch {
+                    val request = dev.stapler.stelekit.ui.annotate.ExistingImageRequest(
+                        pageUuid = block.pageUuid.value,
+                        imageRef = imageRef,
+                        sourceBlock = block,
+                    )
+                    opener.open(request).fold(
+                        ifLeft = { err -> snackbarHostState.showSnackbar(err.message) },
+                        ifRight = { annotationUuid -> viewModel.navigateToAnnotationEditor(annotationUuid, block.pageUuid.value) },
+                    )
+                }
+            }
+            action
+        }
+
         CompositionLocalProvider(
             dev.stapler.stelekit.ui.components.LocalArchiveUrlAction provides archiveUrlAction,
+            dev.stapler.stelekit.ui.components.LocalAnnotateImageAction provides annotateImageAction,
             LocalWindowSizeClass provides windowSizeClass,
             LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) },
             LocalFileSystem provides effectiveFileSystem,
