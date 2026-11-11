@@ -6,7 +6,12 @@ package dev.stapler.stelekit.git
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.Configuration
+import androidx.work.CoroutineWorker
 import androidx.work.ListenableWorker
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.testing.WorkManagerTestInitHelper
@@ -33,13 +38,17 @@ import dev.stapler.stelekit.jobs.schedule.TaskScope
 import dev.stapler.stelekit.platform.NetworkMonitor
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
@@ -47,8 +56,8 @@ import kotlin.test.assertTrue
 /**
  * Story 3.1.2 (Phase 4 repair, P1-2): the thin [GitSyncWorker] evaluates the shared `NetworkGate` and appends
  * exactly one run-log record per run through the shared `recordRun`, with no registry and no store.
- * The clone-yield hook ordering (watchdog -> gate -> yield -> body -> notify) needs a RUNNING clone
- * `WorkInfo` under a cold process and is not driven here.
+ * The clone-yield test holds a real RUNNING work item under the tracked clone work id (a blocked stand-in
+ * worker on a thread-pool executor) so the production `isGitCloneWorkerRunningFor` path is exercised.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
@@ -62,6 +71,18 @@ class GitSyncWorkerGateAndRecordTest {
         override suspend fun append(record: TaskRunRecord) { records += record }
         override suspend fun recent(key: TaskKey) = records.filter { it.key == key }
         override suspend fun lastSuccessAtMs(key: TaskKey): Long? = null
+    }
+
+    /** Stands in for a RUNNING GitCloneWorker: blocks until [release] is counted down. */
+    class BlockedCloneStandIn(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+        override suspend fun doWork(): Result {
+            release.await()
+            return Result.success()
+        }
+
+        companion object {
+            @Volatile var release = CountDownLatch(1)
+        }
     }
 
     private var fetches = 0
@@ -241,5 +262,65 @@ class GitSyncWorkerGateAndRecordTest {
         registerService(); provider(metered = false)
         GitSyncWorker.runLogOverride = { throw IllegalStateException("settings unavailable") }
         assertIs<ListenableWorker.Result.Success>(run())
+    }
+
+    @Test
+    fun doWork_should_appendExactlyOneRecord_When_SuccessSkipOrFailure() {
+        provider(metered = false)
+        registerService()
+        run()
+        assertTrue(onlyRecord().result !is TaskRunResult.Skipped && onlyRecord().result !is TaskRunResult.Failed)
+
+        log.records.clear()
+        provider(metered = true)
+        run(policy = "unmetered")
+        assertEquals(TaskRunResult.Skipped("metered"), onlyRecord().result)
+
+        log.records.clear()
+        provider(metered = false)
+        GitSyncServiceRegistry.unregister(graphId)
+        registerService(DomainError.GitError.RetryExhausted(5, DomainError.GitError.FetchFailed("boom")).left())
+        run()
+        assertIs<TaskRunResult.Failed>(onlyRecord().result)
+    }
+
+    @Test
+    fun doWork_should_runPreRunGateYieldBodyPostRunInOrder_When_CloneRunning() {
+        WorkManagerTestInitHelper.initializeTestWorkManager(
+            context,
+            Configuration.Builder().setExecutor(Executors.newCachedThreadPool()).build(),
+        )
+        BlockedCloneStandIn.release = CountDownLatch(1)
+        val clone = OneTimeWorkRequestBuilder<BlockedCloneStandIn>().build()
+        try {
+            WorkManager.getInstance(context).enqueue(clone)
+            runBlocking {
+                withTimeout(CLONE_RUNNING_TIMEOUT_MS) {
+                    WorkManager.getInstance(context).getWorkInfoByIdFlow(clone.id).first { it?.state == WorkInfo.State.RUNNING }
+                }
+            }
+            GitCloneWorkTracker.recordStart(context, graphId, clone.id, System.currentTimeMillis())
+            provider(metered = true)
+
+            // Gate precedes the clone yield: a metered network on an unmetered policy is reported as metered, not clone-running.
+            assertEquals(1, runGated("unmetered", "metered"))
+            // Gate passed -> clone yield: skipped before the body, so no git call.
+            assertEquals(2, runGated("any", "clone-running"))
+            assertEquals(0, fetches, "the body must not run while a clone is RUNNING")
+        } finally {
+            GitCloneWorkTracker.clear(context, graphId)
+            BlockedCloneStandIn.release.countDown()
+        }
+    }
+
+    /** Runs the worker with no live service and returns the cumulative record count after asserting the newest skip reason. */
+    private fun runGated(policy: String, expectedReason: String): Int {
+        assertIs<ListenableWorker.Result.Success>(run(policy = policy))
+        assertEquals(TaskRunResult.Skipped(expectedReason), log.records.last().result)
+        return log.records.size
+    }
+
+    private companion object {
+        const val CLONE_RUNNING_TIMEOUT_MS = 10_000L
     }
 }
