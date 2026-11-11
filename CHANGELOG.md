@@ -1,5 +1,62 @@
 # Changelog
 
+## [0.108.0](https://github.com/tstapler/stelekit/compare/v0.107.0...v0.108.0) (2026-11-11)
+
+
+### Features
+
+* **annotate:** 6.4b+6.4c complete, 6.4d PARTIAL (persistence queue, leave dialog, export scaling) ([#609](https://github.com/tstapler/stelekit/issues/609)) ([552b531](https://github.com/tstapler/stelekit/commit/552b5318197e144ddec63590d0da05afd5bde959))
+* **annotate:** 6.4d rest - export label text, EXIF, bounded decode, OOM guard, themed Drive icon ([#623](https://github.com/tstapler/stelekit/issues/623)) ([aae264a](https://github.com/tstapler/stelekit/commit/aae264aed1dec27eb648cb67eced46866e3aaff0))
+* **annotate:** non-drag crosshair placement (home-sketch 6.5a/6.5b) ([#624](https://github.com/tstapler/stelekit/issues/624)) ([69bcf66](https://github.com/tstapler/stelekit/commit/69bcf66e8d745cc49f9fce5e11f839d168ae8e84))
+* **asset:** keep drawings and sketch files out of the cloud pipeline (sketch story 0.3) ([#573](https://github.com/tstapler/stelekit/issues/573)) ([e4306cd](https://github.com/tstapler/stelekit/commit/e4306cd7436c5b0280beea281d0b2f109ac05297))
+* **bench:** unified CPU+memory benchmark harness, budgets and gates (Epic B) ([#564](https://github.com/tstapler/stelekit/issues/564)) ([e0dfd46](https://github.com/tstapler/stelekit/commit/e0dfd46bde11f5a78c23bb18d42fb7c9df8c41b6))
+* **calibration:** calibration basis version, service and sidecar marker (home-sketch 6.2a/6.2b) ([#603](https://github.com/tstapler/stelekit/issues/603)) ([b0b8d56](https://github.com/tstapler/stelekit/commit/b0b8d56765142a1fbefb796194e6a8a6e42446e3))
+* **home-sketch:** attach drawing sheets to a project (5.9d) ([#629](https://github.com/tstapler/stelekit/issues/629)) ([727afe2](https://github.com/tstapler/stelekit/commit/727afe2f126fa0c57f97df2e9fa89c3f85ac6f75))
+* **home-sketch:** collector stages complete and closet end-to-end golden (5.8) ([#610](https://github.com/tstapler/stelekit/issues/610)) ([046953e](https://github.com/tstapler/stelekit/commit/046953e492267ddcf941bf8446cc3c3a99f0bef3))
+* **home-sketch:** digest renderer, LLM payload and outbound gate (5.5a, 5.5b) ([#590](https://github.com/tstapler/stelekit/issues/590)) ([2c94b67](https://github.com/tstapler/stelekit/commit/2c94b672bef6115347a688c73465c4245b7461b9))
+* **home-sketch:** DigestWriter owned digest page (5.4c) ([#595](https://github.com/tstapler/stelekit/issues/595)) ([0d6eadc](https://github.com/tstapler/stelekit/commit/0d6eadcd38fa904539e074dc06fc85e551c1fd93))
+* **home-sketch:** in-app registry and constraint editor (5.9e) ([#627](https://github.com/tstapler/stelekit/issues/627)) ([00139a9](https://github.com/tstapler/stelekit/commit/00139a9b7a458ee498c749d04f81d6ad403941e6))
+* **home-sketch:** owned-page writer, guard, active replace (5.4a/5.4b) ([#589](https://github.com/tstapler/stelekit/issues/589)) ([073f90c](https://github.com/tstapler/stelekit/commit/073f90c6d4429c119298e605fe0d417f3be05c1c))
+* **home-sketch:** PNG calibration and dimension tagging in drawing import (4.5b) ([#630](https://github.com/tstapler/stelekit/issues/630)) ([bb2daf1](https://github.com/tstapler/stelekit/commit/bb2daf166ed80bbe273c31bdf2cbb5666168b2b9))
+* **home-sketch:** post-sync project spine and homeSketch settings (5.0, 5.7a) ([#577](https://github.com/tstapler/stelekit/issues/577)) ([8a94387](https://github.com/tstapler/stelekit/commit/8a94387aa222a5dd36688e6021829bffe0a99557))
+* **home-sketch:** project list, creation and settings UI (5.9a) + outbound preview dialog (5.6c) ([#601](https://github.com/tstapler/stelekit/issues/601)) ([f95a146](https://github.com/tstapler/stelekit/commit/f95a146ac80f0754be9e445589f98af25125356b))
+* **home-sketch:** relevance + loop safety + two-device convergence (5.7b) ([#612](https://github.com/tstapler/stelekit/issues/612)) ([6cb3685](https://github.com/tstapler/stelekit/commit/6cb368546d64758eeb74ac4f5dda5f2bbfc61828))
+* **home-sketch:** sidecar bundle, store, three-way reconcile (2.4, 2.5) ([#605](https://github.com/tstapler/stelekit/issues/605)) ([a857261](https://github.com/tstapler/stelekit/commit/a8572611c9340714931898a777ad31de10e2c346))
+* **home-sketch:** source binding, choose wiki pages and read them safely (5.9b) ([#608](https://github.com/tstapler/stelekit/issues/608)) ([fa08274](https://github.com/tstapler/stelekit/commit/fa082745d3b496ab274a053af79f6186a4e3a512))
+* **home-sketch:** YAML snapshot picker + registry/FusionSpec source wired into post-sync job (5.9c) ([#616](https://github.com/tstapler/stelekit/issues/616)) ([54f059f](https://github.com/tstapler/stelekit/commit/54f059f3517659d20af72573b5772b7d87db04ff))
+* **library:** one Library for Gallery and Assets, grouped nav (Epic D) ([#565](https://github.com/tstapler/stelekit/issues/565)) ([c963b6c](https://github.com/tstapler/stelekit/commit/c963b6cd2b32677a1aa1944a0a7d7952f17db709))
+* **library:** parity table green, retire Gallery/Assets, Sketch/Drawing class (6.7, 6.8) ([#604](https://github.com/tstapler/stelekit/issues/604)) ([f95852b](https://github.com/tstapler/stelekit/commit/f95852bfec880ad06c2e4c90dad857ff46fb3e90))
+* **llm:** PROJECT_ANALYSIS feature, picker and acknowledgement (home-sketch 5.6a) ([#588](https://github.com/tstapler/stelekit/issues/588)) ([28b0e4b](https://github.com/tstapler/stelekit/commit/28b0e4b86241e49a48e0721014f58825b0b4e33d))
+* **llm:** ProjectAnalysisService + golden prompt + read-only answer (home-sketch 5.6b) ([#596](https://github.com/tstapler/stelekit/issues/596)) ([05df58c](https://github.com/tstapler/stelekit/commit/05df58cf289e575b9dea093f07b830020236f2b4))
+* **platform:** AtomicFileWriter shared by owned-file writes (sketch story 2.0) ([#575](https://github.com/tstapler/stelekit/issues/575)) ([91c1751](https://github.com/tstapler/stelekit/commit/91c175107b31ce718cb884671b9aae2cc75fabab))
+* **projectbridge:** minimal YAML parser and dimension extractor (home-sketch 5.3) ([#586](https://github.com/tstapler/stelekit/issues/586)) ([efa48c5](https://github.com/tstapler/stelekit/commit/efa48c5292bd50bcf9d5f69da62807810c471839))
+* **projectbridge:** prose and count extractors (home-sketch 5.3b) ([#597](https://github.com/tstapler/stelekit/issues/597)) ([65c2d95](https://github.com/tstapler/stelekit/commit/65c2d95f537c4c288ff6bbbe3f870189dae8fa7e))
+* **projectbridge:** table extractor over the AST (home-sketch 5.2) ([#583](https://github.com/tstapler/stelekit/issues/583)) ([7ce3f78](https://github.com/tstapler/stelekit/commit/7ce3f783d75db4c1cc3f22729f9feade209d4645))
+* **sketch:** editor stories 3.2-3.4 (history, ViewModel, route, SketchCanvas) ([#593](https://github.com/tstapler/stelekit/issues/593)) ([310a4b2](https://github.com/tstapler/stelekit/commit/310a4b26a8dc9b0fce766bfa4cc3855a90e7db66))
+* **sketchimport:** drawing import flow and manual tagging UI (home-sketch 4.4) ([#600](https://github.com/tstapler/stelekit/issues/600)) ([3a7e6b2](https://github.com/tstapler/stelekit/commit/3a7e6b2590a07f58a68c791b9f4bb1a713ef1e6f))
+* **sketchimport:** label-to-dimension binding (home-sketch 4.3) ([#594](https://github.com/tstapler/stelekit/issues/594)) ([08897a7](https://github.com/tstapler/stelekit/commit/08897a7e391a8bee5f08a3516a73bc1a0c75bb21))
+* **sketchimport:** SVG geometry extractor (home-sketch 4.8) ([#598](https://github.com/tstapler/stelekit/issues/598)) ([457c4aa](https://github.com/tstapler/stelekit/commit/457c4aa35055a131660838cabb81dbfa9ec3d41f))
+* **sketchimport:** SVG subset reader + transform/calibration (home-sketch 4.1b, 4.2) ([#585](https://github.com/tstapler/stelekit/issues/585)) ([ae369d2](https://github.com/tstapler/stelekit/commit/ae369d265616638ab446add208ac0b2eecc7ca90))
+* **sketch:** PlacementController + non-drag placement a11y (home-sketch 3.0, 3.6) ([#620](https://github.com/tstapler/stelekit/issues/620)) ([10a4a17](https://github.com/tstapler/stelekit/commit/10a4a176d3a5fe4346727eb066f6a3e3483a02fb))
+* **sketch:** PNG sheets via Calibration (home-sketch 4.5) ([#615](https://github.com/tstapler/stelekit/issues/615)) ([aae2d57](https://github.com/tstapler/stelekit/commit/aae2d57555ac530492582be19ae0b38ba972b8cf))
+* **sketch:** repositories, write stubs, query-plan audit (2.2, 2.3) ([#584](https://github.com/tstapler/stelekit/issues/584)) ([e3b231e](https://github.com/tstapler/stelekit/commit/e3b231e37d12868ebe9c8216d58f97b5098956ef))
+* **sketch:** scene model, view transform and snap engine (home-sketch 3.1) ([#587](https://github.com/tstapler/stelekit/issues/587)) ([b3af57d](https://github.com/tstapler/stelekit/commit/b3af57d875bf8e6a48b83dc35516c69696f2008a))
+* **sketch:** sketch schema, migration, generated sources (story 2.1) ([#578](https://github.com/tstapler/stelekit/issues/578)) ([5e510f3](https://github.com/tstapler/stelekit/commit/5e510f33954e3338d82e43f92fcb360fb412622a))
+* **sketch:** SVG + CSV export (home-sketch 3.7) ([#614](https://github.com/tstapler/stelekit/issues/614)) ([404f169](https://github.com/tstapler/stelekit/commit/404f169d1c05229dc215d7f7b43fd2d444304f5b))
+* **sketch:** typed dimensions, zones, layers, sheet scale and view direction (home-sketch 3.5) ([#606](https://github.com/tstapler/stelekit/issues/606)) ([2f2dd81](https://github.com/tstapler/stelekit/commit/2f2dd81a3d2c360bbd7444e8d03061b45b3efaaf))
+* **units,fusion:** length parser, solver, registry and fusion engine (sketch slice SL-A/SL-B: 1.2, 1.3, 1.7, 1.4) ([#576](https://github.com/tstapler/stelekit/issues/576)) ([2a70964](https://github.com/tstapler/stelekit/commit/2a7096418e282ad11ff4ac6094c1e752b8ffd3c9))
+* **units:** exact Rational/Inches types and domain-layer audit (sketch story 1.1) ([#570](https://github.com/tstapler/stelekit/issues/570)) ([021e1b4](https://github.com/tstapler/stelekit/commit/021e1b46caf4db0e74633aa078807a6c8bb675b1))
+
+
+### Bug Fixes
+
+* **annotate:** escape image annotation tags + carry-over audit (home-sketch 6.0, 6.1) ([#567](https://github.com/tstapler/stelekit/issues/567)) ([22eb545](https://github.com/tstapler/stelekit/commit/22eb54582668bfc243a7de8714f63b1a4a03dd04))
+* **annotate:** loupe narrow-canvas crash + undo semantics (6.3, 6.4a) ([#602](https://github.com/tstapler/stelekit/issues/602)) ([ee72ed6](https://github.com/tstapler/stelekit/commit/ee72ed6a9fdf6b71c10555f7268366d3ebeefeb5))
+* **git:** make EditLock.isEditing synchronous (ScheduledSyncStackE2ETest flake) ([#607](https://github.com/tstapler/stelekit/issues/607)) ([c6e3031](https://github.com/tstapler/stelekit/commit/c6e3031f443cc32c650a5aae91797be5dccd6c21))
+* **merge:** ref fixpoint with no solution made merge refuse the page ([#626](https://github.com/tstapler/stelekit/issues/626)) ([3c138f7](https://github.com/tstapler/stelekit/commit/3c138f72abb5cf22475ed1b73ab39952451d2653))
+* **qr:** subscribe to coordinator events before start (QrDecodeViewModelTest flake) ([#619](https://github.com/tstapler/stelekit/issues/619)) ([6c53c7b](https://github.com/tstapler/stelekit/commit/6c53c7be137cce3f511cfa53367d4a8d9fffaf7b))
+* **sync:** zero poll interval must not start a loop; make PostSync LFS test wait for sync ([#591](https://github.com/tstapler/stelekit/issues/591)) ([7b6a356](https://github.com/tstapler/stelekit/commit/7b6a356bc65ec3ab46152211d47a36d2d022750a))
+
 ## [0.107.0](https://github.com/tstapler/stelekit/compare/v0.106.2...v0.107.0) (2026-11-09)
 
 
