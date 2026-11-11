@@ -160,15 +160,8 @@ class GitSyncService(
     /** Epoch-millis timestamp of the last successful [sync]/[applyJournalMerge], persisted in
      * [settings] so it survives app restarts and graph switches — unlike [SyncState.Success],
      * which only lives for the 3-second badge fade. */
-    private val _lastSyncAt = MutableStateFlow(settings?.getString(lastSyncSettingsKey(), "")?.toLongOrNull())
-    val lastSyncAt: StateFlow<Long?> = _lastSyncAt.asStateFlow()
-
-    private fun lastSyncSettingsKey() = "git_last_synced_at_$graphId"
-
-    private fun recordLastSyncAt(epochMillis: Long) {
-        _lastSyncAt.value = epochMillis
-        settings?.putString(lastSyncSettingsKey(), epochMillis.toString())
-    }
+    private val lastSync = PersistedLastSync(settings, graphId)
+    val lastSyncAt: StateFlow<Long?> = lastSync.at
 
     /**
      * Lightweight working-tree status check — reads git status without running the full
@@ -493,7 +486,7 @@ class GitSyncService(
                 lastSyncAt = Clock.System.now().toEpochMilliseconds(),
                 autoMergedPaths = autoMergedPaths,
             )
-            recordLastSyncAt(success.lastSyncAt)
+            lastSync.record(success.lastSyncAt)
             guardedAbort.clearRecovery(graphId)
             stalenessTracker.merged(success.lastSyncAt)
             firstSyncConfirmation?.confirm(graphId, config.remoteName, config.remoteBranch)
@@ -740,7 +733,7 @@ class GitSyncService(
 
         refreshLocalStatus(graphId)
         val successAt = Clock.System.now().toEpochMilliseconds()
-        recordLastSyncAt(successAt)
+        lastSync.record(successAt)
         stalenessTracker.merged(successAt)
         _syncState.value = SyncState.Success(
             localCommitsMade = 0,

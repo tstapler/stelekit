@@ -40,10 +40,8 @@ import dev.stapler.stelekit.jobs.schedule.recordRun
 import dev.stapler.stelekit.jobs.schedule.toTaskRunResult
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.RepoRoot
-import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.SteleKitContext
-import dev.stapler.stelekit.platform.security.CredentialStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking

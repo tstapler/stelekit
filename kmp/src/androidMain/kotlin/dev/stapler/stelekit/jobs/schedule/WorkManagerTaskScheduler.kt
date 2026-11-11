@@ -5,16 +5,11 @@ package dev.stapler.stelekit.jobs.schedule
 
 import android.content.Context
 import androidx.work.BackoffPolicy
-import androidx.work.Constraints
-import androidx.work.Data
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
-import androidx.work.ListenableWorker
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
-import androidx.work.PeriodicWorkRequest
 import androidx.work.WorkInfo
-import androidx.work.WorkManager
 import dev.stapler.stelekit.jobs.JobTags
 import dev.stapler.stelekit.jobs.workManagerOrNull
 import dev.stapler.stelekit.logging.Logger
@@ -42,6 +37,7 @@ class WorkManagerTaskScheduler(
     private val nowMs: () -> Long = System::currentTimeMillis,
 ) : BackgroundTaskScheduler {
     private val logger = Logger("WorkManagerTaskScheduler")
+    private val requests = TaskRequestFactory(registry, workers, capabilities)
 
     override suspend fun apply(key: TaskKey, config: TaskConfig) = guarded("apply ${key.workName()}") {
         if (!config.enabled) {
@@ -62,10 +58,10 @@ class WorkManagerTaskScheduler(
         guarded("runOnce ${key.workName()}") {
             val wm = workManagerOrNull(context) ?: return@guarded
             val spec = registry.specFor(key.kind)
-            val builder = OneTimeWorkRequest.Builder(workerClassFor(key))
-                .setConstraints(constraintsOf(constraints))
-                .setInputData(inputData(key, constraints.network, interval = null))
-            schedTags(key, spec).forEach(builder::addTag)
+            val builder = OneTimeWorkRequest.Builder(requests.workerClassFor(key))
+                .setConstraints(requests.constraintsOf(constraints))
+                .setInputData(requests.inputData(key, constraints.network, interval = null))
+            requests.schedTags(key, spec).forEach(builder::addTag)
             builder.addTag(JobTags.ANY)
             builder.addTag(JobTags.title(spec?.title ?: key.kind.id))
             if ((spec?.oneShotRetryCap ?: 0) > 0) builder.setBackoffCriteria(BackoffPolicy.EXPONENTIAL, ONE_SHOT_BACKOFF_SECONDS, TimeUnit.SECONDS)
@@ -156,7 +152,7 @@ class WorkManagerTaskScheduler(
     /** Inserts live periodic work the way a pre-upgrade job exists: no ledger, store or scope tag. For tests. */
     internal fun seedExternalPeriodic(key: TaskKey, config: TaskConfig) {
         val wm = workManagerOrNull(context) ?: return
-        wm.enqueueUniquePeriodicWork(key.workName(), ExistingPeriodicWorkPolicy.UPDATE, buildPeriodic(key, config, tagged = false)).result.get()
+        wm.enqueueUniquePeriodicWork(key.workName(), ExistingPeriodicWorkPolicy.UPDATE, requests.buildPeriodic(key, config, tagged = false)).result.get()
     }
 
     /** The pending (unfinished) one-time request for [key]: its id and the network type it requires. For tests. */
@@ -182,57 +178,9 @@ class WorkManagerTaskScheduler(
                 return
             }
         }
-        val request = buildPeriodic(key, config, tagged = true, initialDelayMs = initialDelayMs)
+        val request = requests.buildPeriodic(key, config, tagged = true, initialDelayMs = initialDelayMs)
         blocking { wm.enqueueUniquePeriodicWork(key.workName(), policy, request).result.get() }
     }
-
-    private fun buildPeriodic(key: TaskKey, config: TaskConfig, tagged: Boolean, initialDelayMs: Long? = null): PeriodicWorkRequest {
-        val effective = config.schedule.clamp(capabilities, JitterSeed.of(key))
-        val worker = workerClassFor(key)
-        val builder = if (effective.flexMinutes != null) {
-            PeriodicWorkRequest.Builder(worker, effective.intervalMinutes.toLong(), TimeUnit.MINUTES, effective.flexMinutes.toLong(), TimeUnit.MINUTES)
-        } else {
-            PeriodicWorkRequest.Builder(worker, effective.intervalMinutes.toLong(), TimeUnit.MINUTES)
-        }
-        builder.setConstraints(constraintsOf(config.constraints))
-            .setInputData(inputData(key, config.constraints.network, effective.intervalMinutes))
-        if (initialDelayMs != null) {
-            if (initialDelayMs > 0) builder.setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)
-        } else if (effective.offsetMinutes > 0) {
-            builder.setInitialDelay(effective.offsetMinutes.toLong(), TimeUnit.MINUTES)
-        }
-        if (tagged) schedTags(key, registry.specFor(key.kind)).forEach(builder::addTag)
-        return builder.build()
-    }
-
-    private fun workerClassFor(key: TaskKey): Class<out ListenableWorker> =
-        workers.bindingFor(key.kind)?.workerClass ?: TaskWorker::class.java
-
-    private fun inputData(key: TaskKey, network: NetworkPolicy, interval: Int?): Data {
-        val b = Data.Builder().putString(TaskWorkKeys.KEY_NETWORK_POLICY, TaskWorkKeys.encode(network))
-        val binding = workers.bindingFor(key.kind)
-        if (binding != null) {
-            b.putAll(binding.input(key, interval))
-        } else {
-            b.putString(TaskWorkKeys.KEY_TASK_KIND, key.kind.id).putString(TaskWorkKeys.KEY_TASK_SCOPE, key.scope.value)
-        }
-        return b.build()
-    }
-
-    /** Scope tag value is the raw scope (the reconciler reads it back); a null `jobKind` gets no kind tag. */
-    private fun schedTags(key: TaskKey, spec: TaskSpec?): List<String> = buildList {
-        add(SchedTags.ANY)
-        add(SchedTags.scope(key.scope))
-        add(SchedTags.kindId(key.kind))
-        spec?.jobKind?.let { add(JobTags.kind(it)) }
-    }
-
-    private fun constraintsOf(c: TaskConstraints): Constraints = Constraints.Builder()
-        .setRequiredNetworkType(if (c.network == NetworkPolicy.Unmetered) NetworkType.UNMETERED else NetworkType.CONNECTED)
-        .setRequiresCharging(c.requiresCharging)
-        .setRequiresBatteryNotLow(c.batteryNotLow)
-        .setRequiresStorageNotLow(c.requiresStorageNotLow)
-        .build()
 
     private suspend fun livePeriodic(key: TaskKey): WorkInfo? {
         val wm = workManagerOrNull(context) ?: return null

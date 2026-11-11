@@ -12,6 +12,7 @@ object SchedTags {
     const val ANY = "stelekit-sched"
     private const val SCOPE_PREFIX = "stelekit-sched-scope:"
     private const val KIND_ID_PREFIX = "stelekit-sched-kind:"
+    private val KIND_ID_PATTERN = Regex("[a-z0-9-]+")
 
     fun scope(scope: TaskScope) = SCOPE_PREFIX + scope.value
     fun kindId(kind: TaskKind) = KIND_ID_PREFIX + kind.id
@@ -21,7 +22,7 @@ object SchedTags {
 
     fun kindIdOf(tags: Set<String>): TaskKind? =
         tags.firstOrNull { it.startsWith(KIND_ID_PREFIX) }?.removePrefix(KIND_ID_PREFIX)
-            ?.takeIf { it.matches(Regex("[a-z0-9-]+")) }?.let(::TaskKind)
+            ?.takeIf { it.matches(KIND_ID_PATTERN) }?.let(::TaskKind)
 }
 
 /** WorkManager input-data keys shared by the adapter and the workers it enqueues. */

@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -46,6 +45,7 @@ import dev.stapler.stelekit.jobs.schedule.TaskConfig
 import dev.stapler.stelekit.jobs.schedule.TaskKey
 import dev.stapler.stelekit.jobs.schedule.TaskKind
 import dev.stapler.stelekit.jobs.schedule.TaskScope
+import dev.stapler.stelekit.ui.components.typedItems
 
 /** A graph the Background tasks list can configure; [name] is the display name, never the raw id. */
 data class BackgroundTaskGraph(val id: String, val name: String)
@@ -138,14 +138,14 @@ fun BackgroundTasksSection(
                     TaskSettingsPanel(
                         controller, TaskKey(d.kind, TaskScope(d.graph.id)), "${controller.titleOf(d.kind)} - ${d.graph.name}",
                         switchGate = switchGate(d.kind, d.graph.id),
-                        onChanged = { refresh++ },
+                        onChange = { refresh++ },
                     )
                 }
                 is Destination.AppWide -> {
                     BackRow { back(Destination.List) }
                     TaskSettingsPanel(
                         controller, TaskKey(d.kind, TaskScope(APP_WIDE_SCOPE)), controller.titleOf(d.kind),
-                        onChanged = { refresh++ },
+                        onChange = { refresh++ },
                     )
                 }
             }
@@ -167,19 +167,21 @@ private fun KindList(
     onAddGraph: () -> Unit,
     open: (Destination) -> Unit,
 ) {
-    val kinds = controller.kinds()
-    val periodic = kinds.filterNot(controller::isOneShot)
-    if (periodic.isNotEmpty() && graphs.isEmpty()) {
-        Text(NO_GRAPHS_TEXT, style = MaterialTheme.typography.bodyMedium)
-        Button(onClick = onAddGraph, modifier = Modifier.heightIn(min = TARGET_DP.dp)) { Text(ADD_GRAPH_LABEL) }
-    }
-    kinds.forEach { kind ->
-        if (controller.isOneShot(kind)) {
-            val summary by produceKindSummary(controller, kind, graphs, refresh)
-            NavRow(controller.titleOf(kind), summary, "kind:${kind.id}", focusOpener) { open(Destination.AppWide(kind)) }
-        } else if (graphs.isNotEmpty()) {
-            val summary by produceKindSummary(controller, kind, graphs, refresh)
-            NavRow(controller.titleOf(kind), summary, "kind:${kind.id}", focusOpener) { open(Destination.Kind(kind)) }
+    Column {
+        val kinds = controller.kinds()
+        val periodic = kinds.filterNot(controller::isOneShot)
+        if (periodic.isNotEmpty() && graphs.isEmpty()) {
+            Text(NO_GRAPHS_TEXT, style = MaterialTheme.typography.bodyMedium)
+            Button(onClick = onAddGraph, modifier = Modifier.heightIn(min = TARGET_DP.dp)) { Text(ADD_GRAPH_LABEL) }
+        }
+        kinds.forEach { kind ->
+            if (controller.isOneShot(kind)) {
+                val summary by produceKindSummary(controller, kind, graphs, refresh)
+                NavRow(controller.titleOf(kind), summary, "kind:${kind.id}", focusOpener) { open(Destination.AppWide(kind)) }
+            } else if (graphs.isNotEmpty()) {
+                val summary by produceKindSummary(controller, kind, graphs, refresh)
+                NavRow(controller.titleOf(kind), summary, "kind:${kind.id}", focusOpener) { open(Destination.Kind(kind)) }
+            }
         }
     }
 }
@@ -244,43 +246,45 @@ private fun KindScreen(
     onBack: () -> Unit,
     open: (Destination) -> Unit,
 ) {
-    val rows = remember(kind) { mutableStateMapOf<String, TaskSettingsLoad>() }
-    var base by remember(kind) { mutableStateOf<TaskConfig?>(null) }
-    var query by remember { mutableStateOf("") }
-    LaunchedEffect(kind, graphs, refresh) {
-        base = controller.baseConfig(kind)
-        graphs.forEach { rows[it.id] = controller.load(TaskKey(kind, TaskScope(it.id))) }
-    }
-    val titleFocus = remember { FocusRequester() }
-    LaunchedEffect(kind) { if (focusOpener == null) runCatching { titleFocus.requestFocus() } }
+    Column {
+        val rows = remember(kind) { mutableStateMapOf<String, TaskSettingsLoad>() }
+        var base by remember(kind) { mutableStateOf<TaskConfig?>(null) }
+        var query by remember { mutableStateOf("") }
+        LaunchedEffect(kind, graphs, refresh) {
+            base = controller.baseConfig(kind)
+            graphs.forEach { rows[it.id] = controller.load(TaskKey(kind, TaskScope(it.id))) }
+        }
+        val titleFocus = remember { FocusRequester() }
+        LaunchedEffect(kind) { if (focusOpener == null) runCatching { titleFocus.requestFocus() } }
 
-    BackRow(onBack)
-    Text(
-        controller.titleOf(kind),
-        style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier.focusRequester(titleFocus).focusable().semantics { heading() }.padding(bottom = 8.dp),
-    )
-    val usingDefault = graphs.count { (rows[it.id] as? TaskSettingsLoad.Loaded)?.entry?.overrides == null && rows.containsKey(it.id) }
-    DefaultRow(base, usingDefault, rows.size == graphs.size, focusOpener) { open(Destination.Defaults(kind)) }
-
-    if (graphs.size >= GRAPH_SEARCH_THRESHOLD) {
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            label = { Text(SEARCH_LABEL) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().semantics { contentDescription = SEARCH_LABEL },
+        BackRow(onBack)
+        Text(
+            controller.titleOf(kind),
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.focusRequester(titleFocus).focusable().semantics { heading() }.padding(bottom = 8.dp),
         )
-    }
-    val shown = graphs.filter { it.name.contains(query.trim(), ignoreCase = true) }
-    if (shown.isEmpty()) {
-        Text(NO_MATCHES_TEXT, style = MaterialTheme.typography.bodyMedium)
-        TextButton(onClick = { query = "" }, modifier = Modifier.heightIn(min = TARGET_DP.dp)) { Text(CLEAR_SEARCH_LABEL) }
-        return
-    }
-    LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = LIST_MAX_HEIGHT_DP.dp)) {
-        items(shown, key = { it.id }) { graph ->
-            GraphRowItem(controller, kind, GraphRow(graph, rows[graph.id]), base, focusOpener) { open(Destination.Graph(kind, graph)) }
+        val usingDefault = graphs.count { (rows[it.id] as? TaskSettingsLoad.Loaded)?.entry?.overrides == null && rows.containsKey(it.id) }
+        DefaultRow(base, usingDefault, rows.size == graphs.size, focusOpener) { open(Destination.Defaults(kind)) }
+
+        if (graphs.size >= GRAPH_SEARCH_THRESHOLD) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = { Text(SEARCH_LABEL) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().semantics { contentDescription = SEARCH_LABEL },
+            )
+        }
+        val shown = graphs.filter { it.name.contains(query.trim(), ignoreCase = true) }
+        if (shown.isEmpty()) {
+            Text(NO_MATCHES_TEXT, style = MaterialTheme.typography.bodyMedium)
+            TextButton(onClick = { query = "" }, modifier = Modifier.heightIn(min = TARGET_DP.dp)) { Text(CLEAR_SEARCH_LABEL) }
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = LIST_MAX_HEIGHT_DP.dp)) {
+                typedItems(shown, key = { it.id }) { graph ->
+                    GraphRowItem(controller, kind, GraphRow(graph, rows[graph.id]), base, focusOpener) { open(Destination.Graph(kind, graph)) }
+                }
+            }
         }
     }
 }

@@ -15,6 +15,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -118,7 +119,7 @@ internal fun List<TaskRunRow>.matching(query: String): List<TaskRunRow> =
 /** Reads the run log, re-reading when [source] changes or Retry is pressed; null [source] stays Loading-free and empty. */
 @Composable
 internal fun rememberTaskRunRowsState(source: TaskRunLogSource?): Pair<TaskRunRowsState, () -> Unit> {
-    var attempt by remember { mutableStateOf(0) }
+    var attempt by remember { mutableIntStateOf(0) }
     var state by remember(source) { mutableStateOf<TaskRunRowsState>(TaskRunRowsState.Loading) }
     LaunchedEffect(source, attempt) {
         if (source == null) return@LaunchedEffect

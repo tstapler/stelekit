@@ -137,7 +137,7 @@ fun TaskSettingsPanel(
     modifier: Modifier = Modifier,
     target: PanelTarget = PanelTarget.Entry,
     switchGate: SwitchGate? = null,
-    onChanged: () -> Unit = {},
+    onChange: () -> Unit = {},
 ) {
     val caps = controller.capabilities
     val oneShot = controller.isOneShot(taskKey.kind)
@@ -169,7 +169,7 @@ fun TaskSettingsPanel(
                 }
             }
             reloadToken++
-            if (result == SaveResult.Saved) onChanged()
+            if (result == SaveResult.Saved) onChange()
         }
     }
 
@@ -291,68 +291,74 @@ private fun SwitchBlock(
     gate: SwitchGate?,
     onToggle: (Boolean) -> Unit,
 ) {
-    val blocked = gate != null && !state.enabled
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = TARGET_DP.dp)
-            .toggleable(value = state.enabled, enabled = !blocked, role = Role.Switch, onValueChange = onToggle)
-            .semantics { if (blocked) stateDescription = "Disabled, ${gate?.reason}" },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(SWITCH_LABEL, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        Switch(checked = state.enabled, onCheckedChange = null, enabled = !blocked)
+    Column {
+        val blocked = gate != null && !state.enabled
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = TARGET_DP.dp)
+                .toggleable(value = state.enabled, enabled = !blocked, role = Role.Switch, onValueChange = onToggle)
+                .semantics { if (blocked) stateDescription = "Disabled, ${gate?.reason}" },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(SWITCH_LABEL, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Switch(checked = state.enabled, onCheckedChange = null, enabled = !blocked)
+        }
+        if (blocked && gate != null) {
+            Text(gate.reason, style = MaterialTheme.typography.bodyMedium)
+            Button(onClick = gate.onFix, modifier = Modifier.heightIn(min = TARGET_DP.dp)) { Text(gate.actionLabel) }
+        }
+        val effective = maxOf(state.schedule.intervalMinutes, minInterval)
+        Text(
+            text = "Runs ${aboutEveryPhrase(effective)}, ${networkLabel(state.network).lowercase()}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (state.enabled && firstCheck != null) {
+            Text(firstCheckText(firstCheck), style = MaterialTheme.typography.bodySmall, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        }
+        SaveError(showError)
     }
-    if (blocked && gate != null) {
-        Text(gate.reason, style = MaterialTheme.typography.bodyMedium)
-        Button(onClick = gate.onFix, modifier = Modifier.heightIn(min = TARGET_DP.dp)) { Text(gate.actionLabel) }
-    }
-    val effective = maxOf(state.schedule.intervalMinutes, minInterval)
-    Text(
-        text = "Runs ${aboutEveryPhrase(effective)}, ${networkLabel(state.network).lowercase()}",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    if (state.enabled && firstCheck != null) {
-        Text(firstCheckText(firstCheck), style = MaterialTheme.typography.bodySmall, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-    }
-    SaveError(showError)
 }
 
 @Composable
 private fun IntervalBlock(state: PanelLoad.Ready, controller: BackgroundTaskSettingsController, showError: Boolean, onPick: (Int) -> Unit) {
-    val caps = controller.capabilities
-    val effective = maxOf(state.schedule.intervalMinutes, caps.minIntervalMinutes)
-    val presets = scheduledIntervalPresets(caps)
-    GroupLabel(INTERVAL_GROUP_LABEL)
-    OptionGroup(
-        options = presets.map { OptionSpec(intervalLabel(it), selected = it == effective, enabled = true) },
-        onPick = { onPick(presets[it]) },
-    )
-    if (showsMinIntervalHelper(caps)) Helper(ANDROID_MIN_INTERVAL_HELPER) else if (!caps.runsWhenClosed) Helper(DESKTOP_HELPER)
-    clampSummary(state.schedule.intervalMinutes, caps)?.let { Helper(it) }
-    SaveError(showError)
+    Column {
+        val caps = controller.capabilities
+        val effective = maxOf(state.schedule.intervalMinutes, caps.minIntervalMinutes)
+        val presets = scheduledIntervalPresets(caps)
+        GroupLabel(INTERVAL_GROUP_LABEL)
+        OptionGroup(
+            options = presets.map { OptionSpec(intervalLabel(it), selected = it == effective, enabled = true) },
+            onPick = { onPick(presets[it]) },
+        )
+        if (showsMinIntervalHelper(caps)) Helper(ANDROID_MIN_INTERVAL_HELPER) else if (!caps.runsWhenClosed) Helper(DESKTOP_HELPER)
+        clampSummary(state.schedule.intervalMinutes, caps)?.let { Helper(it) }
+        SaveError(showError)
+    }
 }
 
 @Composable
 private fun NetworkBlock(state: PanelLoad.Ready, controller: BackgroundTaskSettingsController, showError: Boolean, onPick: (NetworkPolicy) -> Unit) {
-    val caps = controller.capabilities
-    val policies = NetworkPolicy.entries
-    GroupLabel(NETWORK_GROUP_LABEL)
-    OptionGroup(
-        options = policies.map { policy ->
-            val unavailable = policy == NetworkPolicy.Unmetered && !isUnmeteredSelectable(caps)
-            OptionSpec(
-                label = networkLabel(policy),
-                selected = policy == state.network,
-                enabled = !unavailable,
-                reason = if (unavailable) UNMETERED_DESKTOP_REASON else null,
-                helper = if (policy == NetworkPolicy.Unmetered && !unavailable) NetworkPolicyCopy.UNMETERED_ONLY_HELPER else null,
-            )
-        },
-        onPick = { onPick(policies[it]) },
-    )
-    SaveError(showError)
+    Column {
+        val caps = controller.capabilities
+        val policies = NetworkPolicy.entries
+        GroupLabel(NETWORK_GROUP_LABEL)
+        OptionGroup(
+            options = policies.map { policy ->
+                val unavailable = policy == NetworkPolicy.Unmetered && !isUnmeteredSelectable(caps)
+                OptionSpec(
+                    label = networkLabel(policy),
+                    selected = policy == state.network,
+                    enabled = !unavailable,
+                    reason = if (unavailable) UNMETERED_DESKTOP_REASON else null,
+                    helper = if (policy == NetworkPolicy.Unmetered && !unavailable) NetworkPolicyCopy.UNMETERED_ONLY_HELPER else null,
+                )
+            },
+            onPick = { onPick(policies[it]) },
+        )
+        SaveError(showError)
+    }
 }
 
 @Composable
@@ -364,28 +370,30 @@ private fun AdvancedBlock(
     showError: Boolean,
     onPick: (JitterPreset) -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = TARGET_DP.dp)
-            .selectable(selected = open, role = Role.Button, onClick = { onOpenChange(!open) })
-            .semantics { stateDescription = if (open) "Expanded" else "Collapsed" },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(ADVANCED_LABEL, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        Text(if (open) "-" else "+", style = MaterialTheme.typography.bodyLarge)
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = TARGET_DP.dp)
+                .selectable(selected = open, role = Role.Button, onClick = { onOpenChange(!open) })
+                .semantics { stateDescription = if (open) "Expanded" else "Collapsed" },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(ADVANCED_LABEL, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Text(if (open) "-" else "+", style = MaterialTheme.typography.bodyLarge)
+        }
+        if (!open) return
+        val presets = JitterPreset.entries
+        val current = JitterPreset.presetOf(state.schedule)
+        GroupLabel(SPREAD_LABEL)
+        OptionGroup(
+            options = presets.map { OptionSpec(spreadLabel(it), selected = it == current, enabled = true) },
+            onPick = { onPick(presets[it]) },
+        )
+        Helper(SPREAD_HELPER)
+        spreadSummary(state.info, state.schedule, controller.capabilities)?.let { Helper(it) }
+        SaveError(showError)
     }
-    if (!open) return
-    val presets = JitterPreset.entries
-    val current = JitterPreset.presetOf(state.schedule)
-    GroupLabel(SPREAD_LABEL)
-    OptionGroup(
-        options = presets.map { OptionSpec(spreadLabel(it), selected = it == current, enabled = true) },
-        onPick = { onPick(presets[it]) },
-    )
-    Helper(SPREAD_HELPER)
-    spreadSummary(state.info, state.schedule, controller.capabilities)?.let { Helper(it) }
-    SaveError(showError)
 }
 
 @Composable
@@ -435,7 +443,7 @@ internal fun OptionGroup(options: List<OptionSpec>, onPick: (Int) -> Unit) {
         },
     ) {
         options.forEachIndexed { index, option ->
-            OptionRow(option, Modifier.focusRequester(requesters[index]).onFocusChanged { if (it.isFocused) focused = index }) { onPick(index) }
+            OptionRow(option, onClick = { onPick(index) }, modifier = Modifier.focusRequester(requesters[index]).onFocusChanged { if (it.isFocused) focused = index })
         }
     }
 }
@@ -454,7 +462,7 @@ internal fun nextEnabledIndex(options: List<OptionSpec>, from: Int, step: Int): 
 }
 
 @Composable
-private fun OptionRow(option: OptionSpec, modifier: Modifier, onClick: () -> Unit) {
+private fun OptionRow(option: OptionSpec, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .fillMaxWidth()
