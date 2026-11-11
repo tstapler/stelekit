@@ -5,7 +5,6 @@
 package dev.stapler.stelekit.ui.sketch
 
 import dev.stapler.stelekit.model.ProjectUuid
-import dev.stapler.stelekit.projectbridge.YamlImportOutcome
 import dev.stapler.stelekit.projectbridge.YamlSnapshotImporter
 import dev.stapler.stelekit.projectbridge.YamlSnapshotRules
 import dev.stapler.stelekit.projectbridge.YamlSourceEntry

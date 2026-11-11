@@ -828,6 +828,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.projectbridge.BoundPagesReaderTest::class,
     dev.stapler.stelekit.projectbridge.SourceBindingServiceTest::class,
     dev.stapler.stelekit.projectbridge.YamlSnapshotImporterTest::class,
+    dev.stapler.stelekit.ui.annotate.AnnotationEditorUnitTest::class,
     dev.stapler.stelekit.projectbridge.ProjectFusionSourceTest::class,
     dev.stapler.stelekit.ui.sketch.ProjectListViewModelTest::class,
     dev.stapler.stelekit.projectbridge.DigestWriterJobTest::class,
