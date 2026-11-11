@@ -119,7 +119,11 @@ class FirstOpenSmokeTest {
                         composeRule.onNodeWithTag("nav-row-library").performSemanticsAction(SemanticsActions.OnClick)
                         composeRule.mainClock.advanceTimeBy(CLICK_SETTLE_MS)
                         composeRule.onNodeWithText(I18n.get(I18n.LIBRARY_SEARCH_PLACEHOLDER)).assertIsDisplayed()
-                        composeRule.onNodeWithText(I18n.get(I18n.LIBRARY_EMPTY_TITLE)).assertIsDisplayed()
+                        // Empty copy, or "Indexing" while the asset walk (now always on) is still filling the index.
+                        composeRule.onNode(
+                            androidx.compose.ui.test.hasText(I18n.get(I18n.LIBRARY_EMPTY_TITLE)) or
+                                androidx.compose.ui.test.hasText(I18n.get(I18n.LIBRARY_INDEXING)),
+                        ).assertIsDisplayed()
                     }
                     else -> error("FIRST_OPEN_SCREENS names '$screen' but no opener is defined for it")
                 }

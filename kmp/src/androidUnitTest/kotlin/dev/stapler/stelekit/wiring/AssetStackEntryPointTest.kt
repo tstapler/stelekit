@@ -163,14 +163,15 @@ class AssetStackEntryPointTest {
     }
 
     @Test
-    fun switchUnset_leavesTheIndexEmpty_evenWhenTheGraphIsFullyLoaded() {
+    fun switchUnset_stillIndexesFilesForTheLibrary_butNotThePluginStage() {
         val (wired, _, stack) = mount(switchOn = false)
 
-        assertEquals(AssetIndexProgress.Idle, assertNotNull(stack()).indexing.progress.value, "the backfill was never started")
-        assertEquals(0L, rows(wired))
+        awaitIndexed(stack())
+        assertEquals(3L, rows(wired), "the Library lists asset_index, so the file walk is not gated by the switch")
+        assertEquals(false, assertNotNull(stack()).indexing.isActive, "plugins stay gated by the switch")
         val attachments = assertNotNull(stack()?.attachmentService)
         runBlocking { attachments.pickAndAttach(EffectiveNotesPath(graphPath), "") }
-        assertEquals(0L, rows(wired), "attach is not indexed while the switch is off")
+        assertEquals(4L, rows(wired), "attachments are indexed too")
     }
 
     @Test
@@ -187,11 +188,12 @@ class AssetStackEntryPointTest {
     }
 
     @Test
-    fun releaseVariant_neverStartsTheBackfill_evenIfTheKeyIsSet() {
+    fun releaseVariant_indexesFilesButHidesTheSwitchAndMove() {
         val (wired, _, stack) = mount(switchOn = true, internalBuild = false)
 
-        assertEquals(AssetIndexProgress.Idle, assertNotNull(stack()).indexing.progress.value, "the backfill was never started")
-        assertEquals(0L, rows(wired), "a build that hides the switch must not index, whatever the stored key says")
+        awaitIndexed(stack())
+        assertEquals(3L, rows(wired), "release builds index files so the Library is populated")
+        assertEquals(false, assertNotNull(stack()).indexing.isActive, "but never run the plugin stage")
         assertEquals(false, assertNotNull(stack()).indexing.toggleVisible)
         assertEquals(null, stack()?.moveAsset, "Move is not offered when the switch is hidden")
     }

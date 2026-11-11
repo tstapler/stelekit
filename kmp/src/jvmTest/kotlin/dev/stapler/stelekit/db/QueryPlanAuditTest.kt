@@ -810,7 +810,8 @@ ORDER BY depth, parent_uuid, position"""),
                 }
                 seed.execute("ANALYZE")
             }
-            val statements = dev.stapler.stelekit.repository.LibrarySql.auditStatements()
+            val statements = dev.stapler.stelekit.repository.LibrarySql.auditStatements() +
+                dev.stapler.stelekit.repository.LibrarySql.legacyAuditStatements()
             check(statements.size >= 24) { "audit set unexpectedly small: ${statements.size}" }
             for (st in statements) {
                 val plan = conn.prepareStatement("EXPLAIN QUERY PLAN ${st.sql}").use { ps ->

@@ -26,7 +26,7 @@ object LibrarySql {
     private fun hay(column: String): String =
         "(' ' || " + SEPARATORS.fold(column) { acc, ch -> "REPLACE($acc, '$ch', ' ')" } + ")"
 
-    private const val INNER = """SELECT a.uuid AS uuid, a.file_path AS file_path,
+    private fun inner(legacy: Boolean): String = """SELECT a.uuid AS uuid, a.file_path AS file_path,
   REPLACE(a.file_path, RTRIM(a.file_path, REPLACE(a.file_path, '/', '')), '') AS file_name,
   a.media_type AS media_type, a.size_bytes AS size_bytes, a.imported_at_ms AS imported_at_ms,
   a.is_orphan AS is_orphan, a.page_uuids AS page_uuids,
@@ -36,7 +36,23 @@ object LibrarySql {
   (SELECT MIN(ia.thumbnail_path) FROM image_annotations ia WHERE ia.file_path = a.file_path) AS thumbnail_path,
   CAST(EXISTS (SELECT 1 FROM image_annotations ia WHERE ia.file_path = a.file_path) AS INTEGER) AS annotated,
   a.relative_path AS relative_path
-FROM asset_index a"""
+FROM ${if (legacy) LEGACY_SOURCE else "asset_index"} a"""
+
+    /**
+     * Pre-index annotated images: `image_annotations` files with no `asset_index` row, one row per file. Used
+     * only while [LEGACY_EXISTS] is true; the plain statement keeps the ordered index scan. The row id is the
+     * lowest annotation uuid, so the card opens the annotation editor; it disappears once the file is indexed.
+     */
+    private const val LEGACY_SOURCE = """(SELECT uuid, file_path, media_type, size_bytes, imported_at_ms, is_orphan, page_uuids, relative_path FROM asset_index
+  UNION ALL
+  SELECT MIN(ia.uuid), ia.file_path, 'IMAGE', 0, MAX(ia.imported_at_ms), 0, '[]', ''
+  FROM image_annotations ia
+  WHERE NOT EXISTS (SELECT 1 FROM asset_index x WHERE x.file_path = ia.file_path)
+  GROUP BY ia.file_path)"""
+
+    /** Cheap probe (indexed anti-join, one row) deciding whether [page]/[count] need `legacy = true`. */
+    const val LEGACY_EXISTS = "SELECT 1 FROM image_annotations ia WHERE NOT EXISTS " +
+        "(SELECT 1 FROM asset_index x WHERE x.file_path = ia.file_path) LIMIT 1"
 
     /** Column order of [page] results. */
     val PAGE_COLUMNS = listOf(
@@ -109,23 +125,23 @@ FROM asset_index a"""
     }
 
     /** One page of at most [limit] rows (callers cap at 100) after [cursor], or the first page when null. */
-    fun page(query: LibraryQuery, cursor: LibraryCursor?, limit: Int): LibraryStatement {
+    fun page(query: LibraryQuery, cursor: LibraryCursor?, limit: Int, legacy: Boolean = false): LibraryStatement {
         val clauses = mutableListOf<String>()
         val args = mutableListOf<Any?>()
         addFilterClauses(clauses, args, query)
         if (cursor != null) keyset(query.sort, cursor, clauses, args)
         val where = if (clauses.isEmpty()) "" else "\nWHERE " + clauses.joinToString("\n  AND ")
-        val sql = "SELECT * FROM (\n$INNER\n) AS t$where\nORDER BY ${orderBy(query.sort)}\nLIMIT ?"
+        val sql = "SELECT * FROM (\n${inner(legacy)}\n) AS t$where\nORDER BY ${orderBy(query.sort)}\nLIMIT ?"
         return LibraryStatement(sql, args + limit.toLong())
     }
 
     /** Count capped at [COUNT_CAP] + 1 rows scanned, so a huge library never materialises. */
-    fun count(query: LibraryQuery): LibraryStatement {
+    fun count(query: LibraryQuery, legacy: Boolean = false): LibraryStatement {
         val clauses = mutableListOf<String>()
         val args = mutableListOf<Any?>()
         addFilterClauses(clauses, args, query)
         val where = if (clauses.isEmpty()) "" else "\nWHERE " + clauses.joinToString("\n  AND ")
-        val sql = "SELECT COUNT(*) FROM (SELECT 1 FROM (\n$INNER\n) AS t$where\nLIMIT ${COUNT_CAP + 1})"
+        val sql = "SELECT COUNT(*) FROM (SELECT 1 FROM (\n${inner(legacy)}\n) AS t$where\nLIMIT ${COUNT_CAP + 1})"
         return LibraryStatement(sql, args)
     }
 
@@ -146,5 +162,12 @@ FROM asset_index a"""
                 page(LibraryQuery(f, sort), cursor, 100)
             }
         } + filters.map { count(LibraryQuery(it)) }
+    }
+
+    /** The legacy-union variants of [auditStatements]. */
+    fun legacyAuditStatements(): List<LibraryStatement> {
+        val base = LibraryFilterRules.normalize(dev.stapler.stelekit.ui.library.LibraryFilterState())
+        return LibrarySort.entries.map { page(LibraryQuery(base, it), null, 100, legacy = true) } +
+            listOf(count(LibraryQuery(base), legacy = true), count(LibraryQuery(base.copy(search = "kit")), legacy = true))
     }
 }

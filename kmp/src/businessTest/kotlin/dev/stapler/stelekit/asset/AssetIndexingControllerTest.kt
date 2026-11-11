@@ -63,46 +63,44 @@ class AssetIndexingControllerTest {
     }
 
     @Test
-    fun releaseBuild_ignoresTheSwitch_and_neverStartsTheBackfill() = runBlocking {
+    fun releaseBuild_ignoresTheSwitch_but_stillIndexesTheFilesForTheLibrary() = runBlocking {
         val settings = FakeSettings()
         val c = controller(settings, visible = false)
 
         c.setEnabled(true)
         c.onGraphReady(notes, writeActor = null, fileSystem = fs)
+        awaitFinished(c)
 
         assertFalse(settings.getBoolean(key, false), "a hidden switch cannot write the key")
-        assertFalse(c.isActive)
-        assertEquals(0, spy.lookups, "backfill must not touch the index")
-        assertEquals(AssetIndexProgress.Idle, c.progress.value)
-        assertEquals(0L, repo.countAssets().getOrNull())
+        assertFalse(c.isActive, "the plugin stage stays off")
+        assertEquals(5L, repo.countAssets().getOrNull(), "the Library's only source must be filled in release builds")
         c.close()
     }
 
     @Test
-    fun releaseBuild_withTheKeyAlreadyTrue_stillNeverStartsTheBackfill() = runBlocking {
+    fun releaseBuild_withTheKeyAlreadyTrue_indexesFilesAndAttachmentsButStaysInactive() = runBlocking {
         val settings = FakeSettings().apply { putBoolean(key, true) }
         val c = controller(settings, visible = false)
 
         c.onGraphReady(notes, writeActor = null, fileSystem = fs)
-        c.registerAttachment(AttachmentResult("../assets/a0.png", "a0.png"))
+        awaitFinished(c)
+        fs.writeFileBytes("/graph/assets/new.png", png + byteArrayOf(9))
+        c.registerAttachment(AttachmentResult("../assets/new.png", "new.png"))
 
         assertTrue(c.enabled.value, "the stored value is reported as stored")
-        assertFalse(c.isActive, "but a build that hides the switch never acts on it")
-        assertEquals(0, spy.lookups)
-        assertEquals(0L, repo.countAssets().getOrNull(), "no attach registration either")
+        assertFalse(c.isActive, "but a build that hides the switch never runs the plugin stage")
+        assertEquals(6L, repo.countAssets().getOrNull(), "walked files plus the registered attachment")
         c.close()
     }
 
     @Test
-    fun flagUnset_inAnInternalBuild_isInert() = runBlocking {
+    fun graphNotReady_neverWalks() = runBlocking {
         val c = controller(visible = true)
 
-        c.onGraphReady(notes, writeActor = null, fileSystem = fs)
+        c.onGraphNotReady()
 
-        // startBackfill publishes Counting synchronously, so Idle here means it was never started.
         assertEquals(AssetIndexProgress.Idle, c.progress.value)
         assertEquals(0, spy.lookups)
-        assertEquals(0L, repo.countAssets().getOrNull())
         c.close()
     }
 

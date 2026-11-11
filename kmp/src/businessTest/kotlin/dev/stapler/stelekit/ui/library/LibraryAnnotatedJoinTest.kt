@@ -51,14 +51,14 @@ class LibraryAnnotatedJoinTest {
     }
 
     @Test
-    fun annotationWithoutAnAssetRow_isNotInTheAssetBackedList() = runBlocking {
-        // Recorded limitation (ADR-008 UNION ALL branch): such rows are only reachable once the asset index has them.
+    fun annotationWithoutAnAssetRow_isListedAsALegacyItem() = runBlocking {
+        // Legacy fallback: pre-index annotated images list straight from image_annotations (see LibraryLegacyAnnotatedImagesTest).
         fx.annotations.saveImageAnnotation(
             dev.stapler.stelekit.model.ImageAnnotation(
                 uuid = "ann-x", blockUuid = "blk-x", pageUuid = "page-x", graphPath = "/g", filePath = "/g/assets/images/unindexed.png",
             ),
         )
-        assertTrue(fx.library.getLibraryPage(LibraryQuery(), null, 10).getOrNull()!!.isEmpty())
+        assertEquals(listOf("ann-x"), fx.library.getLibraryPage(LibraryQuery(), null, 10).getOrNull()!!.map { it.id })
     }
 
     @Test
