@@ -25,6 +25,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import dev.stapler.stelekit.ui.i18n.I18n
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -107,7 +108,7 @@ class LibraryStatsScreenTest {
         val vm = vm(CountingProvider(report()))
         show(vm)
         composeTestRule.waitUntil(5_000) { vm.state.value is LibraryStatsState.Loaded }
-        composeTestRule.onNodeWithText("Library Stats").assertExists()
+        composeTestRule.onNodeWithText(I18n.get(I18n.NAV_GRAPH_STATS)).assertExists()
         composeTestRule.onNodeWithText("Volume").assertExists()
         composeTestRule.onNodeWithText("Link Topology").assertExists()
         composeTestRule.onNodeWithText("Pages").assertExists()

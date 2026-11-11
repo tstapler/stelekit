@@ -103,6 +103,29 @@ class MigrationRunnerSchemaSyncTest {
         )
     }
 
+    @Test
+    fun `all IF NOT EXISTS indexes in SteleDatabase schema have a MigrationRunner entry`() {
+        val sqContent = checkNotNull(sqContent) { SQ_CONTENT_NOT_FOUND_MESSAGE }
+        val indexesInSchema: Set<String> = Regex(
+            """CREATE\s+(?:UNIQUE\s+)?INDEX\s+IF\s+NOT\s+EXISTS\s+(\w+)""",
+            RegexOption.IGNORE_CASE
+        ).findAll(sqContent).map { it.groupValues[1].lowercase() }.toSet()
+
+        val indexesInMigrations: Set<String> = MigrationRunner.all
+            .flatMap { it.statements }
+            .flatMap { sql ->
+                Regex("""CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)""", RegexOption.IGNORE_CASE)
+                    .findAll(sql).map { it.groupValues[1].lowercase() }
+            }
+            .toSet()
+
+        val uncovered = indexesInSchema - indexesInMigrations
+        assertTrue(uncovered.isEmpty(),
+            "Indexes in SteleDatabase.sq but missing from MigrationRunner.all (existing databases never " +
+                "get them otherwise):\n  ${uncovered.sorted().joinToString(", ")}"
+        )
+    }
+
     // ── Test 1b: git_config_clone_depth_state's AddColumn ops are registered ──────
 
     /**
