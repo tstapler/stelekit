@@ -96,6 +96,14 @@ fun attachedSheetService(
     fileSystem::readFileBytes,
 )
 
+/** The attached SVG sheets for the post-sync collector; empty when the graph has no notes folder (demo graph). */
+suspend fun readAttachedSvgSheets(
+    repositories: SketchRepositories,
+    fileSystem: FileSystem,
+    notesPath: EffectiveNotesPath?,
+    write: suspend (suspend () -> Either<DomainError, Unit>) -> Either<DomainError, Unit>,
+): List<SheetSvg> = notesPath?.let { attachedSheetService(repositories, fileSystem, it, write).readSvgSheets() }.orEmpty()
+
 /** Whether an attached drawing can be read on this device. */
 enum class SheetStatus(val label: String) {
     READY("ready"),

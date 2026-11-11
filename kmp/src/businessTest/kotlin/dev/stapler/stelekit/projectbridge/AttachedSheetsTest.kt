@@ -28,6 +28,9 @@ import dev.stapler.stelekit.ui.sketch.DrawingAttachAction
 import dev.stapler.stelekit.ui.sketch.DrawingStart
 import dev.stapler.stelekit.ui.sketch.DrawingText
 import dev.stapler.stelekit.ui.sketch.PickedDrawing
+import dev.stapler.stelekit.ui.sketch.drawingWiringFor
+import dev.stapler.stelekit.ui.sketch.pickDrawing
+import dev.stapler.stelekit.ui.sketch.projectListViewModelFor
 import dev.stapler.stelekit.ui.sketch.ProjectListViewModel
 import dev.stapler.stelekit.ui.sketch.addDrawing
 import dev.stapler.stelekit.ui.sketch.finishDrawing
@@ -339,6 +342,50 @@ class AttachedSheetsTest {
             vm.removeDrawing("x")
             vm.finishDrawing(ImportPhase.Done, null)
             assertNull(vm.importSession.value)
+        } finally {
+            vm.close()
+        }
+    }
+
+    // --- wiring helpers ---
+
+    private class PickingFs(private val path: String?, private val bytes: ByteArray?) : FakeFileSystem() {
+        override suspend fun pickFileAsync(): String? = path
+        override fun readFileBytes(path: String): ByteArray? = bytes
+    }
+
+    @Test
+    fun drawingWiringNeedsAFileSystemAndANotesFolder() = runBlocking<Unit> {
+        val fresh = { AssetIndexService(dev.stapler.stelekit.repository.InMemoryAssetRepository()) }
+        assertNull(drawingWiringFor(repos, fresh, null, notes, null))
+        assertNull(drawingWiringFor(repos, fresh, fs, null, null))
+        val wiring = checkNotNull(drawingWiringFor(repos, fresh, PickingFs("/x/pic.png", png), notes, null))
+
+        assertIs<DrawingStart.Started>(wiring.action.start("p1"))
+    }
+
+    @Test
+    fun pickDrawingReturnsTheNameAndBytesOrNull() = runBlocking<Unit> {
+        val picked = checkNotNull(pickDrawing(PickingFs("/x/pic.png", png)))
+        assertEquals("pic.png", picked.fileName)
+        assertTrue(picked.bytes.contentEquals(png))
+        assertNull(pickDrawing(PickingFs(null, png)))
+        assertNull(pickDrawing(PickingFs("/x/a.svg", null)))
+    }
+
+    @Test
+    fun attachedSvgSheetsAreEmptyWithoutANotesFolderAndReadWithOne() = runBlocking<Unit> {
+        attach("a.svg", svg)
+        assertTrue(readAttachedSvgSheets(repos, fs, null) { it() }.isEmpty())
+        assertEquals(1, readAttachedSvgSheets(repos, fs, notes) { it() }.size)
+        assertEquals(svgHash.take(8), SheetSource(SheetKind.SVG, svgHash).hash8)
+    }
+
+    @Test
+    fun theViewModelFactoryCarriesTheDrawingActionAndService() = runBlocking<Unit> {
+        val vm = projectListViewModelFor(repos, null, "g1", BridgeMapSettings(), drawings = action, sheets = service)
+        try {
+            assertTrue(vm.drawingsAvailable)
         } finally {
             vm.close()
         }
