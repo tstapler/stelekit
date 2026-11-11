@@ -73,7 +73,7 @@ fun SketchScreen(
 }
 
 @Composable
-private fun SketchPanels(state: SketchUiState, vm: SketchViewModel, modifier: Modifier) {
+private fun SketchPanels(state: SketchUiState, vm: SketchViewModel, modifier: Modifier = Modifier) {
     val sheet = state.document.sheet
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SheetPropertiesPanel(sheet, vm::setSheetKind, vm::setViewDirection, vm::setScale)

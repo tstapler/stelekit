@@ -7,6 +7,14 @@ import dev.stapler.stelekit.repository.SketchRepositories
 import dev.stapler.stelekit.repository.SketchTestSupport
 import dev.stapler.stelekit.repository.inMemorySketchRepositories
 import dev.stapler.stelekit.ui.sketch.SketchViewModel
+import dev.stapler.stelekit.ui.sketch.addLayer
+import dev.stapler.stelekit.ui.sketch.setLayerLocked
+import dev.stapler.stelekit.ui.sketch.setLineLength
+import dev.stapler.stelekit.ui.sketch.setScale
+import dev.stapler.stelekit.ui.sketch.setSelectedLayer
+import dev.stapler.stelekit.ui.sketch.setSheetKind
+import dev.stapler.stelekit.ui.sketch.setViewDirection
+import dev.stapler.stelekit.ui.sketch.setZoneTotal
 import dev.stapler.stelekit.units.Inches
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first

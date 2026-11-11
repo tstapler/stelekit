@@ -12,14 +12,12 @@ import dev.stapler.stelekit.model.SheetUuid
 import dev.stapler.stelekit.model.SketchSheet
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.SketchRepositories
+import dev.stapler.stelekit.sketch.SheetProps
 import dev.stapler.stelekit.sketch.SketchCommand
 import dev.stapler.stelekit.sketch.message
 import dev.stapler.stelekit.sketch.SketchDocument
 import dev.stapler.stelekit.sketch.SketchHistory
-import dev.stapler.stelekit.sketch.SheetProps
 import dev.stapler.stelekit.sketch.SketchPoint
-import dev.stapler.stelekit.sketch.SketchSheetKind
-import dev.stapler.stelekit.sketch.ViewDirection
 import dev.stapler.stelekit.sketch.SketchScene
 import dev.stapler.stelekit.sketch.SketchPrimitive
 import dev.stapler.stelekit.sketch.Zone
@@ -143,29 +141,6 @@ class SketchViewModel(
     fun deleteSelected() {
         _uiState.value.selectedId?.let { commit(SketchCommand.RemovePrimitive(it)); select(null) }
     }
-
-    /** Sets the selected-or-given line to a typed length; the field validates the text first (see `DimensionInput`). */
-    fun setLineLength(id: String, length: Inches) = commit(SketchCommand.SetLineLength(id, length))
-
-    fun addLayer(name: String) = commit(SketchCommand.AddLayer(name))
-
-    fun setLayerVisible(name: String, visible: Boolean) = commit(SketchCommand.SetLayerVisible(name, visible))
-
-    fun setLayerLocked(name: String, locked: Boolean) = commit(SketchCommand.SetLayerLocked(name, locked))
-
-    fun setSelectedLayer(layer: String) {
-        _uiState.value.selectedId?.let { commit(SketchCommand.SetPrimitiveLayer(it, layer)) }
-    }
-
-    fun setSheetKind(kind: SketchSheetKind) = commit(SketchCommand.SetSheetKind(kind))
-
-    fun setViewDirection(direction: ViewDirection) = commit(SketchCommand.SetViewDirection(direction))
-
-    fun setScale(sixteenths: Long) = commit(SketchCommand.SetScale(sixteenths))
-
-    fun setZoneTotal(key: String, isTotal: Boolean) = commit(SketchCommand.SetZoneTotal(key, isTotal))
-
-    fun removeZone(key: String) = commit(SketchCommand.RemoveZone(key))
 
     fun addZone(zone: Zone) = commit(SketchCommand.AddZone(zone))
 

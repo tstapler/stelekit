@@ -28,9 +28,9 @@ fun LayerPanel(
     props: SheetProps,
     hasSelection: Boolean,
     onAdd: (String) -> Unit,
-    onVisible: (String, Boolean) -> Unit,
-    onLocked: (String, Boolean) -> Unit,
-    onAssignSelected: (String) -> Unit,
+    onToggleVisible: (String, Boolean) -> Unit,
+    onToggleLock: (String, Boolean) -> Unit,
+    onAssignSelection: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier.padding(horizontal = 8.dp)) {
@@ -38,14 +38,14 @@ fun LayerPanel(
         props.layers.forEach { layer ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(layer.name)
-                Checkbox(checked = layer.visible, onCheckedChange = { onVisible(layer.name, it) })
+                Checkbox(checked = layer.visible, onCheckedChange = { onToggleVisible(layer.name, it) })
                 Text("Show")
-                Checkbox(checked = layer.locked, onCheckedChange = { onLocked(layer.name, it) })
+                Checkbox(checked = layer.locked, onCheckedChange = { onToggleLock(layer.name, it) })
                 Text("Lock")
-                if (hasSelection) TextButton(onClick = { onAssignSelected(layer.name) }) { Text("Move selection here") }
+                if (hasSelection) TextButton(onClick = { onAssignSelection(layer.name) }) { Text("Move selection here") }
             }
         }
-        if (hasSelection) TextButton(onClick = { onAssignSelected("") }) { Text("Move selection to default layer") }
+        if (hasSelection) TextButton(onClick = { onAssignSelection("") }) { Text("Move selection to default layer") }
         NameAdder(label = "New layer", valid = SketchLayer::isValidName, onAdd = onAdd)
     }
 }
