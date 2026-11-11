@@ -6,6 +6,9 @@ package dev.stapler.stelekit.jobs.schedule
 import dev.stapler.stelekit.git.GitSyncWorkerBinding
 import dev.stapler.stelekit.jobs.JobKind
 import kotlinx.coroutines.runBlocking
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import dev.stapler.stelekit.git.GitCloneWorker
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -15,6 +18,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
@@ -68,7 +72,7 @@ class ScheduleStartupTest {
         onUnreadable: (Long) -> Unit = {},
     ) = ScheduleStartup(
         store(settings), scheduler(settings), registry, AppliedConfigLedger(settings), { known }, { active },
-        reconcile, { ready }, onUnreadable,
+        reconcile, { ready }, { key -> isCloneWorkLive(h.context, key) }, onUnreadable,
     )
 
     private fun live(key: TaskKey) = h.active(key.workName())
@@ -84,6 +88,36 @@ class ScheduleStartupTest {
         assertEquals(listOf(g1), seededKeys, "second start never re-seeds")
         assertEquals(entryAfterFirst, settings.getString(TaskSettingsKeys.entry(g1), ""))
         assertEquals("", settings.getString(TaskSettingsKeys.entry(g2), ""), "non-active graph untouched")
+    }
+
+    /** A queued (delayed) one-time request under the shared work name, the way a live clone sits there. */
+    private fun enqueueLiveClone(key: TaskKey) {
+        val request = OneTimeWorkRequestBuilder<GitCloneWorker>().setInitialDelay(1, TimeUnit.DAYS).build()
+        h.wm.enqueueUniqueWork(key.workName(), ExistingWorkPolicy.REPLACE, request).result.get()
+    }
+
+    @Test
+    fun run_should_resumeStalePausedSnapshot_When_NoCloneWorkIsLive() = runBlocking<Unit> {
+        val ledger = AppliedConfigLedger(settings)
+        ledger.recordApplied(g1, cfg)
+        ledger.snapshotPaused(g1, cfg)
+        assertNull(live(g1))
+        val report = startup().run()
+        assertNull(ledger.pausedSnapshot(g1), "stale snapshot cleared")
+        assertNotNull(live(g1)?.periodicityInfo, "periodic work re-enqueued")
+        assertEquals(setOf(g1), report.resumed)
+    }
+
+    @Test
+    fun run_should_stayPaused_When_CloneWorkIsLive() = runBlocking<Unit> {
+        val ledger = AppliedConfigLedger(settings)
+        ledger.recordApplied(g1, cfg)
+        ledger.snapshotPaused(g1, cfg)
+        enqueueLiveClone(g1)
+        val report = startup().run()
+        assertNotNull(ledger.pausedSnapshot(g1), "snapshot kept while the clone runs")
+        assertNull(live(g1)?.periodicityInfo, "only the clone request is live")
+        assertEquals(emptySet(), report.resumed)
     }
 
     @Test

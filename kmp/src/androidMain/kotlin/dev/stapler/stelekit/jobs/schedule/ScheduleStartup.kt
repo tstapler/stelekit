@@ -6,13 +6,16 @@ package dev.stapler.stelekit.jobs.schedule
 import android.content.Context
 import dev.stapler.stelekit.jobs.workManagerOrNull
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
 
 /** What one [ScheduleStartup.run] did; each step is empty when it was skipped or failed. */
 data class ScheduleStartupReport(
     val migrated: Set<TaskKey> = emptySet(),
     val cancelledScopes: Set<TaskScope> = emptySet(),
     val reapplied: Set<TaskKey> = emptySet(),
+    val resumed: Set<TaskKey> = emptySet(),
 )
 
 /**
@@ -32,6 +35,8 @@ class ScheduleStartup(
     /** Cancels work of removed graphs (`ScheduledTaskReconciler.reconcile`); fail closed on its own. */
     private val reconcile: suspend () -> Set<TaskScope>,
     private val workManagerReady: () -> Boolean,
+    /** True while unfinished non-periodic work (a clone) holds [key]'s work name; see [isCloneWorkLive]. */
+    private val cloneWorkLive: suspend (TaskKey) -> Boolean,
     /** Called with the time of a settings read that failed, for the "Can't read settings" status (Story 4.1.2). */
     private val onSettingsUnreadable: (Long) -> Unit = {},
     private val nowMs: () -> Long = System::currentTimeMillis,
@@ -42,8 +47,9 @@ class ScheduleStartup(
         if (!safely("WorkManager readiness check") { workManagerReady() }.let { it == true }) return ScheduleStartupReport()
         val migrated = safely("migrate") { migrateActiveGraph() } ?: emptySet()
         val cancelled = safely("reconcile") { reconcile() } ?: emptySet()
+        val resumed = safely("resumeStalePaused") { resumeStalePaused() } ?: emptySet()
         val reapplied = safely("reapplyAll") { reapplyAll() } ?: emptySet()
-        return ScheduleStartupReport(migrated, cancelled, reapplied)
+        return ScheduleStartupReport(migrated, cancelled, reapplied, resumed)
     }
 
     private fun periodicKinds(): List<TaskKind> =
@@ -61,6 +67,23 @@ class ScheduleStartup(
             }
         }
         return migrated
+    }
+
+    /**
+     * A clone killed with its process never ran its resume, leaving a paused snapshot (and no periodic work) forever.
+     * Resumes each scope whose snapshots have no live clone work; a scope with a live clone stays paused for the
+     * clone's own resume. Runs before [reapplyAll], whose `apply` would otherwise only update the snapshot.
+     */
+    suspend fun resumeStalePaused(): Set<TaskKey> {
+        val scopes = (knownScopes.read() as? KnownScopesResult.Known)?.scopes ?: return emptySet()
+        val resumed = mutableSetOf<TaskKey>()
+        for (scope in scopes) {
+            val paused = periodicKinds().map { TaskKey(it, scope) }.filter { ledger.pausedSnapshot(it) != null }
+            if (paused.isEmpty() || paused.any { cloneWorkLive(it) }) continue
+            scheduler.resume(scope)
+            resumed += paused
+        }
+        return resumed
     }
 
     /**
@@ -94,3 +117,17 @@ class ScheduleStartup(
 
 /** True when WorkManager is initialised for [context]; the host passes it as [ScheduleStartup]'s readiness check. */
 fun isWorkManagerReady(context: Context): Boolean = workManagerOrNull(context) != null
+
+/** True when unfinished non-periodic work (an in-flight clone) holds [key]'s unique work name. Unreadable counts as live. */
+suspend fun isCloneWorkLive(context: Context, key: TaskKey): Boolean {
+    val wm = workManagerOrNull(context) ?: return false
+    return try {
+        withContext(PlatformDispatcher.IO) { wm.getWorkInfosForUniqueWork(key.workName()).get() }
+            .any { !it.state.isFinished && it.periodicityInfo == null }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        Logger("ScheduleStartup").warn("cannot read work for ${key.workName()}; treating as live", e)
+        true
+    }
+}

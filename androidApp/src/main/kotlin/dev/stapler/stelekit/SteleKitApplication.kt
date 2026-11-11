@@ -329,6 +329,7 @@ class SteleKitApplication : Application() {
                         dev.stapler.stelekit.jobs.schedule.ScheduledTaskReconciler(this@SteleKitApplication, knownScopes).reconcile()
                     },
                     workManagerReady = { dev.stapler.stelekit.jobs.schedule.isWorkManagerReady(this@SteleKitApplication) },
+                    cloneWorkLive = { key -> dev.stapler.stelekit.jobs.schedule.isCloneWorkLive(this@SteleKitApplication, key) },
                     onSettingsUnreadable = health::recordFailure,
                 ).run()
             } catch (e: kotlinx.coroutines.CancellationException) {
