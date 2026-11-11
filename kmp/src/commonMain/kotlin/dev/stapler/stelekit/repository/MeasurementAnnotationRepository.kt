@@ -22,7 +22,6 @@ interface MeasurementAnnotationRepository {
     /**
      * Persist [measurement]. INSERT OR REPLACE semantics.
      */
-    @DirectRepositoryWrite
     suspend fun saveMeasurementAnnotation(measurement: MeasurementAnnotation): Either<DomainError, Unit>
 
     /**
@@ -32,14 +31,11 @@ interface MeasurementAnnotationRepository {
      * Callers should prefer this over individual [saveMeasurementAnnotation] calls when
      * committing a full annotation session.
      */
-    @DirectRepositoryWrite
     suspend fun saveMeasurements(imageUuid: String, measurements: List<MeasurementAnnotation>): Either<DomainError, Unit>
 
     /** Delete a single measurement by its own [uuid]. */
-    @DirectRepositoryWrite
     suspend fun deleteMeasurementAnnotation(uuid: String): Either<DomainError, Unit>
 
     /** Delete all measurements for [imageUuid] (used before re-saving a complete set). */
-    @DirectRepositoryWrite
     suspend fun deleteMeasurementsForImage(imageUuid: String): Either<DomainError, Unit>
 }

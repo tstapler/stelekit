@@ -416,7 +416,7 @@ class RepositoryFactoryImpl(
         val imageAnnotationRepo: ImageAnnotationRepository = if (backend == GraphBackend.SQLDELIGHT)
             SqlDelightImageAnnotationRepository(database) else InMemoryImageAnnotationRepository()
         val measurementAnnotationRepo: MeasurementAnnotationRepository = if (backend == GraphBackend.SQLDELIGHT)
-            SqlDelightMeasurementAnnotationRepository(database) else InMemoryMeasurementAnnotationRepository()
+            SqlDelightMeasurementAnnotationRepository(database, MeasurementWrites(actor)) else InMemoryMeasurementAnnotationRepository()
         val assetRepo: AssetRepository = if (backend == GraphBackend.SQLDELIGHT)
             SqlDelightAssetRepository(database) else InMemoryAssetRepository()
 
