@@ -147,6 +147,14 @@ class SketchSheetPropsTest {
     }
 
     @Test
+    fun movingARectToALayerKeepsItsCorners() {
+        val rect = SketchPrimitive.Rect("r", pt(0, 0), pt(16, 32))
+        val moved = rect.withLayer("wall") as SketchPrimitive.Rect
+        assertEquals("wall", moved.layer)
+        assertEquals(rect.copy(layer = "wall"), moved)
+    }
+
+    @Test
     fun layerNamesAndSheetSettingsAreValidated() {
         val doc = SketchDocument()
         assertIs<CommandError.InvalidLayerName>(SketchCommand.AddLayer(" ").apply(doc).err())

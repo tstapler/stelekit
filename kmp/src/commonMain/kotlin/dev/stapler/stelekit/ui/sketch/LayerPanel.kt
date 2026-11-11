@@ -72,19 +72,24 @@ fun ZonePanel(
 private fun ZoneRow(zone: Zone, report: ZoneReport?, onText: (String, String?) -> Unit, onTotal: (String, Boolean) -> Unit, onRemove: (String) -> Unit) {
     var text by remember(zone.key, zone.text) { mutableStateOf(zone.text.orEmpty()) }
     val bad = report?.textErrors?.contains(zone.key) == true
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(
-            value = text,
-            onValueChange = { text = it },
-            label = { Text(zone.key) },
-            singleLine = true,
-            isError = bad,
-            supportingText = if (bad) ({ Text("Not a length. Try 12 3/16\"") }) else null,
-        )
-        TextButton(onClick = { onText(zone.key, text.ifBlank { null }) }) { Text("Set") }
-        Checkbox(checked = zone.isTotal, onCheckedChange = { onTotal(zone.key, it) })
-        Text("Total")
-        TextButton(onClick = { onRemove(zone.key) }) { Text("Remove") }
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text(zone.key) },
+                singleLine = true,
+                isError = bad,
+                supportingText = if (bad) ({ Text("Not a length. Try 12 3/16\"") }) else null,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = { onText(zone.key, text.ifBlank { null }) }) { Text("Set") }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Checkbox(checked = zone.isTotal, onCheckedChange = { onTotal(zone.key, it) })
+            Text("Total")
+            TextButton(onClick = { onRemove(zone.key) }) { Text("Remove") }
+        }
     }
 }
 

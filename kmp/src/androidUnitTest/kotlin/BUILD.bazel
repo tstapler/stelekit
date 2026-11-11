@@ -28,6 +28,7 @@ kt_android_library(
             "**/SketchCanvasGestureTest.kt",
             "**/SketchScreenEntryPointTest.kt",
             "**/DimensionFieldTest.kt",
+            "**/SketchSheetPanelsTest.kt",
         ],
     ),
     custom_package = "dev.stapler.stelekit",
