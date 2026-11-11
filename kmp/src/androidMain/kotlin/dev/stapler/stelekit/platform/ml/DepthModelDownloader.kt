@@ -23,7 +23,9 @@ import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.ui.annotate.DepthModelUiState
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,7 +40,13 @@ import java.util.concurrent.TimeUnit
  * mirrors WorkManager's persisted state into [modelState]. A fresh instance after a restart re-attaches to
  * whatever job is still queued or running.
  */
-class DepthModelDownloader(private val context: Context) {
+class DepthModelDownloader internal constructor(
+    private val context: Context,
+    private val readyCheck: (File) -> Boolean,
+    private val settleTimeoutMs: Long,
+    private val settlePollMs: Long,
+) {
+    constructor(context: Context) : this(context, DepthModelStorage::isReady, SETTLE_TIMEOUT_MS, SETTLE_POLL_MS)
 
     private val modelFile: File = DepthModelStorage.modelFile(context)
     private val logger = Logger("DepthModelDownloader")
@@ -106,9 +114,13 @@ class DepthModelDownloader(private val context: Context) {
     /** Absolute path of the model file. Safe to pass to [ai.onnxruntime.OrtSession]. */
     fun modelFilePath(): String = modelFile.absolutePath
 
-    fun isModelReady(): Boolean = DepthModelStorage.isReady(modelFile)
+    fun isModelReady(): Boolean = readyCheck(modelFile)
+
+    private var settleJob: Job? = null
 
     private fun apply(infos: List<WorkInfo>) {
+        // An empty list is WorkManager's "nothing yet" and must not abort a settle already under way.
+        if (infos.isNotEmpty()) settleJob?.cancel()
         if (isModelReady()) {
             _modelState.value = ModelState.Ready
             return
@@ -119,9 +131,28 @@ class DepthModelDownloader(private val context: Context) {
             null -> ModelState.Absent
             WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> ModelState.Downloading(progress = -1)
             WorkInfo.State.RUNNING -> ModelState.Downloading(info.progress.getInt(DepthModelDownloadWorker.KEY_PROGRESS, -1))
-            WorkInfo.State.SUCCEEDED -> ModelState.Failed("The model file went missing after downloading. Try again.")
+            WorkInfo.State.SUCCEEDED -> {
+                onWorkSucceeded()
+                return
+            }
             WorkInfo.State.FAILED -> ModelState.Failed(info.outputData.getString(DepthModelDownloadWorker.KEY_ERROR))
             WorkInfo.State.CANCELLED -> ModelState.Absent
+        }
+    }
+
+    /**
+     * WorkManager can report SUCCEEDED slightly before the file is visible to [isModelReady]. Hold the state at
+     * "downloading" while polling for up to [settleTimeoutMs]; only a file that never appears is a failure.
+     */
+    internal fun onWorkSucceeded() {
+        settleJob?.cancel()
+        _modelState.value = ModelState.Downloading(progress = 100)
+        settleJob = scope.launch {
+            var polls = (settleTimeoutMs / settlePollMs).toInt()
+            while (!isModelReady() && polls-- > 0) delay(settlePollMs)
+            _modelState.value =
+                if (isModelReady()) ModelState.Ready
+                else ModelState.Failed("The model file went missing after downloading. Try again.")
         }
     }
 
@@ -153,6 +184,8 @@ class DepthModelDownloader(private val context: Context) {
         const val MODEL_URL =
             "https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/main/onnx/model.onnx"
         const val UNIQUE_WORK_NAME = "depth-model-download"
+        private const val SETTLE_TIMEOUT_MS = 2_000L
+        private const val SETTLE_POLL_MS = 100L
     }
 }
 
