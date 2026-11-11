@@ -848,5 +848,6 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.projectbridge.TableExtractorInlineTest::class,
     dev.stapler.stelekit.projectbridge.ProseExtractorsTest::class,
     dev.stapler.stelekit.projectbridge.ProseExtractorsClosetTest::class,
+    dev.stapler.stelekit.projectbridge.ClosetEndToEndTest::class,
 )
 class AllBusinessTests
