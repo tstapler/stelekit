@@ -95,6 +95,12 @@ class OutlinerRegressionTest {
         val blockStateManager = BlockStateManager(blockRepo, graphLoader, scope)
         val viewModel = JournalsViewModel(journalService, blockStateManager, scope)
 
+        // Load the page's blocks before the first composition so the first frame already renders
+        // them. Waiting for the UI to catch up with a live StateFlow update raced the Compose
+        // collector in CI (journal day rendered "Click to write..." while the VM held the blocks).
+        runBlocking { viewModel.loadPageContent(PageUuid(pageUuid)).join() }
+        check(viewModel.blocks.value[pageUuid]?.size == 2) { "blocks not preloaded: ${viewModel.blocks.value}" }
+
         composeTestRule.setContent {
             MaterialTheme {
                 JournalsView(
