@@ -29,6 +29,7 @@ import dev.stapler.stelekit.jobs.schedule.RunTimeFormatter
 import dev.stapler.stelekit.jobs.schedule.TaskKey
 import dev.stapler.stelekit.jobs.schedule.TaskRegistry
 import dev.stapler.stelekit.jobs.schedule.TaskRunLog
+import dev.stapler.stelekit.jobs.schedule.TaskRunReadResult
 import dev.stapler.stelekit.jobs.schedule.TaskRunRecord
 import dev.stapler.stelekit.jobs.schedule.TaskRunResult
 import dev.stapler.stelekit.jobs.schedule.TaskScope
@@ -73,8 +74,8 @@ internal sealed interface TaskRunRowsState {
 }
 
 /**
- * Periodic tasks are keyed per graph, one-shot tasks app-wide (no graph segment). A throwing
- * [TaskRunLog.recent] propagates so the caller can offer Retry.
+ * Periodic tasks are keyed per graph, one-shot tasks app-wide (no graph segment). A failing
+ * [TaskRunLog.recentResult] propagates so the caller can offer Retry.
  */
 internal suspend fun loadTaskRunRows(source: TaskRunLogSource): TaskRunRows {
     val titled = source.registry.kinds().mapNotNull { kind ->
@@ -89,7 +90,11 @@ internal suspend fun loadTaskRunRows(source: TaskRunLogSource): TaskRunRows {
     }
     val now = source.nowMs()
     val all = keys.flatMap { (key, label) ->
-        source.runLog.recent(key).map { record -> toRow(record, label.first, label.second, now, source) }
+        val records = when (val r = source.runLog.recentResult(key)) {
+            is TaskRunReadResult.Loaded -> r.records
+            is TaskRunReadResult.ReadFailed -> throw r.cause
+        }
+        records.map { record -> toRow(record, label.first, label.second, now, source) }
     }.sortedByDescending { it.startedAtMs }
     return TaskRunRows(all.take(MAX_RUN_ROWS), all.size)
 }

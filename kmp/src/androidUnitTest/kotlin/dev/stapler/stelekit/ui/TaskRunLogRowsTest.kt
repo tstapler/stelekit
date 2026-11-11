@@ -25,6 +25,7 @@ import dev.stapler.stelekit.jobs.schedule.SettingsTaskRunLog
 import dev.stapler.stelekit.jobs.schedule.TaskKey
 import dev.stapler.stelekit.jobs.schedule.TaskRegistry
 import dev.stapler.stelekit.jobs.schedule.TaskRunLog
+import dev.stapler.stelekit.jobs.schedule.TaskRunReadResult
 import dev.stapler.stelekit.jobs.schedule.TaskRunRecord
 import dev.stapler.stelekit.jobs.schedule.TaskRunResult
 import dev.stapler.stelekit.jobs.schedule.TaskScope
@@ -191,6 +192,27 @@ class TaskRunLogRowsTest {
         rule.waitForIdle()
         rule.onAllNodesWithText(RUN_HISTORY_UNREADABLE).assertCountEquals(0)
         rule.onNodeWithText("Git sync / Work notes / success").assertExists()
+    }
+
+    @Test
+    fun section_should_showUnreadableAndRetry_When_RealSettingsReadThrows() {
+        append(record(now - minute))
+        settings.failReads = true
+        show(source())
+        rule.onNodeWithText(RUN_HISTORY_UNREADABLE).assertExists()
+        settings.failReads = false
+        rule.onNodeWithText(RUN_HISTORY_RETRY).performClick()
+        rule.waitForIdle()
+        rule.onAllNodesWithText(RUN_HISTORY_UNREADABLE).assertCountEquals(0)
+        rule.onNodeWithText("Git sync / Work notes / success").assertExists()
+    }
+
+    @Test
+    fun recentResult_should_beReadFailedWhileRecentStaysEmpty_When_SettingsReadThrows() = runBlocking {
+        append(record(now - minute))
+        settings.failReads = true
+        assertTrue(runLog.recentResult(gitKey) is TaskRunReadResult.ReadFailed)
+        assertEquals(emptyList(), runLog.recent(gitKey))
     }
 
     @Test

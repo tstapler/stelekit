@@ -33,18 +33,25 @@ class SettingsTaskRunLog(
         }
     }
 
-    override suspend fun recent(key: TaskKey): List<TaskRunRecord> = try {
-        RunSource.entries
-            .flatMap { source -> load(source, key) }
-            .withIndex()
-            .sortedWith(compareByDescending<IndexedValue<TaskRunRecord>> { it.value.startedAtMs }.thenByDescending { it.index })
-            .map { it.value }
-            .take(cap)
+    override suspend fun recent(key: TaskKey): List<TaskRunRecord> = when (val r = recentResult(key)) {
+        is TaskRunReadResult.Loaded -> r.records
+        is TaskRunReadResult.ReadFailed -> emptyList()
+    }
+
+    override suspend fun recentResult(key: TaskKey): TaskRunReadResult = try {
+        TaskRunReadResult.Loaded(
+            RunSource.entries
+                .flatMap { source -> load(source, key) }
+                .withIndex()
+                .sortedWith(compareByDescending<IndexedValue<TaskRunRecord>> { it.value.startedAtMs }.thenByDescending { it.index })
+                .map { it.value }
+                .take(cap),
+        )
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         logger.warn("run log read failed for ${TaskKeyEncoding.encode(key)}", e)
-        emptyList()
+        TaskRunReadResult.ReadFailed(e)
     }
 
     override suspend fun lastSuccessAtMs(key: TaskKey): Long? =
