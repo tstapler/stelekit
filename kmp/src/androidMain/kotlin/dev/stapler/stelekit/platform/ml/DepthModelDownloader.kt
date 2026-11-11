@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -75,6 +76,9 @@ class DepthModelDownloader(
     /** True while [downloadModel] waits; a WorkInfo snapshot taken before our enqueue is visible must not read as "cancelled". */
     private val inFlight = java.util.concurrent.atomic.AtomicInteger(0)
 
+    /** Bumped by [cancelDownload]; a [downloadModel] that began before a cancel must not outlive it. */
+    private val cancelGeneration = java.util.concurrent.atomic.AtomicInteger(0)
+
     private val _modelState = MutableStateFlow(initialState())
     val modelState: StateFlow<ModelState> = _modelState.asStateFlow()
 
@@ -104,9 +108,18 @@ class DepthModelDownloader(
             ?: return DomainError.SensorError.HardwareUnavailable("Background downloads are unavailable right now").left()
         // KEEP: an already queued or running job is left alone; a finished one is replaced by this new run.
         inFlight.incrementAndGet()
+        val generation = cancelGeneration.get()
         try {
             taskScheduler.runOnce(ModelDownloadTask.KEY, storedConstraints(), OneShotConflict.Keep)
-            if (_modelState.value !is ModelState.Downloading) _modelState.value = ModelState.Downloading(progress = -1)
+            // A cancel that landed while runOnce was suspended must not be undone by this late write, and the job
+            // runOnce just enqueued is an orphan: cancel it again.
+            _modelState.update { current ->
+                if (cancelGeneration.get() != generation || current is ModelState.Downloading) current else ModelState.Downloading(progress = -1)
+            }
+            if (cancelGeneration.get() != generation) {
+                workManagerOrNull(context)?.cancelUniqueWork(UNIQUE_WORK_NAME)
+                return DomainError.SensorError.HardwareUnavailable("Depth model download cancelled").left()
+            }
             return awaitTerminal()
         } finally {
             inFlight.decrementAndGet()
@@ -144,6 +157,7 @@ class DepthModelDownloader(
 
     /** User-initiated cancel: stops the job, drops the partial file and resolves any waiting [downloadModel] caller. */
     fun cancelDownload() {
+        cancelGeneration.incrementAndGet()
         workManagerOrNull(context)?.cancelUniqueWork(UNIQUE_WORK_NAME)
         runCatching { File(modelFile.parentFile, "${modelFile.name}.part").delete() }
         if (!isModelReady()) _modelState.value = ModelState.Cancelled
