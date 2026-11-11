@@ -97,6 +97,7 @@ class OneShotSkipTest {
         val result = scope.async { f.downloader.downloadModel() }
         val work = WorkManager.getInstance(context)
         val id: UUID = awaitActiveWorkId(work, DepthModelDownloader.UNIQUE_WORK_NAME)
+        f.downloader.awaitDownloadingState()
         WorkManagerTestInitHelper.getTestDriver(context)!!.setAllConstraintsMet(id)
 
         val outcome = withTimeout(30_000) { result.await() }

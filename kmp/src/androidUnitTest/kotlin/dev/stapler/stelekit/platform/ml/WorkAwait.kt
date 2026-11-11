@@ -11,3 +11,11 @@ internal suspend fun awaitActiveWorkId(work: WorkManager, uniqueName: String, ti
         work.getWorkInfosForUniqueWorkFlow(uniqueName).first { infos -> infos.any { !it.state.isFinished } }
             .first { !it.state.isFinished }.id
     }
+
+/**
+ * Suspends until the downloader reports `Downloading`. Release a job's constraints only after this: a job that
+ * ends first can have its terminal state replaced by downloadModel's post-enqueue `Downloading` write.
+ */
+internal suspend fun DepthModelDownloader.awaitDownloadingState(timeoutMs: Long = 5_000) {
+    withTimeout(timeoutMs) { modelState.first { it is DepthModelDownloader.ModelState.Downloading } }
+}

@@ -60,6 +60,7 @@ class ModelDownloadEndToEndTest {
         val result = scope.async { fixture.downloader.downloadModel() }
         val work = WorkManager.getInstance(context)
         val id: UUID = awaitActiveWorkId(work, DepthModelDownloader.UNIQUE_WORK_NAME)
+        fixture.downloader.awaitDownloadingState()
         WorkManagerTestInitHelper.getTestDriver(context)!!.setAllConstraintsMet(id)
 
         assertTrue(withTimeout(60_000) { result.await() }.isRight())
