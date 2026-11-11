@@ -118,6 +118,8 @@ kt_jvm_library(
         "dev/stapler/stelekit/fusion/LinearSolverPropertyTest.kt",
         "dev/stapler/stelekit/fusion/LinearSolverTest.kt",
         "dev/stapler/stelekit/git/BannerPrecedenceTest.kt",
+        "dev/stapler/stelekit/git/GitLastSuccessSourceTest.kt",
+        "dev/stapler/stelekit/git/GitSyncTaskMappingTest.kt",
         "dev/stapler/stelekit/git/StalenessChipStateTest.kt",
         "dev/stapler/stelekit/git/SyncNotificationLogicTest.kt",
         "dev/stapler/stelekit/git/SyncSafetyConfirmTest.kt",

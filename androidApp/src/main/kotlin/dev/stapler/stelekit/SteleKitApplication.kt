@@ -224,6 +224,7 @@ class SteleKitApplication : Application() {
         try {
             dev.stapler.stelekit.platform.NetworkMonitor.init(this)
             dev.stapler.stelekit.jobs.schedule.registerAndroidTasks(taskRegistry)
+            dev.stapler.stelekit.git.registerGitSyncTask(taskRegistry)
             dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime.knownScopes = dev.stapler.stelekit.db.GraphRegistryKnownScopes(PlatformSettings())
             // Debug/internal builds expose the Asset indexing switch; release variants stay hidden
             // until the heap-gate flip PR (AssetBuildFlags.RELEASE_TOGGLE_VISIBLE).
