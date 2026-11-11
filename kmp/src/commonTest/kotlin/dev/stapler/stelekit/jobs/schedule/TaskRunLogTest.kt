@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.jobs.schedule
 
 import dev.stapler.stelekit.logging.LogManager
+import dev.stapler.stelekit.security.Redactor
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.string
 import io.kotest.property.checkAll
@@ -109,6 +110,8 @@ class TaskRunLogTest {
     fun codec_should_roundTrip_When_FreeTextHasSeparators() = runTest {
         val log = SettingsTaskRunLog(MapSettings())
         checkAll(Arb.string(0..20)) { text ->
+            // Credential masking intentionally rewrites URL userinfo / query values; this property is about separators.
+            if (Redactor.redactGitMessage(text) != text) return@checkAll
             val r = record(7, TaskRunResult.Failed(text, retryable = true))
             val decoded = TaskRunRecordCodec.decode(TaskRunRecordCodec.encode(r), key)
             assertEquals(r, decoded)
@@ -116,5 +119,22 @@ class TaskRunLogTest {
         }
         log.append(record(1, TaskRunResult.Partial("a b%20c\nd")))
         assertEquals(TaskRunResult.Partial("a b%20c\nd"), log.recent(key).single().result)
+    }
+
+    @Test
+    fun append_should_neverPersistOrLogCredentials_When_FailureTextCarriesUrlUserinfoAndToken() = runTest {
+        val settings = MapSettings()
+        val log = SettingsTaskRunLog(settings)
+        val leaky = "fetch failed for https://user:hunter2pw@example.com/repo.git using ghp_AbCdEf0123456789xyz"
+        log.append(record(1, TaskRunResult.Failed(leaky)))
+        log.append(record(2, TaskRunResult.Partial(leaky)))
+        log.append(record(3, TaskRunResult.Skipped(leaky)))
+
+        val persisted = settings.store.getValue(TaskKeyEncoding.runLogKey(RunSource.Background, key))
+        for (secret in listOf("hunter2pw", "user:", "ghp_AbCdEf0123456789xyz")) {
+            assertTrue(secret !in persisted, "$secret leaked into the stored run record: $persisted")
+            assertTrue(LogManager.logs.value.none { secret in it.message }, "$secret leaked into the log line")
+        }
+        assertTrue("example.com/repo.git" in persisted, "host stays readable: $persisted")
     }
 }

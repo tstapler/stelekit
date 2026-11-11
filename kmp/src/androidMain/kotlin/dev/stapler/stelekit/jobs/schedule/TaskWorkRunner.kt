@@ -146,7 +146,7 @@ internal suspend fun runTaskWork(
             throw e
         } catch (e: Throwable) {
             logger.error("task ${key.kind.id} threw", e)
-            TaskRunResult.Failed(e.message ?: e::class.simpleName ?: "error", retryable = false)
+            TaskRunResult.Failed(redactedFailureMessage(e), retryable = false)
         }
         result = bodyResult
         return mapResult(oneShot, spec, bodyResult, runAttemptCount)
@@ -155,7 +155,7 @@ internal suspend fun runTaskWork(
         throw e
     } catch (e: Throwable) {
         logger.error("task work failed for ${key.kind.id}", e)
-        val failed = TaskRunResult.Failed(e.message ?: e::class.simpleName ?: "error", retryable = false)
+        val failed = TaskRunResult.Failed(redactedFailureMessage(e), retryable = false)
         result = failed
         return TaskWorkOutcome.Failure(failed.message)
     } finally {

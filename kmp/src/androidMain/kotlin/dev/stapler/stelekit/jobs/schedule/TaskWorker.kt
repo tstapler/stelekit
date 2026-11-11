@@ -11,6 +11,7 @@ import androidx.work.workDataOf
 import dev.stapler.stelekit.jobs.workManagerOrNull
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.security.Redactor
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -63,7 +64,7 @@ object TaskWorkerRuntime {
 /** WorkManager rejects output `Data` over 10 KB; 2000 chars is at most 8 KB of UTF-8. */
 private const val MAX_ERROR_CHARS = 2_000
 
-private fun errorData(message: String) = workDataOf(TaskWorkKeys.KEY_ERROR to message.take(MAX_ERROR_CHARS))
+private fun errorData(message: String) = workDataOf(TaskWorkKeys.KEY_ERROR to Redactor.redactGitMessage(message).take(MAX_ERROR_CHARS))
 
 /**
  * Generic worker for one-shots and non-git periodic kinds: gates, runs, records, never silently crashes.

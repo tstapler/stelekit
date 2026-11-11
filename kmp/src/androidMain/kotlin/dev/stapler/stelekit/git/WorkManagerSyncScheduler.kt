@@ -32,6 +32,7 @@ import dev.stapler.stelekit.jobs.schedule.TaskRunLog
 import dev.stapler.stelekit.jobs.schedule.TaskRunRecord
 import dev.stapler.stelekit.jobs.schedule.TaskRunResult
 import dev.stapler.stelekit.jobs.schedule.TaskScope
+import dev.stapler.stelekit.jobs.schedule.redactedFailureMessage
 import dev.stapler.stelekit.jobs.schedule.TaskSettingsStore
 import dev.stapler.stelekit.jobs.schedule.TaskWorkKeys
 import dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime
@@ -206,7 +207,7 @@ class GitSyncWorker(
         } catch (e: Throwable) {
             Logger("GitSyncWorker").error("git-sync worker failed", e)
             // ADR-002: a second WorkManager-level retry would stack on the git layer's own retry.
-            recorded = TaskRunResult.Failed(e.message ?: e::class.simpleName ?: "error", retryable = false)
+            recorded = TaskRunResult.Failed(redactedFailureMessage(e), retryable = false)
             return Result.failure()
         } finally {
             recorded?.let { final -> recordOnce(graphId, startedAtMs, final, constraintState) }

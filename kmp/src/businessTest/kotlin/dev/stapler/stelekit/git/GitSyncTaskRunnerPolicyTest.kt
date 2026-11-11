@@ -49,4 +49,18 @@ class GitSyncTaskRunnerPolicyTest {
         assertEquals(TaskRunResult.Skipped("vault-locked"), task.run(key, ctx))
         assertTrue(repo.calls.isEmpty(), "no git call on a policy skip: ${repo.calls}")
     }
+
+    @Test
+    fun toTaskRunResult_should_redactCredentials_When_FailureMessageEmbedsRemoteUrlAndToken() {
+        val result = TickOutcome.Failure("push https://user:hunter2pw@example.com/r.git ghp_AbCdEf0123456789xyz").toTaskRunResult()
+        val message = (result as TaskRunResult.Failed).message
+        assertTrue("hunter2pw" !in message && "ghp_AbCdEf0123456789xyz" !in message, message)
+    }
+
+    @Test
+    fun run_should_redactCredentials_When_BodyThrowsWithSecretInMessage() = runTest {
+        val task = GitSyncTask(liveTick = { throw IllegalStateException("clone https://user:hunter2pw@example.com/r.git") })
+        val failed = task.run(key, ctx) as TaskRunResult.Failed
+        assertTrue("hunter2pw" !in failed.message, failed.message)
+    }
 }

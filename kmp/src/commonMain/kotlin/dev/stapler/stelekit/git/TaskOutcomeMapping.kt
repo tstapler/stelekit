@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.git
 
 import dev.stapler.stelekit.jobs.schedule.TaskRunResult
+import dev.stapler.stelekit.security.Redactor
 
 /**
  * A tick as the port's result. [TickOutcome.Fetched] is [TaskRunResult.Partial] (never "Last synced");
@@ -13,7 +14,7 @@ import dev.stapler.stelekit.jobs.schedule.TaskRunResult
 fun TickOutcome.toTaskRunResult(): TaskRunResult = when (this) {
     TickOutcome.Success -> TaskRunResult.Success
     TickOutcome.Fetched -> TaskRunResult.Partial("fetched")
-    is TickOutcome.Failure -> TaskRunResult.Failed(message, retryable = false)
+    is TickOutcome.Failure -> TaskRunResult.Failed(Redactor.redactGitMessage(message), retryable = false)
     is TickOutcome.Skip -> TaskRunResult.Skipped(reason.code())
 }
 

@@ -257,6 +257,17 @@ class TaskWorkerTest {
     }
 
     @Test
+    fun doWork_should_redactCredentialsFromOutputAndRecord_When_bodyThrowsWithSecretInMessage() {
+        registerOneShot(cap = 1)
+        bodyResult = { throw IllegalStateException("fetch https://user:hunter2pw@example.com/r.git ghp_AbCdEf0123456789xyz") }
+        val result = run(oneShotKey, "unmetered")
+        val error = assertNotNull(result.error())
+        assertTrue("hunter2pw" !in error && "ghp_AbCdEf0123456789xyz" !in error, error)
+        val recorded = (runLog.results.single() as TaskRunResult.Failed).message
+        assertTrue("hunter2pw" !in recorded && "ghp_AbCdEf0123456789xyz" !in recorded, recorded)
+    }
+
+    @Test
     fun doWork_should_succeedWithNotRegisteredRecord_When_registryEmpty() {
         assertEquals(Result.success(), run(periodicKey))
         assertEquals(listOf<TaskRunResult>(TaskRunResult.Skipped("task-not-registered")), runLog.results)

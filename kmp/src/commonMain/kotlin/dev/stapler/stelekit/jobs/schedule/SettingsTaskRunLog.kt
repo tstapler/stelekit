@@ -5,6 +5,7 @@ package dev.stapler.stelekit.jobs.schedule
 
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.Settings
+import dev.stapler.stelekit.security.Redactor
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -98,9 +99,9 @@ internal object TaskRunRecordCodec {
 
     private fun encodeResult(r: TaskRunResult): String = when (r) {
         TaskRunResult.Success -> "Success"
-        is TaskRunResult.Partial -> "Partial:${r.detail}"
-        is TaskRunResult.Skipped -> "Skipped:${r.reason}"
-        is TaskRunResult.Failed -> "Failed:${r.message}"
+        is TaskRunResult.Partial -> "Partial:${Redactor.redactGitMessage(r.detail)}"
+        is TaskRunResult.Skipped -> "Skipped:${Redactor.redactGitMessage(r.reason)}"
+        is TaskRunResult.Failed -> "Failed:${Redactor.redactGitMessage(r.message)}"
     }
 
     private fun decodeResult(raw: String, retryable: Boolean): TaskRunResult? {

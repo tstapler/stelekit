@@ -263,7 +263,7 @@ class InProcessTaskScheduler(
             handle?.cancelled()
             throw e
         } catch (t: Throwable) { // OutOfMemoryError included: it must not kill the loop
-            TaskRunResult.Failed(t.message ?: t::class.simpleName ?: "unknown")
+            TaskRunResult.Failed(redactedFailureMessage(t))
         }
         when (result) {
             is TaskRunResult.Failed -> handle?.fail(result.message)

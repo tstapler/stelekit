@@ -3,6 +3,8 @@
 
 package dev.stapler.stelekit.jobs.schedule
 
+import dev.stapler.stelekit.security.Redactor
+
 /** Outcome of one background task run; neutral of any feature (no git types). */
 sealed interface TaskRunResult {
     data object Success : TaskRunResult
@@ -15,3 +17,6 @@ sealed interface TaskRunResult {
 fun interface BackgroundTask {
     suspend fun run(key: TaskKey, ctx: TaskRunContext): TaskRunResult
 }
+
+/** Failure text that is safe to store, log or put in WorkManager output: remote URLs and tokens are masked. */
+fun redactedFailureMessage(t: Throwable): String = Redactor.redactGitMessage(t.message ?: t::class.simpleName ?: "error")
