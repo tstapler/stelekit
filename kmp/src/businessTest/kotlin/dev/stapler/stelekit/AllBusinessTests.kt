@@ -855,6 +855,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.ui.placement.NudgeStepperPropertyTest::class,
     dev.stapler.stelekit.ui.placement.InchesPlacementControllerContractTest::class,
     dev.stapler.stelekit.ui.placement.SketchPlacementControllerContractTest::class,
+    dev.stapler.stelekit.ui.placement.AnnotationPlacementControllerContractTest::class,
+    dev.stapler.stelekit.ui.annotate.AnnotationPlacementTest::class,
     dev.stapler.stelekit.sketch.ViewTransformTest::class,
     dev.stapler.stelekit.projectbridge.SidecarBundleTest::class,
     dev.stapler.stelekit.projectbridge.SidecarReconcileTest::class,

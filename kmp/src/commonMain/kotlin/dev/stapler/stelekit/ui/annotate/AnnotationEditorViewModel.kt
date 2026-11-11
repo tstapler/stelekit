@@ -119,6 +119,8 @@ data class AnnotationEditorState(
     val depthModelUiState: DepthModelUiState = DepthModelUiState.Absent,
     /** Set when a Throwable escaped an editor coroutine; see [EditorError]. Cleared by Retry. */
     val error: EditorError? = null,
+    /** Opt-in non-drag crosshair placement (C.8); idle unless the user turns the mode on. */
+    val placement: AnnotationPlacementSession = AnnotationPlacementSession(),
 )
 
 /**
@@ -408,7 +410,19 @@ class AnnotationEditorViewModel(
     /** Switch the active annotation tool and clear any in-progress points. */
     fun selectTool(tool: AnnotationTool) {
         if (inputStopped()) return
-        _state.update { it.copy(currentTool = tool, inProgressPoints = emptyList()) }
+        _state.update {
+            it.copy(
+                currentTool = tool,
+                inProgressPoints = emptyList(),
+                placement = if (tool == AnnotationTool.SELECT) AnnotationPlacementSession() else it.placement,
+            )
+        }
+    }
+
+    /** Applies [transform] to the non-drag placement session; see the extensions in AnnotationPlacement.kt. */
+    internal fun updatePlacement(transform: (AnnotationPlacementSession) -> AnnotationPlacementSession) {
+        if (inputStopped()) return
+        _state.update { it.copy(placement = transform(it.placement)) }
     }
 
     // ── Initialization ────────────────────────────────────────────────────────
