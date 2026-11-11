@@ -146,11 +146,11 @@ class DepthModelDownloader(
     fun cancelDownload() {
         workManagerOrNull(context)?.cancelUniqueWork(UNIQUE_WORK_NAME)
         runCatching { File(modelFile.parentFile, "${modelFile.name}.part").delete() }
-        if (!isModelReady()) _modelState.value = ModelState.Absent
+        if (!isModelReady()) _modelState.value = ModelState.Cancelled
     }
 
     private suspend fun awaitTerminal(): Either<DomainError, File> =
-        when (val terminal = modelState.first { it is ModelState.Ready || it is ModelState.Failed || it is ModelState.Absent }) {
+        when (val terminal = modelState.first { it is ModelState.Ready || it is ModelState.Failed || it is ModelState.Absent || it is ModelState.Cancelled }) {
             is ModelState.Ready -> modelFile.right()
             is ModelState.Failed -> DomainError.SensorError.HardwareUnavailable(terminal.reason ?: "Depth model download failed").left()
             else -> DomainError.SensorError.HardwareUnavailable("Depth model download cancelled").left()
@@ -177,7 +177,7 @@ class DepthModelDownloader(
             }
             WorkInfo.State.SUCCEEDED -> ModelState.Failed("The model file went missing after downloading. Try again.")
             WorkInfo.State.FAILED -> ModelState.Failed(info.outputData.getString(DepthModelDownloadWorker.KEY_ERROR))
-            WorkInfo.State.CANCELLED -> ModelState.Absent
+            WorkInfo.State.CANCELLED -> ModelState.Cancelled
         }
     }
 
@@ -233,6 +233,9 @@ class DepthModelDownloader(
         /** Model file present and verified. */
         data object Ready : ModelState
 
+        /** The user (or the system) cancelled the download; terminal for a waiting [downloadModel] caller, offers "Download again". */
+        data object Cancelled : ModelState
+
         /** Download failed or model file corrupt. [reason] carries plain-language copy when set. */
         data class Failed(val reason: String? = null) : ModelState
     }
@@ -254,6 +257,7 @@ fun DepthModelDownloader.ModelState.toUiState(): DepthModelUiState =
         is DepthModelDownloader.ModelState.Downloading ->
             if (waitingMessage != null) DepthModelUiState.Waiting(waitingMessage, canDownloadAnyway, notice)
             else DepthModelUiState.Downloading(progress, notice)
+        is DepthModelDownloader.ModelState.Cancelled -> DepthModelUiState.Cancelled
         is DepthModelDownloader.ModelState.Ready -> DepthModelUiState.Ready
         is DepthModelDownloader.ModelState.Failed -> DepthModelUiState.Failed(ModelDownloadPresentation.failureReason(reason))
     }

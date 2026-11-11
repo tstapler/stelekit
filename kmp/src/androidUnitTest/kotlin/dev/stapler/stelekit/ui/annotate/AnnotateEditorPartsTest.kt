@@ -195,6 +195,15 @@ class AnnotateEditorPartsTest {
     }
 
     @Test
+    fun depthPanel_cancelled_saysCancelledAndDownloadAgainRestarts() {
+        var downloads = 0
+        rule.setContent { DepthEstimationPanel(DepthModelUiState.Cancelled, false, null, onDownload = { downloads++ }) }
+        rule.onNodeWithText("Download cancelled.").assertExists()
+        rule.onNodeWithText("Download again").performClick()
+        assertEquals(1, downloads)
+    }
+
+    @Test
     fun depthPanel_ready_enabledWithWarning_orComingSoon() {
         var estimates = 0
         var wired by androidx.compose.runtime.mutableStateOf(true)

@@ -1617,6 +1617,18 @@ internal fun DepthEstimationPanel(
                     }
                 }
 
+                // Cancelled by the user: say so and keep an exit (UX-20). Copy mirrors ModelDownloadPresentation.CANCELLED.
+                modelState is DepthModelUiState.Cancelled -> {
+                    Text(
+                        text = "Download cancelled.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                    )
+                    TextButton(onClick = onDownload) {
+                        Text("Download again", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                    }
+                }
+
                 // Model absent — show download prompt.
                 else -> {
                     OutlinedButton(onClick = onDownload) {

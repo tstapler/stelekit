@@ -142,6 +142,9 @@ sealed interface DepthModelUiState {
     /** Model ready — show "Estimate depth (AI)" button. */
     data object Ready : DepthModelUiState
 
+    /** Download cancelled — show "Download cancelled." with a "Download again" action. */
+    data object Cancelled : DepthModelUiState
+
     /**
      * Download failed. Show "Download failed — tap to retry", or [reason] followed by
      * "Tap to retry." when set (e.g. a stall-timeout transition surfaces plain-language copy

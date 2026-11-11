@@ -8,6 +8,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
+import dev.stapler.stelekit.ui.annotate.DepthModelUiState
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.yield
@@ -89,7 +90,7 @@ class DepthModelDownloaderTest {
     }
 
     @Test
-    fun `cancel resolves a waiting caller and returns to Absent`() = runBlocking<Unit> {
+    fun `cancel resolves a waiting caller and surfaces Cancelled`() = runBlocking<Unit> {
         val downloader = DepthModelDownloader(context)
         val waiting = async { downloader.downloadModel() }
         downloader.awaitDownloading()
@@ -97,7 +98,9 @@ class DepthModelDownloaderTest {
         downloader.cancelDownload()
 
         assertTrue(waiting.await().isLeft())
-        assertEquals(DepthModelDownloader.ModelState.Absent, downloader.modelState.value)
+        assertEquals(DepthModelDownloader.ModelState.Cancelled, downloader.modelState.value)
+        assertEquals(DepthModelUiState.Cancelled, downloader.modelState.value.toUiState())
+        assertEquals(ModelDownloadPresentation.CANCELLED, ModelDownloadPresentation.present(ModelDownloadInput(ModelWorkState.Cancelled))?.text)
     }
 
     @Test
