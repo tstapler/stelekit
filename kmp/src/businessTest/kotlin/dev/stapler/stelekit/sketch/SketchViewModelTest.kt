@@ -180,7 +180,7 @@ class SketchViewModelTest {
     fun failedCommandSurfacesAnErrorAndKeepsTheDocument() = runTest {
         val f = fixture()
         f.vm.commit(dev.stapler.stelekit.sketch.SketchCommand.RemovePrimitive("missing"))
-        assertTrue(f.vm.uiState.value.error!!.contains("missing"))
+        assertTrue(f.vm.uiState.value.error!!.contains("no such shape"))
         assertEquals(0, f.vm.uiState.value.history.undoDepth)
     }
 

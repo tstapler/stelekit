@@ -36,6 +36,9 @@ import dev.stapler.stelekit.ui.library.LibraryViewModelStateTest
 import dev.stapler.stelekit.ui.library.LibraryFilterSqlParityTest
 import dev.stapler.stelekit.ui.library.LibraryAnnotatedJoinTest
 import dev.stapler.stelekit.ui.library.LargeLibraryBatchingTest
+import dev.stapler.stelekit.ui.library.LibrarySketchFilterTest
+import dev.stapler.stelekit.ui.library.LibrarySessionTest
+import dev.stapler.stelekit.ui.library.LibraryViewModelActionsTest
 import dev.stapler.stelekit.llm.ProjectAnalysisServiceTest
 import dev.stapler.stelekit.llm.ProjectAnalysisGoldenPromptTest
 import dev.stapler.stelekit.llm.ProjectAnalysisInboxVariantTest
@@ -133,8 +136,6 @@ import dev.stapler.stelekit.platform.image.ImageSamplingTest
 import dev.stapler.stelekit.platform.image.ImageTiersTest
 import dev.stapler.stelekit.ui.assets.AssetImageReferenceTest
 import dev.stapler.stelekit.ui.PageSelectionTest
-import dev.stapler.stelekit.ui.assets.AssetFilterTest
-import dev.stapler.stelekit.ui.assets.AssetBrowserViewModelTest
 import dev.stapler.stelekit.asset.AssetMoveServiceTest
 import dev.stapler.stelekit.asset.AssetMoveServiceWalTest
 import dev.stapler.stelekit.asset.AssetIndexServiceTest
@@ -323,6 +324,7 @@ import dev.stapler.stelekit.git.UpdatesNotificationToggleTest
 import dev.stapler.stelekit.ui.FirstSyncPreviewLoaderTest
 import dev.stapler.stelekit.ui.GitSyncCoordinatorTest
 import dev.stapler.stelekit.git.ScheduledSyncPolicyTest
+import dev.stapler.stelekit.git.EditLockTest
 import dev.stapler.stelekit.git.ScheduledSyncStackE2ETest
 import dev.stapler.stelekit.git.ShallowMergeTest
 import dev.stapler.stelekit.git.merge.JournalMergeServiceTest
@@ -360,7 +362,6 @@ import dev.stapler.stelekit.tags.WikiLinkExtractorTest
 import dev.stapler.stelekit.transfer.qrcode.QrImportServiceTest
 import dev.stapler.stelekit.transfer.qrcode.QrTransferCoordinatorTest
 import dev.stapler.stelekit.transfer.qrcode.TransferSessionTest
-import dev.stapler.stelekit.ui.GalleryViewModelTest
 import dev.stapler.stelekit.ui.StelekitViewModelNavigationTest
 import dev.stapler.stelekit.ui.StelekitViewModelUiToggleTest
 import dev.stapler.stelekit.ui.screens.DiskConflictFullScreenStateTest
@@ -396,6 +397,9 @@ import org.junit.runners.Suite
     NavLabelUniquenessTest::class,
     LibraryRedirectTest::class,
     LibraryViewModelStateTest::class,
+    LibrarySketchFilterTest::class,
+    LibrarySessionTest::class,
+    LibraryViewModelActionsTest::class,
     LibraryFilterSqlParityTest::class,
     LibraryAnnotatedJoinTest::class,
     LargeLibraryBatchingTest::class,
@@ -484,8 +488,6 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.ui.components.CoilSeamTest::class,
     dev.stapler.stelekit.ui.components.ImageLoaderConstructionCountTest::class,
     dev.stapler.stelekit.db.FixtureGraphCountsTest::class,
-    AssetFilterTest::class,
-    AssetBrowserViewModelTest::class,
     AssetMoveServiceTest::class,
     AssetMoveServiceWalTest::class,
     AssetIndexServiceTest::class,
@@ -667,6 +669,7 @@ import org.junit.runners.Suite
     FirstSyncPreviewLoaderTest::class,
     GitSyncCoordinatorTest::class,
     ScheduledSyncPolicyTest::class,
+    EditLockTest::class,
     ScheduledSyncStackE2ETest::class,
     ShallowMergeTest::class,
     StubGitRepositoryFailureSequenceTest::class,
@@ -704,7 +707,6 @@ import org.junit.runners.Suite
     QrImportServiceTest::class,
     QrTransferCoordinatorTest::class,
     TransferSessionTest::class,
-    GalleryViewModelTest::class,
     StelekitViewModelNavigationTest::class,
     StelekitViewModelUiToggleTest::class,
     DiskConflictFullScreenStateTest::class,
@@ -774,6 +776,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.ui.library.LibrarySearchTest::class,
     dev.stapler.stelekit.ui.library.LibraryMediaClassTest::class,
     dev.stapler.stelekit.ui.library.LibraryStatusLineTest::class,
+    dev.stapler.stelekit.ui.library.LibraryItemActionsTest::class,
     dev.stapler.stelekit.ui.library.UpgradeNoticeStateMachineTest::class,
     dev.stapler.stelekit.ui.nav.NavSectionBuilderTest::class,
     dev.stapler.stelekit.ui.nav.NavCommandsTest::class,
@@ -832,6 +835,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.SketchViewMathTest::class,
     dev.stapler.stelekit.sketch.SketchRenderCacheTest::class,
     dev.stapler.stelekit.sketch.SketchHistoryTest::class,
+    dev.stapler.stelekit.sketch.SketchSheetPropsTest::class,
+    dev.stapler.stelekit.sketch.SketchSheetViewModelTest::class,
     dev.stapler.stelekit.sketch.SketchViewModelTest::class,
     dev.stapler.stelekit.projectbridge.SketchNavigationGateTest::class,
     dev.stapler.stelekit.sketch.SnapEnginePropertyTest::class,

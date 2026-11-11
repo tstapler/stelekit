@@ -2,8 +2,10 @@ package dev.stapler.stelekit.ui.library
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,17 +14,26 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AudioFile
+import androidx.compose.material.icons.filled.BrokenImage
+import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.VideoFile
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -65,6 +76,7 @@ object LibraryCardDescription {
         LibraryMediaClass.AUDIO -> "Audio"
         LibraryMediaClass.VIDEO -> "Video"
         LibraryMediaClass.DOCS -> "Document"
+        LibraryMediaClass.SKETCHES -> "Sketch"
         LibraryMediaClass.OTHER -> "Other"
     }
 
@@ -89,18 +101,25 @@ fun LibraryItemCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
+    missing: Boolean = false,
+    onAction: (LibraryAssetAction) -> Unit = {},
 ) {
-    val description = LibraryCardDescription.of(item)
+    val description = LibraryCardDescription.of(item) + if (missing) ", ${I18n.get(I18n.LIBRARY_MISSING)}" else ""
+    Box(modifier = modifier.fillMaxWidth().aspectRatio(1f)) {
     Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
+        modifier = Modifier
+            .fillMaxSize()
             .testTag("library-card-${item.id}")
+            .then(if (missing) Modifier.border(2.dp, MaterialTheme.colorScheme.error, MaterialTheme.shapes.medium) else Modifier)
             .semantics { contentDescription = description; role = Role.Button }
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
         Box(Modifier.fillMaxSize().clearAndSetSemantics { }, contentAlignment = Alignment.Center) {
-            if (item.isImage) ImageThumb(item) else Icon(typeIcon(item.mediaClass), contentDescription = null, modifier = Modifier.size(TYPE_ICON_DP.dp))
+            when {
+                missing -> MissingTile(item)
+                item.isImage -> ImageThumb(item)
+                else -> Icon(typeIcon(item.mediaClass), contentDescription = null, modifier = Modifier.size(TYPE_ICON_DP.dp))
+            }
             if (item.annotated) {
                 Row(
                     modifier = Modifier
@@ -134,6 +153,41 @@ fun LibraryItemCard(
             )
         }
     }
+    CardMenu(item, onAction, Modifier.align(Alignment.TopEnd))
+    }
+}
+
+@Composable
+private fun MissingTile(item: LibraryItem) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.testTag("library-missing-${item.id}")) {
+        Icon(Icons.Default.BrokenImage, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(TYPE_ICON_DP.dp))
+        Text(t(I18n.LIBRARY_MISSING), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+    }
+}
+
+@Composable
+private fun CardMenu(item: LibraryItem, onAction: (LibraryAssetAction) -> Unit, modifier: Modifier = Modifier) {
+    var open by remember { mutableStateOf(false) }
+    Box(modifier) {
+        IconButton(onClick = { open = true }, modifier = Modifier.testTag("library-card-menu-${item.id}")) {
+            Icon(Icons.Default.MoreVert, contentDescription = t(I18n.LIBRARY_CARD_MENU))
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            LibraryAssetAction.entries.forEach { action ->
+                DropdownMenuItem(
+                    text = { Text(t(actionLabelKey(action))) },
+                    onClick = { open = false; onAction(action) },
+                    modifier = Modifier.testTag("library-action-${action.name}"),
+                )
+            }
+        }
+    }
+}
+
+private fun actionLabelKey(a: LibraryAssetAction) = when (a) {
+    LibraryAssetAction.Details -> I18n.LIBRARY_ACTION_DETAILS
+    LibraryAssetAction.CopyLink -> I18n.LIBRARY_ACTION_COPY_LINK
+    LibraryAssetAction.Delete -> I18n.LIBRARY_ACTION_DELETE
 }
 
 @Composable
@@ -155,6 +209,7 @@ private fun typeIcon(c: LibraryMediaClass) = when (c) {
     LibraryMediaClass.AUDIO -> Icons.Default.AudioFile
     LibraryMediaClass.VIDEO -> Icons.Default.VideoFile
     LibraryMediaClass.DOCS -> Icons.Default.Description
+    LibraryMediaClass.SKETCHES -> Icons.Default.Brush
     else -> Icons.Default.InsertDriveFile
 }
 

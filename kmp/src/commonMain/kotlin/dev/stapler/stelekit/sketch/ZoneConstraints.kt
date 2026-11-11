@@ -23,6 +23,9 @@ import dev.stapler.stelekit.units.parseLength
 data class Zone(val key: String, val text: String? = null, val isTotal: Boolean = false)
 
 data class ZoneSet(val zones: List<Zone>) {
+    /** Zone keys as they read left to right in [direction]; the total is not part of the row. */
+    fun displayKeys(direction: ViewDirection): List<String> = direction.labelOrder(zones.filterNot { it.isTotal }.map { it.key })
+
     companion object {
         val EMPTY = ZoneSet(emptyList())
     }
@@ -43,7 +46,7 @@ data class ZoneReport(
 object ZoneConstraints {
     private const val SUM_CONSTRAINT_ID = 0
 
-    fun resolve(zones: ZoneSet): Either<FusionError, ZoneReport> = either {
+    fun resolve(zones: ZoneSet, direction: ViewDirection = ViewDirection.TOP): Either<FusionError, ZoneReport> = either {
         if (zones.zones.isEmpty()) return@either ZoneReport(emptyMap(), emptySet(), false)
         val textErrors = mutableSetOf<String>()
         val observations = zones.zones.mapNotNull { zone ->
@@ -61,7 +64,7 @@ object ZoneConstraints {
         val constraints: List<Constraint> =
             if (total != null && parts.isNotEmpty()) listOf(Sum(SUM_CONSTRAINT_ID, total.key, parts)) else emptyList()
         val registry = DimensionRegistry(dimensions = zones.zones.map { DimensionEntry(it.key, DimensionKind.LENGTH, it.key) })
-        val result = FusionEngine.fuse(FusionInput(observations, constraints, zoneOrder = parts), registry).bind()
+        val result = FusionEngine.fuse(FusionInput(observations, constraints, zoneOrder = direction.labelOrder(parts)), registry).bind()
         ZoneReport(
             dimensions = result.dimensions,
             textErrors = textErrors,

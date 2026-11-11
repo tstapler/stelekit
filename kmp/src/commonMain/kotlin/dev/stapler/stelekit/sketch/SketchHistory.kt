@@ -1,10 +1,19 @@
 package dev.stapler.stelekit.sketch
 
-/** What one undo step restores: the drawing and the named zones. In-progress input is never part of it. */
-data class SketchDocument(val scene: SketchScene = SketchScene.EMPTY, val zones: ZoneSet = ZoneSet.EMPTY) {
+/** What one undo step restores: the drawing, named zones and sheet settings. In-progress input is never part of it. */
+data class SketchDocument(
+    val scene: SketchScene = SketchScene.EMPTY,
+    val zones: ZoneSet = ZoneSet.EMPTY,
+    val sheet: SheetProps = SheetProps(),
+) {
+    /** What the canvas draws and hit-tests: primitives on hidden layers are left out. */
+    val visibleScene: SketchScene by lazy(LazyThreadSafetyMode.NONE) {
+        if (sheet.layers.all { it.visible }) scene else scene.filtered { sheet.isVisible(it.layer) }
+    }
+
     /** [SketchScene] has identity equality, so compare its content. */
     fun sameContent(other: SketchDocument): Boolean =
-        zones == other.zones && scene.primitives == other.scene.primitives
+        zones == other.zones && sheet == other.sheet && scene.primitives == other.scene.primitives
 }
 
 /**

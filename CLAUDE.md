@@ -489,7 +489,7 @@ The owner cannot run `adb logcat` (it crashes their Linux machine). Diagnose fro
 
 - Log through `Logger`, not `android.util.Log`, so output reaches the persisted sink.
 - Reproduce on the `Pixel_Fold` AVD before theorizing: `~/Android/Sdk/emulator/emulator -avd Pixel_Fold -no-window -no-audio -no-snapshot`. Worktrees have no `local.properties`, so `export ANDROID_HOME=$HOME/Android/Sdk` first. Run one class with `./gradlew :kmp:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=<fqcn>`, read `kmp/build/outputs/androidTest-results/connected/debug/*.xml`, then `adb emu kill`.
-- A screen that reads the DB needs both a JVM Compose test over real SQLDelight (`ui/assets/AssetBrowserScreenTest`) and an on-device test on the Android driver (`androidInstrumentedTest/.../AssetBrowserE2ETest`).
+- A screen that reads the DB needs both a JVM Compose test over real SQLDelight (`ui/library/LibraryScreenTest`) and an on-device test on the Android driver (none for the Library yet; the Assets-era `AssetBrowserE2ETest` was retired with the screen).
 - Voice: a blank STT transcript must never reach the LLM (`VoiceCaptureViewModel`). There is no on-device LLM pre-warm — `MlKitLlmFormatterProvider.checkEligible()` only queries status — so "Running on-device inference (0 chars input)" in a log means an empty transcript was sent.
 
 ## Testing Infrastructure
