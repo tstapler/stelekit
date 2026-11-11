@@ -14,6 +14,9 @@ sealed interface PostSyncRunOutcome {
     /** Flag, digest opt-in or project missing: nothing ran and nothing was read. */
     data object Inactive : PostSyncRunOutcome
 
+    /** The bound source inputs are unchanged since the last digest, so nothing ran and nothing was written. */
+    data object NotRelevant : PostSyncRunOutcome
+
     data class Completed(val unloadedPages: Int) : PostSyncRunOutcome
 
     /** Local steps ran, but this platform has no writer for the digest page. */
@@ -60,6 +63,10 @@ class PostSyncProjectJob(
         val setup = if (collector == null || fusion == null) deps.fusionSetup() else null
         val collected = (collector ?: defaultCollector(setup)).collect()
         val stage = fusion ?: setup?.stage()
+        val inputHash = ProjectRelevanceHasher.hash(collected)
+        if (ProjectRelevanceHasher.isUnchanged(inputHash, deps.settings.lastDigestInputHash(graphId))) {
+            return PostSyncRunOutcome.NotRelevant
+        }
         val settle = barrier.awaitSettled(collected.boundPages)
         val base = if (syncLeftLfsFiles()) "$TITLE (sync left LFS files held)" else TITLE
         val title = if (reconcile?.needsResolution == true) "$base ($RESOLVE_CONFLICT)" else base
@@ -74,7 +81,7 @@ class PostSyncProjectJob(
                     handle.fail(UNAVAILABLE)
                     PostSyncRunOutcome.DigestUnavailable
                 } else {
-                    finish(graphId, handle, settle.unloaded, collected, stage)
+                    finish(graphId, handle, settle.unloaded, collected, inputHash, stage)
                 }
             }
         } catch (e: CancellationException) {
@@ -109,6 +116,7 @@ class PostSyncProjectJob(
         handle: JobHandle,
         unloaded: Int,
         collected: CollectedSources,
+        inputHash: String,
         fusion: ProjectFusionStage?,
     ): PostSyncRunOutcome {
         val digest = writeDigest(graphId, collected, fusion)
@@ -119,6 +127,8 @@ class PostSyncProjectJob(
         }
         val ok = digest == null || digest is DigestWriteResult.Written || digest is DigestWriteResult.Unchanged
         if (ok) handle.succeed() else handle.fail(digest?.note)
+        // Remembered only after a complete, settled write so a deferred, refused or partial run retries on the next trigger.
+        if (digest != null && ok && unloaded == 0) deps.settings.setLastDigestInputHash(graphId, inputHash)
         return when (digest) {
             null, is DigestWriteResult.Written, is DigestWriteResult.Unchanged -> PostSyncRunOutcome.Completed(unloaded)
             is DigestWriteResult.Unavailable -> PostSyncRunOutcome.DigestUnavailable

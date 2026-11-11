@@ -131,4 +131,15 @@ class ProjectFusionSourceTest {
         assertIs<PostSyncRunOutcome.Completed>(PostSyncProjectJob(deps, digestWriter = writer).run(BRIDGE_GRAPH) { false })
         assertTrue(written.isEmpty())
     }
+
+    @Test
+    fun replacingTheYamlSnapshotChangesTheRelevanceHashEvenWhenNoReadingChanges() = runTest {
+        suspend fun hashFor(yaml: String?) = ProjectRelevanceHasher.hash(
+            ProjectSourceCollector(reader = ProjectSourceReader { ProjectSourceTexts(yamlSnapshot = yaml) }).collect(),
+        )
+        val a = hashFor("a: 1\n")
+        assertEquals(a, hashFor("a: 1\n"))
+        assertTrue(a != hashFor("a: 2\n"))
+        assertTrue(a != hashFor(null))
+    }
 }
