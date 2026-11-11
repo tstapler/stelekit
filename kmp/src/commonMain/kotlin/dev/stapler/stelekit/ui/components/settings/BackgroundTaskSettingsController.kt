@@ -153,20 +153,20 @@ class BackgroundTaskSettingsController(
      * One-shot kinds (model download): only the network choice, stored as `enabled = false` with explicit
      * constraints, and never `apply` (an explicit `runOnce` always runs).
      */
-    suspend fun setOneShotNetwork(key: TaskKey, network: NetworkPolicy): SaveResult = store.serialized { setOneShotNetworkLocked(key, network) }
-
-    private suspend fun setOneShotNetworkLocked(key: TaskKey, network: NetworkPolicy): SaveResult = try {
-        val constraints = (store.readEntry(key).overrides?.constraints ?: baseConfig(key.kind).constraints).copy(network = network)
-        if (store.write(key, TaskEntry(enabled = false, overrides = TaskOverrides(schedule = null, constraints = constraints)))) {
-            SaveResult.Saved
-        } else {
+    suspend fun setOneShotNetwork(key: TaskKey, network: NetworkPolicy): SaveResult = store.serialized {
+        try {
+            val constraints = (store.readEntry(key).overrides?.constraints ?: baseConfig(key.kind).constraints).copy(network = network)
+            if (store.write(key, TaskEntry(enabled = false, overrides = TaskOverrides(schedule = null, constraints = constraints)))) {
+                SaveResult.Saved
+            } else {
+                SaveResult.Failed
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn("one-shot write failed for ${key.kind.id}", e)
             SaveResult.Failed
         }
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        logger.warn("one-shot write failed for ${key.kind.id}", e)
-        SaveResult.Failed
     }
 
     /**
@@ -174,31 +174,26 @@ class BackgroundTaskSettingsController(
      * follow it so their schedule matches what Settings now shows.
      */
     suspend fun writeDefaults(kind: TaskKind, defaults: TaskDefaults, followingGraphIds: List<String> = emptyList()): SaveResult =
-        store.serialized { writeDefaultsLocked(kind, defaults, followingGraphIds) }
-
-    private suspend fun writeDefaultsLocked(kind: TaskKind, defaults: TaskDefaults, followingGraphIds: List<String>): SaveResult {
-        val written = try {
-            store.writeDefaults(kind, defaults)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            false
+        store.serialized {
+            val written = try {
+                store.writeDefaults(kind, defaults)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                false
+            }
+            if (!written) return@serialized SaveResult.Failed
+            followingGraphIds.forEach { graphId ->
+                val key = TaskKey(kind, TaskScope(graphId))
+                val resolved = (store.readResult(key) as? TaskReadResult.Ok)?.config
+                if (resolved != null && !applyFailed(key, resolved)) logger.debug("re-applied ${key.scope.value} after default change")
+                onSaved(key)
+            }
+            SaveResult.Saved
         }
-        if (!written) return SaveResult.Failed
-        followingGraphIds.forEach { graphId ->
-            val key = TaskKey(kind, TaskScope(graphId))
-            val resolved = (store.readResult(key) as? TaskReadResult.Ok)?.config
-            if (resolved != null && !applyFailed(key, resolved)) logger.debug("re-applied ${key.scope.value} after default change")
-            onSaved(key)
-        }
-        return SaveResult.Saved
-    }
 
-    private suspend fun change(key: TaskKey, edit: (TaskEntry, TaskConfig) -> TaskEntry): SaveResult =
-        store.serialized { changeLocked(key, edit) }
-
-    private suspend fun changeLocked(key: TaskKey, edit: (TaskEntry, TaskConfig) -> TaskEntry): SaveResult {
-        val current = (store.readResult(key) as? TaskReadResult.Ok)?.config ?: return SaveResult.Failed
+    private suspend fun change(key: TaskKey, edit: (TaskEntry, TaskConfig) -> TaskEntry): SaveResult = store.serialized {
+        val current = (store.readResult(key) as? TaskReadResult.Ok)?.config ?: return@serialized SaveResult.Failed
         val previous = store.readEntry(key)
         val wrote = try {
             store.write(key, edit(previous, current))
@@ -207,22 +202,17 @@ class BackgroundTaskSettingsController(
         } catch (e: Exception) {
             false
         }
-        if (!wrote) return SaveResult.Failed
+        if (!wrote) return@serialized SaveResult.Failed
         val stored = (store.readResult(key) as? TaskReadResult.Ok)?.config
         if (stored == null || applyFailed(key, stored)) {
-            // No partially written state: put the previous entry back when the scheduler could not take the change.
+            // No partially written state: put the previous entry back, and the scheduler with it (best effort).
             store.write(key, previous)
-            restoreScheduler(key)
-            return SaveResult.Failed
+            val restored = (store.readResult(key) as? TaskReadResult.Ok)?.config
+            if (restored != null && applyFailed(key, restored)) logger.warn("could not restore scheduler for ${key.kind.id}/${key.scope.value}")
+            return@serialized SaveResult.Failed
         }
         onSaved(key)
-        return SaveResult.Saved
-    }
-
-    /** Best effort: re-applies what the restored entry resolves to, so scheduler and stored settings agree again. */
-    private suspend fun restoreScheduler(key: TaskKey) {
-        val restored = (store.readResult(key) as? TaskReadResult.Ok)?.config ?: return
-        if (applyFailed(key, restored)) logger.warn("could not restore scheduler for ${key.kind.id}/${key.scope.value}")
+        SaveResult.Saved
     }
 
     private fun scheduleFor(current: Schedule, minutes: Int): Schedule = scheduleForInterval(current, minutes)

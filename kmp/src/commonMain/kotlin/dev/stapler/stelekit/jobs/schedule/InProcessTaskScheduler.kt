@@ -27,6 +27,16 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
+/** A tracker or log failure must never end the loop; only cancellation propagates. */
+private inline fun <T> guardedSideEffect(logger: Logger, what: String, block: () -> T): T? = try {
+    block()
+} catch (e: CancellationException) {
+    throw e
+} catch (t: Throwable) {
+    logger.warn("$what failed", t)
+    null
+}
+
 /** Live view of one scheduled key for status lines: when it next fires and what the last tick did. */
 data class TaskScheduleStatus(val nextRunAtMs: Long?, val lastRun: TaskRunRecord?)
 
@@ -257,36 +267,26 @@ class InProcessTaskScheduler(
             return
         }
         val spec = registry.specFor(key.kind)
-        val handle = spec?.jobKind?.let { kind -> guarded("job tracker begin") { jobTracker.begin(kind, spec.title) } }
+        val handle = spec?.jobKind?.let { kind -> guardedSideEffect(logger, "job tracker begin") { jobTracker.begin(kind, spec.title) } }
         val result = try {
             task.run(key, TaskRunContext(scheduledAtMs, startedAt, appOpen = true, constraintState = state))
         } catch (e: CancellationException) {
-            guarded("job tracker cancelled") { handle?.cancelled() }
+            guardedSideEffect(logger, "job tracker cancelled") { handle?.cancelled() }
             throw e
         } catch (t: Throwable) { // OutOfMemoryError included: it must not kill the loop
             TaskRunResult.Failed(redactedFailureMessage(t))
         }
         when (result) {
-            is TaskRunResult.Failed -> guarded("job tracker fail") { handle?.fail(result.message) }
-            else -> guarded("job tracker succeed") { handle?.succeed() }
+            is TaskRunResult.Failed -> guardedSideEffect(logger, "job tracker fail") { handle?.fail(result.message) }
+            else -> guardedSideEffect(logger, "job tracker succeed") { handle?.succeed() }
         }
         record(key, scheduledAtMs, startedAt, result, state)
     }
 
     private suspend fun record(key: TaskKey, scheduledAtMs: Long?, startedAtMs: Long, result: TaskRunResult, state: ConstraintState) {
         val record = TaskRunRecord(key, RunSource.Background, scheduledAtMs, startedAtMs, result, state)
-        guarded("run log append") { runLog.append(record) }
+        guardedSideEffect(logger, "run log append") { runLog.append(record) }
         _status.update { map -> if (key in map) map + (key to map.getValue(key).copy(lastRun = record)) else map }
-    }
-
-    /** A tracker or log failure must never end the loop; only cancellation propagates. */
-    private inline fun <T> guarded(what: String, block: () -> T): T? = try {
-        block()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (t: Throwable) {
-        logger.warn("$what failed", t)
-        null
     }
 
     private fun downgradeReason(constraints: TaskConstraints): String? = when {
