@@ -224,8 +224,12 @@ class SteleKitApplication : Application() {
         try {
             dev.stapler.stelekit.platform.NetworkMonitor.init(this)
             dev.stapler.stelekit.jobs.schedule.registerAndroidTasks(taskRegistry)
-            dev.stapler.stelekit.git.registerGitSyncTask(taskRegistry)
+            dev.stapler.stelekit.git.registerGitSyncTask(taskRegistry, cold = dev.stapler.stelekit.git.AndroidColdPathRunner(this))
             dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime.knownScopes = dev.stapler.stelekit.db.GraphRegistryKnownScopes(PlatformSettings())
+            // Set here (not in MainActivity) so a cold worker, the shim and MainActivity's store all migrate git-sync identically.
+            dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime.legacySeed = dev.stapler.stelekit.git.LegacyGitSyncMigration(
+                PlatformSettings(), dev.stapler.stelekit.git.AndroidGitLegacyConfigSource(this),
+            )
             // Debug/internal builds expose the Asset indexing switch; release variants stay hidden
             // until the heap-gate flip PR (AssetBuildFlags.RELEASE_TOGGLE_VISIBLE).
             dev.stapler.stelekit.asset.pipeline.AssetBuildFlags.internalBuild =
