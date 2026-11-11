@@ -13,9 +13,13 @@ import dev.stapler.stelekit.model.SketchSheet
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.SketchRepositories
 import dev.stapler.stelekit.sketch.SketchCommand
+import dev.stapler.stelekit.sketch.message
 import dev.stapler.stelekit.sketch.SketchDocument
 import dev.stapler.stelekit.sketch.SketchHistory
+import dev.stapler.stelekit.sketch.SheetProps
 import dev.stapler.stelekit.sketch.SketchPoint
+import dev.stapler.stelekit.sketch.SketchSheetKind
+import dev.stapler.stelekit.sketch.ViewDirection
 import dev.stapler.stelekit.sketch.SketchScene
 import dev.stapler.stelekit.sketch.SketchPrimitive
 import dev.stapler.stelekit.sketch.Zone
@@ -97,7 +101,6 @@ class SketchViewModel(
     private var token: RevisionToken? = null
     private var sheet: SketchSheet? = null
     private var persisted: Map<String, StoredPrimitive> = emptyMap()
-    private var persistedZones: JsonArray = JsonArray(emptyList())
     private var saveJob: Job? = null
     private var loadJob: Job? = null
 
@@ -141,6 +144,29 @@ class SketchViewModel(
         _uiState.value.selectedId?.let { commit(SketchCommand.RemovePrimitive(it)); select(null) }
     }
 
+    /** Sets the selected-or-given line to a typed length; the field validates the text first (see `DimensionInput`). */
+    fun setLineLength(id: String, length: Inches) = commit(SketchCommand.SetLineLength(id, length))
+
+    fun addLayer(name: String) = commit(SketchCommand.AddLayer(name))
+
+    fun setLayerVisible(name: String, visible: Boolean) = commit(SketchCommand.SetLayerVisible(name, visible))
+
+    fun setLayerLocked(name: String, locked: Boolean) = commit(SketchCommand.SetLayerLocked(name, locked))
+
+    fun setSelectedLayer(layer: String) {
+        _uiState.value.selectedId?.let { commit(SketchCommand.SetPrimitiveLayer(it, layer)) }
+    }
+
+    fun setSheetKind(kind: SketchSheetKind) = commit(SketchCommand.SetSheetKind(kind))
+
+    fun setViewDirection(direction: ViewDirection) = commit(SketchCommand.SetViewDirection(direction))
+
+    fun setScale(sixteenths: Long) = commit(SketchCommand.SetScale(sixteenths))
+
+    fun setZoneTotal(key: String, isTotal: Boolean) = commit(SketchCommand.SetZoneTotal(key, isTotal))
+
+    fun removeZone(key: String) = commit(SketchCommand.RemoveZone(key))
+
     fun addZone(zone: Zone) = commit(SketchCommand.AddZone(zone))
 
     /** Types a length such as `12 3/16` on a zone; dependents re-solve and a violated sum is flagged in [SketchUiState.zoneReport]. */
@@ -156,7 +182,7 @@ class SketchViewModel(
         _uiState.update { state ->
             if (state.phase != SketchPhase.READY) return@update state
             command.apply(state.document).fold(
-                ifLeft = { failure = it.toString(); state },
+                ifLeft = { failure = it.message(); state },
                 ifRight = { next -> withHistory(state, state.history.commit(next)) },
             )
         }
@@ -192,12 +218,11 @@ class SketchViewModel(
         val wanted = doc.scene.primitives.mapIndexed { z, p -> p.toStored(currentSheet.uuid, z.toLong()) }
         val upserts = wanted.filter { persisted[it.uuid] != it }
         val removed = persisted.keys - wanted.map { it.uuid }.toSet()
-        val zonesJson = doc.zones.toJson()
+        val desiredSheet = doc.sheet.applyTo(currentSheet).copy(zones = doc.zones.toJson())
         val result: Either<DomainError, Unit> = either {
-            if (zonesJson != persistedZones) {
-                store.write { repos.sheets.saveSheet(currentSheet.copy(zones = zonesJson), tok) }.bind()
-                sheet = currentSheet.copy(zones = zonesJson)
-                persistedZones = zonesJson
+            if (desiredSheet != currentSheet) {
+                store.write { repos.sheets.saveSheet(desiredSheet, tok) }.bind()
+                sheet = desiredSheet
             }
             if (upserts.isNotEmpty()) store.write { repos.sheets.savePrimitives(upserts, tok) }.bind()
             for (id in removed) store.write { repos.sheets.deletePrimitive(id, tok) }.bind()
@@ -232,13 +257,13 @@ class SketchViewModel(
         token = newToken
         sheet = first
         persisted = stored.associateBy { it.uuid }
-        persistedZones = first.zones
         val scene = stored.mapNotNull { it.toScenePrimitive() }.fold(SketchScene.EMPTY) { s, p -> s.add(p).getOrNull() ?: s }
         val zones = ZoneSet.fromJson(first.zones)
+        val props = first.toSheetProps()
         _uiState.update {
             it.copy(
-                phase = SketchPhase.READY, error = null, history = SketchHistory.of(SketchDocument(scene, zones)), pendingStart = null,
-                selectedId = null, zoneReport = ZoneConstraints.resolve(zones).getOrNull(), saveStatus = SaveStatus.SAVED,
+                phase = SketchPhase.READY, error = null, history = SketchHistory.of(SketchDocument(scene, zones, props)), pendingStart = null,
+                selectedId = null, zoneReport = ZoneConstraints.resolve(zones, props.viewDirection).getOrNull(), saveStatus = SaveStatus.SAVED,
             )
         }
     }
@@ -255,19 +280,25 @@ class SketchViewModel(
 }
 
 private fun withHistory(state: SketchUiState, history: SketchHistory): SketchUiState =
-    state.copy(history = history, zoneReport = ZoneConstraints.resolve(history.present.zones).getOrNull(), saveStatus = SaveStatus.PENDING, error = null)
+    state.copy(history = history, zoneReport = ZoneConstraints.resolve(history.present.zones, history.present.sheet.viewDirection).getOrNull(), saveStatus = SaveStatus.PENDING, error = null)
+
+private fun SketchSheet.toSheetProps(): SheetProps = SheetProps.fromStored(kind, viewDirection, scaleSixteenthsPerUnit, layers)
+
+private fun SheetProps.applyTo(stored: SketchSheet): SketchSheet = stored.copy(
+    kind = kind.wire, viewDirection = viewDirection.wire, scaleSixteenthsPerUnit = scaleSixteenths, layers = layers.map { it.encode() },
+)
 
 private fun SketchPrimitive.toStored(sheet: SheetUuid, z: Long): StoredPrimitive = when (this) {
-    is SketchPrimitive.Line -> StoredPrimitive(id, sheet, "line", a.x.sixteenths, a.y.sixteenths, b.x.sixteenths, b.y.sixteenths, z = z)
-    is SketchPrimitive.Rect -> StoredPrimitive(id, sheet, "rect", a.x.sixteenths, a.y.sixteenths, b.x.sixteenths, b.y.sixteenths, z = z)
+    is SketchPrimitive.Line -> StoredPrimitive(id, sheet, "line", a.x.sixteenths, a.y.sixteenths, b.x.sixteenths, b.y.sixteenths, layer = layer, z = z)
+    is SketchPrimitive.Rect -> StoredPrimitive(id, sheet, "rect", a.x.sixteenths, a.y.sixteenths, b.x.sixteenths, b.y.sixteenths, layer = layer, z = z)
 }
 
 private fun StoredPrimitive.toScenePrimitive(): SketchPrimitive? {
     val a = SketchPoint(Inches(x1), Inches(y1))
     val b = SketchPoint(Inches(x2), Inches(y2))
     return when (kind) {
-        "line" -> SketchPrimitive.Line(uuid, a, b)
-        "rect" -> SketchPrimitive.Rect(uuid, a, b)
+        "line" -> SketchPrimitive.Line(uuid, a, b, layer)
+        "rect" -> SketchPrimitive.Rect(uuid, a, b, layer)
         else -> null
     }
 }
