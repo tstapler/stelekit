@@ -818,6 +818,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.projectbridge.LlmPayloadBuilderTest::class,
     dev.stapler.stelekit.projectbridge.DigestWriteIdempotenceTest::class,
     dev.stapler.stelekit.projectbridge.DigestSelfFeedTest::class,
+    dev.stapler.stelekit.projectbridge.ProjectManagementTest::class,
+    dev.stapler.stelekit.ui.sketch.ProjectListViewModelTest::class,
     dev.stapler.stelekit.projectbridge.DigestWriterJobTest::class,
     dev.stapler.stelekit.llm.OutboundLlmGateTest::class,
     dev.stapler.stelekit.llm.GateIssuedAuditTest::class,
