@@ -172,4 +172,20 @@ class ModelDownloadTaskTest {
         assertEquals(first.id, activeRequest().id)
         assertNotNull(Schedule.of(1, 0))
     }
+
+    @Test
+    fun downloadModel_should_defaultToUnmetered_When_storeIsEmptyOrUnreadable() = runBlocking<Unit> {
+        assertEquals(NetworkPolicy.Unmetered, ModelDownloadTask.defaultConfig.constraints.network)
+        val empty = startDownload(fixture.downloader)
+        assertEquals(NetworkType.UNMETERED, activeRequest().constraints.requiredNetworkType)
+        assertTrue(activeRequest().constraints.requiresStorageNotLow())
+        fixture.downloader.cancelDownload()
+        empty.await()
+
+        fixture.settings.failReads = true
+        val unreadable = startDownload(fixture.downloader)
+        assertEquals(NetworkType.UNMETERED, activeRequest().constraints.requiredNetworkType)
+        fixture.downloader.cancelDownload()
+        unreadable.await()
+    }
 }

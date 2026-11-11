@@ -93,12 +93,13 @@ class ModelDownloadTask(
 
         /**
          * One-shot: only `constraints` is read (`enabled` and the schedule are placeholders, see `TaskSpec`).
-         * Network default is [NetworkPolicy.Any] here; flipping to `Unmetered` is the one-line owner-confirm change.
+         * Owner-confirm item (a): the network default is [NetworkPolicy.Unmetered] so a ~100 MB download waits for
+         * Wi-Fi; reverting to `Any` is the one-line change on the `constraints` below.
          */
         val defaultConfig = TaskConfig(
             enabled = false,
             schedule = Schedule.of(60, 0),
-            constraints = TaskConstraints(network = NetworkPolicy.Any, requiresStorageNotLow = true),
+            constraints = TaskConstraints(network = NetworkPolicy.Unmetered, requiresStorageNotLow = true),
         )
 
         val spec = TaskSpec(
