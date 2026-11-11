@@ -71,7 +71,7 @@ object SidecarCodec {
 
     /** SHA-256 over the sorted `(path, sha256(bytes))` list. `modelRevision` is informational and excluded. */
     fun bundleHash(files: Map<String, ByteArray>): String {
-        val listing = files.toSortedMap().entries.joinToString("\n") { (path, bytes) ->
+        val listing = files.entries.sortedBy { it.key }.joinToString("\n") { (path, bytes) ->
             "$path\u0000${ContentHasher.sha256(if (path == MODEL_PATH) withoutRevision(bytes) else bytes)}"
         }
         return ContentHasher.sha256(listing)
