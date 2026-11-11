@@ -769,6 +769,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.fusion.ClosetInvariantTest::class,
     dev.stapler.stelekit.sketchimport.KsoupSvgSpikeTest::class,
     PrivateStringGuardTest::class,
+    dev.stapler.stelekit.ui.annotate.AnnotationEditorUnitTest::class,
     GoldenFileGuardTest::class,
     GitSyncCoordinatorJobsTest::class,
     dev.stapler.stelekit.ui.library.LibraryFilterRulesTest::class,
