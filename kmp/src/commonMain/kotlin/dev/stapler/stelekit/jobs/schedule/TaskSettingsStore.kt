@@ -129,6 +129,8 @@ class TaskSettingsStore(
         if (raw.isNotEmpty()) return TaskConfigCodec.decodeEntry(raw) ?: TaskConfigCodec.DISABLED_ENTRY
         val markerKey = TaskSettingsKeys.migrated(key)
         if (settings.containsKey(markerKey)) return TaskConfigCodec.DISABLED_ENTRY
+        // The None sentinel is "no seed wired (yet)", not "nothing to migrate": a marker here would be permanent.
+        if (seed === LegacyConfigSeed.None) return TaskConfigCodec.DISABLED_ENTRY
         // A throwing seed propagates before any write, so no marker is recorded and the next read retries.
         val seeded = seed.seed(key)
         val entry = seeded?.let { TaskEntry(it.enabled, TaskOverrides(it.schedule, it.constraints)) }

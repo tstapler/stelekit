@@ -228,7 +228,7 @@ internal fun rememberBackgroundTasksSettingsState(
     val activeGraphIdForSaves = stack.gitSyncGraphId
     val reconcileRunning by rememberUpdatedState(controls.reconcileRunning)
     val controller = remember(deps.platformSettings, configRepository, scheduler, registry, activeGraphIdForSaves) {
-        val seed = LegacyGitSyncMigration(deps.platformSettings, ConfigRepositoryLegacyConfigSource(configRepository))
+        val seed = LegacyGitSyncMigration(deps.platformSettings, ConfigRepositoryLegacyConfigSource(configRepository, activeGraphIdForSaves))
         dev.stapler.stelekit.ui.components.settings.BackgroundTaskSettingsController(
             TaskSettingsStore(deps.platformSettings, seed, registry), scheduler, registry,
             onSaved = { key -> if (key.kind == GitSyncTask.KIND && key.scope.value == activeGraphIdForSaves) reconcileRunning() },
@@ -310,7 +310,7 @@ internal fun rememberGraphContentScheduledSyncControls(
     // The seed reads this graph's own config through [configRepository]; building it here (not in the
     // host) is what lets a graph whose config repository is not the host's still migrate.
     val controller = remember(deps.platformSettings, configRepository, taskScheduler) {
-        val seed = LegacyGitSyncMigration(deps.platformSettings, ConfigRepositoryLegacyConfigSource(configRepository))
+        val seed = LegacyGitSyncMigration(deps.platformSettings, ConfigRepositoryLegacyConfigSource(configRepository, graphId))
         GitSyncScheduleController(
             TaskSettingsStore(deps.platformSettings, seed, deps.platformIntegrations.taskRegistry),
             taskScheduler,

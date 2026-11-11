@@ -125,6 +125,14 @@ class TaskSettingsStoreMigrationTest {
     }
 
     @Test
+    fun read_should_notWriteMarker_When_NoSeedIsWiredYet() = runTest {
+        val settings = MapSettings()
+        assertFalse(store(settings).read(g1).enabled)
+        assertFalse(settings.store.containsKey(TaskSettingsKeys.migrated(g1)))
+        assertFalse(settings.store.containsKey(TaskSettingsKeys.entry(g1)))
+    }
+
+    @Test
     fun read_should_beDisabledAndWriteMarker_When_GraphHasNoRemote() = runTest {
         val settings = MapSettings()
         val s = legacy(settings, true, FakeGitLegacyConfigSource(LegacyGitConfigResult.Found(false, 30)))

@@ -26,7 +26,7 @@ class ConfigRepositoryLegacyConfigSourceTest {
         override fun observeConfig(graphId: String): Flow<Either<DomainError, GitConfig?>> = emptyFlow()
     }
 
-    private fun source(get: suspend () -> Either<DomainError, GitConfig?>) = ConfigRepositoryLegacyConfigSource(FakeConfigRepository(get))
+    private fun source(get: suspend () -> Either<DomainError, GitConfig?>) = ConfigRepositoryLegacyConfigSource(FakeConfigRepository(get), "g1")
 
     @Test
     fun read_should_ReturnFoundWithRemoteAndInterval_When_ConfigExists() = runTest {
@@ -46,5 +46,13 @@ class ConfigRepositoryLegacyConfigSourceTest {
     @Test
     fun read_should_ReturnUnavailableNotNoRemote_When_RepositoryReturnsError() = runTest {
         assertEquals(LegacyGitConfigResult.Unavailable, source { DomainError.DatabaseError.ReadFailed("x").left() }.read("g1"))
+    }
+
+    @Test
+    fun read_should_ReturnUnavailableWithoutQuerying_When_GraphIsNotTheBoundOne() = runTest {
+        var queried = false
+        val result = source { queried = true; null.right() }.read("other-graph")
+        assertEquals(LegacyGitConfigResult.Unavailable, result)
+        assertEquals(false, queried)
     }
 }
