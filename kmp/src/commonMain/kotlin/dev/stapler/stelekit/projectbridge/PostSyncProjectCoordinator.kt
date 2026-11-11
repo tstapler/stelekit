@@ -71,7 +71,7 @@ class PostSyncProjectCoordinator(
             logger.error("post-sync project job failed: ${e::class.simpleName}")
             return
         }
-        if (outcome is PostSyncRunOutcome.Completed || outcome is PostSyncRunOutcome.DigestUnavailable) {
+        if (outcome is PostSyncRunOutcome.Completed || outcome is PostSyncRunOutcome.NotRelevant || outcome is PostSyncRunOutcome.DigestUnavailable) {
             lastFinishedKey = key
         }
     }
