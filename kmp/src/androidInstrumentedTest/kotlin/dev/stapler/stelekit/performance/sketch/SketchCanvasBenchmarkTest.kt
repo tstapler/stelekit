@@ -6,6 +6,7 @@ package dev.stapler.stelekit.performance.sketch
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -54,6 +55,9 @@ class SketchCanvasBenchmarkTest {
     @get:Rule
     val rule = createAndroidComposeRule<ComponentActivity>()
 
+    private var contentSet = false
+    private val run = mutableStateOf(SketchUiState() to false)
+
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test
@@ -77,14 +81,19 @@ class SketchCanvasBenchmarkTest {
         val scene = fixtureScene()
         val healthy = ratio(panFrames(scene, slowDraw = false), panFrames(SketchScene.EMPTY, slowDraw = false))
         val slow = ratio(panFrames(scene, slowDraw = true), panFrames(SketchScene.EMPTY, slowDraw = false))
-        assertTrue(slow > RATIO_BUDGET, "mutated ratio $slow did not exceed the budget $RATIO_BUDGET (healthy $healthy): the probe cannot fail")
+        assertTrue(slow > RATIO_BUDGET && slow > healthy * MIN_MUTATION_GAIN, "mutated ratio $slow did not exceed the budget $RATIO_BUDGET and ${MIN_MUTATION_GAIN}x healthy (healthy $healthy): the probe cannot fail")
     }
 
     private fun ratio(loaded: FrameStats, empty: FrameStats): Double = loaded.p50Ms / maxOf(empty.p50Ms, MIN_BASELINE_MS)
 
     private fun panFrames(scene: SketchScene, slowDraw: Boolean): FrameStats {
+        // setContent may run once per rule; later runs swap this state instead.
         val state = SketchUiState(phase = SketchPhase.READY, history = SketchHistory.of(SketchDocument(scene = scene)))
-        rule.setContent { Host(state, slowDraw) }
+        if (!contentSet) {
+            contentSet = true
+            rule.setContent { Host(run.value) }
+        }
+        rule.runOnUiThread { run.value = state to slowDraw }
         rule.waitForIdle()
         val sampler = FrameSampler(rule.activity).also { it.start() }
         val node = rule.onNodeWithTag(SKETCH_CANVAS_TAG)
@@ -100,15 +109,16 @@ class SketchCanvasBenchmarkTest {
     }
 
     @Composable
-    private fun Host(state: SketchUiState, slowDraw: Boolean) {
+    private fun Host(current: Pair<SketchUiState, Boolean>) {
+        val (state, slowDraw) = current
         val measurer = rememberTextMeasurer()
-        var counter = 0
+        val counter = androidx.compose.runtime.remember { LongArray(1) }
         val modifier = if (!slowDraw) {
             Modifier.fillMaxSize()
         } else {
             // Unique text defeats the measurer cache, so every frame pays full layout cost.
             Modifier.fillMaxSize().drawWithContent {
-                repeat(SLOW_MEASURES_PER_FRAME) { measurer.measure("mutation ${counter++}") }
+                repeat(SLOW_MEASURES_PER_FRAME) { measurer.measure("mutation ${counter[0]++}") }
                 drawContent()
             }
         }
@@ -136,6 +146,7 @@ class SketchCanvasBenchmarkTest {
         const val PRIMITIVES = 200
         const val FRAMES = 600
         const val RATIO_BUDGET = 1.5
+        const val MIN_MUTATION_GAIN = 1.5
         const val MIN_FRAMES = 100
         const val MIN_BASELINE_MS = 1.0
         const val PAN_STEP_PX = 6f
