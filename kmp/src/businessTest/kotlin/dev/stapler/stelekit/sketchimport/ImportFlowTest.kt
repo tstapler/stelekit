@@ -22,6 +22,7 @@ import dev.stapler.stelekit.fixtures.ClosetFixtureText
 import dev.stapler.stelekit.fixtures.ClosetFusion
 import dev.stapler.stelekit.fusion.DimensionKind
 import dev.stapler.stelekit.model.EffectiveNotesPath
+import dev.stapler.stelekit.model.NormalizedPoint
 import dev.stapler.stelekit.model.ProjectUuid
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
@@ -29,6 +30,7 @@ import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.repository.SketchRepositories
 import dev.stapler.stelekit.repository.SketchTestSupport
 import dev.stapler.stelekit.repository.SqlDelightAssetRepository
+import dev.stapler.stelekit.units.Rational
 import dev.stapler.stelekit.repository.inMemorySketchRepositories
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -89,7 +91,8 @@ class ImportFlowTest {
 
     @Test
     fun prepare_should_Reject_UnsupportedTypeAndEmptyBytes() {
-        assertIs<ImportError.UnsupportedType>(flow.prepare(registry, "scan.png", byteArrayOf(1, 2)).leftOrNull())
+        assertIs<ImportError.UnsupportedType>(flow.prepare(registry, "scan.pdf", byteArrayOf(1, 2)).leftOrNull())
+        assertIs<ImportError.Failed>(flow.prepare(registry, "scan.png", byteArrayOf(1, 2)).leftOrNull())
         assertEquals(ImportError.Empty, flow.prepare(registry, "a.svg", ByteArray(0)).leftOrNull())
     }
 
@@ -170,5 +173,67 @@ class ImportFlowTest {
         val result = flow.commit(ProjectUuid("nope"), preview, registry, emptyMap())
         assertEquals(ImportError.ProjectMissing, result.leftOrNull())
         assertEquals(0, rows().size)
+    }
+
+    private val png = pngHeader(1000, 500)
+    private val widthKey get() = registry.dimensions.first { it.kind == DimensionKind.LENGTH }.key
+
+    @Test
+    fun prepare_should_ReadPngSizeWithNoLabels() {
+        val preview = flow.prepare(registry, "sheet.png", png).getOrNull()!!
+        assertEquals(PngSize(1000, 500), preview.raster)
+        assertEquals(0, preview.taggingItems.size)
+    }
+
+    @Test
+    fun commit_should_RegisterPngAsDrawing_AndSaveOnlyTheUserReference() = runBlocking<Unit> {
+        val preview = flow.prepare(registry, "sheet.png", png).getOrNull()!!
+        val ref = RasterReference(widthKey, NormalizedPoint(0.0, 0.5), NormalizedPoint(1.0, 0.5), Rational(96))
+
+        val outcome = flow.commit(ProjectUuid("p1"), preview, registry, emptyMap(), ref).getOrNull()!!
+
+        assertEquals(AssetMediaType.DRAWING, rows().single().mediaType)
+        val d = dims().single()
+        assertEquals("png", d.sourceKind)
+        assertEquals(Rational(96), d.value)
+        assertEquals(1, outcome.dimensionCount)
+    }
+
+    @Test
+    fun commit_should_SaveNoDimension_When_PngHasNoReference() = runBlocking<Unit> {
+        val preview = flow.prepare(registry, "sheet.png", png).getOrNull()!!
+        assertEquals(0, flow.commit(ProjectUuid("p1"), preview, registry, emptyMap()).getOrNull()!!.dimensionCount)
+    }
+
+    @Test
+    fun commit_should_UpgradePhotoToDrawing_When_SamePngBytesImportedAsDrawing() = runBlocking<Unit> {
+        fs.writeFileBytes("/graph/assets/sheet.png", png)
+        assets.registerAsset("/graph/assets/sheet.png", notes, writeActor = null, fileSystem = fs)
+        assertEquals(AssetMediaType.IMAGE, rows().single().mediaType)
+
+        flow.commit(ProjectUuid("p1"), flow.prepare(registry, "sheet.png", png).getOrNull()!!, registry, emptyMap()).getOrNull()!!
+
+        assertEquals(listOf(AssetMediaType.DRAWING), rows().map { it.mediaType })
+    }
+
+    @Test
+    fun commit_should_MakeZeroCloudCalls_ForImportedPng_ThroughBackfill() = runBlocking<Unit> {
+        val rig = CloudRig(scaled = CloudRig.SMALL_JPEG, sessionCap = 100).also {
+            it.gate.grant(CloudRig.GRAPH_A, atMs = 5L, scope = CloudBackfillScope.IncludeExisting)
+        }
+        fs.writeFileBytes("/graph/assets/sheet.png", png)
+        assets.registerAsset("/graph/assets/sheet.png", notes, writeActor = null, fileSystem = fs)
+        val outcome = flow.commit(ProjectUuid("p1"), flow.prepare(registry, "sheet.png", png).getOrNull()!!, registry, emptyMap()).getOrNull()!!
+        rig.fs.writeFileBytes(outcome.assetPath, CloudRig.SMALL_JPEG)
+        rig.fs.writeFileBytes("/graph/assets/sheet.png", CloudRig.SMALL_JPEG)
+
+        val service = AssetPipelineService(
+            PluginRegistry().also { it.register(rig.plugin) }, assetRepo,
+            DatabaseWriteActor(InMemoryBlockRepository(), InMemoryPageRepository()),
+        )
+        service.scheduleBackfill()
+        withTimeout(30_000) { service.progress.first { it is PipelineProgress.Finished || it is PipelineProgress.Paused } }
+
+        assertEquals(0, rig.http.requests.size, "an imported PNG drawing is never sent")
     }
 }
