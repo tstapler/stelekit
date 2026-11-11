@@ -58,7 +58,7 @@ open class ProjectSourceCollector(
         if (snapshot == null) YamlExtractionResult() else yamlExtractor.extract(snapshot, "yaml-snapshot")
 
     /** Prose and count stage (Story 5.3b): lengths and counts stated in free text. */
-    internal fun extractProse(pages: List<TablePageText>): ProseExtractionResult =
+    fun extractProse(pages: List<TablePageText>): ProseExtractionResult =
         pages.fold(ProseExtractionResult()) { acc, p ->
             acc + proseExtractor.extract(p.markdown, p.locator, p.origin) + countExtractor.extract(p.markdown, p.locator, p.origin)
         }
