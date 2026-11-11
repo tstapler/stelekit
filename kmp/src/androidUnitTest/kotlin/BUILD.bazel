@@ -29,6 +29,8 @@ kt_android_library(
             # Compose gesture/host tests for the flagged Sketch screen (Gradle-only, R-AU)
             "**/SketchCanvasGestureTest.kt",
             "**/SketchScreenEntryPointTest.kt",
+            "**/DimensionFieldTest.kt",
+            "**/SketchSheetPanelsTest.kt",
         ],
     ),
     custom_package = "dev.stapler.stelekit",

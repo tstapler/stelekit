@@ -20,6 +20,9 @@ data class SketchSegment(val a: SketchPoint, val b: SketchPoint)
 sealed interface SketchPrimitive {
     val id: String
 
+    /** Layer name; `""` is the default layer. */
+    val layer: String
+
     /** Vertices that the snap engine treats as endpoints. */
     val vertices: List<SketchPoint>
 
@@ -33,19 +36,24 @@ sealed interface SketchPrimitive {
             return Aabb(xs.min(), ys.min(), xs.max(), ys.max())
         }
 
-    data class Line(override val id: String, val a: SketchPoint, val b: SketchPoint) : SketchPrimitive {
+    data class Line(override val id: String, val a: SketchPoint, val b: SketchPoint, override val layer: String = "") : SketchPrimitive {
         override val vertices: List<SketchPoint> get() = listOf(a, b)
         override val segments: List<SketchSegment> get() = listOf(SketchSegment(a, b))
     }
 
     /** Axis-aligned rectangle given by two opposite corners. */
-    data class Rect(override val id: String, val a: SketchPoint, val b: SketchPoint) : SketchPrimitive {
+    data class Rect(override val id: String, val a: SketchPoint, val b: SketchPoint, override val layer: String = "") : SketchPrimitive {
         private val corners: List<SketchPoint>
             get() = listOf(a, SketchPoint(b.x, a.y), b, SketchPoint(a.x, b.y))
         override val vertices: List<SketchPoint> get() = corners
         override val segments: List<SketchSegment>
             get() = corners.let { c -> c.indices.map { SketchSegment(c[it], c[(it + 1) % c.size]) } }
     }
+}
+
+fun SketchPrimitive.withLayer(layer: String): SketchPrimitive = when (this) {
+    is SketchPrimitive.Line -> copy(layer = layer)
+    is SketchPrimitive.Rect -> copy(layer = layer)
 }
 
 sealed interface SceneError {
@@ -68,6 +76,16 @@ class SketchScene private constructor(val primitives: List<SketchPrimitive>) {
         primitives.any { it.id == primitive.id } -> SceneError.DuplicateId(primitive.id).left()
         else -> SketchScene(primitives + primitive).right()
     }
+
+    /** Swaps the primitive with [primitive]'s id for it, keeping draw order. */
+    fun replace(primitive: SketchPrimitive): Either<SceneError, SketchScene> = when {
+        primitive.vertices.any { abs(it.x.sixteenths) > MAX_COORD_SIXTEENTHS || abs(it.y.sixteenths) > MAX_COORD_SIXTEENTHS } ->
+            SceneError.CoordinateOutOfRange(primitive.id).left()
+        else -> SketchScene(primitives.map { if (it.id == primitive.id) primitive else it }).right()
+    }
+
+    /** The primitives for which [keep] is true; ids stay unique because they come from this scene. */
+    fun filtered(keep: (SketchPrimitive) -> Boolean): SketchScene = SketchScene(primitives.filter(keep))
 
     fun remove(id: String): SketchScene = SketchScene(primitives.filterNot { it.id == id })
 

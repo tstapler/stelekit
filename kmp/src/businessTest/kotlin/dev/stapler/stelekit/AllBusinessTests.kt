@@ -832,6 +832,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.SketchViewMathTest::class,
     dev.stapler.stelekit.sketch.SketchRenderCacheTest::class,
     dev.stapler.stelekit.sketch.SketchHistoryTest::class,
+    dev.stapler.stelekit.sketch.SketchSheetPropsTest::class,
+    dev.stapler.stelekit.sketch.SketchSheetViewModelTest::class,
     dev.stapler.stelekit.sketch.SketchViewModelTest::class,
     dev.stapler.stelekit.projectbridge.SketchNavigationGateTest::class,
     dev.stapler.stelekit.sketch.SnapEnginePropertyTest::class,

@@ -29,13 +29,9 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import dev.stapler.stelekit.sketch.ScreenPoint
 import dev.stapler.stelekit.sketch.ViewTransform
 import dev.stapler.stelekit.sketch.SketchPoint
-import dev.stapler.stelekit.units.Inches
 import dev.stapler.stelekit.units.Rational
 
 const val SKETCH_CANVAS_TAG = "sketch-canvas"
-
-/** One-inch grid snap. A per-sheet scale arrives with Story 3.5. */
-private val GRID_STEP = Inches(Inches.SIXTEENTHS_PER_INCH)
 
 private const val STROKE_DP = 2f
 private const val ANCHOR_RADIUS_DP = 4f
@@ -111,7 +107,7 @@ fun SketchCanvas(
                     hover = null
                     if (!transforming && !classifier.isDrag) {
                         val s = currentState
-                        resolveTap(s.tool, s.document.scene, view, screenOf(down.position), GRID_STEP, s.pendingStart).onRight { action ->
+                        resolveTap(s.tool, s.document.visibleScene, view, screenOf(down.position), s.document.sheet.gridStep, s.pendingStart).onRight { action ->
                             when (action) {
                                 is TapAction.Place -> currentPlace(action.point)
                                 is TapAction.Select -> currentSelect(action.id)
@@ -126,7 +122,7 @@ fun SketchCanvas(
         val frame = drawFrameOf(v, density)
         val scale = frame.scale
         val strokeWidth = frame.strokeInSheetUnits(STROKE_DP, density)
-        val shapes = cache.shapesFor(state.document.scene)
+        val shapes = cache.shapesFor(state.document.visibleScene)
         withTransform({
             translate(frame.originX, frame.originY)
             scale(scale, scale, pivot = Offset.Zero)
@@ -149,7 +145,7 @@ fun SketchCanvas(
 
 private fun resolveSnap(state: SketchUiState, view: ViewTransform, at: ScreenPoint): SketchPoint? =
     if (state.tool == SketchTool.ZONE_SELECT) null
-    else resolveTap(state.tool, state.document.scene, view, at, GRID_STEP, state.pendingStart).getOrNull().let { (it as? TapAction.Place)?.point }
+    else resolveTap(state.tool, state.document.visibleScene, view, at, state.document.sheet.gridStep, state.pendingStart).getOrNull().let { (it as? TapAction.Place)?.point }
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLabels(
     shapes: List<CachedShape>,
