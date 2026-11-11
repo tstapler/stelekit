@@ -6,6 +6,7 @@ import arrow.core.raise.either
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.model.LoadedSketchProject
 import dev.stapler.stelekit.model.ProjectUuid
 import dev.stapler.stelekit.model.RevisionToken
 import dev.stapler.stelekit.model.SheetUuid
@@ -63,6 +64,9 @@ data class SketchUiState(
     val selectedId: String? = null,
     val zoneReport: ZoneReport? = null,
     val saveStatus: SaveStatus = SaveStatus.SAVED,
+    /** Opaque project slug and revision, used only to name export files. */
+    val slug: String? = null,
+    val revision: Long = 0,
 ) {
     val document: SketchDocument get() = history.present
     val canUndo: Boolean get() = history.canUndo
@@ -224,12 +228,12 @@ class SketchViewModel(
                 val (loaded, first) = store.loadSheet(uuid, newId).bind()
                 Triple(loaded, first, store.readAllPrimitives(first.uuid).bind())
             }
-            outcome.fold(ifLeft = { fail(it.message) }, ifRight = { (loaded, first, stored) -> apply(loaded.token, first, stored) })
+            outcome.fold(ifLeft = { fail(it.message) }, ifRight = { (loaded, first, stored) -> apply(loaded, first, stored) })
         }
     }
 
-    private fun apply(newToken: RevisionToken, first: SketchSheet, stored: List<StoredPrimitive>) {
-        token = newToken
+    private fun apply(loaded: LoadedSketchProject, first: SketchSheet, stored: List<StoredPrimitive>) {
+        token = loaded.token
         sheet = first
         persisted = stored.associateBy { it.uuid }
         val scene = stored.mapNotNull { it.toScenePrimitive() }.fold(SketchScene.EMPTY) { s, p -> s.add(p).getOrNull() ?: s }
@@ -239,6 +243,7 @@ class SketchViewModel(
             it.copy(
                 phase = SketchPhase.READY, error = null, history = SketchHistory.of(SketchDocument(scene, zones, props)), pendingStart = null,
                 selectedId = null, zoneReport = ZoneConstraints.resolve(zones, props.viewDirection).getOrNull(), saveStatus = SaveStatus.SAVED,
+                slug = loaded.project.slug, revision = loaded.token.value,
             )
         }
     }

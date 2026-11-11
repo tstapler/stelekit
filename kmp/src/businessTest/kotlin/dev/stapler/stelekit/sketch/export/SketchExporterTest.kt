@@ -22,31 +22,39 @@ class SketchExporterTest {
         override val supportsTempRenameWrites get() = tempRename
     }
 
+    private val SLUG = "proj-0a1b2c"
     private val doc = SketchDocument(zones = ZoneSet(listOf(Zone("zone.a", "12\""))))
-    private fun exporter(fs: Fs) = SketchExporter(fs, AtomicFileWriter(fs, { it }, ".tmp") { 1L }, "/g/assets/stelekit-sketch-export")
+    private fun exporter(fs: Fs) = SketchExporter(fs, AtomicFileWriter(fs, { it }, ".tmp") { 1L }, "/g")
 
     @Test
     fun export_should_WriteSvgAndCsvThroughTheAtomicWriter_AndLeaveNoTempFiles() {
         val fs = Fs()
-        val paths = exporter(fs).export(doc).getOrNull()!!
-        assertEquals(listOf("/g/assets/stelekit-sketch-export/sketch.svg", "/g/assets/stelekit-sketch-export/sketch-dimensions.csv"), paths)
+        val paths = exporter(fs).export(doc, SLUG, 7).getOrNull()!!
+        assertEquals(listOf("/g/assets/stelekit-sketch/$SLUG/exports/$SLUG-plan-r7.svg", "/g/assets/stelekit-sketch/$SLUG/exports/$SLUG-plan-r7.csv"), paths)
         assertTrue(fs.readFile(paths[0])!!.contains(SketchSvgWriter.MARKER))
         assertTrue(fs.readFile(paths[1])!!.startsWith(SketchCsvWriter.HEADER))
         assertEquals(emptyList(), fs.allFilePaths().filter { it.endsWith(".tmp") })
     }
 
     @Test
+    fun export_should_RefuseASlugThatCouldEscapeTheFolder() {
+        val fs = Fs()
+        assertIs<DomainError.FileSystemError.WriteFailed>(exporter(fs).export(doc, "../x", 1).leftOrNull())
+        assertEquals(emptyList(), fs.allFilePaths())
+    }
+
+    @Test
     fun export_should_BeIdempotent() {
         val fs = Fs()
-        val first = exporter(fs).export(doc)
-        val second = exporter(fs).export(doc)
+        val first = exporter(fs).export(doc, SLUG, 7)
+        val second = exporter(fs).export(doc, SLUG, 7)
         assertEquals(first, second)
     }
 
     @Test
     fun export_should_DegradeWithoutWriting_WhenTempRenameIsUnsupported() {
         val fs = Fs(tempRename = false)
-        val result = exporter(fs).export(doc)
+        val result = exporter(fs).export(doc, SLUG, 7)
         assertIs<DomainError.FileSystemError.AtomicWriteUnsupported>(result.leftOrNull())
         assertEquals(emptyList(), fs.allFilePaths())
     }

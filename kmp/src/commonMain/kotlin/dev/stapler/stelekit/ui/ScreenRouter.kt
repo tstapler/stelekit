@@ -407,7 +407,7 @@ internal fun ScreenRouter(
                             dev.stapler.stelekit.sketch.export.SketchExporter(
                                 fileSystem,
                                 dev.stapler.stelekit.platform.AtomicFileWriter(fileSystem, { it }, ".tmp"),
-                                graphPath.trimEnd('/') + "/" + dev.stapler.stelekit.sketch.export.SketchExporter.EXPORT_DIR,
+                                graphPath,
                             )
                         }
                     }

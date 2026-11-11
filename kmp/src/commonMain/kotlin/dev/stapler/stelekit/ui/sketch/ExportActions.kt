@@ -18,7 +18,6 @@ import arrow.core.Either
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.error.toUiMessage
-import dev.stapler.stelekit.sketch.SketchDocument
 import dev.stapler.stelekit.sketch.export.SketchExporter
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -31,13 +30,14 @@ fun exportStatusText(result: Either<DomainError, List<String>>): String = when (
 
 /** Export button for the sketch toolbar; shows nothing when this graph has no writable location. */
 @Composable
-fun SketchExportButton(document: SketchDocument, exporter: SketchExporter?, modifier: Modifier = Modifier) {
-    if (exporter == null) return
+fun SketchExportButton(state: SketchUiState, exporter: SketchExporter?, modifier: Modifier = Modifier) {
+    val slug = state.slug
+    if (exporter == null || slug == null) return
     val scope = rememberCoroutineScope()
     var status by remember { mutableStateOf<String?>(null) }
     TextButton(
         onClick = {
-            scope.launch { status = exportStatusText(withContext(PlatformDispatcher.IO) { exporter.export(document) }) }
+            scope.launch { status = exportStatusText(withContext(PlatformDispatcher.IO) { exporter.export(state.document, slug, state.revision) }) }
         },
         modifier = modifier,
     ) { Text("Export") }

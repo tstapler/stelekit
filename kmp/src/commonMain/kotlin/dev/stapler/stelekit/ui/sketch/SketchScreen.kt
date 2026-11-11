@@ -54,7 +54,7 @@ fun SketchScreen(
             TextButton(onClick = viewModel::undo, enabled = state.canUndo) { Text("Undo") }
             TextButton(onClick = viewModel::redo, enabled = state.canRedo) { Text("Redo") }
             TextButton(onClick = viewModel::deleteSelected, enabled = state.selectedId != null) { Text("Delete") }
-            SketchExportButton(state.document, exporter)
+            SketchExportButton(state, exporter)
             TextButton(onClick = { panelsOpen = !panelsOpen }) { Text(if (panelsOpen) "Hide sheet panels" else "Sheet panels") }
             Text(state.statusText(), style = MaterialTheme.typography.labelMedium)
         }

@@ -90,7 +90,7 @@ class SketchExportRoundTripTest {
     @Test
     fun dimensionGroupsCarryDataAttributes() {
         val svg = SketchSvgWriter.write(doc("12\"", "6\""))
-        assertTrue(svg.contains("""<g data-dim-id="zone.left" data-value="12&quot;" data-source="typed">"""), svg)
+        assertTrue(svg.contains("""<g data-dim-id="zone.left" data-value="1&apos; 0&quot;" data-source="typed">"""), svg)
     }
 
     @Test
