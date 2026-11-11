@@ -58,6 +58,11 @@ class ProjectBridgeSettings(private val settings: Settings) {
         return true
     }
 
+    /** Hash of the source inputs behind the last digest this device wrote or confirmed; blank before the first run. Device-local. */
+    fun lastDigestInputHash(graphId: String): String = settings.getString(inputHashKey(graphId), "")
+
+    fun setLastDigestInputHash(graphId: String, hash: String) = settings.putString(inputHashKey(graphId), hash)
+
     /** True only when both the master flag and this graph's digest opt-in are on. */
     fun isDigestActive(graphId: String): Boolean = homeSketchEnabled && digestEnabled(graphId)
 
@@ -70,6 +75,7 @@ class ProjectBridgeSettings(private val settings: Settings) {
         private fun digestTitleKey(graphId: String) = "home_sketch_digest_title_$graphId"
         private fun previewHashKey(graphId: String) = "home_sketch_outbound_preview_hash_$graphId"
         private fun termsKey(graphId: String) = "home_sketch_outbound_private_terms_$graphId"
+        private fun inputHashKey(graphId: String) = "home_sketch_last_digest_input_hash_$graphId"
         private fun analyseKey(graphId: String) = "home_sketch_analyse_after_sync_$graphId"
     }
 }
