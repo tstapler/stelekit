@@ -5,7 +5,12 @@ package dev.stapler.stelekit.jobs.schedule
 
 import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
@@ -43,4 +48,27 @@ class GraphRemovalTasks(
             }
         }
     }
+}
+
+/**
+ * Owns the guarded scope [GraphRemovalTasks] launches on, so each root installation has exactly one scope
+ * and [close] cancels it. The Android root creates one per activity composition (rotation recreates it),
+ * which would otherwise leak the previous scope.
+ */
+class GraphRemovalCleanup(
+    scheduler: BackgroundTaskScheduler,
+    store: TaskSettingsStore,
+    registry: TaskRegistry,
+    dispatcher: CoroutineDispatcher = Dispatchers.Default,
+) {
+    private val logger = Logger("GraphRemovalTasks")
+    private val scope = CoroutineScope(
+        SupervisorJob() + dispatcher + CoroutineExceptionHandler { _, t -> logger.warn("graph removal task cleanup failed", t) },
+    )
+    private val tasks = GraphRemovalTasks(scheduler, store, registry, scope)
+
+    fun onRemoved(graph: TaskScope) = tasks.onRemoved(graph)
+
+    /** Cancels in-flight and future cleanup; later [onRemoved] calls are no-ops. */
+    fun close() = scope.cancel()
 }

@@ -94,4 +94,22 @@ class GraphRemovalTasksTest {
         assertFalse(store.isTombstoned(TaskKey(gitKind, removed)), "the failing write did not land")
         assertTrue(store.isTombstoned(TaskKey(syncKind, removed)), "later kinds still tombstoned")
     }
+
+    @Test
+    fun cleanup_should_runWork_When_openAndDoNothing_When_closed() = runTest {
+        val store = TaskSettingsStore(MapSettings(), LegacyConfigSeed.None, registry)
+        val scheduler = fake()
+        val dispatcher = kotlinx.coroutines.test.StandardTestDispatcher(testScheduler)
+        val cleanup = GraphRemovalCleanup(scheduler, store, registry, dispatcher)
+
+        cleanup.onRemoved(removed)
+        advanceUntilIdle()
+        assertEquals(listOf("cancelAll:g1"), scheduler.calls)
+
+        cleanup.close()
+        cleanup.onRemoved(kept)
+        advanceUntilIdle()
+        assertEquals(listOf("cancelAll:g1"), scheduler.calls, "a closed cleanup's scope no longer launches")
+        assertFalse(store.isTombstoned(TaskKey(gitKind, kept)))
+    }
 }
