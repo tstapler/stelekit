@@ -8,7 +8,7 @@ import dev.stapler.stelekit.model.NormalizedPoint
 import kotlin.math.hypot
 
 /** What a SELECT-tool touch landed on. */
-internal sealed interface AnnotationHit {
+sealed interface AnnotationHit {
     val uuid: String
 
     /** A vertex handle — dragging moves just that point. */
@@ -19,15 +19,18 @@ internal sealed interface AnnotationHit {
 }
 
 /**
- * Finds the annotation under [position] (canvas pixels). Vertices win over edges so a point at the
- * end of a line is grabbable on its own; among candidates the nearest one wins.
+ * Finds the annotation under [position]. Vertices win over edges so a point at the end of a line is
+ * grabbable on its own; among candidates the nearest one wins. [position] and the radii are screen
+ * pixels in the canvas's local space; annotation points are mapped through [view] first, so grab
+ * targets keep a constant on-screen size at any zoom.
  */
-internal fun hitTestAnnotations(
+fun hitTestAnnotations(
     annotations: List<MeasurementAnnotation>,
     position: Offset,
     canvasSize: IntSize,
     vertexRadiusPx: Float,
     edgeRadiusPx: Float,
+    view: AnnotationViewTransform = AnnotationViewTransform.Fit,
 ): AnnotationHit? {
     var bestVertex: AnnotationHit.Vertex? = null
     var bestVertexDist = vertexRadiusPx
@@ -35,7 +38,7 @@ internal fun hitTestAnnotations(
     var bestEdgeDist = edgeRadiusPx
 
     for (annotation in annotations) {
-        val pts = annotation.normalizedPoints.map { it.toScreen(canvasSize) }
+        val pts = annotation.normalizedPoints.map { view.toView(it.toScreen(canvasSize)) }
         pts.forEachIndexed { i, p ->
             val d = (p - position).getDistance()
             if (d <= bestVertexDist) {

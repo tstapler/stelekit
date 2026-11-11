@@ -42,6 +42,8 @@ kt_android_library(
             "**/LabsFlagToggleTest.kt",
             # Compose host test for the annotate non-drag placement UI (Gradle-only, no Compose plugin here)
             "**/AnnotationNonDragModeTest.kt",
+            # Compose host test for annotate zoom/pan (Gradle-only, no Compose plugin here)
+            "**/AnnotationZoomPanTest.kt",
             # Compose host test for the PNG calibration step (Gradle-only, no Compose plugin here)
             "**/RasterTaggingPanelTest.kt",
         ],

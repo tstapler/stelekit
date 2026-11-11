@@ -16,10 +16,20 @@ import kotlin.math.roundToInt
  * The annotated image as the [PlacementSpace] of the shared placement controller: normalised
  * [0,1] points over a canvas of the given pixel size. Nudged points snap to the pixel grid so
  * opposite nudges reverse exactly. A [NormalizedPoint] cannot leave [0,1], so shifts clamp at the edge.
+ *
+ * When the view is zoomed by [zoom], nudge pixels are screen pixels: the grid is the zoomed canvas, so a
+ * 1 px nudge at 8x moves 1/8 of an image pixel. Percent steps are a percent of the visible width,
+ * [visibleWidthPx] (the viewport, if known) capped at the zoomed canvas width.
  */
-class AnnotationPlacementSpace(canvasWidthPx: Int, canvasHeightPx: Int) : PlacementSpace<NormalizedPoint> {
-    override val canvasWidthPx: Int = canvasWidthPx.coerceAtLeast(1)
-    private val heightPx: Int = canvasHeightPx.coerceAtLeast(1)
+class AnnotationPlacementSpace(
+    canvasWidthPx: Int,
+    canvasHeightPx: Int,
+    zoom: Float = 1f,
+    visibleWidthPx: Int? = null,
+) : PlacementSpace<NormalizedPoint> {
+    private val extentXPx: Int = (canvasWidthPx * zoom).roundToInt().coerceAtLeast(1)
+    private val heightPx: Int = (canvasHeightPx * zoom).roundToInt().coerceAtLeast(1)
+    override val canvasWidthPx: Int = (visibleWidthPx?.let { minOf(it, extentXPx) } ?: extentXPx).coerceAtLeast(1)
 
     override fun center(): NormalizedPoint = NormalizedPoint(HALF, HALF)
 
@@ -30,7 +40,7 @@ class AnnotationPlacementSpace(canvasWidthPx: Int, canvasHeightPx: Int) : Placem
 
     override fun shift(point: NormalizedPoint, offset: PxOffset): NormalizedPoint =
         NormalizedPoint(
-            shifted(point.x, offset.dx, canvasWidthPx),
+            shifted(point.x, offset.dx, extentXPx),
             shifted(point.y, offset.dy, heightPx),
         )
 

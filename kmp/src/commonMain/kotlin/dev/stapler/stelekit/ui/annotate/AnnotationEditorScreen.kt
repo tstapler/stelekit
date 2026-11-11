@@ -3,8 +3,6 @@ package dev.stapler.stelekit.ui.annotate
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.shape.CircleShape
@@ -48,17 +46,23 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.runtime.Composable
 import dev.stapler.stelekit.ui.PlatformBackHandler
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.Offset
@@ -68,10 +72,8 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import dev.stapler.stelekit.ui.placement.crosshairPoint
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntOffset
@@ -184,7 +186,47 @@ fun AnnotationEditorScreen(
 ) {
     val state by viewModel.state.collectAsState()
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
-    val placementSpace = AnnotationPlacementSpace(canvasSize.width, canvasSize.height)
+    var viewportSize by remember { mutableStateOf(IntSize.Zero) }
+    var canvasOrigin by remember { mutableStateOf(Offset.Zero) }
+    var toolbarHeightPx by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    // Zoom/pan is a view concern: not persisted, not exported, reset per image. Only draw/layout/gesture
+    // code reads it, so a gesture frame never recomposes this screen.
+    var viewTransform by rememberSaveable(imageAnnotation.uuid, stateSaver = AnnotationViewTransformSaver) {
+        mutableStateOf(AnnotationViewTransform.Fit)
+    }
+    val density = LocalDensity.current
+    val panSlackPx = with(density) { PAN_SLACK.toPx() }
+    val viewHandle = remember(panSlackPx) {
+        AnnotationViewHandle(
+            canvasSize = { canvasSize },
+            canvasOrigin = { canvasOrigin },
+            view = { viewTransform },
+            geometry = {
+                ViewGeometry(
+                    canvasWidth = canvasSize.width.toFloat(),
+                    canvasHeight = canvasSize.height.toFloat(),
+                    canvasLeft = canvasOrigin.x,
+                    canvasTop = canvasOrigin.y,
+                    viewportWidth = viewportSize.width.toFloat(),
+                    viewportHeight = viewportSize.height.toFloat(),
+                    slack = panSlackPx,
+                )
+            },
+            setView = { viewTransform = it },
+        )
+    }
+    // Nudges are screen pixels, so the space follows the zoom; built at event time, not during composition.
+    fun placementSpace() = AnnotationPlacementSpace(canvasSize.width, canvasSize.height, viewTransform.scale, viewportSize.width)
+    LaunchedEffect(canvasSize, viewportSize, canvasOrigin) {
+        viewTransform = viewTransform.clamped(viewHandle.geometry())
+    }
+    // Keep the crosshair on screen while nudging at zoom.
+    val crosshair = state.placement.state.crosshairPoint
+    LaunchedEffect(crosshair) {
+        if (crosshair != null && canvasSize != IntSize.Zero) {
+            viewTransform = viewTransform.revealing(crosshair.toScreen(canvasSize), panSlackPx * 2, viewHandle.geometry())
+        }
+    }
     val haptic = LocalHapticFeedback.current
     var showCalibrationSheet by remember { mutableStateOf(false) }
     var showCalibrationChangeWarning by remember { mutableStateOf(false) }
@@ -207,7 +249,7 @@ fun AnnotationEditorScreen(
 
     // Delete annotation confirmation
     var pendingDeleteUuid by remember { mutableStateOf<String?>(null) }
-    var loupeOffset by remember { mutableStateOf<Offset?>(null) }
+    var loupeTouch by remember { mutableStateOf<LoupeTouch?>(null) }
     // Decoded image aspect; the annotation layers are sized to it so canvas fractions == image fractions.
     var imageAspect by remember { mutableStateOf<Float?>(null) }
     val rippleAlpha = remember { Animatable(0f) }
@@ -433,12 +475,22 @@ fun AnnotationEditorScreen(
         }
 
         Box(modifier = Modifier.weight(1f)) {
+        // Viewport: clips the zoomed image and stops above the floating toolbar so the whole image
+        // stays reachable by panning instead of sitting under it.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = with(density) { toolbarHeightPx.toDp() } + TOOLBAR_CLEARANCE)
+                .clipToBounds()
+                .onSizeChanged { viewportSize = it },
+        ) {
         // Image-aligned box: without it the Fit-scaled photo is letterboxed inside a full-size canvas,
         // so touches, drawn points and the loupe's crosshair all map to different image positions.
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
-                .then(imageAspect?.let { Modifier.aspectRatio(it) } ?: Modifier.fillMaxSize()),
+                .then(imageAspect?.let { Modifier.aspectRatio(it) } ?: Modifier.fillMaxSize())
+                .onGloballyPositioned { coords -> canvasOrigin = coords.positionInParent() },
         ) {
             // Layer 1: Zoomed/pannable image
             // We use Coil AsyncImage which handles subsampling for large images.
@@ -448,8 +500,16 @@ fun AnnotationEditorScreen(
             val imageUri = remember(imageAnnotation.filePath) {
                 fileSystem?.resolveLoadableUri(imageAnnotation.filePath) ?: imageAnnotation.filePath
             }
+            val platformContext = LocalPlatformContext.current
+            // Decode above the fitted size so a zoomed view stays sharp (capped, like the loupe).
+            val imageModel: Any = remember(imageUri, viewportSize, platformContext) {
+                if (viewportSize == IntSize.Zero) imageUri else {
+                    val (w, h) = loupeDecodeSize(viewportSize.width, viewportSize.height, ZOOM_DECODE_FACTOR)
+                    ImageRequest.Builder(platformContext).data(imageUri).size(Size(w, h)).build()
+                }
+            }
             AsyncImage(
-                model = imageUri,
+                model = imageModel,
                 imageLoader = rememberSteleKitImageLoader(),
                 contentDescription = "Annotated image",
                 onSuccess = { success ->
@@ -461,7 +521,15 @@ fun AnnotationEditorScreen(
                 },
                 modifier = Modifier
                     .fillMaxSize()
-                    .onGloballyPositioned { coords -> canvasSize = coords.size },
+                    .onGloballyPositioned { coords -> canvasSize = coords.size }
+                    .graphicsLayer {
+                        val v = viewTransform
+                        transformOrigin = TransformOrigin(0f, 0f)
+                        scaleX = v.scale
+                        scaleY = v.scale
+                        translationX = v.offsetX
+                        translationY = v.offsetY
+                    },
                 // Explicit: LoupeOverlay's offset math assumes Fit letterboxing.
                 contentScale = ContentScale.Fit,
             )
@@ -472,37 +540,26 @@ fun AnnotationEditorScreen(
                 annotations = state.committedAnnotations,
                 selectedUuid = state.selectedAnnotationUuid,
                 canvasSize = canvasSize,
+                view = { viewTransform },
             )
 
-            // Layer 3: In-progress annotation Canvas + gesture detection
-            InProgressAnnotationCanvas(
+            // Layer 3: In-progress preview (drawing only; the gesture layer above owns the touches)
+            InProgressPreviewCanvas(
                 inProgressPoints = state.inProgressPoints,
                 currentTool = state.currentTool,
                 canvasSize = canvasSize,
-                onTap = { offset ->
-                    val normalized = offset.toNormalized(canvasSize)
-                    if (normalized != null) {
-                        if (state.placement.active) viewModel.tapCrosshair(placementSpace, normalized)
-                        else viewModel.addPoint(normalized)
-                    }
-                },
-                onLoupeOffset = { offset -> loupeOffset = offset },
-                onRipple = { screenOffset -> rippleCanvasOffset = screenOffset },
-                annotations = state.committedAnnotations,
-                onSelect = { uuid -> if (uuid == null) viewModel.clearSelection() else viewModel.selectAnnotation(uuid) },
-                onEditStart = { viewModel.beginAnnotationEdit() },
-                onEditPoints = { uuid, pts -> viewModel.updateAnnotationPoints(uuid, pts) },
-                onEditEnd = { uuid -> viewModel.commitAnnotationEdit(uuid) },
+                view = { viewTransform },
             )
 
-            AnnotationCrosshairLayer(state.placement.state.crosshairPoint, canvasSize)
+            AnnotationCrosshairLayer(state.placement.state.crosshairPoint, canvasSize, view = { viewTransform })
 
-            val currentLoupeOffset = loupeOffset
-            if (currentLoupeOffset != null && canvasSize != IntSize.Zero) {
+            val currentLoupeTouch = loupeTouch
+            if (currentLoupeTouch != null && canvasSize != IntSize.Zero) {
                 LoupeOverlay(
                     imageUri = imageUri,
-                    touchOffset = currentLoupeOffset,
+                    touch = currentLoupeTouch,
                     canvasSize = canvasSize,
+                    viewScale = viewTransform.scale,
                 )
             }
             val currentRippleOffset = rippleCanvasOffset
@@ -523,6 +580,7 @@ fun AnnotationEditorScreen(
                 annotations = state.committedAnnotations,
                 canvasSize = canvasSize,
                 modifier = Modifier.fillMaxSize(),
+                view = { viewTransform },
             )
 
             // Accessibility layer: invisible semantic nodes over each annotation for TalkBack
@@ -530,8 +588,35 @@ fun AnnotationEditorScreen(
                 annotations = state.committedAnnotations,
                 canvasSize = canvasSize,
                 onAnnotationSelect = { uuid -> viewModel.selectAnnotation(uuid) },
-                onMoveVertex = { uuid, index -> viewModel.beginVertexMove(placementSpace, uuid, index) },
+                onMoveVertex = { uuid, index -> viewModel.beginVertexMove(placementSpace(), uuid, index) },
                 modifier = Modifier.fillMaxSize(),
+                view = { viewTransform },
+            )
+
+            } // end image-aligned Box
+
+            // The gesture layer sits above every annotation layer and below the coach marks.
+            AnnotationGestureLayer(
+                currentTool = state.currentTool,
+                annotations = state.committedAnnotations,
+                handle = viewHandle,
+                callbacks = remember(viewModel) {
+                    AnnotationGestureCallbacks(
+                        onTap = { canvasPoint ->
+                            val normalized = canvasPoint.toNormalized(canvasSize)
+                            if (normalized != null) {
+                                if (viewModel.state.value.placement.active) viewModel.tapCrosshair(placementSpace(), normalized)
+                                else viewModel.addPoint(normalized)
+                            }
+                        },
+                        onLoupe = { touch -> loupeTouch = touch },
+                        onRipple = { local -> rippleCanvasOffset = local },
+                        onSelect = { uuid -> if (uuid == null) viewModel.clearSelection() else viewModel.selectAnnotation(uuid) },
+                        onEditStart = { viewModel.beginAnnotationEdit() },
+                        onEditPoints = { uuid, pts -> viewModel.updateAnnotationPoints(uuid, pts) },
+                        onEditEnd = { uuid -> viewModel.commitAnnotationEdit(uuid) },
+                    )
+                },
             )
 
             // Coach mark: after first calibration, show DISTANCE coach mark
@@ -559,7 +644,15 @@ fun AnnotationEditorScreen(
                 )
             }
 
-            } // end image-aligned Box
+            } // end viewport Box
+
+            AnnotationZoomControls(
+                view = { viewTransform },
+                onZoomIn = { viewTransform = viewTransform.stepped(ZOOM_STEP_FACTOR, viewHandle.geometry()) },
+                onZoomOut = { viewTransform = viewTransform.stepped(1f / ZOOM_STEP_FACTOR, viewHandle.geometry()) },
+                onFit = { viewTransform = AnnotationViewTransform.Fit },
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp),
+            )
 
             val contextHint: String? = when {
                 state.currentTool == AnnotationTool.SELECT -> null
@@ -593,10 +686,10 @@ fun AnnotationEditorScreen(
             if (state.currentTool != AnnotationTool.SELECT) {
                 AnnotationPlacementControls(
                     session = state.placement,
-                    onToggle = { viewModel.togglePlacementMode(placementSpace) },
-                    onNudge = { direction, step -> viewModel.nudgeCrosshair(placementSpace, direction, step) },
+                    onToggle = { viewModel.togglePlacementMode(placementSpace()) },
+                    onNudge = { direction, step -> viewModel.nudgeCrosshair(placementSpace(), direction, step) },
                     onConfirm = {
-                        if (viewModel.confirmCrosshair(placementSpace)) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        if (viewModel.confirmCrosshair(placementSpace())) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     },
                     onCancel = { viewModel.cancelPlacement() },
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 150.dp),
@@ -632,7 +725,8 @@ fun AnnotationEditorScreen(
                 showLabels = showToolLabels,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(8.dp),
+                    .padding(8.dp)
+                    .onSizeChanged { toolbarHeightPx = it.height },
             )
 
             // Story 5.7: Device connection status chip + "Set from laser" button.
@@ -916,16 +1010,18 @@ private fun CommittedAnnotationsCanvas(
     selectedUuid: String?,
     canvasSize: IntSize,
     modifier: Modifier = Modifier,
+    view: () -> AnnotationViewTransform = { AnnotationViewTransform.Fit },
 ) {
     // Retain Path objects per annotation uuid to avoid per-frame allocation.
     val pathMap = remember { mutableMapOf<String, Path>() }
 
     Canvas(modifier = modifier.fillMaxSize()) {
         if (canvasSize == IntSize.Zero) return@Canvas
+        val currentView = view()
         annotations.forEach { annotation ->
             val isSelected = annotation.uuid == selectedUuid
             val path = pathMap.getOrPut(annotation.uuid) { Path() }
-            drawAnnotation(annotation, path, canvasSize, isSelected)
+            drawAnnotation(annotation, path, canvasSize, isSelected, currentView)
         }
     }
 }
@@ -935,13 +1031,14 @@ private fun DrawScope.drawAnnotation(
     path: Path,
     canvasSize: IntSize,
     isSelected: Boolean,
+    view: AnnotationViewTransform,
 ) {
     val color = if (isSelected) Color(0xFFFFD700) else annotationColor(annotation.annotationType)
     val strokeWidth = if (isSelected) 4.dp.toPx() else 2.dp.toPx()
     val points = annotation.normalizedPoints
     if (points.isEmpty()) return
 
-    val screenPoints = points.map { it.toScreen(canvasSize) }
+    val screenPoints = points.map { view.toView(it.toScreen(canvasSize)) }
 
     when (annotation.annotationType) {
         AnnotationType.DISTANCE, AnnotationType.GRID_REF -> {
@@ -990,111 +1087,26 @@ private fun DrawScope.drawAnnotation(
     }
 }
 
-// ── Layer 3: In-progress Canvas ───────────────────────────────────────────────
+// ── Layer 3: In-progress preview ──────────────────────────────────────────────
 
 /**
- * Transparent Canvas that captures taps via [awaitEachGesture] and draws the
- * in-progress annotation preview.
+ * Draws the in-progress annotation preview. Touches are handled by [AnnotationGestureLayer].
  *
- * PERFORMANCE: recomposition of this layer is driven only by [inProgressPoints] changes,
- * NOT by zoom/pan state — ensuring no per-frame recomposition during gestures.
+ * PERFORMANCE: recomposition is driven only by [inProgressPoints] changes; the view transform is
+ * read in the draw phase, so pinch/pan never recomposes it.
  */
 @Composable
-private fun InProgressAnnotationCanvas(
+private fun InProgressPreviewCanvas(
     inProgressPoints: List<NormalizedPoint>,
     currentTool: AnnotationTool,
     canvasSize: IntSize,
-    onTap: (Offset) -> Unit,
     modifier: Modifier = Modifier,
-    onLoupeOffset: ((Offset?) -> Unit)? = null,
-    onRipple: ((Offset) -> Unit)? = null,
-    annotations: List<MeasurementAnnotation> = emptyList(),
-    onSelect: (String?) -> Unit = {},
-    onEditStart: () -> Unit = {},
-    onEditPoints: (String, List<NormalizedPoint>) -> Unit = { _, _ -> },
-    onEditEnd: (String) -> Unit = {},
+    view: () -> AnnotationViewTransform = { AnnotationViewTransform.Fit },
 ) {
-    DisposableEffect(currentTool) {
-        onDispose { onLoupeOffset?.invoke(null) }
-    }
-    val tapThresholdPx = with(LocalDensity.current) { 16.dp.toPx() }
-    val vertexRadiusPx = with(LocalDensity.current) { 28.dp.toPx() }
-    val edgeRadiusPx = with(LocalDensity.current) { 20.dp.toPx() }
-    val currentAnnotations by rememberUpdatedState(annotations)
-    val currentCanvasSize by rememberUpdatedState(canvasSize)
-    Canvas(
-        modifier = modifier
-            .fillMaxSize()
-            .semantics { contentDescription = "Annotation canvas — tap to place points" }
-            .pointerInput(currentTool) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    val downPos = down.position
-                    if (currentTool == AnnotationTool.SELECT) {
-                        val size = currentCanvasSize
-                        val hit = hitTestAnnotations(currentAnnotations, downPos, size, vertexRadiusPx, edgeRadiusPx)
-                        if (hit == null) {
-                            val up = waitForUpOrCancellation()
-                            if (up != null && (up.position - downPos).getDistance() < tapThresholdPx) onSelect(null)
-                            return@awaitEachGesture
-                        }
-                        down.consume()
-                        onSelect(hit.uuid)
-                        val original = currentAnnotations.first { it.uuid == hit.uuid }.normalizedPoints
-                        var editing = false
-                        try {
-                            while (true) {
-                                val change = awaitPointerEvent().changes.firstOrNull() ?: break
-                                if (!editing && (change.position - downPos).getDistance() >= tapThresholdPx) {
-                                    editing = true
-                                    onEditStart()
-                                }
-                                if (editing) {
-                                    change.consume()
-                                    when (hit) {
-                                        is AnnotationHit.Vertex -> {
-                                            change.position.toNormalized(size)?.let { moved ->
-                                                onEditPoints(hit.uuid, original.toMutableList().also { it[hit.index] = moved })
-                                            }
-                                            onLoupeOffset?.invoke(change.position)
-                                        }
-                                        is AnnotationHit.Body -> if (size.width > 0 && size.height > 0) {
-                                            val delta = change.position - downPos
-                                            onEditPoints(
-                                                hit.uuid,
-                                                translateClamped(original, delta.x.toDouble() / size.width, delta.y.toDouble() / size.height),
-                                            )
-                                        }
-                                    }
-                                }
-                                if (!change.pressed) break
-                            }
-                        } finally {
-                            onLoupeOffset?.invoke(null)
-                            if (editing) onEditEnd(hit.uuid)
-                        }
-                        return@awaitEachGesture
-                    }
-                    down.consume()
-                    onLoupeOffset?.invoke(downPos)
-                    var lastPos = downPos
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull() ?: break
-                        lastPos = change.position
-                        change.consume()
-                        onLoupeOffset?.invoke(lastPos)
-                        if (!change.pressed) break
-                    }
-                    // The loupe is for aiming: drag to the crosshair, release to place — at any distance.
-                    onRipple?.invoke(lastPos)
-                    onTap(lastPos)
-                    onLoupeOffset?.invoke(null)
-                }
-            },
-    ) {
+    Canvas(modifier = modifier.fillMaxSize()) {
         if (canvasSize == IntSize.Zero || inProgressPoints.isEmpty()) return@Canvas
-        val screenPoints = inProgressPoints.map { it.toScreen(canvasSize) }
+        val currentView = view()
+        val screenPoints = inProgressPoints.map { currentView.toView(it.toScreen(canvasSize)) }
         val color = Color(0xFF4CAF50)
 
         // Draw line segments between points
@@ -1651,13 +1663,26 @@ internal fun DepthEstimationPanel(
 
 internal const val LOUPE_OVERLAY_TAG = "loupe-overlay"
 
+private val PAN_SLACK = 24.dp
+private val TOOLBAR_CLEARANCE = 16.dp
+private const val ZOOM_DECODE_FACTOR = 2.5f
+
+/** Survives rotation and process recreation; the view is cheap state, so a plain list of floats. */
+internal val AnnotationViewTransformSaver: Saver<AnnotationViewTransform, Any> = listSaver(
+    save = { listOf(it.scale, it.offsetX, it.offsetY) },
+    restore = { AnnotationViewTransform(it[0], it[1], it[2]) },
+)
+
 @Composable
 private fun LoupeOverlay(
     imageUri: String,
-    touchOffset: Offset,
+    touch: LoupeTouch,
     canvasSize: IntSize,
+    viewScale: Float,
 ) {
-    val zoomFactor = 3f
+    // Placed at the finger (local screen position); samples the canvas pixel under it, which differs once zoomed.
+    val touchOffset = touch.local
+    val zoomFactor = loupeZoomFactor(viewScale)
     val loupeSizeDp = 120.dp
     val loupeSizePx = with(LocalDensity.current) { loupeSizeDp.toPx() }
     val marginPx = with(LocalDensity.current) { 16.dp.toPx() }
@@ -1683,7 +1708,7 @@ private fun LoupeOverlay(
         val (w, h) = loupeDecodeSize(canvasSize.width, canvasSize.height, zoomFactor)
         ImageRequest.Builder(platformContext).data(imageUri).size(Size(w, h)).build()
     }
-    val innerOffset = loupeInnerOffset(loupeSizePx, touchOffset, zoomFactor)
+    val innerOffset = loupeInnerOffset(loupeSizePx, touch.canvas, zoomFactor)
     Box(
         modifier = Modifier
             .offset { IntOffset(loupeXPx.toInt(), loupeYPx.toInt()) }
