@@ -2,6 +2,7 @@ package dev.stapler.stelekit.ui.library
 
 import arrow.core.Either
 import arrow.core.left
+import dev.stapler.stelekit.asset.AssetIndexProgress
 import dev.stapler.stelekit.asset.AssetMediaType
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.platform.Settings
@@ -46,6 +47,20 @@ class LibraryViewModelStateTest {
         fx.add(1, "kitchen.png", AssetMediaType.IMAGE, 1_000L, annotation = AnnotationSpec(tags = listOf("site"), labels = listOf("w")))
         fx.add(2, "sink.png", AssetMediaType.IMAGE, 1_001L)
         fx.add(3, "plan.pdf", AssetMediaType.PDF, 1_002L)
+    }
+
+    @Test
+    fun finishedIndexWalk_reloadsTheList_andRunningWalkFlagsIndexing() = runBlocking {
+        val progress = kotlinx.coroutines.flow.MutableStateFlow<AssetIndexProgress>(AssetIndexProgress.Indexing(0, 3))
+        val v = LibraryViewModel(fx.library, null, pageSize = 100, searchDebounceMs = 20, indexProgress = progress).also { toClose += it }
+        await(v) { !it.isLoading && it.indexing }
+        assertTrue(v.state.value.items.isEmpty())
+
+        seed()
+        progress.value = AssetIndexProgress.Finished(3)
+
+        await(v) { !it.indexing && it.items.size == 3 }
+        assertEquals(3, v.state.value.items.size)
     }
 
     @Test

@@ -21,10 +21,9 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * Owns the `asset_pipeline_enabled` switch and decides when [AssetIndexService] runs.
  *
- * The gate lives here, in the entry point, not only in the UI: [isActive] is false unless the
- * build exposes the switch ([toggleVisible], hidden in release variants before the heap gate) AND
- * the stored flag is true, so a release build never starts the backfill and never registers
- * attachments even if the key were somehow set.
+ * [isActive] (switch exposed by the build AND stored flag true) gates the plugin stage only. The
+ * bounded file walk and attachment registration always run, because the Library lists `asset_index`
+ * and a release build, which hides the switch, would otherwise never populate it.
  */
 class AssetIndexingController(
     private val settings: Settings,
@@ -124,14 +123,16 @@ class AssetIndexingController(
         runMarker.end(MARKER_OWNER)
     }
 
+    // The file walk fills asset_index, the Library's only source, so it runs whenever a graph is ready;
+    // only the heavier plugin stage stays behind [isActive].
     private fun reconcile() {
         val ctx = graph
-        if (isActive && ctx != null) {
-            runMarker.begin(MARKER_OWNER)
-            indexService.startBackfill(ctx.notesPath, ctx.writeActor, ctx.fileSystem)
-        } else {
+        if (ctx == null) {
             stopIndexing()
+            return
         }
+        if (isActive) runMarker.begin(MARKER_OWNER) else runMarker.end(MARKER_OWNER)
+        indexService.startBackfill(ctx.notesPath, ctx.writeActor, ctx.fileSystem)
     }
 
     /**
@@ -139,8 +140,7 @@ class AssetIndexingController(
      * swallowed: indexing must never fail an attach.
      */
     suspend fun registerAttachment(result: AttachmentResult) {
-        val ctx = graph
-        if (!isActive || ctx == null) return
+        val ctx = graph ?: return
         try {
             val absolute = ctx.notesPath.child(result.relativePath.removePrefix("../"))
             indexService.registerAsset(

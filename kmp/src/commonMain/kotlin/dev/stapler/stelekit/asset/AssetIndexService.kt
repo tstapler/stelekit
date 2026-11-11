@@ -212,6 +212,7 @@ class AssetIndexService(
     ) {
         val assetsDir = notesPath.child("assets")
         if (!fileSystem.directoryExists(assetsDir)) {
+            logger.info("Asset backfill skipped: no assets/ directory")
             publish(run, AssetIndexProgress.Idle)
             return
         }
@@ -220,12 +221,14 @@ class AssetIndexService(
         val total = walkFiles(assetsDir, fileSystem).count(indexable)
         var done = 0
         publish(run, AssetIndexProgress.Indexing(done, total))
+        logger.info("Asset backfill started: $total files under assets/")
         for (batch in walkFiles(assetsDir, fileSystem).filter(indexable).chunked(BACKFILL_BATCH_SIZE)) {
             processBatch(batch, notesPath, writeActor, fileSystem)
             done += batch.size
             publish(run, AssetIndexProgress.Indexing(done, maxOf(total, done)))
             yield()
         }
+        logger.info("Asset backfill finished: $done files walked, ${assetRepository.countAssets().getOrNull()} indexed")
         publish(run, AssetIndexProgress.Finished(done))
     }
 

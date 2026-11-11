@@ -55,6 +55,23 @@ class AssetIndexedBrowseTest {
         service.close()
     }
 
+    /** Pre-0.108 user in a release build: images sit in assets/ and the pipeline switch was never on. */
+    @Test
+    fun releaseBuildWithUnsetSwitch_existingImagesStillAppearInTheLibrary() = runBlocking {
+        val fs = FakeFileSystem()
+        repeat(4) { fs.writeFileBytes("/graph/assets/old$it.png", png + byteArrayOf(it.toByte())) }
+        assertEquals(0L, library.countLibrary(LibraryQuery()).getOrNull(), "nothing is indexed before the walk")
+        val controller = AssetIndexingController(
+            dev.stapler.stelekit.wiring.FakeSettings(), AssetIndexService(repo), toggleVisibleProvider = { false },
+        )
+
+        controller.onGraphReady(EffectiveNotesPath("/graph"), writeActor = null, fileSystem = fs)
+        withTimeout(10_000) { controller.progress.first { it is AssetIndexProgress.Finished } }
+
+        assertEquals(4, library.getLibraryPage(LibraryQuery(), null, 100).getOrNull()!!.size)
+        controller.close()
+    }
+
     @Test
     fun indexedPathAndHashLookups_workOverRealSql_includingMoreThanOneChunk() = runBlocking {
         val fs = FakeFileSystem()
