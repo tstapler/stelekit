@@ -35,6 +35,29 @@ class LlmSettings(private val settings: Settings) {
         settings.putString(selectedProviderKey(feature), providerId?.trim().orEmpty())
     }
 
+    /**
+     * The only resolution path for opt-in features such as [LlmFeature.PROJECT_ANALYSIS]:
+     * returns a provider id only when the user explicitly chose one AND acknowledged it for its
+     * current model. Unset (never Auto), [LlmProviderRegistry.DISABLED_SENTINEL] and an
+     * unacknowledged choice all return null, meaning no provider call.
+     */
+    fun resolveExplicitProvider(feature: LlmFeature): String? {
+        val id = getSelectedProviderId(feature) ?: return null
+        if (id == LlmProviderRegistry.DISABLED_SENTINEL) return null
+        return id.takeIf { isAcknowledged(feature, it, acknowledgementModelId(it)) }
+    }
+
+    /** Model id an acknowledgement is bound to: a custom provider's configured model, else blank. */
+    fun acknowledgementModelId(providerId: String): String =
+        getCustomProviderConfig(providerId)?.model.orEmpty()
+
+    fun isAcknowledged(feature: LlmFeature, providerId: String, modelId: String): Boolean =
+        settings.getBoolean(acknowledgementKey(feature, providerId, modelId), false)
+
+    /** Keyed by (provider id, model id), so changing either invalidates it without a clear step. */
+    fun acknowledge(feature: LlmFeature, providerId: String, modelId: String) =
+        settings.putBoolean(acknowledgementKey(feature, providerId, modelId), true)
+
     fun getCustomProviderIds(): List<String> =
         settings.getString(KEY_CUSTOM_PROVIDER_IDS, "")
             .split(",")
@@ -76,6 +99,9 @@ class LlmSettings(private val settings: Settings) {
 
     private fun selectedProviderKey(feature: LlmFeature): String =
         "llm.feature.${feature.name.lowercase()}.provider_id"
+
+    private fun acknowledgementKey(feature: LlmFeature, providerId: String, modelId: String): String =
+        "llm.feature.${feature.name.lowercase()}.ack.$providerId.$modelId"
 
     companion object {
         private const val KEY_CUSTOM_PROVIDER_IDS = "llm.custom_provider_ids"

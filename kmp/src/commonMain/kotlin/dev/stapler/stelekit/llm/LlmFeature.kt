@@ -3,4 +3,12 @@
 package dev.stapler.stelekit.llm
 
 /** Features that independently select an [LlmProvider] via [LlmSettings]. */
-enum class LlmFeature { VOICE_FORMATTING, TAG_SUGGESTION, GRAPH_EDIT_SYNTHESIS, CAPTURE_ENRICHMENT }
+enum class LlmFeature {
+    VOICE_FORMATTING,
+    TAG_SUGGESTION,
+    GRAPH_EDIT_SYNTHESIS,
+    CAPTURE_ENRICHMENT,
+
+    /** Opt-in only: unset means disabled, never Auto. Resolve via [LlmSettings.resolveExplicitProvider]. */
+    PROJECT_ANALYSIS,
+}

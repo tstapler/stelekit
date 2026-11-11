@@ -21,6 +21,14 @@ sealed interface DomainError {
         data class WriteFailed(val path: String, override val message: String) : FileSystemError
         data class ReadFailed(val path: String, override val message: String) : FileSystemError
         data class DeleteFailed(val path: String, override val message: String) : FileSystemError
+        /** The platform cannot stage a temp file and rename it (Web, iOS); nothing was written. */
+        data class AtomicWriteUnsupported(val path: String) : FileSystemError {
+            override val message: String = "Atomic write is not supported on this platform: $path"
+        }
+        /** [path] is a link; replacing it would sever the link, so nothing was written. */
+        data class SymlinkRefused(val path: String) : FileSystemError {
+            override val message: String = "Refusing to replace a symbolic link: $path"
+        }
     }
 
     sealed interface ParseError : DomainError {
@@ -351,6 +359,8 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.FileSystemError.WriteFailed -> "File write failed"
     is DomainError.FileSystemError.ReadFailed -> "File read failed"
     is DomainError.FileSystemError.DeleteFailed -> "File delete failed"
+    is DomainError.FileSystemError.AtomicWriteUnsupported -> "Safe file writes are not supported here"
+    is DomainError.FileSystemError.SymlinkRefused -> "File is a symbolic link"
     is DomainError.ParseError.EmptyFile -> "File is empty"
     is DomainError.ParseError.InvalidSyntax -> "Parse error"
     is DomainError.ParseError.UnsupportedForm -> "Unsupported form"

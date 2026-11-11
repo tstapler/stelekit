@@ -27,6 +27,7 @@ editor: T2
 error: T2
 export: T2
 flashcard: T2
+fusion: T1
 git: T1
 jobs: T2
 llm: T2
@@ -41,6 +42,7 @@ parser: T1
 parsing: T1
 performance: T3
 platform: T3
+projectbridge: T2
 query: T1
 repository: T1
 resilience: T2
@@ -49,6 +51,8 @@ search: T2
 sections: T2
 security: T1
 service: T2
+sketchimport: T1
+sketch: T2
 stats: T3
 sync: T2
 tags: T2

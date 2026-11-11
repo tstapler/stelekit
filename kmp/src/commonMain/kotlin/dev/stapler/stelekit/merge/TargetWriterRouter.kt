@@ -71,6 +71,21 @@ class TargetWriterRouter(
         ).left()
     }
 
+    /**
+     * Guard and replace of an app-owned page in ONE [withWriter] block (never two: TOCTOU). A writer
+     * that is not an [OwnedPageWriter] (busy `RefusingWriter`, the off-graph file writer after a
+     * graph switch) is `Retryable`, never `NotOwned`.
+     */
+    suspend fun replaceOwnedPage(
+        target: GraphId,
+        page: PageKey,
+        owned: MergePage,
+        expectedPriorHash: String?,
+    ): Either<DomainError, WriteOutcome> = withWriter(target) { writer ->
+        (writer as? OwnedPageWriter)?.replaceOwnedPage(page, owned, expectedPriorHash)
+            ?: DomainError.MergeError.Retryable("${target.value} is not writable for generated pages right now; try again.").left()
+    }
+
     /** Outside any lock. True when it waited for the in-flight init of [target]. */
     private suspend fun awaitIfSwitchInFlight(target: GraphId): Boolean {
         val notReady = graphManager.readyGraph.value?.id != target

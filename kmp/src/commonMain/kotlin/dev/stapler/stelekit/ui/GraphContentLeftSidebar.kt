@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -69,8 +70,10 @@ internal fun GraphContentLeftSidebar(
     val graphManager = deps.graphManager
     val appState = inputs.appState
     var demoBannerDismissed by inputs.demoBannerDismissedState
+    val libraryOnboarding by viewModel.libraryOnboarding.collectAsState()
 
     LeftSidebar(
+        showLibraryNewBadge = libraryOnboarding.showBadge,
         expanded = appState.sidebarExpanded,
         isLoading = appState.isLoading,
         favoritePages = appState.favoritePages,

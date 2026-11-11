@@ -290,6 +290,8 @@ data class StelekitAppCaptureDeps(
     val activeWriteHooks: dev.stapler.stelekit.capture.ActiveWriteHooks = dev.stapler.stelekit.capture.ActiveWriteHooks(),
     /** Turns on the copy entry points: push ("Copy pages to...") on Android/Desktop, pull ("Copy pages from...") on iOS/Web; null hides them. */
     val copyHost: dev.stapler.stelekit.ui.screens.copy.CopyHostConfig? = null,
+    /** Where the open composition publishes the app's one router for non-Composable collaborators (the post-sync project job). */
+    val routerHolder: dev.stapler.stelekit.capture.TargetWriterRouterHolder = dev.stapler.stelekit.capture.TargetWriterRouterHolder(),
 )
 
 /**
@@ -334,6 +336,8 @@ data class GraphContentDeps(
     val gitSyncSeams: GitSyncServiceSeams = GitSyncServiceSeams(),
     /** Where this graph registers its editor-side writer for the share router. */
     val activeWriteHooks: dev.stapler.stelekit.capture.ActiveWriteHooks? = null,
+    /** Read side of [StelekitAppCaptureDeps.routerHolder]. */
+    val routerHolder: dev.stapler.stelekit.capture.TargetWriterRouterHolder = dev.stapler.stelekit.capture.TargetWriterRouterHolder(),
     /** Where in-process long-running work (git sync, storage moves) reports to the jobs list. */
     val jobTracker: dev.stapler.stelekit.jobs.JobTracker = dev.stapler.stelekit.jobs.NoJobTracker,
     /** Everything the Background jobs screen lists: in-process jobs plus the platform store. */

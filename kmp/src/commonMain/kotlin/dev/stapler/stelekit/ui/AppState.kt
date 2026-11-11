@@ -24,6 +24,7 @@ import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.sections.SectionState
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.ui.i18n.Language
+import dev.stapler.stelekit.ui.library.LibraryFilter
 import dev.stapler.stelekit.model.EffectiveNotesPath
 
 /** Vault unlock state for paranoid-mode graphs. */
@@ -74,12 +75,19 @@ sealed class Screen {
     @HelpPage(docs = PageViewDocs::class)
     data class PageView(val page: Page) : Screen()
 
-    /** Full-screen gallery of annotated images. */
-    @HelpExempt(reason = "Full-screen gallery shown from image blocks; not a primary navigation destination")
+    /** The one destination for every photo and file (ADR-006): filters, sort, search. */
+    @HelpExempt(reason = "Library help page is tracked with the Library docs follow-up; reachable from the nav Graph section")
+    data class Library(
+        val initialSearch: String? = null,
+        val initialFilter: LibraryFilter? = null,
+    ) : Screen()
+
+    /** Redirect alias kept one release; [StelekitViewModel.navigateTo] rewrites it to [Library] (annotated filter). */
+    @HelpExempt(reason = "Redirect alias to Library; never shown")
     data object Gallery : Screen()
 
-    /** Asset browser for viewing and managing all graph assets. */
-    @HelpExempt(reason = "Asset management surface; power-user feature not in primary nav")
+    /** Redirect alias kept one release; [StelekitViewModel.navigateTo] rewrites it to [Library] (search). */
+    @HelpExempt(reason = "Redirect alias to Library; never shown")
     data class AssetBrowser(val initialSearch: String? = null) : Screen()
 
     /** Google Drive file browser, opened from Settings > Google Account > Browse Drive. */
@@ -105,6 +113,8 @@ sealed class Screen {
 
 data class AppState(
     val sidebarExpanded: Boolean = false,
+    /** Phone "More" sheet (grouped nav, plan D.4); desktop and tablets keep the sidebar. */
+    val moreSheetOpen: Boolean = false,
     val rightSidebarExpanded: Boolean = false,
     val settingsVisible: Boolean = false,
     val isLoading: Boolean = false,

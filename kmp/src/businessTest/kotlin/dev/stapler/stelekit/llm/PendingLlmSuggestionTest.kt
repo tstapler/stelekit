@@ -70,6 +70,7 @@ class PendingLlmSuggestionTest {
                 is PendingLlmSuggestion.TagChange -> Unit
                 is PendingLlmSuggestion.NewPage -> Unit
                 is PendingLlmSuggestion.UnlinkedReference -> Unit
+                is PendingLlmSuggestion.ProjectAnalysisAnswer -> Unit
             }
             assertFalse(variant.id.isBlank(), "id must not be blank for ${variant::class.simpleName}")
             assertFalse(variant.graphId.isBlank(), "graphId must not be blank for ${variant::class.simpleName}")

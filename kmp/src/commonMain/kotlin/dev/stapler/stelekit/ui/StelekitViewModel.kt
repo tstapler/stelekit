@@ -34,6 +34,7 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.projectbridge.PostSyncProjectCoordinator
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.JournalService
@@ -42,7 +43,13 @@ import dev.stapler.stelekit.repository.DataType
 import dev.stapler.stelekit.repository.SearchScope
 import dev.stapler.stelekit.repository.SearchRequest
 import dev.stapler.stelekit.repository.PageRepository
+import dev.stapler.stelekit.ui.i18n.I18n
 import dev.stapler.stelekit.ui.i18n.Language
+import dev.stapler.stelekit.ui.library.LibraryFilter
+import dev.stapler.stelekit.ui.library.LibraryOnboardingState
+import dev.stapler.stelekit.ui.library.LibraryOnboardingStore
+import dev.stapler.stelekit.ui.nav.LegacyScreenAlias
+import dev.stapler.stelekit.ui.nav.NavCommands
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.editor.commands.CommandContext
 import dev.stapler.stelekit.editor.commands.EditorCommand
@@ -114,6 +121,35 @@ class StelekitViewModel(
     private val graphLoader: GraphLoaderPort = deps.graphLoader
     private val graphWriter: GraphWriterPort = deps.graphWriter
     private val platformSettings: Settings = deps.platformSettings
+
+    private val libraryOnboardingStore = LibraryOnboardingStore(platformSettings)
+    private val _libraryOnboarding = MutableStateFlow(
+        libraryOnboardingStore.load(
+            graphRegistered = try {
+                platformSettings.lastNotesPath() != null || platformSettings.getBoolean("onboardingCompleted", false)
+            } catch (_: Exception) {
+                false
+            },
+        ),
+    )
+
+    /** One-time Library tip / upgrade notice / "New" badge state (plan D.9). */
+    val libraryOnboarding: StateFlow<LibraryOnboardingState> = _libraryOnboarding.asStateFlow()
+
+    fun setMoreSheetOpen(open: Boolean) {
+        _uiState.update { if (it.moreSheetOpen == open) it else it.copy(moreSheetOpen = open) }
+    }
+
+    fun onLibraryOpened() = updateLibraryOnboarding { it.onLibraryOpened() }
+    fun dismissLibraryTip() = updateLibraryOnboarding { it.dismissTip() }
+    fun dismissUpgradeNotice() = updateLibraryOnboarding { it.dismissNotice() }
+
+    private fun updateLibraryOnboarding(transform: (LibraryOnboardingState) -> LibraryOnboardingState) {
+        val next = transform(_libraryOnboarding.value)
+        if (next == _libraryOnboarding.value) return
+        _libraryOnboarding.value = next
+        libraryOnboardingStore.save(next)
+    }
     private val notificationManager: NotificationManager? = deps.notificationManager
     private val journalService: JournalService =
         deps.journalService ?: JournalService(deps.pageRepository, deps.blockRepository)
@@ -457,6 +493,10 @@ class StelekitViewModel(
     /** Forwards to [GitSyncCoordinator.gitLastSyncAt] — read directly by Compose call sites. */
     val gitLastSyncAt: StateFlow<Long?> = gitSyncCoordinator.gitLastSyncAt
 
+    private val postSyncProjectCoordinator = deps.projectBridge?.let {
+        PostSyncProjectCoordinator(it, gitLastSyncAt, { activeGitSyncService.value?.syncState?.value }, activeGraphIdProvider, scope.coroutineContext)
+    }
+
     // See SectionManagementCoordinator's class doc for why this shares _uiState directly rather
     // than owning a separate StateFlow: the fields it owns are pre-existing AppState fields read
     // by Compose call sites across the app.
@@ -539,6 +579,7 @@ class StelekitViewModel(
 
         updateCommands()
         gitSyncCoordinator.observeSyncState()
+        postSyncProjectCoordinator?.start()
         llmSuggestionCoordinator.observeLlmSuggestions()
 
         // Initialize graph if path exists
@@ -1177,7 +1218,9 @@ class StelekitViewModel(
     }
 
     @OptIn(DirectRepositoryWrite::class)
-    fun navigateTo(screen: Screen, addToHistory: Boolean = true) {
+    fun navigateTo(requested: Screen, addToHistory: Boolean = true) {
+        // Old Gallery/AssetBrowser values (saved state, deep links, palette ids) never reach the back stack.
+        val screen = LegacyScreenAlias.resolve(requested)
         val navStart = kotlin.time.Clock.System.now().toEpochMilliseconds()
         // addToRecent must run outside the update lambda — it has side effects (launches a
         // coroutine, calls platformSettings) and calls _uiState.update itself, which would
@@ -1210,10 +1253,10 @@ class StelekitViewModel(
                     is Screen.Console -> "Opened Console"
                     is Screen.GlobalUnlinkedReferences -> "Opened Unlinked References"
                     is Screen.Import -> "Import text as new page"
-                    is Screen.LibraryStats -> "Opened Library Stats"
+                    is Screen.LibraryStats -> "Opened ${I18n.get(I18n.NAV_GRAPH_STATS)}"
                     is Screen.VaultUnlock -> "Vault locked"
-                    is Screen.Gallery -> "Opened Gallery"
-                    is Screen.AssetBrowser -> "Opened Asset Browser"
+                    is Screen.Library -> "Opened ${I18n.get(I18n.NAV_LIBRARY)}"
+                    is Screen.Gallery, is Screen.AssetBrowser -> "Opened ${I18n.get(I18n.NAV_LIBRARY)}"
                     is Screen.DriveBrowser -> "Opened Google Drive"
                     is Screen.AssetDetail -> "Opened Asset: ${screen.assetUuid.value}"
                     is Screen.AnnotationEditor -> "Opened Annotation Editor"
@@ -1364,9 +1407,9 @@ class StelekitViewModel(
         navigateTo(Screen.AnnotationEditor(imageAnnotationUuid = ImageAnnotationUuid(imageAnnotationUuid), pageUuid = pageUuid))
     }
 
-    /** Navigate to the image gallery screen. */
+    /** Opens the Library filtered to annotated photos (formerly the Gallery). */
     fun navigateToGallery() {
-        navigateTo(Screen.Gallery)
+        navigateTo(Screen.Library(initialFilter = LibraryFilter.Annotated))
     }
 
     fun navigateToBlock(blockUuid: String) {
@@ -2185,6 +2228,11 @@ class StelekitViewModel(
                     shortcut = null,
                     action = { navigateTo(Screen.GlobalUnlinkedReferences) }
                 )
+
+                legacyCommands += NavCommands.build(
+                    navigate = { navigateTo(it) },
+                    openGitSetup = { openGitSetup() },
+                ).filter { cmd -> legacyCommands.none { it.id == cmd.id } }
 
                 if (_uiState.value.currentGraphPath != null) {
                     legacyCommands += Command(

@@ -1,7 +1,40 @@
 {
   "schema": 1,
   "fixture": "closet",
-  "files": ["fixture-manifest.json"],
+  "project": "proj-closet-1",
+  "files": [
+    "fixture-manifest.json",
+    "closet.yaml",
+    "closet-tables.md",
+    "closet-elevation.svg",
+    "closet-section.svg",
+    "dimension-map.json"
+  ],
   "dimensionKeyPattern": "^[a-z0-9.-]+$",
-  "vocabulary": ["left", "right"]
+  "vocabulary": ["left", "right"],
+  "seededMutations": [
+    {
+      "id": "C1",
+      "file": "closet-tables.md",
+      "find": "**33 7/16\"**",
+      "replace": "**33 3/8\"**",
+      "expect": "left-long zone width conflicts by 1/16 inch; zone sum is 135 15/16 inches"
+    },
+    {
+      "id": "C2",
+      "file": "closet-elevation.svg",
+      "find": ">38\" Rod<",
+      "replace": ">37\" Rod<",
+      "expect": "long rod height conflicts by 1 inch"
+    }
+  ],
+  "realConflicts": [
+    { "id": "C3", "kind": "mirrored-view", "note": "elevation shows the zone widths in right-to-left order versus the tables" },
+    { "id": "C4", "kind": "rod-diameter", "values": ["1.25 (yaml)", "1-1/16 (tables)"] },
+    { "id": "C5", "kind": "rod-carrier-count", "values": [8, 10, 12] }
+  ],
+  "negativeControls": [
+    { "id": "N1", "decimal": "43.31", "fraction": "43 5/16", "labelPrecision": "1/200", "mustConflict": false },
+    { "id": "N2", "decimal": "23.12", "fraction": "23 1/8", "labelPrecision": "1/200", "mustConflict": false }
+  ]
 }

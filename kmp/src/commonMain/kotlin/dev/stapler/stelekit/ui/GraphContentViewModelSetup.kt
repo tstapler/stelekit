@@ -14,7 +14,14 @@ import dev.stapler.stelekit.export.JsonExporter
 import dev.stapler.stelekit.export.MarkdownExporter
 import dev.stapler.stelekit.export.PlainTextExporter
 import dev.stapler.stelekit.export.ShareProvider
+import dev.stapler.stelekit.git.model.SyncState
+import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.GraphId
+import dev.stapler.stelekit.projectbridge.LoaderPageSettleProbe
+import dev.stapler.stelekit.projectbridge.ProjectBridgeDeps
+import dev.stapler.stelekit.projectbridge.ProjectBridgeSettings
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import dev.stapler.stelekit.ui.state.BlockStateManager
 
 /** Bundles [GraphContent]'s core ViewModel stack (Parameter Object pattern). */
@@ -176,5 +183,47 @@ private fun buildViewModelDependencies(
         },
         onSectionsLoaded = seed.onSectionsLoaded,
         scope = seed.viewModelScope,
+        projectBridge = buildProjectBridgeDeps(deps, effectiveFileSystem, graphIoStack),
+    )
+}
+
+/**
+ * Dormant until the `homeSketch` flag is on: the coordinator built from this reads the flag at trigger time.
+ * [ProjectBridgeDeps.hasConfiguredProject] is false until Story 2.3 introduces projects.
+ */
+private fun buildProjectBridgeDeps(
+    deps: GraphContentDeps,
+    effectiveFileSystem: dev.stapler.stelekit.platform.FileSystem,
+    graphIoStack: GraphContentGraphIoStack,
+): ProjectBridgeDeps {
+    val graphManager = deps.graphManager
+    val busyCounter = deps.platformIntegrations.gitSyncBusyCounter
+    val loader = graphIoStack.graphLoader
+    return ProjectBridgeDeps(
+        routerProvider = deps.routerHolder::get,
+        sketchRepositories = { null },
+        sidecarStore = { null },
+        fileSystem = effectiveFileSystem,
+        // GitSyncService keeps its busy counter private, so also read the published in-progress states.
+        isGitSyncBusy = {
+            busyCounter?.isBusy?.value == true ||
+                graphManager.activeGitSyncService.value?.syncState?.value.let {
+                    it is SyncState.Fetching || it is SyncState.Merging || it is SyncState.Pushing || it is SyncState.Committing
+                }
+        },
+        settings = ProjectBridgeSettings(deps.platformSettings),
+        jobTracker = deps.jobTracker,
+        readyGraphIds = graphManager.readyGraph.map { it?.id?.value },
+        hasConfiguredProject = { false },
+        pageSettleProbe = LoaderPageSettleProbe(
+            isIndexOnlyStub = { page ->
+                deps.repos.pageRepository.getPageByName(page.pageName).first().getOrNull()?.isContentLoaded == false
+            },
+            registryHash = { path -> loader.fileRegistry.getContentHash(FilePath(path)) },
+            readDisk = { path ->
+                effectiveFileSystem.invalidateShadow(path)
+                effectiveFileSystem.readFileSuspend(path)
+            },
+        ),
     )
 }
