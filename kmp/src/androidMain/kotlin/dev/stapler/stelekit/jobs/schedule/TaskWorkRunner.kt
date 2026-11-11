@@ -7,6 +7,8 @@ import android.content.Context
 import androidx.work.Data
 import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 /** Everything a cold [TaskWorker] needs, built from a `Context` and process statics (no UI state). */
 class TaskWorkerDeps(
@@ -149,6 +151,7 @@ internal suspend fun runTaskWork(
         result = bodyResult
         return mapResult(oneShot, spec, bodyResult, runAttemptCount)
     } catch (e: CancellationException) {
+        if (result == null) result = TaskRunResult.Skipped("cancelled")
         throw e
     } catch (e: Throwable) {
         logger.error("task work failed for ${key.kind.id}", e)
@@ -158,12 +161,15 @@ internal suspend fun runTaskWork(
     } finally {
         val final = result
         if (final != null) {
-            recordRun(
-                deps.runLog,
-                TaskRunRecord(key, RunSource.Background, scheduledAtMs = null, startedAtMs = startedAtMs, result = final, constraintState = constraintState),
-            )
-            if (spec != null) {
-                deps.hooks(key.kind)?.let { hooks -> guardedSideEffect("postRun hook") { hooks.postRun(context, key, input, final) } }
+            // NonCancellable: a cancelled worker still has to leave its run record (a suspending append would throw).
+            withContext(NonCancellable) {
+                recordRun(
+                    deps.runLog,
+                    TaskRunRecord(key, RunSource.Background, scheduledAtMs = null, startedAtMs = startedAtMs, result = final, constraintState = constraintState),
+                )
+                if (spec != null) {
+                    deps.hooks(key.kind)?.let { hooks -> guardedSideEffect("postRun hook") { hooks.postRun(context, key, input, final) } }
+                }
             }
         }
     }

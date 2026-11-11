@@ -60,6 +60,11 @@ object TaskWorkerRuntime {
     }
 }
 
+/** WorkManager rejects output `Data` over 10 KB; 2000 chars is at most 8 KB of UTF-8. */
+private const val MAX_ERROR_CHARS = 2_000
+
+private fun errorData(message: String) = workDataOf(TaskWorkKeys.KEY_ERROR to message.take(MAX_ERROR_CHARS))
+
 /**
  * Generic worker for one-shots and non-git periodic kinds: gates, runs, records, never silently crashes.
  * All logic is in [runTaskWork]; this maps its outcome to a WorkManager `Result`. `git-sync` is run by
@@ -92,7 +97,7 @@ class TaskWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 TaskWorkOutcome.Success -> Result.success()
                 TaskWorkOutcome.Retry -> Result.retry()
                 is TaskWorkOutcome.Failure ->
-                    if (outcome.error == null) Result.failure() else Result.failure(workDataOf(TaskWorkKeys.KEY_ERROR to outcome.error))
+                    if (outcome.error == null) Result.failure() else Result.failure(errorData(outcome.error))
                 TaskWorkOutcome.CancelOwnWork -> {
                     workManagerOrNull(applicationContext)?.cancelUniqueWork(key.workName())
                     Result.success()
@@ -102,7 +107,7 @@ class TaskWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             throw e
         } catch (e: Throwable) {
             logger.error("TaskWorker failed for ${key.kind.id}", e)
-            Result.failure(workDataOf(TaskWorkKeys.KEY_ERROR to (e.message ?: e::class.simpleName ?: "error")))
+            Result.failure(errorData(e.message ?: e::class.simpleName ?: "error"))
         }
     }
 

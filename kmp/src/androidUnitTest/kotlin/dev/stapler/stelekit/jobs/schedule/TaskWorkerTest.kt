@@ -20,6 +20,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -235,6 +236,24 @@ class TaskWorkerTest {
         bodyResult = { throw CancellationException("cancelled") }
         assertFailsWith<CancellationException> { run(periodicKey) }
         Unit
+    }
+
+    @Test
+    fun doWork_should_recordCancelledRun_When_bodyThrowsCancellationException() = runBlocking {
+        registerPeriodic(); enablePeriodic()
+        bodyResult = { throw CancellationException("cancelled") }
+        assertFailsWith<CancellationException> { run(periodicKey) }
+        assertEquals(listOf<TaskRunResult>(TaskRunResult.Skipped("cancelled")), runLog.results)
+    }
+
+    @Test
+    fun doWork_should_truncateErrorToWorkManagerDataLimit_When_failureMessageIsHuge() {
+        registerOneShot(cap = 1)
+        bodyResult = { TaskRunResult.Failed("x".repeat(50_000), retryable = false) }
+        val result = run(oneShotKey, "unmetered")
+        val error = assertNotNull(result.error(), "a Failure result with an oversized message must still carry output data")
+        assertTrue(error.length < 5_000, "message bounded, was ${error.length}")
+        assertTrue(error.startsWith("xxx"), "the task's own message is kept, not WorkManager's size error: ${error.take(60)}")
     }
 
     @Test
