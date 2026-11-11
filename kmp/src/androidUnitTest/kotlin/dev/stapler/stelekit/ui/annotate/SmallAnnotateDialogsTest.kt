@@ -20,20 +20,28 @@ class SmallAnnotateDialogsTest {
     val rule = createComposeRule()
 
     @Test
-    fun unsavedChanges_buttonsInvokeMatchingCallbacks() {
+    fun unsavedChanges_namesUnfinishedPointsAndInvokesCallbacks() {
         val calls = mutableListOf<String>()
         rule.setContent {
             UnsavedChangesDialog(
-                onSave = { calls += "save" },
+                unfinishedPoints = 1,
                 onDiscard = { calls += "discard" },
                 onKeepEditing = { calls += "keep" },
             )
         }
-        rule.onNodeWithText("Save changes?").assertExists()
-        rule.onNodeWithText("Save").performClick()
+        rule.onNodeWithText("Discard 1 unfinished point?").assertExists()
         rule.onNodeWithText("Discard").performClick()
         rule.onNodeWithText("Keep editing").performClick()
-        assertEquals(listOf("save", "discard", "keep"), calls)
+        assertEquals(listOf("discard", "keep"), calls)
+    }
+
+    @Test
+    fun saveFailed_offersRetryAndCloseAnyway() {
+        val calls = mutableListOf<String>()
+        rule.setContent { SaveFailedDialog(onRetry = { calls += "retry" }, onCloseAnyway = { calls += "close" }) }
+        rule.onNodeWithText("Retry").performClick()
+        rule.onNodeWithText("Close anyway").performClick()
+        assertEquals(listOf("retry", "close"), calls)
     }
 
     @Test
