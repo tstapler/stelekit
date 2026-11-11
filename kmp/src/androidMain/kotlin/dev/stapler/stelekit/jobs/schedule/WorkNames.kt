@@ -34,6 +34,9 @@ object TaskWorkKeys {
     /** Failure output-data key a one-shot's terminal failure carries; same value `DepthModelDownloader` already reads. */
     const val KEY_ERROR = "error"
 
+    /** Running-work progress key (percent); same value `DepthModelDownloader` already reads. */
+    const val KEY_PROGRESS = "progress"
+
     fun encode(policy: NetworkPolicy): String = when (policy) {
         NetworkPolicy.Any -> "any"
         NetworkPolicy.Unmetered -> "unmetered"

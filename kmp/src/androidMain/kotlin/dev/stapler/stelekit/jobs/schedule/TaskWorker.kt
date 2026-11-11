@@ -86,6 +86,7 @@ class TaskWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 promoteToForeground = { kind ->
                     TaskWorkerRuntime.foreground.factoryFor(kind)?.let { setForeground(it.create(applicationContext, key)) }
                 },
+                reportProgress = { percent -> setProgress(workDataOf(TaskWorkKeys.KEY_PROGRESS to percent)) },
             )
             when (outcome) {
                 TaskWorkOutcome.Success -> Result.success()

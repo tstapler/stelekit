@@ -225,6 +225,8 @@ class SteleKitApplication : Application() {
             dev.stapler.stelekit.platform.NetworkMonitor.init(this)
             dev.stapler.stelekit.jobs.schedule.registerAndroidTasks(taskRegistry)
             dev.stapler.stelekit.git.registerGitSyncTask(taskRegistry, cold = dev.stapler.stelekit.git.AndroidColdPathRunner(this))
+            // Outside jobs.schedule (ADR-001): platform/ml owns the model-download spec, task and foreground notification.
+            dev.stapler.stelekit.platform.ml.registerModelDownloadTask(taskRegistry, this)
             dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime.knownScopes = dev.stapler.stelekit.db.GraphRegistryKnownScopes(PlatformSettings())
             // Set here (not in MainActivity) so a cold worker, the shim and MainActivity's store all migrate git-sync identically.
             dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime.legacySeed = dev.stapler.stelekit.git.LegacyGitSyncMigration(

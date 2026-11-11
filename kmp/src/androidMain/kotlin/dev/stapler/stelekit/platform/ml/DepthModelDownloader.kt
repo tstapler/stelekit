@@ -4,23 +4,26 @@
 package dev.stapler.stelekit.platform.ml
 
 import android.content.Context
-import androidx.work.BackoffPolicy
-import androidx.work.Constraints
-import androidx.work.Data
-import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
-import androidx.work.WorkManager
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
-import dev.stapler.stelekit.jobs.JobKind
-import dev.stapler.stelekit.jobs.JobTags
+import dev.stapler.stelekit.jobs.schedule.AppliedConfigLedger
+import dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler
+import dev.stapler.stelekit.jobs.schedule.OneShotConflict
+import dev.stapler.stelekit.jobs.schedule.TaskConstraints
+import dev.stapler.stelekit.jobs.schedule.TaskRegistry
+import dev.stapler.stelekit.jobs.schedule.TaskSettingsStore
+import dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime
+import dev.stapler.stelekit.jobs.schedule.WorkManagerTaskScheduler
+import dev.stapler.stelekit.jobs.workManagerOrNull
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.platform.SteleKitContext
 import dev.stapler.stelekit.ui.annotate.DepthModelUiState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -30,18 +33,37 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 /**
- * App-facing handle on the Depth Anything V2 ViT-S model download. The transfer is a unique WorkManager job
- * ([DepthModelDownloadWorker]), so it survives process death and screen navigation; this class only enqueues it and
- * mirrors WorkManager's persisted state into [modelState]. A fresh instance after a restart re-attaches to
- * whatever job is still queued or running.
+ * App-facing handle on the Depth Anything V2 ViT-S model download. The transfer is a unique one-shot job
+ * ([ModelDownloadTask] under [UNIQUE_WORK_NAME]) enqueued through the scheduling port's `runOnce`, so it survives
+ * process death and screen navigation; this class only requests it and mirrors WorkManager's persisted state into
+ * [modelState]. A fresh instance after a restart re-attaches to whatever job is still queued or running.
+ *
+ * Constraints come from the `model-download` entry in [TaskSettingsStore] (never `enabled`), defaulting to the
+ * spec's network policy when nothing is stored or the read fails.
  */
-class DepthModelDownloader(private val context: Context) {
+class DepthModelDownloader(
+    private val context: Context,
+    scheduler: BackgroundTaskScheduler? = null,
+    store: TaskSettingsStore? = null,
+) {
 
     private val modelFile: File = DepthModelStorage.modelFile(context)
     private val logger = Logger("DepthModelDownloader")
+
+    // Spec-only registry: tags and the store default need the spec, the worker resolves the real registry itself.
+    private val specRegistry by lazy { TaskRegistry().also { it.register(ModelDownloadTask.KIND, ModelDownloadTask.spec, ModelDownloadTask(context)) } }
+    private val settings by lazy { SteleKitContext.init(context); PlatformSettings() }
+    private val taskStore: TaskSettingsStore by lazy {
+        store ?: TaskSettingsStore(settings, TaskWorkerRuntime.legacySeed, specRegistry)
+    }
+    private val taskScheduler: BackgroundTaskScheduler by lazy {
+        scheduler ?: WorkManagerTaskScheduler(context, specRegistry, taskStore, AppliedConfigLedger(settings))
+    }
+
+    /** True while [downloadModel] waits; a WorkInfo snapshot taken before our enqueue is visible must not read as "cancelled". */
+    @Volatile private var requestInFlight = false
 
     private val _modelState = MutableStateFlow(initialState())
     val modelState: StateFlow<ModelState> = _modelState.asStateFlow()
@@ -53,7 +75,7 @@ class DepthModelDownloader(private val context: Context) {
 
     init {
         scope.launch {
-            val workManager = workManagerOrNull() ?: return@launch
+            val workManager = workManagerOrNull(context) ?: return@launch
             workManager.getWorkInfosForUniqueWorkFlow(UNIQUE_WORK_NAME).collect { infos -> apply(infos) }
         }
     }
@@ -68,30 +90,35 @@ class DepthModelDownloader(private val context: Context) {
             _modelState.value = ModelState.Ready
             return modelFile.right()
         }
-        val workManager = workManagerOrNull()
+        workManagerOrNull(context)
             ?: return DomainError.SensorError.HardwareUnavailable("Background downloads are unavailable right now").left()
-        val request = OneTimeWorkRequestBuilder<DepthModelDownloadWorker>()
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .setRequiresStorageNotLow(true)
-                    .build(),
-            )
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
-            .setInputData(Data.EMPTY)
-            .addTag(JobTags.ANY)
-            .addTag(JobTags.kind(JobKind.ModelDownload))
-            .addTag(JobTags.title("Depth model download"))
-            .build()
         // KEEP: an already queued or running job is left alone; a finished one is replaced by this new run.
-        workManager.enqueueUniqueWork(UNIQUE_WORK_NAME, ExistingWorkPolicy.KEEP, request)
-        if (_modelState.value !is ModelState.Downloading) _modelState.value = ModelState.Downloading(progress = -1)
-        return awaitTerminal()
+        requestInFlight = true
+        try {
+            taskScheduler.runOnce(ModelDownloadTask.KEY, storedConstraints(), OneShotConflict.Keep)
+            if (_modelState.value !is ModelState.Downloading) _modelState.value = ModelState.Downloading(progress = -1)
+            return awaitTerminal()
+        } finally {
+            requestInFlight = false
+        }
+    }
+
+    /** The user's stored constraints (default from the spec); a failed read never blocks the tap. */
+    private suspend fun storedConstraints(): TaskConstraints {
+        val resolved = try {
+            taskStore.read(ModelDownloadTask.KEY).constraints
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            logger.warn("model-download settings unreadable; using the default", e)
+            ModelDownloadTask.defaultConfig.constraints
+        }
+        return resolved.copy(requiresStorageNotLow = true)
     }
 
     /** User-initiated cancel: stops the job, drops the partial file and resolves any waiting [downloadModel] caller. */
     fun cancelDownload() {
-        workManagerOrNull()?.cancelUniqueWork(UNIQUE_WORK_NAME)
+        workManagerOrNull(context)?.cancelUniqueWork(UNIQUE_WORK_NAME)
         runCatching { File(modelFile.parentFile, "${modelFile.name}.part").delete() }
         if (!isModelReady()) _modelState.value = ModelState.Absent
     }
@@ -116,20 +143,13 @@ class DepthModelDownloader(private val context: Context) {
         // A new run can sit beside a finished one; an unfinished job is what the user is waiting on.
         val info = infos.firstOrNull { !it.state.isFinished } ?: infos.lastOrNull()
         _modelState.value = when (info?.state) {
-            null -> ModelState.Absent
+            null -> if (requestInFlight) return else ModelState.Absent
             WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> ModelState.Downloading(progress = -1)
             WorkInfo.State.RUNNING -> ModelState.Downloading(info.progress.getInt(DepthModelDownloadWorker.KEY_PROGRESS, -1))
             WorkInfo.State.SUCCEEDED -> ModelState.Failed("The model file went missing after downloading. Try again.")
             WorkInfo.State.FAILED -> ModelState.Failed(info.outputData.getString(DepthModelDownloadWorker.KEY_ERROR))
             WorkInfo.State.CANCELLED -> ModelState.Absent
         }
-    }
-
-    private fun workManagerOrNull(): WorkManager? = try {
-        WorkManager.getInstance(context)
-    } catch (e: IllegalStateException) {
-        logger.warn("WorkManager is not initialised", e)
-        null
     }
 
     private fun initialState(): ModelState = if (isModelReady()) ModelState.Ready else ModelState.Absent

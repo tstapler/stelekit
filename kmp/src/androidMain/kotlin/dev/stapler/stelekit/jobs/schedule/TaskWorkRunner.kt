@@ -47,6 +47,7 @@ internal suspend fun runTaskWork(
     input: Data,
     runAttemptCount: Int,
     deps: TaskWorkerDeps,
+    reportProgress: suspend (Int) -> Unit = {},
     promoteToForeground: suspend (TaskKind) -> Unit = {},
 ): TaskWorkOutcome {
     val startedAtMs = deps.clock()
@@ -136,7 +137,7 @@ internal suspend fun runTaskWork(
             }
         }
 
-        val ctx = TaskRunContext(scheduledAtMs = null, startedAtMs = startedAtMs, appOpen = false, constraintState = constraintState)
+        val ctx = TaskRunContext(scheduledAtMs = null, startedAtMs = startedAtMs, appOpen = false, constraintState = constraintState, reportProgress = reportProgress)
         val bodyResult = try {
             task.run(key, ctx)
         } catch (e: CancellationException) {

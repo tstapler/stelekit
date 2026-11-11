@@ -35,6 +35,8 @@ data class TaskConstraints(
     val network: NetworkPolicy = NetworkPolicy.Any,
     val requiresCharging: Boolean = false,
     val batteryNotLow: Boolean = false,
+    /** Not user-configurable and not persisted by the codec; a consumer sets it per request (model download). */
+    val requiresStorageNotLow: Boolean = false,
 )
 
 /**
@@ -81,6 +83,8 @@ data class TaskRunContext(
     val startedAtMs: Long,
     val appOpen: Boolean,
     val constraintState: ConstraintState,
+    /** Percent 0-100 for user-visible progress (one-shots); adapters that have no channel leave the no-op. */
+    val reportProgress: suspend (Int) -> Unit = {},
 )
 
 /** What an adapter honours; the UI disables unsupported options with a reason. */

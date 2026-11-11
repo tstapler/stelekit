@@ -231,6 +231,7 @@ class WorkManagerTaskScheduler(
         .setRequiredNetworkType(if (c.network == NetworkPolicy.Unmetered) NetworkType.UNMETERED else NetworkType.CONNECTED)
         .setRequiresCharging(c.requiresCharging)
         .setRequiresBatteryNotLow(c.batteryNotLow)
+        .setRequiresStorageNotLow(c.requiresStorageNotLow)
         .build()
 
     private suspend fun livePeriodic(key: TaskKey): WorkInfo? {
