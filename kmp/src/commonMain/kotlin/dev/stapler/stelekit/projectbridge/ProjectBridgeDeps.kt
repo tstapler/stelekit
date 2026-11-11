@@ -35,4 +35,8 @@ class ProjectBridgeDeps(
     val writeActor: () -> DatabaseWriteActor? = { null },
     /** The bound pages' text for the graph's project (Story 5.9b); empty when nothing is bound. */
     val boundSources: suspend () -> SourceReadResult = { SourceReadResult.EMPTY },
+    /** The YAML snapshot text recorded for the graph's project (Story 5.9c); null when none was picked. */
+    val yamlSnapshot: suspend () -> String? = { null },
+    /** The project's registry and fusion spec (synced in its settings); null until the project has a registry, so nothing fuses and nothing is written. */
+    val fusionSetup: suspend () -> ProjectFusionSetup? = { null },
 )

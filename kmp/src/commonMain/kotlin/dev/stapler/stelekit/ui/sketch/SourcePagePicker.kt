@@ -32,6 +32,7 @@ fun SourcePagePicker(
     onBind: (SourceBindingKind, String) -> Unit,
     onUnbind: (String) -> Unit,
     modifier: Modifier = Modifier,
+    onChooseYaml: (() -> Unit)? = null,
 ) {
     var query by remember { mutableStateOf("") }
     Column(modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -40,6 +41,12 @@ fun SourcePagePicker(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                 Text(SourcePickerText.boundLabel(row))
                 TextButton(onClick = { onUnbind(row.bindingId) }) { Text("Remove") }
+            }
+        }
+        if (onChooseYaml != null) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                Text(YamlPickerText.status(state.yamlSnapshotSet))
+                TextButton(onClick = onChooseYaml) { Text(YamlPickerText.action(state.yamlSnapshotSet)) }
             }
         }
         OutlinedTextField(

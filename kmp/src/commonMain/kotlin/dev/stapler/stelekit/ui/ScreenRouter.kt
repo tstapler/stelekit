@@ -399,6 +399,15 @@ internal fun ScreenRouter(
                                     dev.stapler.stelekit.projectbridge.LocalBindingTable(platformSettings),
                                 )
                             },
+                            fileSystem?.let { fs ->
+                                dev.stapler.stelekit.ui.sketch.YamlPickerAction(
+                                    dev.stapler.stelekit.projectbridge.YamlSnapshotImporter(
+                                        repos.sketchRepositories, viewModel::projectSidecarStore,
+                                        { op -> repos.writeActor?.execute(op = op) ?: op() },
+                                    ),
+                                    repos.sketchRepositories,
+                                ) { fs.pickFileAsync()?.let { path -> fs.readFileSuspend(path) } }
+                            },
                         )
                     }
                     dev.stapler.stelekit.ui.sketch.ProjectListScreen(

@@ -47,7 +47,10 @@ fun ProjectListScreen(viewModel: ProjectListViewModel, onOpenProject: (String) -
                 onAddPrivateTerm = viewModel::addPrivateTerm,
             )
             if (viewModel.sourcesAvailable && state.projects.isNotEmpty()) {
-                SourcePagePicker(state, viewModel::searchSourcePages, viewModel::bindSource, viewModel::unbindSource)
+                SourcePagePicker(
+                    state, viewModel::searchSourcePages, viewModel::bindSource, viewModel::unbindSource,
+                    onChooseYaml = if (viewModel.yamlAvailable) viewModel::chooseYaml else null,
+                )
             }
         },
         modifier = modifier,
