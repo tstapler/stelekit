@@ -259,6 +259,7 @@ import dev.stapler.stelekit.ui.annotate.AnnotationToolbarShortcutTest
 import dev.stapler.stelekit.ui.annotate.DisabledTintContrastTest
 import dev.stapler.stelekit.ui.AppStorageSubtitleTest
 import dev.stapler.stelekit.ui.assets.AssetBrowserScreenTest
+import dev.stapler.stelekit.ui.library.LibraryScreenTest
 import dev.stapler.stelekit.ui.CaptureAndImportTest
 import dev.stapler.stelekit.ui.CommandPaletteFocusRetentionTest
 import dev.stapler.stelekit.ui.components.BlockItemGestureTest
@@ -602,6 +603,7 @@ import org.junit.runners.Suite
     DisabledTintContrastTest::class,
     AppStorageSubtitleTest::class,
     AssetBrowserScreenTest::class,
+    LibraryScreenTest::class,
     CaptureAndImportTest::class,
     CommandPaletteFocusRetentionTest::class,
     BlockItemGestureTest::class,

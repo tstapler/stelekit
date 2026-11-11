@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.assets
 
 import androidx.compose.ui.test.hasText
+import dev.stapler.stelekit.ui.i18n.I18n
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -229,14 +230,14 @@ class AssetResultsSurfaceTest {
         composeRule.setContent {
             AssetsSearchSection(query, AssetSearchService(repo), onShowAll = { shown = it }, onOpenAsset = {})
         }
-        composeRule.waitUntil(5_000) { composeRule.onAllNodes(hasText("Show all in Assets")).fetchSemanticsNodes().isNotEmpty() }
+        composeRule.waitUntil(5_000) { composeRule.onAllNodes(hasText(I18n.get(I18n.LIBRARY_SEARCH_SHOW_ALL))).fetchSemanticsNodes().isNotEmpty() }
 
         assertEquals(5, composeRule.onAllNodes(hasText("Text found in image")).fetchSemanticsNodes().size)
-        composeRule.onNodeWithText("Show all in Assets").performClick()
+        composeRule.onNodeWithText(I18n.get(I18n.LIBRARY_SEARCH_SHOW_ALL)).performClick()
         assertEquals("4821", shown)
 
         query = "zzzzzz"
-        composeRule.waitUntil(5_000) { composeRule.onAllNodes(hasText("Assets")).fetchSemanticsNodes().isEmpty() }
+        composeRule.waitUntil(5_000) { composeRule.onAllNodes(hasText(I18n.get(I18n.LIBRARY_SEARCH_SECTION))).fetchSemanticsNodes().isEmpty() }
     }
 
     @Test

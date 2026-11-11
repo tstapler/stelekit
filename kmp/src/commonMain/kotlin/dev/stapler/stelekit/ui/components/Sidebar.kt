@@ -16,17 +16,13 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
-import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.ContentCopy
@@ -36,7 +32,6 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.foundation.layout.Box
 import dev.stapler.stelekit.merge.CopyDirection
 import dev.stapler.stelekit.ui.screens.copy.CopyDialogStrings
-import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Sync
 import dev.stapler.stelekit.ui.screens.git.looksLikeUri
 import dev.stapler.stelekit.ui.screens.git.wikiSubdirError
@@ -120,6 +115,7 @@ fun LeftSidebar(
     onOpenSyncStatus: (() -> Unit)? = null,
     onSyncClick: () -> Unit = {},
     onGitSetup: () -> Unit = {},
+    showLibraryNewBadge: Boolean = false,
     isGitConfigured: Boolean = false,
     onAuthError: (() -> Unit)? = null,
     /** Epic 2.3: current web-local-folder-livesync [HostAccessState]. [HostAccessState.NotApplicable]
@@ -312,46 +308,20 @@ fun LeftSidebar(
                 )
             }
 
-            // Navigation Section
-            Text(
-                "Navigation",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(vertical = 8.dp)
+            // Grouped navigation (ADR-007): one NavSection model shared with the phone sheet.
+            NavSectionList(
+                currentScreen = currentScreen,
+                onNavigate = onNavigate,
+                onGitSetup = onGitSetup,
+                showLibraryNewBadge = showLibraryNewBadge,
+                afterJournals = if (onNewSectionJournalEntry != null) {
+                    {
+                        val sectionLabel = sectionManifest?.sections?.find { it.id == defaultSection }?.displayName ?: "Work"
+                        NavigationItem("New $sectionLabel Journal", Icons.Default.DateRange, false) { onNewSectionJournalEntry() }
+                    }
+                } else null,
             )
-            // Primary — daily-use screens
-            NavigationItem("Journals", Icons.Default.DateRange, currentScreen is Screen.Journals) { onNavigate(Screen.Journals) }
-            if (onNewSectionJournalEntry != null) {
-                val sectionLabel = sectionManifest?.sections?.find { it.id == defaultSection }?.displayName ?: "Work"
-                NavigationItem("New $sectionLabel Journal", Icons.Default.DateRange, false) { onNewSectionJournalEntry() }
-            }
-            NavigationItem("All Pages", Icons.AutoMirrored.Filled.List, currentScreen is Screen.AllPages) { onNavigate(Screen.AllPages()) }
-            NavigationItem("Flashcards", Icons.Default.Style, currentScreen is Screen.Flashcards) { onNavigate(Screen.Flashcards) }
 
-            Spacer(Modifier.height(4.dp))
-
-            // Note-taking tools
-            NavigationItem("Unlinked References", Icons.Default.Link, currentScreen is Screen.GlobalUnlinkedReferences) { onNavigate(Screen.GlobalUnlinkedReferences) }
-            NavigationItem("Notifications", Icons.Default.Notifications, currentScreen is Screen.Notifications) { onNavigate(Screen.Notifications) }
-
-            Spacer(Modifier.height(4.dp))
-
-            // Media / Library
-            NavigationItem("Gallery", Icons.Default.PhotoLibrary, currentScreen is Screen.Gallery) { onNavigate(Screen.Gallery) }
-            NavigationItem("Assets", Icons.Default.FolderOpen, currentScreen is Screen.AssetBrowser) { onNavigate(Screen.AssetBrowser()) }
-
-            Spacer(Modifier.height(4.dp))
-
-            // Admin / Dev
-            NavigationItem("Library Stats", Icons.Default.BarChart, currentScreen is Screen.LibraryStats) { onNavigate(Screen.LibraryStats) }
-            NavigationItem("Git Setup", Icons.Default.Sync, false) { onGitSetup() }
-
-            // Developer tools — only visible when already on those screens
-            if (currentScreen is Screen.Logs || currentScreen is Screen.Performance) {
-                NavigationItem("Logs", Icons.Default.Info, currentScreen is Screen.Logs) { onNavigate(Screen.Logs()) }
-                NavigationItem("Performance", Icons.Default.Settings, currentScreen is Screen.Performance) { onNavigate(Screen.Performance) }
-            }
-            
             Spacer(modifier = Modifier.height(16.dp))
             
             if (isLoading) {
