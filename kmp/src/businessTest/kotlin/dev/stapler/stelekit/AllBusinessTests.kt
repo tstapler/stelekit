@@ -794,6 +794,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.git.PeriodicSyncDriverRunRecordTest::class,
     dev.stapler.stelekit.jobs.schedule.TaskRunLogTest::class,
     dev.stapler.stelekit.jobs.schedule.GraphRemovalTasksTest::class,
+    dev.stapler.stelekit.ui.theme.MutedTextContrastTest::class,
     dev.stapler.stelekit.jobs.schedule.FakeBackgroundTaskSchedulerContractTest::class,
     dev.stapler.stelekit.jobs.schedule.FakeBackgroundTaskSchedulerMinimalCapabilitiesContractTest::class,
     dev.stapler.stelekit.projectbridge.TableMeasurementExtractorTest::class,

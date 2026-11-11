@@ -128,5 +128,7 @@ import org.junit.runners.Suite
     // BackgroundTasksSectionTest, TaskRunLogRowsTest and ModelDownloadUiTest (background-task scheduling UI)
     // are excluded for the same reason (1): they drive composables through ComposeContentTestRule.
     // They run under Gradle's testDebugUnitTest.
+    // BackgroundTasksUxGapsTest, ScheduledSyncStatusActionsTest, TaskSettingsAccessibilityAndErrorsTest,
+    // DepthEstimationPanelLiveRegionTest and ScheduledSyncControlsApplyTest are excluded for the same reason (1).
 )
 class AllAndroidUnitTests

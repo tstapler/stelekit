@@ -339,6 +339,7 @@ import dev.stapler.stelekit.wiring.GitSyncServiceRegistryBalanceTest
 import dev.stapler.stelekit.logging.LogManagerConcurrencyTest
 import dev.stapler.stelekit.wiring.GitSyncStackEntryPointTest
 import dev.stapler.stelekit.wiring.ScheduledSyncOriginE2ETest
+import dev.stapler.stelekit.wiring.DesktopTaskRootWiringTest
 import dev.stapler.stelekit.wiring.TaskSchedulerDesktopEntryPointTest
 import dev.stapler.stelekit.wiring.JvmPlatformCapsRootTest
 import org.junit.runner.RunWith
@@ -689,6 +690,7 @@ import org.junit.runners.Suite
     GitSyncStackEntryPointTest::class,
     ScheduledSyncOriginE2ETest::class,
     TaskSchedulerDesktopEntryPointTest::class,
+    DesktopTaskRootWiringTest::class,
     GitSyncServiceRegistryBalanceTest::class,
     JvmPlatformCapsRootTest::class,
     dev.stapler.stelekit.jobs.schedule.InProcessTaskSchedulerContractTest::class,

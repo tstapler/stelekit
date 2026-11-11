@@ -195,7 +195,14 @@ class DepthModelDownloader(
             WorkInfo.State.CANCELLED -> ModelState.Cancelled
         }
         // queuedState suspends on the network read; a cancel during it must not be undone by this stale snapshot.
-        if (cancelGeneration.get() == generation) _modelState.value = next
+        // A snapshot taken before the cancel (or a straggling RUNNING/ENQUEUED one after it) must not reopen a cancelled download.
+        _modelState.update { current ->
+            when {
+                cancelGeneration.get() != generation -> current
+                next is ModelState.Downloading && current is ModelState.Cancelled && inFlight.get() == 0 -> current
+                else -> next
+            }
+        }
     }
 
     /** Queued: explains why it is not running yet. The snapshot is taken at emission time, so it can go stale. */
