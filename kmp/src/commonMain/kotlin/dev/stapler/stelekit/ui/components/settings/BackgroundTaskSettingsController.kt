@@ -59,6 +59,11 @@ class BackgroundTaskSettingsController(
     private val store: TaskSettingsStore,
     private val scheduler: BackgroundTaskScheduler,
     private val registry: TaskRegistry,
+    /**
+     * Called after a change is stored for a key, so the host can push it into any loop it runs itself
+     * (Desktop's `PeriodicSyncDriver` is not reachable through [BackgroundTaskScheduler.apply]).
+     */
+    private val onSaved: (TaskKey) -> Unit = {},
 ) {
     private val logger = Logger("BackgroundTaskSettingsController")
 
@@ -179,6 +184,7 @@ class BackgroundTaskSettingsController(
             val key = TaskKey(kind, TaskScope(graphId))
             val resolved = (store.readResult(key) as? TaskReadResult.Ok)?.config
             if (resolved != null && !applyFailed(key, resolved)) logger.debug("re-applied ${key.scope.value} after default change")
+            onSaved(key)
         }
         return SaveResult.Saved
     }
@@ -200,6 +206,7 @@ class BackgroundTaskSettingsController(
             store.write(key, previous)
             return SaveResult.Failed
         }
+        onSaved(key)
         return SaveResult.Saved
     }
 

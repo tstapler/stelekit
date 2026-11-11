@@ -16,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import dev.stapler.stelekit.git.BatterySettingsLauncher
 import dev.stapler.stelekit.git.GitConfigRepository
 import dev.stapler.stelekit.git.GitLastSuccessSource
@@ -95,6 +96,8 @@ internal class ScheduledSyncControls(
     val health: ScheduleHealth = ScheduleHealth.Healthy,
     /** Re-reads the settings store and clears the unreadable marker when that succeeds. */
     val retrySettings: () -> Unit = {},
+    /** Re-reads the stored `git-sync` entry into the running loop; call after Settings writes the store directly. */
+    val reconcileRunning: () -> Unit = {},
 ) {
     companion object {
         val Unavailable = ScheduledSyncControls(
@@ -216,14 +219,17 @@ internal fun rememberBackgroundTasksSettingsState(
     val configRepository = stack.gitConfigRepository ?: return null
     val scheduler = deps.platformIntegrations.backgroundTaskScheduler
     val registry = deps.platformIntegrations.taskRegistry
-    val controller = remember(deps.platformSettings, configRepository, scheduler, registry) {
+    val controls = stack.scheduledSync
+    val activeGraphIdForSaves = stack.gitSyncGraphId
+    val reconcileRunning by rememberUpdatedState(controls.reconcileRunning)
+    val controller = remember(deps.platformSettings, configRepository, scheduler, registry, activeGraphIdForSaves) {
         val seed = LegacyGitSyncMigration(deps.platformSettings, ConfigRepositoryLegacyConfigSource(configRepository))
         dev.stapler.stelekit.ui.components.settings.BackgroundTaskSettingsController(
             TaskSettingsStore(deps.platformSettings, seed, registry), scheduler, registry,
+            onSaved = { key -> if (key.kind == GitSyncTask.KIND && key.scope.value == activeGraphIdForSaves) reconcileRunning() },
         )
     }
     val rows = graphs.map { dev.stapler.stelekit.ui.components.settings.BackgroundTaskGraph(it.id.value, it.displayName) }
-    val controls = stack.scheduledSync
     val hasRemote = controls.hasRemote
     val reviewRequired = hasRemote && !controls.firstSyncConfirmed()
     val activeGraphId = stack.gitSyncGraphId
@@ -387,6 +393,9 @@ internal fun rememberGraphContentScheduledSyncControls(
                     healthRefresh++
                 }
             }
+        },
+        reconcileRunning = {
+            scope.launch { controller.reconcile(graphId)?.let { taskConfig = it } }
         },
         setEnabled = { on ->
             scope.launch {
