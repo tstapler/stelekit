@@ -14,6 +14,8 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.runtime.getValue
@@ -50,6 +52,7 @@ import dev.stapler.stelekit.ui.components.settings.ANDROID_FIVE_MINUTE_REASON
 import dev.stapler.stelekit.ui.components.settings.ANDROID_HELPER
 import dev.stapler.stelekit.ui.components.settings.DESKTOP_HELPER
 import dev.stapler.stelekit.ui.components.settings.NO_REMOTE_REASON
+import dev.stapler.stelekit.ui.components.settings.PAUSED_ICON_TAG
 import dev.stapler.stelekit.ui.components.settings.RESTRICTED_HELPER
 import dev.stapler.stelekit.ui.components.settings.REVIEW_FIRST_SYNC_REASON
 import dev.stapler.stelekit.ui.components.settings.SWITCH_LABEL
@@ -222,6 +225,16 @@ class ScheduledSyncSettingsTest {
         assertEquals(1, taps.fixes)
         composeTestRule.onNodeWithText("Authentication failed").assertExists()
         composeTestRule.onNodeWithText("Resume").assertIsEnabled()
+    }
+
+    @Test
+    fun pausedLine_should_ShowDecorativePauseIconBesideText_When_StatusPaused() {
+        show(state(enabled = true, status = ScheduledSyncStatus(paused = true, consecutiveFailures = 3)))
+        composeTestRule.onNodeWithTag(PAUSED_ICON_TAG, useUnmergedTree = true).assertIsDisplayed()
+            .assert(SemanticsMatcher("no contentDescription (text announces the state)") {
+                it.config.getOrNull(SemanticsProperties.ContentDescription) == null
+            })
+        composeTestRule.onNodeWithText("Paused after 3 failures - tap to fix").assertIsDisplayed()
     }
 
     @Test

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.selection.selectable
@@ -37,6 +38,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.git.ANDROID_MIN_INTERVAL_HELPER
 import dev.stapler.stelekit.git.BATTERY_SETTINGS_MANUAL_PATH
@@ -213,20 +215,34 @@ private fun IntervalPicker(state: ScheduledSyncSettingsState, effective: Int) {
     }
 }
 
+/** Test tag for the decorative pause icon on the Paused status line. */
+const val PAUSED_ICON_TAG = "scheduled-sync-paused-icon"
+
 @Composable
 private fun StatusLine(line: ScheduledSyncLine, state: ScheduledSyncSettingsState) {
     if (line is ScheduledSyncLine.Paused) {
         Column(modifier = Modifier.padding(top = 8.dp)) {
-            Text(
-                text = "Paused after ${line.failures} failures - tap to fix",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
+            // UX-28: icon + text + colour; the icon is decorative (null description) because the text already announces the state.
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = MIN_TARGET_DP.dp)
-                    .clickable(onClick = state.onFix)
-                    .semantics { liveRegion = LiveRegionMode.Polite },
-            )
+                    .clickable(onClick = state.onFix),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Default.Pause,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(18.dp).padding(end = 4.dp).testTag(PAUSED_ICON_TAG),
+                )
+                Text(
+                    text = "Paused after ${line.failures} failures - tap to fix",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
             line.lastFailure?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             Button(onClick = state.onResume, modifier = Modifier.heightIn(min = MIN_TARGET_DP.dp)) { Text("Resume") }
         }
