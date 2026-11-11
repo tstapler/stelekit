@@ -4,6 +4,7 @@ import dev.stapler.stelekit.db.WalConfiguredCallbackTest
 import dev.stapler.stelekit.git.AndroidGitLegacyConfigSourceTest
 import dev.stapler.stelekit.git.AndroidGitRepositoryLfsGuardTest
 import dev.stapler.stelekit.google.AndroidGoogleSupportTest
+import dev.stapler.stelekit.git.AndroidBatterySettingsLauncherTest
 import dev.stapler.stelekit.git.AndroidGitRepositoryTestRemoteTest
 import dev.stapler.stelekit.git.GitSyncBusyCounterSharedWiringTest
 import dev.stapler.stelekit.git.GitSyncWorkerGateAndRecordTest
@@ -17,7 +18,10 @@ import dev.stapler.stelekit.jobs.schedule.PlatformSettingsColdPathTest
 import dev.stapler.stelekit.jobs.schedule.WorkManagerJitterSpikeTest
 import dev.stapler.stelekit.jobs.schedule.TaskRegistryBothRootsTest
 import dev.stapler.stelekit.jobs.schedule.TaskWorkerTest
+import dev.stapler.stelekit.platform.ml.ModelDownloadEndToEndTest
 import dev.stapler.stelekit.platform.ml.ModelDownloadPresentationTest
+import dev.stapler.stelekit.platform.ml.ModelDownloadTaskTest
+import dev.stapler.stelekit.platform.ml.OneShotSkipTest
 import dev.stapler.stelekit.jobs.schedule.ScheduleStartupTest
 import dev.stapler.stelekit.jobs.schedule.ScheduledTaskReconcilerTest
 import dev.stapler.stelekit.jobs.schedule.WorkManagerTaskSchedulerConstraintsTest
@@ -59,6 +63,10 @@ import org.junit.runners.Suite
     ScheduleStartupTest::class,
     TaskWorkerTest::class,
     ModelDownloadPresentationTest::class,
+    ModelDownloadTaskTest::class,
+    ModelDownloadEndToEndTest::class,
+    OneShotSkipTest::class,
+    AndroidBatterySettingsLauncherTest::class,
     TaskRegistryBothRootsTest::class,
     WorkManagerSyncSchedulerPauseTest::class,
     WorkManagerSyncSchedulerRetryOwnerTest::class,
