@@ -200,7 +200,8 @@ private class SteleDatabaseImpl(
           |    focal_length_mm            REAL,
           |    focal_length_35mm_eq       REAL,
           |    camera_make                TEXT,
-          |    camera_model               TEXT
+          |    camera_model               TEXT,
+          |    calibration_basis_version  INTEGER NOT NULL DEFAULT 0
           |)
           """.trimMargin(), 0).await()
       driver.execute(null, """

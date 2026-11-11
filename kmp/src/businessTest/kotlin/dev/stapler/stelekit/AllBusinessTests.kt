@@ -163,6 +163,8 @@ import dev.stapler.stelekit.asset.pipeline.OcrPluginTest
 import dev.stapler.stelekit.asset.AssetSearchSqlTest
 import dev.stapler.stelekit.asset.AssetTagSearchSqlTest
 import dev.stapler.stelekit.repository.ImageAnnotationTagEscapingTest
+import dev.stapler.stelekit.calibration.CalibrationBasisServiceTest
+import dev.stapler.stelekit.db.CalibrationBasisMigrationTest
 import dev.stapler.stelekit.asset.AssetSearchCloudDescriptionTest
 import dev.stapler.stelekit.asset.CloudDescriptionStorageTest
 import dev.stapler.stelekit.asset.CloudKeyLeakageAuditTest
@@ -512,6 +514,8 @@ import org.junit.runners.Suite
     AssetSearchSqlTest::class,
     AssetTagSearchSqlTest::class,
     ImageAnnotationTagEscapingTest::class,
+    CalibrationBasisServiceTest::class,
+    CalibrationBasisMigrationTest::class,
     AssetSearchCloudDescriptionTest::class,
     CloudDescriptionStorageTest::class,
     CloudKeyLeakageAuditTest::class,

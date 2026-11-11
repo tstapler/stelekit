@@ -37,6 +37,8 @@ data class SidecarImageAnnotation(
     @SerialName("calibrationMethod") val calibrationMethod: String = "NONE",
     @SerialName("pixelsPerMeter") val pixelsPerMeter: Double = 0.0,
     @SerialName("calibrationConfidencePct") val calibrationConfidencePct: Int = 0,
+    /** Pixel basis of [pixelsPerMeter] (0 legacy decode-relative, 1 native). Absent in older sidecars, which read as 0. */
+    @SerialName("calibrationBasisVersion") val calibrationBasisVersion: Int = 0,
     @SerialName("unit") val unit: String = "METERS",
     @SerialName("tags") val tags: List<String> = emptyList(),
     @SerialName("latLng") val latLng: String? = null,

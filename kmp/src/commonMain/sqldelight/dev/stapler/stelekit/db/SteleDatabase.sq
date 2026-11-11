@@ -1020,6 +1020,7 @@ DELETE FROM git_config WHERE graph_id = ?;
 
 -- Image annotations table: stores one row per imported image with calibration & sensor data.
 -- The authoritative source is the sidecar JSON; this table is a query-optimised cache.
+-- calibration_basis_version: 0 = legacy decode-size-relative pixels_per_meter, 1 = native image pixels (ADR-004).
 CREATE TABLE IF NOT EXISTS image_annotations (
     uuid                       TEXT NOT NULL PRIMARY KEY,
     block_uuid                 TEXT NOT NULL,
@@ -1044,7 +1045,8 @@ CREATE TABLE IF NOT EXISTS image_annotations (
     focal_length_mm            REAL,
     focal_length_35mm_eq       REAL,
     camera_make                TEXT,
-    camera_model               TEXT
+    camera_model               TEXT,
+    calibration_basis_version  INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_image_annotations_block_uuid ON image_annotations(block_uuid);
@@ -1089,8 +1091,9 @@ INSERT OR REPLACE INTO image_annotations (
     source, source_uri, captured_at_ms, imported_at_ms,
     calibration_method, pixels_per_meter, calibration_confidence_pct,
     unit, tags, lat_lng, altitude_m, bearing_deg, pitch_deg, roll_deg,
-    focal_length_mm, focal_length_35mm_eq, camera_make, camera_model
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    focal_length_mm, focal_length_35mm_eq, camera_make, camera_model,
+    calibration_basis_version
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateImageAnnotation:
 UPDATE image_annotations SET
@@ -1116,7 +1119,8 @@ UPDATE image_annotations SET
     focal_length_mm = ?,
     focal_length_35mm_eq = ?,
     camera_make = ?,
-    camera_model = ?
+    camera_model = ?,
+    calibration_basis_version = ?
 WHERE uuid = ?;
 
 deleteImageAnnotation:
