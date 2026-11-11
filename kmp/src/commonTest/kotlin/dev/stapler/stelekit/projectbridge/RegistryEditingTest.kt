@@ -128,7 +128,7 @@ class RegistryEditingTest {
         assertEquals(EditError.NeedsParts, add(ConstraintTemplate.PartsSum("dim.k1", emptyList(), "x")))
         assertEquals(EditError.RepeatedKey, add(ConstraintTemplate.PartsSum("dim.k1", listOf("dim.k1"), "x")))
         assertEquals(EditError.RepeatedKey, add(ConstraintTemplate.PartsSum("dim.k1", listOf("dim.k2", "dim.k2"), "x")))
-        assertEquals(EditError.BadLabel, add(ConstraintTemplate.PartsSum("dim.k1", listOf("dim.k2"), "[[page]]")))
+        assertEquals(EditError.BadLabel, add(ConstraintTemplate.PartsSum("dim.k1", listOf("dim.k2"), "a[b]")))
         assertEquals(EditError.RepeatedKey, add(ConstraintTemplate.Equality("dim.k1", "dim.k1")))
         assertEquals(EditError.BadOffset, add(ConstraintTemplate.OffsetBy("dim.k1", "dim.k2", "wide")))
         assertEquals(EditError.UnknownKey("nope"), add(ConstraintTemplate.Equality("dim.k1", "nope")))
