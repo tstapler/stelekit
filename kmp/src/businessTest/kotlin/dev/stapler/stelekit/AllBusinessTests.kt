@@ -166,6 +166,8 @@ import dev.stapler.stelekit.asset.AssetSearchSqlTest
 import dev.stapler.stelekit.asset.AssetTagSearchSqlTest
 import dev.stapler.stelekit.repository.ImageAnnotationTagEscapingTest
 import dev.stapler.stelekit.calibration.CalibrationBasisServiceTest
+import dev.stapler.stelekit.calibration.LensDistortionSimulationTest
+import dev.stapler.stelekit.db.CalibrationLensPersistenceTest
 import dev.stapler.stelekit.db.CalibrationBasisMigrationTest
 import dev.stapler.stelekit.asset.AssetSearchCloudDescriptionTest
 import dev.stapler.stelekit.asset.CloudDescriptionStorageTest
@@ -532,6 +534,8 @@ import org.junit.runners.Suite
     AssetTagSearchSqlTest::class,
     ImageAnnotationTagEscapingTest::class,
     CalibrationBasisServiceTest::class,
+    LensDistortionSimulationTest::class,
+    CalibrationLensPersistenceTest::class,
     CalibrationBasisMigrationTest::class,
     AssetSearchCloudDescriptionTest::class,
     CloudDescriptionStorageTest::class,

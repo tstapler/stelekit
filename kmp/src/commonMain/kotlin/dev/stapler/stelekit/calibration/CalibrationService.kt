@@ -75,7 +75,7 @@ object CalibrationService {
      */
     fun pixelsPerMeterAt(calibration: Calibration, nativeWidthPx: Double, renderedWidthPx: Double): Double {
         val stored = calibration.pixelsPerMeter
-        if (calibration.basisVersion != CalibrationBasis.NATIVE_PIXELS) return stored
+        if (!CalibrationBasis.isNativeRelative(calibration.basisVersion)) return stored
         if (!isUsableWidth(nativeWidthPx) || !isUsableWidth(renderedWidthPx)) return stored
         return stored * renderedWidthPx / nativeWidthPx
     }
