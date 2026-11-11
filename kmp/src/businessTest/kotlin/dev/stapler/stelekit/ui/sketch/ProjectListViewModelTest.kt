@@ -41,8 +41,13 @@ class ProjectListViewModelTest {
     private var tick = 0L
     private val models = mutableListOf<ProjectListViewModel>()
 
-    private fun vm(write: ProjectWriteRunner = { it() }) = ProjectListViewModel(
-        repos.projects, graphId, bridge, llm, write, { ++tick }, Random(1), UnconfinedTestDispatcher(),
+    private val pageRepo = dev.stapler.stelekit.repository.InMemoryPageRepository()
+    private val files = mutableMapOf<String, String>()
+
+    private fun vm(withSources: Boolean = false, write: ProjectWriteRunner = { it() }) = ProjectListViewModel(
+        repos.projects, graphId, bridge, llm, write, { ++tick }, Random(1),
+        sources = if (withSources) dev.stapler.stelekit.projectbridge.SourceBindingService(repos, pageRepo, { files[it] }, { it() }, dev.stapler.stelekit.projectbridge.LocalBindingTable(raw)) else null,
+        dispatcher = UnconfinedTestDispatcher(),
     ).also { models += it }
 
     @AfterTest
@@ -207,5 +212,44 @@ class ProjectListViewModelTest {
         assertFalse(hasConfiguredProject(repos))
         vm().createProject("Closet")
         assertTrue(hasConfiguredProject(repos))
+    }
+
+    @Test
+    fun sourcePickerSearchesBindsAndUnbindsTheFirstProject() = kotlinx.coroutines.test.runTest {
+        val id = dev.stapler.stelekit.projectbridge.uuidOf(5)
+        pageRepo.savePage(dev.stapler.stelekit.projectbridge.testPage(id, "Closet Plan"))
+        files["/g/pages/Closet Plan.md"] = "| a |"
+        val vm = vm(withSources = true)
+        assertTrue(vm.sourcesAvailable)
+        vm.bindSource(dev.stapler.stelekit.projectbridge.SourceBindingKind.TABLE, id)
+        assertNotNull(vm.state.value.message, "no project yet")
+        vm.dismissMessage()
+        vm.createProject("Closet")
+        vm.searchSourcePages("clos")
+        assertEquals(listOf(id), vm.state.value.pickerResults.map { it.uuid })
+        vm.bindSource(dev.stapler.stelekit.projectbridge.SourceBindingKind.TABLE, id)
+        assertEquals("Closet Plan", vm.state.value.boundSources.single().title)
+        vm.unbindSource(vm.state.value.boundSources.single().bindingId)
+        assertTrue(vm.state.value.boundSources.isEmpty())
+    }
+
+    @Test
+    fun unreadablePageBindingShowsAMessage() = kotlinx.coroutines.test.runTest {
+        val id = dev.stapler.stelekit.projectbridge.uuidOf(6)
+        pageRepo.savePage(dev.stapler.stelekit.projectbridge.testPage(id, "Stub", loaded = false))
+        val vm = vm(withSources = true)
+        vm.createProject("Closet")
+        vm.bindSource(dev.stapler.stelekit.projectbridge.SourceBindingKind.PROSE, id)
+        assertNotNull(vm.state.value.message)
+        assertTrue(vm.state.value.boundSources.isEmpty())
+    }
+
+    @Test
+    fun pickerIsUnavailableWithoutAService() {
+        val vm = vm()
+        assertFalse(vm.sourcesAvailable)
+        vm.searchSourcePages("clos")
+        vm.unbindSource("00000001")
+        assertTrue(vm.state.value.pickerResults.isEmpty())
     }
 }

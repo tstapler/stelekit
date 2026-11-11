@@ -7,6 +7,7 @@ import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationMethod
+import dev.stapler.stelekit.model.DEFAULT_MEASUREMENT_UNIT
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.MeasurementAnnotation
 import dev.stapler.stelekit.model.MeasurementUnit
@@ -14,6 +15,8 @@ import dev.stapler.stelekit.model.NormalizedPoint
 import dev.stapler.stelekit.model.angleBetweenThreePoints
 import dev.stapler.stelekit.model.metersToDisplayString
 import dev.stapler.stelekit.model.polygonAreaMeters
+import dev.stapler.stelekit.platform.Settings
+import dev.stapler.stelekit.platform.setDefaultMeasurementUnit
 import dev.stapler.stelekit.platform.diagnostics.EditorDiagnosticsSnapshot
 import dev.stapler.stelekit.platform.diagnostics.EditorDiagnosticsSource
 import dev.stapler.stelekit.platform.measurement.DeviceConnectionState
@@ -36,6 +39,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -100,6 +104,8 @@ data class AnnotationEditorState(
     val gridRefLengthText: String = "",
     /** Selected unit for the GRID_REF dialog (defaults to the image's display unit). */
     val gridRefUnit: MeasurementUnit = MeasurementUnit.METERS,
+    /** Unit used to label every measurement; starts as the image's stored unit, changed via [AnnotationEditorViewModel.setDisplayUnit]. */
+    val selectedUnit: MeasurementUnit = DEFAULT_MEASUREMENT_UNIT,
     // ── Monocular depth estimation state ──────────────────────────────────
     /** True while ONNX inference is running (shows spinner). */
     val isDepthInferenceRunning: Boolean = false,
@@ -210,6 +216,8 @@ class AnnotationEditorViewModel(
      * Pass an explicit implementation in tests to avoid global mutable state.
      */
     private val monocularDepthEstimator: MonocularDepthEstimator = SensorModule.monocularDepthEstimator,
+    /** Optional — when set, a unit change also becomes the global default for new annotations. */
+    private val settings: Settings? = null,
 ) {
     // CRITICAL: internal scope — never injected from outside composition.
     // The handler keeps an uncaught Throwable (notably OutOfMemoryError) from reaching the default
@@ -379,7 +387,14 @@ class AnnotationEditorViewModel(
         // a second time updates the calibration/image state but must not overwrite annotations
         // that the user has already added or deleted in this session.
         val firstCall = initialized.compareAndSet(false, true)
-        _state.update { it.copy(imageAnnotation = imageAnnotation, calibration = imageAnnotation.calibration) }
+        _state.update {
+            it.copy(
+                // A repeat call may carry a stale copy; the unit the user chose here wins.
+                imageAnnotation = if (firstCall) imageAnnotation else imageAnnotation.copy(unit = it.selectedUnit),
+                calibration = imageAnnotation.calibration,
+                selectedUnit = if (firstCall) imageAnnotation.unit else it.selectedUnit,
+            )
+        }
         if (!firstCall) return
         // Load persisted annotations once at startup. After that, committedAnnotations is managed
         // exclusively by optimistic local updates (commitAnnotation, undo, redo, deleteAnnotation).
@@ -392,7 +407,7 @@ class AnnotationEditorViewModel(
                 // wins the race and sets hasBeenMutated=true before our CAS succeeds, the
                 // MutableStateFlow CAS loop retries the lambda and we see true on retry.
                 _state.update { currentSt ->
-                    if (!hasBeenMutated.value) currentSt.copy(committedAnnotations = list)
+                    if (!hasBeenMutated.value) currentSt.copy(committedAnnotations = list.map { it.relabeled(currentSt.selectedUnit) })
                     else currentSt
                 }
             }
@@ -574,7 +589,8 @@ class AnnotationEditorViewModel(
 
         // GRID_REF: show the calibration dialog instead of committing a measurement annotation.
         if (tool == AnnotationTool.GRID_REF) {
-            val displayUnit = _state.value.imageAnnotation?.unit ?: MeasurementUnit.METERS
+            // The GRID_REF dialog offers no feet-inches entry, so it never inherits that display unit.
+            val displayUnit = _state.value.selectedUnit.takeIf { it != MeasurementUnit.FEET_INCHES } ?: MeasurementUnit.METERS
             _state.update {
                 it.copy(
                     isGridRefDialogVisible = true,
@@ -590,7 +606,7 @@ class AnnotationEditorViewModel(
         val st = _state.value
         val calibration = st.calibration
         val imageAnnotationUuid = st.imageAnnotation?.uuid ?: return
-        val displayUnit = st.imageAnnotation?.unit ?: MeasurementUnit.METERS
+        val displayUnit = st.selectedUnit
 
         val (valueMeters, valueDisplay) = computeMeasurement(points, tool, calibration, displayUnit)
 
@@ -663,7 +679,7 @@ class AnnotationEditorViewModel(
             _canUndoCalibration.value = true
         }
 
-        val displayUnit = st.imageAnnotation?.unit ?: MeasurementUnit.METERS
+        val displayUnit = st.selectedUnit
 
         val rederived = st.committedAnnotations.map { annotation ->
             val (newValue, newDisplay) = computeMeasurement(
@@ -697,12 +713,12 @@ class AnnotationEditorViewModel(
         _canUndoCalibration.value = false
         _state.update { it.copy(
             calibration = snapshot.calibration,
-            committedAnnotations = snapshot.annotations,
+            committedAnnotations = snapshot.annotations.map { a -> a.relabeled(it.selectedUnit) },
         )}
         _calibrationChangeMessage.value = "Scale restored"
         scope.launch {
             val imageUuid = _state.value.imageAnnotation?.uuid ?: return@launch
-            measurementRepository.saveMeasurements(imageUuid, snapshot.annotations).onLeft { err ->
+            measurementRepository.saveMeasurements(imageUuid, _state.value.committedAnnotations).onLeft { err ->
                 logger.error("Failed to restore measurements: ${err.message}")
             }
         }
@@ -740,7 +756,7 @@ class AnnotationEditorViewModel(
     fun updateAnnotationPoints(uuid: String, points: List<NormalizedPoint>) {
         if (inputStopped()) return
         _state.update { st ->
-            val displayUnit = st.imageAnnotation?.unit ?: MeasurementUnit.METERS
+            val displayUnit = st.selectedUnit
             st.copy(
                 committedAnnotations = st.committedAnnotations.map { a ->
                     if (a.uuid != uuid || points.size != a.normalizedPoints.size) a
@@ -901,6 +917,53 @@ class AnnotationEditorViewModel(
         val updated = current.copy(tags = current.tags - tag)
         _state.update { it.copy(imageAnnotation = updated) }
         persistTagsUpdate(updated)
+    }
+
+    /**
+     * Switch the unit every measurement is labelled in, save it on the image so reopening restores
+     * it, and remember it as the default for new annotations. Labels change immediately; saving is
+     * best-effort and only logs on failure. Not an undoable step: undo/redo keep the chosen unit.
+     */
+    fun setDisplayUnit(unit: MeasurementUnit) {
+        if (inputStopped()) return
+        val before = _state.value
+        val image = before.imageAnnotation ?: return
+        if (unit == before.selectedUnit && unit == image.unit) return
+        val after = _state.updateAndGet { st ->
+            st.copy(
+                selectedUnit = unit,
+                imageAnnotation = st.imageAnnotation?.copy(unit = unit),
+                committedAnnotations = st.committedAnnotations.map { it.relabeled(unit) },
+            )
+        }
+        settings?.setDefaultMeasurementUnit(unit)
+        val relabeled = after.committedAnnotations.filter { a ->
+            before.committedAnnotations.firstOrNull { it.uuid == a.uuid }?.valueDisplay != a.valueDisplay
+        }
+        persistUnitChange(relabeled)
+    }
+
+    /**
+     * Saves the latest image row (so a racing tag edit is not clobbered) and each re-labelled
+     * measurement individually. Upserts, never a whole-set replace: the initial load may not have
+     * finished, and replacing the set would delete measurements that are stored but not yet loaded.
+     */
+    @OptIn(DirectRepositoryWrite::class)
+    private fun persistUnitChange(relabeled: List<MeasurementAnnotation>) {
+        scope.launch {
+            persistLock.withLock {
+                _state.value.imageAnnotation?.let { image ->
+                    imageAnnotationRepository?.saveImageAnnotation(image)?.onLeft { err ->
+                        logger.error("Failed to persist unit change: ${err.message}")
+                    }
+                }
+                relabeled.forEach { m ->
+                    measurementRepository.saveMeasurementAnnotation(m).onLeft { err ->
+                        logger.error("Failed to persist re-labelled measurement ${m.uuid}: ${err.message}")
+                    }
+                }
+            }
+        }
     }
 
     @OptIn(DirectRepositoryWrite::class)
