@@ -70,7 +70,9 @@ import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntSize
@@ -1484,8 +1486,12 @@ internal fun DepthEstimationPanel(
         shape = MaterialTheme.shapes.small,
         modifier = modifier,
     ) {
+        // UX-38: download state changes (waiting, progress, failed, cancelled) are announced politely.
+        val announcesDownload = modelState is DepthModelUiState.Downloading || modelState is DepthModelUiState.Waiting ||
+            modelState is DepthModelUiState.Failed || modelState is DepthModelUiState.Cancelled
         Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                .then(if (announcesDownload) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             when {
