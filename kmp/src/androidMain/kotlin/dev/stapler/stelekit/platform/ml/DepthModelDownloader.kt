@@ -182,7 +182,8 @@ class DepthModelDownloader(
         }
         // A new run can sit beside a finished one; an unfinished job is what the user is waiting on.
         val info = infos.firstOrNull { !it.state.isFinished } ?: infos.lastOrNull()
-        _modelState.value = when (info?.state) {
+        val generation = cancelGeneration.get()
+        val next = when (info?.state) {
             null -> if (inFlight.get() > 0) return else ModelState.Absent
             WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> queuedState(info)
             WorkInfo.State.RUNNING -> {
@@ -193,6 +194,8 @@ class DepthModelDownloader(
             WorkInfo.State.FAILED -> ModelState.Failed(info.outputData.getString(DepthModelDownloadWorker.KEY_ERROR))
             WorkInfo.State.CANCELLED -> ModelState.Cancelled
         }
+        // queuedState suspends on the network read; a cancel during it must not be undone by this stale snapshot.
+        if (cancelGeneration.get() == generation) _modelState.value = next
     }
 
     /** Queued: explains why it is not running yet. The snapshot is taken at emission time, so it can go stale. */

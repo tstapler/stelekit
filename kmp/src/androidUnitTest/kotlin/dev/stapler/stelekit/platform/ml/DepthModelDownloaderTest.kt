@@ -9,7 +9,12 @@ import androidx.work.WorkManager
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
 import dev.stapler.stelekit.ui.annotate.DepthModelUiState
+import dev.stapler.stelekit.jobs.schedule.NetworkSnapshot
+import dev.stapler.stelekit.jobs.schedule.NetworkSnapshotProvider
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.yield
 import kotlinx.coroutines.runBlocking
@@ -101,6 +106,27 @@ class DepthModelDownloaderTest {
         assertEquals(DepthModelDownloader.ModelState.Cancelled, downloader.modelState.value)
         assertEquals(DepthModelUiState.Cancelled, downloader.modelState.value.toUiState())
         assertEquals(ModelDownloadPresentation.CANCELLED, ModelDownloadPresentation.present(ModelDownloadInput(ModelWorkState.Cancelled))?.text)
+    }
+
+    @Test
+    fun `a queued-state snapshot that finishes after cancel never shows Downloading again`() = runBlocking<Unit> {
+        val gate = CompletableDeferred<Unit>()
+        val downloader = DepthModelDownloader(context, network = NetworkSnapshotProvider { gate.await(); NetworkSnapshot(online = true, isMetered = false) })
+        val seen = java.util.Collections.synchronizedList(mutableListOf<DepthModelDownloader.ModelState>())
+        val recorder = launch(Dispatchers.Unconfined) { downloader.modelState.collect { seen += it } }
+        val waiting = async { downloader.downloadModel() }
+        downloader.awaitDownloading()
+        // Let the ENQUEUED emission reach the suspended snapshot read before cancelling.
+        kotlinx.coroutines.delay(500)
+
+        downloader.cancelDownload()
+        gate.complete(Unit)
+        waiting.await()
+        kotlinx.coroutines.delay(500)
+        recorder.cancel()
+
+        val afterCancel = seen.dropWhile { it !is DepthModelDownloader.ModelState.Cancelled }
+        assertTrue(afterCancel.none { it is DepthModelDownloader.ModelState.Downloading }, "saw $afterCancel")
     }
 
     @Test
