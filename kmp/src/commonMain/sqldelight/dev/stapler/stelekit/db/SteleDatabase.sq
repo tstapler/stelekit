@@ -1020,6 +1020,7 @@ DELETE FROM git_config WHERE graph_id = ?;
 
 -- Image annotations table: stores one row per imported image with calibration & sensor data.
 -- The authoritative source is the sidecar JSON; this table is a query-optimised cache.
+-- calibration_basis_version: 0 = legacy decode-size-relative pixels_per_meter, 1 = native image pixels (ADR-004).
 CREATE TABLE IF NOT EXISTS image_annotations (
     uuid                       TEXT NOT NULL PRIMARY KEY,
     block_uuid                 TEXT NOT NULL,
@@ -1044,7 +1045,8 @@ CREATE TABLE IF NOT EXISTS image_annotations (
     focal_length_mm            REAL,
     focal_length_35mm_eq       REAL,
     camera_make                TEXT,
-    camera_model               TEXT
+    camera_model               TEXT,
+    calibration_basis_version  INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_image_annotations_block_uuid ON image_annotations(block_uuid);
@@ -1089,8 +1091,9 @@ INSERT OR REPLACE INTO image_annotations (
     source, source_uri, captured_at_ms, imported_at_ms,
     calibration_method, pixels_per_meter, calibration_confidence_pct,
     unit, tags, lat_lng, altitude_m, bearing_deg, pitch_deg, roll_deg,
-    focal_length_mm, focal_length_35mm_eq, camera_make, camera_model
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    focal_length_mm, focal_length_35mm_eq, camera_make, camera_model,
+    calibration_basis_version
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateImageAnnotation:
 UPDATE image_annotations SET
@@ -1116,7 +1119,8 @@ UPDATE image_annotations SET
     focal_length_mm = ?,
     focal_length_35mm_eq = ?,
     camera_make = ?,
-    camera_model = ?
+    camera_model = ?,
+    calibration_basis_version = ?
 WHERE uuid = ?;
 
 deleteImageAnnotation:
@@ -1391,6 +1395,15 @@ DELETE FROM storage_locations WHERE graph_id = ?;
 selectLastInsertRowId:
 SELECT last_insert_rowid();
 
+-- Library (ADR-006/008): the paged page/count queries are built per request in LibrarySql.kt because the
+-- SQLDelight dialect cannot parse REPLACE() and a fixed text would carry every optional predicate.
+-- This index is the join key of those queries; it is also a MigrationRunner entry.
+CREATE INDEX IF NOT EXISTS idx_image_annotations_file_path ON image_annotations(file_path);
+
+-- Bounded projection for the tag chips: distinct tag sets by usage; tags are flattened in Kotlin.
+selectAnnotationTagSets:
+SELECT tags, COUNT(*) AS uses FROM image_annotations WHERE tags <> '[]' AND tags <> '' GROUP BY tags ORDER BY uses DESC LIMIT :limit;
+
 -- home-sketch (Story 2.1)
 -- The sidecar bundle is authoritative for the project model; sheets and primitives are a CACHE
 -- rebuilt from it on another device (ADR-005). No ON DELETE CASCADE is relied on: deleteProject
@@ -1460,3 +1473,59 @@ CREATE TABLE IF NOT EXISTS sketch_dimensions (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sketch_dimensions_key ON sketch_dimensions(project_uuid, key, source_kind, source_ref);
 CREATE INDEX IF NOT EXISTS idx_sketch_dimensions_project ON sketch_dimensions(project_uuid);
+
+-- home-sketch (Story 2.2/2.3): named queries. Every read is bounded (LIMIT) and index-backed.
+selectSketchProjects:
+SELECT * FROM sketch_projects ORDER BY created_at DESC, uuid LIMIT ? OFFSET ?;
+
+selectSketchProjectByUuid:
+SELECT * FROM sketch_projects WHERE uuid = ?;
+
+selectSketchSheetsByProject:
+SELECT * FROM sketch_sheets WHERE project_uuid = ? ORDER BY position, uuid LIMIT ?;
+
+selectSketchPrimitivesBySheet:
+SELECT * FROM sketch_primitives WHERE sheet_uuid = ? ORDER BY z, uuid LIMIT ? OFFSET ?;
+
+selectSketchDimensionsByProject:
+SELECT * FROM sketch_dimensions WHERE project_uuid = ? ORDER BY key, uuid LIMIT ? OFFSET ?;
+
+insertSketchProject:
+INSERT OR REPLACE INTO sketch_projects (uuid, slug, name, created_at, settings_json, fusion_results_json, source_hash, last_digest_hash, model_revision, base_revision, last_synced_sidecar_hash)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertSketchSheet:
+INSERT OR REPLACE INTO sketch_sheets (uuid, project_uuid, kind, view_direction, unit, scale_sixteenths_per_unit, source_asset_uuid, layer_json, zones_json, position)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertSketchPrimitive:
+INSERT OR REPLACE INTO sketch_primitives (uuid, sheet_uuid, kind, x1, y1, x2, y2, name, layer, z)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertSketchDimension:
+INSERT OR REPLACE INTO sketch_dimensions (uuid, project_uuid, key, kind, value_num, value_den, precision_num, precision_den, source_kind, source_ref, tolerance_num, tolerance_den, locked)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteSketchPrimitive:
+DELETE FROM sketch_primitives WHERE uuid = ?;
+
+deleteSketchPrimitivesBySheet:
+DELETE FROM sketch_primitives WHERE sheet_uuid = ?;
+
+deleteSketchPrimitivesByProject:
+DELETE FROM sketch_primitives WHERE sheet_uuid IN (SELECT uuid FROM sketch_sheets WHERE project_uuid = ?);
+
+deleteSketchSheet:
+DELETE FROM sketch_sheets WHERE uuid = ?;
+
+deleteSketchSheetsByProject:
+DELETE FROM sketch_sheets WHERE project_uuid = ?;
+
+deleteSketchDimension:
+DELETE FROM sketch_dimensions WHERE uuid = ?;
+
+deleteSketchDimensionsByProject:
+DELETE FROM sketch_dimensions WHERE project_uuid = ?;
+
+deleteSketchProject:
+DELETE FROM sketch_projects WHERE uuid = ?;

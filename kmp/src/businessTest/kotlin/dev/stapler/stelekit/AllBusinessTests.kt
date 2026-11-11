@@ -28,6 +28,22 @@ package dev.stapler.stelekit
 // runtime classpath for every dev.stapler.stelekit `*Test` class carrying a JUnit `@Test` method
 // and fails if it isn't registered here, so a missing entry is caught by this suite itself
 // instead of relying on someone noticing.
+import dev.stapler.stelekit.ui.nav.PersistedScreenIdTest
+import dev.stapler.stelekit.ui.nav.NavModelExhaustivenessTest
+import dev.stapler.stelekit.ui.nav.NavLabelUniquenessTest
+import dev.stapler.stelekit.ui.nav.LibraryRedirectTest
+import dev.stapler.stelekit.ui.library.LibraryViewModelStateTest
+import dev.stapler.stelekit.ui.library.LibraryFilterSqlParityTest
+import dev.stapler.stelekit.ui.library.LibraryAnnotatedJoinTest
+import dev.stapler.stelekit.ui.library.LargeLibraryBatchingTest
+import dev.stapler.stelekit.ui.library.LibrarySketchFilterTest
+import dev.stapler.stelekit.ui.library.LibrarySessionTest
+import dev.stapler.stelekit.ui.library.LibraryViewModelActionsTest
+import dev.stapler.stelekit.llm.ProjectAnalysisServiceTest
+import dev.stapler.stelekit.llm.ProjectAnalysisGoldenPromptTest
+import dev.stapler.stelekit.llm.ProjectAnalysisInboxVariantTest
+import dev.stapler.stelekit.projectbridge.ProjectAnalysisStepTest
+import dev.stapler.stelekit.projectbridge.OutboundPreviewTest
 import dev.stapler.stelekit.projectbridge.SettleBarrierTest
 import dev.stapler.stelekit.projectbridge.ProjectBridgeSettingsTest
 import dev.stapler.stelekit.projectbridge.PostSyncProjectJobEntryPointTest
@@ -120,8 +136,6 @@ import dev.stapler.stelekit.platform.image.ImageSamplingTest
 import dev.stapler.stelekit.platform.image.ImageTiersTest
 import dev.stapler.stelekit.ui.assets.AssetImageReferenceTest
 import dev.stapler.stelekit.ui.PageSelectionTest
-import dev.stapler.stelekit.ui.assets.AssetFilterTest
-import dev.stapler.stelekit.ui.assets.AssetBrowserViewModelTest
 import dev.stapler.stelekit.asset.AssetMoveServiceTest
 import dev.stapler.stelekit.asset.AssetMoveServiceWalTest
 import dev.stapler.stelekit.asset.AssetIndexServiceTest
@@ -148,7 +162,10 @@ import dev.stapler.stelekit.asset.pipeline.AssetPipelineCrashLoopBreakerTest
 import dev.stapler.stelekit.asset.pipeline.DefaultAssetPluginsTest
 import dev.stapler.stelekit.asset.pipeline.OcrPluginTest
 import dev.stapler.stelekit.asset.AssetSearchSqlTest
+import dev.stapler.stelekit.asset.AssetTagSearchSqlTest
 import dev.stapler.stelekit.repository.ImageAnnotationTagEscapingTest
+import dev.stapler.stelekit.calibration.CalibrationBasisServiceTest
+import dev.stapler.stelekit.db.CalibrationBasisMigrationTest
 import dev.stapler.stelekit.asset.AssetSearchCloudDescriptionTest
 import dev.stapler.stelekit.asset.CloudDescriptionStorageTest
 import dev.stapler.stelekit.asset.CloudKeyLeakageAuditTest
@@ -201,6 +218,10 @@ import dev.stapler.stelekit.db.MigrationRunnerCoverageTest
 import dev.stapler.stelekit.db.MigrationRunnerIndexTest
 import dev.stapler.stelekit.db.MigrationRunnerSchemaSyncTest
 import dev.stapler.stelekit.db.SketchMigrationTest
+import dev.stapler.stelekit.db.SketchStubGatingTest
+import dev.stapler.stelekit.repository.SketchDeleteProjectTest
+import dev.stapler.stelekit.repository.SketchRepositoryContractTest
+import dev.stapler.stelekit.repository.SketchStaleEditorTest
 import dev.stapler.stelekit.db.RelocationStagingDirectoryTest
 import dev.stapler.stelekit.merge.AssetCopierTest
 import dev.stapler.stelekit.merge.LinkClosureTest
@@ -208,6 +229,11 @@ import dev.stapler.stelekit.merge.MergeManifestTest
 import dev.stapler.stelekit.merge.MergeStagingDirectoryTest
 import dev.stapler.stelekit.merge.MergeUndoTest
 import dev.stapler.stelekit.merge.OwnedPageReplaceSpikeTest
+import dev.stapler.stelekit.merge.ActiveOwnedPageWriterContractTest
+import dev.stapler.stelekit.merge.OwnedFileGuardTest
+import dev.stapler.stelekit.merge.OwnedHashStabilityTest
+import dev.stapler.stelekit.merge.OwnedRefusalMappingTest
+import dev.stapler.stelekit.merge.OwnedReplaceLockOrderTest
 import dev.stapler.stelekit.merge.MetricsLogContractTest
 import dev.stapler.stelekit.merge.SourceReaderParityTest
 import dev.stapler.stelekit.merge.SourceReadCapabilitiesTest
@@ -298,6 +324,7 @@ import dev.stapler.stelekit.git.UpdatesNotificationToggleTest
 import dev.stapler.stelekit.ui.FirstSyncPreviewLoaderTest
 import dev.stapler.stelekit.ui.GitSyncCoordinatorTest
 import dev.stapler.stelekit.git.ScheduledSyncPolicyTest
+import dev.stapler.stelekit.git.EditLockTest
 import dev.stapler.stelekit.git.ScheduledSyncStackE2ETest
 import dev.stapler.stelekit.git.ShallowMergeTest
 import dev.stapler.stelekit.git.merge.JournalMergeServiceTest
@@ -335,7 +362,6 @@ import dev.stapler.stelekit.tags.WikiLinkExtractorTest
 import dev.stapler.stelekit.transfer.qrcode.QrImportServiceTest
 import dev.stapler.stelekit.transfer.qrcode.QrTransferCoordinatorTest
 import dev.stapler.stelekit.transfer.qrcode.TransferSessionTest
-import dev.stapler.stelekit.ui.GalleryViewModelTest
 import dev.stapler.stelekit.ui.StelekitViewModelNavigationTest
 import dev.stapler.stelekit.ui.StelekitViewModelUiToggleTest
 import dev.stapler.stelekit.ui.screens.DiskConflictFullScreenStateTest
@@ -366,6 +392,22 @@ import org.junit.runners.Suite
 
 @RunWith(Suite::class)
 @Suite.SuiteClasses(
+    PersistedScreenIdTest::class,
+    NavModelExhaustivenessTest::class,
+    NavLabelUniquenessTest::class,
+    LibraryRedirectTest::class,
+    LibraryViewModelStateTest::class,
+    LibrarySketchFilterTest::class,
+    LibrarySessionTest::class,
+    LibraryViewModelActionsTest::class,
+    LibraryFilterSqlParityTest::class,
+    LibraryAnnotatedJoinTest::class,
+    LargeLibraryBatchingTest::class,
+    ProjectAnalysisServiceTest::class,
+    ProjectAnalysisGoldenPromptTest::class,
+    ProjectAnalysisInboxVariantTest::class,
+    ProjectAnalysisStepTest::class,
+    OutboundPreviewTest::class,
     SettleBarrierTest::class,
     ProjectBridgeSettingsTest::class,
     PostSyncProjectJobEntryPointTest::class,
@@ -398,6 +440,7 @@ import org.junit.runners.Suite
     LlmProviderRegistryFactoryTest::class,
     LlmProviderRegistryTest::class,
     LlmSettingsTest::class,
+    dev.stapler.stelekit.llm.ProjectAnalysisSettingsTest::class,
     HistogramRegressionTest::class,
     HistogramWriterTest::class,
     PerfExporterPickerTest::class,
@@ -441,11 +484,10 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.ui.annotate.AnnotationEditorCrashGuardTest::class,
     dev.stapler.stelekit.ui.annotate.PostKillBannerControllerTest::class,
     dev.stapler.stelekit.ui.annotate.UndoDepthTest::class,
+    dev.stapler.stelekit.ui.annotate.UndoHistoryTest::class,
     dev.stapler.stelekit.ui.components.CoilSeamTest::class,
     dev.stapler.stelekit.ui.components.ImageLoaderConstructionCountTest::class,
     dev.stapler.stelekit.db.FixtureGraphCountsTest::class,
-    AssetFilterTest::class,
-    AssetBrowserViewModelTest::class,
     AssetMoveServiceTest::class,
     AssetMoveServiceWalTest::class,
     AssetIndexServiceTest::class,
@@ -473,7 +515,10 @@ import org.junit.runners.Suite
     OcrPluginTest::class,
     PluginRegistryTest::class,
     AssetSearchSqlTest::class,
+    AssetTagSearchSqlTest::class,
     ImageAnnotationTagEscapingTest::class,
+    CalibrationBasisServiceTest::class,
+    CalibrationBasisMigrationTest::class,
     AssetSearchCloudDescriptionTest::class,
     CloudDescriptionStorageTest::class,
     CloudKeyLeakageAuditTest::class,
@@ -529,6 +574,11 @@ import org.junit.runners.Suite
     MergeManifestTest::class,
     MergeUndoTest::class,
     OwnedPageReplaceSpikeTest::class,
+    ActiveOwnedPageWriterContractTest::class,
+    OwnedFileGuardTest::class,
+    OwnedHashStabilityTest::class,
+    OwnedRefusalMappingTest::class,
+    OwnedReplaceLockOrderTest::class,
     MetricsLogContractTest::class,
     SourceReaderParityTest::class,
     SourceReadCapabilitiesTest::class,
@@ -619,6 +669,7 @@ import org.junit.runners.Suite
     FirstSyncPreviewLoaderTest::class,
     GitSyncCoordinatorTest::class,
     ScheduledSyncPolicyTest::class,
+    EditLockTest::class,
     ScheduledSyncStackE2ETest::class,
     ShallowMergeTest::class,
     StubGitRepositoryFailureSequenceTest::class,
@@ -656,7 +707,6 @@ import org.junit.runners.Suite
     QrImportServiceTest::class,
     QrTransferCoordinatorTest::class,
     TransferSessionTest::class,
-    GalleryViewModelTest::class,
     StelekitViewModelNavigationTest::class,
     StelekitViewModelUiToggleTest::class,
     DiskConflictFullScreenStateTest::class,
@@ -710,6 +760,10 @@ import org.junit.runners.Suite
     TrackedCopyRunHostTest::class,
     HomeSketchFixtureVisibilityTest::class,
     SketchMigrationTest::class,
+    SketchStubGatingTest::class,
+    SketchRepositoryContractTest::class,
+    SketchDeleteProjectTest::class,
+    SketchStaleEditorTest::class,
     dev.stapler.stelekit.fixtures.ClosetFixtureTest::class,
     dev.stapler.stelekit.fusion.FixtureRegistryTest::class,
     dev.stapler.stelekit.fusion.ClosetInvariantTest::class,
@@ -717,6 +771,23 @@ import org.junit.runners.Suite
     PrivateStringGuardTest::class,
     GoldenFileGuardTest::class,
     GitSyncCoordinatorJobsTest::class,
+    dev.stapler.stelekit.ui.library.LibraryFilterRulesTest::class,
+    dev.stapler.stelekit.ui.library.LibraryFilterRulesPropertyTest::class,
+    dev.stapler.stelekit.ui.library.LibrarySearchTest::class,
+    dev.stapler.stelekit.ui.library.LibraryMediaClassTest::class,
+    dev.stapler.stelekit.ui.library.LibraryStatusLineTest::class,
+    dev.stapler.stelekit.ui.library.LibraryItemActionsTest::class,
+    dev.stapler.stelekit.ui.library.UpgradeNoticeStateMachineTest::class,
+    dev.stapler.stelekit.ui.nav.NavSectionBuilderTest::class,
+    dev.stapler.stelekit.ui.nav.NavCommandsTest::class,
+    dev.stapler.stelekit.ui.nav.NavModelExhaustivenessTest::class,
+    dev.stapler.stelekit.ui.nav.NavLabelUniquenessTest::class,
+    dev.stapler.stelekit.ui.nav.LibraryRedirectTest::class,
+    dev.stapler.stelekit.ui.nav.PersistedScreenIdTest::class,
+    dev.stapler.stelekit.ui.library.LibraryFilterSqlParityTest::class,
+    dev.stapler.stelekit.ui.library.LibraryAnnotatedJoinTest::class,
+    dev.stapler.stelekit.ui.library.LargeLibraryBatchingTest::class,
+    dev.stapler.stelekit.ui.library.LibraryViewModelStateTest::class,
     DomainLayerAuditTest::class,
     dev.stapler.stelekit.units.RationalExamplesTest::class,
     dev.stapler.stelekit.units.RationalPropertyTest::class,
@@ -728,17 +799,54 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.projectbridge.PostSyncProjectJobFailureTest::class,
     dev.stapler.stelekit.capture.TargetWriterRouterHolderTest::class,
     dev.stapler.stelekit.projectbridge.PostSyncProjectJobEntryPointTest::class,
+    dev.stapler.stelekit.projectbridge.MiniYamlGoldenTest::class,
+    dev.stapler.stelekit.projectbridge.MiniYamlPropertyTest::class,
     dev.stapler.stelekit.units.LengthParserGoldenTest::class,
     dev.stapler.stelekit.units.LengthParserPropertyTest::class,
+    dev.stapler.stelekit.sketchimport.LabelBinderPropertyTest::class,
+    dev.stapler.stelekit.sketchimport.SvgReaderInlineTest::class,
+    dev.stapler.stelekit.sketchimport.SvgReaderPropertyTest::class,
+    dev.stapler.stelekit.sketchimport.SvgTransformTest::class,
+    dev.stapler.stelekit.sketchimport.SvgReaderTest::class,
+    dev.stapler.stelekit.sketchimport.SheetCalibrationTest::class,
+    dev.stapler.stelekit.sketchimport.GeometryRulesTest::class,
+    dev.stapler.stelekit.sketchimport.GeometryExtractorTest::class,
+    dev.stapler.stelekit.sketchimport.LabelBinderTest::class,
+    dev.stapler.stelekit.sketchimport.TaggingModelTest::class,
+    dev.stapler.stelekit.sketchimport.ImportFlowTest::class,
+    dev.stapler.stelekit.sketchimport.SketchImportViewModelTest::class,
     dev.stapler.stelekit.fusion.LinearSolverTest::class,
     dev.stapler.stelekit.fusion.DimensionRegistryTest::class,
     dev.stapler.stelekit.fusion.FusionEngineTest::class,
     dev.stapler.stelekit.fusion.LinearSolverPropertyTest::class,
+    dev.stapler.stelekit.projectbridge.DigestRendererTest::class,
+    dev.stapler.stelekit.projectbridge.LlmPayloadBuilderTest::class,
+    dev.stapler.stelekit.projectbridge.DigestWriteIdempotenceTest::class,
+    dev.stapler.stelekit.projectbridge.DigestSelfFeedTest::class,
+    dev.stapler.stelekit.projectbridge.ProjectManagementTest::class,
+    dev.stapler.stelekit.ui.sketch.ProjectListViewModelTest::class,
+    dev.stapler.stelekit.projectbridge.DigestWriterJobTest::class,
+    dev.stapler.stelekit.llm.OutboundLlmGateTest::class,
+    dev.stapler.stelekit.llm.GateIssuedAuditTest::class,
+    dev.stapler.stelekit.sketch.SketchGesturesTest::class,
+    dev.stapler.stelekit.sketch.SketchViewMathTest::class,
+    dev.stapler.stelekit.sketch.SketchRenderCacheTest::class,
+    dev.stapler.stelekit.sketch.SketchHistoryTest::class,
+    dev.stapler.stelekit.sketch.SketchSheetPropsTest::class,
+    dev.stapler.stelekit.sketch.SketchSheetViewModelTest::class,
+    dev.stapler.stelekit.sketch.SketchViewModelTest::class,
+    dev.stapler.stelekit.projectbridge.SketchNavigationGateTest::class,
     dev.stapler.stelekit.sketch.SnapEnginePropertyTest::class,
     dev.stapler.stelekit.sketch.ViewTransformTest::class,
+    dev.stapler.stelekit.projectbridge.SidecarBundleTest::class,
+    dev.stapler.stelekit.projectbridge.SidecarReconcileTest::class,
+    dev.stapler.stelekit.projectbridge.ProjectSidecarStoreTest::class,
+    dev.stapler.stelekit.projectbridge.PostSyncProjectJobSidecarTest::class,
     dev.stapler.stelekit.projectbridge.TableParserCharacterizationTest::class,
     dev.stapler.stelekit.projectbridge.TableMeasurementExtractorTest::class,
     dev.stapler.stelekit.projectbridge.TableExtractorPropertyTest::class,
     dev.stapler.stelekit.projectbridge.TableExtractorInlineTest::class,
+    dev.stapler.stelekit.projectbridge.ProseExtractorsTest::class,
+    dev.stapler.stelekit.projectbridge.ProseExtractorsClosetTest::class,
 )
 class AllBusinessTests

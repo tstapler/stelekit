@@ -560,12 +560,14 @@ class RestrictedDatabaseQueries(
         focal_length_35mm_eq: Double?,
         camera_make: String?,
         camera_model: String?,
+        calibration_basis_version: Long,
     ): Long = queries.insertImageAnnotation(
         uuid, block_uuid, page_uuid, graph_path, file_path, thumbnail_path,
         source, source_uri, captured_at_ms, imported_at_ms,
         calibration_method, pixels_per_meter, calibration_confidence_pct,
         unit, tags, lat_lng, altitude_m, bearing_deg, pitch_deg, roll_deg,
         focal_length_mm, focal_length_35mm_eq, camera_make, camera_model,
+        calibration_basis_version,
     )
 
     @DirectSqlWrite
@@ -593,6 +595,7 @@ class RestrictedDatabaseQueries(
         focal_length_35mm_eq: Double?,
         camera_make: String?,
         camera_model: String?,
+        calibration_basis_version: Long,
         uuid: String,
     ): Long = queries.updateImageAnnotation(
         block_uuid, page_uuid, graph_path, file_path, thumbnail_path,
@@ -600,7 +603,7 @@ class RestrictedDatabaseQueries(
         calibration_method, pixels_per_meter, calibration_confidence_pct,
         unit, tags, lat_lng, altitude_m, bearing_deg, pitch_deg, roll_deg,
         focal_length_mm, focal_length_35mm_eq, camera_make, camera_model,
-        uuid,
+        calibration_basis_version, uuid,
     )
 
     @DirectSqlWrite
@@ -761,4 +764,101 @@ class RestrictedDatabaseQueries(
 
     @DirectSqlWrite
     suspend fun deleteStorageLocation(graph_id: String) = queries.deleteStorageLocation(graph_id)
+
+    // ── Home sketch writes (Story 2.2) ────────────────────────────────────────
+
+    @DirectSqlWrite
+    suspend fun insertSketchProject(
+        uuid: String,
+        slug: String,
+        name: String,
+        created_at: Long,
+        settings_json: String,
+        fusion_results_json: String,
+        source_hash: String,
+        last_digest_hash: String,
+        model_revision: Long,
+        base_revision: Long,
+        last_synced_sidecar_hash: String?,
+    ): Long = queries.insertSketchProject(
+        uuid, slug, name, created_at, settings_json, fusion_results_json, source_hash, last_digest_hash,
+        model_revision, base_revision, last_synced_sidecar_hash,
+    )
+
+    @DirectSqlWrite
+    suspend fun insertSketchSheet(
+        uuid: String,
+        project_uuid: String,
+        kind: String,
+        view_direction: String,
+        unit: String,
+        scale_sixteenths_per_unit: Long,
+        source_asset_uuid: String?,
+        layer_json: String,
+        zones_json: String,
+        position: Long,
+    ): Long = queries.insertSketchSheet(
+        uuid, project_uuid, kind, view_direction, unit, scale_sixteenths_per_unit, source_asset_uuid,
+        layer_json, zones_json, position,
+    )
+
+    @DirectSqlWrite
+    suspend fun insertSketchPrimitive(
+        uuid: String,
+        sheet_uuid: String,
+        kind: String,
+        x1: Long,
+        y1: Long,
+        x2: Long,
+        y2: Long,
+        name: String,
+        layer: String,
+        z: Long,
+    ): Long = queries.insertSketchPrimitive(uuid, sheet_uuid, kind, x1, y1, x2, y2, name, layer, z)
+
+    @DirectSqlWrite
+    suspend fun insertSketchDimension(
+        uuid: String,
+        project_uuid: String,
+        key: String,
+        kind: String,
+        value_num: Long,
+        value_den: Long,
+        precision_num: Long?,
+        precision_den: Long?,
+        source_kind: String,
+        source_ref: String,
+        tolerance_num: Long,
+        tolerance_den: Long,
+        locked: Long,
+    ): Long = queries.insertSketchDimension(
+        uuid, project_uuid, key, kind, value_num, value_den, precision_num, precision_den, source_kind,
+        source_ref, tolerance_num, tolerance_den, locked,
+    )
+
+    @DirectSqlWrite
+    suspend fun deleteSketchPrimitive(uuid: String): Long = queries.deleteSketchPrimitive(uuid)
+
+    @DirectSqlWrite
+    suspend fun deleteSketchPrimitivesBySheet(sheet_uuid: String): Long = queries.deleteSketchPrimitivesBySheet(sheet_uuid)
+
+    @DirectSqlWrite
+    suspend fun deleteSketchPrimitivesByProject(project_uuid: String): Long =
+        queries.deleteSketchPrimitivesByProject(project_uuid)
+
+    @DirectSqlWrite
+    suspend fun deleteSketchSheet(uuid: String): Long = queries.deleteSketchSheet(uuid)
+
+    @DirectSqlWrite
+    suspend fun deleteSketchSheetsByProject(project_uuid: String): Long = queries.deleteSketchSheetsByProject(project_uuid)
+
+    @DirectSqlWrite
+    suspend fun deleteSketchDimension(uuid: String): Long = queries.deleteSketchDimension(uuid)
+
+    @DirectSqlWrite
+    suspend fun deleteSketchDimensionsByProject(project_uuid: String): Long =
+        queries.deleteSketchDimensionsByProject(project_uuid)
+
+    @DirectSqlWrite
+    suspend fun deleteSketchProject(uuid: String): Long = queries.deleteSketchProject(uuid)
 }

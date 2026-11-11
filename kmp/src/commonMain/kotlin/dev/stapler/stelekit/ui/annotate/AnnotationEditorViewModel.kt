@@ -247,7 +247,7 @@ class AnnotationEditorViewModel(
             // `this.`: a bare name would bind to the constructor parameter, not the live property.
             imageWidthPx = this.imageWidthPx.toInt(),
             imageHeightPx = this.imageHeightPx.toInt(),
-            undoDepth = undoStack.size,
+            undoDepth = history.undoDepth,
         )
     }
 
@@ -310,16 +310,10 @@ class AnnotationEditorViewModel(
 
     // ── Undo / redo ───────────────────────────────────────────────────────────
 
-    private val maxHistory = 50
+    private val history = UndoHistory<AnnotationEditorState>(maxHistory = 50)
 
-    // undoStack holds previous states (most recent at the end).
-    private val undoStack = ArrayDeque<AnnotationEditorState>(maxHistory)
-
-    /** Committed-but-undoable states (capped at [maxHistory]); read by the benchmark probe and tests. */
-    internal val undoDepth: Int get() = undoStack.size
-
-    // redoStack holds states available for redo after an undo.
-    private val redoStack = ArrayDeque<AnnotationEditorState>(maxHistory)
+    /** Committed-but-undoable states (capped at 50); read by the benchmark probe and tests. */
+    internal val undoDepth: Int get() = history.undoDepth
 
     // Single-entry calibration undo history. Written from Dispatchers.Default (updateCalibration)
     // and read from the main thread (undoCalibration), so an Atomic reference is used for
@@ -339,32 +333,30 @@ class AnnotationEditorViewModel(
     val canRedo: StateFlow<Boolean> = _canRedo.asStateFlow()
 
     private fun pushUndo(before: AnnotationEditorState) {
-        if (undoStack.size >= maxHistory) undoStack.removeFirst()
-        undoStack.addLast(before)
-        redoStack.clear()
-        _canUndo.value = undoStack.isNotEmpty()
+        history.push(before)
+        _canUndo.value = history.canUndo
         _canRedo.value = false
     }
 
     /** Undo the most recent committed annotation. */
     fun undo() {
         if (inputStopped()) return
-        val prev = undoStack.removeLastOrNull() ?: return
-        redoStack.addLast(_state.value)
-        _state.value = prev.copy(error = _state.value.error)
-        _canUndo.value = undoStack.isNotEmpty()
-        _canRedo.value = redoStack.isNotEmpty()
+        val current = _state.value
+        val prev = history.undo(current) ?: return
+        _state.value = prev.restoredOver(current)
+        _canUndo.value = history.canUndo
+        _canRedo.value = history.canRedo
         persistCommittedSet()
     }
 
     /** Redo the most recently undone annotation. */
     fun redo() {
         if (inputStopped()) return
-        val next = redoStack.removeLastOrNull() ?: return
-        undoStack.addLast(_state.value)
-        _state.value = next.copy(error = _state.value.error)
-        _canUndo.value = undoStack.isNotEmpty()
-        _canRedo.value = redoStack.isNotEmpty()
+        val current = _state.value
+        val next = history.redo(current) ?: return
+        _state.value = next.restoredOver(current)
+        _canUndo.value = history.canUndo
+        _canRedo.value = history.canRedo
         persistCommittedSet()
     }
 

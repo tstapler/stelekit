@@ -148,6 +148,18 @@ class UpgradeResilienceTest {
                 }
             }
 
+            // ── Sketch repositories (home-sketch) ─────────────────────────────
+            val sketch = repoSet.sketchRepositories
+            val sketchProject = dev.stapler.stelekit.model.ProjectUuid("p1")
+            assertFlowEmitsLeft("SketchProjectRepository.getProjects") { sketch.projects.getProjects(10, 0).first() }
+            assertFlowEmitsLeft("SketchProjectRepository.getProjectByUuid") { sketch.projects.getProjectByUuid(sketchProject).first() }
+            assertFlowEmitsLeft("SketchProjectRepository.loadProject") { sketch.projects.loadProject(sketchProject) }
+            assertFlowEmitsLeft("SketchSheetRepository.getSheets") { sketch.sheets.getSheets(sketchProject).first() }
+            assertFlowEmitsLeft("SketchSheetRepository.getPrimitives") {
+                sketch.sheets.getPrimitives(dev.stapler.stelekit.model.SheetUuid("s1")).first()
+            }
+            assertFlowEmitsLeft("SketchDimensionRepository.getDimensions") { sketch.dimensions.getDimensions(sketchProject).first() }
+
             // ── SpanRepository ────────────────────────────────────────────────
             val spanRepo = repoSet.spanRepository as? SqlDelightSpanRepository
             if (spanRepo != null) {

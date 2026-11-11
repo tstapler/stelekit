@@ -4,6 +4,8 @@
 
 package dev.stapler.stelekit.projectbridge
 
+import dev.stapler.stelekit.fusion.Observation
+import dev.stapler.stelekit.jobs.JobHandle
 import dev.stapler.stelekit.jobs.JobKind
 import kotlinx.coroutines.CancellationException
 
@@ -16,11 +18,17 @@ sealed interface PostSyncRunOutcome {
     /** Local steps ran, but this platform has no writer for the digest page. */
     data object DigestUnavailable : PostSyncRunOutcome
 
+    /** The digest page was not written (refused, or deferred until the next sync); nothing else is affected. */
+    data class DigestNotWritten(val result: DigestWriteResult) : PostSyncRunOutcome
+
     /** The database had not caught up with the pulled files; retry on the next trigger. */
     data class Unsettled(val result: SettleResult.Unsettled) : PostSyncRunOutcome
 
     data class Failed(val errorType: String) : PostSyncRunOutcome
 }
+
+/** The digest text and the LLM payload, both projected from one fusion result so they cannot disagree. */
+data class ProjectOutputs(val digest: String, val payload: LlmPayload)
 
 /**
  * One post-sync pass for a graph. Today the shell only collects (nothing), waits for the database to catch up
@@ -31,14 +39,23 @@ class PostSyncProjectJob(
     private val deps: ProjectBridgeDeps,
     private val collector: ProjectSourceCollector = ProjectSourceCollector(),
     private val barrier: SettleBarrier = SettleBarrier(deps.isGitSyncBusy, deps.pageSettleProbe),
+    private val digestWriter: DigestWriter = DigestWriter(deps.routerProvider),
+    /** The fused digest input for the graph's project; null until fusion is wired (Story 5.8), so nothing is written. */
+    private val digestInput: suspend (graphId: String) -> DigestInput? = { null },
+    /** Null until the app wires an LLM; the step itself is also gated per graph (Story 5.6b). */
+    private val analysisStep: ProjectAnalysisStep? = null,
+    /** The fused digest and payload for the graph's project; null while the collector yields nothing. */
+    private val outputsProvider: suspend (graphId: String) -> ProjectOutputs? = { null },
 ) {
     /** [syncLeftLfsFiles] is read after the barrier, when the sync has published its final state. */
     suspend fun run(graphId: String, syncLeftLfsFiles: () -> Boolean): PostSyncRunOutcome {
         if (!deps.settings.isDigestActive(graphId) || !deps.hasConfiguredProject(graphId)) {
             return PostSyncRunOutcome.Inactive
         }
+        val reconcile = reconcileSidecars()
         val settle = barrier.awaitSettled(collector.collect().boundPages)
-        val title = if (syncLeftLfsFiles()) "$TITLE (sync left LFS files held)" else TITLE
+        val base = if (syncLeftLfsFiles()) "$TITLE (sync left LFS files held)" else TITLE
+        val title = if (reconcile?.needsResolution == true) "$base ($RESOLVE_CONFLICT)" else base
         val handle = deps.jobTracker.begin(JobKind.ProjectDigest, title)
         return try {
             when (settle) {
@@ -50,8 +67,7 @@ class PostSyncProjectJob(
                     handle.fail(UNAVAILABLE)
                     PostSyncRunOutcome.DigestUnavailable
                 } else {
-                    handle.succeed()
-                    PostSyncRunOutcome.Completed(settle.unloaded)
+                    finish(graphId, handle, settle.unloaded)
                 }
             }
         } catch (e: CancellationException) {
@@ -64,8 +80,67 @@ class PostSyncProjectJob(
         }
     }
 
+    /**
+     * Brings each project's database state and pulled sidecar into agreement before anything reads the projects.
+     * A failure never stops the digest: it is reported per project in the summary instead.
+     */
+    private suspend fun reconcileSidecars(): ReconcileSummary? {
+        val repos = deps.sketchRepositories() ?: return null
+        val store = deps.sidecarStore() ?: return null
+        return try {
+            SidecarReconciler(repos, store, deps.writeActor()).reconcileAll()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /** Digest page first (a local, loop-safe write), then the gated analysis; an analysis failure is reported first. */
+    private suspend fun finish(graphId: String, handle: JobHandle, unloaded: Int): PostSyncRunOutcome {
+        val digest = writeDigest(graphId)
+        val analysis = runAnalysis(graphId)
+        if (analysis is AnalysisStepOutcome.Blocked || analysis is AnalysisStepOutcome.Failed) {
+            handle.fail(analysisReason(analysis))
+            return PostSyncRunOutcome.Failed("project analysis")
+        }
+        val ok = digest == null || digest is DigestWriteResult.Written || digest is DigestWriteResult.Unchanged
+        if (ok) handle.succeed() else handle.fail(digest?.note)
+        return when (digest) {
+            null, is DigestWriteResult.Written, is DigestWriteResult.Unchanged -> PostSyncRunOutcome.Completed(unloaded)
+            is DigestWriteResult.Unavailable -> PostSyncRunOutcome.DigestUnavailable
+            is DigestWriteResult.Failed -> PostSyncRunOutcome.Failed("DigestWriteFailed")
+            is DigestWriteResult.Deferred, is DigestWriteResult.Refused -> PostSyncRunOutcome.DigestNotWritten(digest)
+        }
+    }
+
+    /** Runs after the barrier only, so the page is never replaced from a half-settled database. */
+    private suspend fun writeDigest(graphId: String): DigestWriteResult? {
+        val input = digestInput(graphId) ?: return null
+        return digestWriter.write(graphId, deps.settings.digestPageTitle(graphId, input.slug), input)
+    }
+
+    private suspend fun runAnalysis(graphId: String): AnalysisStepOutcome {
+        val step = analysisStep ?: return AnalysisStepOutcome.Skipped
+        val outputs = outputsProvider(graphId) ?: return AnalysisStepOutcome.Skipped
+        return step.run(graphId, outputs)
+    }
+
+    private fun analysisReason(outcome: AnalysisStepOutcome): String = when (outcome) {
+        is AnalysisStepOutcome.Blocked -> outcome.reason
+        is AnalysisStepOutcome.Failed -> "project analysis failed: ${outcome.reason}"
+        else -> ""
+    }
+
     companion object {
         const val TITLE = "Project digest"
+        const val RESOLVE_CONFLICT = "resolve the sync conflict"
         const val UNAVAILABLE = "digest unavailable: no writer on this platform"
+
+        /** Seam for the digest-write and LLM stages (Stories 5.4c, 5.6b); nothing calls it until they land. */
+        internal fun projectOutputs(input: DigestInput, observations: List<Observation>): ProjectOutputs = ProjectOutputs(
+            digest = DigestRenderer.render(input),
+            payload = LlmPayloadBuilder.build(input.slug, input.result, input.registry, observations, input.checks),
+        )
     }
 }

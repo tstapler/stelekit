@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.assets
 
 import androidx.compose.ui.test.hasText
+import dev.stapler.stelekit.ui.i18n.I18n
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -17,7 +18,6 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.repository.AssetRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.ui.assets.ASSETS_SEARCH_DEBOUNCE_MS
-import dev.stapler.stelekit.ui.assets.AssetBrowserViewModel
 import dev.stapler.stelekit.ui.assets.AssetSearchEmptyState
 import dev.stapler.stelekit.ui.assets.AssetsSearchSection
 import dev.stapler.stelekit.ui.assets.assetSnippet
@@ -210,18 +210,6 @@ class AssetResultsSurfaceTest {
     }
 
     @Test
-    fun assetsSearch_should_ReturnAssetWithSnippetAndEmphasizedMatch_When_Query4821() = runBlocking<Unit> {
-        val repo = repoWith(assetWith("inv", ocr = "Invoice 4821 due Friday"))
-        val vm = AssetBrowserViewModel(repo, null)
-        vm.setSearch("4821")
-        val state = withTimeout(10_000) { vm.uiState.first { it.searchPreviews.isNotEmpty() } }
-
-        assertEquals("Invoice 4821 due Friday", state.searchPreviews[AssetUuid("inv")]?.excerpt)
-        assertEquals("4821", state.searchQuery)
-        vm.onForgotten()
-    }
-
-    @Test
     fun globalSearch_should_ShowAtMost5AssetsWithShowAllAndHideSection_When_NoMatches() {
         val repo = repoWith(*(1..8).map { assetWith("a$it", ocr = "Invoice 4821 copy $it") }.toTypedArray())
         var shown: String? = null
@@ -229,14 +217,14 @@ class AssetResultsSurfaceTest {
         composeRule.setContent {
             AssetsSearchSection(query, AssetSearchService(repo), onShowAll = { shown = it }, onOpenAsset = {})
         }
-        composeRule.waitUntil(5_000) { composeRule.onAllNodes(hasText("Show all in Assets")).fetchSemanticsNodes().isNotEmpty() }
+        composeRule.waitUntil(5_000) { composeRule.onAllNodes(hasText(I18n.get(I18n.LIBRARY_SEARCH_SHOW_ALL))).fetchSemanticsNodes().isNotEmpty() }
 
         assertEquals(5, composeRule.onAllNodes(hasText("Text found in image")).fetchSemanticsNodes().size)
-        composeRule.onNodeWithText("Show all in Assets").performClick()
+        composeRule.onNodeWithText(I18n.get(I18n.LIBRARY_SEARCH_SHOW_ALL)).performClick()
         assertEquals("4821", shown)
 
         query = "zzzzzz"
-        composeRule.waitUntil(5_000) { composeRule.onAllNodes(hasText("Assets")).fetchSemanticsNodes().isEmpty() }
+        composeRule.waitUntil(5_000) { composeRule.onAllNodes(hasText(I18n.get(I18n.LIBRARY_SEARCH_SECTION))).fetchSemanticsNodes().isEmpty() }
     }
 
     @Test

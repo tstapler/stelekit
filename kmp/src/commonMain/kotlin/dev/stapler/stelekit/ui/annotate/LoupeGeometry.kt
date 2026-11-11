@@ -15,3 +15,14 @@ internal fun loupeInnerOffset(loupeSizePx: Float, touch: Offset, zoomFactor: Flo
         (loupeSizePx / 2f - touch.x * zoomFactor).roundToInt(),
         (loupeSizePx / 2f - touch.y * zoomFactor).roundToInt(),
     )
+
+/**
+ * Clamps [value] into `[margin, extent - loupeSize - margin]` without throwing. `coerceIn` throws
+ * when that range is empty (canvas narrower than loupe plus margins, e.g. a panorama); in that
+ * case the loupe is centred in the canvas and may overhang evenly. Always finite for finite input.
+ */
+fun clampLoupeOffset(value: Float, extent: Float, loupeSize: Float, margin: Float): Float {
+    val max = extent - loupeSize - margin
+    if (max < margin) return (extent - loupeSize) / 2f
+    return value.coerceIn(margin, max)
+}

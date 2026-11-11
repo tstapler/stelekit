@@ -20,9 +20,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.AudioFile
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Straighten
+import androidx.compose.material.icons.filled.VideoFile
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -526,4 +532,13 @@ private fun MetadataRow(label: String, value: String) {
 private fun formatFileSize(bytes: Long): String = when {
     bytes < 1_048_576L -> "${bytes / 1024} KB"
     else -> "${bytes / 1_048_576} MB"
+}
+
+fun assetIcon(mediaType: AssetMediaType) = when (mediaType) {
+    AssetMediaType.IMAGE, AssetMediaType.DRAWING -> Icons.Default.Image
+    AssetMediaType.PDF -> Icons.Default.PictureAsPdf
+    AssetMediaType.AUDIO -> Icons.Default.AudioFile
+    AssetMediaType.VIDEO -> Icons.Default.VideoFile
+    AssetMediaType.DOCUMENT -> Icons.Default.Description
+    AssetMediaType.FILE -> Icons.Default.InsertDriveFile
 }
