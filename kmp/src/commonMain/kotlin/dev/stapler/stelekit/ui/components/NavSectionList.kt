@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Notifications
@@ -58,6 +59,7 @@ fun navIcon(key: NavIconKey): ImageVector = when (key) {
     NavIconKey.GIT_SETUP -> Icons.Default.Sync
     NavIconKey.LOGS -> Icons.Default.Info
     NavIconKey.PERFORMANCE -> Icons.Default.Settings
+    NavIconKey.SKETCH -> Icons.Default.Edit
 }
 
 /**
@@ -75,7 +77,9 @@ fun NavSectionList(
     showLibraryNewBadge: Boolean = false,
     /** Extra content rendered right after the Journals row (the per-section journal shortcut). */
     afterJournals: (@Composable () -> Unit)? = null,
-    sections: List<NavSection> = NavModel.sections(currentScreen),
+    /** The `homeSketch` flag; the Sketch row does not exist while it is off. */
+    homeSketchEnabled: Boolean = false,
+    sections: List<NavSection> = NavModel.sections(currentScreen, homeSketchEnabled),
     /** Called after any row is activated, e.g. to dismiss a sheet. */
     onActivate: () -> Unit = {},
 ) {

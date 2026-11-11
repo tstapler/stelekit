@@ -164,6 +164,8 @@ import dev.stapler.stelekit.asset.pipeline.OcrPluginTest
 import dev.stapler.stelekit.asset.AssetSearchSqlTest
 import dev.stapler.stelekit.asset.AssetTagSearchSqlTest
 import dev.stapler.stelekit.repository.ImageAnnotationTagEscapingTest
+import dev.stapler.stelekit.calibration.CalibrationBasisServiceTest
+import dev.stapler.stelekit.db.CalibrationBasisMigrationTest
 import dev.stapler.stelekit.asset.AssetSearchCloudDescriptionTest
 import dev.stapler.stelekit.asset.CloudDescriptionStorageTest
 import dev.stapler.stelekit.asset.CloudKeyLeakageAuditTest
@@ -513,6 +515,8 @@ import org.junit.runners.Suite
     AssetSearchSqlTest::class,
     AssetTagSearchSqlTest::class,
     ImageAnnotationTagEscapingTest::class,
+    CalibrationBasisServiceTest::class,
+    CalibrationBasisMigrationTest::class,
     AssetSearchCloudDescriptionTest::class,
     CloudDescriptionStorageTest::class,
     CloudKeyLeakageAuditTest::class,
@@ -803,6 +807,9 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketchimport.SvgReaderTest::class,
     dev.stapler.stelekit.sketchimport.SheetCalibrationTest::class,
     dev.stapler.stelekit.sketchimport.LabelBinderTest::class,
+    dev.stapler.stelekit.sketchimport.TaggingModelTest::class,
+    dev.stapler.stelekit.sketchimport.ImportFlowTest::class,
+    dev.stapler.stelekit.sketchimport.SketchImportViewModelTest::class,
     dev.stapler.stelekit.fusion.LinearSolverTest::class,
     dev.stapler.stelekit.fusion.DimensionRegistryTest::class,
     dev.stapler.stelekit.fusion.FusionEngineTest::class,
@@ -814,11 +821,19 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.projectbridge.DigestWriterJobTest::class,
     dev.stapler.stelekit.llm.OutboundLlmGateTest::class,
     dev.stapler.stelekit.llm.GateIssuedAuditTest::class,
+    dev.stapler.stelekit.sketch.SketchGesturesTest::class,
+    dev.stapler.stelekit.sketch.SketchViewMathTest::class,
+    dev.stapler.stelekit.sketch.SketchRenderCacheTest::class,
+    dev.stapler.stelekit.sketch.SketchHistoryTest::class,
+    dev.stapler.stelekit.sketch.SketchViewModelTest::class,
+    dev.stapler.stelekit.projectbridge.SketchNavigationGateTest::class,
     dev.stapler.stelekit.sketch.SnapEnginePropertyTest::class,
     dev.stapler.stelekit.sketch.ViewTransformTest::class,
     dev.stapler.stelekit.projectbridge.TableParserCharacterizationTest::class,
     dev.stapler.stelekit.projectbridge.TableMeasurementExtractorTest::class,
     dev.stapler.stelekit.projectbridge.TableExtractorPropertyTest::class,
     dev.stapler.stelekit.projectbridge.TableExtractorInlineTest::class,
+    dev.stapler.stelekit.projectbridge.ProseExtractorsTest::class,
+    dev.stapler.stelekit.projectbridge.ProseExtractorsClosetTest::class,
 )
 class AllBusinessTests

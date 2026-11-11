@@ -22,6 +22,7 @@ data class CollectedSources(
     val yamlObservations: List<Observation> = emptyList(),
     val tableObservations: List<Observation> = emptyList(),
     val tableNeedsMapping: List<NeedsMapping> = emptyList(),
+    val proseObservations: List<Observation> = emptyList(),
     val svgObservations: List<Observation> = emptyList(),
     /** Drawing labels the binder could not bind; the tagging UI offers them for manual binding. */
     val svgUnboundLabels: List<BoundLabel> = emptyList(),
@@ -40,16 +41,20 @@ open class ProjectSourceCollector(
 ) {
     private val tableExtractor = TableMeasurementExtractor(registry, refTable)
     private val yamlExtractor = YamlMeasurementExtractor(registry, refTable)
+    private val proseExtractor = ProseMeasurementExtractor(registry, refTable)
+    private val countExtractor = CountExtractor(registry, refTable)
     private val labelBinder = LabelBinder(registry, refTable)
 
     open suspend fun collect(): CollectedSources {
         val tables = extractTables(emptyList()) // Story 5.9b supplies the bound pages' text
         val yaml = extractYaml(null) // Story 5.9c supplies the sidecar snapshot
+        val prose = extractProse(emptyList()) // Story 5.9b supplies the bound pages' text
         val svg = extractSvg(null) // Story 5.9d supplies the attached sheets' SVG text
         return CollectedSources(
             tableObservations = tables.observations,
             tableNeedsMapping = tables.needsMapping,
             yamlObservations = yaml.observations,
+            proseObservations = prose.observations,
             svgObservations = svg.observations,
             svgUnboundLabels = svg.unbound,
         )
@@ -62,6 +67,12 @@ open class ProjectSourceCollector(
     /** YAML stage (Story 5.3); [snapshot] is the sidecar's YAML text, never a path (OD-H2). */
     internal fun extractYaml(snapshot: String?): YamlExtractionResult =
         if (snapshot == null) YamlExtractionResult() else yamlExtractor.extract(snapshot, "yaml-snapshot")
+
+    /** Prose and count stage (Story 5.3b): lengths and counts stated in free text. */
+    fun extractProse(pages: List<TablePageText>): ProseExtractionResult =
+        pages.fold(ProseExtractionResult()) { acc, p ->
+            acc + proseExtractor.extract(p.markdown, p.locator, p.origin) + countExtractor.extract(p.markdown, p.locator, p.origin)
+        }
 
     /** SVG label stage (Story 4.3); [svg] is one sheet's text and [locator] stays device-local. */
     internal fun extractSvg(svg: String?, locator: String = "svg-sheet"): LabelBindingResult =

@@ -90,6 +90,10 @@ sealed class Screen {
     @HelpExempt(reason = "Redirect alias to Library; never shown")
     data class AssetBrowser(val initialSearch: String? = null) : Screen()
 
+    /** Home-project sketch editor; reachable only while the `homeSketch` flag is on. */
+    @HelpExempt(reason = "gated behind homeSketch; documented in the demo graph on graduation")
+    data class Sketch(val projectUuid: String? = null) : Screen()
+
     /** Google Drive file browser, opened from Settings > Google Account > Browse Drive. */
     @HelpExempt(reason = "Opened from Settings > Google Account; not a primary navigation destination")
     data object DriveBrowser : Screen()

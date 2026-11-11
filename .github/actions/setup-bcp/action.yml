@@ -18,7 +18,8 @@ runs:
       shell: bash
       run: |
         sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends protobuf-compiler
-        cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev 7806c5f bazel-cache-proxy --locked
+        # A cold build takes 2-3 min; an unbounded one hung a job for the whole 75-min job timeout.
+        timeout 600 cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev 7806c5f bazel-cache-proxy --locked
 
     - name: Start bazel-cache-proxy (GHA backend)
       shell: bash

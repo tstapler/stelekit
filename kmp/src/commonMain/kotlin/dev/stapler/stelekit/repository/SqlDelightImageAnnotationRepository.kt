@@ -90,6 +90,7 @@ class SqlDelightImageAnnotationRepository(
                     focal_length_35mm_eq = annotation.sensorData.focalLength35mmEq,
                     camera_make = annotation.sensorData.cameraMake,
                     camera_model = annotation.sensorData.cameraModel,
+                    calibration_basis_version = annotation.calibration.basisVersion.toLong(),
                 )
                 Unit.right()
             } catch (e: CancellationException) {
@@ -142,6 +143,7 @@ private fun dev.stapler.stelekit.db.Image_annotations.toModel(): ImageAnnotation
             method = runCatching { CalibrationMethod.valueOf(calibration_method) }.getOrDefault(CalibrationMethod.NONE),
             pixelsPerMeter = pixels_per_meter,
             confidencePercent = calibration_confidence_pct.toInt(),
+            basisVersion = calibration_basis_version.toInt(),
         ),
         unit = runCatching { MeasurementUnit.valueOf(unit) }.getOrDefault(MeasurementUnit.METERS),
         tags = tagsList,

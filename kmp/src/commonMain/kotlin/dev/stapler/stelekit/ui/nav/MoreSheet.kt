@@ -36,6 +36,7 @@ fun MoreSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     showLibraryNewBadge: Boolean = false,
+    homeSketchEnabled: Boolean = false,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -54,6 +55,7 @@ fun MoreSheet(
                 onNavigate = onNavigate,
                 onGitSetup = onGitSetup,
                 showLibraryNewBadge = showLibraryNewBadge,
+                homeSketchEnabled = homeSketchEnabled,
                 onActivate = onDismiss,
             )
             TextButton(
