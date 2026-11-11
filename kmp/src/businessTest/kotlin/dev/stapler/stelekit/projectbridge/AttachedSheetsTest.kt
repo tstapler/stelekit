@@ -390,4 +390,33 @@ class AttachedSheetsTest {
             vm.close()
         }
     }
+
+    @Test
+    fun aCalibratedPngIsOneSheetNotTwo() = runBlocking<Unit> {
+        val pngHash = ContentHasher.sha256(png)
+        val record = dev.stapler.stelekit.sketchimport.PngCalibrationRecord(pngHash, 1, "1000.5", emptyList())
+        val project = repos.projects.loadProject(ProjectUuid("p1")).getOrNull()!!.project
+        repos.projects.saveProject(project.copy(settings = checkNotNull(dev.stapler.stelekit.sketchimport.PngTagSources.with(project.settings, record))))
+
+        assertTrue(service.isAttached("p1", pngHash))
+        assertEquals(AttachOutcome.Attached, service.attach("p1", SheetSource(SheetKind.PNG, pngHash), null))
+
+        assertEquals(1, service.list("p1").size)
+        assertTrue(SheetSources.of(settings()).isEmpty())
+        assertTrue(service.detach("p1", pngHash))
+        assertTrue(service.list("p1").isEmpty())
+        assertTrue(dev.stapler.stelekit.sketchimport.PngTagSources.of(settings()).isEmpty())
+    }
+
+    @Test
+    fun aPlainPngEntryAndAnotherDevicesCalibrationRecordCollapseToOneRow() {
+        val pngHash = ContentHasher.sha256(png)
+        val record = dev.stapler.stelekit.sketchimport.PngCalibrationRecord(pngHash, 1, "1000.5", emptyList())
+        val both = checkNotNull(
+            dev.stapler.stelekit.sketchimport.PngTagSources.with(
+                checkNotNull(SheetSources.with(JsonObject(emptyMap()), SheetSource(SheetKind.PNG, pngHash))), record,
+            ),
+        )
+        assertEquals(listOf(SheetSource(SheetKind.PNG, pngHash)), attachedSources(both))
+    }
 }

@@ -29,6 +29,13 @@ import dev.stapler.stelekit.sketchimport.KeyError
 import dev.stapler.stelekit.sketchimport.TagChoice
 import dev.stapler.stelekit.sketchimport.TaggingItem
 
+/** What the PNG calibration step needs from its host: the picked image and the two ways to change state. */
+class RasterControls(
+    val image: ByteArray?,
+    val onEdit: ((RasterState) -> RasterState) -> Unit,
+    val onBind: (choice: TagChoice, toReference: Boolean) -> Unit,
+)
+
 /** Manual tagging of the labels the binder could not place (Story 4.4). Stateless: state and actions come from the caller. */
 @Composable
 fun TaggingScreen(
@@ -37,15 +44,25 @@ fun TaggingScreen(
     onSave: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
+    raster: RasterControls? = null,
 ) {
     Column(modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Tag labels from ${state.fileName}")
-        Text("${state.boundCount} labels matched automatically; ${state.items.size} need a dimension.")
+        val calibrating = state.raster
+        if (calibrating == null) {
+            Text("Tag labels from ${state.fileName}")
+            Text("${state.boundCount} labels matched automatically; ${state.items.size} need a dimension.")
+        } else {
+            Text("Calibrate ${state.fileName}")
+        }
         state.error?.let { Text(it) }
         state.keyError?.let { Text(keyErrorText(it)) }
-        LazyColumn(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            typedItems(state.items, key = { it.ref }) { item ->
-                TaggingRow(item, state.choices[item.ref], state.registryKeys, onChoose)
+        if (calibrating != null && raster != null) {
+            RasterTaggingPanel(calibrating, state.registryKeys, raster.image, raster.onEdit, raster.onBind, Modifier.weight(1f, fill = false))
+        } else {
+            LazyColumn(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                typedItems(state.items, key = { it.ref }) { item ->
+                    TaggingRow(item, state.choices[item.ref], state.registryKeys, onChoose)
+                }
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -56,7 +73,7 @@ fun TaggingScreen(
 }
 
 @Composable
-private fun TaggingRow(
+internal fun TaggingRow(
     item: TaggingItem,
     choice: TagChoice?,
     keys: List<String>,
@@ -96,5 +113,6 @@ private const val MAX_CHOICES = 6
 fun SketchImportHost(viewModel: SketchImportViewModel, modifier: Modifier = Modifier) {
     DisposableEffect(viewModel) { onDispose { viewModel.close() } }
     val state by viewModel.state.collectAsState()
-    TaggingScreen(state, viewModel::choose, viewModel::save, viewModel::cancel, modifier)
+    val raster = remember(viewModel, state.raster != null) { RasterControls(viewModel.rasterImage(), viewModel::editRaster, viewModel::bindRaster) }
+    TaggingScreen(state, viewModel::choose, viewModel::save, viewModel::cancel, modifier, raster)
 }

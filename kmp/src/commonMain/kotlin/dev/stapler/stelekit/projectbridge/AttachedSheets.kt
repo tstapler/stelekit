@@ -13,6 +13,7 @@ import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.SketchRepositories
 import dev.stapler.stelekit.sketchimport.DrawingPaths
+import dev.stapler.stelekit.sketchimport.PngTagSources
 import dev.stapler.stelekit.util.ContentHasher
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.JsonArray
@@ -104,6 +105,16 @@ suspend fun readAttachedSvgSheets(
     write: suspend (suspend () -> Either<DomainError, Unit>) -> Either<DomainError, Unit>,
 ): List<SheetSvg> = notesPath?.let { attachedSheetService(repositories, fileSystem, it, write).readSvgSheets() }.orEmpty()
 
+/**
+ * Every attached sheet: the `svg` / `png` entries plus the PNG sheets known only by their `png-calibration` record
+ * (Story 4.5b), so a calibrated PNG is one sheet, not two. A calibration record wins over a bare `png` entry.
+ */
+fun attachedSources(settings: JsonObject): List<SheetSource> {
+    val calibrated = PngTagSources.of(settings).map { SheetSource(SheetKind.PNG, it.contentHash) }
+    val calibratedHashes = calibrated.mapTo(HashSet()) { it.contentHash }
+    return SheetSources.of(settings).filterNot { it.contentHash in calibratedHashes } + calibrated
+}
+
 /** Whether an attached drawing can be read on this device. */
 enum class SheetStatus(val label: String) {
     READY("ready"),
@@ -141,12 +152,12 @@ class AttachedSheetService(
 ) {
     suspend fun list(projectUuid: String): List<AttachedSheetRow> {
         val project = repositories.projects.loadProject(ProjectUuid(projectUuid)).getOrNull()?.project ?: return emptyList()
-        return SheetSources.of(project.settings).map { AttachedSheetRow(it.kind, it.contentHash, statusOf(project.slug, it)) }
+        return attachedSources(project.settings).map { AttachedSheetRow(it.kind, it.contentHash, statusOf(project.slug, it)) }
     }
 
     suspend fun isAttached(projectUuid: String, contentHash: String): Boolean =
         repositories.projects.loadProject(ProjectUuid(projectUuid)).getOrNull()?.project
-            ?.let { project -> SheetSources.of(project.settings).any { it.contentHash == contentHash } } == true
+            ?.let { project -> attachedSources(project.settings).any { it.contentHash == contentHash } } == true
 
     /** The project's registry, or an empty one while it has none. */
     suspend fun registryOf(projectUuid: String): DimensionRegistry =
@@ -160,7 +171,8 @@ class AttachedSheetService(
         val project = repositories.projects.loadProject(ProjectUuid(projectUuid)).getOrNull()?.project
             ?: return AttachOutcome.ProjectNotFound
         if (SheetSources.of(project.settings).any { it.contentHash == source.contentHash }) return AttachOutcome.AlreadyAttached
-        val withSource = SheetSources.with(project.settings, source) ?: return AttachOutcome.LimitReached
+        val calibratedPng = source.kind == SheetKind.PNG && PngTagSources.of(project.settings).any { it.contentHash == source.contentHash }
+        val withSource = if (calibratedPng) project.settings else SheetSources.with(project.settings, source) ?: return AttachOutcome.LimitReached
         val settings = registry?.let { withRegistry(project.slug, withSource, it) } ?: withSource
         val updated = project.copy(settings = settings, modelRevision = project.modelRevision + 1)
         return write { repositories.projects.saveProject(updated) }.fold({ AttachOutcome.Failed }, { AttachOutcome.Attached })
@@ -170,15 +182,16 @@ class AttachedSheetService(
     @OptIn(DirectRepositoryWrite::class)
     suspend fun detach(projectUuid: String, contentHash: String): Boolean {
         val project = repositories.projects.loadProject(ProjectUuid(projectUuid)).getOrNull()?.project ?: return false
-        if (SheetSources.of(project.settings).none { it.contentHash == contentHash }) return false
-        val updated = project.copy(settings = SheetSources.without(project.settings, contentHash), modelRevision = project.modelRevision + 1)
+        if (attachedSources(project.settings).none { it.contentHash == contentHash }) return false
+        val settings = PngTagSources.without(SheetSources.without(project.settings, contentHash), contentHash)
+        val updated = project.copy(settings = settings, modelRevision = project.modelRevision + 1)
         return write { repositories.projects.saveProject(updated) }.isRight()
     }
 
     /** SVG text of every attached, readable, unchanged SVG sheet of the graph's first project, for the post-sync collector. */
     suspend fun readSvgSheets(): List<SheetSvg> {
         val project = repositories.projects.getProjects(1, 0).first().getOrNull()?.firstOrNull() ?: return emptyList()
-        return SheetSources.of(project.settings).filter { it.kind == SheetKind.SVG }.mapNotNull { source ->
+        return attachedSources(project.settings).filter { it.kind == SheetKind.SVG }.mapNotNull { source ->
             val bytes = bytesOf(project.slug, source)?.takeIf { ContentHasher.sha256(it) == source.contentHash } ?: return@mapNotNull null
             SheetSvg(sheet = ELEVATION, locator = "drawing:${source.contentHash}", svg = bytes.decodeToString())
         }

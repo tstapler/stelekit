@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.projectbridge
 
+import dev.stapler.stelekit.sketchimport.PngCalibrationRecord
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.jobs.JobTracker
 import dev.stapler.stelekit.merge.TargetWriterRouter
@@ -41,4 +42,6 @@ class ProjectBridgeDeps(
     val attachedSheets: suspend () -> List<SheetSvg> = { emptyList() },
     /** The project's registry and fusion spec (synced in its settings); null until the project has a registry, so nothing fuses and nothing is written. */
     val fusionSetup: suspend () -> ProjectFusionSetup? = { null },
+    /** The PNG sheets' calibration records for the graph's project (Story 4.5b); empty when none is tagged. */
+    val pngTags: suspend () -> List<PngCalibrationRecord> = { emptyList() },
 )

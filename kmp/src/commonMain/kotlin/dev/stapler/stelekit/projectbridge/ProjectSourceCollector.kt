@@ -4,6 +4,8 @@
 
 package dev.stapler.stelekit.projectbridge
 
+import dev.stapler.stelekit.sketchimport.PngCalibrationRecord
+import dev.stapler.stelekit.sketchimport.PngTagObservations
 import dev.stapler.stelekit.fusion.DimensionRegistry
 import dev.stapler.stelekit.fusion.Observation
 import dev.stapler.stelekit.fusion.RefTable
@@ -29,6 +31,8 @@ data class CollectedSources(
     val geometryObservations: List<Observation> = emptyList(),
     val proseObservations: List<Observation> = emptyList(),
     val svgObservations: List<Observation> = emptyList(),
+    /** Lengths the user tagged on PNG sheets after calibrating them (Story 4.5b). */
+    val pngObservations: List<Observation> = emptyList(),
     /** Drawing labels the binder could not bind; the tagging UI offers them for manual binding. */
     val svgUnboundLabels: List<BoundLabel> = emptyList(),
     /** Zone-width labels with their sheet x, for the engine's mirrored-view value matching. */
@@ -38,7 +42,7 @@ data class CollectedSources(
 ) {
     /** Every reading from every source stage, ready for [dev.stapler.stelekit.fusion.FusionInput]. */
     val observations: List<Observation>
-        get() = yamlObservations + tableObservations + geometryObservations + proseObservations + svgObservations
+        get() = yamlObservations + tableObservations + geometryObservations + proseObservations + svgObservations + pngObservations
 }
 
 /** One attached drawing: [sheet] is its role (`elevation`), [locator] stays device-local. */
@@ -50,6 +54,8 @@ data class ProjectSourceTexts(
     val yamlSnapshot: String? = null,
     val sheets: List<SheetSvg> = emptyList(),
     val boundPages: List<BoundPageRef> = emptyList(),
+    /** Calibration records of attached PNG sheets, read from the project's synced `sources[]`. */
+    val pngTags: List<PngCalibrationRecord> = emptyList(),
 )
 
 /** Where the collector gets its text: bound wiki pages, the sidecar's YAML snapshot and attached sheets (Stories 5.9b-d). */
@@ -66,8 +72,8 @@ data class TablePageText(val locator: String, val markdown: String, val origin: 
  * reader supplies nothing, so an unwired collector yields an empty [CollectedSources].
  */
 open class ProjectSourceCollector(
-    registry: DimensionRegistry = DimensionRegistry(dimensions = emptyList()),
-    refTable: RefTable = RefTable(),
+    private val registry: DimensionRegistry = DimensionRegistry(dimensions = emptyList()),
+    private val refTable: RefTable = RefTable(),
     private val reader: ProjectSourceReader = ProjectSourceReader { ProjectSourceTexts() },
 ) {
     private val tableExtractor = TableMeasurementExtractor(registry, refTable)
@@ -93,6 +99,7 @@ open class ProjectSourceCollector(
             geometryObservations = geometry.observations,
             proseObservations = prose.observations,
             svgObservations = svg.flatMap { it.observations },
+            pngObservations = PngTagObservations.of(texts.pngTags, registry, refTable),
             svgUnboundLabels = svg.flatMap { it.unbound },
             svgZoneLabels = texts.sheets.zip(svg).filter { (sheet, _) -> sheet.sheet == ELEVATION }.flatMap { (_, bound) -> bound.zoneLabelOrder },
         )

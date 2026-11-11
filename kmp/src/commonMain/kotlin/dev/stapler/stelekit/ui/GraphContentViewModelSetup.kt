@@ -29,6 +29,7 @@ import dev.stapler.stelekit.projectbridge.LocalBindingTable
 import dev.stapler.stelekit.projectbridge.readAttachedSvgSheets
 import dev.stapler.stelekit.projectbridge.BoundPagesReader
 import dev.stapler.stelekit.projectbridge.loadFusionSetup
+import dev.stapler.stelekit.sketchimport.readPngTags
 import dev.stapler.stelekit.projectbridge.readBoundSources
 import dev.stapler.stelekit.projectbridge.readYamlSnapshot
 import dev.stapler.stelekit.ui.sketch.hasConfiguredProject
@@ -250,6 +251,7 @@ private fun buildProjectBridgeDeps(
             ) { op -> deps.repos.writeActor?.execute(op = op) ?: op() }
         },
         fusionSetup = { loadFusionSetup(deps.repos.sketchRepositories) },
+        pngTags = { readPngTags(deps.repos.sketchRepositories) },
         pageSettleProbe = LoaderPageSettleProbe(
             isIndexOnlyStub = { page ->
                 deps.repos.pageRepository.getPageByName(page.pageName).first().getOrNull()?.isContentLoaded == false

@@ -16,7 +16,7 @@ enum class DimensionKind {
     COUNT,
 }
 
-enum class SourceKind { TABLE, YAML, SVG_LABEL, SVG_GEOMETRY, PROSE, DERIVED }
+enum class SourceKind { TABLE, YAML, SVG_LABEL, SVG_GEOMETRY, PROSE, DERIVED, PNG_TAG }
 
 /**
  * Opaque handle for where a value was read: `<kind>:<hash prefix of the locator>`. It names no
