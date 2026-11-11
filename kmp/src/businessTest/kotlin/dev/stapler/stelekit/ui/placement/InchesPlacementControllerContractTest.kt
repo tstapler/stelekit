@@ -19,7 +19,7 @@ class InchesTestSpace : PlacementSpace<SketchPoint> {
         SketchPoint(Inches(point.x.sixteenths + offset.dx), Inches(point.y.sixteenths + offset.dy))
 }
 
-class InchesPlacementControllerContractTest : PlacementControllerContractTest<SketchPoint>() {
+class InchesPlacementControllerContractTest : PlacementControllerContractSuite<SketchPoint>() {
     override fun space(): PlacementSpace<SketchPoint> = InchesTestSpace()
 
     override fun interiorPoint() = SketchPoint(Inches(120), Inches(90))

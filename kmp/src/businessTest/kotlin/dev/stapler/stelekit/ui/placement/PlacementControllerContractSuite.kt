@@ -6,7 +6,7 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /** Behaviour every [PlacementController] consumer must show; subclasses supply a real [PlacementSpace]. */
-abstract class PlacementControllerContractTest<P> {
+abstract class PlacementControllerContractSuite<P> {
     abstract fun space(): PlacementSpace<P>
 
     /** A point well inside the bounds and not the center. */
