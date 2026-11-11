@@ -123,4 +123,31 @@ class RegistryEditorViewModelTest {
         assertEquals(listOf("zone.left", "zones.b.width"), vm.state.value.spec.constraints.single().dimensions)
         assertEquals("zone.left", assertNotNull(loadFusionSetup(repos)).registry.dimensions.first { it.key == "zone.left" }.key)
     }
+
+    @Test
+    fun kindAliasAndActionBindingsReachTheSavedRegistry() = runTest {
+        createProject()
+        val vm = vm()
+        val actions = vm.actions(onBack = { backs++ })
+        actions.onBack()
+        assertEquals(1, backs)
+        actions.onAddKey("a.b", dev.stapler.stelekit.fusion.DimensionKind.LENGTH, "A")
+        actions.onToggleKind("a.b", dev.stapler.stelekit.fusion.DimensionKind.COUNT)
+        actions.onAddAlias("a.b", dev.stapler.stelekit.projectbridge.AliasKind.PROSE, "the a")
+        assertEquals(listOf("the a"), vm.state.value.registry.entry("a.b")!!.aliases.prose)
+        assertEquals(dev.stapler.stelekit.fusion.DimensionKind.COUNT, assertNotNull(loadFusionSetup(repos)).registry.entry("a.b")!!.kind)
+        actions.onRemoveAlias("a.b", dev.stapler.stelekit.projectbridge.AliasKind.PROSE, "the a")
+        assertTrue(vm.state.value.registry.entry("a.b")!!.aliases.prose.isEmpty())
+        actions.onRenameKey("a.b", "c.d")
+        actions.onAddKey("e.f", dev.stapler.stelekit.fusion.DimensionKind.LENGTH, "")
+        actions.onAddConstraint(ConstraintTemplate.Equality("c.d", "e.f"))
+        actions.onRemoveConstraint(1)
+        actions.onDeleteKey("c.d")
+        actions.onAcceptSuggestion("nope")
+        actions.onStartOver()
+        actions.onDismissMessage()
+        assertEquals(listOf("e.f"), vm.state.value.registry.dimensions.map { it.key })
+    }
+
+    private var backs = 0
 }

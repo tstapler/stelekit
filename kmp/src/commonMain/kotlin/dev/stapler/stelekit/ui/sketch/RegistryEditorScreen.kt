@@ -63,22 +63,7 @@ class RegistryEditorActions(
 fun RegistryEditorScreen(viewModel: RegistryEditorViewModel, onBack: () -> Unit, modifier: Modifier = Modifier) {
     DisposableEffect(viewModel) { onDispose { viewModel.close() } }
     val state by viewModel.state.collectAsState()
-    val actions = remember(viewModel, onBack) {
-        RegistryEditorActions(
-            onBack = onBack,
-            onAddKey = viewModel::addKey,
-            onRenameKey = viewModel::renameKey,
-            onDeleteKey = viewModel::deleteKey,
-            onToggleKind = viewModel::setKind,
-            onAddAlias = viewModel::addAlias,
-            onRemoveAlias = viewModel::removeAlias,
-            onAcceptSuggestion = viewModel::acceptSuggestion,
-            onAddConstraint = viewModel::addConstraint,
-            onRemoveConstraint = viewModel::removeConstraint,
-            onStartOver = viewModel::startOver,
-            onDismissMessage = viewModel::dismissMessage,
-        )
-    }
+    val actions = remember(viewModel, onBack) { viewModel.actions(onBack) }
     RegistryEditorContent(state, actions, modifier)
 }
 

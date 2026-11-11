@@ -159,3 +159,20 @@ class RegistryEditorViewModel(
 
     private fun setMessage(text: String) = _state.update { it.copy(message = text) }
 }
+
+/** Binds every editor action to this view model; kept out of the composable so the wiring is unit-tested. */
+fun RegistryEditorViewModel.actions(onBack: () -> Unit): RegistryEditorActions =
+    RegistryEditorActions(
+            onBack = onBack,
+            onAddKey = this::addKey,
+            onRenameKey = this::renameKey,
+            onDeleteKey = this::deleteKey,
+            onToggleKind = this::setKind,
+            onAddAlias = this::addAlias,
+            onRemoveAlias = this::removeAlias,
+            onAcceptSuggestion = this::acceptSuggestion,
+            onAddConstraint = this::addConstraint,
+            onRemoveConstraint = this::removeConstraint,
+            onStartOver = this::startOver,
+            onDismissMessage = this::dismissMessage,
+    )

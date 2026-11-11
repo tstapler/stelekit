@@ -162,3 +162,61 @@ class RegistryEditingTest {
         assertEquals("a - b = 1/2", ConstraintEditing.describe(Offset(1, "a", "b", Rational(1, 2))))
     }
 }
+
+class RegistryEditingExtraTest {
+    private val registry = DimensionRegistry(
+        dimensions = listOf("a", "b", "c").map { DimensionEntry(it, DimensionKind.LENGTH, it) },
+    )
+
+    @Test
+    fun setLabelAndSetKind_should_UpdateOrRefuse() {
+        assertEquals("Wide", RegistryEditing.setLabel(registry, "a", " Wide ").getOrNull()!!.entry("a")!!.label)
+        assertEquals("a", RegistryEditing.setLabel(registry, "a", "  ").getOrNull()!!.entry("a")!!.label)
+        assertEquals(EditError.BadLabel, RegistryEditing.setLabel(registry, "a", "l".repeat(RegistryEditing.MAX_LABEL + 1)).leftOrNull())
+        assertEquals(DimensionKind.COUNT, RegistryEditing.setKind(registry, "a", DimensionKind.COUNT).getOrNull()!!.entry("a")!!.kind)
+        assertIs<EditError.UnknownKey>(RegistryEditing.setKind(registry, "zz", DimensionKind.COUNT).leftOrNull())
+    }
+
+    @Test
+    fun everyEditError_should_HaveOwnerFacingText() {
+        val errors = listOf(
+            EditError.BadKey(KeyError.Blank), EditError.BadKey(KeyError.BadFormat), EditError.BadKey(KeyError.TooLong),
+            EditError.BadKey(KeyError.Duplicate("a")), EditError.BadKey(KeyError.Unknown("a")), EditError.UnknownKey("a"),
+            EditError.KeyInUse("a"), EditError.BlankAlias, EditError.DuplicateAlias("a"), EditError.BadLabel, EditError.NeedsParts,
+            EditError.RepeatedKey, EditError.BadOffset, EditError.DuplicateConstraint, EditError.TooMany, EditError.InvalidRegistry,
+        )
+        val texts = errors.map { it.message() }
+        assertEquals(texts.size, texts.distinct().size)
+        assertTrue(texts.all { it.isNotBlank() })
+    }
+
+    @Test
+    fun renameKey_should_FollowEveryConstraintKind() {
+        val spec = FusionSpec(
+            listOf(
+                dev.stapler.stelekit.fusion.Fixed(1, "a", Rational(1)),
+                Equal(2, "a", "b"),
+                Offset(3, "a", "c", Rational(1, 2)),
+            ),
+        )
+        val renamed = ConstraintEditing.renameKey(spec, "a", "z")
+        assertEquals(listOf("z", "z", "z"), renamed.constraints.map { it.dimensions.first() })
+        assertEquals("z - c = 1/2", ConstraintEditing.describe(renamed.constraints[2]))
+        assertEquals("z = 1", ConstraintEditing.describe(renamed.constraints[0]))
+    }
+
+    @Test
+    fun duplicateDetection_should_CoverEveryShape() {
+        val fixed = dev.stapler.stelekit.fusion.Fixed(1, "a", Rational(1))
+        val spec = FusionSpec(listOf(fixed, Offset(2, "a", "b", Rational(3, 4))))
+        val again = ConstraintEditing.add(registry, spec, ConstraintTemplate.OffsetBy("a", "b", "3/4"))
+        assertEquals(EditError.DuplicateConstraint, again.leftOrNull())
+        assertEquals(EditError.TooMany, ConstraintEditing.add(
+            registry,
+            FusionSpec((1..ConstraintEditing.MAX_CONSTRAINTS).map { Equal(it, "a", "b") }),
+            ConstraintTemplate.Equality("b", "c"),
+        ).leftOrNull())
+        assertEquals(EditError.InvalidRegistry, ConstraintEditing.validate(FusionSpec(checks = listOf(SumCheck("x", 9, "a", listOf("b"))))))
+        assertEquals(EditError.DuplicateConstraint, ConstraintEditing.validate(FusionSpec(listOf(Equal(1, "a", "b"), Equal(1, "b", "c")))))
+    }
+}
