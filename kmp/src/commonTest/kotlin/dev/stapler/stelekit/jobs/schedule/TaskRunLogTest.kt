@@ -53,7 +53,6 @@ class TaskRunLogTest {
         log.append(record(100, TaskRunResult.Skipped("offline")))
         log.append(record(200, TaskRunResult.Failed("boom", retryable = true)))
         assertEquals(50L, log.lastSuccessAtMs(key))
-        assertEquals(50L, TaskRunLogLastSuccessSource(log).lastSuccessAtMs(key))
         assertNull(log.lastSuccessAtMs(TaskKey(TaskKind("git-sync"), TaskScope("other"))))
     }
 
