@@ -145,7 +145,7 @@ class TaskRunLogTest {
     @Test
     fun append_should_swallowNonExceptionThrowable_When_SettingsThrowError() = runTest {
         val log = SettingsTaskRunLog(object : dev.stapler.stelekit.platform.Settings by MapSettings() {
-            override fun getString(key: String, defaultValue: String): String = throw NoClassDefFoundError("keystore")
+            override fun getString(key: String, defaultValue: String): String = throw FakeLinkageError("keystore")
         })
         log.append(record(1, TaskRunResult.Success))
     }
@@ -170,3 +170,6 @@ class TaskRunLogTest {
         assertEquals(6, log.recent(key).size, "every concurrent append must be kept")
     }
 }
+
+/** Stand-in for a JVM linkage Error (e.g. NoClassDefFoundError): an Error that is not an Exception. */
+private class FakeLinkageError(message: String) : Error(message)
