@@ -32,7 +32,7 @@ class ExportStyleTest {
 
     @Test
     fun message_should_AskSignIn_When_Unauthorized() {
-        assertEquals(DRIVE_SIGN_IN_MESSAGE, driveExportMessage(DomainError.NetworkError.HttpError(401, "x")))
+        assertEquals("$DRIVE_SIGN_IN_MESSAGE (x)", driveExportMessage(DomainError.NetworkError.HttpError(401, "x")))
     }
 
     @Test

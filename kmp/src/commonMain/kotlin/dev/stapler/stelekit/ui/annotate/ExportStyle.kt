@@ -31,6 +31,6 @@ fun driveExportMessage(error: DomainError): String = when {
     error is DomainError.NetworkError.Timeout || error is DomainError.NetworkError.CircuitOpen -> DRIVE_OFFLINE_MESSAGE
     error is DomainError.NetworkError.HttpError && error.statusCode == TRANSPORT_FAILURE_STATUS -> DRIVE_OFFLINE_MESSAGE
     error is DomainError.NetworkError.HttpError && (error.statusCode == UNAUTHORIZED || error.statusCode == FORBIDDEN) ->
-        DRIVE_SIGN_IN_MESSAGE
+        "$DRIVE_SIGN_IN_MESSAGE (${error.message})"
     else -> error.message
 }
