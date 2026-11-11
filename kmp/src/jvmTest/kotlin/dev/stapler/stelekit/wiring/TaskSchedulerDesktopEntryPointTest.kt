@@ -15,6 +15,9 @@ import dev.stapler.stelekit.git.testsupport.StubGitRepository
 import dev.stapler.stelekit.git.testsupport.sampleConfig
 import dev.stapler.stelekit.jobs.schedule.AppliedConfigLedger
 import dev.stapler.stelekit.jobs.schedule.FakeBackgroundTaskScheduler
+import dev.stapler.stelekit.jobs.schedule.InProcessTaskScheduler
+import dev.stapler.stelekit.jobs.schedule.RunSource
+import dev.stapler.stelekit.jobs.schedule.SettingsTaskRunLog
 import dev.stapler.stelekit.jobs.schedule.TaskKey
 import dev.stapler.stelekit.jobs.schedule.TaskScope
 import dev.stapler.stelekit.platform.SCHEDULED_SYNC_ENABLED_KEY
@@ -147,5 +150,22 @@ class TaskSchedulerDesktopEntryPointTest {
         open(pollMinutes = 15)
         awaitCondition("the loop to start") { stack?.gitSyncService?.scheduledSyncStatus?.value?.running == true }
         assertNull(runBlocking { fixture!!.backgroundTaskScheduler.describe(TaskKey(GitSyncTask.KIND, TaskScope(graphId))) })
+    }
+
+    @Test
+    fun desktopRoot_should_RecordForegroundRunInTheSharedRunLog_When_InProcessLoopTicks() {
+        open(pollMinutes = 15)
+        assertTrue(fixture!!.backgroundTaskScheduler is InProcessTaskScheduler, "Desktop's root names the in-process scheduler")
+        awaitCondition("the immediate tick") {
+            repo.fetches.get() >= 1 && stack?.gitSyncService?.scheduledSyncStatus?.value?.tickInFlight == false
+        }
+        val key = TaskKey(GitSyncTask.KIND, TaskScope(graphId))
+
+        ObservableEffect.assert("in-process-task-tick") {
+            val records = runBlocking { SettingsTaskRunLog(settings).recent(key) }
+            assertEquals(1, records.size, "the one in-app tick is the only run-log row")
+            assertEquals(RunSource.Foreground, records.single().source)
+            assertEquals(1, repo.fetches.get(), "the recorded run is a real fetch")
+        }
     }
 }
