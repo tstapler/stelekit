@@ -15,6 +15,7 @@ import dev.stapler.stelekit.sketchimport.BoundLabel
 import dev.stapler.stelekit.sketchimport.LabelBinder
 import dev.stapler.stelekit.sketchimport.LabelBindingResult
 import dev.stapler.stelekit.sketchimport.readSvg
+import dev.stapler.stelekit.util.ContentHasher
 
 /** A wiki page a project is bound to; [filePath] is where the loader reads it from. */
 data class BoundPageRef(val pageName: String, val filePath: String)
@@ -32,6 +33,8 @@ data class CollectedSources(
     val svgUnboundLabels: List<BoundLabel> = emptyList(),
     /** Zone-width labels with their sheet x, for the engine's mirrored-view value matching. */
     val svgZoneLabels: List<SvgLabel> = emptyList(),
+    /** SHA-256 of the YAML snapshot text, so replacing the file changes the relevance hash even if no reading changes. */
+    val yamlSnapshotHash: String = "",
 ) {
     /** Every reading from every source stage, ready for [dev.stapler.stelekit.fusion.FusionInput]. */
     val observations: List<Observation>
@@ -83,6 +86,7 @@ open class ProjectSourceCollector(
         val svg = texts.sheets.map { extractSvg(it.svg, it.locator) }
         return CollectedSources(
             boundPages = texts.boundPages,
+            yamlSnapshotHash = texts.yamlSnapshot?.let(ContentHasher::sha256).orEmpty(),
             tableObservations = tables.observations,
             tableNeedsMapping = tables.needsMapping,
             yamlObservations = yaml.observations,

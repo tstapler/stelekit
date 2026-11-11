@@ -52,6 +52,8 @@ data class ProjectListUiState(
     val privateTerms: List<String> = emptyList(),
     val pickerResults: List<PickerPage> = emptyList(),
     val boundSources: List<BoundSourceRow> = emptyList(),
+    /** True once the project records a YAML snapshot; the file itself is never shown. */
+    val yamlSnapshotSet: Boolean = false,
     val message: String? = null,
 )
 
@@ -71,6 +73,7 @@ class ProjectListViewModel(
     private val clock: () -> Long,
     private val random: Random = Random.Default,
     private val sources: SourceBindingService? = null,
+    private val yaml: YamlPickerAction? = null,
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     private val scope = CoroutineScope(
@@ -79,6 +82,7 @@ class ProjectListViewModel(
     private val _state = MutableStateFlow(snapshot(emptyList(), false))
     val state: StateFlow<ProjectListUiState> = _state
     val sourcesAvailable: Boolean = sources != null
+    val yamlAvailable: Boolean = yaml != null
 
     init {
         scope.launch {
@@ -190,11 +194,28 @@ class ProjectListViewModel(
         }
     }
 
+    /** Picks a YAML file once and snapshots its content into the project (Story 5.9c). */
+    fun chooseYaml() {
+        val action = yaml ?: return
+        val project = _state.value.projects.firstOrNull() ?: return setMessage("Create a project first")
+        scope.launch {
+            action.run(project.uuid)?.let(::setMessage)
+            reloadBound()
+        }
+    }
+
     private suspend fun reloadBound() {
+        refreshYamlFlag()
         val service = sources ?: return
         val project = _state.value.projects.firstOrNull() ?: return _state.update { it.copy(boundSources = emptyList()) }
         val rows = service.listBound(project.uuid)
         _state.update { it.copy(boundSources = rows) }
+    }
+
+    private suspend fun refreshYamlFlag() {
+        val project = _state.value.projects.firstOrNull()
+        val set = project != null && yaml?.hasSnapshot(project.uuid) == true
+        _state.update { it.copy(yamlSnapshotSet = set) }
     }
 
     fun dismissMessage() = _state.update { it.copy(message = null) }
@@ -217,6 +238,7 @@ class ProjectListViewModel(
         pendingPreview = previous?.pendingPreview,
         pickerResults = previous?.pickerResults.orEmpty(),
         boundSources = previous?.boundSources.orEmpty(),
+        yamlSnapshotSet = previous?.yamlSnapshotSet == true,
         privateTerms = settings.outboundPrivateTerms(graphId),
         message = previous?.message,
     )
@@ -235,6 +257,7 @@ fun projectListViewModelFor(
     graphId: String,
     settings: dev.stapler.stelekit.platform.Settings,
     sources: SourceBindingService? = null,
+    yaml: YamlPickerAction? = null,
 ): ProjectListViewModel = ProjectListViewModel(
     projects = repositories.projects,
     graphId = graphId,
@@ -243,6 +266,7 @@ fun projectListViewModelFor(
     write = { op -> writeActor?.execute(op = op) ?: op() },
     clock = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
     sources = sources,
+    yaml = yaml,
 )
 
 /** True when the graph has at least one project (the post-sync job's `hasConfiguredProject`). */

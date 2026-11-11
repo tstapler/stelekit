@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.projectbridge
 
+import dev.stapler.stelekit.fusion.DimensionRegistry
 import dev.stapler.stelekit.fusion.Observation
 import dev.stapler.stelekit.jobs.JobHandle
 import dev.stapler.stelekit.jobs.JobKind
@@ -40,7 +41,8 @@ data class ProjectOutputs(val digest: String, val payload: LlmPayload)
  */
 class PostSyncProjectJob(
     private val deps: ProjectBridgeDeps,
-    private val collector: ProjectSourceCollector = ProjectSourceCollector(reader = ProjectSourceReader { deps.boundSources().toTexts() }),
+    /** Null (the default) builds the collector per run from the project's registry, so an edited registry is read at run time. */
+    private val collector: ProjectSourceCollector? = null,
     private val barrier: SettleBarrier = SettleBarrier(deps.isGitSyncBusy, deps.pageSettleProbe),
     private val digestWriter: DigestWriter = DigestWriter(deps.routerProvider),
     /** The fused digest input for the graph's project; null (the default) defers to [fusion], so nothing is written without either. */
@@ -49,7 +51,7 @@ class PostSyncProjectJob(
     private val analysisStep: ProjectAnalysisStep? = null,
     /** The fused digest and payload for the graph's project; null while the collector yields nothing. */
     private val outputsProvider: suspend (graphId: String) -> ProjectOutputs? = { null },
-    /** Fuses what the collector found into the digest input and payload when no provider above supplies them (Story 5.8). */
+    /** Fuses what the collector found into the digest input and payload when no provider above supplies them (Story 5.8); null defers to [ProjectBridgeDeps.fusionSetup]. */
     private val fusion: ProjectFusionStage? = null,
 ) {
     /** [syncLeftLfsFiles] is read after the barrier, when the sync has published its final state. */
@@ -58,7 +60,9 @@ class PostSyncProjectJob(
             return PostSyncRunOutcome.Inactive
         }
         val reconcile = reconcileSidecars()
-        val collected = collector.collect()
+        val setup = if (collector == null || fusion == null) deps.fusionSetup() else null
+        val collected = (collector ?: defaultCollector(setup)).collect()
+        val stage = fusion ?: setup?.stage()
         val inputHash = ProjectRelevanceHasher.hash(collected)
         if (ProjectRelevanceHasher.isUnchanged(inputHash, deps.settings.lastDigestInputHash(graphId))) {
             return PostSyncRunOutcome.NotRelevant
@@ -77,7 +81,7 @@ class PostSyncProjectJob(
                     handle.fail(UNAVAILABLE)
                     PostSyncRunOutcome.DigestUnavailable
                 } else {
-                    finish(graphId, handle, settle.unloaded, collected, inputHash)
+                    finish(graphId, handle, settle.unloaded, collected, inputHash, stage)
                 }
             }
         } catch (e: CancellationException) {
@@ -107,9 +111,16 @@ class PostSyncProjectJob(
     }
 
     /** Digest page first (a local, loop-safe write), then the gated analysis; an analysis failure is reported first. */
-    private suspend fun finish(graphId: String, handle: JobHandle, unloaded: Int, collected: CollectedSources, inputHash: String): PostSyncRunOutcome {
-        val digest = writeDigest(graphId, collected)
-        val analysis = runAnalysis(graphId, collected)
+    private suspend fun finish(
+        graphId: String,
+        handle: JobHandle,
+        unloaded: Int,
+        collected: CollectedSources,
+        inputHash: String,
+        fusion: ProjectFusionStage?,
+    ): PostSyncRunOutcome {
+        val digest = writeDigest(graphId, collected, fusion)
+        val analysis = runAnalysis(graphId, collected, fusion)
         if (analysis is AnalysisStepOutcome.Blocked || analysis is AnalysisStepOutcome.Failed) {
             handle.fail(analysisReason(analysis))
             return PostSyncRunOutcome.Failed("project analysis")
@@ -127,16 +138,22 @@ class PostSyncProjectJob(
     }
 
     /** Runs after the barrier only, so the page is never replaced from a half-settled database. */
-    private suspend fun writeDigest(graphId: String, collected: CollectedSources): DigestWriteResult? {
+    private suspend fun writeDigest(graphId: String, collected: CollectedSources, fusion: ProjectFusionStage?): DigestWriteResult? {
         val input = digestInput(graphId) ?: fusion?.digestInput(collected) ?: return null
         return digestWriter.write(graphId, deps.settings.digestPageTitle(graphId, input.slug), input)
     }
 
-    private suspend fun runAnalysis(graphId: String, collected: CollectedSources): AnalysisStepOutcome {
+    private suspend fun runAnalysis(graphId: String, collected: CollectedSources, fusion: ProjectFusionStage?): AnalysisStepOutcome {
         val step = analysisStep ?: return AnalysisStepOutcome.Skipped
         val outputs = outputsProvider(graphId) ?: fusion?.outputs(collected) ?: return AnalysisStepOutcome.Skipped
         return step.run(graphId, outputs)
     }
+
+    /** Reads bound pages and the YAML snapshot through the registry; with no registry the stages find nothing (as before). */
+    private fun defaultCollector(setup: ProjectFusionSetup?) = ProjectSourceCollector(
+        registry = setup?.registry ?: DimensionRegistry(dimensions = emptyList()),
+        reader = ProjectSourceReader { deps.boundSources().toTexts().copy(yamlSnapshot = deps.yamlSnapshot()) },
+    )
 
     private fun analysisReason(outcome: AnalysisStepOutcome): String = when (outcome) {
         is AnalysisStepOutcome.Blocked -> outcome.reason

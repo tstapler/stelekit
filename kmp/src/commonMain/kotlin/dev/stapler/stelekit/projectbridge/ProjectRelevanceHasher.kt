@@ -17,7 +17,8 @@ object ProjectRelevanceHasher {
         val lines = collected.boundPages.map { "page|${it.pageName}" } +
             collected.observations.map { "obs|$it" } +
             collected.tableNeedsMapping.map { "map|$it" } +
-            collected.svgUnboundLabels.map { "unbound|$it" }
+            collected.svgUnboundLabels.map { "unbound|$it" } +
+            listOf("yaml|${collected.yamlSnapshotHash}")
         return ContentHasher.sha256(lines.sorted().joinToString("\n"))
     }
 

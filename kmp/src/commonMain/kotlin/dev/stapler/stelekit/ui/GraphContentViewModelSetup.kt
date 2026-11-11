@@ -27,7 +27,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import dev.stapler.stelekit.projectbridge.LocalBindingTable
 import dev.stapler.stelekit.projectbridge.BoundPagesReader
+import dev.stapler.stelekit.projectbridge.loadFusionSetup
 import dev.stapler.stelekit.projectbridge.readBoundSources
+import dev.stapler.stelekit.projectbridge.readYamlSnapshot
 import dev.stapler.stelekit.ui.sketch.hasConfiguredProject
 import dev.stapler.stelekit.ui.state.BlockStateManager
 
@@ -214,16 +216,17 @@ private fun buildProjectBridgeDeps(
     }
     // One store (and so one mutex) per graph path; symlink resolution is off here (no common canonicalize).
     var cachedStore: Pair<String, ProjectSidecarStore>? = null
+    val sidecarStore = {
+        graphManager.getActiveGraphInfo()?.takeIf { !it.isDemo }?.effectiveNotesPath?.value?.let { root ->
+            cachedStore?.takeIf { it.first == root }?.second ?: FileProjectSidecarStore(
+                effectiveFileSystem, root, AtomicFileWriter(effectiveFileSystem, { it }, ".tmp"), isGitSyncBusy,
+            ).also { cachedStore = root to it }
+        }
+    }
     return ProjectBridgeDeps(
         routerProvider = deps.routerHolder::get,
         sketchRepositories = { deps.repos.sketchRepositories },
-        sidecarStore = {
-            graphManager.getActiveGraphInfo()?.takeIf { !it.isDemo }?.effectiveNotesPath?.value?.let { root ->
-                cachedStore?.takeIf { it.first == root }?.second ?: FileProjectSidecarStore(
-                    effectiveFileSystem, root, AtomicFileWriter(effectiveFileSystem, { it }, ".tmp"), isGitSyncBusy,
-                ).also { cachedStore = root to it }
-            }
-        },
+        sidecarStore = sidecarStore,
         writeActor = { deps.repos.writeActor },
         fileSystem = effectiveFileSystem,
         // GitSyncService keeps its busy counter private, so also read the published in-progress states.
@@ -238,6 +241,8 @@ private fun buildProjectBridgeDeps(
                 effectiveFileSystem.readFileSuspend(path)
             }, LocalBindingTable(deps.platformSettings))
         },
+        yamlSnapshot = { sidecarStore()?.let { readYamlSnapshot(deps.repos.sketchRepositories, it) } },
+        fusionSetup = { loadFusionSetup(deps.repos.sketchRepositories) },
         pageSettleProbe = LoaderPageSettleProbe(
             isIndexOnlyStub = { page ->
                 deps.repos.pageRepository.getPageByName(page.pageName).first().getOrNull()?.isContentLoaded == false

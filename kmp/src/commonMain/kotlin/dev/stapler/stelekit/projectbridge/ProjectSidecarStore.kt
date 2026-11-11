@@ -46,6 +46,9 @@ interface ProjectSidecarStore {
     /** Stores a picked YAML source's content as `sources/yaml-<hash8>.yaml`; no path or filename is kept. */
     suspend fun writeSourceSnapshot(slug: String, hash8: String, bytes: ByteArray): SidecarWriteOutcome
 
+    /** The stored YAML snapshot named by [hash8], or null when absent or unavailable on this platform. */
+    suspend fun readSourceSnapshot(slug: String, hash8: String): ByteArray?
+
     /** Writes queued bundles once the git sync is idle; returns how many were written. */
     suspend fun flushPending(): Int
 
@@ -145,6 +148,10 @@ class FileProjectSidecarStore(
         fs.createDirectory(d)
         replace("$d/yaml-$hash8.yaml", bytes)?.let { return SidecarWriteOutcome.Failed(it) }
         SidecarWriteOutcome.Written
+    }
+
+    override suspend fun readSourceSnapshot(slug: String, hash8: String): ByteArray? = mutex.withLock {
+        if (unavailable() || !YamlSourceEntry.isValidHash(hash8)) null else fs.readFileBytes("${dir(slug)}/sources/yaml-$hash8.yaml")
     }
 
     override suspend fun flushPending(): Int = mutex.withLock {

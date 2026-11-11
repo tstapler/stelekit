@@ -493,7 +493,12 @@ class StelekitViewModel(
     /** Forwards to [GitSyncCoordinator.gitLastSyncAt] — read directly by Compose call sites. */
     val gitLastSyncAt: StateFlow<Long?> = gitSyncCoordinator.gitLastSyncAt
 
-    private val postSyncProjectCoordinator = deps.projectBridge?.let {
+    private val projectBridgeDeps = deps.projectBridge
+
+    /** The graph's sidecar store (null where unsupported); the Sketch screen's YAML picker writes through it. */
+    fun projectSidecarStore(): dev.stapler.stelekit.projectbridge.ProjectSidecarStore? = projectBridgeDeps?.sidecarStore?.invoke()
+
+    private val postSyncProjectCoordinator = projectBridgeDeps?.let {
         PostSyncProjectCoordinator(it, gitLastSyncAt, { activeGitSyncService.value?.syncState?.value }, activeGraphIdProvider, scope.coroutineContext)
     }
 
