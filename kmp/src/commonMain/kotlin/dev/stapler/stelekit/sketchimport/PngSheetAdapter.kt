@@ -24,6 +24,8 @@ data class RasterReference(val key: String, val start: NormalizedPoint, val end:
 /** Raster (PNG) sheets through the existing `Calibration` path (Story 4.5); native-pixel basis only. */
 object PngSheetAdapter {
     const val SOURCE_KIND = "png"
+    const val TAG_SOURCE_KIND = "png-tag"
+    private const val SHEET_REF_LENGTH = 8
     private val SIGNATURE = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
     private const val IHDR_END = 24
     private const val WIDTH_AT = 16
@@ -70,6 +72,19 @@ object PngSheetAdapter {
             precision = null,
             sourceKind = SOURCE_KIND,
             sourceRef = "png:reference",
+        )
+
+    /** A tagged length as an observation of source kind `png-tag`; no file name or path is kept. */
+    fun tagDimension(projectUuid: ProjectUuid, uuid: String, tag: RasterTag, contentHash: String): SketchDimension =
+        SketchDimension(
+            uuid = uuid,
+            projectUuid = projectUuid,
+            key = tag.key,
+            kind = "length",
+            value = tag.length,
+            precision = if (tag.measured) RasterTagging.MEASURED_PRECISION else Rational.ZERO,
+            sourceKind = TAG_SOURCE_KIND,
+            sourceRef = "png:${contentHash.take(SHEET_REF_LENGTH)}",
         )
 
     private fun int32(b: ByteArray, at: Int): Int =

@@ -37,6 +37,8 @@ kt_android_library(
             "**/SketchA11yTest.kt",
             # Compose host test for the annotate non-drag placement UI (Gradle-only, no Compose plugin here)
             "**/AnnotationNonDragModeTest.kt",
+            # Compose host test for the PNG calibration step (Gradle-only, no Compose plugin here)
+            "**/RasterTaggingPanelTest.kt",
         ],
     ),
     custom_package = "dev.stapler.stelekit",

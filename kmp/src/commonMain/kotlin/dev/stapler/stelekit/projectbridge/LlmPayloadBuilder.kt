@@ -87,7 +87,7 @@ object LlmPayloadBuilder {
         val prefix = when (kind) {
             SourceKind.TABLE -> "table"
             SourceKind.YAML -> "yaml"
-            SourceKind.SVG_LABEL, SourceKind.SVG_GEOMETRY -> "svg"
+            SourceKind.SVG_LABEL, SourceKind.SVG_GEOMETRY, SourceKind.PNG_TAG -> "svg"
             SourceKind.PROSE -> "prose"
             SourceKind.DERIVED -> "derived"
         }
