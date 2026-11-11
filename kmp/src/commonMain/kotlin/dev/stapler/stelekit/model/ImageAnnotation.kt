@@ -114,7 +114,7 @@ data class ImageAnnotation(
     val capturedAtMs: Long? = null,
     val importedAtMs: Long = 0L,
     val calibration: Calibration = Calibration(),
-    val unit: MeasurementUnit = MeasurementUnit.METERS,
+    val unit: MeasurementUnit = MeasurementUnit.FEET_INCHES,
     val tags: List<String> = emptyList(),
     val sensorData: ImageSensorData = ImageSensorData(),
 ) {
