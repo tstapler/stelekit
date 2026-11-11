@@ -24,8 +24,6 @@ import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.isTertiaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -102,7 +100,6 @@ internal fun AnnotationGestureLayer(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .semantics { contentDescription = ANNOTATION_CANVAS_DESCRIPTION }
             .pointerInput(currentTool) {
                 val env = newGestureEnv(handle, callbacks, { currentAnnotations }, density)
                 awaitEachGesture { runGesture(env, currentTool) }

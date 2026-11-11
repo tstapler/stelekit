@@ -543,6 +543,10 @@ fun AnnotationEditorScreen(
                 view = { viewTransform },
             )
 
+            // Semantics-only node exactly the size of the image box: tests and TalkBack address the image
+            // through it, while the viewport-sized gesture layer above receives the touches.
+            Box(Modifier.fillMaxSize().semantics { contentDescription = ANNOTATION_CANVAS_DESCRIPTION })
+
             // Layer 3: In-progress preview (drawing only; the gesture layer above owns the touches)
             InProgressPreviewCanvas(
                 inProgressPoints = state.inProgressPoints,
