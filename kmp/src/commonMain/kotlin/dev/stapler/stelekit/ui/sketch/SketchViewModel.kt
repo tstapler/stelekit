@@ -138,6 +138,9 @@ class SketchViewModel(
         }
     }
 
+    /** Non-drag "Move vertex N": one committed history step. */
+    fun moveVertex(vertex: VertexRef, to: SketchPoint) = commit(SketchCommand.MoveVertex(vertex.primitiveId, vertex.index, to))
+
     fun deleteSelected() {
         _uiState.value.selectedId?.let { commit(SketchCommand.RemovePrimitive(it)); select(null) }
     }

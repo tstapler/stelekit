@@ -13,6 +13,8 @@ import dev.stapler.stelekit.ui.sketch.SaveStatus
 import dev.stapler.stelekit.ui.sketch.SketchPhase
 import dev.stapler.stelekit.ui.sketch.SketchTool
 import dev.stapler.stelekit.ui.sketch.SketchViewModel
+import dev.stapler.stelekit.ui.sketch.VertexRef
+import dev.stapler.stelekit.ui.sketch.vertexAt
 import dev.stapler.stelekit.units.Inches
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -143,6 +145,18 @@ class SketchViewModelTest {
         f.vm.flush()
         val sheet = f.repos.sheets.getSheets(SketchTestSupport.P).first().getOrNull()!!.items.single()
         assertEquals(3, sheet.zones.size)
+    }
+
+    @Test
+    fun moveVertexCommitsOneUndoableStep() = runTest {
+        val f = fixture()
+        f.vm.placePoint(pt(16, 16))
+        f.vm.placePoint(pt(64, 16))
+        val id = f.vm.uiState.value.document.scene.primitives.single().id
+        f.vm.moveVertex(VertexRef(id, 1), pt(96, 16))
+        assertEquals(pt(96, 16), f.vm.uiState.value.document.scene.vertexAt(VertexRef(id, 1)))
+        f.vm.undo()
+        assertEquals(pt(64, 16), f.vm.uiState.value.document.scene.vertexAt(VertexRef(id, 1)))
     }
 
     @Test

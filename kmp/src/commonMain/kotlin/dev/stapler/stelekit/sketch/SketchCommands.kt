@@ -52,6 +52,22 @@ private fun SketchDocument.primitive(id: String): SketchPrimitive? = scene.primi
 private fun SketchDocument.lockedLayerOf(primitive: SketchPrimitive): CommandError? =
     if (sheet.isLocked(primitive.layer)) CommandError.LayerLocked(primitive.layer) else null
 
+/** The primitive with vertex [index] moved to [to]; null when there is no such vertex. */
+fun SketchPrimitive.withVertex(index: Int, to: SketchPoint): SketchPrimitive? = when (this) {
+    is SketchPrimitive.Line -> when (index) {
+        0 -> copy(a = to)
+        1 -> copy(b = to)
+        else -> null
+    }
+    is SketchPrimitive.Rect -> when (index) {
+        0 -> copy(a = to)
+        1 -> copy(a = SketchPoint(a.x, to.y), b = SketchPoint(to.x, b.y))
+        2 -> copy(b = to)
+        3 -> copy(a = SketchPoint(to.x, a.y), b = SketchPoint(b.x, to.y))
+        else -> null
+    }
+}
+
 /** A user edit. Applying one yields the next [SketchDocument]; the caller commits it to the history. */
 sealed interface SketchCommand {
     fun apply(doc: SketchDocument): Either<CommandError, SketchDocument>
@@ -110,6 +126,16 @@ sealed interface SketchCommand {
                 dx != 0L -> line.copy(b = SketchPoint(Inches(line.a.x.sixteenths + length.sixteenths * dx.sign), line.b.y))
                 else -> line.copy(b = SketchPoint(line.b.x, Inches(line.a.y.sixteenths + length.sixteenths * dy.sign)))
             }
+            return doc.scene.replace(moved).mapLeft { CommandError.Scene(it) }.map { doc.copy(scene = it) }
+        }
+    }
+
+    /** Moves one vertex (line end, or rectangle corner in [SketchPrimitive.vertices] order) to [to]. */
+    data class MoveVertex(val id: String, val index: Int, val to: SketchPoint) : SketchCommand {
+        override fun apply(doc: SketchDocument): Either<CommandError, SketchDocument> {
+            val target = doc.primitive(id) ?: return CommandError.UnknownPrimitive(id).left()
+            doc.lockedLayerOf(target)?.let { return it.left() }
+            val moved = target.withVertex(index, to) ?: return CommandError.UnknownPrimitive(id).left()
             return doc.scene.replace(moved).mapLeft { CommandError.Scene(it) }.map { doc.copy(scene = it) }
         }
     }
