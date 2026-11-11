@@ -44,9 +44,10 @@ class ProjectListViewModelTest {
     private val pageRepo = dev.stapler.stelekit.repository.InMemoryPageRepository()
     private val files = mutableMapOf<String, String>()
 
-    private fun vm(withSources: Boolean = false, write: ProjectWriteRunner = { it() }) = ProjectListViewModel(
+    private fun vm(withSources: Boolean = false, write: ProjectWriteRunner = { it() }, yaml: YamlPickerAction? = null) = ProjectListViewModel(
         repos.projects, graphId, bridge, llm, write, { ++tick }, Random(1),
         sources = if (withSources) dev.stapler.stelekit.projectbridge.SourceBindingService(repos, pageRepo, { files[it] }, { it() }, dev.stapler.stelekit.projectbridge.LocalBindingTable(raw)) else null,
+        yaml = yaml,
         dispatcher = UnconfinedTestDispatcher(),
     ).also { models += it }
 
@@ -251,5 +252,33 @@ class ProjectListViewModelTest {
         vm.searchSourcePages("clos")
         vm.unbindSource("00000001")
         assertTrue(vm.state.value.pickerResults.isEmpty())
+    }
+
+    private fun yamlAction(pick: suspend () -> String?) = YamlPickerAction(
+        dev.stapler.stelekit.projectbridge.YamlSnapshotImporter(repos, { store }, { it() }), repos, pick,
+    )
+    private val store = dev.stapler.stelekit.projectbridge.newStore(dev.stapler.stelekit.projectbridge.SidecarFs())
+
+    @Test
+    fun chooseYamlRecordsTheSnapshotAndFlipsTheStatus() {
+        val vm = vm(yaml = yamlAction { "a: 1\n" })
+        assertTrue(vm.yamlAvailable)
+        vm.chooseYaml()
+        assertEquals("Create a project first", vm.state.value.message)
+        vm.createProject("Closet")
+        vm.chooseYaml()
+        assertTrue(vm.state.value.yamlSnapshotSet)
+        vm.chooseYaml()
+        assertEquals("That YAML file is already the project's source", vm.state.value.message)
+    }
+
+    @Test
+    fun chooseYamlIsInertWithoutAPicker() {
+        val vm = vm()
+        assertFalse(vm.yamlAvailable)
+        vm.createProject("Closet")
+        vm.chooseYaml()
+        assertFalse(vm.state.value.yamlSnapshotSet)
+        assertNull(vm.state.value.message)
     }
 }
