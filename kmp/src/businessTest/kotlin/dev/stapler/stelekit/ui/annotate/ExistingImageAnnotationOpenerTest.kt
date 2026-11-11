@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.ui.annotate
 
+import arrow.core.left
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.model.BlockUuid
@@ -114,5 +115,25 @@ class ExistingImageAnnotationOpenerTest {
         val result = opener().open(ExistingImageRequest("page-001", "content://media/1"))
 
         assertTrue(result.isRight())
+    }
+
+    @Test
+    fun errorMessages_areHumanReadable() {
+        assertTrue(OpenForAnnotationError.FileMissing("/x").message.contains("missing"))
+        assertTrue(OpenForAnnotationError.NoPage.message.contains("page"))
+    }
+
+    @Test
+    fun blockWriteFailure_isReportedAndNoAnnotationIsSaved() = runTest {
+        val failing = object : dev.stapler.stelekit.repository.BlockRepository by blocks {
+            override suspend fun saveBlock(block: Block) =
+                dev.stapler.stelekit.error.DomainError.DatabaseError.WriteFailed("boom").left()
+        }
+        val opener = ExistingImageAnnotationOpener(annotations, failing, null, "/graph", fileExists = { true })
+
+        val result = opener.open(ExistingImageRequest("page-001", "../assets/photo.jpg"))
+
+        assertIs<OpenForAnnotationError.WriteFailed>(result.leftOrNull())
+        assertTrue(annotations.getImageAnnotationsByPage("page-001").first().getOrNull().orEmpty().isEmpty())
     }
 }
