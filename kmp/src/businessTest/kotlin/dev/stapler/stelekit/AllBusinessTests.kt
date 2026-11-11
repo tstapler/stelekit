@@ -845,6 +845,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.ui.annotate.AnnotationEditorUnitTest::class,
     dev.stapler.stelekit.projectbridge.ProjectFusionSourceTest::class,
     dev.stapler.stelekit.ui.sketch.ProjectListViewModelTest::class,
+    dev.stapler.stelekit.ui.sketch.RegistryEditorViewModelTest::class,
     dev.stapler.stelekit.projectbridge.DigestWriterJobTest::class,
     dev.stapler.stelekit.llm.OutboundLlmGateTest::class,
     dev.stapler.stelekit.llm.GateIssuedAuditTest::class,
