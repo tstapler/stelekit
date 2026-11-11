@@ -76,7 +76,7 @@ class ModelDownloadFixture(
     }
     val store = TaskSettingsStore(settings, LegacyConfigSeed.None, registry)
     val scheduler = WorkManagerTaskScheduler(context, registry, store, AppliedConfigLedger(settings))
-    val downloader = DepthModelDownloader(context, scheduler, store)
+    val downloader = DepthModelDownloader(context, scheduler, store, NetworkSnapshotProvider { network }, notificationsOff = { false })
     private val health = SettingsReadHealth(context.getSharedPreferences("model_download_test_health", Context.MODE_PRIVATE))
 
     fun install() {

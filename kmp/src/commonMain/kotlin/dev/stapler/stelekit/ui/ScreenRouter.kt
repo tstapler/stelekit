@@ -489,6 +489,9 @@ internal fun ScreenRouter(
                         onCancelDownloadDepthModel = downloadableDepthModel?.let {
                             { it.cancelDownload() }
                         },
+                        onDownloadDepthModelAnyway = downloadableDepthModel?.let {
+                            { depthModelScope.launch { it.downloadNowAnyway() } }
+                        },
                         // Real depth estimation (running inference on a captured bitmap) is
                         // unrelated to the download-stall bug this wiring exists for and needs its
                         // own bitmap-sourcing work — left null so the panel shows "coming soon"

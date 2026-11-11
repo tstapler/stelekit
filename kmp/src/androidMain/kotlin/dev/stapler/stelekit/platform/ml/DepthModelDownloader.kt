@@ -4,14 +4,20 @@
 package dev.stapler.stelekit.platform.ml
 
 import android.content.Context
+import androidx.core.app.NotificationManagerCompat
+import androidx.work.NetworkType
 import androidx.work.WorkInfo
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.jobs.schedule.AndroidNetworkSnapshotProvider
 import dev.stapler.stelekit.jobs.schedule.AppliedConfigLedger
 import dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler
+import dev.stapler.stelekit.jobs.schedule.NetworkPolicy
+import dev.stapler.stelekit.jobs.schedule.NetworkSnapshot
+import dev.stapler.stelekit.jobs.schedule.NetworkSnapshotProvider
 import dev.stapler.stelekit.jobs.schedule.OneShotConflict
 import dev.stapler.stelekit.jobs.schedule.TaskConstraints
 import dev.stapler.stelekit.jobs.schedule.TaskRegistry
@@ -47,7 +53,11 @@ class DepthModelDownloader(
     private val context: Context,
     scheduler: BackgroundTaskScheduler? = null,
     store: TaskSettingsStore? = null,
+    network: NetworkSnapshotProvider? = null,
+    private val notificationsOff: () -> Boolean = { areNotificationsOff(context) },
 ) {
+    private val networkProvider: NetworkSnapshotProvider by lazy { network ?: AndroidNetworkSnapshotProvider(context) }
+
 
     private val modelFile: File = DepthModelStorage.modelFile(context)
     private val logger = Logger("DepthModelDownloader")
@@ -63,7 +73,7 @@ class DepthModelDownloader(
     }
 
     /** True while [downloadModel] waits; a WorkInfo snapshot taken before our enqueue is visible must not read as "cancelled". */
-    @Volatile private var requestInFlight = false
+    private val inFlight = java.util.concurrent.atomic.AtomicInteger(0)
 
     private val _modelState = MutableStateFlow(initialState())
     val modelState: StateFlow<ModelState> = _modelState.asStateFlow()
@@ -93,13 +103,29 @@ class DepthModelDownloader(
         workManagerOrNull(context)
             ?: return DomainError.SensorError.HardwareUnavailable("Background downloads are unavailable right now").left()
         // KEEP: an already queued or running job is left alone; a finished one is replaced by this new run.
-        requestInFlight = true
+        inFlight.incrementAndGet()
         try {
             taskScheduler.runOnce(ModelDownloadTask.KEY, storedConstraints(), OneShotConflict.Keep)
             if (_modelState.value !is ModelState.Downloading) _modelState.value = ModelState.Downloading(progress = -1)
             return awaitTerminal()
         } finally {
-            requestInFlight = false
+            inFlight.decrementAndGet()
+        }
+    }
+
+    /**
+     * "Download now anyway": replaces the queued request with one that accepts any network. Per request only; the
+     * stored default is untouched, so the next plain request is unmetered again. A caller already waiting in
+     * [downloadModel] keeps waiting on the replacement.
+     */
+    suspend fun downloadNowAnyway() {
+        if (isModelReady()) return
+        inFlight.incrementAndGet()
+        try {
+            taskScheduler.runOnce(ModelDownloadTask.KEY, ANYWAY_CONSTRAINTS, OneShotConflict.Replace)
+            if (_modelState.value !is ModelState.Downloading) _modelState.value = ModelState.Downloading(progress = -1)
+        } finally {
+            inFlight.decrementAndGet()
         }
     }
 
@@ -135,7 +161,7 @@ class DepthModelDownloader(
 
     fun isModelReady(): Boolean = DepthModelStorage.isReady(modelFile)
 
-    private fun apply(infos: List<WorkInfo>) {
+    private suspend fun apply(infos: List<WorkInfo>) {
         if (isModelReady()) {
             _modelState.value = ModelState.Ready
             return
@@ -143,12 +169,46 @@ class DepthModelDownloader(
         // A new run can sit beside a finished one; an unfinished job is what the user is waiting on.
         val info = infos.firstOrNull { !it.state.isFinished } ?: infos.lastOrNull()
         _modelState.value = when (info?.state) {
-            null -> if (requestInFlight) return else ModelState.Absent
-            WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> ModelState.Downloading(progress = -1)
-            WorkInfo.State.RUNNING -> ModelState.Downloading(info.progress.getInt(DepthModelDownloadWorker.KEY_PROGRESS, -1))
+            null -> if (inFlight.get() > 0) return else ModelState.Absent
+            WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> queuedState(info)
+            WorkInfo.State.RUNNING -> {
+                val notice = if (notificationsOff()) ModelDownloadPresentation.NOTIFICATIONS_OFF else null
+                ModelState.Downloading(info.progress.getInt(DepthModelDownloadWorker.KEY_PROGRESS, -1), notice = notice)
+            }
             WorkInfo.State.SUCCEEDED -> ModelState.Failed("The model file went missing after downloading. Try again.")
             WorkInfo.State.FAILED -> ModelState.Failed(info.outputData.getString(DepthModelDownloadWorker.KEY_ERROR))
             WorkInfo.State.CANCELLED -> ModelState.Absent
+        }
+    }
+
+    /** Queued: explains why it is not running yet. The snapshot is taken at emission time, so it can go stale. */
+    private suspend fun queuedState(info: WorkInfo): ModelState.Downloading {
+        val snapshot: NetworkSnapshot? = try {
+            networkProvider.snapshot()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            logger.warn("network snapshot failed", e)
+            null
+        }
+        val row = ModelDownloadPresentation.present(
+            ModelDownloadInput(
+                work = ModelWorkState.Queued,
+                network = snapshot,
+                attempt = info.runAttemptCount,
+                requiresUnmetered = info.constraints.requiredNetworkType == NetworkType.UNMETERED,
+                notificationsOff = notificationsOff(),
+            ),
+        )
+        return if (row != null && row.isWaiting) {
+            ModelState.Downloading(
+                progress = -1,
+                waitingMessage = row.text,
+                canDownloadAnyway = ModelDownloadAction.DownloadNowAnyway in row.actions,
+                notice = row.notice,
+            )
+        } else {
+            ModelState.Downloading(progress = -1, notice = row?.notice)
         }
     }
 
@@ -159,8 +219,16 @@ class DepthModelDownloader(
         /** No model file on disk. */
         data object Absent : ModelState
 
-        /** Download queued or in progress — [progress] is 0–100, or -1 if indeterminate. */
-        data class Downloading(val progress: Int) : ModelState
+        /**
+         * Download queued or in progress — [progress] is 0–100, or -1 if indeterminate. A non-null [waitingMessage]
+         * means queued behind the network (unmetered wait, offline, retry backoff), not running.
+         */
+        data class Downloading(
+            val progress: Int,
+            val waitingMessage: String? = null,
+            val canDownloadAnyway: Boolean = false,
+            val notice: String? = null,
+        ) : ModelState
 
         /** Model file present and verified. */
         data object Ready : ModelState
@@ -173,6 +241,9 @@ class DepthModelDownloader(
         const val MODEL_URL =
             "https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/main/onnx/model.onnx"
         const val UNIQUE_WORK_NAME = "depth-model-download"
+
+        /** Per request, never persisted. */
+        private val ANYWAY_CONSTRAINTS = TaskConstraints(network = NetworkPolicy.Any, requiresStorageNotLow = true)
     }
 }
 
@@ -180,11 +251,20 @@ class DepthModelDownloader(
 fun DepthModelDownloader.ModelState.toUiState(): DepthModelUiState =
     when (this) {
         is DepthModelDownloader.ModelState.Absent -> DepthModelUiState.Absent
-        is DepthModelDownloader.ModelState.Downloading -> DepthModelUiState.Downloading(progress)
+        is DepthModelDownloader.ModelState.Downloading ->
+            if (waitingMessage != null) DepthModelUiState.Waiting(waitingMessage, canDownloadAnyway, notice)
+            else DepthModelUiState.Downloading(progress, notice)
         is DepthModelDownloader.ModelState.Ready -> DepthModelUiState.Ready
-        is DepthModelDownloader.ModelState.Failed -> DepthModelUiState.Failed(reason)
+        is DepthModelDownloader.ModelState.Failed -> DepthModelUiState.Failed(ModelDownloadPresentation.failureReason(reason))
     }
 
 /** Pure — testable without WorkManager. -1 for an unknown total size. */
 internal fun computeProgressPercent(bytesDownloaded: Long, totalBytes: Long): Int =
     if (totalBytes <= 0L) -1 else ((bytesDownloaded * 100L) / totalBytes).toInt().coerceIn(0, 100)
+
+private fun areNotificationsOff(context: Context): Boolean = try {
+    // Below Android 13 notifications are on by default, and a foreground-service one is shown regardless.
+    android.os.Build.VERSION.SDK_INT >= 33 && !NotificationManagerCompat.from(context).areNotificationsEnabled()
+} catch (e: Exception) {
+    false
+}

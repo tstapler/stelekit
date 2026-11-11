@@ -64,6 +64,8 @@ class OnnxMonocularDepthEstimator(
 
     override fun cancelDownload() = downloader.cancelDownload()
 
+    override suspend fun downloadNowAnyway() = downloader.downloadNowAnyway()
+
     override val isAvailable: Boolean
         get() = _isAvailable
 

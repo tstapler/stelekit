@@ -166,6 +166,7 @@ fun AnnotationEditorScreen(
      * [DepthModelUiState.Downloading].
      */
     onCancelDownloadDepthModel: (() -> Unit)? = null,
+    onDownloadDepthModelAnyway: (() -> Unit)? = null,
     /**
      * When non-null, the "Estimate depth (AI)" button is enabled and tapping it calls this
      * lambda. The caller (Android activity/fragment) should trigger inference and update the
@@ -645,6 +646,7 @@ fun AnnotationEditorScreen(
                     onDownload = onDownloadDepthModel ?: {},
                     onCancel = onCancelDownloadDepthModel,
                     onEstimate = onEstimateDepth,
+                    onDownloadAnyway = onDownloadDepthModelAnyway,
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(start = 8.dp, top = 8.dp),
@@ -1475,6 +1477,7 @@ internal fun DepthEstimationPanel(
     modifier: Modifier = Modifier,
     onCancel: (() -> Unit)? = null,
     onEstimate: (() -> Unit)? = null,
+    onDownloadAnyway: (() -> Unit)? = null,
 ) {
     Surface(
         color = Color(0xDD1A1A1A),
@@ -1557,6 +1560,36 @@ internal fun DepthEstimationPanel(
                                 modifier = Modifier.semantics {
                                     contentDescription = "Cancel model download"
                                 },
+                            ) {
+                                Text("Cancel", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                            }
+                        }
+                    }
+                    modelState.notice?.let {
+                        Text(text = it, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f))
+                    }
+                }
+
+                // Queued: waiting for an unmetered network, offline, or backing off — always keeps an exit.
+                modelState is DepthModelUiState.Waiting -> {
+                    Text(
+                        text = modelState.message,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                    )
+                    modelState.notice?.let {
+                        Text(text = it, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f))
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (modelState.canDownloadAnyway && onDownloadAnyway != null) {
+                            TextButton(onClick = onDownloadAnyway) {
+                                Text("Download now anyway", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                            }
+                        }
+                        if (onCancel != null) {
+                            TextButton(
+                                onClick = onCancel,
+                                modifier = Modifier.semantics { contentDescription = "Cancel model download" },
                             ) {
                                 Text("Cancel", style = MaterialTheme.typography.labelSmall, color = Color.White)
                             }

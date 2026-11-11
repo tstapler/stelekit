@@ -77,4 +77,7 @@ interface DownloadableDepthModel {
     val modelState: StateFlow<DepthModelUiState>
     suspend fun downloadModel(): Either<DomainError, Unit>
     fun cancelDownload()
+
+    /** "Download now anyway": replaces a queued request with one that accepts a metered network. Per request only. */
+    suspend fun downloadNowAnyway() {}
 }
