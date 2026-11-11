@@ -11,6 +11,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -33,8 +38,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.git.COULDNT_READ_SETTINGS
+import dev.stapler.stelekit.git.GitSyncTask
 import dev.stapler.stelekit.git.GRAPH_SEARCH_THRESHOLD
 import dev.stapler.stelekit.git.aboutEveryPhrase
 import dev.stapler.stelekit.git.graphRowDescription
@@ -48,7 +55,14 @@ import dev.stapler.stelekit.jobs.schedule.TaskScope
 import dev.stapler.stelekit.ui.components.typedItems
 
 /** A graph the Background tasks list can configure; [name] is the display name, never the raw id. */
-data class BackgroundTaskGraph(val id: String, val name: String)
+data class BackgroundTaskGraph(
+    val id: String,
+    val name: String,
+    /** SAF-backed: the closed app can fetch but never merge, so git sync only checks for updates (G6). */
+    val fetchOnly: Boolean = false,
+    /** The open graph is the only one whose remote and first-sync state is knowable (the config repository is single-open). */
+    val active: Boolean = true,
+)
 
 /** Everything the dialog needs to show [BackgroundTasksSection]; null hides the section. */
 data class BackgroundTasksSettingsState(
@@ -70,6 +84,10 @@ internal const val SEARCH_LABEL = "Search graphs"
 internal const val NO_MATCHES_TEXT = "No matches"
 internal const val CLEAR_SEARCH_LABEL = "Clear search"
 internal const val BACK_LABEL = "Back"
+internal const val FETCH_ONLY_NOTE = "This graph can only check for updates in the background"
+internal const val OPEN_GRAPH_FOR_STATUS = "Open this graph to see its sync status and any setup it needs."
+internal const val NAV_CHEVRON_TAG = "background-tasks-nav-chevron"
+internal const val BACK_ARROW_TAG = "background-tasks-back-arrow"
 private const val TARGET_DP = 48
 private const val LIST_MAX_HEIGHT_DP = 480
 private const val APP_WIDE_SCOPE = ""
@@ -138,6 +156,7 @@ fun BackgroundTasksSection(
                     TaskSettingsPanel(
                         controller, TaskKey(d.kind, TaskScope(d.graph.id)), "${controller.titleOf(d.kind)} - ${d.graph.name}",
                         switchGate = switchGate(d.kind, d.graph.id),
+                        notes = graphNotes(d.kind, d.graph, switchGate(d.kind, d.graph.id)),
                         onChange = { refresh++ },
                     )
                 }
@@ -153,9 +172,25 @@ fun BackgroundTasksSection(
     }
 }
 
+/**
+ * Lines under a git graph's switch: the SAF fetch-only limit, and for a graph that is not open the explicit
+ * "open it" copy (its remote and review state cannot be read here, so no reason is invented).
+ */
+private fun graphNotes(kind: TaskKind, graph: BackgroundTaskGraph, gate: SwitchGate?): List<String> {
+    if (kind != GitSyncTask.KIND) return emptyList()
+    return listOfNotNull(
+        FETCH_ONLY_NOTE.takeIf { graph.fetchOnly },
+        OPEN_GRAPH_FOR_STATUS.takeIf { !graph.active && gate == null },
+    )
+}
+
 @Composable
 private fun BackRow(onBack: () -> Unit) {
-    TextButton(onClick = onBack, modifier = Modifier.heightIn(min = TARGET_DP.dp)) { Text("< $BACK_LABEL") }
+    TextButton(onClick = onBack, modifier = Modifier.heightIn(min = TARGET_DP.dp)) {
+        // AutoMirrored so the arrow points the reading-direction way under RTL (UX-36).
+        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp).testTag(BACK_ARROW_TAG))
+        Text(BACK_LABEL, modifier = Modifier.padding(start = 4.dp))
+    }
 }
 
 @Composable
@@ -168,23 +203,30 @@ private fun KindList(
     open: (Destination) -> Unit,
 ) {
     Column {
+        var retry by remember { mutableIntStateOf(0) }
         val kinds = controller.kinds()
         val periodic = kinds.filterNot(controller::isOneShot)
         if (periodic.isNotEmpty() && graphs.isEmpty()) {
             Text(NO_GRAPHS_TEXT, style = MaterialTheme.typography.bodyMedium)
             Button(onClick = onAddGraph, modifier = Modifier.heightIn(min = TARGET_DP.dp)) { Text(ADD_GRAPH_LABEL) }
         }
+        var anyReadFailed = false
         kinds.forEach { kind ->
-            if (controller.isOneShot(kind)) {
-                val summary by produceKindSummary(controller, kind, graphs, refresh)
-                NavRow(controller.titleOf(kind), summary, "kind:${kind.id}", focusOpener) { open(Destination.AppWide(kind)) }
-            } else if (graphs.isNotEmpty()) {
-                val summary by produceKindSummary(controller, kind, graphs, refresh)
-                NavRow(controller.titleOf(kind), summary, "kind:${kind.id}", focusOpener) { open(Destination.Kind(kind)) }
-            }
+            val shown = controller.isOneShot(kind) || graphs.isNotEmpty()
+            if (!shown) return@forEach
+            val summary by produceKindSummary(controller, kind, graphs, refresh, retry)
+            val target = if (controller.isOneShot(kind)) Destination.AppWide(kind) else Destination.Kind(kind)
+            NavRow(controller.titleOf(kind), summary.text, "kind:${kind.id}", focusOpener) { open(target) }
+            anyReadFailed = anyReadFailed || summary.readFailed
+        }
+        if (anyReadFailed) {
+            TextButton(onClick = { retry++ }, modifier = Modifier.heightIn(min = TARGET_DP.dp)) { Text(RETRY_LABEL) }
         }
     }
 }
+
+/** A kind's S1 line; [readFailed] means the store could not be read, so nothing is scheduled (fail closed) and Retry is offered. */
+private data class KindSummary(val text: String, val readFailed: Boolean = false)
 
 @Composable
 private fun produceKindSummary(
@@ -192,23 +234,27 @@ private fun produceKindSummary(
     kind: TaskKind,
     graphs: List<BackgroundTaskGraph>,
     refresh: Int,
-) = androidx.compose.runtime.produceState(initialValue = "", kind, graphs, refresh) {
+    retry: Int,
+) = androidx.compose.runtime.produceState(initialValue = KindSummary(""), kind, graphs, refresh, retry) {
     value = summarizeKind(controller, kind, graphs)
 }
 
-private suspend fun summarizeKind(controller: BackgroundTaskSettingsController, kind: TaskKind, graphs: List<BackgroundTaskGraph>): String {
+private suspend fun summarizeKind(controller: BackgroundTaskSettingsController, kind: TaskKind, graphs: List<BackgroundTaskGraph>): KindSummary {
     val base = controller.baseConfig(kind)
     if (controller.isOneShot(kind)) {
         val loaded = controller.load(TaskKey(kind, TaskScope(APP_WIDE_SCOPE)))
+        if (loaded is TaskSettingsLoad.ReadFailed) return KindSummary(COULDNT_READ_SETTINGS.substringBefore(". "), readFailed = true)
         val network = (loaded as? TaskSettingsLoad.Loaded)?.resolved?.constraints?.network ?: base.constraints.network
-        return "${networkLabel(network)} - app-wide"
+        return KindSummary("${networkLabel(network)} - app-wide")
     }
     var on = 0
     graphs.forEach { g ->
-        val loaded = controller.load(TaskKey(kind, TaskScope(g.id)))
-        if ((loaded as? TaskSettingsLoad.Loaded)?.entry?.enabled == true) on++
+        when (val loaded = controller.load(TaskKey(kind, TaskScope(g.id)))) {
+            TaskSettingsLoad.ReadFailed -> return KindSummary(COULDNT_READ_SETTINGS.substringBefore(". "), readFailed = true)
+            is TaskSettingsLoad.Loaded -> if (loaded.entry.enabled) on++
+        }
     }
-    return kindSummary(base, on, graphs.size)
+    return KindSummary(kindSummary(base, on, graphs.size))
 }
 
 @Composable
@@ -230,7 +276,7 @@ private fun NavRow(title: String, summary: String, id: String, focusOpener: Stri
             Text(title, style = MaterialTheme.typography.bodyLarge)
             if (summary.isNotEmpty()) Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text(">", style = MaterialTheme.typography.bodyLarge)
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, modifier = Modifier.testTag(NAV_CHEVRON_TAG))
     }
 }
 

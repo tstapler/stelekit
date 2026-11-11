@@ -203,6 +203,11 @@ internal fun rememberScheduledSyncSettingsState(
     )
 }
 
+/** A SAF-backed graph: a registry root `saf://` or `content://` path (SAF check, not a notes-folder read). */
+@OptIn(dev.stapler.stelekit.model.RegistryRootPath::class)
+private fun isSafGraph(graph: dev.stapler.stelekit.model.GraphInfo): Boolean =
+    graph.path.startsWith("saf://") || graph.path.startsWith("content://")
+
 /**
  * Settings model for Background tasks, or null when git config is unavailable on this platform (the
  * legacy seed needs it, and a graph first read without it would record a wrong "nothing to migrate" marker).
@@ -229,7 +234,14 @@ internal fun rememberBackgroundTasksSettingsState(
             onSaved = { key -> if (key.kind == GitSyncTask.KIND && key.scope.value == activeGraphIdForSaves) reconcileRunning() },
         )
     }
-    val rows = graphs.map { dev.stapler.stelekit.ui.components.settings.BackgroundTaskGraph(it.id.value, it.displayName) }
+    val rows = graphs.map {
+        dev.stapler.stelekit.ui.components.settings.BackgroundTaskGraph(
+            id = it.id.value,
+            name = it.displayName,
+            fetchOnly = isSafGraph(it),
+            active = it.id.value == stack.gitSyncGraphId,
+        )
+    }
     val hasRemote = controls.hasRemote
     val reviewRequired = hasRemote && !controls.firstSyncConfirmed()
     val activeGraphId = stack.gitSyncGraphId

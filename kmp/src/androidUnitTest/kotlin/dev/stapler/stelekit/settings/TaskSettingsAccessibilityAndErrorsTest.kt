@@ -128,7 +128,7 @@ class TaskSettingsAccessibilityAndErrorsTest {
         rule.onNodeWithText("Work notes", substring = true).performClick()
         rule.waitForIdle()
         rule.onNodeWithText(NO_REMOTE_REASON).assertExists()
-        rule.onNodeWithText("< Back").performClick()
+        rule.onNodeWithText("Back").performClick()
         rule.onNodeWithText("Graph 2", substring = true).performClick()
         rule.waitForIdle()
         rule.onNodeWithText(NO_REMOTE_REASON).assertDoesNotExist()
@@ -190,7 +190,7 @@ class TaskSettingsAccessibilityAndErrorsTest {
         rule.waitForIdle()
         rule.onNodeWithText(COULDNT_READ_SETTINGS).assertExists()
         rule.onNode(hasText("Retry") and hasClickAction() and isEnabled()).assertExists()
-        rule.onNode(hasText("< Back") and hasClickAction() and isEnabled()).assertExists()
+        rule.onNode(hasText("Back") and hasClickAction() and isEnabled()).assertExists()
         fixture.settings.failReads = false
         rule.onNodeWithText("Retry").performClick()
         rule.waitForIdle()
@@ -212,7 +212,7 @@ class TaskSettingsAccessibilityAndErrorsTest {
         rule.onNodeWithText(COULDNT_SAVE).assertExists()
         // Retry by choosing again: the control is still enabled; Back is still there.
         rule.onNode(hasText("2 hours") and hasClickAction() and isEnabled()).assertExists()
-        rule.onNode(hasText("< Back") and hasClickAction() and isEnabled()).assertExists()
+        rule.onNode(hasText("Back") and hasClickAction() and isEnabled()).assertExists()
     }
 
     @Test
@@ -226,7 +226,7 @@ class TaskSettingsAccessibilityAndErrorsTest {
         rule.onNodeWithText("Work notes", substring = true).performClick()
         rule.waitForIdle()
         rule.onNodeWithText(LOADING_SETTINGS_REASON).assertExists()
-        rule.onNode(hasText("< Back") and hasClickAction() and isEnabled()).assertExists()
+        rule.onNode(hasText("Back") and hasClickAction() and isEnabled()).assertExists()
         gate.complete(Unit)
     }
 

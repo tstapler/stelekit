@@ -190,9 +190,9 @@ class BackgroundTasksSectionTest {
         rule.onNode(hasText("Git sync") and androidx.compose.ui.test.isFocusable()).assertIsFocused()
         rule.onNodeWithText("Work notes", substring = true).performClick()
         rule.onNodeWithText("Git sync - Work notes").assertIsFocused()
-        rule.onNodeWithText("< Back").performClick()
+        rule.onNodeWithText("Back").performClick()
         rule.onNode(androidx.compose.ui.test.hasContentDescription("Work notes", substring = true)).assertIsFocused()
-        rule.onNodeWithText("< Back").performClick()
+        rule.onNodeWithText("Back").performClick()
         rule.onNode(androidx.compose.ui.test.hasContentDescription("Git sync", substring = true)).assertIsFocused()
     }
 }

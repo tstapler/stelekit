@@ -137,6 +137,8 @@ fun TaskSettingsPanel(
     modifier: Modifier = Modifier,
     target: PanelTarget = PanelTarget.Entry,
     switchGate: SwitchGate? = null,
+    /** Extra helper lines shown under the switch, e.g. the SAF fetch-only limit. */
+    notes: List<String> = emptyList(),
     onChange: () -> Unit = {},
 ) {
     val caps = controller.capabilities
@@ -193,6 +195,7 @@ fun TaskSettingsPanel(
                     SwitchBlock(state, caps.minIntervalMinutes, firstCheck, failed == ChangedControl.Switch, switchGate) {
                         submit(ChangedControl.Switch, PanelEdit.Enabled(it))
                     }
+                    notes.forEach { Helper(it) }
                 }
                 if (!oneShot) {
                     IntervalBlock(state, controller, failed == ChangedControl.Interval) { submit(ChangedControl.Interval, PanelEdit.Interval(it)) }
