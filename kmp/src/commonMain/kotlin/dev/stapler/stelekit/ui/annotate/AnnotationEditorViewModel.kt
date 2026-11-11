@@ -1,6 +1,9 @@
 package dev.stapler.stelekit.ui.annotate
 
 import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
 import androidx.compose.ui.graphics.ImageBitmap
 import dev.stapler.stelekit.calibration.CalibrationService
 import dev.stapler.stelekit.logging.Logger
@@ -41,8 +44,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import arrow.atomic.Atomic
 import arrow.atomic.AtomicBoolean
 import arrow.atomic.getAndUpdate
@@ -263,8 +265,48 @@ class AnnotationEditorViewModel(
     @kotlin.concurrent.Volatile private var imageWidthPx: Double = imageWidthPx
     @kotlin.concurrent.Volatile private var imageHeightPx: Double = imageHeightPx
 
-    // Serializes persistence so a slow older save can't land after a newer one; each save re-reads the latest state.
-    private val persistLock = Mutex()
+    // Serializes persistence so a slow older save can't land after a newer one; set-saves re-read the latest state when they run.
+    private val persistence = AnnotationPersistenceQueue(onThrowable = ::reportThrowable)
+
+    // Rows this session added or deleted; a late initial load must not re-add them (e.g. after undo).
+    private val sessionTouched = Atomic<Set<String>>(emptySet())
+
+    // True when the initial load failed: a bulk replace would wipe rows that were never shown.
+    private val loadFailed = AtomicBoolean(false)
+
+    /** Writes still in flight, for the leave-while-saving wait. */
+    val pendingWrites: StateFlow<Int> get() = persistence.pending
+
+    /** Latest persistence failure, for a retry banner. */
+    val persistenceFailure: StateFlow<DomainError?> get() = persistence.failure
+
+    /** Waits briefly for in-flight saves, then decides what Back should do (see [backOutcome]). */
+    suspend fun resolveBack(waitMillis: Long = LEAVE_SAVE_WAIT_MILLIS): BackOutcome {
+        withTimeoutOrNull(waitMillis) { persistence.awaitIdle() }
+        return backOutcome(_state.value.inProgressPoints.size, persistence.failure.value != null)
+    }
+
+    /** Re-saves the committed set after a failed save, clearing the failure first. */
+    fun retryPersistence() {
+        persistence.clearFailure()
+        persistCommittedSet()
+    }
+
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun saveRow(row: MeasurementAnnotation) = measurementRepository.saveMeasurementAnnotation(row)
+
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun saveRows(imageUuid: String, rows: List<MeasurementAnnotation>) =
+        measurementRepository.saveMeasurements(imageUuid, rows)
+
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun deleteRow(uuid: String) = measurementRepository.deleteMeasurementAnnotation(uuid)
+
+    private suspend fun saveSet(imageUuid: String, rows: List<MeasurementAnnotation>): Either<DomainError, Unit> {
+        if (!loadFailed.value) return saveRows(imageUuid, rows)
+        rows.forEach { row -> saveRow(row).onLeft { return it.left() } }
+        return Unit.right()
+    }
 
     /** Supplies the decoded image's native size; without it every pixel distance is ~1 px. */
     fun setImageSize(widthPx: Int, heightPx: Int) {
@@ -279,13 +321,6 @@ class AnnotationEditorViewModel(
      * re-issuing the one-shot repository load.
      */
     private val initialized = AtomicBoolean(false)
-
-    /**
-     * Set to true the first time any user action mutates [committedAnnotations] (commit or delete).
-     * The initial-load coroutine in [initialize] uses this to bail out if the user has already
-     * interacted — preventing stale repository results from overwriting optimistic UI state.
-     */
-    private val hasBeenMutated = AtomicBoolean(false)
 
     // ── Depth estimation coordinator ──────────────────────────────────────────
     private val depthCoordinator = DepthEstimationCoordinator(
@@ -401,14 +436,21 @@ class AnnotationEditorViewModel(
         // A continuous collect would race with optimistic updates and corrupt undo/redo history.
         scope.launch {
             val result = measurementRepository.getMeasurementsForImage(imageAnnotation.uuid).first()
+            result.onLeft { err ->
+                loadFailed.value = true
+                logger.error("Failed to load saved measurements: ${err.message}")
+            }
             result.onRight { list ->
-                // Guard against TOCTOU: check hasBeenMutated inside _state.update so that the
-                // check and the write are part of the same CAS operation. If commitAnnotation
-                // wins the race and sets hasBeenMutated=true before our CAS succeeds, the
-                // MutableStateFlow CAS loop retries the lambda and we see true on retry.
+                // Merge inside the CAS so a load that finishes after the first placement keeps
+                // both the persisted rows and the new ones (a later bulk save would delete them).
                 _state.update { currentSt ->
-                    if (!hasBeenMutated.value) currentSt.copy(committedAnnotations = list.map { it.relabeled(currentSt.selectedUnit) })
-                    else currentSt
+                    currentSt.copy(
+                        committedAnnotations = mergeInitialLoad(
+                            list.map { it.relabeled(currentSt.selectedUnit) },
+                            currentSt.committedAnnotations,
+                            sessionTouched.value,
+                        ),
+                    )
                 }
             }
         }
@@ -570,7 +612,6 @@ class AnnotationEditorViewModel(
      * The [calibration] in the current state is used for unit conversion. If calibration
      * is absent (NONE), [valueMeters] is stored as null and the display shows pixel counts.
      */
-    @OptIn(DirectRepositoryWrite::class)
     private fun commitAnnotation(
         points: List<NormalizedPoint>,
         tool: AnnotationTool,
@@ -623,7 +664,7 @@ class AnnotationEditorViewModel(
 
         val before = st
         pushUndo(before)
-        hasBeenMutated.value = true
+        sessionTouched.getAndUpdate { it + measurement.uuid }
 
         // Story 9.6: Fire haptic feedback on annotation commit. The callback is injected
         // at construction time; on Android the composable caller wires LocalHapticFeedback
@@ -638,8 +679,7 @@ class AnnotationEditorViewModel(
             )
         }
 
-        scope.launch {
-            val result = measurementRepository.saveMeasurementAnnotation(measurement)
+        persistence.submit(onResult = { result ->
             result.onLeft { err ->
                 logger.error("Failed to save annotation: ${err.message}")
                 // Roll back optimistic update on failure
@@ -650,7 +690,7 @@ class AnnotationEditorViewModel(
                     )
                 }
             }
-        }
+        }) { saveRow(measurement) }
     }
 
     // ── Calibration ───────────────────────────────────────────────────────────
@@ -661,7 +701,6 @@ class AnnotationEditorViewModel(
      * This is critical: if calibration changes (e.g. user marks a reference object),
      * all existing annotations must be recalculated or they display stale values.
      */
-    @OptIn(DirectRepositoryWrite::class)
     fun updateCalibration(newCalibration: Calibration) {
         if (inputStopped()) return
         if (!newCalibration.pixelsPerMeter.isFinite() || newCalibration.pixelsPerMeter <= 0.0) {
@@ -694,10 +733,9 @@ class AnnotationEditorViewModel(
         _state.update { it.copy(calibration = newCalibration, committedAnnotations = rederived) }
 
         // Persist re-derived measurements to the repository
-        scope.launch {
-            val imageUuid = st.imageAnnotation?.uuid ?: return@launch
-            measurementRepository.saveMeasurements(imageUuid, rederived).onLeft { err ->
-                logger.error("Failed to persist re-derived measurements: ${err.message}")
+        st.imageAnnotation?.uuid?.let { imageUuid ->
+            persistence.submit(onResult = { it.onLeft { err -> logger.error("Failed to persist re-derived measurements: ${err.message}") } }) {
+                saveSet(imageUuid, rederived)
             }
         }
 
@@ -707,7 +745,6 @@ class AnnotationEditorViewModel(
         }
     }
 
-    @OptIn(DirectRepositoryWrite::class)
     fun undoCalibration() {
         val snapshot = calibrationHistory.getAndUpdate { null } ?: return
         _canUndoCalibration.value = false
@@ -716,10 +753,9 @@ class AnnotationEditorViewModel(
             committedAnnotations = snapshot.annotations.map { a -> a.relabeled(it.selectedUnit) },
         )}
         _calibrationChangeMessage.value = "Scale restored"
-        scope.launch {
-            val imageUuid = _state.value.imageAnnotation?.uuid ?: return@launch
-            measurementRepository.saveMeasurements(imageUuid, _state.value.committedAnnotations).onLeft { err ->
-                logger.error("Failed to restore measurements: ${err.message}")
+        _state.value.imageAnnotation?.uuid?.let { imageUuid ->
+            persistence.submit(onResult = { it.onLeft { err -> logger.error("Failed to restore measurements: ${err.message}") } }) {
+                saveSet(imageUuid, _state.value.committedAnnotations)
             }
         }
     }
@@ -749,7 +785,6 @@ class AnnotationEditorViewModel(
     fun beginAnnotationEdit() {
         if (inputStopped()) return
         pushUndo(_state.value)
-        hasBeenMutated.value = true
     }
 
     /** Replaces an annotation's points and re-derives its measurement. UI-state only; see [commitAnnotationEdit]. */
@@ -770,30 +805,20 @@ class AnnotationEditorViewModel(
     }
 
     /** Persists the annotation's current state after a move gesture ends. */
-    @OptIn(DirectRepositoryWrite::class)
     fun commitAnnotationEdit(uuid: String) {
         if (inputStopped()) return
-        scope.launch {
-            persistLock.withLock {
-                val annotation = _state.value.committedAnnotations.firstOrNull { it.uuid == uuid } ?: return@withLock
-                measurementRepository.saveMeasurementAnnotation(annotation).onLeft { err ->
-                    logger.error("Failed to save moved annotation $uuid: ${err.message}")
-                }
-            }
+        persistence.submit(onResult = { it.onLeft { err -> logger.error("Failed to save moved annotation $uuid: ${err.message}") } }) {
+            val annotation = _state.value.committedAnnotations.firstOrNull { it.uuid == uuid }
+            if (annotation == null) Unit.right() else saveRow(annotation)
         }
     }
 
     /** Re-saves the full committed set so undo/redo of an already-persisted edit reaches the database. */
-    @OptIn(DirectRepositoryWrite::class)
     private fun persistCommittedSet() {
-        scope.launch {
-            persistLock.withLock {
-                val st = _state.value
-                val imageUuid = st.imageAnnotation?.uuid ?: return@withLock
-                measurementRepository.saveMeasurements(imageUuid, st.committedAnnotations).onLeft { err ->
-                    logger.error("Failed to persist undo/redo: ${err.message}")
-                }
-            }
+        persistence.submit(onResult = { it.onLeft { err -> logger.error("Failed to persist undo/redo: ${err.message}") } }) {
+            val st = _state.value
+            val imageUuid = st.imageAnnotation?.uuid
+            if (imageUuid == null) Unit.right() else saveSet(imageUuid, st.committedAnnotations)
         }
     }
 
@@ -805,13 +830,13 @@ class AnnotationEditorViewModel(
     }
 
     /** Delete an annotation by UUID. */
-    @OptIn(DirectRepositoryWrite::class)
     fun deleteAnnotation(uuid: String) {
         if (inputStopped()) return
         val before = _state.value
         pushUndo(before)
-        hasBeenMutated.value = true
 
+        // Before the state change, so a load landing in between can't re-add the row.
+        sessionTouched.getAndUpdate { it + uuid }
         _state.update { currentSt ->
             currentSt.copy(
                 committedAnnotations = currentSt.committedAnnotations.filter { it.uuid != uuid },
@@ -819,10 +844,8 @@ class AnnotationEditorViewModel(
             )
         }
 
-        scope.launch {
-            measurementRepository.deleteMeasurementAnnotation(uuid).onLeft { err ->
-                logger.error("Failed to delete annotation $uuid: ${err.message}")
-            }
+        persistence.submit(onResult = { it.onLeft { err -> logger.error("Failed to delete annotation $uuid: ${err.message}") } }) {
+            deleteRow(uuid)
         }
     }
 
@@ -950,29 +973,26 @@ class AnnotationEditorViewModel(
      */
     @OptIn(DirectRepositoryWrite::class)
     private fun persistUnitChange(relabeled: List<MeasurementAnnotation>) {
-        scope.launch {
-            persistLock.withLock {
-                _state.value.imageAnnotation?.let { image ->
-                    imageAnnotationRepository?.saveImageAnnotation(image)?.onLeft { err ->
-                        logger.error("Failed to persist unit change: ${err.message}")
-                    }
-                }
-                relabeled.forEach { m ->
-                    measurementRepository.saveMeasurementAnnotation(m).onLeft { err ->
-                        logger.error("Failed to persist re-labelled measurement ${m.uuid}: ${err.message}")
-                    }
+        persistence.submit {
+            _state.value.imageAnnotation?.let { image ->
+                imageAnnotationRepository?.saveImageAnnotation(image)?.onLeft { err ->
+                    logger.error("Failed to persist unit change: ${err.message}")
                 }
             }
+            relabeled.forEach { m ->
+                saveRow(m).onLeft { err ->
+                    logger.error("Failed to persist re-labelled measurement ${m.uuid}: ${err.message}")
+                }
+            }
+            Unit.right()
         }
     }
 
     @OptIn(DirectRepositoryWrite::class)
     private fun persistTagsUpdate(updated: ImageAnnotation) {
         val repo = imageAnnotationRepository ?: return
-        scope.launch {
-            repo.saveImageAnnotation(updated).onLeft { err ->
-                logger.error("Failed to persist tag update: ${err.message}")
-            }
+        persistence.submit(onResult = { it.onLeft { err -> logger.error("Failed to persist tag update: ${err.message}") } }) {
+            repo.saveImageAnnotation(updated)
         }
     }
 
@@ -1114,6 +1134,7 @@ class AnnotationEditorViewModel(
      */
     fun close() {
         depthCoordinator.close()
+        persistence.close()
         scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
     }
 }
