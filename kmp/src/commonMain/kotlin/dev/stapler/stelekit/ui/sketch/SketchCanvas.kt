@@ -19,6 +19,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalViewConfiguration
@@ -51,8 +53,11 @@ fun SketchCanvas(
     onSelect: (String?) -> Unit,
     modifier: Modifier = Modifier,
     onViewChange: (ViewTransform) -> Unit = {},
+    crosshair: SketchPoint? = null,
+    onCrosshairTap: ((SketchPoint) -> Unit)? = null,
+    onSizeChange: (IntSize) -> Unit = {},
 ) {
-    var view by remember { mutableStateOf(ViewTransform.of(origin = ScreenPoint(Rational(16), Rational(16)))) }
+    var view by remember { mutableStateOf(initialSketchView()) }
     var hover by remember { mutableStateOf<SketchPoint?>(null) }
     val cache = remember { SketchRenderCache() }
     val measurer = rememberTextMeasurer()
@@ -62,6 +67,8 @@ fun SketchCanvas(
     val currentPlace by rememberUpdatedState(onPlace)
     val currentSelect by rememberUpdatedState(onSelect)
     val currentViewChange by rememberUpdatedState(onViewChange)
+    val currentCrosshairTap by rememberUpdatedState(onCrosshairTap)
+    val currentSizeChange by rememberUpdatedState(onSizeChange)
     val ink = MaterialTheme.colorScheme.onSurface
     val accent = MaterialTheme.colorScheme.primary
     val labelStyle = MaterialTheme.typography.labelSmall.copy(color = ink)
@@ -75,6 +82,7 @@ fun SketchCanvas(
         modifier = modifier
             .fillMaxSize()
             .testTag(SKETCH_CANVAS_TAG)
+            .onSizeChanged { currentSizeChange(it) }
             .pointerInput(density, slop) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
@@ -105,7 +113,10 @@ fun SketchCanvas(
                         }
                     } while (event.changes.any { it.pressed })
                     hover = null
-                    if (!transforming && !classifier.isDrag) {
+                    val crosshairTap = currentCrosshairTap
+                    if (!transforming && !classifier.isDrag && crosshairTap != null) {
+                        view.toSheet(screenOf(down.position)).onRight(crosshairTap)
+                    } else if (!transforming && !classifier.isDrag) {
                         val s = currentState
                         resolveTap(s.tool, s.document.visibleScene, view, screenOf(down.position), s.document.sheet.gridStep, s.pendingStart).onRight { action ->
                             when (action) {
@@ -137,10 +148,23 @@ fun SketchCanvas(
                 hover?.let { h -> drawLine(accent, a, Offset(h.x.toInchesFloat(), h.y.toInchesFloat()), strokeWidth) }
             }
         }
+        crosshair?.let { drawCrosshair(it, frame, accent, density) }
         if (v.dpPerInch.toFloat() >= LABEL_SKIP_BELOW_DP_PER_INCH) {
             drawLabels(shapes, frame, measurer, labelStyle)
         }
     }
+}
+
+fun initialSketchView(): ViewTransform = ViewTransform.of(origin = ScreenPoint(Rational(16), Rational(16)))
+
+private const val CROSSHAIR_ARM_DP = 14f
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCrosshair(at: SketchPoint, frame: DrawFrame, color: androidx.compose.ui.graphics.Color, density: Float) {
+    val (x, y) = frame.px(at.x.toInchesFloat(), at.y.toInchesFloat())
+    val arm = CROSSHAIR_ARM_DP * density
+    val width = STROKE_DP * density
+    drawLine(color, Offset(x - arm, y), Offset(x + arm, y), width)
+    drawLine(color, Offset(x, y - arm), Offset(x, y + arm), width)
 }
 
 private fun resolveSnap(state: SketchUiState, view: ViewTransform, at: ScreenPoint): SketchPoint? =

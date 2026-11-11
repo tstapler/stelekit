@@ -40,6 +40,7 @@ object AnnotationExporter {
         val canvas = Canvas(output)
         val paint = Paint()
         val canvasSize = IntSize(width, height)
+        val scale = exportScale(width)
 
         // Draw source image
         canvas.drawImage(sourceImage, Offset.Zero, paint)
@@ -47,7 +48,7 @@ object AnnotationExporter {
         // Draw each annotation
         val path = Path()
         measurements.forEach { annotation ->
-            drawAnnotationOnCanvas(canvas, annotation, path, canvasSize, paint)
+            drawAnnotationOnCanvas(canvas, annotation, path, canvasSize, paint, scale)
         }
 
         return output
@@ -70,13 +71,14 @@ object AnnotationExporter {
         return mapEncodeResult(ImageEncoder.encodeToJpeg(baked, quality))
     }
 
-    @Suppress("LongMethod")
+    @Suppress("LongMethod", "LongParameterList")
     private fun drawAnnotationOnCanvas(
         canvas: Canvas,
         annotation: MeasurementAnnotation,
         path: Path,
         canvasSize: IntSize,
         paint: Paint,
+        scale: Float,
     ) {
         val screenPoints = annotation.normalizedPoints.map {
             Offset(
@@ -88,7 +90,7 @@ object AnnotationExporter {
 
         val color = annotationExportColor(annotation.annotationType)
         paint.color = color
-        paint.strokeWidth = 3f
+        paint.strokeWidth = 3f * scale
         paint.style = PaintingStyle.Stroke
 
         when (annotation.annotationType) {
@@ -96,8 +98,8 @@ object AnnotationExporter {
                 if (screenPoints.size >= 2) {
                     canvas.drawLine(screenPoints[0], screenPoints[1], paint)
                     paint.style = PaintingStyle.Fill
-                    canvas.drawCircle(screenPoints[0], 5f, paint)
-                    canvas.drawCircle(screenPoints[1], 5f, paint)
+                    canvas.drawCircle(screenPoints[0], 5f * scale, paint)
+                    canvas.drawCircle(screenPoints[1], 5f * scale, paint)
                 }
             }
 
@@ -126,7 +128,7 @@ object AnnotationExporter {
             AnnotationType.LABEL -> {
                 if (screenPoints.isNotEmpty()) {
                     paint.style = PaintingStyle.Fill
-                    canvas.drawCircle(screenPoints[0], 6f, paint)
+                    canvas.drawCircle(screenPoints[0], 6f * scale, paint)
                 }
             }
         }
@@ -135,24 +137,24 @@ object AnnotationExporter {
         val labelText = annotation.valueDisplay ?: annotation.label
         if (labelText != null && labelText.isNotBlank()) {
             val anchor = annotationExportMidpoint(screenPoints, annotation.annotationType)
-            drawLabel(canvas, labelText, anchor, paint)
+            drawLabel(canvas, labelText, anchor, paint, scale)
         }
     }
 
-    private fun drawLabel(canvas: Canvas, text: String, anchor: Offset, paint: Paint) {
+    private fun drawLabel(canvas: Canvas, text: String, anchor: Offset, paint: Paint, scale: Float) {
         // Draw a simple background rectangle
-        val padding = 4f
-        val approxCharWidth = 7f
-        val textHeight = 14f
+        val padding = 4f * scale
+        val approxCharWidth = 7f * scale
+        val textHeight = 14f * scale
         val textWidth = text.length * approxCharWidth
         val bgLeft = anchor.x - textWidth / 2 - padding
-        val bgTop = anchor.y - 40f - textHeight / 2 - padding
+        val bgTop = anchor.y - 40f * scale - textHeight / 2 - padding
         val bgRight = anchor.x + textWidth / 2 + padding
-        val bgBottom = anchor.y - 40f + textHeight / 2 + padding
+        val bgBottom = anchor.y - 40f * scale + textHeight / 2 + padding
 
         paint.color = Color(0xCC000000)
         paint.style = PaintingStyle.Fill
-        canvas.drawRoundRect(bgLeft, bgTop, bgRight, bgBottom, 4f, 4f, paint)
+        canvas.drawRoundRect(bgLeft, bgTop, bgRight, bgBottom, 4f * scale, 4f * scale, paint)
     }
 
     private fun annotationExportColor(type: AnnotationType): Color = when (type) {

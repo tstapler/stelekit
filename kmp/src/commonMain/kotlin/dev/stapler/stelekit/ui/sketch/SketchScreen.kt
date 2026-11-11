@@ -67,7 +67,7 @@ fun SketchScreen(
         }
         Box(Modifier.fillMaxSize()) {
             if (state.phase == SketchPhase.READY) {
-                SketchCanvas(state = state, onPlace = viewModel::placePoint, onSelect = viewModel::select)
+                SketchNonDragMode(state, viewModel, Modifier.fillMaxSize())
             } else {
                 Text(state.error ?: "Loading sketch", Modifier.align(Alignment.Center).padding(16.dp))
             }

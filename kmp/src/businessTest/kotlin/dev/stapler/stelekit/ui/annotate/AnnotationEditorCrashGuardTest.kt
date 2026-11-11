@@ -172,7 +172,8 @@ class AnnotationEditorCrashGuardTest {
             val vm = makeViewModel(InMemoryMeasurementAnnotationRepository(), ThrowingDepthEstimator(OutOfMemoryError("simulated")))
 
             vm.runDepthEstimation(StubImageBitmap())
-            awaitState(vm) { it.error != null }
+            // error is set by the coordinator callback; the depth fields reach the VM state via a separate collector.
+            awaitState(vm) { it.error != null && it.depthEstimationError != null && !it.isDepthInferenceRunning }
 
             assertTrue(recorder.uncaught.isEmpty(), "default handler saw ${recorder.uncaught}")
             assertEquals(false, vm.state.value.isDepthInferenceRunning)

@@ -54,6 +54,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -98,6 +99,7 @@ import dev.stapler.stelekit.platform.measurement.DeviceConnectionState
 import dev.stapler.stelekit.platform.measurement.ExternalMeasurementDevice
 import kotlin.math.abs
 import dev.stapler.stelekit.util.roundTo
+import kotlinx.coroutines.launch
 
 /**
  * Root screen for the image annotation editor.
@@ -190,9 +192,10 @@ fun AnnotationEditorScreen(
     val canRedo by viewModel.canRedo.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // UnsavedChanges tracking
-    var showUnsavedChangesDialog by remember { mutableStateOf(false) }
-    var hasUnsavedChanges by remember { mutableStateOf(false) }
+    // Back handling: placed measurements are saved as they are made, so only unfinished points or a failed save need a dialog.
+    var leaveDialog by remember { mutableStateOf<BackOutcome?>(null) }
+    val pendingWrites by viewModel.pendingWrites.collectAsState()
+    val backScope = rememberCoroutineScope()
 
     // BleDevicePanel
     var showBleDevicePanel by remember { mutableStateOf(false) }
@@ -243,7 +246,6 @@ fun AnnotationEditorScreen(
     }
 
     LaunchedEffect(state.committedAnnotations.size) {
-        if (state.committedAnnotations.isNotEmpty()) hasUnsavedChanges = true
         if (state.committedAnnotations.size == 1 &&
             state.committedAnnotations.first().annotationType == dev.stapler.stelekit.model.AnnotationType.DISTANCE &&
             coachMarksShown == 1) {
@@ -265,9 +267,14 @@ fun AnnotationEditorScreen(
         }
     }
 
-    // Show UnsavedChangesDialog when user tries to back-navigate with unsaved changes
-    PlatformBackHandler(enabled = hasUnsavedChanges) {
-        showUnsavedChangesDialog = true
+    PlatformBackHandler(enabled = true) {
+        backScope.launch {
+            if (pendingWrites > 0) launch { snackbarHostState.showSnackbar("Saving...", duration = SnackbarDuration.Short) }
+            when (val outcome = viewModel.resolveBack()) {
+                BackOutcome.Close -> onNavigateBack()
+                else -> leaveDialog = outcome
+            }
+        }
     }
 
     Scaffold(
@@ -730,24 +737,17 @@ fun AnnotationEditorScreen(
             )
         }
 
-        // UnsavedChangesDialog
-        if (showUnsavedChangesDialog) {
-            UnsavedChangesDialog(
-                onSave = {
-                    showUnsavedChangesDialog = false
-                    hasUnsavedChanges = false
-                    // TODO: trigger explicit save — for now just navigate back
-                    onNavigateBack()
-                },
-                onDiscard = {
-                    showUnsavedChangesDialog = false
-                    hasUnsavedChanges = false
-                    onNavigateBack()
-                },
-                onKeepEditing = {
-                    showUnsavedChangesDialog = false
-                },
+        when (val outcome = leaveDialog) {
+            is BackOutcome.ConfirmDiscard -> UnsavedChangesDialog(
+                unfinishedPoints = outcome.count,
+                onDiscard = { leaveDialog = null; onNavigateBack() },
+                onKeepEditing = { leaveDialog = null },
             )
+            BackOutcome.SaveFailed -> SaveFailedDialog(
+                onRetry = { leaveDialog = null; viewModel.retryPersistence() },
+                onCloseAnyway = { leaveDialog = null; onNavigateBack() },
+            )
+            else -> Unit
         }
 
         // Delete annotation confirmation

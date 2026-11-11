@@ -118,9 +118,20 @@ class OutlinerRegressionTest {
         composeTestRule.waitUntil(timeoutMillis = HANG_GUARD_MS) {
             viewModel.blocks.value[pageUuid]?.size == 2 && pageUuid !in viewModel.loadingPageUuids.value
         }
-        composeTestRule.waitUntil(timeoutMillis = HANG_GUARD_MS) {
-            composeTestRule.onAllNodes(hasText("Parent Block", substring = true))
-                .fetchSemanticsNodes().isNotEmpty()
+        try {
+            composeTestRule.waitUntil(timeoutMillis = HANG_GUARD_MS) {
+                composeTestRule.onAllNodes(hasText("Parent Block", substring = true))
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+        } catch (e: ComposeTimeoutException) {
+            // Surface the rendered tree + VM state: the timeout alone doesn't say whether the
+            // blocks are missing, collapsed into a spinner, or off-viewport.
+            throw AssertionError(
+                "Parent Block never rendered. blocks=${viewModel.blocks.value} " +
+                    "loading=${viewModel.loadingPageUuids.value}\n" +
+                    composeTestRule.onRoot().printToString(100),
+                e,
+            )
         }
         composeTestRule.onNodeWithText("Parent Block", substring = true).assertIsDisplayed()
         composeTestRule.onNodeWithText("Child Block", substring = true).assertIsDisplayed()
