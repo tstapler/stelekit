@@ -389,7 +389,29 @@ internal fun ScreenRouter(
                 NavigationTracingEffect("Sketch")
                 if (currentScreen.projectUuid == null && platformSettings != null) {
                     val graphId = appState.currentGraphId.orEmpty()
+                    val notesPath = appState.currentNotesPath
                     val projectListViewModel = remember(repos, graphId) {
+                        val sheetWrite: suspend (suspend () -> arrow.core.Either<dev.stapler.stelekit.error.DomainError, Unit>) -> arrow.core.Either<dev.stapler.stelekit.error.DomainError, Unit> =
+                            { op -> repos.writeActor?.execute(op = op) ?: op() }
+                        val sheets = if (fileSystem != null && notesPath != null) {
+                            dev.stapler.stelekit.projectbridge.attachedSheetService(repos.sketchRepositories, fileSystem, notesPath, sheetWrite)
+                        } else {
+                            null
+                        }
+                        val drawings = if (fileSystem != null && notesPath != null && sheets != null) {
+                            val flow = dev.stapler.stelekit.sketchimport.ImportFlow(
+                                dev.stapler.stelekit.asset.AssetIndexService(repos.assetRepository),
+                                repos.sketchRepositories, fileSystem, notesPath, repos.writeActor,
+                            )
+                            dev.stapler.stelekit.ui.sketch.DrawingAttachAction(sheets, flow) {
+                                fileSystem.pickFileAsync()?.let { path ->
+                                    runCatching { fileSystem.readFileBytes(path) }.getOrNull()
+                                        ?.let { dev.stapler.stelekit.ui.sketch.PickedDrawing(path.substringAfterLast('/'), it) }
+                                }
+                            }
+                        } else {
+                            null
+                        }
                         dev.stapler.stelekit.ui.sketch.projectListViewModelFor(
                             repos.sketchRepositories, repos.writeActor, graphId, platformSettings,
                             graphLoader?.let { loader ->
@@ -408,6 +430,8 @@ internal fun ScreenRouter(
                                     repos.sketchRepositories,
                                 ) { fs.pickFileAsync()?.let { path -> fs.readFileSuspend(path) } }
                             },
+                            drawings,
+                            sheets,
                         )
                     }
                     dev.stapler.stelekit.ui.sketch.ProjectListScreen(
