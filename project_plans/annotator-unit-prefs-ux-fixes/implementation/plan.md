@@ -164,3 +164,16 @@ Suggested order: 5 → 2 → 3 → 4 → 1 → 6 → 7.
 - Settings screen UI entry for default unit (follow-on item).
 - Migrating existing saved annotations to FEET_INCHES.
 - iOS/desktop depth model (Android-only).
+
+---
+
+## Adversarial-review resolutions (verified against code at 69c11270fe)
+
+- **Blocker 1 (dead space) — resolved.** `AnnotationEditorScreen.kt:272` calls `Scaffold(` with no `contentWindowInsets`, so it applies default system-bar insets via `paddingValues` (line ~290) on top of the outer app Scaffold's — the "inner Scaffold" does exist. Task 1: pass `contentWindowInsets = WindowInsets(0)`; confirm on `Pixel_Fold` that nothing overlaps system bars; add the Roborazzi test.
+- **Blocker 2 (Either.Left on save) — resolved.** Task 2 must `.onLeft { logger.error(...) }` and surface a transient error; the optimistic `selectedUnit` stays so the label still switches.
+- **Blocker 3 (bad stored string) — resolved.** `runCatching { valueOf }` fallback is in Task 4's snippet; it is a required test case.
+- **Concern 1 (`gridRefUnit`) — resolved.** Stays `METERS`; `setDisplayUnit` must not touch it (checklist item in validation.md).
+- **Concern 2 (toolbar null-gating) — resolved.** Task 3 uses `displayUnit = state.selectedUnit.takeIf { state.imageAnnotation != null }` (current site: `AnnotationEditorScreen.kt:578`, `onUnitSelect = {}` at :600).
+- **Concern 3 (delay in `apply()`) — plan corrected.** `DepthModelDownloader.apply()` is a non-suspend `private fun` (DepthModelDownloader.kt:~109), and the SUCCEEDED branch is at :122, so `delay()` there will not compile. Task 7: on SUCCEEDED with `!isModelReady()`, launch a cancellable retry in the downloader's scope (poll `isModelReady()` every 100 ms up to 2 s, then set `Failed`); keep `apply()` synchronous. The existing `DepthModelDownloaderTest` must keep passing.
+- **Task 6 test impact.** `androidUnitTest/.../AnnotateEditorPartsTest.kt:212` asserts the "Estimation coming soon" text; update it to the new copy.
+- **Estimates in this file** are legacy human-time figures; treat each task as one small agent step (low cost class).
