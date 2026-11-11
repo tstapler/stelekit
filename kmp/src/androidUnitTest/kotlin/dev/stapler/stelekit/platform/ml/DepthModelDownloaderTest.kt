@@ -29,6 +29,7 @@ import kotlin.test.assertTrue
 class DepthModelDownloaderTest {
     private companion object {
         const val SETTLE_YIELDS = 50
+        const val SETTLE_MS = 1_000L
     }
 
     private val context: Context = ApplicationProvider.getApplicationContext<Application>()
@@ -68,6 +69,9 @@ class DepthModelDownloaderTest {
         downloader.awaitDownloading()
         val second = async { downloader.downloadModel() }
         repeat(SETTLE_YIELDS) { yield() }
+        // runOnce hops to a real dispatcher (settings read), which yield() cannot wait for; cancelling before the
+        // second enqueue lands lets it start a fresh, never-satisfied job and hangs the awaits below.
+        kotlinx.coroutines.delay(SETTLE_MS)
 
         assertEquals(1, jobs().size, "KEEP must not create a second job")
 
