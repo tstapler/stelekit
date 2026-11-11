@@ -24,7 +24,6 @@ jvmTest/dev/stapler/stelekit/ui/VoiceCaptureStateTransitionTest.kt
 jvmTest/dev/stapler/stelekit/ui/annotate/AnnotationEditorScreenKeyboardTest.kt
 jvmTest/dev/stapler/stelekit/ui/annotate/AnnotationEditorScreenTagWiringTest.kt
 jvmTest/dev/stapler/stelekit/ui/annotate/AnnotationToolbarShortcutTest.kt
-jvmTest/dev/stapler/stelekit/ui/assets/AssetBrowserScreenTest.kt
 jvmTest/dev/stapler/stelekit/ui/components/AutocompleteMenuTest.kt
 jvmTest/dev/stapler/stelekit/ui/components/BlockItemCodeFenceDispatchTest.kt
 jvmTest/dev/stapler/stelekit/ui/components/BlockItemGestureTest.kt

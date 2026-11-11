@@ -12,10 +12,16 @@ import dev.stapler.stelekit.repository.LibraryRepository
  * Keeps one [LibraryViewModel] alive across navigation so filters, search and scroll position survive Back
  * from the editor or detail (LD-4). Owned by the router; closed when the router leaves composition.
  */
-class LibrarySession(private val repository: LibraryRepository, private val settings: Settings?) {
+class LibrarySession(
+    private val repository: LibraryRepository,
+    private val settings: Settings?,
+    private val fileExists: ((String) -> Boolean)? = null,
+    private val deleteAsset: (suspend (String) -> arrow.core.Either<dev.stapler.stelekit.error.DomainError, Unit>)? = null,
+) {
     private var viewModel: LibraryViewModel? = null
 
-    fun viewModel(): LibraryViewModel = viewModel ?: LibraryViewModel(repository, settings).also { viewModel = it }
+    fun viewModel(): LibraryViewModel =
+        viewModel ?: LibraryViewModel(repository, settings, fileExists = fileExists, deleteAsset = deleteAsset).also { viewModel = it }
 
     fun close() {
         viewModel?.close()
@@ -35,6 +41,7 @@ fun LibraryRoute(
     onDismissTip: () -> Unit,
     onDismissNotice: () -> Unit,
     onAddPhoto: (() -> Unit)?,
+    onCopyLink: (String) -> Unit = {},
 ) {
     val viewModel = remember(session) { session.viewModel() }
     val currentOnLibraryOpen by rememberUpdatedState(onLibraryOpen)
@@ -52,5 +59,14 @@ fun LibraryRoute(
         onDismissNotice = onDismissNotice,
         onShowAnnotations = { viewModel.applyEntryPoint(LibraryFilter.Annotated, null) },
         onAddPhoto = onAddPhoto,
+        onCopyLink = onCopyLink,
     )
+}
+
+/** The Library's delete action: one asset row removed through the write actor (or directly where none exists). */
+@OptIn(dev.stapler.stelekit.repository.DirectRepositoryWrite::class)
+internal fun libraryAssetDeleter(repos: dev.stapler.stelekit.repository.RepositorySet): suspend (String) -> arrow.core.Either<dev.stapler.stelekit.error.DomainError, Unit> = { id ->
+    val uuid = dev.stapler.stelekit.asset.AssetUuid(id)
+    val actor = repos.writeActor
+    if (actor != null) actor.execute { repos.assetRepository.deleteAsset(uuid) } else repos.assetRepository.deleteAsset(uuid)
 }

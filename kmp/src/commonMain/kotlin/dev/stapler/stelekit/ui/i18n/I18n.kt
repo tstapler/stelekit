@@ -131,6 +131,16 @@ private val translations = mapOf(
         "library.filter.audio" to "Audio",
         "library.filter.video" to "Video",
         "library.filter.documents" to "Docs",
+        "library.filter.sketches" to "Sketch/Drawing",
+        "library.card.menu" to "More actions",
+        "library.action.details" to "Details",
+        "library.action.copy_link" to "Copy link",
+        "library.action.delete" to "Delete file",
+        "library.missing" to "File missing",
+        "library.delete.title" to "Delete this file?",
+        "library.delete.body" to "The file and its measurements are removed. This can't be undone.",
+        "library.delete.confirm" to "Delete",
+        "library.delete.cancel" to "Cancel",
         "library.filter.other" to "Other",
         "library.filter.clear" to "Clear filters",
         "library.filter.reason.annotate_needs_photos" to "Unavailable: only photos can be annotated",
@@ -292,6 +302,16 @@ class I18n(val language: Language) {
         const val LIBRARY_FILTER_AUDIO = "library.filter.audio"
         const val LIBRARY_FILTER_VIDEO = "library.filter.video"
         const val LIBRARY_FILTER_DOCUMENTS = "library.filter.documents"
+        const val LIBRARY_FILTER_SKETCHES = "library.filter.sketches"
+        const val LIBRARY_CARD_MENU = "library.card.menu"
+        const val LIBRARY_ACTION_DETAILS = "library.action.details"
+        const val LIBRARY_ACTION_COPY_LINK = "library.action.copy_link"
+        const val LIBRARY_ACTION_DELETE = "library.action.delete"
+        const val LIBRARY_MISSING = "library.missing"
+        const val LIBRARY_DELETE_TITLE = "library.delete.title"
+        const val LIBRARY_DELETE_BODY = "library.delete.body"
+        const val LIBRARY_DELETE_CONFIRM = "library.delete.confirm"
+        const val LIBRARY_DELETE_CANCEL = "library.delete.cancel"
         const val LIBRARY_FILTER_OTHER = "library.filter.other"
         const val LIBRARY_FILTER_CLEAR = "library.filter.clear"
         const val LIBRARY_REASON_ANNOTATE_NEEDS_PHOTOS = "library.filter.reason.annotate_needs_photos"
