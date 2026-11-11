@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -286,6 +287,9 @@ fun AnnotationEditorScreen(
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        // The app shell's top bar and bottom nav already own the system-bar insets; applying them again
+        // here left a blank band above the calibration badge.
+        contentWindowInsets = WindowInsets(0),
     ) { paddingValues ->
         Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
         if (state.error != null) {
