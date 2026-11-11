@@ -52,6 +52,8 @@ class AssetDetailViewModel(
     private val graphPath: String = "",
     /** Moves the asset into an `assets/` subfolder; null hides the Move action. */
     private val mover: (suspend (AssetEntry, String) -> Either<DomainError, Unit>)? = null,
+    /** Unit a newly created annotation starts in — the user's global default. */
+    private val defaultUnit: () -> dev.stapler.stelekit.model.MeasurementUnit = { dev.stapler.stelekit.model.MeasurementUnit.FEET_INCHES },
 ) : RememberObserver {
     private val logger = Logger("AssetDetailViewModel")
     private val scope = CoroutineScope(
@@ -182,6 +184,7 @@ class AssetDetailViewModel(
             graphPath = graphPath,
             filePath = asset.filePath,
             tags = asset.tags,
+            unit = defaultUnit(),
         )
         return imageAnnotationRepository.saveImageAnnotation(annotation).fold(
             ifLeft = { err ->

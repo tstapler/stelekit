@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.ui
 
+import dev.stapler.stelekit.platform.defaultMeasurementUnit
 import dev.stapler.stelekit.model.EffectiveNotesPath
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -42,7 +43,7 @@ internal fun rememberGraphContentGraphIoStack(
     graphContentLogger: Logger,
 ): GraphContentGraphIoStack {
     val repos = deps.repos
-    val imageIo = rememberImageIoSetup(effectiveFileSystem, repos, activeGraphPath, graphContentLogger)
+    val imageIo = rememberImageIoSetup(effectiveFileSystem, repos, activeGraphPath, graphContentLogger, deps.platformSettings)
 
     val sidecarManager = imageIo.sidecarManager
     val graphLoader = remember(effectiveFileSystem, repos, sidecarManager, activeGraphPath) {
@@ -88,6 +89,7 @@ private fun rememberImageIoSetup(
     repos: RepositorySet,
     activeGraphPath: String,
     graphContentLogger: Logger,
+    settings: dev.stapler.stelekit.platform.Settings,
 ): ImageIoSetup {
     val sidecarManager = remember(activeGraphPath, effectiveFileSystem) {
         val graphPath = activeGraphPath.ifEmpty { null }?.let(::EffectiveNotesPath)
@@ -107,6 +109,7 @@ private fun rememberImageIoSetup(
                 writeActor = repos.writeActor,
                 measurementAnnotationRepository = repos.measurementAnnotationRepository,
                 derivativeService = dev.stapler.stelekit.platform.image.ImageDerivativeService.shared,
+                defaultUnit = { settings.defaultMeasurementUnit() },
             )
         } else null
     }

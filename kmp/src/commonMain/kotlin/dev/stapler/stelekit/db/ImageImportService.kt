@@ -55,6 +55,8 @@ class ImageImportService(
     private val writeActor: DatabaseWriteActor? = null,
     private val measurementAnnotationRepository: MeasurementAnnotationRepository? = null,
     private val derivativeService: ImageDerivativeService? = null,
+    /** Unit a newly imported annotation starts in — the user's global default. */
+    private val defaultUnit: () -> MeasurementUnit = { MeasurementUnit.FEET_INCHES },
 ) {
 
     /**
@@ -124,7 +126,7 @@ class ImageImportService(
             source = source,
             capturedAtMs = tempFile.capturedAtMs,
             importedAtMs = now.toEpochMilliseconds(),
-            unit = MeasurementUnit.METERS,
+            unit = defaultUnit(),
             sensorData = ImageSensorData(
                 // GPS + motion sensor data from MotionSensorProvider snapshot at capture time
                 latLng = capturedSensorData?.latLng,
