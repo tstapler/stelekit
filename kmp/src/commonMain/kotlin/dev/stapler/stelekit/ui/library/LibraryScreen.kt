@@ -161,6 +161,7 @@ private fun ItemGrid(
     onOpenSketch: ((String) -> Unit)?,
 ) {
     var deleteTarget by remember { mutableStateOf<LibraryItem?>(null) }
+    Column(Modifier.fillMaxSize()) {
     deleteTarget?.let { target ->
         DeleteDialog(
             onConfirm = { viewModel.deleteItem(target.id); deleteTarget = null },
@@ -184,7 +185,7 @@ private fun ItemGrid(
         columns = GridCells.Adaptive(MIN_CARD_DP.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxSize().testTag("library-grid"),
+        modifier = Modifier.weight(1f).fillMaxWidth().testTag("library-grid"),
     ) {
         typedGridItems(state.items, key = { it.id }) { item ->
             val open: () -> Unit = {
@@ -221,6 +222,7 @@ private fun ItemGrid(
                 }
             }
         }
+    }
     }
 }
 

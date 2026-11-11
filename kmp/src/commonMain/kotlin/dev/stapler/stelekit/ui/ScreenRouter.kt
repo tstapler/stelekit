@@ -150,7 +150,7 @@ internal fun ScreenRouter(
             repos.libraryRepository,
             platformSettings,
             fileExists = fileSystem?.let { fs -> { path: String -> fs.fileExists(path) } },
-            deleteAsset = libraryAssetDeleter(repos),
+            deleteAsset = libraryAssetDeleter(repos.assetRepository, repos.writeActor),
         )
     }
     DisposableEffect(librarySession) { onDispose { librarySession.close() } }

@@ -166,7 +166,7 @@ private fun MissingTile(item: LibraryItem) {
 }
 
 @Composable
-private fun CardMenu(item: LibraryItem, onAction: (LibraryAssetAction) -> Unit, modifier: Modifier) {
+private fun CardMenu(item: LibraryItem, onAction: (LibraryAssetAction) -> Unit, modifier: Modifier = Modifier) {
     var open by remember { mutableStateOf(false) }
     Box(modifier) {
         IconButton(onClick = { open = true }, modifier = Modifier.testTag("library-card-menu-${item.id}")) {

@@ -534,7 +534,7 @@ private fun formatFileSize(bytes: Long): String = when {
     else -> "${bytes / 1_048_576} MB"
 }
 
-private fun assetIcon(mediaType: AssetMediaType) = when (mediaType) {
+fun assetIcon(mediaType: AssetMediaType) = when (mediaType) {
     AssetMediaType.IMAGE, AssetMediaType.DRAWING -> Icons.Default.Image
     AssetMediaType.PDF -> Icons.Default.PictureAsPdf
     AssetMediaType.AUDIO -> Icons.Default.AudioFile

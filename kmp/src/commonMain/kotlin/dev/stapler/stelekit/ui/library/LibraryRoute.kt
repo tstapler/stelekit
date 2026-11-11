@@ -65,8 +65,10 @@ fun LibraryRoute(
 
 /** The Library's delete action: one asset row removed through the write actor (or directly where none exists). */
 @OptIn(dev.stapler.stelekit.repository.DirectRepositoryWrite::class)
-internal fun libraryAssetDeleter(repos: dev.stapler.stelekit.repository.RepositorySet): suspend (String) -> arrow.core.Either<dev.stapler.stelekit.error.DomainError, Unit> = { id ->
+fun libraryAssetDeleter(
+    assets: dev.stapler.stelekit.repository.AssetRepository,
+    actor: dev.stapler.stelekit.db.DatabaseWriteActor?,
+): suspend (String) -> arrow.core.Either<dev.stapler.stelekit.error.DomainError, Unit> = { id ->
     val uuid = dev.stapler.stelekit.asset.AssetUuid(id)
-    val actor = repos.writeActor
-    if (actor != null) actor.execute { repos.assetRepository.deleteAsset(uuid) } else repos.assetRepository.deleteAsset(uuid)
+    if (actor != null) actor.execute { assets.deleteAsset(uuid) } else assets.deleteAsset(uuid)
 }
