@@ -390,7 +390,16 @@ internal fun ScreenRouter(
                 if (currentScreen.projectUuid == null && platformSettings != null) {
                     val graphId = appState.currentGraphId.orEmpty()
                     val projectListViewModel = remember(repos, graphId) {
-                        dev.stapler.stelekit.ui.sketch.projectListViewModelFor(repos.sketchRepositories, repos.writeActor, graphId, platformSettings)
+                        dev.stapler.stelekit.ui.sketch.projectListViewModelFor(
+                            repos.sketchRepositories, repos.writeActor, graphId, platformSettings,
+                            graphLoader?.let { loader ->
+                                dev.stapler.stelekit.projectbridge.SourceBindingService(
+                                    repos.sketchRepositories, repos.pageRepository, loader::readPageText,
+                                    { op -> repos.writeActor?.execute(op = op) ?: op() },
+                                    dev.stapler.stelekit.projectbridge.LocalBindingTable(platformSettings),
+                                )
+                            },
+                        )
                     }
                     dev.stapler.stelekit.ui.sketch.ProjectListScreen(
                         projectListViewModel,
