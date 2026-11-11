@@ -22,6 +22,7 @@ import dev.stapler.stelekit.jobs.schedule.TaskKind
 import dev.stapler.stelekit.jobs.schedule.TaskRegistry
 import dev.stapler.stelekit.jobs.schedule.TaskRunContext
 import dev.stapler.stelekit.jobs.schedule.TaskRunResult
+import dev.stapler.stelekit.jobs.schedule.redactedFailureMessage
 import dev.stapler.stelekit.jobs.schedule.TaskScope
 import dev.stapler.stelekit.jobs.schedule.TaskShape
 import dev.stapler.stelekit.jobs.schedule.TaskSpec
@@ -74,7 +75,7 @@ class ModelDownloadTask(
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
-            logger.warn("download attempt failed: ${e.message}")
+            logger.warn("download attempt failed: ${redactedFailureMessage(e)}")
             // The .part file stays, so the retry resumes.
             TaskRunResult.Failed("The download kept failing. Check your connection and try again.", retryable = true)
         } catch (e: Throwable) {

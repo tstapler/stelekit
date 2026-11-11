@@ -111,18 +111,22 @@ class DepthModelDownloaderTest {
     @Test
     fun `a queued-state snapshot that finishes after cancel never shows Downloading again`() = runBlocking<Unit> {
         val gate = CompletableDeferred<Unit>()
-        val downloader = DepthModelDownloader(context, network = NetworkSnapshotProvider { gate.await(); NetworkSnapshot(online = true, isMetered = false) })
+        val entered = CompletableDeferred<Unit>()
+        val downloader = DepthModelDownloader(
+            context,
+            network = NetworkSnapshotProvider { entered.complete(Unit); gate.await(); NetworkSnapshot(online = true, isMetered = false) },
+        )
         val seen = java.util.Collections.synchronizedList(mutableListOf<DepthModelDownloader.ModelState>())
         val recorder = launch(Dispatchers.Unconfined) { downloader.modelState.collect { seen += it } }
         val waiting = async { downloader.downloadModel() }
-        downloader.awaitDownloading()
-        // Let the ENQUEUED emission reach the suspended snapshot read before cancelling.
-        kotlinx.coroutines.delay(500)
+        // The ENQUEUED emission is now suspended inside the snapshot read: the stale write we guard against.
+        withTimeout(5_000) { entered.await() }
 
         downloader.cancelDownload()
         gate.complete(Unit)
         waiting.await()
-        kotlinx.coroutines.delay(500)
+        // WorkManager's CANCELLED emission is applied after the stale one (collect is sequential); wait for it.
+        withTimeout(5_000) { downloader.modelState.first { it is DepthModelDownloader.ModelState.Cancelled } }
         recorder.cancel()
 
         val afterCancel = seen.dropWhile { it !is DepthModelDownloader.ModelState.Cancelled }

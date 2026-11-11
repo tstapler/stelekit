@@ -25,7 +25,6 @@ import dev.stapler.stelekit.jobs.schedule.TaskRegistry
 import dev.stapler.stelekit.jobs.schedule.TaskRunContext
 import dev.stapler.stelekit.jobs.schedule.TaskRunResult
 import dev.stapler.stelekit.jobs.schedule.TaskShape
-import dev.stapler.stelekit.jobs.schedule.Schedule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -41,7 +40,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
@@ -170,7 +168,11 @@ class ModelDownloadTaskTest {
         val first = activeRequest()
         fixture.scheduler.runOnce(ModelDownloadTask.KEY, TaskConstraints(NetworkPolicy.Any), OneShotConflict.Keep)
         assertEquals(first.id, activeRequest().id)
-        assertNotNull(Schedule.of(1, 0))
+
+        fixture.scheduler.runOnce(ModelDownloadTask.KEY, TaskConstraints(NetworkPolicy.Any), OneShotConflict.Replace)
+        val replaced = activeRequest()
+        assertTrue(replaced.id != first.id, "Replace must enqueue a new request")
+        assertEquals(NetworkType.CONNECTED, replaced.constraints.requiredNetworkType)
     }
 
     @Test
