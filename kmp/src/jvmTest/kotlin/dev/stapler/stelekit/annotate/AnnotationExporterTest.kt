@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.annotate
 
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.toPixelMap
 import arrow.core.Either
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.Calibration
@@ -145,5 +146,33 @@ class AnnotationExporterTest {
         assertTrue(bytes.isNotEmpty())
         assertEquals(0xFF.toByte(), bytes[0])
         assertEquals(0xD8.toByte(), bytes[1])
+    }
+
+    @Test
+    fun bakeAnnotations_drawsLabelTextPixels_insideThePill() {
+        val labelled = MeasurementAnnotation(
+            uuid = "m", imageUuid = "i", annotationType = AnnotationType.DISTANCE,
+            normalizedPoints = listOf(NormalizedPoint(0.1, 0.8), NormalizedPoint(0.9, 0.8)),
+            valueDisplay = "3.20 m",
+        )
+        val withText = AnnotationExporter.bakeAnnotations(ImageBitmap(1000, 750), listOf(labelled)).toPixelMap()
+        val pillCenterY = (0.8 * 750 - 40).toInt()
+        // Pill background is translucent black over the (transparent) source; text is opaque white.
+        val whitePixels = (0 until 1000).count { x ->
+            (pillCenterY - 7..pillCenterY + 7).any { y -> withText[x, y].let { it.red > 0.9f && it.green > 0.9f && it.blue > 0.9f && it.alpha > 0.9f } }
+        }
+        assertTrue(whitePixels > 20, "label text drew $whitePixels white pixels")
+    }
+
+    @Test
+    fun bakeAndEncode_returnsLeft_whenTheEncoderThrows() {
+        val result = AnnotationExporter.bakeAndEncode(ImageBitmap(40, 30), emptyList()) { _, _ -> throw IllegalStateException("boom") }
+        assertIs<Either.Left<*>>(result)
+    }
+
+    @Test
+    fun bakeAndEncode_returnsLeft_whenTheEncoderReturnsNoBytes() {
+        val result = AnnotationExporter.bakeAndEncode(ImageBitmap(40, 30), emptyList()) { _, _ -> ByteArray(0) }
+        assertIs<Either.Left<*>>(result)
     }
 }

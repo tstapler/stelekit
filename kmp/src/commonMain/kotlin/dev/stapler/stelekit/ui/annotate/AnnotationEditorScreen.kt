@@ -800,8 +800,8 @@ internal fun DriveExportButton(
             Column(modifier = modifier, horizontalAlignment = Alignment.End) {
                 androidx.compose.material3.FloatingActionButton(
                     onClick = { if (disabledReason == null) onExport() },
-                    containerColor = Color(0xFF1565C0).copy(alpha = if (disabledReason == null) 1f else 0.5f),
-                    contentColor = Color.White,
+                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = if (disabledReason == null) 1f else 0.5f),
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
                 ) {
                     Icon(Icons.Default.CloudUpload, contentDescription = "Export to Google Drive")
                 }
@@ -824,7 +824,7 @@ internal fun DriveExportButton(
         is DriveExportUiState.Loading -> {
             Surface(
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                color = Color(0xFFE3F2FD),
+                color = MaterialTheme.colorScheme.primaryContainer,
                 modifier = modifier,
             ) {
                 Row(
@@ -832,12 +832,12 @@ internal fun DriveExportButton(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     androidx.compose.material3.CircularProgressIndicator(
-                        color = Color(0xFF1565C0),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                         strokeWidth = 2.dp,
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text("Uploading…", style = MaterialTheme.typography.labelSmall, color = Color(0xFF1565C0))
+                    Text("Uploading…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     if (onCancel != null) {
                         TextButton(onClick = onCancel) { Text("Cancel") }
                     }
@@ -847,25 +847,25 @@ internal fun DriveExportButton(
         is DriveExportUiState.Success -> {
             Surface(
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                color = Color(0xFFE3F2FD),
+                color = MaterialTheme.colorScheme.primaryContainer,
                 modifier = modifier,
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Default.CloudUpload, contentDescription = null, tint = Color(0xFF1565C0))
+                    Icon(Icons.Default.CloudUpload, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
                     Spacer(Modifier.width(6.dp))
                     Column {
                         Text(
                             text = "Saved to Drive",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF1565C0),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                         Text(
                             text = exportState.driveLink,
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF1565C0),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                             textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
                             modifier = if (onOpenLink != null) {
                                 Modifier.clickable { onOpenLink(exportState.driveLink) }

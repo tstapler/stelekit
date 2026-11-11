@@ -38,7 +38,8 @@ actual object ImageEncoder {
             writer.write(null, IIOImage(buffered, null, null), params)
             writer.dispose()
             out.toByteArray()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // Throwable: an OutOfMemoryError must yield the empty-array failure contract, not crash.
             ByteArray(0)
         }
     }
