@@ -195,7 +195,7 @@ class AnnotateEditorPartsTest {
     }
 
     @Test
-    fun depthPanel_ready_enabledWithWarning_orComingSoon() {
+    fun depthPanel_ready_enabledWithWarning_orModelReadyNotice() {
         var estimates = 0
         var wired by androidx.compose.runtime.mutableStateOf(true)
         rule.setContent {
@@ -209,7 +209,9 @@ class AnnotateEditorPartsTest {
         assertEquals(1, estimates)
         wired = false
         rule.waitForIdle()
-        rule.onNodeWithText("Estimation coming soon").assertExists()
+        rule.onNodeWithText("Depth model ready — estimation coming in a future update").assertExists()
+        rule.onNodeWithText("Estimation coming soon").assertDoesNotExist()
+        rule.onNodeWithText("Estimate depth (AI)").assertDoesNotExist()
         rule.onNodeWithText("Low confidence — verify with reference object").assertDoesNotExist()
     }
 

@@ -40,6 +40,7 @@ import dev.stapler.stelekit.performance.NavigationTracingEffect
 import dev.stapler.stelekit.performance.PercentileSummary
 import dev.stapler.stelekit.performance.QueryStat
 import dev.stapler.stelekit.performance.SerializedSpan
+import dev.stapler.stelekit.platform.defaultMeasurementUnit
 import dev.stapler.stelekit.platform.sensor.SensorModule
 import dev.stapler.stelekit.repository.RepositorySet
 import dev.stapler.stelekit.transfer.qrcode.QrImportService
@@ -419,6 +420,7 @@ internal fun ScreenRouter(
                         writeActor = repos.writeActor,
                         graphPath = appState.currentGraphPath.orEmpty(),
                         mover = assetMover,
+                        defaultUnit = { platformSettings.defaultMeasurementUnit() },
                     )
                 }
                 val annotateScope = rememberCoroutineScope()
@@ -443,6 +445,7 @@ internal fun ScreenRouter(
                     AnnotationEditorViewModel(
                         measurementRepository = repos.measurementAnnotationRepository,
                         imageAnnotationRepository = repos.imageAnnotationRepository,
+                        settings = platformSettings,
                     )
                 }
                 DisposableEffect(annotationEditorViewModel) {

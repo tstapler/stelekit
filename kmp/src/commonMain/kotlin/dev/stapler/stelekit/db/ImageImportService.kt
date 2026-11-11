@@ -8,6 +8,7 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.DEFAULT_MEASUREMENT_UNIT
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.model.ImageAnnotation
@@ -55,6 +56,8 @@ class ImageImportService(
     private val writeActor: DatabaseWriteActor? = null,
     private val measurementAnnotationRepository: MeasurementAnnotationRepository? = null,
     private val derivativeService: ImageDerivativeService? = null,
+    /** Unit a newly imported annotation starts in — the user's global default. */
+    private val defaultUnit: () -> MeasurementUnit = { DEFAULT_MEASUREMENT_UNIT },
 ) {
 
     /**
@@ -124,7 +127,7 @@ class ImageImportService(
             source = source,
             capturedAtMs = tempFile.capturedAtMs,
             importedAtMs = now.toEpochMilliseconds(),
-            unit = MeasurementUnit.METERS,
+            unit = defaultUnit(),
             sensorData = ImageSensorData(
                 // GPS + motion sensor data from MotionSensorProvider snapshot at capture time
                 latLng = capturedSensorData?.latLng,
