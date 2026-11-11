@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.map
  * Stores measurements keyed by their own [MeasurementAnnotation.uuid].
  * Suitable for unit tests and non-SQLDelight graph backends.
  */
+@OptIn(DirectRepositoryWrite::class)
 class InMemoryMeasurementAnnotationRepository : MeasurementAnnotationRepository {
 
     private val measurements = MutableStateFlow<Map<String, MeasurementAnnotation>>(emptyMap())
@@ -25,6 +26,7 @@ class InMemoryMeasurementAnnotationRepository : MeasurementAnnotationRepository 
                 .right()
         }
 
+    @DirectRepositoryWrite
     override suspend fun saveMeasurementAnnotation(measurement: MeasurementAnnotation): Either<DomainError, Unit> {
         val current = measurements.value.toMutableMap()
         current[measurement.uuid] = measurement
@@ -32,6 +34,7 @@ class InMemoryMeasurementAnnotationRepository : MeasurementAnnotationRepository 
         return Unit.right()
     }
 
+    @DirectRepositoryWrite
     override suspend fun saveMeasurements(imageUuid: String, newMeasurements: List<MeasurementAnnotation>): Either<DomainError, Unit> {
         val current = measurements.value.toMutableMap()
         // Remove all existing measurements for this image
@@ -42,6 +45,7 @@ class InMemoryMeasurementAnnotationRepository : MeasurementAnnotationRepository 
         return Unit.right()
     }
 
+    @DirectRepositoryWrite
     override suspend fun deleteMeasurementAnnotation(uuid: String): Either<DomainError, Unit> {
         val current = measurements.value.toMutableMap()
         current.remove(uuid)
@@ -49,6 +53,7 @@ class InMemoryMeasurementAnnotationRepository : MeasurementAnnotationRepository 
         return Unit.right()
     }
 
+    @DirectRepositoryWrite
     override suspend fun deleteMeasurementsForImage(imageUuid: String): Either<DomainError, Unit> {
         val current = measurements.value.toMutableMap()
         current.entries.removeAll { it.value.imageUuid == imageUuid }

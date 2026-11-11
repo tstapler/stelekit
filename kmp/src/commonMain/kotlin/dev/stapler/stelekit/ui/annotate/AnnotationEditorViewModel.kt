@@ -284,9 +284,19 @@ class AnnotationEditorViewModel(
         persistCommittedSet()
     }
 
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun saveRow(row: MeasurementAnnotation) = measurementRepository.saveMeasurementAnnotation(row)
+
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun saveRows(imageUuid: String, rows: List<MeasurementAnnotation>) =
+        measurementRepository.saveMeasurements(imageUuid, rows)
+
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun deleteRow(uuid: String) = measurementRepository.deleteMeasurementAnnotation(uuid)
+
     private suspend fun saveSet(imageUuid: String, rows: List<MeasurementAnnotation>): Either<DomainError, Unit> {
-        if (!loadFailed.value) return measurementRepository.saveMeasurements(imageUuid, rows)
-        rows.forEach { row -> measurementRepository.saveMeasurementAnnotation(row).onLeft { return it.left() } }
+        if (!loadFailed.value) return saveRows(imageUuid, rows)
+        rows.forEach { row -> saveRow(row).onLeft { return it.left() } }
         return Unit.right()
     }
 
@@ -660,7 +670,7 @@ class AnnotationEditorViewModel(
                     )
                 }
             }
-        }) { measurementRepository.saveMeasurementAnnotation(measurement) }
+        }) { saveRow(measurement) }
     }
 
     // ── Calibration ───────────────────────────────────────────────────────────
@@ -779,7 +789,7 @@ class AnnotationEditorViewModel(
         if (inputStopped()) return
         persistence.submit(onResult = { it.onLeft { err -> logger.error("Failed to save moved annotation $uuid: ${err.message}") } }) {
             val annotation = _state.value.committedAnnotations.firstOrNull { it.uuid == uuid }
-            if (annotation == null) Unit.right() else measurementRepository.saveMeasurementAnnotation(annotation)
+            if (annotation == null) Unit.right() else saveRow(annotation)
         }
     }
 
@@ -814,7 +824,7 @@ class AnnotationEditorViewModel(
 
         sessionTouched.getAndUpdate { it + uuid }
         persistence.submit(onResult = { it.onLeft { err -> logger.error("Failed to delete annotation $uuid: ${err.message}") } }) {
-            measurementRepository.deleteMeasurementAnnotation(uuid)
+            deleteRow(uuid)
         }
     }
 

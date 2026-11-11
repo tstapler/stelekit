@@ -27,7 +27,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * Reads use [PlatformDispatcher.DB]; writes use [withContext] with [PlatformDispatcher.DB].
  * Writes go through [MeasurementWrites] (DatabaseWriteActor, HIGH priority).
  */
-@OptIn(DirectSqlWrite::class)
+@OptIn(DirectSqlWrite::class, DirectRepositoryWrite::class)
 class SqlDelightMeasurementAnnotationRepository(
     private val database: SteleDatabase,
     private val writes: MeasurementWrites = MeasurementWrites(null),
@@ -55,9 +55,11 @@ class SqlDelightMeasurementAnnotationRepository(
         queries.selectMeasurementsForImage(imageUuid)
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
+    @DirectRepositoryWrite
     override suspend fun saveMeasurementAnnotation(measurement: MeasurementAnnotation): Either<DomainError, Unit> =
         write { restricted.insertMeasurement(measurement) }
 
+    @DirectRepositoryWrite
     override suspend fun saveMeasurements(imageUuid: String, measurements: List<MeasurementAnnotation>): Either<DomainError, Unit> =
         write {
             restricted.transaction {
@@ -66,9 +68,11 @@ class SqlDelightMeasurementAnnotationRepository(
             }
         }
 
+    @DirectRepositoryWrite
     override suspend fun deleteMeasurementAnnotation(uuid: String): Either<DomainError, Unit> =
         write { restricted.deleteMeasurementAnnotation(uuid) }
 
+    @DirectRepositoryWrite
     override suspend fun deleteMeasurementsForImage(imageUuid: String): Either<DomainError, Unit> =
         write { restricted.deleteMeasurementsForImage(imageUuid) }
 }
