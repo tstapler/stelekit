@@ -273,6 +273,9 @@ jobs:
         run: git fetch --no-tags origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
 
       - name: Incremental coverage gate (jvmTest + testDebugUnitTest)
+        # Completed runs in the last 8 days took 0.8-15.2 min; two hung here until the 60-min job
+        # timeout. This fails such a hang 35 min sooner.
+        timeout-minutes: 25
         env:
           BASE_REF: ${{ github.base_ref }}
         # The wrapper logs whole-machine and per-process memory (with each JVM's -Xmx) to the job log.

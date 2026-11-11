@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.projectbridge
 
+import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.jobs.JobTracker
 import dev.stapler.stelekit.merge.TargetWriterRouter
 import dev.stapler.stelekit.platform.FileSystem
@@ -30,4 +31,6 @@ class ProjectBridgeDeps(
     /** True when a sketch project is configured for the graph; false until projects exist (Story 2.3). */
     val hasConfiguredProject: suspend (graphId: String) -> Boolean,
     val pageSettleProbe: PageSettleProbe,
+    /** The graph's write actor; sidecar pulls write the sketch cache rows through it. */
+    val writeActor: () -> DatabaseWriteActor? = { null },
 )

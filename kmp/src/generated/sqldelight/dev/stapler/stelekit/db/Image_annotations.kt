@@ -29,4 +29,5 @@ public data class Image_annotations(
   public val focal_length_35mm_eq: Double?,
   public val camera_make: String?,
   public val camera_model: String?,
+  public val calibration_basis_version: Long,
 )

@@ -52,8 +52,10 @@ class PostSyncProjectJob(
         if (!deps.settings.isDigestActive(graphId) || !deps.hasConfiguredProject(graphId)) {
             return PostSyncRunOutcome.Inactive
         }
+        val reconcile = reconcileSidecars()
         val settle = barrier.awaitSettled(collector.collect().boundPages)
-        val title = if (syncLeftLfsFiles()) "$TITLE (sync left LFS files held)" else TITLE
+        val base = if (syncLeftLfsFiles()) "$TITLE (sync left LFS files held)" else TITLE
+        val title = if (reconcile?.needsResolution == true) "$base ($RESOLVE_CONFLICT)" else base
         val handle = deps.jobTracker.begin(JobKind.ProjectDigest, title)
         return try {
             when (settle) {
@@ -75,6 +77,22 @@ class PostSyncProjectJob(
             val type = e::class.simpleName ?: "Error"
             handle.fail("project digest failed ($type)")
             PostSyncRunOutcome.Failed(type)
+        }
+    }
+
+    /**
+     * Brings each project's database state and pulled sidecar into agreement before anything reads the projects.
+     * A failure never stops the digest: it is reported per project in the summary instead.
+     */
+    private suspend fun reconcileSidecars(): ReconcileSummary? {
+        val repos = deps.sketchRepositories() ?: return null
+        val store = deps.sidecarStore() ?: return null
+        return try {
+            SidecarReconciler(repos, store, deps.writeActor()).reconcileAll()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+            null
         }
     }
 
@@ -116,6 +134,7 @@ class PostSyncProjectJob(
 
     companion object {
         const val TITLE = "Project digest"
+        const val RESOLVE_CONFLICT = "resolve the sync conflict"
         const val UNAVAILABLE = "digest unavailable: no writer on this platform"
 
         /** Seam for the digest-write and LLM stages (Stories 5.4c, 5.6b); nothing calls it until they land. */

@@ -17,7 +17,10 @@ import dev.stapler.stelekit.export.ShareProvider
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.GraphId
+import dev.stapler.stelekit.platform.AtomicFileWriter
+import dev.stapler.stelekit.projectbridge.FileProjectSidecarStore
 import dev.stapler.stelekit.projectbridge.LoaderPageSettleProbe
+import dev.stapler.stelekit.projectbridge.ProjectSidecarStore
 import dev.stapler.stelekit.projectbridge.ProjectBridgeDeps
 import dev.stapler.stelekit.projectbridge.ProjectBridgeSettings
 import kotlinx.coroutines.flow.first
@@ -200,18 +203,28 @@ private fun buildProjectBridgeDeps(
     val graphManager = deps.graphManager
     val busyCounter = deps.platformIntegrations.gitSyncBusyCounter
     val loader = graphIoStack.graphLoader
+    val isGitSyncBusy = {
+        busyCounter?.isBusy?.value == true ||
+            graphManager.activeGitSyncService.value?.syncState?.value.let {
+                it is SyncState.Fetching || it is SyncState.Merging || it is SyncState.Pushing || it is SyncState.Committing
+            }
+    }
+    // One store (and so one mutex) per graph path; symlink resolution is off here (no common canonicalize).
+    var cachedStore: Pair<String, ProjectSidecarStore>? = null
     return ProjectBridgeDeps(
         routerProvider = deps.routerHolder::get,
         sketchRepositories = { deps.repos.sketchRepositories },
-        sidecarStore = { null },
+        sidecarStore = {
+            graphManager.getActiveGraphInfo()?.takeIf { !it.isDemo }?.effectiveNotesPath?.value?.let { root ->
+                cachedStore?.takeIf { it.first == root }?.second ?: FileProjectSidecarStore(
+                    effectiveFileSystem, root, AtomicFileWriter(effectiveFileSystem, { it }, ".tmp"), isGitSyncBusy,
+                ).also { cachedStore = root to it }
+            }
+        },
+        writeActor = { deps.repos.writeActor },
         fileSystem = effectiveFileSystem,
         // GitSyncService keeps its busy counter private, so also read the published in-progress states.
-        isGitSyncBusy = {
-            busyCounter?.isBusy?.value == true ||
-                graphManager.activeGitSyncService.value?.syncState?.value.let {
-                    it is SyncState.Fetching || it is SyncState.Merging || it is SyncState.Pushing || it is SyncState.Committing
-                }
-        },
+        isGitSyncBusy = isGitSyncBusy,
         settings = ProjectBridgeSettings(deps.platformSettings),
         jobTracker = deps.jobTracker,
         readyGraphIds = graphManager.readyGraph.map { it?.id?.value },
