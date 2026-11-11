@@ -37,7 +37,7 @@ data class ProjectOutputs(val digest: String, val payload: LlmPayload)
  */
 class PostSyncProjectJob(
     private val deps: ProjectBridgeDeps,
-    private val collector: ProjectSourceCollector = ProjectSourceCollector(),
+    private val collector: ProjectSourceCollector = ProjectSourceCollector(sources = deps.boundSources),
     private val barrier: SettleBarrier = SettleBarrier(deps.isGitSyncBusy, deps.pageSettleProbe),
     private val digestWriter: DigestWriter = DigestWriter(deps.routerProvider),
     /** The fused digest input for the graph's project; null until fusion is wired (Story 5.8), so nothing is written. */

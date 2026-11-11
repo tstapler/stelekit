@@ -38,6 +38,8 @@ data class TablePageText(val locator: String, val markdown: String, val origin: 
 open class ProjectSourceCollector(
     registry: DimensionRegistry = DimensionRegistry(dimensions = emptyList()),
     refTable: RefTable = RefTable(),
+    /** The bound pages' text (Story 5.9b); a no-op when no source is bound. */
+    private val sources: suspend () -> SourceReadResult = { SourceReadResult.EMPTY },
 ) {
     private val tableExtractor = TableMeasurementExtractor(registry, refTable)
     private val yamlExtractor = YamlMeasurementExtractor(registry, refTable)
@@ -46,11 +48,13 @@ open class ProjectSourceCollector(
     private val labelBinder = LabelBinder(registry, refTable)
 
     open suspend fun collect(): CollectedSources {
-        val tables = extractTables(emptyList()) // Story 5.9b supplies the bound pages' text
+        val read = sources()
+        val tables = extractTables(read.tablePages)
         val yaml = extractYaml(null) // Story 5.9c supplies the sidecar snapshot
-        val prose = extractProse(emptyList()) // Story 5.9b supplies the bound pages' text
+        val prose = extractProse(read.prosePages)
         val svg = extractSvg(null) // Story 5.9d supplies the attached sheets' SVG text
         return CollectedSources(
+            boundPages = read.boundPages,
             tableObservations = tables.observations,
             tableNeedsMapping = tables.needsMapping,
             yamlObservations = yaml.observations,
