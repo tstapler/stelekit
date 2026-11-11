@@ -99,6 +99,11 @@ data class StelekitAppPlatformIntegrations(
     /** Kind-to-task lookup the scheduler runs against. No default: every host passes its registry explicitly. */
     val taskRegistry: dev.stapler.stelekit.jobs.schedule.TaskRegistry,
     /**
+     * The one app-wide settings instance, shared with the scheduler and run log the host built. Null makes
+     * [StelekitApp] create its own, which is only safe where nothing else writes the same store.
+     */
+    val settings: dev.stapler.stelekit.platform.Settings? = null,
+    /**
      * Reports OS background restrictions (battery saver, restricted standby bucket) so Settings can
      * say that closed-app checks are limited. Null means the platform has none to report.
      */

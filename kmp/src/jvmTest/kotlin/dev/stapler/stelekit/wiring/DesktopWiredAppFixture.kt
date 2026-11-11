@@ -93,19 +93,12 @@ class DesktopWiredAppFixture private constructor(
     busyCounter: GitSyncBusyCounter?,
     taskScheduler: dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler?,
 ) {
-    val taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry()
+    /** Built by the same factories `desktop/Main.kt` uses, so a registry that forgets a task fails here too. */
+    val taskRegistry = dev.stapler.stelekit.desktop.createDesktopTaskRegistry()
 
     /** The scheduler the root names: Desktop's `InProcessTaskScheduler` unless a test substitutes its own (e.g. a counting one). */
     val backgroundTaskScheduler: dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler = taskScheduler
-        ?: dev.stapler.stelekit.jobs.schedule.InProcessTaskScheduler(
-            registry = taskRegistry,
-            store = dev.stapler.stelekit.jobs.schedule.TaskSettingsStore(
-                ports.settings, dev.stapler.stelekit.jobs.schedule.LegacyConfigSeed.None, taskRegistry,
-            ),
-            ledger = dev.stapler.stelekit.jobs.schedule.AppliedConfigLedger(ports.settings),
-            runLog = dev.stapler.stelekit.jobs.schedule.SettingsTaskRunLog(ports.settings),
-            clock = System::currentTimeMillis,
-        )
+        ?: dev.stapler.stelekit.desktop.createDesktopTaskScheduler(taskRegistry, ports.settings)
 
     internal val deps = GraphContentDeps(
         repos = repos,

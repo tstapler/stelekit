@@ -14,6 +14,7 @@ import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.writeLastNotesPath
 import dev.stapler.stelekit.git.GitHostAdapter
 import dev.stapler.stelekit.git.WasmGitRepository
+import dev.stapler.stelekit.git.registerGitSync
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.GitHostConfig
 import dev.stapler.stelekit.git.resolve
@@ -364,7 +365,7 @@ fun main() {
                     platformIntegrations = dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations(
                         backgroundSyncSchedulerFactory = dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory.None,
                         backgroundTaskScheduler = dev.stapler.stelekit.jobs.schedule.NoopTaskScheduler(),
-                        taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry(),
+                        taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry().also { it.registerGitSync() },
                         platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
                         // Demo-fallback mode has no persistent OPFS content to write attachments
                         // into (matches graphMoveQuiesceStrategy/hostLinkStep/insufficientSpaceCheck's
@@ -515,7 +516,7 @@ private suspend fun runEphemeralSession() {
                 platformIntegrations = dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations(
                     backgroundSyncSchedulerFactory = dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory.None,
                     backgroundTaskScheduler = dev.stapler.stelekit.jobs.schedule.NoopTaskScheduler(),
-                    taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry(),
+                    taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry().also { it.registerGitSync() },
                         platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
                     attachmentService = WasmMediaAttachmentService(fileSystem),
                     gitRepository = wasmGitRepository,

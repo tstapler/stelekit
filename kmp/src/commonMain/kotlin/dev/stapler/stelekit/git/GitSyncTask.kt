@@ -26,6 +26,14 @@ fun interface ColdPathRunner {
 }
 
 /**
+ * Registers `git-sync` so Settings lists it and its default (including jitter) applies. Idempotent.
+ * Shared by every composition root that builds a [dev.stapler.stelekit.jobs.schedule.TaskRegistry].
+ */
+fun dev.stapler.stelekit.jobs.schedule.TaskRegistry.registerGitSync(task: GitSyncTask = GitSyncTask()) {
+    register(GitSyncTask.KIND, GitSyncTask.spec, task)
+}
+
+/**
  * `git-sync` behind [BackgroundTask]. [ScheduledSyncPolicy] stays the domain gate: the live tick is
  * `GitSyncService.scheduled.run`, which decides run / fetch-only / skip. With no live service (cold
  * process) the [cold] runner fetches only; without one the tick is a deliberate skip. The scope of the

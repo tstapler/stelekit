@@ -12,6 +12,7 @@ object WiringRoots {
     val EXACT: List<String> = listOf(
         "jvmMain/$PKG/desktop/Main.kt",
         "jvmMain/$PKG/desktop/ui/App.kt",
+        "jvmMain/$PKG/desktop/DesktopTaskScheduling.kt",
         "wasmJsMain/$PKG/browser/Main.kt",
         "androidApp.main/$PKG/MainActivity.kt",
         "androidApp.main/$PKG/SteleKitApplication.kt",
