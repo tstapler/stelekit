@@ -115,6 +115,8 @@ fun LeftSidebar(
     onOpenSyncStatus: (() -> Unit)? = null,
     onSyncClick: () -> Unit = {},
     onGitSetup: () -> Unit = {},
+    /** The `homeSketch` flag; the Sketch entry does not exist while it is off. */
+    homeSketchEnabled: Boolean = false,
     showLibraryNewBadge: Boolean = false,
     isGitConfigured: Boolean = false,
     onAuthError: (() -> Unit)? = null,
@@ -314,6 +316,7 @@ fun LeftSidebar(
                 onNavigate = onNavigate,
                 onGitSetup = onGitSetup,
                 showLibraryNewBadge = showLibraryNewBadge,
+                homeSketchEnabled = homeSketchEnabled,
                 afterJournals = if (onNewSectionJournalEntry != null) {
                     {
                         val sectionLabel = sectionManifest?.sections?.find { it.id == defaultSection }?.displayName ?: "Work"

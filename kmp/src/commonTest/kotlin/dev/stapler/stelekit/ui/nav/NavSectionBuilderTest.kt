@@ -75,4 +75,23 @@ class NavSectionBuilderTest {
     }
 
     private fun checkNotNullKey(k: String?): String = k ?: error("missing short label")
+
+    @Test
+    fun sketchRowExistsOnlyWhileTheHomeSketchFlagIsOn() {
+        fun ids(flag: Boolean) = NavModel.sections(Screen.Journals, flag).flatMap { it.items }.map { it.id }
+        assertFalse("sketch" in ids(false))
+        assertTrue("sketch" in ids(true))
+        val graph = NavModel.sections(Screen.Journals, true).single { it.id == "graph" }
+        assertEquals(listOf("library", "sketch", "graph-stats", "git-setup"), graph.items.map { it.id })
+        assertFalse(NavModel.sketch in NavModel.allSpecs, "the palette must not list Sketch")
+    }
+
+    @Test
+    fun sketchRowOpensTheSketchRouteAndIsSelectedOnIt() {
+        assertEquals(Screen.Sketch(), NavModel.sketch.screen)
+        assertTrue(NavModel.sketch.isSelected(Screen.Sketch("p1")))
+        assertFalse(NavModel.sketch.isSelected(Screen.Journals))
+        assertEquals("Sketch", I18n.get(NavModel.sketch.labelKey))
+        assertTrue(I18n.get(NavModel.sketch.descriptionKey) != NavModel.sketch.descriptionKey)
+    }
 }

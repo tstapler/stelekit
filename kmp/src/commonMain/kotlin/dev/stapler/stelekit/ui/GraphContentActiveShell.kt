@@ -308,6 +308,7 @@ internal fun GraphContentActiveShell(
                 onOpenDrawer = { viewModel.toggleSidebar() },
                 onDismiss = { viewModel.setMoreSheetOpen(false) },
                 showLibraryNewBadge = onboarding.showBadge,
+                homeSketchEnabled = viewModel.homeSketchEnabled,
             )
         }
 

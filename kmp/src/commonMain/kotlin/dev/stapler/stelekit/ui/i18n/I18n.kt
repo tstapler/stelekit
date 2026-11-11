@@ -108,6 +108,8 @@ private val translations = mapOf(
         "nav.library.desc" to "Every photo and file on your pages",
         "nav.graph_stats" to "Graph Stats",
         "nav.graph_stats.desc" to "Size and health of this graph",
+        "nav.sketch" to "Sketch",
+        "nav.sketch.desc" to "Draw plans and elevations",
         "nav.git_setup" to "Git Setup",
         "nav.git_setup.desc" to "Sync this graph with a repository",
         "nav.logs" to "Logs",
@@ -267,6 +269,8 @@ class I18n(val language: Language) {
         const val NAV_LIBRARY_DESC = "nav.library.desc"
         const val NAV_GRAPH_STATS = "nav.graph_stats"
         const val NAV_GRAPH_STATS_DESC = "nav.graph_stats.desc"
+        const val NAV_SKETCH = "nav.sketch"
+        const val NAV_SKETCH_DESC = "nav.sketch.desc"
         const val NAV_GIT_SETUP = "nav.git_setup"
         const val NAV_GIT_SETUP_DESC = "nav.git_setup.desc"
         const val NAV_LOGS = "nav.logs"
