@@ -24,6 +24,9 @@ data class SourceReadResult(
     /** Current content hash per binding id, for the relevance check. */
     val contentHashes: Map<String, String> = emptyMap(),
 ) {
+    /** Hands the bound pages to the collector. Table and prose pages share one list, as the collector runs both extractors over it. */
+    fun toTexts(): ProjectSourceTexts = ProjectSourceTexts(pages = tablePages + prosePages, boundPages = boundPages)
+
     companion object {
         val EMPTY = SourceReadResult()
     }
@@ -33,7 +36,7 @@ data class SourceReadResult(
  * Reads bound wiki pages under the graph-read rules: uuid point lookups in chunks of [CHUNK] (never a scan), no writes.
  * [readText] reads a page's markdown file; a null result is treated as not yet readable.
  */
-class ProjectSourceReader(
+class BoundPagesReader(
     private val pages: PageRepository,
     private val readText: suspend (filePath: String) -> String?,
 ) {

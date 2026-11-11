@@ -825,7 +825,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.projectbridge.DigestSelfFeedTest::class,
     dev.stapler.stelekit.projectbridge.ProjectManagementTest::class,
     dev.stapler.stelekit.projectbridge.SourceBindingTest::class,
-    dev.stapler.stelekit.projectbridge.ProjectSourceReaderTest::class,
+    dev.stapler.stelekit.projectbridge.BoundPagesReaderTest::class,
     dev.stapler.stelekit.projectbridge.SourceBindingServiceTest::class,
     dev.stapler.stelekit.ui.sketch.ProjectListViewModelTest::class,
     dev.stapler.stelekit.projectbridge.DigestWriterJobTest::class,
@@ -851,5 +851,6 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.projectbridge.TableExtractorInlineTest::class,
     dev.stapler.stelekit.projectbridge.ProseExtractorsTest::class,
     dev.stapler.stelekit.projectbridge.ProseExtractorsClosetTest::class,
+    dev.stapler.stelekit.projectbridge.ClosetEndToEndTest::class,
 )
 class AllBusinessTests

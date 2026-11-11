@@ -36,11 +36,11 @@ internal class CountingPages(private val inner: InMemoryPageRepository) : PageRe
 private fun resolved(kind: SourceBindingKind, pageUuid: String) =
     BindingResolution.Resolved(SourceBinding(kind, pageUuid.takeLast(8), "x"), pageUuid)
 
-class ProjectSourceReaderTest {
+class BoundPagesReaderTest {
     private val repo = InMemoryPageRepository()
     private val pages = CountingPages(repo)
     private val files = mutableMapOf<String, String>()
-    private val reader = ProjectSourceReader(pages) { files[it] }
+    private val reader = BoundPagesReader(pages) { files[it] }
 
     private suspend fun add(id: String, name: String, text: String?, loaded: Boolean = true) {
         repo.savePage(testPage(id, name, loaded))

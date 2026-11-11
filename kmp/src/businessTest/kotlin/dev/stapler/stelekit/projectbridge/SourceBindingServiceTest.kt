@@ -94,13 +94,13 @@ class SourceBindingServiceTest {
         val b = SimulatedDevice(uuidOf(900), seed = 2).also { it.setUp(project.copy(settings = synced)) }
         val before = b.service.listBound("pr1").single()
         assertTrue(before.needsRebind, "no local mapping on the new device")
-        assertEquals(1, readBoundSources(b.repos, ProjectSourceReader(b.pages) { b.files[it] }, b.table).needsRebind)
+        assertEquals(1, readBoundSources(b.repos, BoundPagesReader(b.pages) { b.files[it] }, b.table).needsRebind)
 
         assertEquals(1, b.service.autoRebind("pr1", b.service.search("clos")))
         val after = b.service.listBound("pr1").single()
         assertFalse(after.needsRebind)
         assertEquals("Closet Plan", after.title)
-        val read = readBoundSources(b.repos, ProjectSourceReader(b.pages) { b.files[it] }, b.table)
+        val read = readBoundSources(b.repos, BoundPagesReader(b.pages) { b.files[it] }, b.table)
         assertEquals(listOf("| a |"), read.tablePages.map { it.markdown })
         assertEquals(0, read.needsRebind)
         assertEquals(synced, b.settings(), "re-resolving is device-local; the synced settings are untouched")
@@ -184,20 +184,22 @@ class SourceBindingServiceTest {
     @Test
     fun readBoundSourcesIsEmptyWithoutProjectOrBindings() = runTest {
         val d = SimulatedDevice(uuidOf(7))
-        val reader = ProjectSourceReader(d.pages) { d.files[it] }
+        val reader = BoundPagesReader(d.pages) { d.files[it] }
         assertEquals(SourceReadResult.EMPTY, readBoundSources(d.repos, reader, d.table))
         d.setUp(project)
         assertEquals(SourceReadResult.EMPTY, readBoundSources(d.repos, reader, d.table))
     }
 
     @Test
-    fun collectorReadStageFeedsTheExtractorsAndReportsBoundPages() = runTest {
+    fun readResultHandsBothPageKindsAndBoundPagesToTheCollector() = runTest {
         val read = SourceReadResult(
             tablePages = listOf(TablePageText("page:1", "no table here")),
+            prosePages = listOf(TablePageText("page:2", "notes")),
             boundPages = listOf(BoundPageRef("P", "/g/P.md")),
         )
-        val out = ProjectSourceCollector(sources = { read }).collect()
+        val out = ProjectSourceCollector(reader = ProjectSourceReader { read.toTexts() }).collect()
         assertEquals(read.boundPages, out.boundPages)
+        assertEquals(listOf("page:1", "page:2"), read.toTexts().pages.map { it.locator })
         assertTrue(out.tableObservations.isEmpty())
         assertEquals(emptyList(), ProjectSourceCollector().collect().boundPages)
     }

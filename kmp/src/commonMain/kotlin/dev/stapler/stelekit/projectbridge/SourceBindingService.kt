@@ -131,7 +131,7 @@ class SourceBindingService(
 }
 
 /** The first project's bound pages, read through [reader]; empty when there is no project or nothing is bound. */
-suspend fun readBoundSources(repositories: SketchRepositories, reader: ProjectSourceReader, table: LocalBindingTable): SourceReadResult {
+suspend fun readBoundSources(repositories: SketchRepositories, reader: BoundPagesReader, table: LocalBindingTable): SourceReadResult {
     val project = repositories.projects.getProjects(1, 0).first().getOrNull()?.firstOrNull() ?: return SourceReadResult.EMPTY
     val bindings = SourceBindings.of(project.settings)
     return if (bindings.isEmpty()) SourceReadResult.EMPTY

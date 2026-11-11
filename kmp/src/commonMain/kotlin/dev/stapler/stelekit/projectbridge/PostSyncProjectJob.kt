@@ -37,15 +37,17 @@ data class ProjectOutputs(val digest: String, val payload: LlmPayload)
  */
 class PostSyncProjectJob(
     private val deps: ProjectBridgeDeps,
-    private val collector: ProjectSourceCollector = ProjectSourceCollector(sources = deps.boundSources),
+    private val collector: ProjectSourceCollector = ProjectSourceCollector(reader = ProjectSourceReader { deps.boundSources().toTexts() }),
     private val barrier: SettleBarrier = SettleBarrier(deps.isGitSyncBusy, deps.pageSettleProbe),
     private val digestWriter: DigestWriter = DigestWriter(deps.routerProvider),
-    /** The fused digest input for the graph's project; null until fusion is wired (Story 5.8), so nothing is written. */
+    /** The fused digest input for the graph's project; null (the default) defers to [fusion], so nothing is written without either. */
     private val digestInput: suspend (graphId: String) -> DigestInput? = { null },
     /** Null until the app wires an LLM; the step itself is also gated per graph (Story 5.6b). */
     private val analysisStep: ProjectAnalysisStep? = null,
     /** The fused digest and payload for the graph's project; null while the collector yields nothing. */
     private val outputsProvider: suspend (graphId: String) -> ProjectOutputs? = { null },
+    /** Fuses what the collector found into the digest input and payload when no provider above supplies them (Story 5.8). */
+    private val fusion: ProjectFusionStage? = null,
 ) {
     /** [syncLeftLfsFiles] is read after the barrier, when the sync has published its final state. */
     suspend fun run(graphId: String, syncLeftLfsFiles: () -> Boolean): PostSyncRunOutcome {
@@ -53,7 +55,8 @@ class PostSyncProjectJob(
             return PostSyncRunOutcome.Inactive
         }
         val reconcile = reconcileSidecars()
-        val settle = barrier.awaitSettled(collector.collect().boundPages)
+        val collected = collector.collect()
+        val settle = barrier.awaitSettled(collected.boundPages)
         val base = if (syncLeftLfsFiles()) "$TITLE (sync left LFS files held)" else TITLE
         val title = if (reconcile?.needsResolution == true) "$base ($RESOLVE_CONFLICT)" else base
         val handle = deps.jobTracker.begin(JobKind.ProjectDigest, title)
@@ -67,7 +70,7 @@ class PostSyncProjectJob(
                     handle.fail(UNAVAILABLE)
                     PostSyncRunOutcome.DigestUnavailable
                 } else {
-                    finish(graphId, handle, settle.unloaded)
+                    finish(graphId, handle, settle.unloaded, collected)
                 }
             }
         } catch (e: CancellationException) {
@@ -97,9 +100,9 @@ class PostSyncProjectJob(
     }
 
     /** Digest page first (a local, loop-safe write), then the gated analysis; an analysis failure is reported first. */
-    private suspend fun finish(graphId: String, handle: JobHandle, unloaded: Int): PostSyncRunOutcome {
-        val digest = writeDigest(graphId)
-        val analysis = runAnalysis(graphId)
+    private suspend fun finish(graphId: String, handle: JobHandle, unloaded: Int, collected: CollectedSources): PostSyncRunOutcome {
+        val digest = writeDigest(graphId, collected)
+        val analysis = runAnalysis(graphId, collected)
         if (analysis is AnalysisStepOutcome.Blocked || analysis is AnalysisStepOutcome.Failed) {
             handle.fail(analysisReason(analysis))
             return PostSyncRunOutcome.Failed("project analysis")
@@ -115,14 +118,14 @@ class PostSyncProjectJob(
     }
 
     /** Runs after the barrier only, so the page is never replaced from a half-settled database. */
-    private suspend fun writeDigest(graphId: String): DigestWriteResult? {
-        val input = digestInput(graphId) ?: return null
+    private suspend fun writeDigest(graphId: String, collected: CollectedSources): DigestWriteResult? {
+        val input = digestInput(graphId) ?: fusion?.digestInput(collected) ?: return null
         return digestWriter.write(graphId, deps.settings.digestPageTitle(graphId, input.slug), input)
     }
 
-    private suspend fun runAnalysis(graphId: String): AnalysisStepOutcome {
+    private suspend fun runAnalysis(graphId: String, collected: CollectedSources): AnalysisStepOutcome {
         val step = analysisStep ?: return AnalysisStepOutcome.Skipped
-        val outputs = outputsProvider(graphId) ?: return AnalysisStepOutcome.Skipped
+        val outputs = outputsProvider(graphId) ?: fusion?.outputs(collected) ?: return AnalysisStepOutcome.Skipped
         return step.run(graphId, outputs)
     }
 
