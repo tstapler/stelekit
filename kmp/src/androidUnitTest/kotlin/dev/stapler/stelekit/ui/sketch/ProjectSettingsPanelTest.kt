@@ -89,7 +89,7 @@ class ProjectSettingsPanelTest {
             MaterialTheme {
                 ProjectListContent(
                     ProjectListUiState(projects = listOf(ProjectRow("u1", "proj-0a1b2c", "Closet"))),
-                    onCreate = {}, onDismissMessage = {}, settings = {},
+                    onCreate = {}, onDismissMessage = {}, onOpen = {}, settings = {},
                 )
             }
         }
@@ -98,9 +98,24 @@ class ProjectSettingsPanelTest {
     }
 
     @Test
+    fun tappingAProjectOpensIt() {
+        var opened: String? = null
+        rule.setContent {
+            MaterialTheme {
+                ProjectListContent(
+                    ProjectListUiState(projects = listOf(ProjectRow("u1", "proj-0a1b2c", "Closet"))),
+                    onCreate = {}, onDismissMessage = {}, onOpen = { opened = it }, settings = {},
+                )
+            }
+        }
+        rule.onNodeWithText("Closet").performClick()
+        assertEquals("u1", opened)
+    }
+
+    @Test
     fun newProjectDialogCreatesWithTheTypedName() {
         var created: String? = null
-        rule.setContent { MaterialTheme { ProjectListContent(ProjectListUiState(), { created = it }, {}, {}) } }
+        rule.setContent { MaterialTheme { ProjectListContent(ProjectListUiState(), { created = it }, {}, {}, {}) } }
         rule.onNodeWithText("New project").performClick()
         rule.onNodeWithText("Name").performTextInput("Garage")
         rule.onNodeWithText("Create").performClick()

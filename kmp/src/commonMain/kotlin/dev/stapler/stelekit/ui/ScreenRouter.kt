@@ -372,13 +372,23 @@ internal fun ScreenRouter(
                 )
             }
 
-            is Screen.Sketch -> if (viewModel.homeSketchEnabled && platformSettings != null) {
+            is Screen.Sketch -> if (viewModel.homeSketchEnabled) {
                 NavigationTracingEffect("Sketch")
-                val graphId = appState.currentGraphId.orEmpty()
-                val projectListViewModel = remember(repos, graphId) {
-                    dev.stapler.stelekit.ui.sketch.projectListViewModelFor(repos.sketchRepositories, repos.writeActor, graphId, platformSettings)
+                if (currentScreen.projectUuid == null && platformSettings != null) {
+                    val graphId = appState.currentGraphId.orEmpty()
+                    val projectListViewModel = remember(repos, graphId) {
+                        dev.stapler.stelekit.ui.sketch.projectListViewModelFor(repos.sketchRepositories, repos.writeActor, graphId, platformSettings)
+                    }
+                    dev.stapler.stelekit.ui.sketch.ProjectListScreen(
+                        projectListViewModel,
+                        onOpenProject = { viewModel.navigateTo(Screen.Sketch(it)) },
+                    )
+                } else {
+                    val sketchViewModel = remember(currentScreen.projectUuid) {
+                        dev.stapler.stelekit.ui.sketch.sketchViewModelFor(repos.sketchRepositories, repos.writeActor, currentScreen.projectUuid)
+                    }
+                    dev.stapler.stelekit.ui.sketch.SketchScreen(viewModel = sketchViewModel, onNavigateBack = { viewModel.goBack() })
                 }
-                dev.stapler.stelekit.ui.sketch.ProjectListScreen(projectListViewModel)
             }
 
             is Screen.DriveBrowser -> {

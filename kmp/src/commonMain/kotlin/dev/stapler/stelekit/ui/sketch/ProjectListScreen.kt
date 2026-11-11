@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.ui.sketch
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -27,13 +28,14 @@ import dev.stapler.stelekit.ui.components.typedItems
 
 /** Flag-gated project list with creation and the per-graph settings; reached from the Sketch row. */
 @Composable
-fun ProjectListScreen(viewModel: ProjectListViewModel, modifier: Modifier = Modifier) {
+fun ProjectListScreen(viewModel: ProjectListViewModel, onOpenProject: (String) -> Unit, modifier: Modifier = Modifier) {
     DisposableEffect(viewModel) { onDispose { viewModel.close() } }
     val state by viewModel.state.collectAsState()
     ProjectListContent(
         state = state,
         onCreate = viewModel::createProject,
         onDismissMessage = viewModel::dismissMessage,
+        onOpen = onOpenProject,
         settings = {
             ProjectSettingsPanel(
                 state = state,
@@ -54,6 +56,7 @@ internal fun ProjectListContent(
     state: ProjectListUiState,
     onCreate: (String) -> Unit,
     onDismissMessage: () -> Unit,
+    onOpen: (String) -> Unit,
     settings: @Composable () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -69,7 +72,7 @@ internal fun ProjectListContent(
             Text("No projects yet", modifier = Modifier.padding(16.dp))
         } else {
             LazyColumn(Modifier.weight(1f)) {
-                typedItems(state.projects, key = { it.uuid }) { Text(it.name, modifier = Modifier.padding(16.dp)) }
+                typedItems(state.projects, key = { it.uuid }) { Text(it.name, modifier = Modifier.clickable { onOpen(it.uuid) }.padding(16.dp)) }
             }
             if (state.hasMore) Text("Showing the first ${ProjectListViewModel.PAGE_SIZE} projects", modifier = Modifier.padding(16.dp))
         }
