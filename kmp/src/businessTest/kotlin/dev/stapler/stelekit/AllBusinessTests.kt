@@ -323,6 +323,7 @@ import dev.stapler.stelekit.git.UpdatesNotificationToggleTest
 import dev.stapler.stelekit.ui.FirstSyncPreviewLoaderTest
 import dev.stapler.stelekit.ui.GitSyncCoordinatorTest
 import dev.stapler.stelekit.git.ScheduledSyncPolicyTest
+import dev.stapler.stelekit.git.EditLockTest
 import dev.stapler.stelekit.git.ScheduledSyncStackE2ETest
 import dev.stapler.stelekit.git.ShallowMergeTest
 import dev.stapler.stelekit.git.merge.JournalMergeServiceTest
@@ -667,6 +668,7 @@ import org.junit.runners.Suite
     FirstSyncPreviewLoaderTest::class,
     GitSyncCoordinatorTest::class,
     ScheduledSyncPolicyTest::class,
+    EditLockTest::class,
     ScheduledSyncStackE2ETest::class,
     ShallowMergeTest::class,
     StubGitRepositoryFailureSequenceTest::class,
