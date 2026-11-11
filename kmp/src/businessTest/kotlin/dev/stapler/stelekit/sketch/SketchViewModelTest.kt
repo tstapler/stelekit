@@ -274,6 +274,16 @@ class SketchViewModelTest {
         vm.onForgotten()
     }
 
+    @Test
+    fun leavingTheScreenInsideTheAutosaveDebounceStillSavesTheEdit() = runTest {
+        val f = fixture()
+        f.vm.placePoint(pt(16, 16)); f.vm.placePoint(pt(64, 16))
+        assertEquals(SaveStatus.PENDING, f.vm.uiState.value.saveStatus)
+        f.vm.onForgotten()
+        runCurrent()
+        assertEquals(listOf("id-1"), f.storedPrimitives(), "the edit made just before leaving must be persisted")
+    }
+
     private class FailingSheets(private val inner: dev.stapler.stelekit.repository.SketchSheetRepository) :
         dev.stapler.stelekit.repository.SketchSheetRepository by inner {
         override suspend fun savePrimitives(
