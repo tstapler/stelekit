@@ -184,7 +184,7 @@ internal fun GraphContentLeftSidebar(
             }
         },
         onGitSetup = { viewModel.openGitSetup() },
-        homeSketchEnabled = viewModel.homeSketchEnabled,
+        homeSketchEnabled = viewModel.homeSketchEnabledState.collectAsState().value,
         isGitConfigured = appState.gitConfig != null,
         onAuthError = { viewModel.openGitSetupForCredentials() },
         onCloneGraph = { viewModel.openGitSetupForClone() },

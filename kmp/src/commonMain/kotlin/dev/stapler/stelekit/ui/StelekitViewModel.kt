@@ -1222,8 +1222,21 @@ class StelekitViewModel(
         }
     }
 
-    /** The `homeSketch` flag, read live; off by default. */
-    val homeSketchEnabled: Boolean get() = dev.stapler.stelekit.projectbridge.ProjectBridgeSettings(platformSettings).homeSketchEnabled
+    private val homeSketchFlag = dev.stapler.stelekit.projectbridge.HomeSketchFlag(
+        dev.stapler.stelekit.projectbridge.ProjectBridgeSettings(platformSettings),
+    )
+
+    /** The `homeSketch` flag as state, so nav entries and the route recompose when it flips. */
+    val homeSketchEnabledState: StateFlow<Boolean> get() = homeSketchFlag.enabled
+
+    /** The `homeSketch` flag, read live from storage; off by default. */
+    val homeSketchEnabled: Boolean get() = homeSketchFlag.readLive()
+
+    /** Persists the flag; turning it off while on the Sketch screen leaves for Journals. */
+    fun setHomeSketchEnabled(on: Boolean) {
+        homeSketchFlag.set(on)
+        if (!on && _uiState.value.currentScreen is Screen.Sketch) navigateTo(Screen.Journals)
+    }
 
     @OptIn(DirectRepositoryWrite::class)
     fun navigateTo(requested: Screen, addToHistory: Boolean = true) {

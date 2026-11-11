@@ -866,6 +866,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.SketchSheetViewModelTest::class,
     dev.stapler.stelekit.sketch.SketchViewModelTest::class,
     dev.stapler.stelekit.projectbridge.SketchNavigationGateTest::class,
+    dev.stapler.stelekit.projectbridge.HomeSketchFlagTest::class,
     dev.stapler.stelekit.sketch.SnapEnginePropertyTest::class,
     dev.stapler.stelekit.sketch.SketchNonDragModeTest::class,
     dev.stapler.stelekit.ui.placement.NudgeStepperPropertyTest::class,

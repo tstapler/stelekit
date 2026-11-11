@@ -385,7 +385,7 @@ internal fun ScreenRouter(
                 )
             }
 
-            is Screen.Sketch -> if (viewModel.homeSketchEnabled) {
+            is Screen.Sketch -> if (viewModel.homeSketchEnabledState.collectAsState().value) {
                 NavigationTracingEffect("Sketch")
                 if (currentScreen.projectUuid == null && platformSettings != null) {
                     val graphId = appState.currentGraphId.orEmpty()
