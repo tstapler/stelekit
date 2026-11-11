@@ -44,7 +44,7 @@ class ProjectListViewModelTest {
     private val pageRepo = dev.stapler.stelekit.repository.InMemoryPageRepository()
     private val files = mutableMapOf<String, String>()
 
-    private fun vm(withSources: Boolean = false, write: ProjectWriteRunner = { it() }, yaml: YamlPickerAction? = null) = ProjectListViewModel(
+    private fun vm(withSources: Boolean = false, yaml: YamlPickerAction? = null, write: ProjectWriteRunner = { it() }) = ProjectListViewModel(
         repos.projects, graphId, bridge, llm, write, { ++tick }, Random(1),
         sources = if (withSources) dev.stapler.stelekit.projectbridge.SourceBindingService(repos, pageRepo, { files[it] }, { it() }, dev.stapler.stelekit.projectbridge.LocalBindingTable(raw)) else null,
         yaml = yaml,
