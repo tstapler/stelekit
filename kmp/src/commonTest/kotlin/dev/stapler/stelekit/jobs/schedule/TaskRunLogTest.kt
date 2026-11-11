@@ -137,4 +137,12 @@ class TaskRunLogTest {
         }
         assertTrue("example.com/repo.git" in persisted, "host stays readable: $persisted")
     }
+
+    @Test
+    fun append_should_swallowNonExceptionThrowable_When_SettingsThrowError() = runTest {
+        val log = SettingsTaskRunLog(object : dev.stapler.stelekit.platform.Settings by MapSettings() {
+            override fun getString(key: String, defaultValue: String): String = throw NoClassDefFoundError("keystore")
+        })
+        log.append(record(1, TaskRunResult.Success))
+    }
 }

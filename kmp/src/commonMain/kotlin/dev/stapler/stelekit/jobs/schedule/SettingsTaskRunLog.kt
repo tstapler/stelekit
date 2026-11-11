@@ -29,7 +29,7 @@ class SettingsTaskRunLog(
             settings.putString(settingsKey, kept.joinToString("\n"))
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             logger.warn("run log append failed for ${TaskKeyEncoding.encode(record.key)}", e)
         }
     }

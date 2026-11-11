@@ -3,7 +3,10 @@
 
 package dev.stapler.stelekit.jobs.schedule
 
+import dev.stapler.stelekit.jobs.JobHandle
 import dev.stapler.stelekit.jobs.JobKind
+import dev.stapler.stelekit.jobs.JobTracker
+import dev.stapler.stelekit.jobs.NoJobTracker
 import dev.stapler.stelekit.platform.Settings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -49,8 +52,13 @@ class InProcessTaskSchedulerTest {
     private val key = TaskKey(TaskKind("model-download"), TaskScope(""))
     private val minute = 60_000L
 
-    private class Harness(scope: TestScope, val key: TaskKey, val task: BackgroundTask, state: () -> ConstraintState, seed: Int = 42) {
+    private class Harness(scope: TestScope, val key: TaskKey, val task: BackgroundTask, state: () -> ConstraintState, seed: Int = 42, jobTracker: JobTracker = NoJobTracker, appendOverride: (suspend (TaskRunRecord) -> Unit)? = null) {
         val runLog = SettingsTaskRunLog(ContractSettings())
+        private val schedulerLog = object : TaskRunLog {
+            override suspend fun append(record: TaskRunRecord) { appendOverride?.invoke(record); runLog.append(record) }
+            override suspend fun recent(key: TaskKey) = runLog.recent(key)
+            override suspend fun lastSuccessAtMs(key: TaskKey) = runLog.lastSuccessAtMs(key)
+        }
         val registry = TaskRegistry().apply {
             val config = TaskConfig(true, Schedule.of(15, 5), TaskConstraints())
             register(key.kind, TaskSpec(JobKind.ModelDownload, "Fake", TaskShape.Periodic(config.schedule), config, false, 0), task)
@@ -59,7 +67,8 @@ class InProcessTaskSchedulerTest {
             registry = registry,
             store = TaskSettingsStore(ContractSettings(), LegacyConfigSeed.None, registry),
             ledger = AppliedConfigLedger(ContractSettings()),
-            runLog = runLog,
+            runLog = schedulerLog,
+            jobTracker = jobTracker,
             clock = { scope.currentTime },
             random = Random(seed),
             constraintState = state,
@@ -106,6 +115,32 @@ class InProcessTaskSchedulerTest {
         assertEquals(2, calls)
         assertIs<TaskRunResult.Failed>(results[0])
         assertEquals(TaskRunResult.Success, results[1])
+    }
+
+    @Test
+    fun tick_should_keepLooping_When_JobTrackerThrows() = runTest {
+        var runs = 0
+        val tracker = object : JobTracker {
+            override fun begin(kind: JobKind, title: String, onCancel: (() -> Unit)?): JobHandle = throw IllegalStateException("tracker down")
+        }
+        val h = Harness(this, key, { _, _ -> runs++; TaskRunResult.Success }, online, jobTracker = tracker)
+        h.scheduler.apply(key, TaskConfig(true, Schedule.of(15, 0), TaskConstraints()))
+        advanceTimeBy(45 * minute)
+        runCurrent()
+        h.scheduler.stop()
+        assertEquals(3, runs, "a throwing tracker must not kill the loop")
+        assertEquals(3, h.runLog.recent(key).size)
+    }
+
+    @Test
+    fun tick_should_keepLooping_When_RunLogAppendThrows() = runTest {
+        var runs = 0
+        val h = Harness(this, key, { _, _ -> runs++; TaskRunResult.Success }, online, appendOverride = { throw IllegalStateException("log down") })
+        h.scheduler.apply(key, TaskConfig(true, Schedule.of(15, 0), TaskConstraints()))
+        advanceTimeBy(45 * minute)
+        runCurrent()
+        h.scheduler.stop()
+        assertEquals(3, runs, "a throwing run log must not kill the loop")
     }
 
     @Test
