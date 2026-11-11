@@ -135,7 +135,7 @@ class AssetDetailViewModel(
      */
     suspend fun resolveOrCreateAnnotation(asset: AssetEntry): String? =
         annotationOpener.open(
-            ExistingImageRequest(pageUuid = asset.pageUuids.firstOrNull(), imageRef = asset.filePath, tags = asset.tags),
+            ExistingImageRequest(pageUuid = asset.pageUuids.firstOrNull(), imageRef = asset.filePath, tags = asset.tags, markdownRef = asset.relativePath),
         ).fold(
             ifLeft = { err ->
                 logger.error("Cannot open asset for annotation: ${err.message}")

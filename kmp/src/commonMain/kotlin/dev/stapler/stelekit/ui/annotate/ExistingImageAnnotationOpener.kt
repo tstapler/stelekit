@@ -32,6 +32,8 @@ data class ExistingImageRequest(
     val imageRef: String,
     val tags: List<String> = emptyList(),
     val sourceBlock: Block? = null,
+    /** What a newly created block's markdown links to; defaults to [imageRef]. */
+    val markdownRef: String = imageRef,
 )
 
 /** Why an existing image could not be opened for annotation; [message] is shown to the user as is. */
@@ -107,7 +109,7 @@ class ExistingImageAnnotationOpener(
             Block(
                 uuid = BlockUuid(UuidGenerator.generateV7()),
                 pageUuid = PageUuid(pageUuid),
-                content = "![](${request.imageRef})",
+                content = "![](${request.markdownRef})",
                 position = FractionalIndexing.generateKeyBetween(lastRootPosition, null),
                 createdAt = now,
                 updatedAt = now,
