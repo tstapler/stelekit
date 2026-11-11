@@ -49,7 +49,7 @@ class AssetIndexService(
 ) {
     private val logger = Logger("AssetIndexService")
     private val scope = CoroutineScope(
-        SupervisorJob() + PlatformDispatcher.Default +
+        SupervisorJob() + PlatformDispatcher.IO +
             CoroutineExceptionHandler { _, throwable ->
                 logger.error("AssetIndexService uncaught: ${throwable.message}")
             }

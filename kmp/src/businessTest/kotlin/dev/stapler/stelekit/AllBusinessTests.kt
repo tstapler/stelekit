@@ -35,6 +35,7 @@ import dev.stapler.stelekit.ui.nav.LibraryRedirectTest
 import dev.stapler.stelekit.ui.library.LibraryViewModelStateTest
 import dev.stapler.stelekit.ui.library.LibraryFilterSqlParityTest
 import dev.stapler.stelekit.ui.library.LibraryAnnotatedJoinTest
+import dev.stapler.stelekit.ui.library.LibraryLegacyAnnotatedImagesTest
 import dev.stapler.stelekit.ui.library.LargeLibraryBatchingTest
 import dev.stapler.stelekit.ui.library.LibrarySketchFilterTest
 import dev.stapler.stelekit.ui.library.LibrarySessionTest
@@ -404,6 +405,7 @@ import org.junit.runners.Suite
     LibraryViewModelActionsTest::class,
     LibraryFilterSqlParityTest::class,
     LibraryAnnotatedJoinTest::class,
+    LibraryLegacyAnnotatedImagesTest::class,
     LargeLibraryBatchingTest::class,
     ProjectAnalysisServiceTest::class,
     ProjectAnalysisGoldenPromptTest::class,

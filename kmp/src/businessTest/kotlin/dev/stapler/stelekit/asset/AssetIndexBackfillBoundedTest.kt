@@ -176,4 +176,42 @@ class AssetIndexBackfillBoundedTest {
         assertNotNull(a.contentHash)
         service.close()
     }
+
+    @Test
+    fun backfill_eightThousandFiles_terminatesWithBoundedBatches_offTheCallerThread() = runBlocking {
+        val inner = InMemoryAssetRepository()
+        val repo = BatchRecordingRepository(inner)
+        val fs = TreeFileSystem().also { f -> repeat(8_000) { f.put("/graph/assets/d${it % 40}/g$it.png", pngMagic) } }
+        val callerThread = Thread.currentThread()
+        val walkThreads = java.util.Collections.synchronizedSet(mutableSetOf<Thread>())
+        val recording = object : AssetRepository by repo {
+            override suspend fun getIndexedFilePaths(filePaths: List<String>) =
+                repo.getIndexedFilePaths(filePaths).also { walkThreads += Thread.currentThread() }
+        }
+        val service = AssetIndexService(recording)
+
+        service.startBackfill(notes, writeActor = null, fileSystem = fs)
+        awaitFinished(service)
+
+        assertEquals(8_000L, inner.countAssets().getOrNull())
+        assertEquals(160, repo.lookupSizes.size)
+        assertTrue(repo.lookupSizes.max() <= AssetIndexService.BACKFILL_BATCH_SIZE, "no query exceeds one batch")
+        assertTrue(callerThread !in walkThreads, "the walk must not run on the caller (main) thread")
+        service.close()
+    }
+
+    @Test
+    fun backfill_throwableFromTheFileSystem_isLoggedAndStopsWithoutCrashing() = runBlocking {
+        val fs = object : FakeFileSystem() {
+            override fun directoryExists(path: String) = true
+            override fun listFiles(path: String): List<String> = throw OutOfMemoryError("injected")
+        }
+        val service = AssetIndexService(InMemoryAssetRepository())
+
+        service.startBackfill(notes, writeActor = null, fileSystem = fs)
+        withTimeout(10_000) { service.progress.first { it == AssetIndexProgress.Idle } }
+
+        assertEquals(AssetIndexProgress.Idle, service.progress.value)
+        service.close()
+    }
 }

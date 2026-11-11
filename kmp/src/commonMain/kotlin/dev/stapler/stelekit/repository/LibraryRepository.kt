@@ -106,9 +106,12 @@ class SqlDelightLibraryRepository(
             },
         ).await()
 
+    private suspend fun hasLegacyAnnotatedImages(): Boolean =
+        driver.executeQuery(null, LibrarySql.LEGACY_EXISTS, { c -> QueryResult.Value(c.next().value) }, 0).await()
+
     override suspend fun getLibraryPage(query: LibraryQuery, cursor: LibraryCursor?, limit: Int): Either<DomainError, List<LibraryItem>> =
         guarded {
-            val statement = LibrarySql.page(query, cursor, limit.coerceIn(1, LibraryRepository.MAX_PAGE))
+            val statement = LibrarySql.page(query, cursor, limit.coerceIn(1, LibraryRepository.MAX_PAGE), hasLegacyAnnotatedImages())
             execute(statement) { c ->
                 val rows = ArrayList<LibraryItem>()
                 while (c.next().value) rows += c.toItem()
@@ -117,7 +120,7 @@ class SqlDelightLibraryRepository(
         }
 
     override suspend fun countLibrary(query: LibraryQuery): Either<DomainError, Long> = guarded {
-        execute(LibrarySql.count(query)) { c -> c.next(); QueryResult.Value(c.getLong(0) ?: 0L) }
+        execute(LibrarySql.count(query, hasLegacyAnnotatedImages())) { c -> c.next(); QueryResult.Value(c.getLong(0) ?: 0L) }
     }
 
     override suspend fun getDistinctAnnotationTags(limit: Int): Either<DomainError, List<String>> = guarded {

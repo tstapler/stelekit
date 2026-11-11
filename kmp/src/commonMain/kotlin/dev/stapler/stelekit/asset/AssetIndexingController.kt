@@ -131,7 +131,13 @@ class AssetIndexingController(
             stopIndexing()
             return
         }
-        if (isActive) runMarker.begin(MARKER_OWNER) else runMarker.end(MARKER_OWNER)
+        if (_breakerTripped.value) {
+            // Repeated unclean exits: stop walking; the Library falls back to annotation rows.
+            logger.warn("Asset walk skipped: crash-loop breaker is tripped")
+            stopIndexing()
+            return
+        }
+        runMarker.begin(MARKER_OWNER)
         indexService.startBackfill(ctx.notesPath, ctx.writeActor, ctx.fileSystem)
     }
 
