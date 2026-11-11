@@ -1,6 +1,6 @@
 # ADR-004: Model download is the second consumer; LFS shares `NetworkPolicy`; port has periodic and one-shot shapes
 
-**Status**: Proposed, revised in repair loop 1
+**Status**: Accepted (implemented; owner-confirm items (a) default `Unmetered` and (b) "Download now anyway" landed as separate commits and remain revertable at PR review)
 **Date**: 2026-11-10
 
 ## Context

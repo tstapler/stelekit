@@ -1,6 +1,6 @@
 # ADR-006: Fail-closed network gate, capability-driven disabled options, androidx.work stays at 2.9.1
 
-**Status**: Proposed, revised in repair loop 1
+**Status**: Accepted (implemented; Android 14/15 foreground-service limit numbers remain unconfirmed, plan Task 4.1.2d; standby and OEM behaviour is PENDING OWNER device runs)
 **Date**: 2026-11-10
 
 ## Decision

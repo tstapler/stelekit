@@ -1,6 +1,6 @@
 # ADR-003: Per-(graph, kind) settings in a typed Settings-backed store; git interval moves in; idempotent marker migration
 
-**Status**: Proposed, revised in repair loop 1
+**Status**: Accepted (implemented; the Keystore-backed cold-worker path is PENDING OWNER verification, owner-verification.md M-4; Spike 0.1.2 proved only the plain-prefs fallback)
 **Date**: 2026-11-10
 
 ## Context

@@ -1,6 +1,6 @@
 # ADR-002: Jitter is a flex window plus a deterministic per-(graph, kind) offset
 
-**Status**: Accepted-with-fallback (Spike 0.1.1 run 2026-11-10; see Spike outcomes)
+**Status**: Accepted (implemented; the `CANCEL_AND_REENQUEUE` fallback was not needed. Spike 0.1.1 run 2026-11-10 showed `UPDATE` applies flex, interval, delay and input data. Real-OS flex distribution is still unverified, owner device step; see Spike outcomes)
 **Date**: 2026-11-10
 
 ## Context

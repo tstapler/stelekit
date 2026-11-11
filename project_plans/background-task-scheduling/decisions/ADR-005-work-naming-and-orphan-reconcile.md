@@ -1,6 +1,6 @@
 # ADR-005: Work names keep the git legacy name; new kinds use `stelekit_task_<kind>_<scope>`; orphans reconciled by tag
 
-**Status**: Proposed, revised in repair loop 1
+**Status**: Accepted (implemented)
 **Date**: 2026-11-10
 
 ## Context

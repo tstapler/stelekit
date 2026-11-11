@@ -1,6 +1,6 @@
 # ADR-001: Neutral scheduling port in `jobs.schedule`, level-triggered `apply`, separate from `BackgroundJobRegistry`
 
-**Status**: Proposed, revised in repair loop 1 (accepted when Epic 1.1 and the contract suite are green)
+**Status**: Accepted (implemented: Epic 1.1 and the contract suite landed; test results not re-run for this status change; on branch stelekit-background-sync, not yet merged to main)
 **Date**: 2026-11-10
 
 ## Context
