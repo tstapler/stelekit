@@ -4,6 +4,9 @@ package dev.stapler.stelekit
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ActivityScenario
@@ -13,6 +16,7 @@ import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.repository.GraphBackend
+import dev.stapler.stelekit.ui.i18n.I18n
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -44,7 +48,7 @@ import org.robolectric.annotation.Config
 class FirstOpenSmokeTest {
     companion object {
         /** Screens the opener test walks through. */
-        val FIRST_OPEN_SCREENS = listOf("Assets browser")
+        val FIRST_OPEN_SCREENS = listOf("Library")
 
         private const val CLICK_SETTLE_MS = 1_500L
         private const val DEMO_LOAD_MS = 3_000L
@@ -108,11 +112,14 @@ class FirstOpenSmokeTest {
             ActivityScenario.launch(MainActivity::class.java).use {
                 showDemoShell()
                 when (screen) {
-                    "Assets browser" -> {
-                        tap("More")
-                        tap("Assets")
-                        composeRule.onNodeWithText("Search assets…").assertIsDisplayed()
-                        composeRule.onNodeWithText("No assets yet").assertIsDisplayed()
+                    "Library" -> {
+                        tap(I18n.get(I18n.NAV_MORE))
+                        // Observed in this harness: performClick on a row inside the sheet's popup window left the
+                        // sheet open and the screen unchanged, so invoke the row's click action directly.
+                        composeRule.onNodeWithTag("nav-row-library").performSemanticsAction(SemanticsActions.OnClick)
+                        composeRule.mainClock.advanceTimeBy(CLICK_SETTLE_MS)
+                        composeRule.onNodeWithText(I18n.get(I18n.LIBRARY_SEARCH_PLACEHOLDER)).assertIsDisplayed()
+                        composeRule.onNodeWithText(I18n.get(I18n.LIBRARY_EMPTY_TITLE)).assertIsDisplayed()
                     }
                     else -> error("FIRST_OPEN_SCREENS names '$screen' but no opener is defined for it")
                 }

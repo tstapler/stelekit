@@ -20,15 +20,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.ui.i18n.I18n
+import dev.stapler.stelekit.ui.nav.NavModel
 
 private enum class BottomNavItem(
     val icon: ImageVector,
     val label: String
 ) {
     JOURNALS(Icons.Default.AutoStories, "Journals"),
-    ALL_PAGES(Icons.AutoMirrored.Filled.List, "Pages"),
+    ALL_PAGES(Icons.AutoMirrored.Filled.List, I18n.get(NavModel.allPages.shortLabelKey ?: I18n.NAV_ALL_PAGES)),
     SEARCH(Icons.Default.Search, "Search"),
-    MENU(Icons.Default.Menu, "More");
+    MENU(Icons.Default.Menu, I18n.get(I18n.NAV_MORE));
 
     fun matchesScreen(screen: Screen): Boolean = when (this) {
         JOURNALS  -> screen is Screen.Journals
@@ -71,7 +73,8 @@ actual fun PlatformBottomBar(
                             BottomNavItem.MENU      -> onToggleSidebar()
                         }
                     },
-                    icon = { Icon(item.icon, contentDescription = item.label) },
+                    // The label is visible text, so the icon is decorative and must not be announced twice.
+                    icon = { Icon(item.icon, contentDescription = null) },
                     label = { Text(item.label) },
                 )
             }
@@ -88,7 +91,8 @@ actual fun PlatformBottomBar(
                             BottomNavItem.MENU      -> onToggleSidebar()
                         }
                     },
-                    icon = { Icon(item.icon, contentDescription = item.label) },
+                    // The label is visible text, so the icon is decorative and must not be announced twice.
+                    icon = { Icon(item.icon, contentDescription = null) },
                     label = { Text(item.label) },
                 )
             }

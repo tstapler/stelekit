@@ -81,6 +81,20 @@ sealed interface PendingLlmSuggestion {
         val matchEnd: Int,
         val currentContentSnapshot: String,
     ) : PendingLlmSuggestion
+
+    /**
+     * Read-only answer from the project analysis step. Information only: there is no apply
+     * action, accepting means "dismiss and mark read", and nothing is ever written to the graph.
+     */
+    data class ProjectAnalysisAnswer(
+        override val id: String,
+        override val graphId: String,
+        override val sourceProviderId: String,
+        override val proposedAtEpochMs: Long,
+        override val rationale: String?,
+        val projectSlug: String,
+        val text: String,
+    ) : PendingLlmSuggestion
 }
 
 data class ProposedBlock(val content: String, val depth: Int, val order: Int)

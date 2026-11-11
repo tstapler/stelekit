@@ -28,6 +28,7 @@ class AssetBrowserScreenTest {
     private companion object {
         const val KITCHEN = "kitchen.jpg"
         const val PERMIT = "permit.pdf"
+        const val WAIT_MS = 30_000L
     }
 
     @get:Rule
@@ -75,11 +76,13 @@ class AssetBrowserScreenTest {
         }
     }
 
-    private fun waitForText(text: String) = composeTestRule.waitUntil(5_000) {
+    // Real-clock waits (the search debounces 300 ms, then a DB read and a recomposition); CI runners under
+    // coverage instrumentation need far more than 5 s on a busy JVM. Only the wait grows, no assertion.
+    private fun waitForText(text: String) = composeTestRule.waitUntil(WAIT_MS) {
         composeTestRule.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty()
     }
 
-    private fun waitGone(text: String) = composeTestRule.waitUntil(5_000) {
+    private fun waitGone(text: String) = composeTestRule.waitUntil(WAIT_MS) {
         composeTestRule.onAllNodes(hasText(text)).fetchSemanticsNodes().isEmpty()
     }
 

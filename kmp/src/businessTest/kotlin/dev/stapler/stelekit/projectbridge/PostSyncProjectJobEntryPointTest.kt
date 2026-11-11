@@ -12,6 +12,7 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.EditLock
 import dev.stapler.stelekit.git.FetchResult
 import dev.stapler.stelekit.git.GitStatus
+import dev.stapler.stelekit.git.GitSyncBusyCounter
 import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.lfs.MemoryFileSystem
 import dev.stapler.stelekit.git.model.GitConfig
@@ -34,6 +35,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -56,6 +58,11 @@ class PostSyncProjectJobEntryPointTest {
     private val png = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47) + ByteArray(3_000)
     private val services = mutableListOf<GitSyncService>()
     private var viewModel: StelekitViewModel? = null
+
+    // sync() records lastSyncAt (the trigger) before it publishes its final state and only then ends the busy
+    // bracket. Production's barrier sees the counter; here it blocks the test thread (not the sync's IO thread)
+    // until idle, because virtual-time polling would burn every attempt while the real sync is still running.
+    private val busyCounter = GitSyncBusyCounter()
 
     @AfterTest
     fun cleanup() {
@@ -86,6 +93,7 @@ class PostSyncProjectJobEntryPointTest {
             fileSystem = fs,
             graphId = graphId,
             settings = settings,
+            gitSyncBusyCounter = busyCounter,
             isOnline = { true },
         ).also { services += it }
     }
@@ -100,7 +108,7 @@ class PostSyncProjectJobEntryPointTest {
         val stub = StubFileSystem()
         val jobs = InProcessJobs()
         val router = if (withRouter) newBridgeTestRouter() else null
-        val bridge = bridgeDeps(settings, jobs, router = { router }, readyGraphIds = MutableStateFlow(graphId))
+        val bridge = bridgeDeps(settings, jobs, router = { router }, isGitSyncBusy = { runBlocking { busyCounter.awaitIdle() }; false }, readyGraphIds = MutableStateFlow(graphId))
         val vm = StelekitViewModel(
             StelekitViewModelDependencies(
                 fileSystem = stub,

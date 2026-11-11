@@ -1,4 +1,5 @@
 package dev.stapler.stelekit.ui.layout
+import dev.stapler.stelekit.ui.i18n.I18n
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 
@@ -47,7 +48,7 @@ class SidebarLoadingStateTest {
 
         // Core nav items are always rendered — user can navigate immediately
         composeTestRule.onNodeWithText("Journals").assertIsDisplayed()
-        composeTestRule.onNodeWithText("All Pages").assertIsDisplayed()
+        composeTestRule.onNodeWithText(I18n.get(I18n.NAV_ALL_PAGES)).assertIsDisplayed()
         composeTestRule.onNodeWithText("Flashcards").assertIsDisplayed()
     }
 
@@ -101,7 +102,7 @@ class SidebarLoadingStateTest {
         }
 
         composeTestRule.onNodeWithText("Favorites").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("My Favorite Page").assertIsDisplayed()
+        composeTestRule.onNodeWithText("My Favorite Page").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithText("Recent").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithText("Recent Note").performScrollTo().assertIsDisplayed()
     }
@@ -125,7 +126,7 @@ class SidebarLoadingStateTest {
             }
         }
 
-        composeTestRule.onNodeWithText("All Pages").performClick()
+        composeTestRule.onNodeWithText(I18n.get(I18n.NAV_ALL_PAGES)).performClick()
 
         assertEquals(Screen.AllPages(), navigatedTo, "clicking All Pages must navigate immediately after phase 1")
     }
@@ -150,7 +151,7 @@ class SidebarLoadingStateTest {
             }
         }
 
-        composeTestRule.onNodeWithText("My Favorite Page").performClick()
+        composeTestRule.onNodeWithText("My Favorite Page").performScrollTo().performClick()
 
         assertEquals(favoritePage, clickedPage, "clicking a favorite page must fire onPageClick immediately after phase 1")
     }

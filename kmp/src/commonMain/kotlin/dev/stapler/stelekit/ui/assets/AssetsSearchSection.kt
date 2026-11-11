@@ -11,6 +11,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import dev.stapler.stelekit.ui.i18n.I18n
+import dev.stapler.stelekit.ui.i18n.t
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -117,7 +119,7 @@ fun AssetsSearchSection(
             TextButton(onClick = { retry++ }) { Text("Retry") }
         }
         is SectionState.Results -> SectionBody(modifier, action = {
-            TextButton(onClick = { onShowAll(query.trim()) }) { Text("Show all in Assets") }
+            TextButton(onClick = { onShowAll(query.trim()) }) { Text(t(I18n.LIBRARY_SEARCH_SHOW_ALL)) }
         }) {
             s.hits.forEach { hit -> AssetHitRow(hit, query.trim(), onOpenAsset) }
         }
@@ -129,7 +131,7 @@ private fun SectionBody(modifier: Modifier = Modifier, action: @Composable () ->
     Column(modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         // The action sits beside the title so it stays on screen however many rows follow.
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Assets", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            Text(t(I18n.LIBRARY_SEARCH_SECTION), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             action()
         }
         content()

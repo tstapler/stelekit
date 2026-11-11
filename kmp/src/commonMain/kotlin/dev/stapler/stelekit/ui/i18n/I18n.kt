@@ -88,7 +88,77 @@ private val translations = mapOf(
         "command.system.help.description" to "Open help documentation",
         "command.palette.placeholder" to "Type a command or search...",
         "command.palette.slash.placeholder" to "Type a slash command...",
-        "command.palette.no-results" to "No commands found"
+        "command.palette.no-results" to "No commands found",
+        "nav.section.daily" to "Daily",
+        "nav.section.connections" to "Connections",
+        "nav.section.graph" to "Graph",
+        "nav.section.developer" to "Developer",
+        "nav.journals" to "Journals",
+        "nav.journals.desc" to "Your daily notes, newest first",
+        "nav.all_pages" to "All pages",
+        "nav.pages_short" to "Pages",
+        "nav.all_pages.desc" to "Every page in this graph",
+        "nav.flashcards" to "Flashcards",
+        "nav.flashcards.desc" to "Review cards you have made",
+        "nav.unlinked_refs" to "Unlinked References",
+        "nav.unlinked_refs.desc" to "Mentions that are not yet links",
+        "nav.notifications" to "Notifications",
+        "nav.notifications.desc" to "Alerts and suggestions",
+        "nav.library" to "Library",
+        "nav.library.desc" to "Every photo and file on your pages",
+        "nav.graph_stats" to "Graph Stats",
+        "nav.graph_stats.desc" to "Size and health of this graph",
+        "nav.sketch" to "Sketch",
+        "nav.sketch.desc" to "Draw plans and elevations",
+        "nav.git_setup" to "Git Setup",
+        "nav.git_setup.desc" to "Sync this graph with a repository",
+        "nav.logs" to "Logs",
+        "nav.logs.desc" to "Diagnostic log viewer",
+        "nav.performance" to "Performance",
+        "nav.performance.desc" to "Timing and memory",
+        "nav.go_to" to "Go to",
+        "nav.new_badge" to "New",
+        "nav.new_badge.state" to "New: Gallery and Assets moved here",
+        "nav.more" to "More",
+        "library.title" to "Library",
+        "library.search.placeholder" to "Search library",
+        "library.search.hint" to "Type at least 2 characters to search",
+        "library.filter.group.type" to "Filter by media type",
+        "library.filter.group.show" to "Show",
+        "library.filter.group.tags" to "Filter by tag",
+        "library.filter.annotated" to "Annotated",
+        "library.filter.orphaned" to "Orphaned",
+        "library.filter.images" to "Images",
+        "library.filter.pdfs" to "PDFs",
+        "library.filter.audio" to "Audio",
+        "library.filter.video" to "Video",
+        "library.filter.documents" to "Docs",
+        "library.filter.other" to "Other",
+        "library.filter.clear" to "Clear filters",
+        "library.filter.reason.annotate_needs_photos" to "Unavailable: only photos can be annotated",
+        "library.filter.reason.type_not_photo" to "Unavailable: a non-photo type is selected",
+        "library.sort" to "Sort",
+        "library.sort.recently_added" to "Recently added",
+        "library.sort.recently_annotated" to "Recently annotated",
+        "library.sort.most_measurements" to "Most measurements",
+        "library.sort.name" to "Name A-Z",
+        "library.empty.title" to "Nothing in your library yet",
+        "library.empty.body" to "Capture a photo or attach a file; it is added to the page you were last on.",
+        "library.empty.filtered" to "No items match these filters",
+        "library.empty.annotated" to "No annotated photos yet. Open a photo and add a measurement.",
+        "library.error.title" to "Could not load the library",
+        "library.error.retry" to "Retry",
+        "library.load_more" to "Load more",
+        "library.badge.annotated" to "Annotated",
+        "library.tip" to "Everything attached to your pages lives here. Tap Annotated to see photos you've annotated.",
+        "library.notice" to "Gallery and Assets are now Library. Use the Annotated filter to see your annotated photos.",
+        "library.notice.dismiss" to "Got it",
+        "library.notice.show_annotated" to "Show annotated photos",
+        "library.cmd.show_annotated" to "Show annotated photos",
+        "library.cmd.show_annotated.desc" to "Open the Library filtered to annotated photos",
+        "library.search.section" to "Library",
+        "library.search.show_all" to "Show all in Library",
+        "nav.more.drawer" to "Graphs, favorites and sync"
     ),
     Language.CHINESE to mapOf(
         "welcome" to "欢迎使用 SteleKit",
@@ -176,7 +246,84 @@ private val translations = mapOf(
 
 class I18n(val language: Language) {
     fun t(key: String): String {
-        return translations[language]?.get(key) ?: key
+        return translations[language]?.get(key) ?: translations[Language.ENGLISH]?.get(key) ?: key
+    }
+
+    companion object {
+        const val NAV_SECTION_DAILY = "nav.section.daily"
+        const val NAV_SECTION_CONNECTIONS = "nav.section.connections"
+        const val NAV_SECTION_GRAPH = "nav.section.graph"
+        const val NAV_SECTION_DEVELOPER = "nav.section.developer"
+        const val NAV_JOURNALS = "nav.journals"
+        const val NAV_JOURNALS_DESC = "nav.journals.desc"
+        const val NAV_ALL_PAGES = "nav.all_pages"
+        const val NAV_ALL_PAGES_DESC = "nav.all_pages.desc"
+        const val NAV_PAGES_SHORT = "nav.pages_short"
+        const val NAV_FLASHCARDS = "nav.flashcards"
+        const val NAV_FLASHCARDS_DESC = "nav.flashcards.desc"
+        const val NAV_UNLINKED_REFS = "nav.unlinked_refs"
+        const val NAV_UNLINKED_REFS_DESC = "nav.unlinked_refs.desc"
+        const val NAV_NOTIFICATIONS = "nav.notifications"
+        const val NAV_NOTIFICATIONS_DESC = "nav.notifications.desc"
+        const val NAV_LIBRARY = "nav.library"
+        const val NAV_LIBRARY_DESC = "nav.library.desc"
+        const val NAV_GRAPH_STATS = "nav.graph_stats"
+        const val NAV_GRAPH_STATS_DESC = "nav.graph_stats.desc"
+        const val NAV_SKETCH = "nav.sketch"
+        const val NAV_SKETCH_DESC = "nav.sketch.desc"
+        const val NAV_GIT_SETUP = "nav.git_setup"
+        const val NAV_GIT_SETUP_DESC = "nav.git_setup.desc"
+        const val NAV_LOGS = "nav.logs"
+        const val NAV_LOGS_DESC = "nav.logs.desc"
+        const val NAV_PERFORMANCE = "nav.performance"
+        const val NAV_PERFORMANCE_DESC = "nav.performance.desc"
+        const val NAV_GO_TO = "nav.go_to"
+        const val NAV_NEW_BADGE = "nav.new_badge"
+        const val NAV_NEW_BADGE_STATE = "nav.new_badge.state"
+        const val NAV_MORE = "nav.more"
+        const val NAV_MORE_DRAWER = "nav.more.drawer"
+
+        const val LIBRARY_TITLE = "library.title"
+        const val LIBRARY_SEARCH_PLACEHOLDER = "library.search.placeholder"
+        const val LIBRARY_SEARCH_HINT = "library.search.hint"
+        const val LIBRARY_GROUP_TYPE = "library.filter.group.type"
+        const val LIBRARY_GROUP_SHOW = "library.filter.group.show"
+        const val LIBRARY_GROUP_TAGS = "library.filter.group.tags"
+        const val LIBRARY_FILTER_ANNOTATED = "library.filter.annotated"
+        const val LIBRARY_FILTER_ORPHANED = "library.filter.orphaned"
+        const val LIBRARY_FILTER_IMAGES = "library.filter.images"
+        const val LIBRARY_FILTER_PDFS = "library.filter.pdfs"
+        const val LIBRARY_FILTER_AUDIO = "library.filter.audio"
+        const val LIBRARY_FILTER_VIDEO = "library.filter.video"
+        const val LIBRARY_FILTER_DOCUMENTS = "library.filter.documents"
+        const val LIBRARY_FILTER_OTHER = "library.filter.other"
+        const val LIBRARY_FILTER_CLEAR = "library.filter.clear"
+        const val LIBRARY_REASON_ANNOTATE_NEEDS_PHOTOS = "library.filter.reason.annotate_needs_photos"
+        const val LIBRARY_REASON_TYPE_NOT_PHOTO = "library.filter.reason.type_not_photo"
+        const val LIBRARY_SORT = "library.sort"
+        const val LIBRARY_SORT_RECENTLY_ADDED = "library.sort.recently_added"
+        const val LIBRARY_SORT_RECENTLY_ANNOTATED = "library.sort.recently_annotated"
+        const val LIBRARY_SORT_MOST_MEASUREMENTS = "library.sort.most_measurements"
+        const val LIBRARY_SORT_NAME = "library.sort.name"
+        const val LIBRARY_EMPTY_TITLE = "library.empty.title"
+        const val LIBRARY_EMPTY_BODY = "library.empty.body"
+        const val LIBRARY_EMPTY_FILTERED = "library.empty.filtered"
+        const val LIBRARY_EMPTY_ANNOTATED = "library.empty.annotated"
+        const val LIBRARY_ERROR_TITLE = "library.error.title"
+        const val LIBRARY_ERROR_RETRY = "library.error.retry"
+        const val LIBRARY_LOAD_MORE = "library.load_more"
+        const val LIBRARY_BADGE_ANNOTATED = "library.badge.annotated"
+        const val LIBRARY_TIP = "library.tip"
+        const val LIBRARY_NOTICE = "library.notice"
+        const val LIBRARY_NOTICE_DISMISS = "library.notice.dismiss"
+        const val LIBRARY_NOTICE_SHOW_ANNOTATED = "library.notice.show_annotated"
+        const val LIBRARY_CMD_SHOW_ANNOTATED = "library.cmd.show_annotated"
+        const val LIBRARY_CMD_SHOW_ANNOTATED_DESC = "library.cmd.show_annotated.desc"
+        const val LIBRARY_SEARCH_SECTION = "library.search.section"
+        const val LIBRARY_SEARCH_SHOW_ALL = "library.search.show_all"
+
+        /** English lookup for non-composable callers (palette commands, tests). */
+        fun get(key: String): String = I18n(Language.ENGLISH).t(key)
     }
 }
 

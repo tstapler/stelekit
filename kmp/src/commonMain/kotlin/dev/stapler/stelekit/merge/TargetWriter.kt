@@ -27,6 +27,21 @@ sealed interface WriteRefusedReason {
         override val message = detail.message
     }
 
+    /** An owned-page replace found a page without the app's marker (or another digest's); it is never touched. */
+    data class NotOwned(val page: String) : WriteRefusedReason {
+        override val message = "Page '$page' exists and is not an app-generated page; not replacing it"
+    }
+
+    /** The owned page's body no longer matches its recorded hash: the user edited it. Surfaced for confirmation, never overwritten. */
+    data class EditedByUser(val page: String) : WriteRefusedReason {
+        override val message = "Page '$page' was edited since it was generated; not overwriting it"
+    }
+
+    /** The page file holds git conflict markers; resolve the sync conflict first. */
+    data class Conflicted(val page: String) : WriteRefusedReason {
+        override val message = "Page '$page' has unresolved sync conflict markers; resolve them first"
+    }
+
     /** The target cannot be written off-graph (capability changed, e.g. a grant was lost mid-run). */
     data class Unwritable(val reason: WriteCapabilityReason) : WriteRefusedReason {
         override val message = reason.userText

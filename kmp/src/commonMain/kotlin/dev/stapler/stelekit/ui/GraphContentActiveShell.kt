@@ -295,6 +295,23 @@ internal fun GraphContentActiveShell(
             if (isMobile && appState.sidebarExpanded) viewModel.toggleSidebar()
         }
 
+        // Phone "More" sheet (ADR-007). Unfolding past the phone breakpoint dismisses it; the sidebar takes over.
+        LaunchedEffect(isMobile) {
+            if (!isMobile && appState.moreSheetOpen) viewModel.setMoreSheetOpen(false)
+        }
+        if (isMobile && appState.moreSheetOpen) {
+            val onboarding by viewModel.libraryOnboarding.collectAsState()
+            dev.stapler.stelekit.ui.nav.MoreSheet(
+                currentScreen = appState.currentScreen,
+                onNavigate = { screen -> viewModel.navigateTo(screen) },
+                onGitSetup = { viewModel.openGitSetup() },
+                onOpenDrawer = { viewModel.toggleSidebar() },
+                onDismiss = { viewModel.setMoreSheetOpen(false) },
+                showLibraryNewBadge = onboarding.showBadge,
+                homeSketchEnabled = viewModel.homeSketchEnabled,
+            )
+        }
+
         // Android back gesture — priority order: last registered = highest priority.
         // goBack fires only when nothing else intercepts the event.
         PlatformBackHandler(enabled = appState.canGoBack) { viewModel.goBack() }
