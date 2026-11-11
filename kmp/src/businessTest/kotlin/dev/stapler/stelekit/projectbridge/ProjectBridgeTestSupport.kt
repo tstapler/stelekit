@@ -63,10 +63,15 @@ internal fun bridgeDeps(
     readyGraphIds: Flow<String?> = MutableStateFlow(BRIDGE_GRAPH),
     hasConfiguredProject: Boolean = true,
     probe: PageSettleProbe = PageSettleProbe { PageSettleState.Settled },
+    sketchRepositories: dev.stapler.stelekit.repository.SketchRepositories? = null,
+    sidecarStore: ProjectSidecarStore? = null,
+    boundSources: suspend () -> SourceReadResult = { SourceReadResult.EMPTY },
+    yamlSnapshot: suspend () -> String? = { null },
+    fusionSetup: suspend () -> ProjectFusionSetup? = { null },
 ) = ProjectBridgeDeps(
     routerProvider = router,
-    sketchRepositories = { null },
-    sidecarStore = { null },
+    sketchRepositories = { sketchRepositories },
+    sidecarStore = { sidecarStore },
     fileSystem = StubFileSystem(),
     isGitSyncBusy = isGitSyncBusy,
     settings = ProjectBridgeSettings(settings),
@@ -74,6 +79,9 @@ internal fun bridgeDeps(
     readyGraphIds = readyGraphIds,
     hasConfiguredProject = { hasConfiguredProject },
     pageSettleProbe = probe,
+    boundSources = boundSources,
+    yamlSnapshot = yamlSnapshot,
+    fusionSetup = fusionSetup,
 )
 
 internal const val BRIDGE_GRAPH = "graph-a"

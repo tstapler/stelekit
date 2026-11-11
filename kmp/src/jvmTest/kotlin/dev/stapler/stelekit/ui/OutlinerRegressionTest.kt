@@ -95,6 +95,12 @@ class OutlinerRegressionTest {
         val blockStateManager = BlockStateManager(blockRepo, graphLoader, scope)
         val viewModel = JournalsViewModel(journalService, blockStateManager, scope)
 
+        // Load the page's blocks before the first composition so the first frame already renders
+        // them. Waiting for the UI to catch up with a live StateFlow update raced the Compose
+        // collector in CI (journal day rendered "Click to write..." while the VM held the blocks).
+        runBlocking { viewModel.loadPageContent(PageUuid(pageUuid)).join() }
+        check(viewModel.blocks.value[pageUuid]?.size == 2) { "blocks not preloaded: ${viewModel.blocks.value}" }
+
         composeTestRule.setContent {
             MaterialTheme {
                 JournalsView(
@@ -118,9 +124,20 @@ class OutlinerRegressionTest {
         composeTestRule.waitUntil(timeoutMillis = HANG_GUARD_MS) {
             viewModel.blocks.value[pageUuid]?.size == 2 && pageUuid !in viewModel.loadingPageUuids.value
         }
-        composeTestRule.waitUntil(timeoutMillis = HANG_GUARD_MS) {
-            composeTestRule.onAllNodes(hasText("Parent Block", substring = true))
-                .fetchSemanticsNodes().isNotEmpty()
+        try {
+            composeTestRule.waitUntil(timeoutMillis = HANG_GUARD_MS) {
+                composeTestRule.onAllNodes(hasText("Parent Block", substring = true))
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+        } catch (e: ComposeTimeoutException) {
+            // Surface the rendered tree + VM state: the timeout alone doesn't say whether the
+            // blocks are missing, collapsed into a spinner, or off-viewport.
+            throw AssertionError(
+                "Parent Block never rendered. blocks=${viewModel.blocks.value} " +
+                    "loading=${viewModel.loadingPageUuids.value}\n" +
+                    composeTestRule.onRoot().printToString(100),
+                e,
+            )
         }
         composeTestRule.onNodeWithText("Parent Block", substring = true).assertIsDisplayed()
         composeTestRule.onNodeWithText("Child Block", substring = true).assertIsDisplayed()
@@ -136,5 +153,55 @@ class OutlinerRegressionTest {
         // Verify both blocks are now at the same level (can be checked via position or properties in debug mode)
         composeTestRule.onNodeWithText("Parent Block").assertIsDisplayed()
         composeTestRule.onNodeWithText("Child Block").assertIsDisplayed()
+    }
+
+    /**
+     * Blocks that arrive AFTER the first composition (the real-app path) must still render. Guards
+     * against JournalsView missing a late StateFlow update (journal showing "Click to write..."
+     * for a page with content). Repeated because the CI miss was intermittent.
+     */
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun blocksArrivingAfterFirstCompositionRender() {
+        repeat(10) { iteration ->
+            runComposeUiTest {
+                val driver = DriverFactory().createDriver("jdbc:sqlite::memory:")
+                val database = SteleDatabase(driver)
+                val pageRepo = SqlDelightPageRepository(database)
+                val blockRepo = SqlDelightBlockRepository(database)
+                val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+                val pageUuid = "late-page-$iteration"
+                val now = Clock.System.now()
+                runBlocking {
+                    pageRepo.savePage(
+                        Page(
+                            uuid = PageUuid(pageUuid), name = "2026-03-28", createdAt = now, updatedAt = now,
+                            isJournal = true, journalDate = LocalDate(2026, 3, 28),
+                        )
+                    )
+                    blockRepo.saveBlock(
+                        Block(
+                            uuid = BlockUuid("late-block-$iteration"), pageUuid = PageUuid(pageUuid),
+                            content = "Late Block", position = "a0", createdAt = now, updatedAt = now,
+                        )
+                    )
+                }
+                val scope = CoroutineScope(Dispatchers.Unconfined)
+                val viewModel = JournalsViewModel(
+                    JournalService(pageRepo, blockRepo), BlockStateManager(blockRepo, graphLoader, scope), scope,
+                )
+
+                setContent { MaterialTheme { JournalsView(viewModel = viewModel, isDebugMode = false, onLinkClick = {}) } }
+                waitUntil(timeoutMillis = 30_000) {
+                    onAllNodes(hasText("March 28", substring = true)).fetchSemanticsNodes().isNotEmpty()
+                }
+
+                // Deterministic late arrival: deliver (or re-deliver) the blocks now, after composition.
+                runBlocking { viewModel.loadPageContent(PageUuid(pageUuid)).join() }
+                check(viewModel.blocks.value[pageUuid]?.size == 1)
+                waitForIdle()
+                onNodeWithText("Late Block", substring = true).assertExists()
+            }
+        }
     }
 }

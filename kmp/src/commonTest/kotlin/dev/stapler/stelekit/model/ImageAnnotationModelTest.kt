@@ -18,7 +18,7 @@ class ImageAnnotationModelTest {
     fun imageAnnotation_should_constructWithDefaults_when_minimalFieldsProvided() {
         val ann = sampleAnnotation()
         assertEquals(CalibrationMethod.NONE, ann.calibration.method)
-        assertEquals(MeasurementUnit.METERS, ann.unit)
+        assertEquals(MeasurementUnit.FEET_INCHES, ann.unit)
         assertEquals(emptyList(), ann.tags)
     }
 

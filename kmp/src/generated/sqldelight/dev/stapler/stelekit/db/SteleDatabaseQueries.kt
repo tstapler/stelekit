@@ -2774,7 +2774,8 @@ public class SteleDatabaseQueries(
     focal_length_35mm_eq: Double?,
     camera_make: String?,
     camera_model: String?,
-  ) -> T): Query<T> = Query(-1_056_409_075, arrayOf("image_annotations"), driver, "SteleDatabase.sq", "selectAllImageAnnotations", "SELECT image_annotations.uuid, image_annotations.block_uuid, image_annotations.page_uuid, image_annotations.graph_path, image_annotations.file_path, image_annotations.thumbnail_path, image_annotations.source, image_annotations.source_uri, image_annotations.captured_at_ms, image_annotations.imported_at_ms, image_annotations.calibration_method, image_annotations.pixels_per_meter, image_annotations.calibration_confidence_pct, image_annotations.unit, image_annotations.tags, image_annotations.lat_lng, image_annotations.altitude_m, image_annotations.bearing_deg, image_annotations.pitch_deg, image_annotations.roll_deg, image_annotations.focal_length_mm, image_annotations.focal_length_35mm_eq, image_annotations.camera_make, image_annotations.camera_model FROM image_annotations ORDER BY imported_at_ms DESC") { cursor ->
+    calibration_basis_version: Long,
+  ) -> T): Query<T> = Query(-1_056_409_075, arrayOf("image_annotations"), driver, "SteleDatabase.sq", "selectAllImageAnnotations", "SELECT image_annotations.uuid, image_annotations.block_uuid, image_annotations.page_uuid, image_annotations.graph_path, image_annotations.file_path, image_annotations.thumbnail_path, image_annotations.source, image_annotations.source_uri, image_annotations.captured_at_ms, image_annotations.imported_at_ms, image_annotations.calibration_method, image_annotations.pixels_per_meter, image_annotations.calibration_confidence_pct, image_annotations.unit, image_annotations.tags, image_annotations.lat_lng, image_annotations.altitude_m, image_annotations.bearing_deg, image_annotations.pitch_deg, image_annotations.roll_deg, image_annotations.focal_length_mm, image_annotations.focal_length_35mm_eq, image_annotations.camera_make, image_annotations.camera_model, image_annotations.calibration_basis_version FROM image_annotations ORDER BY imported_at_ms DESC") { cursor ->
     mapper(
       cursor.getString(0)!!,
       cursor.getString(1)!!,
@@ -2799,7 +2800,8 @@ public class SteleDatabaseQueries(
       cursor.getDouble(20),
       cursor.getDouble(21),
       cursor.getString(22),
-      cursor.getString(23)
+      cursor.getString(23),
+      cursor.getLong(24)!!
     )
   }
 
@@ -2830,6 +2832,7 @@ public class SteleDatabaseQueries(
     focal_length_35mm_eq: Double?,
     camera_make: String?,
     camera_model: String?,
+    calibration_basis_version: Long,
   ) -> T): Query<T> = SelectImageAnnotationByUuidQuery(uuid) { cursor ->
     mapper(
       cursor.getString(0)!!,
@@ -2855,7 +2858,8 @@ public class SteleDatabaseQueries(
       cursor.getDouble(20),
       cursor.getDouble(21),
       cursor.getString(22),
-      cursor.getString(23)
+      cursor.getString(23),
+      cursor.getLong(24)!!
     )
   }
 
@@ -2886,6 +2890,7 @@ public class SteleDatabaseQueries(
     focal_length_35mm_eq: Double?,
     camera_make: String?,
     camera_model: String?,
+    calibration_basis_version: Long,
   ) -> T): Query<T> = SelectImageAnnotationsByPageQuery(page_uuid) { cursor ->
     mapper(
       cursor.getString(0)!!,
@@ -2911,7 +2916,8 @@ public class SteleDatabaseQueries(
       cursor.getDouble(20),
       cursor.getDouble(21),
       cursor.getString(22),
-      cursor.getString(23)
+      cursor.getString(23),
+      cursor.getLong(24)!!
     )
   }
 
@@ -2942,6 +2948,7 @@ public class SteleDatabaseQueries(
     focal_length_35mm_eq: Double?,
     camera_make: String?,
     camera_model: String?,
+    calibration_basis_version: Long,
   ) -> T): Query<T> = SelectImageAnnotationsByTagQuery(value) { cursor ->
     mapper(
       cursor.getString(0)!!,
@@ -2967,7 +2974,8 @@ public class SteleDatabaseQueries(
       cursor.getDouble(20),
       cursor.getDouble(21),
       cursor.getString(22),
-      cursor.getString(23)
+      cursor.getString(23),
+      cursor.getLong(24)!!
     )
   }
 
@@ -3813,6 +3821,15 @@ public class SteleDatabaseQueries(
   public fun selectLastInsertRowId(): ExecutableQuery<Long> = Query(998_850_025, driver, "SteleDatabase.sq", "selectLastInsertRowId", "SELECT last_insert_rowid()") { cursor ->
     cursor.getLong(0)!!
   }
+
+  public fun <T : Any> selectAnnotationTagSets(limit: Long, mapper: (tags: String, uses: Long) -> T): Query<T> = SelectAnnotationTagSetsQuery(limit) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getLong(1)!!
+    )
+  }
+
+  public fun selectAnnotationTagSets(limit: Long): Query<SelectAnnotationTagSets> = selectAnnotationTagSets(limit, ::SelectAnnotationTagSets)
 
   public fun <T : Any> selectSketchProjects(
     `value`: Long,
@@ -5299,6 +5316,7 @@ public class SteleDatabaseQueries(
     focal_length_35mm_eq: Double?,
     camera_make: String?,
     camera_model: String?,
+    calibration_basis_version: Long,
   ): Long {
     val result = driver.execute(390_467_728, """
         |INSERT OR REPLACE INTO image_annotations (
@@ -5306,9 +5324,10 @@ public class SteleDatabaseQueries(
         |    source, source_uri, captured_at_ms, imported_at_ms,
         |    calibration_method, pixels_per_meter, calibration_confidence_pct,
         |    unit, tags, lat_lng, altitude_m, bearing_deg, pitch_deg, roll_deg,
-        |    focal_length_mm, focal_length_35mm_eq, camera_make, camera_model
-        |) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """.trimMargin(), 24) {
+        |    focal_length_mm, focal_length_35mm_eq, camera_make, camera_model,
+        |    calibration_basis_version
+        |) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """.trimMargin(), 25) {
           var parameterIndex = 0
           bindString(parameterIndex++, uuid)
           bindString(parameterIndex++, block_uuid)
@@ -5334,6 +5353,7 @@ public class SteleDatabaseQueries(
           bindDouble(parameterIndex++, focal_length_35mm_eq)
           bindString(parameterIndex++, camera_make)
           bindString(parameterIndex++, camera_model)
+          bindLong(parameterIndex++, calibration_basis_version)
         }.await()
     notifyQueries(390_467_728) { emit ->
       emit("image_annotations")
@@ -5368,6 +5388,7 @@ public class SteleDatabaseQueries(
     focal_length_35mm_eq: Double?,
     camera_make: String?,
     camera_model: String?,
+    calibration_basis_version: Long,
     uuid: String,
   ): Long {
     val result = driver.execute(-935_741_312, """
@@ -5394,9 +5415,10 @@ public class SteleDatabaseQueries(
         |    focal_length_mm = ?,
         |    focal_length_35mm_eq = ?,
         |    camera_make = ?,
-        |    camera_model = ?
+        |    camera_model = ?,
+        |    calibration_basis_version = ?
         |WHERE uuid = ?
-        """.trimMargin(), 24) {
+        """.trimMargin(), 25) {
           var parameterIndex = 0
           bindString(parameterIndex++, block_uuid)
           bindString(parameterIndex++, page_uuid)
@@ -5421,6 +5443,7 @@ public class SteleDatabaseQueries(
           bindDouble(parameterIndex++, focal_length_35mm_eq)
           bindString(parameterIndex++, camera_make)
           bindString(parameterIndex++, camera_model)
+          bindLong(parameterIndex++, calibration_basis_version)
           bindString(parameterIndex++, uuid)
         }.await()
     notifyQueries(-935_741_312) { emit ->
@@ -8427,7 +8450,7 @@ public class SteleDatabaseQueries(
       driver.removeListener("image_annotations", listener = listener)
     }
 
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-575_052_033, """SELECT image_annotations.uuid, image_annotations.block_uuid, image_annotations.page_uuid, image_annotations.graph_path, image_annotations.file_path, image_annotations.thumbnail_path, image_annotations.source, image_annotations.source_uri, image_annotations.captured_at_ms, image_annotations.imported_at_ms, image_annotations.calibration_method, image_annotations.pixels_per_meter, image_annotations.calibration_confidence_pct, image_annotations.unit, image_annotations.tags, image_annotations.lat_lng, image_annotations.altitude_m, image_annotations.bearing_deg, image_annotations.pitch_deg, image_annotations.roll_deg, image_annotations.focal_length_mm, image_annotations.focal_length_35mm_eq, image_annotations.camera_make, image_annotations.camera_model FROM image_annotations WHERE uuid = ?""", mapper, 1) {
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-575_052_033, """SELECT image_annotations.uuid, image_annotations.block_uuid, image_annotations.page_uuid, image_annotations.graph_path, image_annotations.file_path, image_annotations.thumbnail_path, image_annotations.source, image_annotations.source_uri, image_annotations.captured_at_ms, image_annotations.imported_at_ms, image_annotations.calibration_method, image_annotations.pixels_per_meter, image_annotations.calibration_confidence_pct, image_annotations.unit, image_annotations.tags, image_annotations.lat_lng, image_annotations.altitude_m, image_annotations.bearing_deg, image_annotations.pitch_deg, image_annotations.roll_deg, image_annotations.focal_length_mm, image_annotations.focal_length_35mm_eq, image_annotations.camera_make, image_annotations.camera_model, image_annotations.calibration_basis_version FROM image_annotations WHERE uuid = ?""", mapper, 1) {
       var parameterIndex = 0
       bindString(parameterIndex++, uuid)
     }
@@ -8447,7 +8470,7 @@ public class SteleDatabaseQueries(
       driver.removeListener("image_annotations", listener = listener)
     }
 
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-1_651_202_740, """SELECT image_annotations.uuid, image_annotations.block_uuid, image_annotations.page_uuid, image_annotations.graph_path, image_annotations.file_path, image_annotations.thumbnail_path, image_annotations.source, image_annotations.source_uri, image_annotations.captured_at_ms, image_annotations.imported_at_ms, image_annotations.calibration_method, image_annotations.pixels_per_meter, image_annotations.calibration_confidence_pct, image_annotations.unit, image_annotations.tags, image_annotations.lat_lng, image_annotations.altitude_m, image_annotations.bearing_deg, image_annotations.pitch_deg, image_annotations.roll_deg, image_annotations.focal_length_mm, image_annotations.focal_length_35mm_eq, image_annotations.camera_make, image_annotations.camera_model FROM image_annotations WHERE page_uuid = ? ORDER BY imported_at_ms DESC""", mapper, 1) {
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-1_651_202_740, """SELECT image_annotations.uuid, image_annotations.block_uuid, image_annotations.page_uuid, image_annotations.graph_path, image_annotations.file_path, image_annotations.thumbnail_path, image_annotations.source, image_annotations.source_uri, image_annotations.captured_at_ms, image_annotations.imported_at_ms, image_annotations.calibration_method, image_annotations.pixels_per_meter, image_annotations.calibration_confidence_pct, image_annotations.unit, image_annotations.tags, image_annotations.lat_lng, image_annotations.altitude_m, image_annotations.bearing_deg, image_annotations.pitch_deg, image_annotations.roll_deg, image_annotations.focal_length_mm, image_annotations.focal_length_35mm_eq, image_annotations.camera_make, image_annotations.camera_model, image_annotations.calibration_basis_version FROM image_annotations WHERE page_uuid = ? ORDER BY imported_at_ms DESC""", mapper, 1) {
       var parameterIndex = 0
       bindString(parameterIndex++, page_uuid)
     }
@@ -8467,7 +8490,7 @@ public class SteleDatabaseQueries(
       driver.removeListener("image_annotations", listener = listener)
     }
 
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(778_023_229, """SELECT image_annotations.uuid, image_annotations.block_uuid, image_annotations.page_uuid, image_annotations.graph_path, image_annotations.file_path, image_annotations.thumbnail_path, image_annotations.source, image_annotations.source_uri, image_annotations.captured_at_ms, image_annotations.imported_at_ms, image_annotations.calibration_method, image_annotations.pixels_per_meter, image_annotations.calibration_confidence_pct, image_annotations.unit, image_annotations.tags, image_annotations.lat_lng, image_annotations.altitude_m, image_annotations.bearing_deg, image_annotations.pitch_deg, image_annotations.roll_deg, image_annotations.focal_length_mm, image_annotations.focal_length_35mm_eq, image_annotations.camera_make, image_annotations.camera_model FROM image_annotations WHERE tags LIKE '%"' || ? || '"%' ORDER BY imported_at_ms DESC""", mapper, 1) {
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(778_023_229, """SELECT image_annotations.uuid, image_annotations.block_uuid, image_annotations.page_uuid, image_annotations.graph_path, image_annotations.file_path, image_annotations.thumbnail_path, image_annotations.source, image_annotations.source_uri, image_annotations.captured_at_ms, image_annotations.imported_at_ms, image_annotations.calibration_method, image_annotations.pixels_per_meter, image_annotations.calibration_confidence_pct, image_annotations.unit, image_annotations.tags, image_annotations.lat_lng, image_annotations.altitude_m, image_annotations.bearing_deg, image_annotations.pitch_deg, image_annotations.roll_deg, image_annotations.focal_length_mm, image_annotations.focal_length_35mm_eq, image_annotations.camera_make, image_annotations.camera_model, image_annotations.calibration_basis_version FROM image_annotations WHERE tags LIKE '%"' || ? || '"%' ORDER BY imported_at_ms DESC""", mapper, 1) {
       var parameterIndex = 0
       bindString(parameterIndex++, value)
     }
@@ -9006,6 +9029,26 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectStorageLocation"
+  }
+
+  private inner class SelectAnnotationTagSetsQuery<out T : Any>(
+    public val limit: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("image_annotations", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("image_annotations", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-2_018_660_065, """SELECT tags, COUNT(*) AS uses FROM image_annotations WHERE tags <> '[]' AND tags <> '' GROUP BY tags ORDER BY uses DESC LIMIT ?""", mapper, 1) {
+      var parameterIndex = 0
+      bindLong(parameterIndex++, limit)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectAnnotationTagSets"
   }
 
   private inner class SelectSketchProjectsQuery<out T : Any>(

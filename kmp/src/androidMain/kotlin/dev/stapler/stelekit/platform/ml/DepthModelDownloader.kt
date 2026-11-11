@@ -32,7 +32,10 @@ import dev.stapler.stelekit.ui.annotate.DepthModelUiState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -50,15 +53,19 @@ import java.io.File
  * Constraints come from the `model-download` entry in [TaskSettingsStore] (never `enabled`), defaulting to the
  * spec's network policy when nothing is stored or the read fails.
  */
-class DepthModelDownloader(
+class DepthModelDownloader internal constructor(
     private val context: Context,
     scheduler: BackgroundTaskScheduler? = null,
     store: TaskSettingsStore? = null,
     network: NetworkSnapshotProvider? = null,
     private val notificationsOff: () -> Boolean = { areNotificationsOff(context) },
+    private val readyCheck: (File) -> Boolean = DepthModelStorage::isReady,
+    private val settleTimeoutMs: Long = SETTLE_TIMEOUT_MS,
+    private val settlePollMs: Long = SETTLE_POLL_MS,
 ) {
-    private val networkProvider: NetworkSnapshotProvider by lazy { network ?: AndroidNetworkSnapshotProvider(context) }
+    constructor(context: Context) : this(context, scheduler = null)
 
+    private val networkProvider: NetworkSnapshotProvider by lazy { network ?: AndroidNetworkSnapshotProvider(context) }
 
     private val modelFile: File = DepthModelStorage.modelFile(context)
     private val logger = Logger("DepthModelDownloader")
@@ -86,6 +93,10 @@ class DepthModelDownloader(
         SupervisorJob() + PlatformDispatcher.IO +
             CoroutineExceptionHandler { _, e -> logger.warn("Uncaught in DepthModelDownloader scope", e) },
     )
+
+    // Declared before `init`: the collector can reach onWorkSucceeded() before the constructor finishes, and a
+    // later `= null` initializer would otherwise clobber the job it just stored.
+    @Volatile private var settleJob: Job? = null
 
     init {
         scope.launch {
@@ -158,6 +169,7 @@ class DepthModelDownloader(
     /** User-initiated cancel: stops the job, drops the partial file and resolves any waiting [downloadModel] caller. */
     fun cancelDownload() {
         cancelGeneration.incrementAndGet()
+        settleJob?.cancel()
         workManagerOrNull(context)?.cancelUniqueWork(UNIQUE_WORK_NAME)
         runCatching { File(modelFile.parentFile, "${modelFile.name}.part").delete() }
         if (!isModelReady()) _modelState.value = ModelState.Cancelled
@@ -173,9 +185,11 @@ class DepthModelDownloader(
     /** Absolute path of the model file. Safe to pass to [ai.onnxruntime.OrtSession]. */
     fun modelFilePath(): String = modelFile.absolutePath
 
-    fun isModelReady(): Boolean = DepthModelStorage.isReady(modelFile)
+    fun isModelReady(): Boolean = readyCheck(modelFile)
 
     private suspend fun apply(infos: List<WorkInfo>) {
+        // An empty list is WorkManager's "nothing yet" and must not abort a settle already under way.
+        if (infos.isNotEmpty()) settleJob?.cancel()
         if (isModelReady()) {
             _modelState.value = ModelState.Ready
             return
@@ -190,7 +204,10 @@ class DepthModelDownloader(
                 val notice = if (notificationsOff()) ModelDownloadPresentation.NOTIFICATIONS_OFF else null
                 ModelState.Downloading(info.progress.getInt(DepthModelDownloadWorker.KEY_PROGRESS, -1), notice = notice)
             }
-            WorkInfo.State.SUCCEEDED -> ModelState.Failed("The model file went missing after downloading. Try again.")
+            WorkInfo.State.SUCCEEDED -> {
+                onWorkSucceeded()
+                return
+            }
             WorkInfo.State.FAILED -> ModelState.Failed(info.outputData.getString(DepthModelDownloadWorker.KEY_ERROR))
             WorkInfo.State.CANCELLED -> ModelState.Cancelled
         }
@@ -236,6 +253,24 @@ class DepthModelDownloader(
         }
     }
 
+    /**
+     * WorkManager can report SUCCEEDED slightly before the file is visible to [isModelReady]. Hold the state at
+     * "downloading" while polling for up to [settleTimeoutMs]; only a file that never appears is a failure.
+     */
+    internal fun onWorkSucceeded() {
+        settleJob?.cancel()
+        _modelState.value = ModelState.Downloading(progress = 100)
+        settleJob = scope.launch {
+            var polls = (settleTimeoutMs / settlePollMs).toInt()
+            while (!isModelReady() && polls-- > 0) delay(settlePollMs)
+            ensureActive() // a newer WorkManager state or a cancel must not be overwritten by this stale result
+            _modelState.value =
+                if (isModelReady()) ModelState.Ready
+                else ModelState.Failed("The model file went missing after downloading. Try again.")
+        }
+    }
+
+
     private fun initialState(): ModelState = if (isModelReady()) ModelState.Ready else ModelState.Absent
 
     /** Download lifecycle state exposed as [StateFlow]. */
@@ -268,6 +303,8 @@ class DepthModelDownloader(
         const val MODEL_URL =
             "https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/main/onnx/model.onnx"
         const val UNIQUE_WORK_NAME = "depth-model-download"
+        private const val SETTLE_TIMEOUT_MS = 2_000L
+        private const val SETTLE_POLL_MS = 100L
 
         /** Per request, never persisted. */
         private val ANYWAY_CONSTRAINTS = TaskConstraints(network = NetworkPolicy.Any, requiresStorageNotLow = true)

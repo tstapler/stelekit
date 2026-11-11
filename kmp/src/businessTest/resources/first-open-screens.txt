@@ -16,6 +16,11 @@
 # DriveBrowserRoute that ScreenRouter mounts, over a fake client.
 # U10 adds the Settings > Plugins list, the Logs initial filter and the Assets prompt card/status line. The Plugins page is a
 # Dialog (unreachable here, see above); its first-render check is PluginsSettingsTest and the card's is AssetResultsSurfaceTest.
-# The Assets browser entry above already covers the screen the card and status line sit in.
+# The Library entry below (the merged Gallery and Assets screen, plan D.8a) covers the screen the card and status line sit in.
+# Sketch (home-project-sketching) is not listed: it is gated behind the default-off homeSketch flag, so a first open
+# cannot reach it. Its entry-point check is SketchScreenEntryPointTest (androidUnitTest, flag forced on); graduation
+# (OD-H6) moves it into this list and into FirstOpenSmokeTest.
 # Planned additions: Assets global-search section (Task 5.6a, deferred from U10).
-Assets browser
+# TaggingScreen (home-sketch 4.4, drawing import) is not listed: it is only reachable from the SketchScreen host behind the homeSketch flag (default off), so a first open cannot show it. Its first-render check is TaggingScreenTest (androidUnitTest); graduation moves it into this list and FirstOpenSmokeTest.
+Library
+# RegistryEditorScreen (home-sketch 5.9e) is not listed: it is reached only from the project settings behind the homeSketch flag (default off). Its first-render check is RegistryEditorScreenTest (androidUnitTest).

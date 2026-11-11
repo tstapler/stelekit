@@ -4,6 +4,8 @@
 
 package dev.stapler.stelekit.projectbridge
 
+import dev.stapler.stelekit.sketchimport.PngCalibrationRecord
+import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.jobs.JobTracker
 import dev.stapler.stelekit.merge.TargetWriterRouter
 import dev.stapler.stelekit.platform.FileSystem
@@ -30,4 +32,16 @@ class ProjectBridgeDeps(
     /** True when a sketch project is configured for the graph; false until projects exist (Story 2.3). */
     val hasConfiguredProject: suspend (graphId: String) -> Boolean,
     val pageSettleProbe: PageSettleProbe,
+    /** The graph's write actor; sidecar pulls write the sketch cache rows through it. */
+    val writeActor: () -> DatabaseWriteActor? = { null },
+    /** The bound pages' text for the graph's project (Story 5.9b); empty when nothing is bound. */
+    val boundSources: suspend () -> SourceReadResult = { SourceReadResult.EMPTY },
+    /** The YAML snapshot text recorded for the graph's project (Story 5.9c); null when none was picked. */
+    val yamlSnapshot: suspend () -> String? = { null },
+    /** The attached SVG drawings' text for the graph's project (Story 5.9d); empty when none is attached. */
+    val attachedSheets: suspend () -> List<SheetSvg> = { emptyList() },
+    /** The project's registry and fusion spec (synced in its settings); null until the project has a registry, so nothing fuses and nothing is written. */
+    val fusionSetup: suspend () -> ProjectFusionSetup? = { null },
+    /** The PNG sheets' calibration records for the graph's project (Story 4.5b); empty when none is tagged. */
+    val pngTags: suspend () -> List<PngCalibrationRecord> = { emptyList() },
 )

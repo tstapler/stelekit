@@ -17,6 +17,8 @@ import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.performance.NavigationTracingEffect
 import dev.stapler.stelekit.stats.GraphStatsReport
 import dev.stapler.stelekit.stats.NamespaceStat
+import dev.stapler.stelekit.ui.i18n.I18n
+import dev.stapler.stelekit.ui.i18n.t
 import kotlin.math.roundToInt
 
 @Composable
@@ -36,7 +38,7 @@ fun LibraryStatsScreen(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Library Stats", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            Text(t(I18n.NAV_GRAPH_STATS), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
             when (state) {
                 LibraryStatsState.Loading -> CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                 else -> IconButton(onClick = { viewModel.load() }) {

@@ -33,3 +33,20 @@ These fix the semantics so `LibraryFilterRulesTest`, `LibraryScreenFilterTest`, 
 7. **Measurement count and multi-page images (LD-15)**: one card per asset; `measurementCount` is the sum over all annotation rows of the asset.
 8. **Persistence (LD-4)**: filters and search are session state (restored after process death, reset on a fresh launch); the sort order is a persisted preference (`libraryDefaultSort`). The scroll anchor restore (LD-19) loads pages from the top until the anchor id is found, at most 10 pages.
 9. **Verification**: `LibraryFilterSqlParityTest` (businessTest) asserts that the in-memory reference filter and the SQL return the same ids in the same order on random item sets and normalized states, including the dedicated search cases (multi-word, `%`/`\` literals, 1 character, ASCII case, non-ASCII case, separators, multi-field tokens) and paging by keyset across 8,030 rows with no repeat or skip; `QueryPlanAuditTest` covers each sort order, each filter and their common combinations (task D.7a).
+
+## Amendment (2026-11-09, Epic D implementation): spike D.7a-0 results and what shipped
+
+Answers to the D.7a-0 questions, from the implementation (`repository/LibrarySql.kt`, `repository/LibraryRepository.kt`, `LibraryFilterSqlParityTest`, `QueryPlanAuditTest`, `LibraryE2ETest`):
+
+- (a) **Join key**: `asset_index.file_path = image_annotations.file_path` (both absolute paths under `<notes>/assets/`: `ImageImportService.reservePath` for annotations, `AssetIndexService` for the index; INFERRED from the code, not yet checked against a real graph's two tables). The join is a set of correlated sub-selects on the new index `idx_image_annotations_file_path` (`SteleDatabase.sq` and `MigrationRunner` entry `idx_image_annotations_file_path`, with `ANALYZE`).
+- (b) **Annotations without an asset row**: not found in fixtures, not measured on a real graph. The `UNION ALL` branch is **not implemented**; such rows do not appear in Library until the asset index has them (`LibraryAnnotatedJoinTest.annotationWithoutAnAssetRow_isNotInTheAssetBackedList` pins the behaviour). Open item: measure on a real graph before the old Gallery screen is deleted.
+- (c) **File name**: no column; the basename comes from `file_path` with `REPLACE(file_path, RTRIM(file_path, REPLACE(file_path, '/', '')), '')`.
+- (d) **Last annotated at**: `MAX(image_annotations.imported_at_ms)` for the asset's annotation rows (there is no update time).
+- (e) **Search plan**: bounded by `LIMIT`; the default sort reads `idx_asset_imported_at` with an incremental tie-break sort, the annotation sorts and Name A-Z scan the asset index once per page (annotation tables are only reached through indexes, asserted by `QueryPlanAuditTest.library paged queries reach annotations only through an index`). Timings on 8,030 rows are printed by `LargeLibraryBatchingTest` (`LIBRARY_QUERY_TIMINGS`). No FTS table.
+- (f) **Two drivers**: the `REPLACE`/`RTRIM`/`LIKE ... ESCAPE` predicate returns the expected rows on the JVM driver (`LibraryFilterSqlParityTest`) and on the Android driver on the Pixel_Fold AVD (`LibraryE2ETest.wordPrefixSearchWorksOnTheAndroidDriver`).
+
+Deviations from the text above:
+
+- **Per-request SQL, not generated queries.** The SQLDelight dialect used here (`sqlite_3_18`) cannot parse `REPLACE()` ("result column expected, got REPLACE"), and one fixed text per sort would carry every optional predicate. `LibrarySql` therefore builds the page and count statements per request and runs them through the driver; only the index and the bounded tag projection (`selectAnnotationTagSets`) are in `SteleDatabase.sq`. Reads are suspend functions returning `Either`, with `try/catch` instead of `catchDbError` (they are not Flows).
+- **Tag filter**: up to 5 tags (OR), `LIKE '%"tag"%'` against the raw `tags` text. `SqlDelightImageAnnotationRepository` writes tags as raw `["a","b"]` without JSON escaping, so a tag containing `"` or `\` is stored corrupt (pre-existing; a quote breaks the JSON, a backslash makes `tagsList` fail to parse). Not fixed here.
+- **Count**: `SELECT COUNT(*) FROM (... LIMIT 10001)`, shown as "10,000+".

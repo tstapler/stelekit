@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.sketchimport.CalibratedLength
 import dev.stapler.stelekit.units.Inches
 import dev.stapler.stelekit.units.LengthFormat
 import dev.stapler.stelekit.units.LengthFormatter
@@ -20,6 +21,9 @@ enum class AnnotationType {
     LABEL,
     GRID_REF,
 }
+
+/** Unit a measurement starts in until the user picks another (US construction: feet and inches). */
+val DEFAULT_MEASUREMENT_UNIT: MeasurementUnit = MeasurementUnit.FEET_INCHES
 
 /**
  * Display unit for measurement values.
@@ -201,7 +205,7 @@ internal fun formatFeetInches(meters: Double): String {
  * Examples: `4.25` → `"4 1/4\""`, `12.0` → `"12\""`, `0.0625` → `"1/16\""`, `0.9375` → `"15/16\""`.
  */
 internal fun formatFractionalInches(inches: Double): String {
-    val sixteenths = kotlin.math.round(inches * 16.0).toLong()
+    val sixteenths = CalibratedLength.sixteenths(inches)
     return LengthFormatter.format(Inches(sixteenths), LengthFormat.INCHES_MIXED)
 }
 

@@ -924,6 +924,21 @@ object MigrationRunner {
                 "ANALYZE sketch_dimensions",
             )
         ),
+        Migration(
+            name = "idx_image_annotations_file_path",
+            statements = listOf(
+                // Join key of the Library paged queries; without it each correlated sub-select scans the table.
+                "CREATE INDEX IF NOT EXISTS idx_image_annotations_file_path ON image_annotations(file_path)",
+                "ANALYZE image_annotations",
+            )
+        ),
+        Migration(
+            name = "image_annotations_calibration_basis_version",
+            // DEFAULT 0 = legacy decode-size-relative basis; existing rows keep their values untouched (ADR-004).
+            schemaOps = listOf(
+                SchemaOp.AddColumn("image_annotations", "calibration_basis_version", "INTEGER NOT NULL DEFAULT 0"),
+            ),
+        ),
     )
 
     /**

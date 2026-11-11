@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -53,6 +54,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -65,7 +67,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
+import dev.stapler.stelekit.ui.placement.crosshairPoint
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -99,6 +104,7 @@ import dev.stapler.stelekit.platform.measurement.DeviceConnectionState
 import dev.stapler.stelekit.platform.measurement.ExternalMeasurementDevice
 import kotlin.math.abs
 import dev.stapler.stelekit.util.roundTo
+import kotlinx.coroutines.launch
 
 /**
  * Root screen for the image annotation editor.
@@ -173,14 +179,16 @@ fun AnnotationEditorScreen(
      * When non-null, the "Estimate depth (AI)" button is enabled and tapping it calls this
      * lambda. The caller (Android activity/fragment) should trigger inference and update the
      * ViewModel's [AnnotationEditorState.depthMap] via [AnnotationEditorViewModel.runDepthEstimation].
-     * When null (estimation not wired on this platform/build), the button is shown disabled with
-     * "Estimation coming soon" rather than silently doing nothing when tapped.
+     * When null (estimation not wired on this platform/build), the panel shows
+     * a "Depth model ready" notice instead of a button that would silently do nothing.
      */
     onEstimateDepth: (() -> Unit)? = null,
     peerCalibration: Pair<String, Calibration>? = null,
 ) {
     val state by viewModel.state.collectAsState()
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    val placementSpace = AnnotationPlacementSpace(canvasSize.width, canvasSize.height)
+    val haptic = LocalHapticFeedback.current
     var showCalibrationSheet by remember { mutableStateOf(false) }
     var showCalibrationChangeWarning by remember { mutableStateOf(false) }
     var isFirstCalibrationUse by remember {
@@ -192,9 +200,10 @@ fun AnnotationEditorScreen(
     val canRedo by viewModel.canRedo.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // UnsavedChanges tracking
-    var showUnsavedChangesDialog by remember { mutableStateOf(false) }
-    var hasUnsavedChanges by remember { mutableStateOf(false) }
+    // Back handling: placed measurements are saved as they are made, so only unfinished points or a failed save need a dialog.
+    var leaveDialog by remember { mutableStateOf<BackOutcome?>(null) }
+    val pendingWrites by viewModel.pendingWrites.collectAsState()
+    val backScope = rememberCoroutineScope()
 
     // BleDevicePanel
     var showBleDevicePanel by remember { mutableStateOf(false) }
@@ -245,7 +254,6 @@ fun AnnotationEditorScreen(
     }
 
     LaunchedEffect(state.committedAnnotations.size) {
-        if (state.committedAnnotations.isNotEmpty()) hasUnsavedChanges = true
         if (state.committedAnnotations.size == 1 &&
             state.committedAnnotations.first().annotationType == dev.stapler.stelekit.model.AnnotationType.DISTANCE &&
             coachMarksShown == 1) {
@@ -267,9 +275,14 @@ fun AnnotationEditorScreen(
         }
     }
 
-    // Show UnsavedChangesDialog when user tries to back-navigate with unsaved changes
-    PlatformBackHandler(enabled = hasUnsavedChanges) {
-        showUnsavedChangesDialog = true
+    PlatformBackHandler(enabled = true) {
+        backScope.launch {
+            if (pendingWrites > 0) launch { snackbarHostState.showSnackbar("Saving...", duration = SnackbarDuration.Short) }
+            when (val outcome = viewModel.resolveBack()) {
+                BackOutcome.Close -> onNavigateBack()
+                else -> leaveDialog = outcome
+            }
+        }
     }
 
     Scaffold(
@@ -289,6 +302,9 @@ fun AnnotationEditorScreen(
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        // The app shell's top bar and bottom nav already own the system-bar insets; applying them again
+        // here left a blank band above the calibration badge.
+        contentWindowInsets = WindowInsets(0),
     ) { paddingValues ->
         Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
         if (state.error != null) {
@@ -469,7 +485,8 @@ fun AnnotationEditorScreen(
                 onTap = { offset ->
                     val normalized = offset.toNormalized(canvasSize)
                     if (normalized != null) {
-                        viewModel.addPoint(normalized)
+                        if (state.placement.active) viewModel.tapCrosshair(placementSpace, normalized)
+                        else viewModel.addPoint(normalized)
                     }
                 },
                 onLoupeOffset = { offset -> loupeOffset = offset },
@@ -480,6 +497,8 @@ fun AnnotationEditorScreen(
                 onEditPoints = { uuid, pts -> viewModel.updateAnnotationPoints(uuid, pts) },
                 onEditEnd = { uuid -> viewModel.commitAnnotationEdit(uuid) },
             )
+
+            AnnotationCrosshairLayer(state.placement.state.crosshairPoint, canvasSize)
 
             val currentLoupeOffset = loupeOffset
             if (currentLoupeOffset != null && canvasSize != IntSize.Zero) {
@@ -514,6 +533,7 @@ fun AnnotationEditorScreen(
                 annotations = state.committedAnnotations,
                 canvasSize = canvasSize,
                 onAnnotationSelect = { uuid -> viewModel.selectAnnotation(uuid) },
+                onMoveVertex = { uuid, index -> viewModel.beginVertexMove(placementSpace, uuid, index) },
                 modifier = Modifier.fillMaxSize(),
             )
 
@@ -573,12 +593,26 @@ fun AnnotationEditorScreen(
                 }
             }
 
+            if (state.currentTool != AnnotationTool.SELECT) {
+                AnnotationPlacementControls(
+                    session = state.placement,
+                    onToggle = { viewModel.togglePlacementMode(placementSpace) },
+                    onNudge = { direction, step -> viewModel.nudgeCrosshair(placementSpace, direction, step) },
+                    onConfirm = {
+                        if (viewModel.confirmCrosshair(placementSpace)) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    },
+                    onCancel = { viewModel.cancelPlacement() },
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 150.dp),
+                )
+            }
+
             // Layer 5: Annotation toolbar (bottom)
             AnnotationToolbar(
                 currentTool = state.currentTool,
                 canUndo = canUndo,
                 canRedo = canRedo,
-                displayUnit = state.imageAnnotation?.unit,
+                // Null until an image is loaded keeps the dropdown hidden, as before.
+                displayUnit = state.selectedUnit.takeIf { state.imageAnnotation != null },
                 onToolSelect = { viewModel.selectTool(it) },
                 onUndo = { viewModel.undo() },
                 onRedo = { viewModel.redo() },
@@ -597,10 +631,7 @@ fun AnnotationEditorScreen(
                         showCalibrationSheet = true
                     }
                 },
-                // TODO: add viewModel.setDisplayUnit(unit) when the ViewModel supports unit changes.
-                // Until then this is intentionally a no-op — the unit dropdown is visible but
-                // selecting a unit has no effect. The unit shown reflects imageAnnotation.unit only.
-                onUnitSelect = {},
+                onUnitSelect = { viewModel.setDisplayUnit(it) },
                 showLabels = showToolLabels,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -732,24 +763,17 @@ fun AnnotationEditorScreen(
             )
         }
 
-        // UnsavedChangesDialog
-        if (showUnsavedChangesDialog) {
-            UnsavedChangesDialog(
-                onSave = {
-                    showUnsavedChangesDialog = false
-                    hasUnsavedChanges = false
-                    // TODO: trigger explicit save — for now just navigate back
-                    onNavigateBack()
-                },
-                onDiscard = {
-                    showUnsavedChangesDialog = false
-                    hasUnsavedChanges = false
-                    onNavigateBack()
-                },
-                onKeepEditing = {
-                    showUnsavedChangesDialog = false
-                },
+        when (val outcome = leaveDialog) {
+            is BackOutcome.ConfirmDiscard -> UnsavedChangesDialog(
+                unfinishedPoints = outcome.count,
+                onDiscard = { leaveDialog = null; onNavigateBack() },
+                onKeepEditing = { leaveDialog = null },
             )
+            BackOutcome.SaveFailed -> SaveFailedDialog(
+                onRetry = { leaveDialog = null; viewModel.retryPersistence() },
+                onCloseAnyway = { leaveDialog = null; onNavigateBack() },
+            )
+            else -> Unit
         }
 
         // Delete annotation confirmation
@@ -802,8 +826,8 @@ internal fun DriveExportButton(
             Column(modifier = modifier, horizontalAlignment = Alignment.End) {
                 androidx.compose.material3.FloatingActionButton(
                     onClick = { if (disabledReason == null) onExport() },
-                    containerColor = Color(0xFF1565C0).copy(alpha = if (disabledReason == null) 1f else 0.5f),
-                    contentColor = Color.White,
+                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = if (disabledReason == null) 1f else 0.5f),
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
                 ) {
                     Icon(Icons.Default.CloudUpload, contentDescription = "Export to Google Drive")
                 }
@@ -826,7 +850,7 @@ internal fun DriveExportButton(
         is DriveExportUiState.Loading -> {
             Surface(
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                color = Color(0xFFE3F2FD),
+                color = MaterialTheme.colorScheme.primaryContainer,
                 modifier = modifier,
             ) {
                 Row(
@@ -834,12 +858,12 @@ internal fun DriveExportButton(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     androidx.compose.material3.CircularProgressIndicator(
-                        color = Color(0xFF1565C0),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                         strokeWidth = 2.dp,
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text("Uploading…", style = MaterialTheme.typography.labelSmall, color = Color(0xFF1565C0))
+                    Text("Uploading…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     if (onCancel != null) {
                         TextButton(onClick = onCancel) { Text("Cancel") }
                     }
@@ -849,25 +873,25 @@ internal fun DriveExportButton(
         is DriveExportUiState.Success -> {
             Surface(
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                color = Color(0xFFE3F2FD),
+                color = MaterialTheme.colorScheme.primaryContainer,
                 modifier = modifier,
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Default.CloudUpload, contentDescription = null, tint = Color(0xFF1565C0))
+                    Icon(Icons.Default.CloudUpload, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
                     Spacer(Modifier.width(6.dp))
                     Column {
                         Text(
                             text = "Saved to Drive",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF1565C0),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                         Text(
                             text = exportState.driveLink,
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF1565C0),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                             textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
                             modifier = if (onOpenLink != null) {
                                 Modifier.clickable { onOpenLink(exportState.driveLink) }
@@ -1512,17 +1536,33 @@ internal fun DepthEstimationPanel(
                     }
                 }
 
-                // Model ready — show estimate button. Disabled with "coming soon" copy when the
-                // caller hasn't wired real estimation (onEstimate == null) — an enabled button
-                // that silently no-ops on tap would just relocate this ticket's bug one screen
-                // deeper (see adversarial-review.md Blocker 3).
+                // Model ready. With real estimation wired (onEstimate != null) show the estimate button.
+                // Otherwise the model IS downloaded but nothing can use it yet: say so, as a status line
+                // rather than a greyed-out button, so it reads as success and not as a failed download.
                 modelState is DepthModelUiState.Ready -> {
-                    OutlinedButton(onClick = onEstimate ?: {}, enabled = onEstimate != null) {
-                        Text(
-                            text = if (onEstimate != null) "Estimate depth (AI)" else "Estimation coming soon",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (onEstimate != null) Color.White else Color.White.copy(alpha = 0.5f),
-                        )
+                    if (onEstimate != null) {
+                        OutlinedButton(onClick = onEstimate) {
+                            Text(
+                                text = "Estimate depth (AI)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                            )
+                        }
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF81C784),
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = "Depth model ready — estimation coming in a future update",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                            )
+                        }
                     }
                     // ADR-005 low-confidence warning.
                     if (onEstimate != null) {
@@ -1674,13 +1714,18 @@ private fun LoupeOverlay(
     val marginPx = with(LocalDensity.current) { 16.dp.toPx() }
     val topThresholdPx = with(LocalDensity.current) { 140.dp.toPx() }
     val gapPx = with(LocalDensity.current) { 16.dp.toPx() }
-    val loupeYPx = (if (touchOffset.y > topThresholdPx) {
-        touchOffset.y - loupeSizePx - gapPx
-    } else {
-        touchOffset.y + gapPx
-    }).coerceIn(marginPx, canvasSize.height - loupeSizePx - marginPx)
-    val loupeXPx = (touchOffset.x - loupeSizePx / 2f)
-        .coerceIn(marginPx, canvasSize.width - loupeSizePx - marginPx)
+    val loupeYPx = clampLoupeOffset(
+        value = if (touchOffset.y > topThresholdPx) touchOffset.y - loupeSizePx - gapPx else touchOffset.y + gapPx,
+        extent = canvasSize.height.toFloat(),
+        loupeSize = loupeSizePx,
+        margin = marginPx,
+    )
+    val loupeXPx = clampLoupeOffset(
+        value = touchOffset.x - loupeSizePx / 2f,
+        extent = canvasSize.width.toFloat(),
+        loupeSize = loupeSizePx,
+        margin = marginPx,
+    )
     val innerWidthPx = (canvasSize.width * zoomFactor).roundToInt()
     val innerHeightPx = (canvasSize.height * zoomFactor).roundToInt()
     // 3x the canvas decodes to ~85 MB on a tall phone; cap the decode and let FillBounds upscale.

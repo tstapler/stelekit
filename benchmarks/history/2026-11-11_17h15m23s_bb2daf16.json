@@ -1,0 +1,122 @@
+{
+  "timestamp": "2026-11-11 17:15:23 UTC",
+  "gitSha": "bb2daf16",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 2,
+  "phase2Ms": 0,
+  "phase3Ms": 2,
+  "totalMs": 4,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 34,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 1203,
+      "pct": 31.8
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 292,
+      "pct": 7.7
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 247,
+      "pct": 6.5
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 192,
+      "pct": 5.1
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 187,
+      "pct": 4.9
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 82,
+      "pct": 2.2
+    },
+    {
+      "frame": "org.jacoco.agent.rt.internal_aeaf9ab.asm.SymbolTable$Entry_[k]",
+      "samples": 79,
+      "pct": 2.1
+    },
+    {
+      "frame": "char[]_[k]",
+      "samples": 75,
+      "pct": 2.0
+    },
+    {
+      "frame": "java.util.Arrays$ArrayItr_[k]",
+      "samples": 62,
+      "pct": 1.6
+    },
+    {
+      "frame": "dev.stapler.stelekit.parsing.lexer.Token_[k]",
+      "samples": 60,
+      "pct": 1.6
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 29912,
+      "pct": 96.1
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-b56e6692-2031-4dff-af6f-2eda802a37bc-libsqlitejdbc.so",
+      "samples": 419,
+      "pct": 1.3
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 147,
+      "pct": 0.5
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 85,
+      "pct": 0.3
+    },
+    {
+      "frame": "fsync",
+      "samples": 72,
+      "pct": 0.2
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 71,
+      "pct": 0.2
+    },
+    {
+      "frame": "pread",
+      "samples": 30,
+      "pct": 0.1
+    },
+    {
+      "frame": "prctl",
+      "samples": 15,
+      "pct": 0.0
+    },
+    {
+      "frame": "syscall",
+      "samples": 9,
+      "pct": 0.0
+    },
+    {
+      "frame": "__xstat64",
+      "samples": 8,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": []
+}

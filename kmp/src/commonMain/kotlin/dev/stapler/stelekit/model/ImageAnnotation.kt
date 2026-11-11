@@ -52,7 +52,25 @@ data class Calibration(
     val pixelsPerMeter: Double = 0.0,
     /** 0–100 integer confidence level (100 = BLE/manual reference, 20 = EXIF, 15 = ML). */
     val confidencePercent: Int = 0,
-)
+    /**
+     * What [pixelsPerMeter] is relative to; one of the [CalibrationBasis] constants. Defaults to
+     * [CalibrationBasis.LEGACY_DECODE_RELATIVE] so every code path that does not opt in stays legacy.
+     */
+    val basisVersion: Int = CalibrationBasis.LEGACY_DECODE_RELATIVE,
+) {
+    /** True when [pixelsPerMeter] is decode-size-relative and must never be rescaled. */
+    val isLegacyBasis: Boolean get() = basisVersion == CalibrationBasis.LEGACY_DECODE_RELATIVE
+}
+
+/** Values of `image_annotations.calibration_basis_version` and the sidecar `calibrationBasisVersion` (ADR-004). */
+object CalibrationBasis {
+    /** [Calibration.pixelsPerMeter] was measured against whatever size the image was decoded at. */
+    const val LEGACY_DECODE_RELATIVE = 0
+    /** [Calibration.pixelsPerMeter] is relative to the image's native pixel dimensions. */
+    const val NATIVE_PIXELS = 1
+
+    fun isKnown(version: Int): Boolean = version == LEGACY_DECODE_RELATIVE || version == NATIVE_PIXELS
+}
 
 /**
  * Platform sensor data snapshotted at the moment of image capture.
@@ -96,7 +114,7 @@ data class ImageAnnotation(
     val capturedAtMs: Long? = null,
     val importedAtMs: Long = 0L,
     val calibration: Calibration = Calibration(),
-    val unit: MeasurementUnit = MeasurementUnit.METERS,
+    val unit: MeasurementUnit = DEFAULT_MEASUREMENT_UNIT,
     val tags: List<String> = emptyList(),
     val sensorData: ImageSensorData = ImageSensorData(),
 ) {

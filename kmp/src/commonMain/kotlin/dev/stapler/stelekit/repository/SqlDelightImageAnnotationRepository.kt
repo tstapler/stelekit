@@ -10,6 +10,7 @@ import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationMethod
+import dev.stapler.stelekit.model.DEFAULT_MEASUREMENT_UNIT
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.ImageSensorData
 import dev.stapler.stelekit.model.ImageSource
@@ -90,6 +91,7 @@ class SqlDelightImageAnnotationRepository(
                     focal_length_35mm_eq = annotation.sensorData.focalLength35mmEq,
                     camera_make = annotation.sensorData.cameraMake,
                     camera_model = annotation.sensorData.cameraModel,
+                    calibration_basis_version = annotation.calibration.basisVersion.toLong(),
                 )
                 Unit.right()
             } catch (e: CancellationException) {
@@ -142,8 +144,9 @@ private fun dev.stapler.stelekit.db.Image_annotations.toModel(): ImageAnnotation
             method = runCatching { CalibrationMethod.valueOf(calibration_method) }.getOrDefault(CalibrationMethod.NONE),
             pixelsPerMeter = pixels_per_meter,
             confidencePercent = calibration_confidence_pct.toInt(),
+            basisVersion = calibration_basis_version.toInt(),
         ),
-        unit = runCatching { MeasurementUnit.valueOf(unit) }.getOrDefault(MeasurementUnit.METERS),
+        unit = runCatching { MeasurementUnit.valueOf(unit) }.getOrDefault(DEFAULT_MEASUREMENT_UNIT),
         tags = tagsList,
         sensorData = ImageSensorData(
             latLng = latLngPair,

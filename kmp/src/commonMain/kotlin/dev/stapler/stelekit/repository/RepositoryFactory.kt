@@ -72,6 +72,8 @@ data class RepositorySet(
     val imageAnnotationRepository: ImageAnnotationRepository = InMemoryImageAnnotationRepository(),
     val measurementAnnotationRepository: MeasurementAnnotationRepository = InMemoryMeasurementAnnotationRepository(),
     val assetRepository: dev.stapler.stelekit.repository.AssetRepository = InMemoryAssetRepository(),
+    /** Bounded, paged Library reads (assets joined with annotation state); see [LibraryRepository]. */
+    val libraryRepository: LibraryRepository = InMemoryLibraryRepository(assetRepository, imageAnnotationRepository, measurementAnnotationRepository),
     val sketchRepositories: SketchRepositories = inMemorySketchRepositories(),
     /** Console-owned read-only SQL connection; null when the backend has no database file. Never the app pool. */
     val sqlConsole: dev.stapler.stelekit.console.views.SqlConsoleView? = null,
@@ -411,6 +413,13 @@ class RepositoryFactoryImpl(
 
         val queryPlanRepo = queryPlanRepoShared
 
+        val imageAnnotationRepo: ImageAnnotationRepository = if (backend == GraphBackend.SQLDELIGHT)
+            SqlDelightImageAnnotationRepository(database) else InMemoryImageAnnotationRepository()
+        val measurementAnnotationRepo: MeasurementAnnotationRepository = if (backend == GraphBackend.SQLDELIGHT)
+            SqlDelightMeasurementAnnotationRepository(database, MeasurementWrites(actor)) else InMemoryMeasurementAnnotationRepository()
+        val assetRepo: AssetRepository = if (backend == GraphBackend.SQLDELIGHT)
+            SqlDelightAssetRepository(database) else InMemoryAssetRepository()
+
         return RepositorySet(
             blockRepository = blockRepo,
             pageRepository = pageRepo,
@@ -434,15 +443,12 @@ class RepositoryFactoryImpl(
             queryStatsRepository = queryStatsRepo,
             queryStatsCollector = collector,
             queryPlanRepository = queryPlanRepo,
-            imageAnnotationRepository = if (backend == GraphBackend.SQLDELIGHT)
-                SqlDelightImageAnnotationRepository(database)
-            else InMemoryImageAnnotationRepository(),
-            measurementAnnotationRepository = if (backend == GraphBackend.SQLDELIGHT)
-                SqlDelightMeasurementAnnotationRepository(database)
-            else InMemoryMeasurementAnnotationRepository(),
-            assetRepository = if (backend == GraphBackend.SQLDELIGHT)
-                SqlDelightAssetRepository(database)
-            else InMemoryAssetRepository(),
+            imageAnnotationRepository = imageAnnotationRepo,
+            measurementAnnotationRepository = measurementAnnotationRepo,
+            assetRepository = assetRepo,
+            libraryRepository = if (backend == GraphBackend.SQLDELIGHT)
+                SqlDelightLibraryRepository(database, requireNotNull(wrappedDriver) { "wrappedDriver is null" })
+            else InMemoryLibraryRepository(assetRepo, imageAnnotationRepo, measurementAnnotationRepo),
             sketchRepositories = if (backend == GraphBackend.SQLDELIGHT)
                 sqlDelightSketchRepositories(database)
             else inMemorySketchRepositories(),

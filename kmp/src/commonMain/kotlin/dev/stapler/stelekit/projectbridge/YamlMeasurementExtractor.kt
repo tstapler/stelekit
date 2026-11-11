@@ -27,7 +27,7 @@ data class YamlExtractionResult(
 
 /**
  * Reads observations from a YAML snapshot (Story 5.3). A scalar's path is its keys joined by `.`,
- * with list items as their index (`zones.0.width`); the registry's yaml aliases map paths onto
+ * with list items as their `short` key when they have one (`zones.left-long.width`) or else their index (`zones.0.width`); the registry's yaml aliases map paths onto
  * dimensions and unmapped paths are ignored. A trailing comment restating the value is part of the
  * same scalar, so it shares the scalar's single ref and never yields a second observation.
  */
@@ -41,22 +41,28 @@ class YamlMeasurementExtractor(
         when (val parsed = MiniYaml.parse(yaml)) {
             is MiniYamlResult.Parsed -> {
                 val found = ArrayList<Observation>()
-                walk(parsed.root, "", locator, found)
+                walk(parsed.root, "", "", locator, found)
                 YamlExtractionResult(found)
             }
             is MiniYamlResult.Unsupported -> YamlExtractionResult(unsupportedLine = parsed.line)
             is MiniYamlResult.Malformed -> YamlExtractionResult(unsupportedLine = parsed.line)
         }
 
-    private fun walk(node: YamlNode, path: String, locator: String, out: MutableList<Observation>) {
+    /** [path] names list items by their `short` key when they have one; [indexPath] always uses positions. */
+    private fun walk(node: YamlNode, path: String, indexPath: String, locator: String, out: MutableList<Observation>) {
         when (node) {
-            is YamlMap -> node.entries.forEach { (key, child) -> walk(child, join(path, key), locator, out) }
-            is YamlList -> node.items.forEachIndexed { index, child -> walk(child, join(path, index.toString()), locator, out) }
-            is YamlScalar -> if (path.isNotEmpty()) observe(node, path, locator)?.let(out::add)
+            is YamlMap -> node.entries.forEach { (key, child) -> walk(child, join(path, key), join(indexPath, key), locator, out) }
+            is YamlList -> node.items.forEachIndexed { index, child ->
+                walk(child, join(path, shortKey(child) ?: index.toString()), join(indexPath, index.toString()), locator, out)
+            }
+            is YamlScalar -> if (path.isNotEmpty()) (observe(node, path, locator) ?: observe(node, indexPath, locator))?.let(out::add)
         }
     }
 
     private fun join(path: String, key: String) = if (path.isEmpty()) key else "$path.$key"
+
+    private fun shortKey(item: YamlNode): String? =
+        ((item as? YamlMap)?.entries?.firstOrNull { it.first == SHORT_KEY }?.second as? YamlScalar)?.text?.trim()?.takeIf { it.isNotEmpty() }
 
     private fun observe(scalar: YamlScalar, path: String, locator: String): Observation? {
         if (scalar.kind == ScalarKind.NULL || scalar.kind == ScalarKind.BOOL) return null
@@ -77,5 +83,9 @@ class YamlMeasurementExtractor(
                 Observation(entry.key, measured.value, measured.roundingPrecision, entry.kind, source, parsed.qualifiers)
             }
         }
+    }
+
+    private companion object {
+        const val SHORT_KEY = "short"
     }
 }

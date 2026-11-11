@@ -127,7 +127,7 @@ private fun SearchDialogHost(
                     service = service,
                     onShowAll = { q ->
                         viewModel.setSearchDialogVisible(false)
-                        viewModel.navigateTo(Screen.AssetBrowser(q))
+                        viewModel.navigateTo(Screen.Library(initialSearch = q))
                     },
                     onOpenAsset = { uuid ->
                         viewModel.setSearchDialogVisible(false)
@@ -151,6 +151,7 @@ private fun SettingsDialogHost(
     }
     val console = LocalConsole.current
     val developerModeOn = rememberDeveloperModeEnabled()
+    val homeSketchOn by viewModel.homeSketchEnabledState.collectAsState()
     SettingsDialog(
         assetIndexing = settings.assetIndexing,
         assetPlugins = settings.assetPlugins,
@@ -161,6 +162,8 @@ private fun SettingsDialogHost(
         visible = appState.shouldShowSettingsDialog(),
         isDeveloperModeEnabled = developerModeOn,
         onDeveloperModeToggle = console?.let { c -> { on: Boolean -> c.developerMode.set(on) } },
+        homeSketchEnabled = homeSketchOn,
+        onHomeSketchToggle = { on -> viewModel.setHomeSketchEnabled(on) },
         onOpenConsole = console?.let {
             {
                 viewModel.setSettingsVisible(false)

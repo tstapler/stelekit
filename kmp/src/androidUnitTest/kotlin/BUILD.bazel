@@ -22,8 +22,29 @@ kt_android_library(
             # Roborazzi screenshot tests — no Bazel integration; kept in Gradle
             "**/*Roborazzi*.kt",
             "**/*Screenshot*.kt",
+            # Uses Roborazzi captureRoboImage (no Bazel integration; Gradle-only)
+            "**/AnnotationEditorInsetsLayoutTest.kt",
             # Composes @Composable lambdas; this target has no Compose compiler plugin (Gradle-only)
             "**/ArchiveUrlEntryPointTest.kt",
+            # Compose host tests for the flagged project list and settings panel (Gradle-only, R-AU)
+            "**/ProjectSettingsPanelTest.kt",
+            "**/SourcePagePickerTest.kt",
+            "**/DrawingAttachUiTest.kt",
+            "**/RegistryEditorScreenTest.kt",
+            "**/RegistryEditorDialogsTest.kt",
+            # Compose gesture/host tests for the flagged Sketch screen (Gradle-only, R-AU)
+            "**/SketchCanvasGestureTest.kt",
+            "**/SketchScreenEntryPointTest.kt",
+            "**/HomeSketchFlowEntryPointTest.kt",
+            "**/DimensionFieldTest.kt",
+            "**/SketchSheetPanelsTest.kt",
+            "**/SketchA11yTest.kt",
+            # Compose host test for the Labs settings toggle (Gradle-only, R-AU)
+            "**/LabsFlagToggleTest.kt",
+            # Compose host test for the annotate non-drag placement UI (Gradle-only, no Compose plugin here)
+            "**/AnnotationNonDragModeTest.kt",
+            # Compose host test for the PNG calibration step (Gradle-only, no Compose plugin here)
+            "**/RasterTaggingPanelTest.kt",
         ],
     ),
     custom_package = "dev.stapler.stelekit",

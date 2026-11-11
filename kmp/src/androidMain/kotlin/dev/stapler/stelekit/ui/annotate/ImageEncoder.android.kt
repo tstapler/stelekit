@@ -15,7 +15,8 @@ actual object ImageEncoder {
             val out = ByteArrayOutputStream()
             androidBitmap.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(0, 100), out)
             out.toByteArray()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // Throwable: an OutOfMemoryError must yield the empty-array failure contract, not crash.
             ByteArray(0)
         }
     }

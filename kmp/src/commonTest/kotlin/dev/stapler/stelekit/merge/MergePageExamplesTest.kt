@@ -274,4 +274,24 @@ class MergePageExamplesTest {
         assertEquals(MergeOutcome.RefsDidNotConverge(0), out)
         assertTrue(mergePage(page(b("t1", "see ((x1))")), page(b("x1", "x"), b("s2", "see ((x1))")), policy) !is MergeOutcome.RefsDidNotConverge)
     }
+
+    /**
+     * Shrunk from the random case behind CI run 43014754354: A and B both want the one target block, and who
+     * wins changes what A's `((u1))` points at, so the ref fixpoint has no solution. B must insert as a copy.
+     */
+    @Test
+    fun refsWithNoFixpointFallBackToInsertingTheContendedBlockAsACopy() {
+        val target = page(b("u2", "see ((u2))"))
+        val source = page(b(null, "see ((u1))"), b("u1", "see ((u2))"))
+
+        val out = merged(target, source).mergedPage()
+
+        val u1Copy = UuidRemap.uuidFor(g, "u1")
+        assertEquals(u1Copy, out.page.blocks.single { it.properties[MergePropertyKeys.SRC_ID] == "g:u1" }.uuid)
+        val present = out.page.blocks.mapNotNull { it.uuid }.toSet()
+        out.page.blocks.flatMap { Regex("\\(\\(([^()\\s]+)\\)\\)").findAll(it.content).map { m -> m.groupValues[1] } }
+            .filter { it == u1Copy }
+            .forEach { assertTrue(it in present, "dangling ref $it") }
+        assertEquals(MergeOutcome.Unchanged, merged(out.page, source))
+    }
 }

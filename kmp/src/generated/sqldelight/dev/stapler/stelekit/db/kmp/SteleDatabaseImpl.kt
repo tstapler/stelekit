@@ -200,7 +200,8 @@ private class SteleDatabaseImpl(
           |    focal_length_mm            REAL,
           |    focal_length_35mm_eq       REAL,
           |    camera_make                TEXT,
-          |    camera_model               TEXT
+          |    camera_model               TEXT,
+          |    calibration_basis_version  INTEGER NOT NULL DEFAULT 0
           |)
           """.trimMargin(), 0).await()
       driver.execute(null, """
@@ -394,6 +395,7 @@ private class SteleDatabaseImpl(
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_asset_unprocessed ON asset_index(ml_processed, ml_failed, imported_at_ms)", 0).await()
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_asset_media_type ON asset_index(media_type)", 0).await()
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_asset_imported_at ON asset_index(imported_at_ms DESC)", 0).await()
+      driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_image_annotations_file_path ON image_annotations(file_path)", 0).await()
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_sketch_sheets_project ON sketch_sheets(project_uuid)", 0).await()
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_sketch_primitives_sheet_z ON sketch_primitives(sheet_uuid, z)", 0).await()
       driver.execute(null, "CREATE UNIQUE INDEX IF NOT EXISTS idx_sketch_dimensions_key ON sketch_dimensions(project_uuid, key, source_kind, source_ref)", 0).await()

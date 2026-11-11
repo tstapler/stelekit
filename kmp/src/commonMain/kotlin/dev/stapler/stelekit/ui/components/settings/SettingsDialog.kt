@@ -90,6 +90,9 @@ fun SettingsDialog(
     isDeveloperModeEnabled: Boolean = false,
     onDeveloperModeToggle: ((Boolean) -> Unit)? = null,
     onOpenConsole: (() -> Unit)? = null,
+    // Labs: null onHomeSketchToggle hides the category.
+    homeSketchEnabled: Boolean = false,
+    onHomeSketchToggle: ((Boolean) -> Unit)? = null,
     // Section settings
     sectionManifest: SectionManifest? = null,
     sectionStates: Map<String, SectionState> = emptyMap(),
@@ -149,7 +152,7 @@ fun SettingsDialog(
 
             val visibleCategories = remember(
                 onConnectGoogle, audiobookNotesSettingsContent, tagSettings,
-                onLibsqlDriverToggle, onMcpServerToggle, onDeveloperModeToggle, sectionManifest,
+                onLibsqlDriverToggle, onMcpServerToggle, onDeveloperModeToggle, onHomeSketchToggle, sectionManifest,
                 llmProviderRegistry, llmSettings, llmCredentialStore,
             ) {
                 SettingsCategory.entries.filter { category ->
@@ -159,6 +162,7 @@ fun SettingsDialog(
                         SettingsCategory.TAG_SUGGESTIONS -> tagSettings != null
                         SettingsCategory.DEVELOPER ->
                             isDeveloperCategoryVisible(onLibsqlDriverToggle, onMcpServerToggle, onDeveloperModeToggle)
+                        SettingsCategory.LABS -> onHomeSketchToggle != null
                         SettingsCategory.SECTIONS -> sectionManifest != null
                         SettingsCategory.DEVICE_SUBSCRIPTIONS -> sectionManifest != null
                         SettingsCategory.LLM_PROVIDERS ->
@@ -258,6 +262,9 @@ fun SettingsDialog(
                             tagSettings = tagSettings,
                             hasLlmKey = hasLlmKey,
                         )
+                    }
+                    SettingsCategory.LABS -> if (onHomeSketchToggle != null) {
+                        LabsSection(homeSketchEnabled, onHomeSketchToggle)
                     }
                     SettingsCategory.DEVELOPER -> if (isDeveloperCategoryVisible(onLibsqlDriverToggle, onMcpServerToggle, onDeveloperModeToggle)) {
                         DeveloperSettings(
@@ -510,6 +517,7 @@ enum class SettingsCategory(val label: String, val icon: ImageVector) {
     VAULT("Vault", Icons.Default.Lock),
     SECTIONS("Sections", Icons.Default.Folder),
     DEVICE_SUBSCRIPTIONS("Device Subscriptions", Icons.Default.Notifications),
+    LABS("Labs", Icons.Default.Science),
     DEVELOPER("Developer", Icons.Default.BugReport),
 }
 

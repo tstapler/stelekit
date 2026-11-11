@@ -5,6 +5,7 @@ package dev.stapler.stelekit.ui.annotate
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationMethod
 import dev.stapler.stelekit.model.ImageAnnotation
@@ -13,6 +14,7 @@ import dev.stapler.stelekit.model.NormalizedPoint
 import dev.stapler.stelekit.repository.InMemoryMeasurementAnnotationRepository
 import org.junit.Rule
 import org.junit.Test
+import kotlin.test.assertEquals
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
@@ -59,6 +61,23 @@ class AnnotationEditorScreenRobolectricTest {
         rule.setContent { AnnotationEditorScreen(viewModel = vm, imageAnnotation = img) }
         rule.waitForIdle()
         rule.onNodeWithText("Tags").assertExists()
+    }
+
+    @Test
+    fun unitDropdown_selectionReachesTheViewModelAndRelabelsMeasurements() {
+        val img = image()
+        val vm = viewModel(img)
+        vm.selectTool(AnnotationTool.DISTANCE)
+        vm.addPoint(NormalizedPoint(0.0, 0.5)); vm.addPoint(NormalizedPoint(0.1, 0.5))
+        rule.setContent { AnnotationEditorScreen(viewModel = vm, imageAnnotation = img) }
+        rule.waitForIdle()
+
+        rule.onNodeWithText(MeasurementUnit.METERS.symbol()).performClick()
+        rule.onNodeWithText(MeasurementUnit.FEET_INCHES.displayName()).performClick()
+        rule.waitForIdle()
+
+        assertEquals(MeasurementUnit.FEET_INCHES, vm.state.value.selectedUnit)
+        rule.onNodeWithText(MeasurementUnit.FEET_INCHES.symbol()).assertExists()
     }
 
     @Test

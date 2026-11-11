@@ -133,6 +133,7 @@ internal fun GraphContentScreenAndCapture(deps: GraphContentDeps, viewModel: Ste
             capabilities = buildEditorCapabilities(deps, viewModel, inputs, captureState).copy(googlePhotos = googlePhotos),
             onImportImage = buildOnImportImage(deps, viewModel, inputs, captureState),
             platformSettings = deps.platformSettings,
+            fileSystem = deps.fileSystem,
             perfSpans = inputs.perfTelemetry.perfSpans,
             perfHistograms = inputs.perfTelemetry.perfHistograms,
             perfQueryStats = inputs.perfTelemetry.perfQueryStats,

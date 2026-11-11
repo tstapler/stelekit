@@ -25,6 +25,9 @@ import dev.stapler.stelekit.model.MeasurementAnnotation
  */
 object AnnotationExporter {
 
+    /** Font cell size at the reference width: a 7-row glyph is 14 px tall, as before. */
+    private const val LABEL_CELL_PX = 2f
+
     /**
      * Draw [measurements] onto [sourceImage] and return the composited [ImageBitmap].
      *
@@ -40,6 +43,7 @@ object AnnotationExporter {
         val canvas = Canvas(output)
         val paint = Paint()
         val canvasSize = IntSize(width, height)
+        val scale = exportScale(width)
 
         // Draw source image
         canvas.drawImage(sourceImage, Offset.Zero, paint)
@@ -47,7 +51,7 @@ object AnnotationExporter {
         // Draw each annotation
         val path = Path()
         measurements.forEach { annotation ->
-            drawAnnotationOnCanvas(canvas, annotation, path, canvasSize, paint)
+            drawAnnotationOnCanvas(canvas, annotation, path, canvasSize, paint, scale)
         }
 
         return output
@@ -57,6 +61,7 @@ object AnnotationExporter {
      * Bake annotations into [sourceImage] and encode as JPEG bytes using [ImageEncoder].
      *
      * @param quality JPEG quality (0–100)
+     * @param encode JPEG encoder; any Throwable it (or the bake) raises becomes [Either.Left].
      * @return [Either.Right] with the encoded bytes, or [Either.Left] with
      *   [DomainError.ExportError.EncodingFailed] if [ImageEncoder.encodeToJpeg] returned no bytes
      *   (its empty-[ByteArray] failure contract, unchanged on every platform).
@@ -65,18 +70,22 @@ object AnnotationExporter {
         sourceImage: ImageBitmap,
         measurements: List<MeasurementAnnotation>,
         quality: Int = 90,
-    ): Either<DomainError.ExportError, ByteArray> {
-        val baked = bakeAnnotations(sourceImage, measurements)
-        return mapEncodeResult(ImageEncoder.encodeToJpeg(baked, quality))
+        encode: (ImageBitmap, Int) -> ByteArray = { bitmap, q -> ImageEncoder.encodeToJpeg(bitmap, q) },
+    ): Either<DomainError.ExportError, ByteArray> = try {
+        mapEncodeResult(encode(bakeAnnotations(sourceImage, measurements), quality))
+    } catch (e: Throwable) {
+        // OutOfMemoryError is an Error; on Android an uncaught one kills the process, so report it instead.
+        DomainError.ExportError.EncodingFailed("Could not export this image: ${e.message ?: e::class.simpleName}").left()
     }
 
-    @Suppress("LongMethod")
+    @Suppress("LongMethod", "LongParameterList")
     private fun drawAnnotationOnCanvas(
         canvas: Canvas,
         annotation: MeasurementAnnotation,
         path: Path,
         canvasSize: IntSize,
         paint: Paint,
+        scale: Float,
     ) {
         val screenPoints = annotation.normalizedPoints.map {
             Offset(
@@ -88,7 +97,7 @@ object AnnotationExporter {
 
         val color = annotationExportColor(annotation.annotationType)
         paint.color = color
-        paint.strokeWidth = 3f
+        paint.strokeWidth = 3f * scale
         paint.style = PaintingStyle.Stroke
 
         when (annotation.annotationType) {
@@ -96,8 +105,8 @@ object AnnotationExporter {
                 if (screenPoints.size >= 2) {
                     canvas.drawLine(screenPoints[0], screenPoints[1], paint)
                     paint.style = PaintingStyle.Fill
-                    canvas.drawCircle(screenPoints[0], 5f, paint)
-                    canvas.drawCircle(screenPoints[1], 5f, paint)
+                    canvas.drawCircle(screenPoints[0], 5f * scale, paint)
+                    canvas.drawCircle(screenPoints[1], 5f * scale, paint)
                 }
             }
 
@@ -126,7 +135,7 @@ object AnnotationExporter {
             AnnotationType.LABEL -> {
                 if (screenPoints.isNotEmpty()) {
                     paint.style = PaintingStyle.Fill
-                    canvas.drawCircle(screenPoints[0], 6f, paint)
+                    canvas.drawCircle(screenPoints[0], 6f * scale, paint)
                 }
             }
         }
@@ -135,24 +144,28 @@ object AnnotationExporter {
         val labelText = annotation.valueDisplay ?: annotation.label
         if (labelText != null && labelText.isNotBlank()) {
             val anchor = annotationExportMidpoint(screenPoints, annotation.annotationType)
-            drawLabel(canvas, labelText, anchor, paint)
+            drawLabel(canvas, labelText, anchor, paint, scale)
         }
     }
 
-    private fun drawLabel(canvas: Canvas, text: String, anchor: Offset, paint: Paint) {
-        // Draw a simple background rectangle
-        val padding = 4f
-        val approxCharWidth = 7f
-        val textHeight = 14f
-        val textWidth = text.length * approxCharWidth
-        val bgLeft = anchor.x - textWidth / 2 - padding
-        val bgTop = anchor.y - 40f - textHeight / 2 - padding
-        val bgRight = anchor.x + textWidth / 2 + padding
-        val bgBottom = anchor.y - 40f + textHeight / 2 + padding
+    private fun drawLabel(canvas: Canvas, text: String, anchor: Offset, paint: Paint, scale: Float) {
+        val cell = LABEL_CELL_PX * scale
+        val padding = 4f * scale
+        val textWidth = ExportLabelFont.textWidth(text, cell)
+        val textHeight = ExportLabelFont.textHeight(cell)
+        val centerY = anchor.y - 40f * scale
+        val textLeft = anchor.x - textWidth / 2
+        val textTop = centerY - textHeight / 2
 
         paint.color = Color(0xCC000000)
         paint.style = PaintingStyle.Fill
-        canvas.drawRoundRect(bgLeft, bgTop, bgRight, bgBottom, 4f, 4f, paint)
+        canvas.drawRoundRect(
+            textLeft - padding, textTop - padding, textLeft + textWidth + padding, textTop + textHeight + padding,
+            4f * scale, 4f * scale, paint,
+        )
+
+        paint.color = Color.White
+        ExportLabelFont.layout(text, textLeft, textTop, cell) { l, t, r, b -> canvas.drawRect(l, t, r, b, paint) }
     }
 
     private fun annotationExportColor(type: AnnotationType): Color = when (type) {

@@ -4,6 +4,8 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import dev.stapler.stelekit.db.DirectSqlWrite
+import dev.stapler.stelekit.db.RestrictedDatabaseQueries
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.AnnotationType
@@ -23,14 +25,63 @@ import kotlinx.serialization.json.jsonPrimitive
  * SQLDelight-backed [MeasurementAnnotationRepository].
  *
  * Reads use [PlatformDispatcher.DB]; writes use [withContext] with [PlatformDispatcher.DB].
- * Follows the same pattern as [SqlDelightPageRepository]: calls steleDatabaseQueries directly.
+ * Writes go through [MeasurementWrites] (DatabaseWriteActor, HIGH priority).
  */
 @OptIn(DirectRepositoryWrite::class)
 class SqlDelightMeasurementAnnotationRepository(
     private val database: SteleDatabase,
+    private val writes: MeasurementWrites = MeasurementWrites(null),
 ) : MeasurementAnnotationRepository {
 
     private val queries = database.steleDatabaseQueries
+    private val restricted = RestrictedDatabaseQueries(queries)
+
+    /** Runs [op] as one actor-serialized write on the DB dispatcher, mapping failures to WriteFailed. */
+    private suspend fun write(op: WriteOp): Either<DomainError, Unit> =
+        writes.execute {
+            withContext(PlatformDispatcher.DB) {
+                try {
+                    apply(op)
+                    Unit.right()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+                }
+            }
+        }
+
+    /** The only place this repository touches mutating queries; always called inside an actor op. */
+    @OptIn(DirectSqlWrite::class)
+    private suspend fun apply(op: WriteOp) {
+        suspend fun insert(m: MeasurementAnnotation) = restricted.insertMeasurementAnnotation(
+            uuid = m.uuid,
+            image_uuid = m.imageUuid,
+            annotation_type = m.annotationType.name,
+            normalized_points = m.normalizedPoints.toJson(),
+            value_meters = m.valueMeters,
+            value_display = m.valueDisplay,
+            label = m.label,
+            color_hex = m.colorHex,
+            ble_device_id = m.bleDeviceId,
+        )
+        when (op) {
+            is WriteOp.Save -> insert(op.measurement)
+            is WriteOp.ReplaceForImage -> restricted.transaction {
+                restricted.deleteMeasurementsForImage(op.imageUuid)
+                op.measurements.forEach { insert(it) }
+            }
+            is WriteOp.Delete -> restricted.deleteMeasurementAnnotation(op.uuid)
+            is WriteOp.DeleteForImage -> restricted.deleteMeasurementsForImage(op.imageUuid)
+        }
+    }
+
+    private sealed interface WriteOp {
+        class Save(val measurement: MeasurementAnnotation) : WriteOp
+        class ReplaceForImage(val imageUuid: String, val measurements: List<MeasurementAnnotation>) : WriteOp
+        class Delete(val uuid: String) : WriteOp
+        class DeleteForImage(val imageUuid: String) : WriteOp
+    }
 
     override fun getMeasurementsForImage(imageUuid: String): Flow<Either<DomainError, List<MeasurementAnnotation>>> =
         queries.selectMeasurementsForImage(imageUuid)
@@ -38,80 +89,19 @@ class SqlDelightMeasurementAnnotationRepository(
 
     @DirectRepositoryWrite
     override suspend fun saveMeasurementAnnotation(measurement: MeasurementAnnotation): Either<DomainError, Unit> =
-        withContext(PlatformDispatcher.DB) {
-            try {
-                queries.insertMeasurementAnnotation(
-                    uuid = measurement.uuid,
-                    image_uuid = measurement.imageUuid,
-                    annotation_type = measurement.annotationType.name,
-                    normalized_points = measurement.normalizedPoints.toJson(),
-                    value_meters = measurement.valueMeters,
-                    value_display = measurement.valueDisplay,
-                    label = measurement.label,
-                    color_hex = measurement.colorHex,
-                    ble_device_id = measurement.bleDeviceId,
-                )
-                Unit.right()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
-            }
-        }
+        write(WriteOp.Save(measurement))
 
     @DirectRepositoryWrite
     override suspend fun saveMeasurements(imageUuid: String, measurements: List<MeasurementAnnotation>): Either<DomainError, Unit> =
-        withContext(PlatformDispatcher.DB) {
-            try {
-                queries.transaction {
-                    queries.deleteMeasurementsForImage(imageUuid)
-                    measurements.forEach { m ->
-                        queries.insertMeasurementAnnotation(
-                            uuid = m.uuid,
-                            image_uuid = m.imageUuid,
-                            annotation_type = m.annotationType.name,
-                            normalized_points = m.normalizedPoints.toJson(),
-                            value_meters = m.valueMeters,
-                            value_display = m.valueDisplay,
-                            label = m.label,
-                            color_hex = m.colorHex,
-                            ble_device_id = m.bleDeviceId,
-                        )
-                    }
-                }
-                Unit.right()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
-            }
-        }
+        write(WriteOp.ReplaceForImage(imageUuid, measurements))
 
     @DirectRepositoryWrite
     override suspend fun deleteMeasurementAnnotation(uuid: String): Either<DomainError, Unit> =
-        withContext(PlatformDispatcher.DB) {
-            try {
-                queries.deleteMeasurementAnnotation(uuid)
-                Unit.right()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
-            }
-        }
+        write(WriteOp.Delete(uuid))
 
     @DirectRepositoryWrite
     override suspend fun deleteMeasurementsForImage(imageUuid: String): Either<DomainError, Unit> =
-        withContext(PlatformDispatcher.DB) {
-            try {
-                queries.deleteMeasurementsForImage(imageUuid)
-                Unit.right()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
-            }
-        }
+        write(WriteOp.DeleteForImage(imageUuid))
 }
 
 

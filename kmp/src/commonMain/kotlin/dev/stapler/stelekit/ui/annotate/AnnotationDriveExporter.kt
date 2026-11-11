@@ -36,7 +36,7 @@ class AnnotationDriveExporter(
             val jpeg = renderer.renderJpeg(imageAnnotation, measurements).fold(
                 ifLeft = { err ->
                     logger.warn("Drive export: rendering failed: ${err.message}")
-                    _state.value = DriveExportUiState.Error(err.message)
+                    _state.value = DriveExportUiState.Error(driveExportMessage(err))
                     return
                 },
                 ifRight = { it },
@@ -44,7 +44,7 @@ class AnnotationDriveExporter(
             service.exportToDrive(imageAnnotation, measurements, jpeg).fold(
                 ifLeft = { err ->
                     logger.warn("Drive export failed: ${err.message}")
-                    _state.value = DriveExportUiState.Error(err.message)
+                    _state.value = DriveExportUiState.Error(driveExportMessage(err))
                 },
                 ifRight = { _state.value = DriveExportUiState.Success(it.imageLink) },
             )

@@ -40,6 +40,7 @@ import dev.stapler.stelekit.performance.NavigationTracingEffect
 import dev.stapler.stelekit.performance.PercentileSummary
 import dev.stapler.stelekit.performance.QueryStat
 import dev.stapler.stelekit.performance.SerializedSpan
+import dev.stapler.stelekit.platform.defaultMeasurementUnit
 import dev.stapler.stelekit.platform.sensor.SensorModule
 import dev.stapler.stelekit.repository.RepositorySet
 import dev.stapler.stelekit.transfer.qrcode.QrImportService
@@ -51,8 +52,10 @@ import dev.stapler.stelekit.platform.openInBrowser
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorScreen
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModel
 import dev.stapler.stelekit.ui.components.*
-import dev.stapler.stelekit.ui.gallery.GalleryScreen
-import dev.stapler.stelekit.ui.gallery.GalleryViewModel
+import dev.stapler.stelekit.ui.library.LibraryRoute
+import dev.stapler.stelekit.ui.library.LibrarySession
+import dev.stapler.stelekit.ui.library.libraryAssetDeleter
+import dev.stapler.stelekit.ui.nav.LegacyScreenAlias
 import dev.stapler.stelekit.ui.screens.AllPagesScreen
 import dev.stapler.stelekit.ui.screens.AllPagesViewModel
 import dev.stapler.stelekit.ui.screens.BackgroundJobsScreen
@@ -93,6 +96,8 @@ internal fun ScreenRouter(
     capabilities: EditorCapabilities = EditorCapabilities(),
     onImportImage: (() -> Unit)? = null,
     platformSettings: dev.stapler.stelekit.platform.Settings? = null,
+    /** Lets the Library flag items whose file is gone; null flags nothing. */
+    fileSystem: dev.stapler.stelekit.platform.FileSystem? = null,
     perfSpans: StateFlow<List<SerializedSpan>> = MutableStateFlow(emptyList()),
     perfHistograms: StateFlow<Map<String, PercentileSummary>> = MutableStateFlow(emptyMap()),
     perfQueryStats: StateFlow<List<QueryStat>> = MutableStateFlow(emptyList()),
@@ -141,6 +146,17 @@ internal fun ScreenRouter(
     }
 
     val suggestionMatcher by viewModel.suggestionMatcher.collectAsState()
+
+    // One Library session for the router's lifetime so filters and scroll survive Back from the editor.
+    val librarySession = remember(repos, fileSystem) {
+        LibrarySession(
+            repos.libraryRepository,
+            platformSettings,
+            fileExists = fileSystem?.let { fs -> { path: String -> fs.fileExists(path) } },
+            deleteAsset = libraryAssetDeleter(repos.assetRepository, repos.writeActor),
+        )
+    }
+    DisposableEffect(librarySession) { onDispose { librarySession.close() } }
 
     // Track navigation direction for slide transition orientation.
     var previousHistoryIndex by remember { mutableStateOf(appState.historyIndex) }
@@ -354,41 +370,85 @@ internal fun ScreenRouter(
                 // Vault unlock is handled by the outer StelekitApp scaffold — no-op here
             }
 
-            is Screen.Gallery -> {
-                NavigationTracingEffect("Gallery")
-                val galleryViewModel = remember {
-                    GalleryViewModel(repos.imageAnnotationRepository)
-                }
-                DisposableEffect(galleryViewModel) {
-                    onDispose { galleryViewModel.close() }
-                }
-                GalleryScreen(
-                    viewModel = galleryViewModel,
-                    onOpenAnnotationEditor = { uuid ->
-                        viewModel.navigateToAnnotationEditor(uuid)
-                    },
-                    onNavigateToPage = { pageUuid ->
-                        viewModel.navigateToPageByUuid(pageUuid)
-                    },
-                    onImportImage = onImportImage,
+            is Screen.Library, is Screen.Gallery, is Screen.AssetBrowser -> {
+                NavigationTracingEffect("Library")
+                val libraryOnboarding by viewModel.libraryOnboarding.collectAsState()
+                val libraryClipboard = LocalClipboardManager.current
+                LibraryRoute(
+                    session = librarySession,
+                    screen = LegacyScreenAlias.resolve(currentScreen) as Screen.Library,
+                    onboarding = libraryOnboarding,
+                    onOpenAnnotationEditor = { uuid -> viewModel.navigateToAnnotationEditor(uuid) },
+                    onOpenAsset = { uuid -> viewModel.navigateTo(Screen.AssetDetail(dev.stapler.stelekit.asset.AssetUuid(uuid))) },
+                    onLibraryOpen = { viewModel.onLibraryOpened() },
+                    onDismissTip = { viewModel.dismissLibraryTip() },
+                    onDismissNotice = { viewModel.dismissUpgradeNotice() },
+                    onAddPhoto = onImportImage,
+                    onCopyLink = { link -> libraryClipboard.setText(AnnotatedString(link)) },
                 )
             }
 
-            is Screen.AssetBrowser -> {
-                NavigationTracingEffect("AssetBrowser")
-                val assetBrowserViewModel = remember {
-                    dev.stapler.stelekit.ui.assets.AssetBrowserViewModel(assetRepository = repos.assetRepository, writeActor = repos.writeActor)
+            is Screen.Sketch -> if (viewModel.homeSketchEnabledState.collectAsState().value) {
+                NavigationTracingEffect("Sketch")
+                if (currentScreen.projectUuid == null && platformSettings != null) {
+                    val graphId = appState.currentGraphId.orEmpty()
+                    val notesPath = appState.currentNotesPath
+                    val projectListViewModel = remember(repos, graphId) {
+                        val wiring = dev.stapler.stelekit.ui.sketch.drawingWiringFor(
+                            repos.sketchRepositories, { dev.stapler.stelekit.asset.AssetIndexService(repos.assetRepository) },
+                            fileSystem, notesPath, repos.writeActor,
+                        )
+                        dev.stapler.stelekit.ui.sketch.projectListViewModelFor(
+                            repos.sketchRepositories, repos.writeActor, graphId, platformSettings,
+                            graphLoader?.let { loader ->
+                                dev.stapler.stelekit.projectbridge.SourceBindingService(
+                                    repos.sketchRepositories, repos.pageRepository, loader::readPageText,
+                                    { op -> repos.writeActor?.execute(op = op) ?: op() },
+                                    dev.stapler.stelekit.projectbridge.LocalBindingTable(platformSettings),
+                                )
+                            },
+                            fileSystem?.let { fs ->
+                                dev.stapler.stelekit.ui.sketch.YamlPickerAction(
+                                    dev.stapler.stelekit.projectbridge.YamlSnapshotImporter(
+                                        repos.sketchRepositories, viewModel::projectSidecarStore,
+                                        { op -> repos.writeActor?.execute(op = op) ?: op() },
+                                    ),
+                                    repos.sketchRepositories,
+                                ) { fs.pickFileAsync()?.let { path -> fs.readFileSuspend(path) } }
+                            },
+                            wiring?.action,
+                            wiring?.sheets,
+                        )
+                    }
+                    dev.stapler.stelekit.ui.sketch.ProjectListScreen(
+                        projectListViewModel,
+                        onOpenProject = { viewModel.navigateTo(Screen.Sketch(it)) },
+                        registryEditor = {
+                            dev.stapler.stelekit.ui.sketch.RegistryEditorViewModel(
+                                repos.sketchRepositories.projects,
+                                { op -> repos.writeActor?.execute(op = op) ?: op() },
+                                { viewModel.projectSidecarStore()?.let { dev.stapler.stelekit.projectbridge.readYamlSnapshot(repos.sketchRepositories, it) } },
+                            )
+                        },
+                    )
+                } else {
+                    val sketchViewModel = remember(currentScreen.projectUuid) {
+                        dev.stapler.stelekit.ui.sketch.sketchViewModelFor(repos.sketchRepositories, repos.writeActor, currentScreen.projectUuid)
+                    }
+                    val graphPath = appState.currentGraphPath.orEmpty()
+                    val sketchExporter = remember(fileSystem, graphPath) {
+                        if (fileSystem == null || graphPath.isBlank()) {
+                            null
+                        } else {
+                            dev.stapler.stelekit.sketch.export.SketchExporter(
+                                fileSystem,
+                                dev.stapler.stelekit.platform.AtomicFileWriter(fileSystem, { it }, ".tmp"),
+                                graphPath,
+                            )
+                        }
+                    }
+                    dev.stapler.stelekit.ui.sketch.SketchScreen(viewModel = sketchViewModel, onNavigateBack = { viewModel.goBack() }, exporter = sketchExporter)
                 }
-                LaunchedEffect(currentScreen.initialSearch) {
-                    currentScreen.initialSearch?.let { assetBrowserViewModel.setSearch(it) }
-                }
-                dev.stapler.stelekit.ui.assets.AssetBrowserScreen(
-                    viewModel = assetBrowserViewModel,
-                    onNavigateBack = { viewModel.goBack() },
-                    onNavigateToAsset = { uuid -> viewModel.navigateTo(Screen.AssetDetail(uuid)) },
-                    plugins = assetPlugins,
-                    onOpenPluginsSettings = { viewModel.showPluginsSettings() },
-                )
             }
 
             is Screen.DriveBrowser -> {
@@ -407,6 +467,7 @@ internal fun ScreenRouter(
                         writeActor = repos.writeActor,
                         graphPath = appState.currentGraphPath.orEmpty(),
                         mover = assetMover,
+                        defaultUnit = { platformSettings.defaultMeasurementUnit() },
                     )
                 }
                 val annotateScope = rememberCoroutineScope()
@@ -431,6 +492,7 @@ internal fun ScreenRouter(
                     AnnotationEditorViewModel(
                         measurementRepository = repos.measurementAnnotationRepository,
                         imageAnnotationRepository = repos.imageAnnotationRepository,
+                        settings = platformSettings,
                     )
                 }
                 DisposableEffect(annotationEditorViewModel) {

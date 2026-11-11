@@ -18,29 +18,61 @@ fun mergePage(existing: MergePage?, incoming: MergePage, policy: MergePolicy, ma
     // An earlier copy of S already at uuid' stays S's ref target even if a later copy took another uuid,
     // unless S itself (same uuid) is on the page.
     val fixed = aligned + remap.filterValues { it in onPage } + aligned.filter { (s, t) -> s == t }
-    var refs = remap + fixed
-    var merger = SiblingMerger(policy, remap, refs, incoming.name, HashSet(onPage))
-    var blocks = merger.mergeSiblings(existing.blocks, incoming.blocks)
-    var passes = 0
-    var settled = false
-    while (passes++ < maxRefPasses) {
-        val next = remap + merger.resolved + fixed
-        if (next == refs) {
-            settled = true
+    var settled: SettledMerge? = null
+    var noContentMatch = emptySet<String>()
+    // Some inputs have no fixpoint (two source blocks that each want the same target block, with refs that
+    // depend on who wins). Retry once with the oscillating uuids barred from content dedup, so they insert as copies.
+    for (attempt in 0..1) {
+        val run = settle(existing, incoming, policy, remap, fixed, onPage, noContentMatch, maxRefPasses)
+        if (run.settled != null) {
+            settled = run.settled
             break
         }
-        refs = next
-        merger = SiblingMerger(policy, remap, refs, incoming.name, HashSet(onPage))
-        blocks = merger.mergeSiblings(existing.blocks, incoming.blocks)
+        if (attempt == 1 || run.oscillating.isEmpty()) break
+        noContentMatch = run.oscillating
     }
     // Unsettled refs would write a page whose ((refs)) point at the wrong blocks; fail the page instead.
-    if (!settled) return MergeOutcome.RefsDidNotConverge(maxRefPasses)
+    val (merger, blocks) = settled ?: return MergeOutcome.RefsDidNotConverge(maxRefPasses)
     val (props, clashes) = unionProperties(existing.properties, incoming.properties)
     if (merger.added == 0 && merger.conflicts.isEmpty() && props == existing.properties) return MergeOutcome.Unchanged
     return MergeOutcome.Merged(existing.copy(properties = props, blocks = blocks), merger.added, merger.conflicts.toList(), clashes)
 }
 
 private const val MAX_REF_PASSES = 8
+
+private class SettledMerge(val merger: SiblingMerger, val blocks: List<MergeBlock>) {
+    operator fun component1() = merger
+    operator fun component2() = blocks
+}
+
+private class SettleRun(val settled: SettledMerge?, val oscillating: Set<String>)
+
+private fun settle(
+    existing: MergePage,
+    incoming: MergePage,
+    policy: MergePolicy,
+    remap: Map<String, String>,
+    fixed: Map<String, String>,
+    onPage: Set<String>,
+    noContentMatch: Set<String>,
+    maxRefPasses: Int,
+): SettleRun {
+    var refs = remap + fixed
+    val history = mutableListOf(refs)
+    var merger = SiblingMerger(policy, remap, refs, incoming.name, HashSet(onPage), noContentMatch)
+    var blocks = merger.mergeSiblings(existing.blocks, incoming.blocks)
+    var passes = 0
+    while (passes++ < maxRefPasses) {
+        val next = remap + merger.resolved + fixed
+        if (next == refs) return SettleRun(SettledMerge(merger, blocks), emptySet())
+        refs = next
+        history += refs
+        merger = SiblingMerger(policy, remap, refs, incoming.name, HashSet(onPage), noContentMatch)
+        blocks = merger.mergeSiblings(existing.blocks, incoming.blocks)
+    }
+    val oscillating = history.flatMap { it.keys }.toSet().filterTo(HashSet()) { k -> history.map { it[k] }.toSet().size > 1 }
+    return SettleRun(null, oscillating)
+}
 
 private fun pageUuids(blocks: List<MergeBlock>): MutableSet<String> {
     val out = HashSet<String>()
@@ -120,6 +152,8 @@ private class SiblingMerger(
     private val pageName: String,
     /** Every uuid on the page so far; an inserted block never reuses one. */
     private val usedUuids: MutableSet<String>,
+    /** Source uuids whose block may only dedup by identity, never by content; see [mergePage]'s retry. */
+    private val noContentMatch: Set<String> = emptySet(),
 ) {
     var added = 0
         private set
@@ -177,7 +211,7 @@ private class SiblingMerger(
         }
         val byKey = out.groupBy { key(it.block.content) }
         incoming.forEachIndexed { i, inc ->
-            if (matched[i] != null) return@forEachIndexed
+            if (matched[i] != null || inc.uuid in noContentMatch) return@forEachIndexed
             val pick = byKey[key(UuidRemap.rewriteRefs(inc.content, refs))]?.firstOrNull { it !in taken && propsCovered(it.block, inc) }
                 ?: return@forEachIndexed
             matched[i] = pick
