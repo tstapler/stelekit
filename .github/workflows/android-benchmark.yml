@@ -59,7 +59,7 @@ jobs:
           if [ "$EVENT" = "pull_request" ]; then
             if [ "$SKIP_LABEL" = "true" ]; then
               run=false
-            elif ! git diff --name-only "$BASE_SHA"...HEAD | grep -Eq '(^|/)performance/(probe|annotation)/|/annotate/|SteleKitAssetFetcher\.kt|^benchmarks/budgets/|^scripts/(bench-budget|benchdiff|android-benchmark|check-artifact)|android-benchmark\.yml'; then
+            elif ! git diff --name-only "$BASE_SHA"...HEAD | grep -Eq '(^|/)performance/(probe|annotation|sketch)/|ui/sketch/SketchCanvas|/annotate/|SteleKitAssetFetcher\.kt|^benchmarks/budgets/|^scripts/(bench-budget|benchdiff|android-benchmark|check-artifact)|android-benchmark\.yml'; then
               run=false
             fi
           fi

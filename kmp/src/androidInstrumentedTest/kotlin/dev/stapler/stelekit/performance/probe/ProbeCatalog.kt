@@ -35,5 +35,7 @@ object ProbeCatalog {
         "SwitchChurn.heapSlopeMbPerCycle",
         "Export.exportedBitmapBytes",
         "Export.bakePeakMb",
+        "SketchCanvasPan200.frameP50RatioToEmpty",
+        "SketchCanvasPan200.frameP95Ms",
     )
 }

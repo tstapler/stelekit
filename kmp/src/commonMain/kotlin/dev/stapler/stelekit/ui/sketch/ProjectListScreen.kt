@@ -28,10 +28,21 @@ import dev.stapler.stelekit.ui.components.typedItems
 
 /** Flag-gated project list with creation and the per-graph settings; reached from the Sketch row. */
 @Composable
-fun ProjectListScreen(viewModel: ProjectListViewModel, onOpenProject: (String) -> Unit, modifier: Modifier = Modifier) {
+fun ProjectListScreen(
+    viewModel: ProjectListViewModel,
+    onOpenProject: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    registryEditor: (() -> RegistryEditorViewModel)? = null,
+) {
     DisposableEffect(viewModel) { onDispose { viewModel.close() } }
     val state by viewModel.state.collectAsState()
     val session by viewModel.importSession.collectAsState()
+    var editing by remember { mutableStateOf(false) }
+    if (editing && registryEditor != null) {
+        val editorViewModel = remember { registryEditor() }
+        RegistryEditorScreen(editorViewModel, onBack = { editing = false }, modifier = modifier)
+        return
+    }
     ProjectListContent(
         state = state,
         onCreate = viewModel::createProject,
@@ -47,6 +58,9 @@ fun ProjectListScreen(viewModel: ProjectListViewModel, onOpenProject: (String) -
                 onDismissPreview = viewModel::dismissPreview,
                 onAddPrivateTerm = viewModel::addPrivateTerm,
             )
+            if (registryEditor != null && state.projects.isNotEmpty()) {
+                TextButton(onClick = { editing = true }, modifier = Modifier.padding(horizontal = 16.dp)) { Text("Registry and constraints") }
+            }
             if (viewModel.sourcesAvailable && state.projects.isNotEmpty()) {
                 SourcePagePicker(
                     state, viewModel::searchSourcePages, viewModel::bindSource, viewModel::unbindSource,

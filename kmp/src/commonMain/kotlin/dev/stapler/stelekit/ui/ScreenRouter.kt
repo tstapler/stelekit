@@ -420,6 +420,13 @@ internal fun ScreenRouter(
                     dev.stapler.stelekit.ui.sketch.ProjectListScreen(
                         projectListViewModel,
                         onOpenProject = { viewModel.navigateTo(Screen.Sketch(it)) },
+                        registryEditor = {
+                            dev.stapler.stelekit.ui.sketch.RegistryEditorViewModel(
+                                repos.sketchRepositories.projects,
+                                { op -> repos.writeActor?.execute(op = op) ?: op() },
+                                { viewModel.projectSidecarStore()?.let { dev.stapler.stelekit.projectbridge.readYamlSnapshot(repos.sketchRepositories, it) } },
+                            )
+                        },
                     )
                 } else {
                     val sketchViewModel = remember(currentScreen.projectUuid) {
