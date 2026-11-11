@@ -51,8 +51,9 @@ import dev.stapler.stelekit.platform.openInBrowser
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorScreen
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModel
 import dev.stapler.stelekit.ui.components.*
-import dev.stapler.stelekit.ui.gallery.GalleryScreen
-import dev.stapler.stelekit.ui.gallery.GalleryViewModel
+import dev.stapler.stelekit.ui.library.LibraryRoute
+import dev.stapler.stelekit.ui.library.LibrarySession
+import dev.stapler.stelekit.ui.nav.LegacyScreenAlias
 import dev.stapler.stelekit.ui.screens.AllPagesScreen
 import dev.stapler.stelekit.ui.screens.AllPagesViewModel
 import dev.stapler.stelekit.ui.screens.BackgroundJobsScreen
@@ -139,6 +140,10 @@ internal fun ScreenRouter(
     }
 
     val suggestionMatcher by viewModel.suggestionMatcher.collectAsState()
+
+    // One Library session for the router's lifetime so filters and scroll survive Back from the editor.
+    val librarySession = remember(repos) { LibrarySession(repos.libraryRepository, platformSettings) }
+    DisposableEffect(librarySession) { onDispose { librarySession.close() } }
 
     // Track navigation direction for slide transition orientation.
     var previousHistoryIndex by remember { mutableStateOf(appState.historyIndex) }
@@ -351,41 +356,28 @@ internal fun ScreenRouter(
                 // Vault unlock is handled by the outer StelekitApp scaffold — no-op here
             }
 
-            is Screen.Gallery -> {
-                NavigationTracingEffect("Gallery")
-                val galleryViewModel = remember {
-                    GalleryViewModel(repos.imageAnnotationRepository)
-                }
-                DisposableEffect(galleryViewModel) {
-                    onDispose { galleryViewModel.close() }
-                }
-                GalleryScreen(
-                    viewModel = galleryViewModel,
-                    onOpenAnnotationEditor = { uuid ->
-                        viewModel.navigateToAnnotationEditor(uuid)
-                    },
-                    onNavigateToPage = { pageUuid ->
-                        viewModel.navigateToPageByUuid(pageUuid)
-                    },
-                    onImportImage = onImportImage,
+            is Screen.Library, is Screen.Gallery, is Screen.AssetBrowser -> {
+                NavigationTracingEffect("Library")
+                val libraryOnboarding by viewModel.libraryOnboarding.collectAsState()
+                LibraryRoute(
+                    session = librarySession,
+                    screen = LegacyScreenAlias.resolve(currentScreen) as Screen.Library,
+                    onboarding = libraryOnboarding,
+                    onOpenAnnotationEditor = { uuid -> viewModel.navigateToAnnotationEditor(uuid) },
+                    onOpenAsset = { uuid -> viewModel.navigateTo(Screen.AssetDetail(dev.stapler.stelekit.asset.AssetUuid(uuid))) },
+                    onLibraryOpen = { viewModel.onLibraryOpened() },
+                    onDismissTip = { viewModel.dismissLibraryTip() },
+                    onDismissNotice = { viewModel.dismissUpgradeNotice() },
+                    onAddPhoto = onImportImage,
                 )
             }
 
-            is Screen.AssetBrowser -> {
-                NavigationTracingEffect("AssetBrowser")
-                val assetBrowserViewModel = remember {
-                    dev.stapler.stelekit.ui.assets.AssetBrowserViewModel(assetRepository = repos.assetRepository, writeActor = repos.writeActor)
+            is Screen.Sketch -> if (viewModel.homeSketchEnabled) {
+                NavigationTracingEffect("Sketch")
+                val sketchViewModel = remember(currentScreen.projectUuid) {
+                    dev.stapler.stelekit.ui.sketch.sketchViewModelFor(repos.sketchRepositories, repos.writeActor, currentScreen.projectUuid)
                 }
-                LaunchedEffect(currentScreen.initialSearch) {
-                    currentScreen.initialSearch?.let { assetBrowserViewModel.setSearch(it) }
-                }
-                dev.stapler.stelekit.ui.assets.AssetBrowserScreen(
-                    viewModel = assetBrowserViewModel,
-                    onNavigateBack = { viewModel.goBack() },
-                    onNavigateToAsset = { uuid -> viewModel.navigateTo(Screen.AssetDetail(uuid)) },
-                    plugins = assetPlugins,
-                    onOpenPluginsSettings = { viewModel.showPluginsSettings() },
-                )
+                dev.stapler.stelekit.ui.sketch.SketchScreen(viewModel = sketchViewModel, onNavigateBack = { viewModel.goBack() })
             }
 
             is Screen.DriveBrowser -> {

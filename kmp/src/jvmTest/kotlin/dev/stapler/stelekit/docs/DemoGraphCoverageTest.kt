@@ -87,7 +87,7 @@ class DemoGraphCoverageTest {
         // Mirrors the @HelpExempt reason list. Keep in sync with AppState.kt.
         private val KNOWN_EXEMPT_SCREENS = setOf(
             "LibraryStats", "Notifications", "Logs", "Performance",
-            "VaultUnlock", "Import", "AnnotationEditor", "Gallery", "AssetBrowser"
+            "VaultUnlock", "Import", "AnnotationEditor", "Library", "Gallery", "AssetBrowser", "Sketch"
         )
     }
 }

@@ -1,4 +1,5 @@
 package dev.stapler.stelekit.ui.layout
+import dev.stapler.stelekit.ui.i18n.I18n
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 
@@ -35,8 +36,8 @@ class MobileLayoutTest {
             }
         }
 
-        // When sidebar is collapsed, "Navigation" label should not be visible
-        composeTestRule.onNodeWithText("Navigation").assertDoesNotExist()
+        // When sidebar is collapsed, "Daily" section header should not be visible
+        composeTestRule.onNodeWithText(I18n.get(I18n.NAV_SECTION_DAILY)).assertDoesNotExist()
     }
 
     @Test
@@ -56,7 +57,7 @@ class MobileLayoutTest {
             }
         }
 
-        composeTestRule.onNodeWithText("Navigation").assertIsDisplayed()
+        composeTestRule.onNodeWithText(I18n.get(I18n.NAV_SECTION_DAILY)).assertIsDisplayed()
         composeTestRule.onNodeWithText("Journals").assertIsDisplayed()
     }
 
@@ -77,7 +78,7 @@ class MobileLayoutTest {
             }
         }
 
-        composeTestRule.onNodeWithText("All Pages").assertIsDisplayed()
+        composeTestRule.onNodeWithText(I18n.get(I18n.NAV_ALL_PAGES)).assertIsDisplayed()
         composeTestRule.onNodeWithText("Flashcards").assertIsDisplayed()
     }
 }

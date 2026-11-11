@@ -53,6 +53,8 @@ class QueryPlanAuditTest {
         "countAssets",
         // JSON-array tag search — LIKE on a JSON text column; no structural index possible
         "selectImageAnnotationsByTag",
+        // Library tag chips: GROUP BY over the whole tags column, LIMITed output, run once per Library open
+        "selectAnnotationTagSets",
         // pending_asset_moves is a crash-recovery WAL bounded to <= a handful of rows by design
         "selectAllPendingMoves",
         // SQLite reports "SCAN CONSTANT ROW" for rowid helpers with no FROM clause — not a real scan
@@ -395,6 +397,8 @@ ORDER BY depth, parent_uuid, position"""),
             "SELECT * FROM image_annotations WHERE page_uuid = 'p0' ORDER BY imported_at_ms DESC"),
         AuditQuery("selectImageAnnotationsByTag",
             "SELECT * FROM image_annotations WHERE tags LIKE '%\"test\"%' ORDER BY imported_at_ms DESC"),
+        AuditQuery("selectAnnotationTagSets",
+            "SELECT tags, COUNT(*) AS uses FROM image_annotations WHERE tags <> '[]' AND tags <> '' GROUP BY tags ORDER BY uses DESC LIMIT 500"),
 
         // ── measurement_annotations ───────────────────────────────────────────────────────────
         AuditQuery("selectMeasurementsForImage",
@@ -770,6 +774,78 @@ ORDER BY depth, parent_uuid, position"""),
      * property is set (i.e. via Gradle — not in IDE run configurations that omit it; those are
      * covered by the main scan test above).
      */
+    /**
+     * The Library page and count statements (LibrarySql) are built per request, so the structural sweep above
+     * cannot see them. Audited here for every sort order and the main filters: the annotation tables must only
+     * ever be reached through an index (the join key and the measurement foreign key), and the default sort
+     * must read the asset index in order with no temp b-tree. The annotation sorts and Name A-Z order by a
+     * computed key, so they scan the asset index once per page; that is allowed, a scan of the annotation
+     * tables per asset is not.
+     */
+    @Test
+    fun `library paged queries reach annotations only through an index`() {
+        val driver = DriverFactory().createDriver("jdbc:sqlite::memory:")
+        val sqliteDriver = driver as PooledJdbcSqliteDriver
+        val conn = sqliteDriver.getConnection()
+        val failures = mutableListOf<String>()
+        try {
+            conn.createStatement().use { seed ->
+                repeat(500) { i ->
+                    seed.execute(
+                        "INSERT OR IGNORE INTO asset_index(uuid,file_path,relative_path,media_type,subfolder,tags,auto_labels," +
+                            "page_uuids,size_bytes,imported_at_ms,ml_processed,ml_failed,ml_tags_source) " +
+                            "VALUES('a$i','/assets/file$i.png','assets/file$i.png','IMAGE','files','[]','[]','[]',1024,${i * 1000L},0,0,'NONE')"
+                    )
+                }
+                repeat(300) { i ->
+                    seed.execute(
+                        "INSERT OR IGNORE INTO image_annotations(uuid,block_uuid,page_uuid,graph_path,file_path,source,imported_at_ms," +
+                            "calibration_method,pixels_per_meter,calibration_confidence_pct,unit,tags) " +
+                            "VALUES('ia$i','b$i','p$i','/graph','/assets/file$i.png','FILE',${i * 1000L},'NONE',0.0,0,'METERS','[\"site\"]')"
+                    )
+                    seed.execute(
+                        "INSERT OR IGNORE INTO measurement_annotations(uuid,image_uuid,annotation_type,normalized_points) " +
+                            "VALUES('m$i','ia$i','DISTANCE','[]')"
+                    )
+                }
+                seed.execute("ANALYZE")
+            }
+            val statements = dev.stapler.stelekit.repository.LibrarySql.auditStatements()
+            check(statements.size >= 24) { "audit set unexpectedly small: ${statements.size}" }
+            for (st in statements) {
+                val plan = conn.prepareStatement("EXPLAIN QUERY PLAN ${st.sql}").use { ps ->
+                    st.args.forEachIndexed { i, a ->
+                        when (a) {
+                            null -> ps.setNull(i + 1, java.sql.Types.VARCHAR)
+                            is Long -> ps.setLong(i + 1, a)
+                            else -> ps.setString(i + 1, a.toString())
+                        }
+                    }
+                    ps.executeQuery().use { rs -> buildList { while (rs.next()) add(rs.getString("detail") ?: "") } }
+                }
+                val heapScansOfAnnotations = plan.filter {
+                    (it.startsWith("SCAN ia") || it.startsWith("SCAN m") || it.startsWith("SCAN image_annotations") ||
+                        it.startsWith("SCAN measurement_annotations")) && !it.contains("USING")
+                }
+                if (heapScansOfAnnotations.isNotEmpty()) failures += "unindexed annotation scan: $heapScansOfAnnotations\n  ${st.sql.take(200)}"
+            }
+            val defaultPage = dev.stapler.stelekit.repository.LibrarySql.page(
+                dev.stapler.stelekit.ui.library.LibraryQuery(), null, 100,
+            )
+            val defaultPlan = conn.prepareStatement("EXPLAIN QUERY PLAN ${defaultPage.sql}").use { ps ->
+                defaultPage.args.forEachIndexed { i, a -> ps.setLong(i + 1, a as Long) }
+                ps.executeQuery().use { rs -> buildList { while (rs.next()) add(rs.getString("detail") ?: "") } }
+            }
+            // "LAST TERM OF ORDER BY" is the incremental sort of the uuid tie-break within equal timestamps; a full sorter would read the whole table.
+            if (defaultPlan.any { it.contains("TEMP B-TREE FOR ORDER BY") }) failures += "default sort needs a full sorter: $defaultPlan"
+            if (defaultPlan.none { it.contains("idx_asset_imported_at") }) failures += "default sort does not use idx_asset_imported_at: $defaultPlan"
+        } finally {
+            sqliteDriver.closeConnection(conn)
+            driver.close()
+        }
+        if (failures.isNotEmpty()) fail(failures.joinToString("\n"))
+    }
+
     @Test
     fun `all SELECT queries in SteleDatabase sq are covered by this audit`() {
         val sqFilePath = System.getProperty("stelekit.sq.file") ?: return

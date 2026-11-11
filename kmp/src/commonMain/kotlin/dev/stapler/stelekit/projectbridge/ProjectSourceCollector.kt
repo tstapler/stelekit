@@ -10,6 +10,9 @@ import dev.stapler.stelekit.fusion.RefTable
 import dev.stapler.stelekit.fusion.SourceOrigin
 import dev.stapler.stelekit.sketchimport.GeometryExtractionResult
 import dev.stapler.stelekit.sketchimport.GeometryExtractor
+import dev.stapler.stelekit.sketchimport.BoundLabel
+import dev.stapler.stelekit.sketchimport.LabelBinder
+import dev.stapler.stelekit.sketchimport.LabelBindingResult
 import dev.stapler.stelekit.sketchimport.readSvg
 
 /** A wiki page a project is bound to; [filePath] is where the loader reads it from. */
@@ -22,6 +25,10 @@ data class CollectedSources(
     val tableObservations: List<Observation> = emptyList(),
     val tableNeedsMapping: List<NeedsMapping> = emptyList(),
     val geometryObservations: List<Observation> = emptyList(),
+    val proseObservations: List<Observation> = emptyList(),
+    val svgObservations: List<Observation> = emptyList(),
+    /** Drawing labels the binder could not bind; the tagging UI offers them for manual binding. */
+    val svgUnboundLabels: List<BoundLabel> = emptyList(),
 )
 
 /** Markdown of one bound table page; [locator] stays device-local in the [RefTable]. */
@@ -38,16 +45,24 @@ open class ProjectSourceCollector(
     private val tableExtractor = TableMeasurementExtractor(registry, refTable)
     private val yamlExtractor = YamlMeasurementExtractor(registry, refTable)
     private val geometryExtractor = GeometryExtractor(registry, refTable)
+    private val proseExtractor = ProseMeasurementExtractor(registry, refTable)
+    private val countExtractor = CountExtractor(registry, refTable)
+    private val labelBinder = LabelBinder(registry, refTable)
 
     open suspend fun collect(): CollectedSources {
         val tables = extractTables(emptyList()) // Story 5.9b supplies the bound pages' text
         val yaml = extractYaml(null) // Story 5.9c supplies the sidecar snapshot
         val geometry = extractGeometry(null) // Story 5.9d supplies the attached sheets' SVG text
+        val prose = extractProse(emptyList()) // Story 5.9b supplies the bound pages' text
+        val svg = extractSvg(null) // Story 5.9d supplies the attached sheets' SVG text
         return CollectedSources(
             tableObservations = tables.observations,
             tableNeedsMapping = tables.needsMapping,
             yamlObservations = yaml.observations,
             geometryObservations = geometry.observations,
+            proseObservations = prose.observations,
+            svgObservations = svg.observations,
+            svgUnboundLabels = svg.unbound,
         )
     }
 
@@ -62,4 +77,14 @@ open class ProjectSourceCollector(
     /** Geometry stage (Story 4.8); [svg] is one sheet's text, [sheet] its role, [locator] stays device-local. */
     internal fun extractGeometry(svg: String?, sheet: String = "elevation", locator: String = "svg-sheet"): GeometryExtractionResult =
         if (svg == null) GeometryExtractionResult() else geometryExtractor.extract(readSvg(svg), locator, sheet)
+
+    /** Prose and count stage (Story 5.3b): lengths and counts stated in free text. */
+    fun extractProse(pages: List<TablePageText>): ProseExtractionResult =
+        pages.fold(ProseExtractionResult()) { acc, p ->
+            acc + proseExtractor.extract(p.markdown, p.locator, p.origin) + countExtractor.extract(p.markdown, p.locator, p.origin)
+        }
+
+    /** SVG label stage (Story 4.3); [svg] is one sheet's text and [locator] stays device-local. */
+    internal fun extractSvg(svg: String?, locator: String = "svg-sheet"): LabelBindingResult =
+        if (svg == null) LabelBindingResult() else labelBinder.bind(readSvg(svg), locator)
 }
