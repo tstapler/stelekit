@@ -336,6 +336,7 @@ import dev.stapler.stelekit.capture.CapturePopupWindowTest
 import dev.stapler.stelekit.capture.CapturePopupWindowUxTest
 import dev.stapler.stelekit.wiring.DesktopWiredAppFixtureTest
 import dev.stapler.stelekit.wiring.GitSyncServiceRegistryBalanceTest
+import dev.stapler.stelekit.logging.LogManagerConcurrencyTest
 import dev.stapler.stelekit.wiring.GitSyncStackEntryPointTest
 import dev.stapler.stelekit.wiring.ScheduledSyncOriginE2ETest
 import dev.stapler.stelekit.wiring.TaskSchedulerDesktopEntryPointTest
@@ -684,6 +685,7 @@ import org.junit.runners.Suite
     SectionsSettingsDialogsTest::class,
     AllJvmTestsCompletenessTest::class,
     DesktopWiredAppFixtureTest::class,
+    LogManagerConcurrencyTest::class,
     GitSyncStackEntryPointTest::class,
     ScheduledSyncOriginE2ETest::class,
     TaskSchedulerDesktopEntryPointTest::class,
