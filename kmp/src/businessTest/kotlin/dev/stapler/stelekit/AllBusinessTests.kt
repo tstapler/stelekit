@@ -795,6 +795,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.platform.PlatformLayerAuditTest::class,
     dev.stapler.stelekit.projectbridge.ProjectBridgeSettingsTest::class,
     dev.stapler.stelekit.projectbridge.SettleBarrierTest::class,
+    dev.stapler.stelekit.projectbridge.ProjectRelevanceLoopSafetyTest::class,
+    dev.stapler.stelekit.projectbridge.TwoDeviceConvergenceTest::class,
     dev.stapler.stelekit.projectbridge.PostSyncProjectCoordinatorTest::class,
     dev.stapler.stelekit.projectbridge.PostSyncProjectJobFailureTest::class,
     dev.stapler.stelekit.capture.TargetWriterRouterHolderTest::class,
