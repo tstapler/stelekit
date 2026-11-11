@@ -30,6 +30,7 @@ kt_android_library(
             "**/ProjectSettingsPanelTest.kt",
             "**/SourcePagePickerTest.kt",
             "**/RegistryEditorScreenTest.kt",
+            "**/RegistryEditorDialogsTest.kt",
             # Compose gesture/host tests for the flagged Sketch screen (Gradle-only, R-AU)
             "**/SketchCanvasGestureTest.kt",
             "**/SketchScreenEntryPointTest.kt",
