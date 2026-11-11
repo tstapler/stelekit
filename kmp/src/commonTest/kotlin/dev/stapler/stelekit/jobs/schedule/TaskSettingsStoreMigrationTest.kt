@@ -108,6 +108,17 @@ class TaskSettingsStoreMigrationTest {
     }
 
     @Test
+    fun read_should_leaveLegacyKeysUnchanged_When_MigrationRuns() = runTest {
+        val settings = MapSettings()
+        val s = legacy(settings, true, FakeGitLegacyConfigSource(LegacyGitConfigResult.Found(true, 30)))
+        val legacyBefore = settings.store.toMap()
+        assertTrue(s.read(g1).enabled)
+        s.write(g1, TaskEntry(false, null))
+        legacyBefore.forEach { (key, value) -> assertEquals(value, settings.store[key], "legacy key $key must stay for rollback (REQ-9)") }
+        assertEquals(true, settings.getBoolean(SCHEDULED_SYNC_ENABLED_KEY, false))
+    }
+
+    @Test
     fun read_should_migrateToEnabled_When_RemoteBearingGraphWasNeverComposed() = runTest {
         val src = FakeGitLegacyConfigSource(LegacyGitConfigResult.Found(true, 45))
         assertTrue(legacy(MapSettings(), true, src).read(g2).enabled)
