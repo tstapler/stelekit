@@ -23,3 +23,4 @@
 # Planned additions: Assets global-search section (Task 5.6a, deferred from U10).
 # TaggingScreen (home-sketch 4.4, drawing import) is not listed: it is only reachable from the SketchScreen host behind the homeSketch flag (default off), so a first open cannot show it. Its first-render check is TaggingScreenTest (androidUnitTest); graduation moves it into this list and FirstOpenSmokeTest.
 Library
+# RegistryEditorScreen (home-sketch 5.9e) is not listed: it is reached only from the project settings behind the homeSketch flag (default off). Its first-render check is RegistryEditorScreenTest (androidUnitTest).
