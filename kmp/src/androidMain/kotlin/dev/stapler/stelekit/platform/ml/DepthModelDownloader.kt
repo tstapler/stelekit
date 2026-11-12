@@ -86,6 +86,9 @@ class DepthModelDownloader internal constructor(
     /** Bumped by [cancelDownload]; a [downloadModel] that began before a cancel must not outlive it. */
     private val cancelGeneration = java.util.concurrent.atomic.AtomicInteger(0)
 
+    /** Bumped before a work-reported `Failed` is stored, so [downloadModel] can tell its own job already failed. */
+    private val failureCount = java.util.concurrent.atomic.AtomicInteger(0)
+
     private val _modelState = MutableStateFlow(initialState())
     val modelState: StateFlow<ModelState> = _modelState.asStateFlow()
 
@@ -120,12 +123,18 @@ class DepthModelDownloader internal constructor(
         // KEEP: an already queued or running job is left alone; a finished one is replaced by this new run.
         inFlight.incrementAndGet()
         val generation = cancelGeneration.get()
+        val failuresBefore = failureCount.get()
         try {
             taskScheduler.runOnce(ModelDownloadTask.KEY, storedConstraints(), OneShotConflict.Keep)
             // A cancel that landed while runOnce was suspended must not be undone by this late write, and the job
-            // runOnce just enqueued is an orphan: cancel it again.
+            // runOnce just enqueued is an orphan: cancel it again. A job that already failed (the collector can
+            // outrun this line) must keep its Failed state, or awaitTerminal would wait on a finished job.
             _modelState.update { current ->
-                if (cancelGeneration.get() != generation || current is ModelState.Downloading) current else ModelState.Downloading(progress = -1)
+                when {
+                    cancelGeneration.get() != generation || current is ModelState.Downloading -> current
+                    current is ModelState.Failed && failureCount.get() != failuresBefore -> current
+                    else -> ModelState.Downloading(progress = -1)
+                }
             }
             if (cancelGeneration.get() != generation) {
                 workManagerOrNull(context)?.cancelUniqueWork(UNIQUE_WORK_NAME)
@@ -208,7 +217,10 @@ class DepthModelDownloader internal constructor(
                 onWorkSucceeded()
                 return
             }
-            WorkInfo.State.FAILED -> ModelState.Failed(info.outputData.getString(DepthModelDownloadWorker.KEY_ERROR))
+            WorkInfo.State.FAILED -> {
+                failureCount.incrementAndGet()
+                ModelState.Failed(info.outputData.getString(DepthModelDownloadWorker.KEY_ERROR))
+            }
             WorkInfo.State.CANCELLED -> ModelState.Cancelled
         }
         // queuedState suspends on the network read; a cancel during it must not be undone by this stale snapshot.
