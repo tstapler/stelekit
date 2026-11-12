@@ -15,6 +15,7 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.SketchRepositories
 import dev.stapler.stelekit.sketch.SheetProps
 import dev.stapler.stelekit.sketch.SketchCommand
+import dev.stapler.stelekit.sketch.isStandalone
 import dev.stapler.stelekit.sketch.message
 import dev.stapler.stelekit.sketch.SketchDocument
 import dev.stapler.stelekit.sketch.SketchHistory
@@ -27,7 +28,10 @@ import dev.stapler.stelekit.sketch.ZoneReport
 import dev.stapler.stelekit.sketch.ZoneSet
 import dev.stapler.stelekit.units.Inches
 import dev.stapler.stelekit.util.UuidGenerator
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -79,11 +83,13 @@ data class SketchUiState(
  * through the repositories carrying the revision token, and a rebuilt project (the sidecar
  * reconcile) cancels the pending save and reloads.
  */
+@Suppress("TooManyFunctions") // one editor session: edit, history, autosave and preview; splitting would scatter the shared state
 class SketchViewModel(
     private val repos: SketchRepositories,
     private val projectUuid: ProjectUuid?,
     private val writeActor: DatabaseWriteActor? = null,
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val onSaved: ((SketchDocument, String) -> Unit)? = null,
     private val newId: () -> String = { UuidGenerator.generateV7() },
 ) : RememberObserver {
     private val logger = Logger("SketchViewModel")
@@ -103,6 +109,7 @@ class SketchViewModel(
     private var token: RevisionToken? = null
     private var sheet: SketchSheet? = null
     private var persisted: Map<String, StoredPrimitive> = emptyMap()
+    private var standalone = false
     private var saveJob: Job? = null
     private var loadJob: Job? = null
 
@@ -214,9 +221,19 @@ class SketchViewModel(
             },
             ifRight = {
                 persisted = wanted.associateBy { it.uuid }
+                publishPreview(doc)
                 _uiState.update { if (it.document.sameContent(doc)) it.copy(saveStatus = SaveStatus.SAVED) else it }
             },
         )
+    }
+
+    private suspend fun publishPreview(doc: SketchDocument) {
+        val notify = onSaved?.takeIf { standalone } ?: return
+        val slug = _uiState.value.slug ?: return
+        try {
+            withContext(PlatformDispatcher.IO) { notify(doc, slug) }
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { logger.warn("sketch preview export failed: ${e.message}") }
     }
 
     private fun load() {
@@ -234,6 +251,7 @@ class SketchViewModel(
 
     private fun apply(loaded: LoadedSketchProject, first: SketchSheet, stored: List<StoredPrimitive>) {
         token = loaded.token
+        standalone = loaded.project.isStandalone
         sheet = first
         persisted = stored.associateBy { it.uuid }
         val scene = stored.mapNotNull { it.toScenePrimitive() }.fold(SketchScene.EMPTY) { s, p -> s.add(p).getOrNull() ?: s }
@@ -311,5 +329,9 @@ private fun ZoneSet.Companion.fromJson(array: JsonArray): ZoneSet = ZoneSet(
 )
 
 /** Builds the editor for a `Screen.Sketch` route; [projectUuid] null opens the first project. */
-fun sketchViewModelFor(repos: SketchRepositories, writeActor: DatabaseWriteActor?, projectUuid: String?): SketchViewModel =
-    SketchViewModel(repos, projectUuid?.let(::ProjectUuid), writeActor)
+fun sketchViewModelFor(
+    repos: SketchRepositories,
+    writeActor: DatabaseWriteActor?,
+    projectUuid: String?,
+    onSaved: ((SketchDocument, String) -> Unit)? = null,
+): SketchViewModel = SketchViewModel(repos, projectUuid?.let(::ProjectUuid), writeActor, onSaved = onSaved)

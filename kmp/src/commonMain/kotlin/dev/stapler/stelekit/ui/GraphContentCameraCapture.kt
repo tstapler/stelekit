@@ -7,6 +7,7 @@ package dev.stapler.stelekit.ui
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -84,6 +85,7 @@ internal fun GraphContentScreenAndCapture(deps: GraphContentDeps, viewModel: Ste
             enabled = queryBlocksEnabled,
         )
     }
+    val sketchEnabled by viewModel.homeSketchEnabledState.collectAsState()
     val googlePhotos = rememberGraphContentGooglePhotosEntry(
         google = deps.platformIntegrations.google,
         attachments = deps.platformIntegrations.attachmentService,
@@ -117,7 +119,8 @@ internal fun GraphContentScreenAndCapture(deps: GraphContentDeps, viewModel: Ste
             assetPlugins = deps.assets?.plugins,
             google = deps.platformIntegrations.google,
             editorDiagnosticsSink = deps.platformIntegrations.editorDiagnosticsSink,
-            capabilities = buildEditorCapabilities(deps, viewModel, inputs, captureState).copy(googlePhotos = googlePhotos),
+            capabilities = buildEditorCapabilities(deps, viewModel, inputs, captureState)
+                .copy(googlePhotos = googlePhotos, onNewSketch = buildOnNewSketch(deps, viewModel, inputs, sketchEnabled)),
             onImportImage = buildOnImportImage(deps, viewModel, inputs, captureState),
             platformSettings = deps.platformSettings,
             fileSystem = deps.fileSystem,
@@ -155,6 +158,34 @@ private fun buildEditorCapabilities(
         },
         onCaptureImage = buildOnCaptureImage(deps, viewModel, inputs, captureState),
     )
+}
+
+/** [EditorCapabilities.onNewSketch]: creates a standalone sketch, embeds its preview image in the block, then opens the editor. */
+private fun buildOnNewSketch(
+    deps: GraphContentDeps,
+    viewModel: StelekitViewModel,
+    inputs: GraphContentMainAreaInputs,
+    enabled: Boolean,
+): ((BlockUuid) -> Unit)? {
+    if (!enabled) return null
+    val repos = deps.repos
+    val service = dev.stapler.stelekit.sketch.StandaloneSketchService(
+        repos.sketchRepositories.projects,
+        { op -> repos.writeActor?.execute(op = op) ?: op() },
+        dev.stapler.stelekit.ui.sketch.sketchExporterFor(deps.fileSystem, inputs.appState.currentGraphPath.orEmpty()),
+        { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+    )
+    return { editingBlockUuid ->
+        inputs.scope.launch {
+            service.create().fold(
+                { viewModel.sendSnackbar("Could not start a sketch") },
+                { sketch ->
+                    sketch.embedMarkdown?.let { inputs.viewModelStack.blockStateManager.insertTextAtCursor(editingBlockUuid, it) }
+                    viewModel.navigateTo(Screen.Sketch(sketch.projectUuid))
+                },
+            )
+        }
+    }
 }
 
 private fun tryPasteImage(

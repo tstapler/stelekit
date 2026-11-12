@@ -520,11 +520,14 @@ internal fun BlockItem(
                         if (imageData != null) {
                             val (url, altText) = imageData
                             val annotateImage = LocalAnnotateImageAction.current
+                            val sketchSlug = remember(url) { dev.stapler.stelekit.sketch.SketchEmbed.slugOf(url) }
+                            val openSketch = LocalOpenSketchAction.current
                             ImageBlock(
                                 url = url,
                                 altText = altText,
                                 onStartEditing = onStartEditing,
-                                onAnnotate = annotateImage?.let { action -> { action(url, block) } },
+                                onAnnotate = if (sketchSlug != null) null else annotateImage?.let { action -> { action(url, block) } },
+                                onOpenSketch = if (sketchSlug != null && openSketch != null) ({ openSketch(sketchSlug) }) else null,
                                 isInSelectionMode = isInSelectionMode,
                                 onToggleSelect = onToggleSelect,
                                 onLongPressSelect = onLongPressSelect,

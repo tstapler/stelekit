@@ -60,6 +60,8 @@ internal fun ImageBlock(
     onToggleSelect: () -> Unit = {},
     onLongPressSelect: (() -> Unit)? = null,
     onAnnotate: (() -> Unit)? = null,
+    /** Set for a sketch embed: a tap reopens the sketch editor instead of the lightbox. */
+    onOpenSketch: (() -> Unit)? = null,
 ) {
     val imageLoader = rememberSteleKitImageLoader()
     var showLightbox by remember { mutableStateOf(false) }
@@ -75,7 +77,13 @@ internal fun ImageBlock(
             .fillMaxWidth()
             .combinedClickable(
                 onLongClick = onLongPressSelect,
-                onClick = { if (isInSelectionMode) onToggleSelect() else showLightbox = true },
+                onClick = {
+                    when {
+                        isInSelectionMode -> onToggleSelect()
+                        onOpenSketch != null -> onOpenSketch()
+                        else -> showLightbox = true
+                    }
+                },
             )
     )
 

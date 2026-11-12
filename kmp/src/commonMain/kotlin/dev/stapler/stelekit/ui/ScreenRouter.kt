@@ -428,6 +428,12 @@ internal fun ScreenRouter(
                             },
                             wiring?.action,
                             wiring?.sheets,
+                            dev.stapler.stelekit.sketch.StandaloneSketchService(
+                                repos.sketchRepositories.projects,
+                                { op -> repos.writeActor?.execute(op = op) ?: op() },
+                                dev.stapler.stelekit.ui.sketch.sketchExporterFor(fileSystem, appState.currentGraphPath.orEmpty()),
+                                { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+                            ),
                         )
                     }
                     dev.stapler.stelekit.ui.sketch.ProjectListScreen(
@@ -442,20 +448,15 @@ internal fun ScreenRouter(
                         },
                     )
                 } else {
-                    val sketchViewModel = remember(currentScreen.projectUuid) {
-                        dev.stapler.stelekit.ui.sketch.sketchViewModelFor(repos.sketchRepositories, repos.writeActor, currentScreen.projectUuid)
-                    }
                     val graphPath = appState.currentGraphPath.orEmpty()
                     val sketchExporter = remember(fileSystem, graphPath) {
-                        if (fileSystem == null || graphPath.isBlank()) {
-                            null
-                        } else {
-                            dev.stapler.stelekit.sketch.export.SketchExporter(
-                                fileSystem,
-                                dev.stapler.stelekit.platform.AtomicFileWriter(fileSystem, { it }, ".tmp"),
-                                graphPath,
-                            )
-                        }
+                        dev.stapler.stelekit.ui.sketch.sketchExporterFor(fileSystem, graphPath)
+                    }
+                    val sketchViewModel = remember(currentScreen.projectUuid, sketchExporter) {
+                        dev.stapler.stelekit.ui.sketch.sketchViewModelFor(
+                            repos.sketchRepositories, repos.writeActor, currentScreen.projectUuid,
+                            onSaved = sketchExporter?.let { exporter -> { doc, slug -> exporter.exportPreview(doc, slug) } },
+                        )
                     }
                     dev.stapler.stelekit.ui.sketch.SketchScreen(viewModel = sketchViewModel, onNavigateBack = { viewModel.goBack() }, exporter = sketchExporter)
                 }

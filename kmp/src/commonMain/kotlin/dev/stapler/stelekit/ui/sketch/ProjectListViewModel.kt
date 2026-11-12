@@ -25,6 +25,8 @@ import dev.stapler.stelekit.projectbridge.ProjectSlugs
 import dev.stapler.stelekit.projectbridge.hasAnyProject
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.SketchProjectRepository
+import dev.stapler.stelekit.sketch.StandaloneSketchService
+import dev.stapler.stelekit.sketch.isStandalone
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -43,6 +45,8 @@ data class ProjectRow(val uuid: String, val slug: String, val name: String)
 
 data class ProjectListUiState(
     val projects: List<ProjectRow> = emptyList(),
+    /** Standalone sketches (started without a project), newest first. */
+    val sketches: List<ProjectRow> = emptyList(),
     val hasMore: Boolean = false,
     val digestEnabled: Boolean = false,
     val digestTitle: String = "",
@@ -67,6 +71,7 @@ typealias ProjectWriteRunner = suspend (suspend () -> Either<DomainError, Unit>)
  * Project list, creation and the per-graph digest settings (Story 5.9a). Owns its scope (never a composition scope) and
  * guards it with a [CoroutineExceptionHandler]. Settings changes are validated here so the composables hold no rules.
  */
+@Suppress("TooManyFunctions") // one screen model: list, create, settings, sources; each handler is a one-liner over shared state
 class ProjectListViewModel(
     private val projects: SketchProjectRepository,
     private val graphId: String,
@@ -79,6 +84,7 @@ class ProjectListViewModel(
     private val yaml: YamlPickerAction? = null,
     internal val drawings: DrawingAttachAction? = null,
     internal val sheets: AttachedSheetService? = null,
+    private val newSketch: StandaloneSketchService? = null,
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     internal val scope = CoroutineScope(
@@ -89,15 +95,18 @@ class ProjectListViewModel(
     val sourcesAvailable: Boolean = sources != null
     val yamlAvailable: Boolean = yaml != null
     val drawingsAvailable: Boolean = drawings != null
+    val sketchesAvailable: Boolean = newSketch != null
     internal val drawingSession = MutableStateFlow<DrawingSession?>(null)
     val importSession: StateFlow<DrawingSession?> = drawingSession
 
     init {
         scope.launch {
-            projects.getProjects(PAGE_SIZE + 1, 0).collect { result ->
+            projects.getProjects(WINDOW, 0).collect { result ->
                 result.onRight { rows ->
-                    val shown = rows.take(PAGE_SIZE).map { ProjectRow(it.uuid.value, it.slug, it.name) }
-                    _state.update { snapshot(shown, rows.size > PAGE_SIZE, it) }
+                    val (sketchRows, projectRows) = rows.partition { it.isStandalone }
+                    val shown = projectRows.take(PAGE_SIZE).map { ProjectRow(it.uuid.value, it.slug, it.name) }
+                    val recent = sketchRows.take(SKETCH_LIMIT).map { ProjectRow(it.uuid.value, it.slug, it.name) }
+                    _state.update { snapshot(shown, projectRows.size > PAGE_SIZE, it).copy(sketches = recent) }
                     reloadBound()
                 }.onLeft { setMessage("Could not load projects") }
             }
@@ -116,6 +125,17 @@ class ProjectListViewModel(
             val slug = ProjectSlugs.generateUnique({ it in taken }, random)
             val project = ProjectFactory.create(name, slug, ProjectFactory.newUuid(), clock())
             write { projects.saveProject(project) }.onLeft { setMessage("Could not create the project") }
+        }
+    }
+
+    /** Starts a standalone sketch (no project) and hands its uuid to [onCreated] so the editor opens at once. */
+    fun createSketch(onCreated: (String) -> Unit) {
+        val service = newSketch ?: return setMessage("Sketching is not available here")
+        scope.launch {
+            service.create().fold(
+                { setMessage("Could not start a sketch") },
+                { onCreated(it.projectUuid) },
+            )
         }
     }
 
@@ -247,6 +267,7 @@ class ProjectListViewModel(
         digestTitle = settings.digestPageTitle(graphId, rows.firstOrNull()?.name ?: DEFAULT_DISPLAY_NAME),
         analyseAfterSync = settings.analyseAfterSync(graphId),
         analyseOffered = providerConfigured(),
+        sketches = previous?.sketches.orEmpty(),
         pendingPreview = previous?.pendingPreview,
         pickerResults = previous?.pickerResults.orEmpty(),
         boundSources = previous?.boundSources.orEmpty(),
@@ -258,6 +279,9 @@ class ProjectListViewModel(
 
     companion object {
         const val PAGE_SIZE = 50
+        /** Rows read per refresh; sketches share the table with projects, so the window is wider than one page. */
+        const val WINDOW = 301
+        const val SKETCH_LIMIT = 20
         const val DEFAULT_DISPLAY_NAME = "Project"
     }
 }
@@ -273,6 +297,7 @@ fun projectListViewModelFor(
     yaml: YamlPickerAction? = null,
     drawings: DrawingAttachAction? = null,
     sheets: AttachedSheetService? = null,
+    newSketch: StandaloneSketchService? = null,
 ): ProjectListViewModel = ProjectListViewModel(
     projects = repositories.projects,
     graphId = graphId,
@@ -284,6 +309,7 @@ fun projectListViewModelFor(
     yaml = yaml,
     drawings = drawings,
     sheets = sheets,
+    newSketch = newSketch,
 )
 
 /** True when the graph has at least one project (the post-sync job's `hasConfiguredProject`). */

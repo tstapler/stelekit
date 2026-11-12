@@ -108,6 +108,13 @@ fun EditorToolbar(
                 { attachFn.invoke(targetUuid) }
             } else null
         },
+        onNewSketch = run {
+            val sketchFn = capabilities.onNewSketch
+            val targetUuid = editingBlockUuid
+            if (sketchFn != null && targetUuid != null) {
+                { sketchFn.invoke(targetUuid) }
+            } else null
+        },
         googlePhotos = run {
             val entry = capabilities.googlePhotos
             val targetUuid = editingBlockUuid
