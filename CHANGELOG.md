@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.109.0](https://github.com/tstapler/stelekit/compare/v0.108.0...v0.109.0) (2026-11-12)
+
+
+### Features
+
+* **annotate:** annotate existing images from viewer, inline block and Library ([#639](https://github.com/tstapler/stelekit/issues/639)) ([fae2f1b](https://github.com/tstapler/stelekit/commit/fae2f1b4f7b9cca28790daa768fc4c10c1128350))
+* **annotate:** mark multiple ruler ticks to calibrate (measure v1, epic 1) ([#644](https://github.com/tstapler/stelekit/issues/644)) ([2c96436](https://github.com/tstapler/stelekit/commit/2c96436cd4f8176e65ef436c2a4cfc7a6bc16b77))
+* **annotate:** multi-point ruler calibration + radial lens correction (basis v2) ([#638](https://github.com/tstapler/stelekit/issues/638)) ([72f01e9](https://github.com/tstapler/stelekit/commit/72f01e9a02d3e440cc20e0bbc9735ff6561efffd))
+* **annotate:** zoom and pan the image in the annotation editor ([#641](https://github.com/tstapler/stelekit/issues/641)) ([ed9f861](https://github.com/tstapler/stelekit/commit/ed9f861400a4e43157a90759e1373259a66f7d38))
+* **settings:** Labs toggle for home project sketching (5.0b) ([#633](https://github.com/tstapler/stelekit/issues/633)) ([8ca5b65](https://github.com/tstapler/stelekit/commit/8ca5b65950f9b4278d1c7988a5588cce4cc2a034))
+
+
+### Bug Fixes
+
+* **library:** index existing assets in release builds ([#637](https://github.com/tstapler/stelekit/issues/637)) ([f91af56](https://github.com/tstapler/stelekit/commit/f91af564d72c5559ae239e08ac74e9147cbdcc31))
+
 ## [0.108.0](https://github.com/tstapler/stelekit/compare/v0.107.0...v0.108.0) (2026-11-11)
 
 

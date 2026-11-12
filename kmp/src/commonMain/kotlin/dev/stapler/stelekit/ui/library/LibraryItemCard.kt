@@ -103,6 +103,7 @@ fun LibraryItemCard(
     modifier: Modifier = Modifier,
     missing: Boolean = false,
     onAction: (LibraryAssetAction) -> Unit = {},
+    canAnnotate: Boolean = false,
 ) {
     val description = LibraryCardDescription.of(item) + if (missing) ", ${I18n.get(I18n.LIBRARY_MISSING)}" else ""
     Box(modifier = modifier.fillMaxWidth().aspectRatio(1f)) {
@@ -153,7 +154,7 @@ fun LibraryItemCard(
             )
         }
     }
-    CardMenu(item, onAction, Modifier.align(Alignment.TopEnd))
+    CardMenu(item, onAction, canAnnotate && item.isImage, Modifier.align(Alignment.TopEnd))
     }
 }
 
@@ -166,14 +167,14 @@ private fun MissingTile(item: LibraryItem) {
 }
 
 @Composable
-private fun CardMenu(item: LibraryItem, onAction: (LibraryAssetAction) -> Unit, modifier: Modifier = Modifier) {
+private fun CardMenu(item: LibraryItem, onAction: (LibraryAssetAction) -> Unit, annotatable: Boolean, modifier: Modifier = Modifier) {
     var open by remember { mutableStateOf(false) }
     Box(modifier) {
         IconButton(onClick = { open = true }, modifier = Modifier.testTag("library-card-menu-${item.id}")) {
             Icon(Icons.Default.MoreVert, contentDescription = t(I18n.LIBRARY_CARD_MENU))
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            LibraryAssetAction.entries.forEach { action ->
+            LibraryAssetAction.entries.filter { it != LibraryAssetAction.Annotate || annotatable }.forEach { action ->
                 DropdownMenuItem(
                     text = { Text(t(actionLabelKey(action))) },
                     onClick = { open = false; onAction(action) },
@@ -185,6 +186,7 @@ private fun CardMenu(item: LibraryItem, onAction: (LibraryAssetAction) -> Unit, 
 }
 
 private fun actionLabelKey(a: LibraryAssetAction) = when (a) {
+    LibraryAssetAction.Annotate -> I18n.LIBRARY_ACTION_ANNOTATE
     LibraryAssetAction.Details -> I18n.LIBRARY_ACTION_DETAILS
     LibraryAssetAction.CopyLink -> I18n.LIBRARY_ACTION_COPY_LINK
     LibraryAssetAction.Delete -> I18n.LIBRARY_ACTION_DELETE

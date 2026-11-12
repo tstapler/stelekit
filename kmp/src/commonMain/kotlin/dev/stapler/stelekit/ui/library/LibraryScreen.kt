@@ -1,6 +1,8 @@
 package dev.stapler.stelekit.ui.library
 
 import androidx.compose.foundation.layout.Arrangement
+import arrow.core.Either
+import dev.stapler.stelekit.ui.annotate.OpenForAnnotationError
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -67,6 +69,8 @@ fun LibraryScreen(
     onShowAnnotations: () -> Unit = {},
     onAddPhoto: (() -> Unit)? = null,
     onCopyLink: (String) -> Unit = {},
+    /** Finds or creates the annotation for an existing image; null hides the card menu's Annotate action. */
+    onAnnotate: (suspend (LibraryItem) -> Either<OpenForAnnotationError, String>)? = null,
     /** Non-null only while the `homeSketch` flag is on and a sketch screen exists (story 6.8). */
     onOpenSketch: ((assetUuid: String) -> Unit)? = null,
 ) {
@@ -107,7 +111,7 @@ fun LibraryScreen(
                 state.isLoading && state.items.isEmpty() -> LoadingState()
                 state.error != null && state.items.isEmpty() -> ErrorState(state.error.orEmpty(), viewModel::reload)
                 state.items.isEmpty() -> EmptyState(state.filters, state.indexing, onAddPhoto, viewModel::clearFilters)
-                else -> ItemGrid(state, gridState, viewModel, onOpenAnnotationEditor, onOpenAsset, onCopyLink, onOpenSketch)
+                else -> ItemGrid(state, gridState, viewModel, onOpenAnnotationEditor, onOpenAsset, onCopyLink, onOpenSketch, onAnnotate)
             }
         }
     }
@@ -159,6 +163,7 @@ private fun ItemGrid(
     onOpenAsset: (String) -> Unit,
     onCopyLink: (String) -> Unit,
     onOpenSketch: ((String) -> Unit)?,
+    onAnnotate: (suspend (LibraryItem) -> Either<OpenForAnnotationError, String>)?,
 ) {
     var deleteTarget by remember { mutableStateOf<LibraryItem?>(null) }
     Column(Modifier.fillMaxSize()) {
@@ -200,8 +205,10 @@ private fun ItemGrid(
                 onClick = open,
                 onLongClick = { onOpenAsset(item.id) },
                 missing = item.id in state.missingIds,
+                canAnnotate = onAnnotate != null,
                 onAction = { action ->
                     when (action) {
+                        LibraryAssetAction.Annotate -> onAnnotate?.let { viewModel.annotateItem(item, it, onOpenAnnotationEditor) }
                         LibraryAssetAction.Details -> onOpenAsset(item.id)
                         LibraryAssetAction.CopyLink -> onCopyLink(LibraryItemActions.markdownLink(item))
                         LibraryAssetAction.Delete -> deleteTarget = item

@@ -519,10 +519,12 @@ internal fun BlockItem(
                         val imageData = remember(block.content) { extractSingleImageNode(block.content) }
                         if (imageData != null) {
                             val (url, altText) = imageData
+                            val annotateImage = LocalAnnotateImageAction.current
                             ImageBlock(
                                 url = url,
                                 altText = altText,
                                 onStartEditing = onStartEditing,
+                                onAnnotate = annotateImage?.let { action -> { action(url, block) } },
                                 isInSelectionMode = isInSelectionMode,
                                 onToggleSelect = onToggleSelect,
                                 onLongPressSelect = onLongPressSelect,

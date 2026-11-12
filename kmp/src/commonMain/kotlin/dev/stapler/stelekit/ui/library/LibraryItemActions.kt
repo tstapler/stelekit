@@ -1,7 +1,7 @@
 package dev.stapler.stelekit.ui.library
 
 /** Per-card actions (parity with the retired Assets screen's action menu). */
-enum class LibraryAssetAction { Details, CopyLink, Delete }
+enum class LibraryAssetAction { Annotate, Details, CopyLink, Delete }
 
 object LibraryItemActions {
     /** Markdown a user can paste on a page: images and drawings embed, other files link. */
