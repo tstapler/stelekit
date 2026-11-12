@@ -709,6 +709,29 @@ fun AnnotationEditorScreen(
                 )
             }
 
+            // Multi-point calibration: tick list, live fit and Apply, sitting just above the toolbar.
+            val rulerSession = state.rulerSession
+            val rulerPreview = viewModel.rulerPreview()
+            if (rulerSession != null && rulerPreview != null) {
+                RulerTickPanel(
+                    session = rulerSession,
+                    preview = rulerPreview,
+                    actions = remember(viewModel) {
+                        RulerTickPanelActions(
+                            onValueChange = { i, t -> viewModel.updateRulerTickValue(i, t) },
+                            onRemove = { viewModel.removeRulerTick(it) },
+                            onUnitChange = { viewModel.setRulerUnit(it) },
+                            onLensModeChange = { viewModel.setRulerLensMode(it) },
+                            onApply = { viewModel.confirmRulerSession() },
+                            onCancel = { viewModel.cancelRulerSession() },
+                        )
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(start = 8.dp, end = 8.dp, bottom = with(density) { toolbarHeightPx.toDp() } + 16.dp),
+                )
+            }
+
             // Layer 5: Annotation toolbar (bottom)
             AnnotationToolbar(
                 currentTool = state.currentTool,
@@ -811,6 +834,7 @@ fun AnnotationEditorScreen(
                 onUnitChange = { viewModel.updateGridRefUnit(it) },
                 onConfirm = { viewModel.confirmGridRefCalibration() },
                 onDismiss = { viewModel.dismissGridRefDialog() },
+                onMarkMoreTicks = { viewModel.beginRulerSession() },
             )
         }
 
@@ -820,6 +844,10 @@ fun AnnotationEditorScreen(
                 onDrawReference = {
                     showCalibrationSheet = false
                     viewModel.selectTool(AnnotationTool.GRID_REF)
+                },
+                onMarkRulerTicks = {
+                    showCalibrationSheet = false
+                    viewModel.beginRulerSession()
                 },
                 onUseBle = {
                     showCalibrationSheet = false
@@ -1367,6 +1395,8 @@ internal fun GridRefCalibrationDialog(
     onUnitChange: (MeasurementUnit) -> Unit,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
+    /** Optional: switch to marking 3+ ruler ticks for a more accurate multi-point calibration. */
+    onMarkMoreTicks: (() -> Unit)? = null,
 ) {
     var unitMenuExpanded by remember { mutableStateOf(false) }
     val isValidLength = lengthText.trim().toDoubleOrNull()?.let { it > 0.0 } == true
@@ -1425,8 +1455,13 @@ internal fun GridRefCalibrationDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+            Row {
+                if (onMarkMoreTicks != null) {
+                    TextButton(onClick = onMarkMoreTicks, enabled = isValidLength) { Text("Mark more ticks") }
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
             }
         },
     )

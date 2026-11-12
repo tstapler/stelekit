@@ -26,6 +26,8 @@ kt_android_library(
             "**/AnnotationEditorInsetsLayoutTest.kt",
             # Composes @Composable lambdas; this target has no Compose compiler plugin (Gradle-only)
             "**/ArchiveUrlEntryPointTest.kt",
+            # Composes @Composable lambdas; no Compose compiler plugin in this target (Gradle-only)
+            "**/AnnotateImageEntryPointTest.kt",
             # Compose host tests for the flagged project list and settings panel (Gradle-only, R-AU)
             "**/ProjectSettingsPanelTest.kt",
             "**/SourcePagePickerTest.kt",
@@ -47,6 +49,8 @@ kt_android_library(
             "**/AnnotationZoomPanTest.kt",
             # Compose host test for the measurement advice strip (Gradle-only, no Compose plugin here)
             "**/MeasurementAdviceStripTest.kt",
+            # Compose host test for the ruler tick panel (Gradle-only, no Compose plugin here)
+            "**/RulerTickPanelTest.kt",
             # Compose host test for the PNG calibration step (Gradle-only, no Compose plugin here)
             "**/RasterTaggingPanelTest.kt",
         ],

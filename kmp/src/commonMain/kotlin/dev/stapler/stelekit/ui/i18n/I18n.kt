@@ -135,6 +135,7 @@ private val translations = mapOf(
         "library.filter.documents" to "Docs",
         "library.filter.sketches" to "Sketch/Drawing",
         "library.card.menu" to "More actions",
+        "library.action.annotate" to "Annotate / measure",
         "library.action.details" to "Details",
         "library.action.copy_link" to "Copy link",
         "library.action.delete" to "Delete file",
@@ -309,6 +310,7 @@ class I18n(val language: Language) {
         const val LIBRARY_FILTER_DOCUMENTS = "library.filter.documents"
         const val LIBRARY_FILTER_SKETCHES = "library.filter.sketches"
         const val LIBRARY_CARD_MENU = "library.card.menu"
+        const val LIBRARY_ACTION_ANNOTATE = "library.action.annotate"
         const val LIBRARY_ACTION_DETAILS = "library.action.details"
         const val LIBRARY_ACTION_COPY_LINK = "library.action.copy_link"
         const val LIBRARY_ACTION_DELETE = "library.action.delete"
