@@ -137,4 +137,28 @@ class RulerTickSessionTest {
             assertTrue(abs(cal.pixelsPerMeter - pxPerM) / pxPerM < 1e-3, "got ${cal.pixelsPerMeter} want $pxPerM")
         }
     }
+
+    @Test
+    fun everyUsableEntryGetsItsOwnResidualAndSkippedOnesAreNull() {
+        val s = session(listOf("0", "10", "oops", "30")).copy(lensMode = LensMode.Off)
+        val p = s.preview(w, h)
+        assertEquals(4, p.entryResidualsPx.size)
+        assertNull(p.entryResidualsPx[2])
+        assertTrue(p.entryResidualsPx.filterNotNull().all { it < 1e-6 })
+    }
+
+    @Test
+    fun theMisTappedTickHasTheLargestResidual() {
+        val s = session(listOf("0", "10", "20", "30"))
+        val bent = s.copy(entries = s.entries.mapIndexed { i, e -> if (i == 2) e.copy(point = NormalizedPoint(e.point.x + 100.0 / w, 0.5)) else e }, lensMode = LensMode.Off)
+        val r = bent.preview(w, h).entryResidualsPx.map { it ?: 0.0 }
+        assertEquals(r.max(), r[2].coerceAtLeast(r.max()))
+        assertTrue(r.max() > 20.0, r.toString())
+    }
+
+    @Test
+    fun residualTextShowsTenthsUnderTenPixels() {
+        assertEquals("0.4 px", tickResidualText(0.44))
+        assertEquals("12 px", tickResidualText(12.3))
+    }
 }

@@ -44,4 +44,13 @@ class MeasurementAdviceStripTest {
         rule.onNodeWithText("Tilt unknown: x").assertDoesNotExist()
         rule.onNodeWithText("Tips for accuracy").assertDoesNotExist()
     }
+
+    @Test
+    fun accuracyLinesShowEvenWithoutWarnings() {
+        rule.setContent {
+            MeasurementAdviceStrip(MeasurementReliability(0.4, emptyList(), accuracy = listOf("Height offset 10.0 mm applied; x", "Estimated error about 0.4%.")))
+        }
+        rule.onNodeWithText("Height offset 10.0 mm applied", substring = true).assertExists()
+        rule.onNodeWithText("Estimated error about 0.4%.").assertExists()
+    }
 }

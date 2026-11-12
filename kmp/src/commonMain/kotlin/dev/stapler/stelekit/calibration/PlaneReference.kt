@@ -27,13 +27,23 @@ data class PlaneSession(
     val rectangle: ReferenceRectangle = ReferenceRectangle.A4,
     val firstEdgeIsLong: Boolean = true,
     val corners: List<NormalizedPoint> = emptyList(),
+    /** Optional fifth tap on the sheet centre, held out of the fit to check it. */
+    val checkPoint: NormalizedPoint? = null,
 ) {
     val firstEdgeMeters: Double get() = if (firstEdgeIsLong) rectangle.longMeters else rectangle.shortMeters
     val secondEdgeMeters: Double get() = if (firstEdgeIsLong) rectangle.shortMeters else rectangle.longMeters
 
-    fun withCorner(point: NormalizedPoint): PlaneSession = if (corners.size >= CORNERS) this else copy(corners = corners + point)
+    /** The first four taps are corners; a fifth is the centre check point; further taps are ignored. */
+    fun withCorner(point: NormalizedPoint): PlaneSession = when {
+        corners.size < CORNERS -> copy(corners = corners + point)
+        checkPoint == null -> copy(checkPoint = point)
+        else -> this
+    }
 
-    fun withoutLastCorner(): PlaneSession = copy(corners = corners.dropLast(1))
+    fun withoutLastCorner(): PlaneSession = if (checkPoint != null) copy(checkPoint = null) else copy(corners = corners.dropLast(1))
+
+    /** Every tapped point in order, for the on-image preview. */
+    fun allPoints(): List<NormalizedPoint> = corners + listOfNotNull(checkPoint)
 
     companion object {
         const val CORNERS = 4
@@ -41,7 +51,14 @@ data class PlaneSession(
 }
 
 /** What confirming a [PlaneSession] would do right now. */
-data class PlanePreview(val calibration: Calibration?, val message: String) {
+data class PlanePreview(
+    val calibration: Calibration?,
+    val message: String,
+    /** Held-out centre-point error in mm, or null when no check point was tapped. */
+    val checkResidualMm: Double? = null,
+    /** True when [checkResidualMm] is large enough that the corners are probably off. */
+    val checkFailed: Boolean = false,
+) {
     val canApply: Boolean get() = calibration != null
 }
 
@@ -50,9 +67,13 @@ object PlaneReference {
     private const val MM = 1000.0
     private const val MIN_AREA_FRACTION = 0.001
 
+    /** A held-out centre error above this share of the long edge means the corners or lens model are off. */
+    const val CHECK_WARN_FRACTION = 0.02
+
     const val GUIDANCE: String =
         "Lay the paper or card flat in the same plane as the object, then tap its four corners in order around the " +
-            "edge. Corners 1 to 2 run along the edge you pick below."
+            "edge. Corners 1 to 2 run along the edge you pick below. Optionally tap the centre of the sheet as a fifth " +
+            "point to check the fit."
 
     fun preview(session: PlaneSession, existingLensK: Double, widthPx: Double, heightPx: Double): PlanePreview {
         val tapped = session.corners.size
@@ -67,6 +88,8 @@ object PlaneReference {
         val fit = HomographyFitter.fit(src, dst) as? HomographyFit.Success
             ?: return PlanePreview(null, "These corners cannot define a plane; retap them.")
         val ppm = meanScale(src, a, b)
+        val check = session.checkPoint?.let { checkResidualMm(fit.homography, it, a, b, existingLensK, widthPx, heightPx) }
+        val failed = check != null && check > CHECK_WARN_FRACTION * session.rectangle.longMeters * MM
         val lens = LensCalibration(k = existingLensK)
         val calibration = Calibration(
             method = CalibrationMethod.MANUAL_REFERENCE,
@@ -75,12 +98,29 @@ object PlaneReference {
             basisVersion = CalibrationBasis.NATIVE_PIXELS_LENS,
             lens = lens,
             geometry = GeometryCalibration(
-                plane = PlaneCalibration(fit.homography.values, session.rectangle.label, a, b),
+                plane = PlaneCalibration(fit.homography.values, session.rectangle.label, a, b, check),
             ),
         )
         val message = "${session.rectangle.label}: scale about ${round(MM / ppm * 100.0) / 100.0} mm per pixel at the " +
             "reference. Distances are measured on the plane, so tilt across it is corrected."
-        return PlanePreview(calibration, message)
+        return PlanePreview(calibration, message + checkMessage(check, failed), check, failed)
+    }
+
+    private fun checkMessage(check: Double?, failed: Boolean): String = when {
+        check == null -> ""
+        failed -> " Centre check is off by ${oneDecimal(check)} mm: retap the corners or choose the other edge."
+        else -> " Centre check: ${oneDecimal(check)} mm."
+    }
+
+    private fun oneDecimal(v: Double): String {
+        val tenths = round(v * 10.0).toLong()
+        return "${tenths / 10}.${tenths % 10}"
+    }
+
+    /** Maps the tapped centre through the fitted plane and returns its distance (mm) from the true centre. */
+    private fun checkResidualMm(h: Homography, tap: NormalizedPoint, a: Double, b: Double, k: Double, w: Double, hh: Double): Double? {
+        val mapped = h.apply(RadialLens.undistort(tap.x, tap.y, k, w, hh)) ?: return null
+        return hypot(mapped.x - a / 2.0, mapped.y - b / 2.0) * MM
     }
 
     /** Average pixels per metre over the four edges, used wherever a single scale is still needed. */

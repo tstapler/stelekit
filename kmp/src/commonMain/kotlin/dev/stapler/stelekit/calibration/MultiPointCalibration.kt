@@ -19,6 +19,8 @@ data class TickFit(
     val cost: Double,
     /** Largest tick disagreement (along or across the ruler) in image pixels. */
     val maxResidualPx: Double,
+    /** Per-tick disagreement in image pixels (along and across the ruler combined), in tick order. */
+    val tickResidualsPx: List<Double> = emptyList(),
 )
 
 /** How the radial coefficient is chosen when calibrating from ticks. */
@@ -80,7 +82,8 @@ object MultiPointCalibration {
         val along = t.indices.map { pos[it] - meanPos - m * t[it] }
         val cost = along.sumOf { it * it } + perp.sumOf { (it * m) * (it * m) }
         val maxPx = max(along.maxOf { abs(it) } / m, perp.maxOf { abs(it) })
-        return TickFit(1.0 / m, along.maxOf { abs(it) } / span * PERCENT, cost, maxPx)
+        val perTick = along.indices.map { hypot(along[it] / m, perp[it]) }
+        return TickFit(1.0 / m, along.maxOf { abs(it) } / span * PERCENT, cost, maxPx, perTick)
     }
 
     /**

@@ -99,17 +99,48 @@ class PlaneReferenceTest {
     }
 
     @Test
-    fun sessionIgnoresAFifthCornerAndCanUndo() {
-        val s = session(0.0).withCorner(NormalizedPoint(0.5, 0.5))
-        assertEquals(4, s.corners.size)
-        assertEquals(3, s.withoutLastCorner().corners.size)
-    }
-
-    @Test
     fun presetsAreTheDocumentedSizes() {
         assertEquals(0.0856, ReferenceRectangle.ID1.longMeters)
         assertEquals(0.05398, ReferenceRectangle.ID1.shortMeters)
         assertEquals(0.297, ReferenceRectangle.A4.longMeters)
         assertEquals(0.2159, ReferenceRectangle.LETTER.shortMeters)
+    }
+
+    private fun centre(tilt: Double) = project(-0.1515, 0.0, tilt)
+
+    @Test
+    fun centreCheckOnATiltedSheetIsWithinAMillimetre() {
+        val preview = PlaneReference.preview(session(5.0).withCorner(centre(5.0)), 0.0, w, h)
+        assertFalse(preview.checkFailed)
+        assertTrue(assertNotNull(preview.checkResidualMm) < 1.0, "residual ${preview.checkResidualMm}")
+        assertTrue(preview.message.contains("Centre check:"))
+        assertNotNull(preview.calibration?.geometry?.plane?.checkResidualMm)
+    }
+
+    @Test
+    fun aMisplacedCentreTapFailsTheCheckButStillAllowsApply() {
+        val off = project(-0.1515 + 0.03, 0.03, 0.0)
+        val preview = PlaneReference.preview(session(0.0).withCorner(off), 0.0, w, h)
+        assertTrue(preview.checkFailed)
+        assertTrue(preview.canApply)
+        assertTrue(preview.message.contains("retap the corners"))
+    }
+
+    @Test
+    fun noCheckPointMeansNoResidual() {
+        val preview = PlaneReference.preview(session(0.0), 0.0, w, h)
+        assertEquals(null, preview.checkResidualMm)
+        assertFalse(preview.checkFailed)
+    }
+
+    @Test
+    fun fifthTapIsTheCheckPointAndUndoRemovesItFirst() {
+        val s = session(0.0).withCorner(NormalizedPoint(0.5, 0.5))
+        assertEquals(4, s.corners.size)
+        assertEquals(NormalizedPoint(0.5, 0.5), s.checkPoint)
+        assertEquals(5, s.allPoints().size)
+        assertEquals(s.withCorner(NormalizedPoint(0.1, 0.1)), s)
+        assertEquals(null, s.withoutLastCorner().checkPoint)
+        assertEquals(4, s.withoutLastCorner().corners.size)
     }
 }

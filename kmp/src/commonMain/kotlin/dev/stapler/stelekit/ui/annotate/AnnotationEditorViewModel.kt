@@ -733,7 +733,9 @@ class AnnotationEditorViewModel(
 
     private fun advise(points: List<NormalizedPoint>, calibration: Calibration, st: AnnotationEditorState): MeasurementReliability {
         val sensor = st.imageAnnotation?.sensorData
-        return MeasurementAdvisor.assess(points, calibration, imageWidthPx, imageHeightPx, sensor?.pitchDeg, sensor?.rollDeg)
+        return MeasurementAdvisor.assess(
+            points, calibration, imageWidthPx, imageHeightPx, sensor?.pitchDeg, sensor?.rollDeg, sensor?.focalLength35mmEq,
+        )
     }
 
     /** Dismiss the GRID_REF dialog without applying calibration. */
@@ -1089,7 +1091,7 @@ class AnnotationEditorViewModel(
     // ── Plane reference session (paper / card corners) ────────────────────────
 
     private fun setPlaneSession(session: PlaneSession?) {
-        _state.update { it.copy(planeSession = session, inProgressPoints = session?.corners.orEmpty()) }
+        _state.update { it.copy(planeSession = session, inProgressPoints = session?.allPoints().orEmpty()) }
     }
 
     fun beginPlaneSession() {
