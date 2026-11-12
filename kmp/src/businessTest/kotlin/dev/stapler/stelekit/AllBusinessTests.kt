@@ -501,6 +501,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.ui.annotate.AnnotationEditorPlaneTest::class,
     dev.stapler.stelekit.calibration.HomographyTest::class,
     dev.stapler.stelekit.calibration.PlaneReferenceTest::class,
+    dev.stapler.stelekit.db.PooledForeignKeysTest::class,
     dev.stapler.stelekit.ui.annotate.AnnotationEditorHeightOffsetTest::class,
     dev.stapler.stelekit.ui.annotate.HeightOffsetFormTest::class,
     dev.stapler.stelekit.calibration.HeightOffsetTest::class,
