@@ -49,6 +49,8 @@ kt_android_library(
             "**/AnnotationZoomPanTest.kt",
             # Compose host test for the height-offset dialog (Gradle-only, no Compose plugin here)
             "**/HeightOffsetDialogTest.kt",
+            # Compose host test for the measurement advice strip (Gradle-only, no Compose plugin here)
+            "**/MeasurementAdviceStripTest.kt",
             # Compose host test for the ruler tick panel (Gradle-only, no Compose plugin here)
             "**/RulerTickPanelTest.kt",
             # Compose host test for the PNG calibration step (Gradle-only, no Compose plugin here)
