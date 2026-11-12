@@ -49,6 +49,8 @@ fun CalibrationSheet(
     onDrawReference: () -> Unit,
     onUseBle: () -> Unit,
     modifier: Modifier = Modifier,
+    /** When set, offers calibrating from a sheet of paper or a card (four corners), which also corrects camera tilt. */
+    onUsePlaneReference: (() -> Unit)? = null,
     peerCalibration: Pair<String, Calibration>? = null,
     onUsePeerCalibration: ((Calibration) -> Unit)? = null,
 ) {
@@ -113,6 +115,12 @@ fun CalibrationSheet(
                         text = "Use BLE laser",
                         modifier = Modifier.padding(start = 8.dp),
                     )
+                }
+            }
+            if (onUsePlaneReference != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(onClick = onUsePlaneReference, modifier = Modifier.fillMaxWidth()) {
+                    Text("Use paper or a card (corrects tilt)")
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))

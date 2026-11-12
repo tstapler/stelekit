@@ -27,6 +27,7 @@ object LensMeasurement {
     private const val WARN_RESIDUAL_PERCENT = 1.0
     private const val RADIAL_DIFF_FACTOR = 2.0
     private const val PERCENT = 100.0
+    private const val PLANE_CELLS = 9
 
     const val DEPTH_ADVICE: String =
         "Anything raised above the ruler's surface (a thick object on top of the ruler) looks larger; " +
@@ -47,20 +48,31 @@ object LensMeasurement {
         val ppm = calibration.pixelsPerMeter
         if (!ppm.isFinite() || ppm <= 0.0) return null
         val (p, q) = pts(listOf(a, b), calibration, w, h)
-        return hypot(q.x - p.x, q.y - p.y) / ppm
+        val plane = planeOf(calibration)
+        if (plane == null) return hypot(q.x - p.x, q.y - p.y) / ppm
+        val mp = plane.apply(p) ?: return null
+        val mq = plane.apply(q) ?: return null
+        return hypot(mq.x - mp.x, mq.y - mp.y)
     }
+
+    private fun planeOf(calibration: Calibration): Homography? =
+        calibration.geometry?.plane?.homography?.takeIf { it.size == PLANE_CELLS }?.let(::Homography)
 
     /** Polygon area in square metres (shoelace over undistorted points), or null without a usable scale. */
     fun areaSquareMeters(points: List<NormalizedPoint>, calibration: Calibration, w: Double, h: Double): Double? {
         val ppm = calibration.pixelsPerMeter
         if (!ppm.isFinite() || ppm <= 0.0 || points.size < 3) return null
-        val p = pts(points, calibration, w, h)
+        val plane = planeOf(calibration)
+        val p = pts(points, calibration, w, h).let { raw ->
+            if (plane == null) raw else raw.map { plane.apply(it) ?: return null }
+        }
+        val unit = if (plane == null) ppm * ppm else 1.0
         var twice = 0.0
         for (i in p.indices) {
             val j = (i + 1) % p.size
             twice += p[i].x * p[j].y - p[j].x * p[i].y
         }
-        return abs(twice) / 2.0 / (ppm * ppm)
+        return abs(twice) / 2.0 / unit
     }
 
     /**

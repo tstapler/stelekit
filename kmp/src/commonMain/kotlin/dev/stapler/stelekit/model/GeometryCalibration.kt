@@ -17,6 +17,21 @@ data class GeometryCalibration(
     val heightOffsetMeters: Double = 0.0,
     /** Manually entered camera-to-reference-plane distance, metres; null derives it from the focal length. */
     val cameraDistanceMeters: Double? = null,
+    /** Plane map from a known rectangle; when present, distances are measured on the plane instead of with one scale. */
+    val plane: PlaneCalibration? = null,
+)
+
+/**
+ * A homography from undistorted native pixels to metres on the reference plane, fitted from the four
+ * corners of a rectangle of known size ([widthMeters] x [heightMeters], named [referenceName]).
+ * [homography] is 9 numbers, row-major.
+ */
+@Serializable
+data class PlaneCalibration(
+    val homography: List<Double>,
+    val referenceName: String,
+    val widthMeters: Double,
+    val heightMeters: Double,
 )
 
 /** JSON text form of [GeometryCalibration] for the `calibration_geometry_json` column; '' means none. */
