@@ -136,4 +136,32 @@ class ExistingImageAnnotationOpenerTest {
         assertIs<OpenForAnnotationError.WriteFailed>(result.leftOrNull())
         assertTrue(annotations.getImageAnnotationsByPage("page-001").first().getOrNull().orEmpty().isEmpty())
     }
+
+    @Test
+    fun openInlineImage_reportsOpenedAnnotationWithPage() = runTest {
+        val source = inlineBlock()
+        blocks.saveBlock(source)
+        var opened: Pair<String, String>? = null
+
+        opener().openInlineImage("../assets/photo.jpg", source, onError = { error("unexpected $it") }) { a, p -> opened = a to p }
+
+        assertEquals("page-001", opened?.second)
+        assertNotNull(annotations.getImageAnnotationByUuid(opened!!.first).first().getOrNull())
+    }
+
+    @Test
+    fun openInlineImage_reportsErrorMessageWhenFileMissing() = runTest {
+        fileThere = false
+        var message: String? = null
+
+        opener().openInlineImage("../assets/photo.jpg", inlineBlock(), onError = { message = it }) { _, _ -> error("unexpected") }
+
+        assertEquals(OpenForAnnotationError.FileMissing("").message, message)
+    }
+
+    @Test
+    fun openLibraryImage_withoutPage_isNoPage_andWithPage_createsAnnotation() = runTest {
+        assertIs<OpenForAnnotationError.NoPage>(opener().openLibraryImage(null, "/graph/assets/a.jpg").leftOrNull())
+        assertTrue(opener().openLibraryImage("page-001", "/graph/assets/a.jpg").isRight())
+    }
 }

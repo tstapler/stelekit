@@ -142,3 +142,23 @@ class ExistingImageAnnotationOpener(
     }
 }
 
+
+/** Opens the inline image shown by [block]; reports success to [onOpened] and failure text to [onError]. */
+suspend fun ExistingImageAnnotationOpener.openInlineImage(
+    imageRef: String,
+    block: Block,
+    onError: suspend (String) -> Unit,
+    onOpened: (annotationUuid: String, pageUuid: String) -> Unit,
+) {
+    val pageUuid = block.pageUuid.value
+    open(ExistingImageRequest(pageUuid = pageUuid, imageRef = imageRef, sourceBlock = block)).fold(
+        ifLeft = { err -> onError(err.message) },
+        ifRight = { annotationUuid -> onOpened(annotationUuid, pageUuid) },
+    )
+}
+
+/** Opens a Library image by file path; a file-system-less build assumes the file exists. */
+suspend fun ExistingImageAnnotationOpener.openLibraryImage(
+    pageUuid: String?,
+    filePath: String,
+): Either<OpenForAnnotationError, String> = open(ExistingImageRequest(pageUuid, filePath))

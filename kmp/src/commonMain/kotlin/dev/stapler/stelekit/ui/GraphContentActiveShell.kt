@@ -45,6 +45,7 @@ import dev.stapler.stelekit.ui.screens.copy.CopyGraphBinding
 import dev.stapler.stelekit.ui.screens.copy.LocalCopyFlow
 import dev.stapler.stelekit.ui.screens.copy.conflictPagePersister
 import dev.stapler.stelekit.platform.defaultMeasurementUnit
+import dev.stapler.stelekit.ui.annotate.openInlineImage
 import kotlinx.coroutines.launch
 
 /**
@@ -288,14 +289,10 @@ internal fun GraphContentActiveShell(
             )
             val action: (String, dev.stapler.stelekit.model.Block) -> Unit = { imageRef, block ->
                 scope.launch {
-                    val request = dev.stapler.stelekit.ui.annotate.ExistingImageRequest(
-                        pageUuid = block.pageUuid.value,
-                        imageRef = imageRef,
-                        sourceBlock = block,
-                    )
-                    opener.open(request).fold(
-                        ifLeft = { err -> snackbarHostState.showSnackbar(err.message) },
-                        ifRight = { annotationUuid -> viewModel.navigateToAnnotationEditor(annotationUuid, block.pageUuid.value) },
+                    opener.openInlineImage(
+                        imageRef, block,
+                        onError = { message -> snackbarHostState.showSnackbar(message) },
+                        onOpened = { annotationUuid, pageUuid -> viewModel.navigateToAnnotationEditor(annotationUuid, pageUuid) },
                     )
                 }
             }
