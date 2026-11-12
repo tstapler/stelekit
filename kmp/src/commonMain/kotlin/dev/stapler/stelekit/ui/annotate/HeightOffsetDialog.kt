@@ -98,16 +98,10 @@ private fun plainMillimetres(meters: Double): String {
     return if (mm == kotlin.math.round(mm)) kotlin.math.round(mm).toLong().toString() else mm.toString()
 }
 
-/** One-line status under the calibration badge: the current offset, or an invitation to set one. */
-@Composable
-fun HeightOffsetRow(geometry: GeometryCalibration?, onEdit: () -> Unit, modifier: Modifier = Modifier) {
-    val active = geometry != null && geometry.heightOffsetMeters > 0.0
-    Row(modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = if (active) "Height offset ${plainMillimetres(geometry?.heightOffsetMeters ?: 0.0)} mm applied" else "Measuring something raised above the ruler?",
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.weight(1f),
-        )
-        TextButton(onClick = onEdit) { Text(if (active) "Edit height" else "Set height") }
+/** Trailing text for the calibration badge: the current height offset, or an invitation to set one. */
+fun heightOffsetActionLabel(geometry: GeometryCalibration?): String =
+    if (geometry != null && geometry.heightOffsetMeters > 0.0) {
+        "Height offset ${plainMillimetres(geometry.heightOffsetMeters)} mm"
+    } else {
+        "Set object height"
     }
-}

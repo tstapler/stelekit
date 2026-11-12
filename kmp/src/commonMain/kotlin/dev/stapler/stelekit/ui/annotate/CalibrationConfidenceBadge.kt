@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.ui.annotate
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
@@ -33,6 +34,9 @@ import dev.stapler.stelekit.model.CalibrationMethod
 fun CalibrationConfidenceBadge(
     calibration: Calibration?,
     modifier: Modifier = Modifier,
+    /** Optional trailing action text on the same line (for example the object-height entry); no extra height. */
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
 ) {
     data class BadgeConfig(
         val icon: ImageVector,
@@ -105,6 +109,15 @@ fun CalibrationConfidenceBadge(
                 text = config.label,
                 style = MaterialTheme.typography.labelSmall,
             )
+            if (actionLabel != null && onAction != null) {
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = actionLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable(onClick = onAction),
+                )
+            }
         }
     }
 }
