@@ -49,6 +49,8 @@ fun CalibrationSheet(
     onDrawReference: () -> Unit,
     onUseBle: () -> Unit,
     modifier: Modifier = Modifier,
+    /** When set, offers the multi-point ruler flow (2+ ticks with their positions, optional lens correction). */
+    onMarkRulerTicks: (() -> Unit)? = null,
     /** When set, offers calibrating from a sheet of paper or a card (four corners), which also corrects camera tilt. */
     onUsePlaneReference: (() -> Unit)? = null,
     peerCalibration: Pair<String, Calibration>? = null,
@@ -115,6 +117,12 @@ fun CalibrationSheet(
                         text = "Use BLE laser",
                         modifier = Modifier.padding(start = 8.dp),
                     )
+                }
+            }
+            if (onMarkRulerTicks != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(onClick = onMarkRulerTicks, modifier = Modifier.fillMaxWidth()) {
+                    Text("Mark ruler ticks (most accurate)")
                 }
             }
             if (onUsePlaneReference != null) {

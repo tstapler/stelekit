@@ -7,6 +7,7 @@ import dev.stapler.stelekit.asset.AssetIndexProgress
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.LibraryRepository
+import dev.stapler.stelekit.ui.annotate.OpenForAnnotationError
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -212,6 +213,23 @@ class LibraryViewModel(
             delete(id).fold(
                 { e -> _state.update { it.copy(actionError = e.message) } },
                 { reload() },
+            )
+        }
+    }
+
+    /**
+     * Opens an existing image in the annotation editor. [open] finds or creates its annotation;
+     * a failure (missing file, no page) sets [LibraryState.actionError] instead of navigating.
+     */
+    fun annotateItem(
+        item: LibraryItem,
+        open: suspend (LibraryItem) -> Either<OpenForAnnotationError, String>,
+        onOpened: (annotationUuid: String) -> Unit,
+    ) {
+        scope.launch {
+            open(item).fold(
+                { e -> _state.update { it.copy(actionError = e.message) } },
+                { annotationUuid -> onOpened(annotationUuid) },
             )
         }
     }

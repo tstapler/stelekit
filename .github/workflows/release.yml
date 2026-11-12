@@ -819,6 +819,7 @@ jobs:
           merge-multiple: true
 
       - name: Update Homebrew formula SHA256s
+        id: formula
         env:
           VER: ${{ needs.resolve-version.outputs.version }}
         run: |
@@ -840,6 +841,7 @@ jobs:
           exit(0 if b >= a else 1)
           "; then
             echo "Formula is already at $CURRENT_VER (newer than $BUILD_VER) — skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"  # also keeps the central tap from being rolled back
             exit 0
           fi
 
@@ -867,6 +869,33 @@ jobs:
           git diff --cached --quiet || git commit -m "chore: update Homebrew formula for $VER"
           git rebase origin/main
           git push origin HEAD:main
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      # Mirror the formula and cask just committed above into the central tap too, as the
+      # tstapler-homebrew-tap-writer GitHub App. Not run when the version guard above skipped (an
+      # older backfill must not roll the tap back), skipped with a notice when the app credentials
+      # are missing, and non-blocking: this repo's own tap is already updated.
+      - name: Check for the tap app credentials
+        id: tap-gate
+        if: steps.formula.outputs.skip == 'false'
+        env:
+          APP_CLIENT_ID: ${{ vars.HOMEBREW_TAP_APP_CLIENT_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}
+        run: |
+          if [ -n "$APP_CLIENT_ID" ] && [ -n "$APP_PRIVATE_KEY" ]; then echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else echo "::notice::HOMEBREW_TAP_APP_CLIENT_ID / HOMEBREW_TAP_APP_PRIVATE_KEY are not set; skipping the central Homebrew tap"; fi
+
+      - name: Publish the formula and cask to the central Homebrew tap
+        if: steps.formula.outputs.skip == 'false' && steps.tap-gate.outputs.enabled == 'true'
+        continue-on-error: true
+        uses: tstapler/gha-actions/publish-homebrew-formula@dcc4013f1e0c983a6926d22b1cb9acf3aba9a489 # gha-actions main, includes publish-homebrew-formula (#2)
+        with:
+          client-id: ${{ vars.HOMEBREW_TAP_APP_CLIENT_ID }}
+          private-key: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}
+          files: |
+            Formula/stelekit.rb:Formula/stelekit.rb
+            Casks/stelekit.rb:Casks/stelekit.rb
+          commit-message: stelekit ${{ needs.resolve-version.outputs.version }}
 
   # ── F-Droid index build ────────────────────────────────────────────────────
   # Called directly after github-release because GITHUB_TOKEN-triggered events

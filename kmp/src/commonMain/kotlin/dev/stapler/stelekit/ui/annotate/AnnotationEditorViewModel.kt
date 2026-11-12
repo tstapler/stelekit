@@ -132,6 +132,8 @@ data class AnnotationEditorState(
     val error: EditorError? = null,
     /** Opt-in non-drag crosshair placement (C.8); idle unless the user turns the mode on. */
     val placement: AnnotationPlacementSession = AnnotationPlacementSession(),
+    /** Non-null while the user is marking ruler ticks for a multi-point calibration. */
+    val rulerSession: RulerTickSession? = null,
     /** Non-null while the user is tapping the corners of a known rectangle (paper or card) to calibrate a plane. */
     val planeSession: PlaneSession? = null,
 )
@@ -427,6 +429,7 @@ class AnnotationEditorViewModel(
             it.copy(
                 currentTool = tool,
                 inProgressPoints = emptyList(),
+                rulerSession = if (tool == AnnotationTool.GRID_REF) it.rulerSession else null,
                 planeSession = if (tool == AnnotationTool.GRID_REF) it.planeSession else null,
                 placement = if (tool == AnnotationTool.SELECT) AnnotationPlacementSession() else it.placement,
             )
@@ -511,6 +514,11 @@ class AnnotationEditorViewModel(
             return
         }
 
+        val ruler = st.rulerSession
+        if (ruler != null && tool == AnnotationTool.GRID_REF) {
+            setRulerSession(ruler.withTick(point))
+            return
+        }
         val plane = st.planeSession
         if (plane != null && tool == AnnotationTool.GRID_REF) {
             setPlaneSession(plane.withCorner(point))
@@ -633,6 +641,64 @@ class AnnotationEditorViewModel(
         updateCalibration(keepingGeometry(calibration))
         logger.info("Multi-point calibration applied: ${ticks.size} ticks, k=${calibration.lens?.k}")
     }
+
+    // ── Ruler tick session (multi-point calibration UI) ───────────────────────
+
+    private fun setRulerSession(session: RulerTickSession?) {
+        _state.update { it.copy(rulerSession = session, inProgressPoints = session?.entries?.map { e -> e.point }.orEmpty()) }
+    }
+
+    /**
+     * Starts marking ruler ticks. When the 2-point reference dialog is open, its two points and typed
+     * length seed the first two ticks (0 and the length); otherwise the session starts empty.
+     */
+    fun beginRulerSession() {
+        if (inputStopped()) return
+        val st = _state.value
+        val seeds = st.pendingGridRefPoints.takeIf { it.size >= 2 }
+        val unit = if (seeds != null) st.gridRefUnit else st.selectedUnit.takeUnless { it == MeasurementUnit.FEET_INCHES }
+            ?: MeasurementUnit.CENTIMETERS
+        val entries = seeds?.let {
+            listOf(RulerTickEntry(it[0], "0"), RulerTickEntry(it[1], st.gridRefLengthText.trim()))
+        }.orEmpty()
+        _state.update {
+            it.copy(
+                currentTool = AnnotationTool.GRID_REF,
+                isGridRefDialogVisible = false,
+                pendingGridRefPoints = emptyList(),
+                gridRefLengthText = "",
+                planeSession = null,
+            )
+        }
+        setRulerSession(RulerTickSession(unit = unit, entries = entries))
+    }
+
+    fun updateRulerTickValue(index: Int, text: String) = updateRulerSession { it.withValue(index, text) }
+
+    fun removeRulerTick(index: Int) = updateRulerSession { it.withoutTick(index) }
+
+    fun setRulerUnit(unit: MeasurementUnit) = updateRulerSession { it.copy(unit = unit) }
+
+    fun setRulerLensMode(mode: LensMode) = updateRulerSession { it.copy(lensMode = mode) }
+
+    private fun updateRulerSession(transform: (RulerTickSession) -> RulerTickSession) {
+        val session = _state.value.rulerSession ?: return
+        setRulerSession(transform(session))
+    }
+
+    /** What applying the current ruler session would produce; null when no session is open. */
+    fun rulerPreview(): RulerTickPreview? = _state.value.rulerSession?.preview(imageWidthPx, imageHeightPx)
+
+    /** Applies the session through [confirmMultiPointCalibration] and closes it; no-op while the preview cannot apply. */
+    fun confirmRulerSession() {
+        if (inputStopped()) return
+        val session = _state.value.rulerSession ?: return
+        if (session.preview(imageWidthPx, imageHeightPx).canApply.not()) return
+        confirmMultiPointCalibration(session.usableTicks(), session.lensMode)
+        setRulerSession(null)
+    }
+
+    fun cancelRulerSession() = setRulerSession(null)
 
     /** Warnings for the committed annotation [uuid]; empty when it is unknown or the calibration has no ruler marks. */
     fun reliabilityOf(uuid: String): MeasurementReliability {
@@ -1001,7 +1067,7 @@ class AnnotationEditorViewModel(
 
     fun beginPlaneSession() {
         if (inputStopped()) return
-        _state.update { it.copy(currentTool = AnnotationTool.GRID_REF, isGridRefDialogVisible = false, pendingGridRefPoints = emptyList()) }
+        _state.update { it.copy(currentTool = AnnotationTool.GRID_REF, isGridRefDialogVisible = false, pendingGridRefPoints = emptyList(), rulerSession = null) }
         setPlaneSession(PlaneSession())
     }
 
