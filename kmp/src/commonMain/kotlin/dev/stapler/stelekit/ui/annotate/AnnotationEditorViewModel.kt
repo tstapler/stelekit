@@ -6,6 +6,7 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import androidx.compose.ui.graphics.ImageBitmap
 import dev.stapler.stelekit.calibration.CalibrationService
+import dev.stapler.stelekit.calibration.HeightOffset
 import dev.stapler.stelekit.calibration.LensMeasurement
 import dev.stapler.stelekit.calibration.LensMode
 import dev.stapler.stelekit.calibration.MeasurementReliability
@@ -16,6 +17,7 @@ import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationMethod
 import dev.stapler.stelekit.model.CalibrationTick
 import dev.stapler.stelekit.model.DEFAULT_MEASUREMENT_UNIT
+import dev.stapler.stelekit.model.GeometryCalibration
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.MeasurementAnnotation
 import dev.stapler.stelekit.model.MeasurementUnit
@@ -603,7 +605,7 @@ class AnnotationEditorViewModel(
                 inProgressPoints = emptyList(),
             )
         }
-        updateCalibration(calibration)
+        updateCalibration(keepingGeometry(calibration))
         logger.info("GRID_REF calibration applied: ${calibration.pixelsPerMeter} px/m from ${lengthMeters}m reference")
     }
 
@@ -615,7 +617,7 @@ class AnnotationEditorViewModel(
     fun confirmMultiPointCalibration(ticks: List<CalibrationTick>, mode: LensMode) {
         if (inputStopped()) return
         val calibration = MultiPointCalibration.calibrate(ticks, imageWidthPx, imageHeightPx, mode) ?: return
-        updateCalibration(calibration)
+        updateCalibration(keepingGeometry(calibration))
         logger.info("Multi-point calibration applied: ${ticks.size} ticks, k=${calibration.lens?.k}")
     }
 
@@ -770,7 +772,14 @@ class AnnotationEditorViewModel(
             annotation.copy(valueMeters = newValue, valueDisplay = newDisplay)
         }
 
-        _state.update { it.copy(calibration = newCalibration, committedAnnotations = rederived) }
+        _state.update {
+            it.copy(
+                calibration = newCalibration,
+                committedAnnotations = rederived,
+                imageAnnotation = it.imageAnnotation?.copy(calibration = newCalibration),
+            )
+        }
+        persistImageCalibration()
 
         // Persist re-derived measurements to the repository
         st.imageAnnotation?.uuid?.let { imageUuid ->
@@ -792,11 +801,23 @@ class AnnotationEditorViewModel(
             calibration = snapshot.calibration,
             committedAnnotations = snapshot.annotations.map { a -> a.relabeled(it.selectedUnit) },
         )}
+        _state.update { it.copy(imageAnnotation = it.imageAnnotation?.copy(calibration = snapshot.calibration)) }
+        persistImageCalibration()
         _calibrationChangeMessage.value = "Scale restored"
         _state.value.imageAnnotation?.uuid?.let { imageUuid ->
             persistence.submit(onResult = { it.onLeft { err -> logger.error("Failed to restore measurements: ${err.message}") } }) {
                 saveSet(imageUuid, _state.value.committedAnnotations)
             }
+        }
+    }
+
+    /** Saves the image row with the current calibration (scale, lens, geometry) so it survives closing the editor. */
+    @OptIn(DirectRepositoryWrite::class)
+    private fun persistImageCalibration() {
+        val repo = imageAnnotationRepository ?: return
+        persistence.submit(onResult = { it.onLeft { err -> logger.error("Failed to persist calibration: ${err.message}") } }) {
+            val image = _state.value.imageAnnotation ?: return@submit Unit.right()
+            repo.saveImageAnnotation(image)
         }
     }
 
@@ -904,13 +925,15 @@ class AnnotationEditorViewModel(
         displayUnit: MeasurementUnit,
     ): Pair<Double?, String?> {
         val ppm = calibration?.pixelsPerMeter ?: 0.0
+        // Reference lines lie in the ruler's plane, so only measurements get the height-offset factor.
+        val length = if (tool == AnnotationTool.GRID_REF) 1.0 else heightFactor(calibration)
         return when (tool) {
             AnnotationTool.DISTANCE, AnnotationTool.GRID_REF -> {
                 if (points.size < 2) return null to null
                 val p1 = points[0]
                 val p2 = points[1]
                 if (calibration?.lens != null) {
-                    val lensMeters = LensMeasurement.distanceMeters(p1, p2, calibration, imageWidthPx, imageHeightPx)
+                    val lensMeters = LensMeasurement.distanceMeters(p1, p2, calibration, imageWidthPx, imageHeightPx)?.times(length)
                     return lensMeters to lensMeters?.let { metersToDisplayString(it, displayUnit) }
                 }
                 val dx = (p2.x - p1.x) * imageWidthPx
@@ -919,7 +942,7 @@ class AnnotationEditorViewModel(
                 if (ppm == 0.0) {
                     null to "${pixelDist.toInt()} px"
                 } else {
-                    val meters = pixelDist / ppm
+                    val meters = pixelDist / ppm * length
                     meters to metersToDisplayString(meters, displayUnit)
                 }
             }
@@ -929,11 +952,12 @@ class AnnotationEditorViewModel(
                 if (ppm == 0.0) {
                     null to "uncalibrated"
                 } else {
-                    val area = if (calibration?.lens != null) {
+                    val flatArea = if (calibration?.lens != null) {
                         LensMeasurement.areaSquareMeters(points, calibration, imageWidthPx, imageHeightPx) ?: 0.0
                     } else {
                         polygonAreaMeters(points, ppm, imageWidthPx, imageHeightPx)
                     }
+                    val area = flatArea * length * length
                     area to "${metersToDisplayString(area, displayUnit)}²"
                 }
             }
@@ -955,6 +979,38 @@ class AnnotationEditorViewModel(
             AnnotationTool.SELECT -> null to null
         }
     }
+
+    private fun heightFactor(calibration: Calibration?): Double = HeightOffset.lengthFactor(
+        calibration,
+        _state.value.imageAnnotation?.sensorData?.focalLength35mmEq,
+        imageWidthPx,
+        imageHeightPx,
+    )
+
+    /**
+     * What a height-offset [draft] would do for the current calibration; null when the image has no
+     * usable calibration yet.
+     */
+    fun heightOffsetPreview(draft: HeightOffsetDraft): HeightOffsetPreview? {
+        val st = _state.value
+        val calibration = usableScale(st.calibration) ?: return null
+        return draft.preview(calibration, st.imageAnnotation?.sensorData?.focalLength35mmEq, imageWidthPx, imageHeightPx)
+    }
+
+    /** Saves [geometry] on the calibration (null clears it) and re-derives every measurement. */
+    fun setGeometry(geometry: GeometryCalibration?) {
+        if (inputStopped()) return
+        val calibration = usableScale(_state.value.calibration) ?: return
+        val cleared = geometry?.takeIf { it.heightOffsetMeters > 0.0 || it.cameraDistanceMeters != null }
+        updateCalibration(calibration.copy(geometry = cleared))
+    }
+
+    private fun usableScale(calibration: Calibration?): Calibration? =
+        calibration?.takeIf { it.method != CalibrationMethod.NONE && it.pixelsPerMeter > 0.0 }
+
+    /** A new reference keeps the height offset the user already entered for this photo. */
+    private fun keepingGeometry(calibration: Calibration): Calibration =
+        calibration.copy(geometry = calibration.geometry ?: _state.value.calibration?.geometry)
 
     // ── Tag management ────────────────────────────────────────────────────────
 

@@ -59,6 +59,8 @@ data class Calibration(
     val basisVersion: Int = CalibrationBasis.LEGACY_DECODE_RELATIVE,
     /** Multi-point / lens-correction data; non-null only for [CalibrationBasis.NATIVE_PIXELS_LENS]. */
     val lens: LensCalibration? = null,
+    /** Height offset / camera distance for the (D - h) / D correction; null means the plain scale. */
+    val geometry: GeometryCalibration? = null,
 ) {
     /** True when [pixelsPerMeter] is decode-size-relative and must never be rescaled. */
     val isLegacyBasis: Boolean get() = basisVersion == CalibrationBasis.LEGACY_DECODE_RELATIVE

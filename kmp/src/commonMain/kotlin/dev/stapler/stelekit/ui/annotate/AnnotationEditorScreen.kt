@@ -229,6 +229,8 @@ fun AnnotationEditorScreen(
     }
     val haptic = LocalHapticFeedback.current
     var showCalibrationSheet by remember { mutableStateOf(false) }
+    var showHeightOffset by remember { mutableStateOf(false) }
+    var heightDraft by remember { mutableStateOf(HeightOffsetDraft()) }
     var showCalibrationChangeWarning by remember { mutableStateOf(false) }
     var isFirstCalibrationUse by remember {
         mutableStateOf(platformSettings?.getBoolean("image_meter_calibrated_before", false)?.not() ?: true)
@@ -443,6 +445,13 @@ fun AnnotationEditorScreen(
                     }
                 }
             }
+        }
+
+        if (viewModel.isCalibrated()) {
+            HeightOffsetRow(geometry = state.calibration?.geometry, onEdit = {
+                heightDraft = draftFor(state.calibration?.geometry)
+                showHeightOffset = true
+            })
         }
 
         // Story 8.2: GPS metadata row — formatted as "49.2827° N, 123.1207° W".
@@ -802,6 +811,24 @@ fun AnnotationEditorScreen(
                 onUnitChange = { viewModel.updateGridRefUnit(it) },
                 onConfirm = { viewModel.confirmGridRefCalibration() },
                 onDismiss = { viewModel.dismissGridRefDialog() },
+            )
+        }
+
+        val heightPreview = if (showHeightOffset) viewModel.heightOffsetPreview(heightDraft) else null
+        if (heightPreview != null) {
+            HeightOffsetDialog(
+                draft = heightDraft,
+                preview = heightPreview,
+                onDraftChange = { heightDraft = it },
+                onApply = {
+                    viewModel.setGeometry(it)
+                    showHeightOffset = false
+                },
+                onClear = {
+                    viewModel.setGeometry(null)
+                    showHeightOffset = false
+                },
+                onDismiss = { showHeightOffset = false },
             )
         }
 

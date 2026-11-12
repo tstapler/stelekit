@@ -562,13 +562,14 @@ class RestrictedDatabaseQueries(
         camera_model: String?,
         calibration_basis_version: Long,
         calibration_lens_json: String,
+        calibration_geometry_json: String,
     ): Long = queries.insertImageAnnotation(
         uuid, block_uuid, page_uuid, graph_path, file_path, thumbnail_path,
         source, source_uri, captured_at_ms, imported_at_ms,
         calibration_method, pixels_per_meter, calibration_confidence_pct,
         unit, tags, lat_lng, altitude_m, bearing_deg, pitch_deg, roll_deg,
         focal_length_mm, focal_length_35mm_eq, camera_make, camera_model,
-        calibration_basis_version, calibration_lens_json,
+        calibration_basis_version, calibration_lens_json, calibration_geometry_json,
     )
 
     @DirectSqlWrite
@@ -598,6 +599,7 @@ class RestrictedDatabaseQueries(
         camera_model: String?,
         calibration_basis_version: Long,
         calibration_lens_json: String,
+        calibration_geometry_json: String,
         uuid: String,
     ): Long = queries.updateImageAnnotation(
         block_uuid, page_uuid, graph_path, file_path, thumbnail_path,
@@ -605,7 +607,7 @@ class RestrictedDatabaseQueries(
         calibration_method, pixels_per_meter, calibration_confidence_pct,
         unit, tags, lat_lng, altitude_m, bearing_deg, pitch_deg, roll_deg,
         focal_length_mm, focal_length_35mm_eq, camera_make, camera_model,
-        calibration_basis_version, calibration_lens_json, uuid,
+        calibration_basis_version, calibration_lens_json, calibration_geometry_json, uuid,
     )
 
     @DirectSqlWrite

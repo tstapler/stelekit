@@ -45,6 +45,8 @@ kt_android_library(
             "**/AnnotationNonDragModeTest.kt",
             # Compose host test for annotate zoom/pan (Gradle-only, no Compose plugin here)
             "**/AnnotationZoomPanTest.kt",
+            # Compose host test for the height-offset dialog (Gradle-only, no Compose plugin here)
+            "**/HeightOffsetDialogTest.kt",
             # Compose host test for the PNG calibration step (Gradle-only, no Compose plugin here)
             "**/RasterTaggingPanelTest.kt",
         ],

@@ -946,6 +946,13 @@ object MigrationRunner {
                 SchemaOp.AddColumn("image_annotations", "calibration_lens_json", "TEXT NOT NULL DEFAULT ''"),
             ),
         ),
+        Migration(
+            name = "image_annotations_calibration_geometry_json",
+            // '' = no geometry data (every existing row); additive, existing rows untouched.
+            schemaOps = listOf(
+                SchemaOp.AddColumn("image_annotations", "calibration_geometry_json", "TEXT NOT NULL DEFAULT ''"),
+            ),
+        ),
     )
 
     /**
