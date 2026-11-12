@@ -93,6 +93,18 @@ class CalibrationGeometryPersistenceTest {
     }
 
     @Test
+    fun plane_should_RoundTripThroughTheDatabase() = runBlocking {
+        val plane = dev.stapler.stelekit.model.PlaneCalibration(
+            homography = listOf(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1e-4, 0.0, 1.0),
+            referenceName = "A4 paper (297 x 210 mm)", widthMeters = 0.297, heightMeters = 0.21,
+        )
+        val withPlane = withGeometry.copy(geometry = geometry.copy(plane = plane))
+        val repo = SqlDelightImageAnnotationRepository(SteleDatabase(driver))
+        repo.saveImageAnnotation(annotation("planeaaa", withPlane))
+        assertEquals(withPlane, repo.getImageAnnotationByUuid("planeaaa").first().getOrNull()!!.calibration)
+    }
+
+    @Test
     fun codec_should_DegradeToNone_When_TextIsBlankOrCorrupt() {
         assertEquals("", GeometryCalibrationCodec.encode(null))
         assertNull(GeometryCalibrationCodec.decode(""))

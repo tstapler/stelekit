@@ -11,6 +11,10 @@ import dev.stapler.stelekit.calibration.LensMeasurement
 import dev.stapler.stelekit.calibration.LensMode
 import dev.stapler.stelekit.calibration.MeasurementAdvisor
 import dev.stapler.stelekit.calibration.MeasurementReliability
+import dev.stapler.stelekit.calibration.PlanePreview
+import dev.stapler.stelekit.calibration.PlaneReference
+import dev.stapler.stelekit.calibration.PlaneSession
+import dev.stapler.stelekit.calibration.ReferenceRectangle
 import dev.stapler.stelekit.calibration.MultiPointCalibration
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.AnnotationType
@@ -131,6 +135,8 @@ data class AnnotationEditorState(
     val placement: AnnotationPlacementSession = AnnotationPlacementSession(),
     /** Non-null while the user is marking ruler ticks for a multi-point calibration. */
     val rulerSession: RulerTickSession? = null,
+    /** Non-null while the user is tapping the corners of a known rectangle (paper or card) to calibrate a plane. */
+    val planeSession: PlaneSession? = null,
 )
 
 /**
@@ -425,6 +431,7 @@ class AnnotationEditorViewModel(
                 currentTool = tool,
                 inProgressPoints = emptyList(),
                 rulerSession = if (tool == AnnotationTool.GRID_REF) it.rulerSession else null,
+                planeSession = if (tool == AnnotationTool.GRID_REF) it.planeSession else null,
                 placement = if (tool == AnnotationTool.SELECT) AnnotationPlacementSession() else it.placement,
             )
         }
@@ -511,6 +518,11 @@ class AnnotationEditorViewModel(
         val ruler = st.rulerSession
         if (ruler != null && tool == AnnotationTool.GRID_REF) {
             setRulerSession(ruler.withTick(point))
+            return
+        }
+        val plane = st.planeSession
+        if (plane != null && tool == AnnotationTool.GRID_REF) {
+            setPlaneSession(plane.withCorner(point))
             return
         }
 
@@ -656,6 +668,7 @@ class AnnotationEditorViewModel(
                 isGridRefDialogVisible = false,
                 pendingGridRefPoints = emptyList(),
                 gridRefLengthText = "",
+                planeSession = null,
             )
         }
         setRulerSession(RulerTickSession(unit = unit, entries = entries))
@@ -1025,7 +1038,7 @@ class AnnotationEditorViewModel(
                 if (points.size < 2) return null to null
                 val p1 = points[0]
                 val p2 = points[1]
-                if (calibration?.lens != null) {
+                if (calibration != null && usesLensPath(calibration)) {
                     val lensMeters = LensMeasurement.distanceMeters(p1, p2, calibration, imageWidthPx, imageHeightPx)?.times(length)
                     return lensMeters to lensMeters?.let { metersToDisplayString(it, displayUnit) }
                 }
@@ -1045,7 +1058,7 @@ class AnnotationEditorViewModel(
                 if (ppm == 0.0) {
                     null to "uncalibrated"
                 } else {
-                    val flatArea = if (calibration?.lens != null) {
+                    val flatArea = if (calibration != null && usesLensPath(calibration)) {
                         LensMeasurement.areaSquareMeters(points, calibration, imageWidthPx, imageHeightPx) ?: 0.0
                     } else {
                         polygonAreaMeters(points, ppm, imageWidthPx, imageHeightPx)
@@ -1073,6 +1086,53 @@ class AnnotationEditorViewModel(
         }
     }
 
+    // ── Plane reference session (paper / card corners) ────────────────────────
+
+    private fun setPlaneSession(session: PlaneSession?) {
+        _state.update { it.copy(planeSession = session, inProgressPoints = session?.corners.orEmpty()) }
+    }
+
+    fun beginPlaneSession() {
+        if (inputStopped()) return
+        _state.update { it.copy(currentTool = AnnotationTool.GRID_REF, isGridRefDialogVisible = false, pendingGridRefPoints = emptyList(), rulerSession = null) }
+        setPlaneSession(PlaneSession())
+    }
+
+    fun setPlaneRectangle(rectangle: ReferenceRectangle) = updatePlaneSession { it.copy(rectangle = rectangle) }
+
+    fun setPlaneFirstEdgeLong(long: Boolean) = updatePlaneSession { it.copy(firstEdgeIsLong = long) }
+
+    fun removeLastPlaneCorner() = updatePlaneSession { it.withoutLastCorner() }
+
+    fun cancelPlaneSession() = setPlaneSession(null)
+
+    private fun updatePlaneSession(transform: (PlaneSession) -> PlaneSession) {
+        setPlaneSession(transform(_state.value.planeSession ?: return))
+    }
+
+    /** What applying the corners tapped so far would do; null when no plane session is open. */
+    fun planePreview(): PlanePreview? {
+        val session = _state.value.planeSession ?: return null
+        return PlaneReference.preview(session, _state.value.calibration?.lens?.k ?: 0.0, imageWidthPx, imageHeightPx)
+    }
+
+    /** Applies the plane calibration (keeping any height offset) and closes the session; no-op until it can apply. */
+    fun confirmPlaneSession() {
+        if (inputStopped()) return
+        val calibration = planePreview()?.calibration ?: return
+        val previous = _state.value.calibration?.geometry
+        val merged = calibration.geometry?.copy(
+            heightOffsetMeters = previous?.heightOffsetMeters ?: 0.0,
+            cameraDistanceMeters = previous?.cameraDistanceMeters,
+        )
+        updateCalibration(calibration.copy(geometry = merged))
+        setPlaneSession(null)
+    }
+
+    /** Lens-aware and plane-mapped calibrations measure through [LensMeasurement]; the rest use the plain scale. */
+    private fun usesLensPath(calibration: Calibration): Boolean =
+        calibration.lens != null || calibration.geometry?.plane != null
+
     private fun heightFactor(calibration: Calibration?): Double = HeightOffset.lengthFactor(
         calibration,
         _state.value.imageAnnotation?.sensorData?.focalLength35mmEq,
@@ -1094,16 +1154,23 @@ class AnnotationEditorViewModel(
     fun setGeometry(geometry: GeometryCalibration?) {
         if (inputStopped()) return
         val calibration = usableScale(_state.value.calibration) ?: return
-        val cleared = geometry?.takeIf { it.heightOffsetMeters > 0.0 || it.cameraDistanceMeters != null }
+        // Only the height-offset fields are edited here; a calibrated plane stays.
+        val merged = (calibration.geometry ?: GeometryCalibration()).copy(
+            heightOffsetMeters = geometry?.heightOffsetMeters ?: 0.0,
+            cameraDistanceMeters = geometry?.cameraDistanceMeters,
+        )
+        val cleared = merged.takeIf { it.heightOffsetMeters > 0.0 || it.cameraDistanceMeters != null || it.plane != null }
         updateCalibration(calibration.copy(geometry = cleared))
     }
 
     private fun usableScale(calibration: Calibration?): Calibration? =
         calibration?.takeIf { it.method != CalibrationMethod.NONE && it.pixelsPerMeter > 0.0 }
 
-    /** A new reference keeps the height offset the user already entered for this photo. */
-    private fun keepingGeometry(calibration: Calibration): Calibration =
-        calibration.copy(geometry = calibration.geometry ?: _state.value.calibration?.geometry)
+    /** A new line or ruler reference keeps the height offset already entered, but replaces any plane. */
+    private fun keepingGeometry(calibration: Calibration): Calibration {
+        val kept = _state.value.calibration?.geometry?.copy(plane = null)?.takeIf { it != GeometryCalibration() }
+        return calibration.copy(geometry = calibration.geometry ?: kept)
+    }
 
     // ── Tag management ────────────────────────────────────────────────────────
 

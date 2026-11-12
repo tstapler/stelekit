@@ -739,6 +739,28 @@ fun AnnotationEditorScreen(
                 )
             }
 
+            // Paper / card reference: corner taps, edge choice and Apply, just above the toolbar.
+            val planeSession = state.planeSession
+            val planePreview = viewModel.planePreview()
+            if (planeSession != null && planePreview != null) {
+                PlaneReferencePanel(
+                    session = planeSession,
+                    preview = planePreview,
+                    actions = remember(viewModel) {
+                        PlaneReferenceActions(
+                            onRectangle = { viewModel.setPlaneRectangle(it) },
+                            onFirstEdgeLong = { viewModel.setPlaneFirstEdgeLong(it) },
+                            onUndoCorner = { viewModel.removeLastPlaneCorner() },
+                            onApply = { viewModel.confirmPlaneSession() },
+                            onCancel = { viewModel.cancelPlaneSession() },
+                        )
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(start = 8.dp, end = 8.dp, bottom = with(density) { toolbarHeightPx.toDp() } + 16.dp),
+                )
+            }
+
             // Layer 5: Annotation toolbar (bottom)
             AnnotationToolbar(
                 currentTool = state.currentTool,
@@ -873,6 +895,10 @@ fun AnnotationEditorScreen(
                 onMarkRulerTicks = {
                     showCalibrationSheet = false
                     viewModel.beginRulerSession()
+                },
+                onUsePlaneReference = {
+                    showCalibrationSheet = false
+                    viewModel.beginPlaneSession()
                 },
                 onUseBle = {
                     showCalibrationSheet = false
