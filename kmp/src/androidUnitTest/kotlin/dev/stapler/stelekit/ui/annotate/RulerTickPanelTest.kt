@@ -83,4 +83,12 @@ class RulerTickPanelTest {
         rule.onNodeWithText("Cancel").performClick()
         assertEquals(1, rec.cancelled)
     }
+
+    @Test
+    fun eachTickShowsHowFarItIsOff() {
+        val preview = session.preview(4000.0, 3000.0).copy(entryResidualsPx = listOf(0.4, 12.3))
+        rule.setContent { RulerTickPanel(session, preview, Recorder().actions()) }
+        rule.onNodeWithText("off by 0.4 px").assertExists()
+        rule.onNodeWithText("off by 12 px").assertExists()
+    }
 }

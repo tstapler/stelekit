@@ -32,6 +32,8 @@ data class PlaneCalibration(
     val referenceName: String,
     val widthMeters: Double,
     val heightMeters: Double,
+    /** Distance in millimetres between the sheet centre mapped through [homography] and where it should be; null if not checked. */
+    val checkResidualMm: Double? = null,
 )
 
 /** JSON text form of [GeometryCalibration] for the `calibration_geometry_json` column; '' means none. */

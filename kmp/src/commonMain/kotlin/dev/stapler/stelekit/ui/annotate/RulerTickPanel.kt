@@ -89,7 +89,7 @@ fun RulerTickPanel(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 session.entries.forEachIndexed { index, entry ->
-                    TickRow(index, entry, session.unit, actions)
+                    TickRow(index, entry, session.unit, preview.entryResidualsPx.getOrNull(index), actions)
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -112,7 +112,7 @@ fun RulerTickPanel(
 }
 
 @Composable
-private fun TickRow(index: Int, entry: RulerTickEntry, unit: MeasurementUnit, actions: RulerTickPanelActions) {
+private fun TickRow(index: Int, entry: RulerTickEntry, unit: MeasurementUnit, residualPx: Double?, actions: RulerTickPanelActions) {
     val valid = parseTickPositionToMeters(entry.valueText, unit) != null
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("Tick ${index + 1}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(56.dp))
@@ -123,6 +123,7 @@ private fun TickRow(index: Int, entry: RulerTickEntry, unit: MeasurementUnit, ac
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             singleLine = true,
             isError = entry.valueText.isNotBlank() && !valid,
+            supportingText = residualPx?.let { { Text("off by ${tickResidualText(it)}") } },
             modifier = Modifier.weight(1f),
         )
         IconButton(onClick = { actions.onRemove(index) }) {

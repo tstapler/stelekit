@@ -499,6 +499,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.repository.RealActorOrderingTest::class,
     dev.stapler.stelekit.ui.annotate.LeavePolicyTest::class,
     dev.stapler.stelekit.ui.annotate.AnnotationEditorUnitTest::class,
+    dev.stapler.stelekit.calibration.MeasurementAdvisorAccuracyTest::class,
     dev.stapler.stelekit.ui.annotate.AnnotationEditorPlaneTest::class,
     dev.stapler.stelekit.calibration.HomographyTest::class,
     dev.stapler.stelekit.calibration.PlaneReferenceTest::class,

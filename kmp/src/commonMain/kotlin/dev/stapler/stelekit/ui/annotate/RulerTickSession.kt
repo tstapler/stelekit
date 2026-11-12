@@ -28,6 +28,8 @@ data class RulerTickPreview(
     val calibration: Calibration?,
     val usableTickCount: Int,
     val summary: String,
+    /** Per-entry disagreement in pixels, aligned with [RulerTickSession.entries]; null for entries not used in the fit. */
+    val entryResidualsPx: List<Double?> = emptyList(),
 ) {
     val canApply: Boolean get() = calibration != null
 }
@@ -79,7 +81,20 @@ fun RulerTickSession.preview(widthPx: Double, heightPx: Double): RulerTickPrevie
         calibration == null -> "These ticks cannot define a scale: give them different positions, spread along a line."
         else -> describe(calibration, ticks, widthPx, heightPx, skipped)
     }
-    return RulerTickPreview(calibration, ticks.size, summary)
+    return RulerTickPreview(calibration, ticks.size, summary, entryResiduals(calibration, ticks, widthPx, heightPx))
+}
+
+/** Spreads the fit's per-tick residuals back over the entries, leaving unusable entries null. */
+private fun RulerTickSession.entryResiduals(calibration: Calibration?, ticks: List<CalibrationTick>, w: Double, h: Double): List<Double?> {
+    val perTick = calibration?.lens?.let { MultiPointCalibration.fitScale(ticks, it.k, w, h)?.tickResidualsPx }
+    var next = 0
+    return entries.map { entry ->
+        if (parseTickPositionToMeters(entry.valueText, unit) == null) {
+            null
+        } else {
+            perTick?.getOrNull(next).also { next++ }
+        }
+    }
 }
 
 private fun describe(calibration: Calibration, ticks: List<CalibrationTick>, w: Double, h: Double, skipped: Int): String {
@@ -110,4 +125,10 @@ private fun formatDecimals(value: Double, decimals: Int): String {
     val whole = scaled / factor.toLong()
     val frac = (scaled % factor.toLong()).toString().padStart(decimals, '0')
     return (if (value < 0.0 && scaled != 0L) "-" else "") + "$whole.$frac"
+}
+
+/** Pixel disagreement for the tick list: "0.4 px" below ten pixels, otherwise whole pixels. */
+fun tickResidualText(px: Double): String {
+    val tenths = round(px * TENTH).toLong()
+    return if (px < TENTH) "${tenths / 10}.${tenths % 10} px" else "${round(px).toLong()} px"
 }

@@ -15,6 +15,8 @@ data class MeasurementReliability(
     val notes: List<String> = emptyList(),
     /** Shooting advice, set only when there are [warnings]. */
     val guidance: String? = null,
+    /** Accuracy-panel lines for plane and height-offset corrections; empty when neither is in use. */
+    val accuracy: List<String> = emptyList(),
 ) {
     val hasWarning: Boolean get() = warnings.isNotEmpty()
 }

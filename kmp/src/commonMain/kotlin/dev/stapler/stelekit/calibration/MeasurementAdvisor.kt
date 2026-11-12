@@ -23,6 +23,10 @@ object MeasurementAdvisor {
     private const val ENDPOINT_PX_ERROR = 1.0
     private const val MIN_TICKS_TO_CHECK_DISTORTION = 3
     private const val PERCENT = 100.0
+    private const val MM_PER_M = 1000.0
+
+    /** How wrong a hand-entered height is assumed to be when sizing its error: INFERRED, not measured. */
+    private const val HEIGHT_UNCERTAINTY_FRACTION = 0.25
     private const val TENTH = 10.0
 
     const val TILT_UNKNOWN_NOTE: String = "Tilt unknown: this photo has no camera orientation data."
@@ -41,6 +45,7 @@ object MeasurementAdvisor {
         heightPx: Double,
         pitchDeg: Double?,
         rollDeg: Double?,
+        focal35mmEq: Double? = null,
     ): MeasurementReliability {
         val lens = calibration.lens
         val base = if (lens == null) {
@@ -77,11 +82,39 @@ object MeasurementAdvisor {
             }
         }
 
+        val accuracy = mutableListOf<String>()
+        calibration.geometry?.let { geometry ->
+            geometry.plane?.let { plane ->
+                accuracy += "Plane reference: ${plane.referenceName}; distances are measured on the plane."
+                plane.checkResidualMm?.let { mm ->
+                    val percent = mm / (max(plane.widthMeters, plane.heightMeters) * MM_PER_M) * PERCENT
+                    accuracy += "Centre check off by ${decimals(mm, 1)} mm (about ${decimals(percent, 1)}% of the long edge)."
+                    if (percent > PlaneReference.CHECK_WARN_FRACTION * PERCENT) {
+                        warnings += "The plane fit failed its centre check by ${decimals(mm, 1)} mm: retap the corners."
+                    }
+                    error = max(error, percent)
+                }
+            }
+            if (geometry.heightOffsetMeters > 0.0) {
+                val distance = HeightOffset.cameraDistance(geometry, calibration, focal35mmEq, widthPx, heightPx)
+                val mm = decimals(geometry.heightOffsetMeters * MM_PER_M, 1)
+                if (distance == null) {
+                    accuracy += "Height offset $mm mm entered but the camera distance is unknown, so it is not applied."
+                } else {
+                    val percent = HEIGHT_UNCERTAINTY_FRACTION * geometry.heightOffsetMeters / distance.meters * PERCENT
+                    accuracy += "Height offset $mm mm applied; if it is off by a quarter, the error is about ${decimals(percent, 1)}%."
+                    error = max(error, percent)
+                }
+            }
+        }
+        if (accuracy.isNotEmpty()) accuracy += "Estimated error about ${decimals(error, 1)}%."
+
         return MeasurementReliability(
             estimatedErrorPercent = error,
             warnings = warnings,
             notes = notes,
             guidance = if (warnings.isEmpty()) null else LensMeasurement.SHOOTING_GUIDANCE,
+            accuracy = accuracy,
         )
     }
 

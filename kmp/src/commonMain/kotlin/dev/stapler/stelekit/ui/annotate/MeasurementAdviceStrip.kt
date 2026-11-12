@@ -32,15 +32,18 @@ private val WARNING_TEXT = Color(0xFF8A4B00)
  */
 @Composable
 fun MeasurementAdviceStrip(reliability: MeasurementReliability?, modifier: Modifier = Modifier) {
-    if (reliability == null || !reliability.hasWarning) return
+    if (reliability == null || (!reliability.hasWarning && reliability.accuracy.isEmpty())) return
     var showTips by remember { mutableStateOf(false) }
     Surface(
-        color = WARNING_FILL,
+        color = if (reliability.hasWarning) WARNING_FILL else MaterialTheme.colorScheme.surfaceVariant,
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
             reliability.warnings.forEach { warning ->
                 Text("⚠ $warning", style = MaterialTheme.typography.bodySmall, color = WARNING_TEXT)
+            }
+            reliability.accuracy.forEach { line ->
+                Text(line, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             reliability.notes.forEach { note ->
                 Text(note, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
