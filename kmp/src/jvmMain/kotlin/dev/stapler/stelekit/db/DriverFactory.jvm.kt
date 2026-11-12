@@ -112,6 +112,7 @@ actual class DriverFactory actual constructor() {
             driver.execute(null, "PRAGMA optimize=0x10002", 0).await()
             MigrationRunner.applyAll(driver)
         }
+        driver.restoreForeignKeys()
 
         return driver
     }

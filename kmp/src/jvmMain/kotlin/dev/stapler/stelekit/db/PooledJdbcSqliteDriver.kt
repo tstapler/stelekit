@@ -101,6 +101,25 @@ internal class PooledJdbcSqliteDriver(
     }
 
     /**
+     * Re-asserts `foreign_keys=ON` on every pooled connection.
+     *
+     * Table-rebuild migrations bracket their work with `PRAGMA foreign_keys=OFF` / `=ON`, but each statement
+     * runs on whichever connection is next in the FIFO pool, so the OFF can land on a connection that never
+     * sees the matching ON and that connection then skips ON DELETE CASCADE. Call once after migrations,
+     * before the driver is shared. Visiting [poolSize] connections in order reaches each exactly once.
+     */
+    fun restoreForeignKeys() {
+        repeat(pool.size) {
+            val conn = pool.poll() ?: return
+            try {
+                conn.createStatement().use { it.execute("PRAGMA foreign_keys=ON") }
+            } finally {
+                pool.offer(conn)
+            }
+        }
+    }
+
+    /**
      * Executes [block] with a single connection held for the entire duration.
      *
      * The connection is checked out from the pool before [block] runs and returned

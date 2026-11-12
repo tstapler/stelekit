@@ -498,6 +498,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.repository.RealActorOrderingTest::class,
     dev.stapler.stelekit.ui.annotate.LeavePolicyTest::class,
     dev.stapler.stelekit.ui.annotate.AnnotationEditorUnitTest::class,
+    dev.stapler.stelekit.db.PooledForeignKeysTest::class,
     dev.stapler.stelekit.ui.annotate.AnnotationEditorHeightOffsetTest::class,
     dev.stapler.stelekit.ui.annotate.HeightOffsetFormTest::class,
     dev.stapler.stelekit.calibration.HeightOffsetTest::class,
