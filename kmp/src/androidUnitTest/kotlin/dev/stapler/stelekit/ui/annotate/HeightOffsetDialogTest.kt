@@ -57,11 +57,19 @@ class HeightOffsetDialogTest {
     }
 
     @Test
-    fun rowOffersToSetOrEditTheHeight() {
-        var edits = 0
-        rule.setContent { HeightOffsetRow(GeometryCalibration(0.0076), onEdit = { edits++ }) }
-        rule.onNodeWithText("Height offset 7.6 mm applied").assertExists()
-        rule.onNodeWithText("Edit height").performClick()
-        assertEquals(1, edits)
+    fun badgeShowsTheOffsetOrAnInvitationAndIsClickable() {
+        assertEquals("Set object height", heightOffsetActionLabel(null))
+        assertEquals("Set object height", heightOffsetActionLabel(GeometryCalibration(0.0)))
+        assertEquals("Height offset 7.6 mm", heightOffsetActionLabel(GeometryCalibration(0.0076)))
+        var clicks = 0
+        rule.setContent {
+            CalibrationConfidenceBadge(
+                calibration = dev.stapler.stelekit.model.Calibration(dev.stapler.stelekit.model.CalibrationMethod.MANUAL_REFERENCE, 100.0, 100),
+                actionLabel = "Set object height",
+                onAction = { clicks++ },
+            )
+        }
+        rule.onNodeWithText("Set object height").performClick()
+        assertEquals(1, clicks)
     }
 }

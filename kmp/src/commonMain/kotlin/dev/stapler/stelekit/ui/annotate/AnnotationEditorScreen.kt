@@ -355,6 +355,11 @@ fun AnnotationEditorScreen(
         CalibrationConfidenceBadge(
             calibration = state.calibration,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            actionLabel = if (viewModel.isCalibrated()) heightOffsetActionLabel(state.calibration?.geometry) else null,
+            onAction = {
+                heightDraft = draftFor(state.calibration?.geometry)
+                showHeightOffset = true
+            },
         )
 
         // ARCore accuracy warning — shown only when ARCore/LiDAR depth calibration is active
@@ -445,13 +450,6 @@ fun AnnotationEditorScreen(
                     }
                 }
             }
-        }
-
-        if (viewModel.isCalibrated()) {
-            HeightOffsetRow(geometry = state.calibration?.geometry, onEdit = {
-                heightDraft = draftFor(state.calibration?.geometry)
-                showHeightOffset = true
-            })
         }
 
         // Story 8.2: GPS metadata row — formatted as "49.2827° N, 123.1207° W".
