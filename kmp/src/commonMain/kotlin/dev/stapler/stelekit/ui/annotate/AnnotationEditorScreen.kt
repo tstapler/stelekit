@@ -231,6 +231,8 @@ fun AnnotationEditorScreen(
     }
     val haptic = LocalHapticFeedback.current
     var showCalibrationSheet by remember { mutableStateOf(false) }
+    var showHeightOffset by remember { mutableStateOf(false) }
+    var heightDraft by remember { mutableStateOf(HeightOffsetDraft()) }
     var showCalibrationChangeWarning by remember { mutableStateOf(false) }
     var isFirstCalibrationUse by remember {
         mutableStateOf(platformSettings?.getBoolean("image_meter_calibrated_before", false)?.not() ?: true)
@@ -355,6 +357,11 @@ fun AnnotationEditorScreen(
         CalibrationConfidenceBadge(
             calibration = state.calibration,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            actionLabel = if (viewModel.isCalibrated()) heightOffsetActionLabel(state.calibration?.geometry) else null,
+            onAction = {
+                heightDraft = draftFor(state.calibration?.geometry)
+                showHeightOffset = true
+            },
         )
 
         // ARCore accuracy warning — shown only when ARCore/LiDAR depth calibration is active
@@ -835,6 +842,24 @@ fun AnnotationEditorScreen(
                 onConfirm = { viewModel.confirmGridRefCalibration() },
                 onDismiss = { viewModel.dismissGridRefDialog() },
                 onMarkMoreTicks = { viewModel.beginRulerSession() },
+            )
+        }
+
+        val heightPreview = if (showHeightOffset) viewModel.heightOffsetPreview(heightDraft) else null
+        if (heightPreview != null) {
+            HeightOffsetDialog(
+                draft = heightDraft,
+                preview = heightPreview,
+                onDraftChange = { heightDraft = it },
+                onApply = {
+                    viewModel.setGeometry(it)
+                    showHeightOffset = false
+                },
+                onClear = {
+                    viewModel.setGeometry(null)
+                    showHeightOffset = false
+                },
+                onDismiss = { showHeightOffset = false },
             )
         }
 

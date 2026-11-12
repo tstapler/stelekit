@@ -41,6 +41,8 @@ data class SidecarImageAnnotation(
     @SerialName("calibrationBasisVersion") val calibrationBasisVersion: Int = 0,
     /** Multi-point/lens calibration (basis 2). Additive: absent in older sidecars, which read as null. */
     @SerialName("calibrationLens") val calibrationLens: dev.stapler.stelekit.model.LensCalibration? = null,
+    /** Height offset and camera distance. Additive: absent in older sidecars, which read as null. */
+    @SerialName("calibrationGeometry") val calibrationGeometry: dev.stapler.stelekit.model.GeometryCalibration? = null,
     @SerialName("unit") val unit: String = "METERS",
     @SerialName("tags") val tags: List<String> = emptyList(),
     @SerialName("latLng") val latLng: String? = null,

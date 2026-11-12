@@ -9,6 +9,7 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Calibration
+import dev.stapler.stelekit.model.GeometryCalibrationCodec
 import dev.stapler.stelekit.model.LensCalibrationCodec
 import dev.stapler.stelekit.model.CalibrationMethod
 import dev.stapler.stelekit.model.DEFAULT_MEASUREMENT_UNIT
@@ -94,6 +95,7 @@ class SqlDelightImageAnnotationRepository(
                     camera_model = annotation.sensorData.cameraModel,
                     calibration_basis_version = annotation.calibration.basisVersion.toLong(),
                     calibration_lens_json = LensCalibrationCodec.encode(annotation.calibration.lens),
+                    calibration_geometry_json = GeometryCalibrationCodec.encode(annotation.calibration.geometry),
                 )
                 Unit.right()
             } catch (e: CancellationException) {
@@ -148,6 +150,7 @@ private fun dev.stapler.stelekit.db.Image_annotations.toModel(): ImageAnnotation
             confidencePercent = calibration_confidence_pct.toInt(),
             basisVersion = calibration_basis_version.toInt(),
             lens = LensCalibrationCodec.decode(calibration_lens_json),
+            geometry = GeometryCalibrationCodec.decode(calibration_geometry_json),
         ),
         unit = runCatching { MeasurementUnit.valueOf(unit) }.getOrDefault(DEFAULT_MEASUREMENT_UNIT),
         tags = tagsList,

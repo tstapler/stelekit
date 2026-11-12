@@ -31,4 +31,5 @@ public data class Image_annotations(
   public val camera_model: String?,
   public val calibration_basis_version: Long,
   public val calibration_lens_json: String,
+  public val calibration_geometry_json: String,
 )

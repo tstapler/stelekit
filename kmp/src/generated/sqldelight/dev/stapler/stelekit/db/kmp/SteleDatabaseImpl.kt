@@ -202,7 +202,8 @@ private class SteleDatabaseImpl(
           |    camera_make                TEXT,
           |    camera_model               TEXT,
           |    calibration_basis_version  INTEGER NOT NULL DEFAULT 0,
-          |    calibration_lens_json      TEXT NOT NULL DEFAULT ''
+          |    calibration_lens_json      TEXT NOT NULL DEFAULT '',
+          |    calibration_geometry_json  TEXT NOT NULL DEFAULT ''
           |)
           """.trimMargin(), 0).await()
       driver.execute(null, """
