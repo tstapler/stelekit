@@ -499,6 +499,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.repository.RealActorOrderingTest::class,
     dev.stapler.stelekit.ui.annotate.LeavePolicyTest::class,
     dev.stapler.stelekit.ui.annotate.AnnotationEditorUnitTest::class,
+    dev.stapler.stelekit.ui.annotate.AnnotationEditorRulerSessionTest::class,
+    dev.stapler.stelekit.ui.annotate.RulerTickSessionTest::class,
     dev.stapler.stelekit.ui.annotate.PostKillBannerControllerTest::class,
     dev.stapler.stelekit.ui.annotate.UndoDepthTest::class,
     dev.stapler.stelekit.ui.annotate.UndoHistoryTest::class,
