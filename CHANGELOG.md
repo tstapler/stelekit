@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.110.0](https://github.com/tstapler/stelekit/compare/v0.109.0...v0.110.0) (2026-11-12)
+
+
+### Features
+
+* **annotate:** height offset for raised objects (measure v1, epic 3) ([#646](https://github.com/tstapler/stelekit/issues/646)) ([bdccae9](https://github.com/tstapler/stelekit/commit/bdccae9a09ea4cbca48adb29c28537790f1b9dd8))
+* **annotate:** paper/card plane homography calibration (measure v1, epic 4) ([#647](https://github.com/tstapler/stelekit/issues/647)) ([de599cc](https://github.com/tstapler/stelekit/commit/de599cc5b57cfa8f2884ec8f27707c16194a9513))
+* **annotate:** plane centre check, per-tick residuals, accuracy lines (measure v1 follow-up) ([#649](https://github.com/tstapler/stelekit/issues/649)) ([224a660](https://github.com/tstapler/stelekit/commit/224a660a0551b30951a6f3caa562d25e19a87b1a))
+* **annotate:** reliability warnings on measurement pill and status area (measure v1, epic 2) ([#645](https://github.com/tstapler/stelekit/issues/645)) ([3c2b27a](https://github.com/tstapler/stelekit/commit/3c2b27a304a88669f4306667111ec85fc2924787))
+
 ## [0.109.0](https://github.com/tstapler/stelekit/compare/v0.108.0...v0.109.0) (2026-11-12)
 
 
