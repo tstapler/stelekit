@@ -165,4 +165,23 @@ class LibraryViewModelStateTest {
         await(v) { !it.isLoadingMore && it.items.size == 5 }
         assertFalse(v.state.value.hasMore)
     }
+
+    @Test
+    fun annotateItem_navigatesOnSuccess_andSetsActionErrorOnFailure() = runBlocking {
+        seed()
+        val v = vm()
+        await(v) { !it.isLoading && it.totalCount == 3L }
+        val item = v.state.value.items.first()
+        var opened: String? = null
+
+        v.annotateItem(item, { Either.Right("ann-1") }) { opened = it }
+        withTimeout(10_000) { while (opened == null) kotlinx.coroutines.yield() }
+        assertEquals("ann-1", opened)
+
+        val failure = dev.stapler.stelekit.ui.annotate.OpenForAnnotationError.FileMissing("/x")
+        v.annotateItem(item, { Either.Left(failure) }) { opened = "wrong" }
+        await(v) { it.actionError != null }
+        assertEquals(failure.message, v.state.value.actionError)
+        assertEquals("ann-1", opened)
+    }
 }

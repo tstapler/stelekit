@@ -15,6 +15,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Straighten
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Text
+import androidx.compose.ui.platform.testTag
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
@@ -54,6 +59,7 @@ internal fun ImageBlock(
     isInSelectionMode: Boolean = false,
     onToggleSelect: () -> Unit = {},
     onLongPressSelect: (() -> Unit)? = null,
+    onAnnotate: (() -> Unit)? = null,
 ) {
     val imageLoader = rememberSteleKitImageLoader()
     var showLightbox by remember { mutableStateOf(false) }
@@ -81,7 +87,13 @@ internal fun ImageBlock(
             onEdit = {
                 showLightbox = false
                 onStartEditing()
-            }
+            },
+            onAnnotate = onAnnotate?.let { annotate ->
+                {
+                    showLightbox = false
+                    annotate()
+                }
+            },
         )
     }
 }
@@ -92,6 +104,7 @@ private fun ImageLightbox(
     altText: String,
     onDismiss: () -> Unit,
     onEdit: () -> Unit,
+    onAnnotate: (() -> Unit)?,
 ) {
     val imageLoader = rememberSteleKitImageLoader()
     Dialog(
@@ -122,14 +135,40 @@ private fun ImageLightbox(
             ) {
                 Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
             }
-            IconButton(
-                onClick = onEdit,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(12.dp)
-                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-            ) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit block", tint = Color.White)
+            LightboxEditMenu(
+                onEdit = onEdit,
+                onAnnotate = onAnnotate,
+                modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+            )
+        }
+    }
+}
+
+/** The lightbox pencil: edits the block directly, or, when annotating is available, offers it first. */
+@Composable
+private fun LightboxEditMenu(onEdit: () -> Unit, onAnnotate: (() -> Unit)?, modifier: Modifier = Modifier) {
+    var menuOpen by remember { mutableStateOf(false) }
+    Box(modifier) {
+        IconButton(
+            onClick = { if (onAnnotate == null) onEdit() else menuOpen = true },
+            modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), CircleShape),
+        ) {
+            Icon(Icons.Default.Edit, contentDescription = "Edit block", tint = Color.White)
+        }
+        if (onAnnotate != null) {
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("Annotate / measure") },
+                    leadingIcon = { Icon(Icons.Default.Straighten, contentDescription = null) },
+                    onClick = { menuOpen = false; onAnnotate() },
+                    modifier = Modifier.testTag("image-lightbox-annotate"),
+                )
+                DropdownMenuItem(
+                    text = { Text("Edit block text") },
+                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                    onClick = { menuOpen = false; onEdit() },
+                    modifier = Modifier.testTag("image-lightbox-edit-text"),
+                )
             }
         }
     }

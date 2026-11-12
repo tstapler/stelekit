@@ -44,6 +44,8 @@ import dev.stapler.stelekit.ui.screens.copy.CopyFlowHost
 import dev.stapler.stelekit.ui.screens.copy.CopyGraphBinding
 import dev.stapler.stelekit.ui.screens.copy.LocalCopyFlow
 import dev.stapler.stelekit.ui.screens.copy.conflictPagePersister
+import dev.stapler.stelekit.platform.defaultMeasurementUnit
+import dev.stapler.stelekit.ui.annotate.openInlineImage
 import kotlinx.coroutines.launch
 
 /**
@@ -276,8 +278,30 @@ internal fun GraphContentActiveShell(
             blockStateManager.appendToBlock(dev.stapler.stelekit.model.BlockUuid(blockUuid), appendText)
         }
 
+        val annotateImageAction = remember(repos, activeGraphPath, effectiveFileSystem) {
+            val opener = dev.stapler.stelekit.ui.annotate.ExistingImageAnnotationOpener(
+                imageAnnotationRepository = repos.imageAnnotationRepository,
+                blockRepository = repos.blockRepository,
+                writeActor = repos.writeActor,
+                graphPath = activeGraphPath,
+                defaultUnit = { platformSettings.defaultMeasurementUnit() },
+                fileExists = effectiveFileSystem::fileExists,
+            )
+            val action: (String, dev.stapler.stelekit.model.Block) -> Unit = { imageRef, block ->
+                scope.launch {
+                    opener.openInlineImage(
+                        imageRef, block,
+                        onError = { message -> snackbarHostState.showSnackbar(message) },
+                        onOpened = { annotationUuid, pageUuid -> viewModel.navigateToAnnotationEditor(annotationUuid, pageUuid) },
+                    )
+                }
+            }
+            action
+        }
+
         CompositionLocalProvider(
             dev.stapler.stelekit.ui.components.LocalArchiveUrlAction provides archiveUrlAction,
+            dev.stapler.stelekit.ui.components.LocalAnnotateImageAction provides annotateImageAction,
             LocalWindowSizeClass provides windowSizeClass,
             LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) },
             LocalFileSystem provides effectiveFileSystem,
