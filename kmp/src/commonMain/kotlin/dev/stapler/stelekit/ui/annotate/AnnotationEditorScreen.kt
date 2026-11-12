@@ -94,6 +94,8 @@ import dev.stapler.stelekit.platform.image.loupeDecodeSize
 import dev.stapler.stelekit.ui.components.rememberSteleKitImageLoader
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.Calibration
+import dev.stapler.stelekit.calibration.TiltAssessment
+import dev.stapler.stelekit.calibration.TiltTier
 import dev.stapler.stelekit.model.CalibrationMethod
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.ImageSensorData
@@ -410,10 +412,7 @@ fun AnnotationEditorScreen(
 
         // Story 8.4: Tilt warning — shown when capture-time pitch > 15° or roll > 10°.
         val sensorData: ImageSensorData? = state.imageAnnotation?.sensorData
-        val isTiltExcessive = sensorData?.let { sd ->
-            (sd.pitchDeg != null && abs(sd.pitchDeg) > 15.0) ||
-                (sd.rollDeg != null && abs(sd.rollDeg) > 10.0)
-        } == true
+        val isTiltExcessive = TiltAssessment.tierOf(sensorData?.pitchDeg, sensorData?.rollDeg) == TiltTier.EXCESSIVE
         var showTiltWarning by remember { mutableStateOf(true) }
         if (isTiltExcessive && showTiltWarning) {
             Surface(
@@ -444,6 +443,13 @@ fun AnnotationEditorScreen(
                 }
             }
         }
+
+        // Measurement confidence for the selected (else latest) measurement; recomputed with the editor state.
+        MeasurementAdviceStrip(
+            reliability = remember(state.calibration, state.committedAnnotations, state.selectedAnnotationUuid, state.imageAnnotation) {
+                viewModel.statusReliability()
+            },
+        )
 
         // Story 8.2: GPS metadata row — formatted as "49.2827° N, 123.1207° W".
         val latLng = sensorData?.latLng
@@ -585,6 +591,9 @@ fun AnnotationEditorScreen(
                 canvasSize = canvasSize,
                 modifier = Modifier.fillMaxSize(),
                 view = { viewTransform },
+                warnedUuids = remember(state.calibration, state.committedAnnotations, state.imageAnnotation) {
+                    viewModel.warnedAnnotationUuids()
+                },
             )
 
             // Accessibility layer: invisible semantic nodes over each annotation for TalkBack

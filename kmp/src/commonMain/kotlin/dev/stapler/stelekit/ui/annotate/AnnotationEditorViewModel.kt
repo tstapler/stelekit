@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import dev.stapler.stelekit.calibration.CalibrationService
 import dev.stapler.stelekit.calibration.LensMeasurement
 import dev.stapler.stelekit.calibration.LensMode
+import dev.stapler.stelekit.calibration.MeasurementAdvisor
 import dev.stapler.stelekit.calibration.MeasurementReliability
 import dev.stapler.stelekit.calibration.MultiPointCalibration
 import dev.stapler.stelekit.logging.Logger
@@ -685,13 +686,39 @@ class AnnotationEditorViewModel(
 
     fun cancelRulerSession() = setRulerSession(null)
 
-    /** Warnings for the committed annotation [uuid]; empty when it is unknown or the calibration has no ruler marks. */
+    /** Warnings and notes for the committed annotation [uuid]; empty when it is unknown, a label, or the image is not calibrated. */
     fun reliabilityOf(uuid: String): MeasurementReliability {
         val st = _state.value
         val annotation = st.committedAnnotations.firstOrNull { it.uuid == uuid }
-        val calibration = st.calibration
-        if (annotation == null || calibration == null) return MeasurementReliability(0.0, emptyList())
-        return LensMeasurement.assess(annotation.normalizedPoints, calibration, imageWidthPx, imageHeightPx)
+        val calibration = usableCalibration(st.calibration)
+        if (annotation == null || annotation.annotationType == AnnotationType.LABEL || calibration == null) {
+            return MeasurementReliability(0.0, emptyList())
+        }
+        return advise(annotation.normalizedPoints, calibration, st)
+    }
+
+    /**
+     * What the editor status area reports: the selected measurement, else the latest one, else a
+     * calibration-level check. Null when the image is not calibrated.
+     */
+    fun statusReliability(): MeasurementReliability? {
+        val st = _state.value
+        val calibration = usableCalibration(st.calibration) ?: return null
+        val measured = st.committedAnnotations.filter { it.annotationType != AnnotationType.LABEL }
+        val subject = measured.firstOrNull { it.uuid == st.selectedAnnotationUuid } ?: measured.lastOrNull()
+        return advise(subject?.normalizedPoints.orEmpty(), calibration, st)
+    }
+
+    /** UUIDs of committed measurements whose pill should carry a warning mark. */
+    fun warnedAnnotationUuids(): Set<String> =
+        _state.value.committedAnnotations.filter { reliabilityOf(it.uuid).hasWarning }.mapTo(mutableSetOf()) { it.uuid }
+
+    private fun usableCalibration(calibration: Calibration?): Calibration? =
+        calibration?.takeIf { it.method != CalibrationMethod.NONE && it.pixelsPerMeter > 0.0 }
+
+    private fun advise(points: List<NormalizedPoint>, calibration: Calibration, st: AnnotationEditorState): MeasurementReliability {
+        val sensor = st.imageAnnotation?.sensorData
+        return MeasurementAdvisor.assess(points, calibration, imageWidthPx, imageHeightPx, sensor?.pitchDeg, sensor?.rollDeg)
     }
 
     /** Dismiss the GRID_REF dialog without applying calibration. */

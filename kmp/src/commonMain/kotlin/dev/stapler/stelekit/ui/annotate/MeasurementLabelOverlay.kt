@@ -16,6 +16,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.stapler.stelekit.calibration.MeasurementAdvisor
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.MeasurementAnnotation
 import androidx.compose.foundation.Canvas
@@ -39,6 +40,8 @@ fun MeasurementLabelOverlay(
     canvasSize: IntSize,
     modifier: Modifier = Modifier,
     view: () -> AnnotationViewTransform = { AnnotationViewTransform.Fit },
+    /** Measurements whose pill shows a warning mark and an amber outline (see [MeasurementAdvisor]). */
+    warnedUuids: Set<String> = emptySet(),
 ) {
     val textMeasurer = rememberTextMeasurer()
     // Retain leader-line path to avoid per-frame allocation
@@ -52,8 +55,10 @@ fun MeasurementLabelOverlay(
         val currentView = view()
 
         annotations.forEach { annotation ->
-            val label = annotation.valueDisplay ?: annotation.label ?: return@forEach
-            if (label.isBlank()) return@forEach
+            val storedLabel = annotation.valueDisplay ?: annotation.label ?: return@forEach
+            if (storedLabel.isBlank()) return@forEach
+            val warned = annotation.uuid in warnedUuids
+            val label = MeasurementAdvisor.pillText(storedLabel, warned)
 
             val screenPoints = annotation.normalizedPoints.map { currentView.toView(it.toScreen(canvasSize)) }
             if (screenPoints.isEmpty()) return@forEach
@@ -99,6 +104,16 @@ fun MeasurementLabelOverlay(
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx()),
             )
 
+            if (warned) {
+                drawRoundRect(
+                    color = WARNING_OUTLINE,
+                    topLeft = Offset(bgRect.left, bgRect.top),
+                    size = androidx.compose.ui.geometry.Size(bgRect.width, bgRect.height),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx()),
+                    style = Stroke(width = 1.5.dp.toPx()),
+                )
+            }
+
             // Draw leader line from anchor to label bottom
             leaderPath.reset()
             leaderPath.moveTo(anchorPoint.x, anchorPoint.y)
@@ -122,6 +137,8 @@ fun MeasurementLabelOverlay(
         }
     }
 }
+
+private val WARNING_OUTLINE = Color(0xFFFFB300)
 
 /**
  * Compute the screen-space midpoint for placing a label callout.
