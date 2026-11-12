@@ -11,6 +11,10 @@ import kotlin.math.round
 data class MeasurementReliability(
     val estimatedErrorPercent: Double,
     val warnings: List<String>,
+    /** Neutral facts (applied correction, unknown tilt) that are not problems. */
+    val notes: List<String> = emptyList(),
+    /** Shooting advice, set only when there are [warnings]. */
+    val guidance: String? = null,
 ) {
     val hasWarning: Boolean get() = warnings.isNotEmpty()
 }
