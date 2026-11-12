@@ -31,6 +31,7 @@ kt_android_library(
             # Compose host tests for the flagged project list and settings panel (Gradle-only, R-AU)
             "**/ProjectSettingsPanelTest.kt",
             "**/ProjectListPhoneLayoutTest.kt",
+            "**/SketchEmbedUiTest.kt",
             "**/SourcePagePickerTest.kt",
             "**/DrawingAttachUiTest.kt",
             "**/RegistryEditorScreenTest.kt",
