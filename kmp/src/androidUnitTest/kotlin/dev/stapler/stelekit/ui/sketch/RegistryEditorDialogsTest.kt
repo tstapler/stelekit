@@ -232,9 +232,9 @@ class RegistryEditorDialogsTest {
                 )
             }
         }
-        rule.onNodeWithText("Registry and constraints").performClick()
+        rule.onNodeWithText("Registry and constraints").performScrollTo().performClick()
         rule.waitUntil(5_000) { rule.onAllNodesWithText("No dimension keys yet").fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithText("Back").performClick()
-        rule.onNodeWithText("Projects").assertIsDisplayed()
+        rule.onNodeWithText("Projects (optional)").assertIsDisplayed()
     }
 }

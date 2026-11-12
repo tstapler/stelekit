@@ -40,6 +40,11 @@ data class EditorCapabilities(
      */
     val onCaptureImage: (() -> Unit)? = null,
     /**
+     * Starts a new standalone sketch and inserts its image embed at the cursor of the supplied block, then opens the
+     * sketch editor. Null hides the "New sketch" toolbar button (the `homeSketch` flag is off, or no graph is open).
+     */
+    val onNewSketch: ((editingBlockUuid: BlockUuid) -> Unit)? = null,
+    /**
      * "From Google Photos" toolbar entry: imports the photos the owner picks and inserts them at the
      * editing block. Null (default, and every release build until the OAuth device pass) hides it.
      */

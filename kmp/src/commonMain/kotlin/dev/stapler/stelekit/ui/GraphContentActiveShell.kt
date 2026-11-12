@@ -18,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import dev.stapler.stelekit.sketch.findUuidBySlug
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.onKeyEvent
@@ -299,7 +300,18 @@ internal fun GraphContentActiveShell(
             action
         }
 
+        val openSketchAction = remember(repos, viewModel) {
+            val action: (String) -> Unit = { slug ->
+                scope.launch {
+                    val uuid = with(repos.sketchRepositories.projects) { findUuidBySlug(slug) }
+                    if (uuid != null) viewModel.navigateTo(Screen.Sketch(uuid.value)) else snackbarHostState.showSnackbar("This sketch is not on this device yet")
+                }
+            }
+            action
+        }
+
         CompositionLocalProvider(
+            dev.stapler.stelekit.ui.components.LocalOpenSketchAction provides openSketchAction,
             dev.stapler.stelekit.ui.components.LocalArchiveUrlAction provides archiveUrlAction,
             dev.stapler.stelekit.ui.components.LocalAnnotateImageAction provides annotateImageAction,
             LocalWindowSizeClass provides windowSizeClass,

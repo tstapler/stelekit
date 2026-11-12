@@ -11,6 +11,7 @@ import androidx.compose.ui.semantics.stateDescription
 import dev.stapler.stelekit.platform.google.GooglePhotosImportState
 import dev.stapler.stelekit.platform.google.GooglePhotosSessionPicker
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -142,6 +143,7 @@ fun MobileBlockToolbar(
     onSuggestTags: (() -> Unit)? = null,
     onAttachImage: (() -> Unit)? = null,
     onCaptureImage: (() -> Unit)? = null,
+    onNewSketch: (() -> Unit)? = null,
     /** "From Google Photos" entry (Story 8.1); null hides it. */
     googlePhotos: GooglePhotosToolbarState? = null,
     /** GAP-005 (Story D.2.1): toggles the currently-editing block's TODO/DOING/DONE marker. */
@@ -360,6 +362,14 @@ fun MobileBlockToolbar(
                                 modifier = Modifier.semantics { contentDescription = "Attach image" }
                             ) {
                                 Icon(Icons.Default.AttachFile, contentDescription = null)
+                            }
+                        }
+                        if (onNewSketch != null) {
+                            IconButton(
+                                onClick = onNewSketch,
+                                modifier = Modifier.semantics { contentDescription = "New sketch" }
+                            ) {
+                                Icon(Icons.Default.Edit, contentDescription = null)
                             }
                         }
                         if (onCaptureImage != null) {

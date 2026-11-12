@@ -7,11 +7,13 @@ package dev.stapler.stelekit.ui.sketch
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,6 +48,7 @@ fun ProjectListScreen(
     ProjectListContent(
         state = state,
         onCreate = viewModel::createProject,
+        onNewSketch = if (viewModel.sketchesAvailable) ({ viewModel.createSketch(onOpenProject) }) else null,
         onDismissMessage = viewModel::dismissMessage,
         onOpen = onOpenProject,
         settings = {
@@ -84,27 +87,58 @@ internal fun ProjectListContent(
     onOpen: (String) -> Unit,
     settings: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    onNewSketch: (() -> Unit)? = null,
 ) {
     var creating by remember { mutableStateOf(false) }
-    Column(modifier.fillMaxSize()) {
-        Text("Projects", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(16.dp))
-        Button(onClick = { creating = true }, modifier = Modifier.padding(horizontal = 16.dp)) { Text("New project") }
+    // One scrolling list: on a phone the settings panel is taller than the screen, so a fixed column would squeeze the rows to nothing.
+    LazyColumn(modifier.fillMaxSize()) {
+        item { SketchHeader(state, onNewSketch, onDismissMessage) }
+        if (state.sketches.isNotEmpty()) {
+            item { Text("Recent sketches", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp)) }
+            typedItems(state.sketches, key = { it.uuid }) {
+                Text("Sketch ${it.slug.removePrefix("proj-")}", modifier = Modifier.fillMaxWidth().clickable { onOpen(it.uuid) }.padding(16.dp))
+            }
+        }
+        item { ProjectsHeader(isEmpty = state.projects.isEmpty(), onNewProject = { creating = true }) }
+        typedItems(state.projects, key = { it.uuid }) { Text(it.name, modifier = Modifier.fillMaxWidth().clickable { onOpen(it.uuid) }.padding(16.dp)) }
+        if (state.hasMore) item { Text("Showing the first ${ProjectListViewModel.PAGE_SIZE} projects", modifier = Modifier.padding(16.dp)) }
+        item { Column { settings() } }
+    }
+    if (creating) {
+        NewProjectDialog(onCreate = { onCreate(it); creating = false }, onDismiss = { creating = false })
+    }
+}
+
+@Composable
+private fun SketchHeader(state: ProjectListUiState, onNewSketch: (() -> Unit)?, onDismissMessage: () -> Unit) {
+    Column {
+        Text("Sketches", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(16.dp))
+        if (onNewSketch != null) {
+            Button(onClick = onNewSketch, modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()) { Text("New sketch") }
+            Text(
+                "Draw something now. No project needed; add a sketch to any journal from the editor toolbar.",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+        }
         state.message?.let {
             Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp))
             TextButton(onClick = onDismissMessage) { Text("Dismiss") }
         }
-        if (state.projects.isEmpty()) {
-            Text("No projects yet", modifier = Modifier.padding(16.dp))
-        } else {
-            LazyColumn(Modifier.weight(1f)) {
-                typedItems(state.projects, key = { it.uuid }) { Text(it.name, modifier = Modifier.clickable { onOpen(it.uuid) }.padding(16.dp)) }
-            }
-            if (state.hasMore) Text("Showing the first ${ProjectListViewModel.PAGE_SIZE} projects", modifier = Modifier.padding(16.dp))
-        }
-        settings()
     }
-    if (creating) {
-        NewProjectDialog(onCreate = { onCreate(it); creating = false }, onDismiss = { creating = false })
+}
+
+@Composable
+private fun ProjectsHeader(isEmpty: Boolean, onNewProject: () -> Unit) {
+    Column {
+        Text("Projects (optional)", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp))
+        Text(
+            "Projects only group sketches and notes you already have.",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        OutlinedButton(onClick = onNewProject, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { Text("New project") }
+        if (isEmpty) Text("No projects yet", modifier = Modifier.padding(16.dp))
     }
 }
 

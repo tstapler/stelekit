@@ -177,7 +177,8 @@ class HomeSketchFlowEntryPointTest {
         // 3. open Sketch: project list, empty state
         rule.onNodeWithTag("nav-row-sketch").performClick()
         rule.waitForIdle()
-        rule.onNodeWithText("Projects").assertIsDisplayed()
+        rule.onNodeWithText("Projects (optional)").assertIsDisplayed()
+        rule.onNodeWithText("New sketch").assertIsDisplayed()
         rule.onNodeWithText("No projects yet").assertIsDisplayed()
 
         // 4. create a project: opaque slug, listed by name

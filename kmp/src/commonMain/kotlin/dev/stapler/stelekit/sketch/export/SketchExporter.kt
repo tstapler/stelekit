@@ -42,6 +42,22 @@ class SketchExporter(
         listOf(svgPath, csvPath)
     }
 
+    /**
+     * Writes the stable `preview.svg` that journal embeds link to (`assets/stelekit-sketch/<slug>/preview.svg`). The name
+     * never changes, so the markdown that references it stays valid across edits; plain Logseq renders it as an image.
+     */
+    fun exportPreview(doc: SketchDocument, slug: String): Either<DomainError, String> = either {
+        val dir = "${graphRoot.trimEnd('/')}/${FileProjectSidecarStore.ROOT_DIR}/$slug"
+        if (!SLUG.matches(slug)) raise(DomainError.FileSystemError.WriteFailed(dir, "invalid project slug"))
+        if (writer.mode(dir) == AtomicWriteMode.UNSUPPORTED) raise(DomainError.FileSystemError.AtomicWriteUnsupported(dir))
+        fs.createDirectory("${graphRoot.trimEnd('/')}/${FileProjectSidecarStore.ROOT_DIR}")
+        fs.createDirectory(dir)
+        if (!fs.directoryExists(dir)) raise(DomainError.FileSystemError.WriteFailed(dir, "could not create the sketch folder"))
+        val path = "$dir/$PREVIEW_FILE"
+        replace(path, SketchSvgWriter.write(doc).encodeToByteArray()).bind()
+        path
+    }
+
     private fun replace(path: String, bytes: ByteArray): Either<DomainError, Unit> {
         val existing = fs.readFileBytes(path)
         if (existing != null && existing.contentEquals(bytes)) return Unit.right()
@@ -52,6 +68,7 @@ class SketchExporter(
 
     private companion object {
         const val EXPORTS = "exports"
+        const val PREVIEW_FILE = "preview.svg"
         val SLUG = Regex("[A-Za-z0-9-]{1,64}")
     }
 }
