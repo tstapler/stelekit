@@ -79,7 +79,7 @@ class SettingsTaskRunLog(
  * `v1 source=.. scheduledAt=<ms|-> startedAt=<ms> result=<Success|Partial:d|Skipped:r|Failed:m> retryable=.. online=.. metered=<true|false|unknown> charging=..`.
  * Free-text values are percent-escaped so a record never spans lines or splits on a space.
  */
-internal object TaskRunRecordCodec {
+object TaskRunRecordCodec {
     fun encode(r: TaskRunRecord): String = "v1 " + fields(r)
 
     fun logLine(r: TaskRunRecord): String =
