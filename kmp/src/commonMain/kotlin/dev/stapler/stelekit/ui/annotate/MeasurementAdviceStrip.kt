@@ -26,15 +26,16 @@ private val WARNING_TEXT = Color(0xFF8A4B00)
 
 /**
  * Editor status area for measurement confidence: warnings about the selected (else latest) measurement
- * or the calibration, neutral notes (applied lens correction, unknown tilt) and, behind "Tips", how to
- * shoot for better accuracy. Renders nothing when there is nothing to say.
+ * or the calibration, with the neutral notes (applied lens correction, unknown tilt) and, behind "Tips",
+ * how to shoot for better accuracy. Renders nothing without a warning, so a plain calibrated photo keeps
+ * its full canvas height.
  */
 @Composable
 fun MeasurementAdviceStrip(reliability: MeasurementReliability?, modifier: Modifier = Modifier) {
-    if (reliability == null || (!reliability.hasWarning && reliability.notes.isEmpty())) return
+    if (reliability == null || !reliability.hasWarning) return
     var showTips by remember { mutableStateOf(false) }
     Surface(
-        color = if (reliability.hasWarning) WARNING_FILL else MaterialTheme.colorScheme.surfaceVariant,
+        color = WARNING_FILL,
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {

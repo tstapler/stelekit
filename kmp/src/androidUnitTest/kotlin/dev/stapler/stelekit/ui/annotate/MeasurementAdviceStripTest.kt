@@ -39,9 +39,9 @@ class MeasurementAdviceStripTest {
     }
 
     @Test
-    fun notesAloneAreShownWithoutTips() {
+    fun notesAloneStayHiddenSoThePhotoKeepsItsHeight() {
         rule.setContent { MeasurementAdviceStrip(MeasurementReliability(0.0, emptyList(), notes = listOf("Tilt unknown: x"))) }
-        rule.onNodeWithText("Tilt unknown: x").assertExists()
+        rule.onNodeWithText("Tilt unknown: x").assertDoesNotExist()
         rule.onNodeWithText("Tips for accuracy").assertDoesNotExist()
     }
 }
