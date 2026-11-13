@@ -6,6 +6,10 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import androidx.compose.ui.graphics.ImageBitmap
 import dev.stapler.stelekit.calibration.CalibrationService
+import dev.stapler.stelekit.calibration.CameraProfile
+import dev.stapler.stelekit.calibration.CameraProfileStore
+import dev.stapler.stelekit.calibration.CameraProfiles
+import dev.stapler.stelekit.calibration.ProfileRejection
 import dev.stapler.stelekit.calibration.HeightOffset
 import dev.stapler.stelekit.calibration.LensMeasurement
 import dev.stapler.stelekit.calibration.LensMode
@@ -45,6 +49,7 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.ImageAnnotationRepository
 import dev.stapler.stelekit.repository.MeasurementAnnotationRepository
 import dev.stapler.stelekit.util.UuidGenerator
+import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -135,6 +140,8 @@ data class AnnotationEditorState(
     val placement: AnnotationPlacementSession = AnnotationPlacementSession(),
     /** Non-null while the user is marking ruler ticks for a multi-point calibration. */
     val rulerSession: RulerTickSession? = null,
+    /** One-line result of the last "save camera profile" attempt; null when none or dismissed. */
+    val cameraProfileNotice: String? = null,
     /** Non-null while the user is tapping the corners of a known rectangle (paper or card) to calibrate a plane. */
     val planeSession: PlaneSession? = null,
 )
@@ -248,6 +255,8 @@ class AnnotationEditorViewModel(
     /** Optional — when set, a unit change also becomes the global default for new annotations. */
     private val settings: Settings? = null,
 ) {
+    private val cameraProfileStore: CameraProfileStore? = settings?.let(::CameraProfileStore)
+
     // CRITICAL: internal scope — never injected from outside composition.
     // The handler keeps an uncaught Throwable (notably OutOfMemoryError) from reaching the default
     // handler, which kills the process on Android; it surfaces as [AnnotationEditorState.error].
@@ -645,9 +654,9 @@ class AnnotationEditorViewModel(
      * committed measurements. [mode] picks no correction, a preset k, or automatic estimation.
      * No-op when the ticks cannot define a scale.
      */
-    fun confirmMultiPointCalibration(ticks: List<CalibrationTick>, mode: LensMode) {
+    fun confirmMultiPointCalibration(ticks: List<CalibrationTick>, mode: LensMode, profile: CameraProfile? = null) {
         if (inputStopped()) return
-        val calibration = MultiPointCalibration.calibrate(ticks, imageWidthPx, imageHeightPx, mode) ?: return
+        val calibration = MultiPointCalibration.calibrate(ticks, imageWidthPx, imageHeightPx, mode, profile) ?: return
         updateCalibration(keepingGeometry(calibration))
         logger.info("Multi-point calibration applied: ${ticks.size} ticks, k=${calibration.lens?.k}")
     }
@@ -680,7 +689,10 @@ class AnnotationEditorViewModel(
                 planeSession = null,
             )
         }
-        setRulerSession(RulerTickSession(unit = unit, entries = entries))
+        val profile = cameraProfileStore?.all()?.let {
+            CameraProfiles.match(it, st.imageAnnotation?.sensorData, imageWidthPx, imageHeightPx)
+        }
+        setRulerSession(RulerTickSession(unit = unit, entries = entries, lensMode = LensMode.Profile, profile = profile))
     }
 
     fun updateRulerTickValue(index: Int, text: String) = updateRulerSession { it.withValue(index, text) }
@@ -700,13 +712,41 @@ class AnnotationEditorViewModel(
     fun rulerPreview(): RulerTickPreview? = _state.value.rulerSession?.preview(imageWidthPx, imageHeightPx)
 
     /** Applies the session through [confirmMultiPointCalibration] and closes it; no-op while the preview cannot apply. */
-    fun confirmRulerSession() {
+    fun confirmRulerSession(saveCameraProfile: Boolean = false) {
         if (inputStopped()) return
         val session = _state.value.rulerSession ?: return
         if (session.preview(imageWidthPx, imageHeightPx).canApply.not()) return
-        confirmMultiPointCalibration(session.usableTicks(), session.lensMode)
+        confirmMultiPointCalibration(session.usableTicks(), session.lensMode, session.profile)
         setRulerSession(null)
+        if (saveCameraProfile) saveCameraProfileFromCalibration()
     }
+
+    /**
+     * Learns a camera profile from the calibration just applied and stores it for this camera. Reports the
+     * outcome in [AnnotationEditorState.cameraProfileNotice]; nothing is stored when the fit is not good enough.
+     */
+    fun saveCameraProfileFromCalibration() {
+        val st = _state.value
+        val calibration = st.calibration
+        val store = cameraProfileStore
+        val notice = when {
+            store == null -> "Camera profiles are unavailable on this device."
+            calibration == null -> ProfileRejection.NotLensFitted.message
+            else -> CameraProfiles.learn(
+                calibration, st.imageAnnotation?.sensorData, imageWidthPx, imageHeightPx,
+                id = "cam-" + UuidGenerator.generateV7().takeLast(PROFILE_ID_CHARS), nowMs = Clock.System.now().toEpochMilliseconds(),
+            ).fold(
+                { it.message },
+                { profile ->
+                    store.save(profile)
+                    "Saved camera profile \"${profile.label}\": it will pre-set lens correction for matching photos."
+                },
+            )
+        }
+        _state.update { it.copy(cameraProfileNotice = notice) }
+    }
+
+    fun dismissCameraProfileNotice() = _state.update { it.copy(cameraProfileNotice = null) }
 
     fun cancelRulerSession() = setRulerSession(null)
 
@@ -1466,3 +1506,5 @@ internal fun parseGridRefLengthToMeters(text: String, unit: MeasurementUnit): Do
         MeasurementUnit.FEET_INCHES -> value * 0.3048
     }
 }
+
+private const val PROFILE_ID_CHARS = 8

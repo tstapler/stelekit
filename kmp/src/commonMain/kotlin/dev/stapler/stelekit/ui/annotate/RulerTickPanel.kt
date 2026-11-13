@@ -48,10 +48,12 @@ class RulerTickPanelActions(
     val onUnitChange: (MeasurementUnit) -> Unit,
     val onLensModeChange: (LensMode) -> Unit,
     val onApply: () -> Unit,
+    val onApplyAndSaveProfile: () -> Unit = {},
     val onCancel: () -> Unit,
 )
 
 private val LENS_CHOICES: List<Pair<String, LensMode>> = listOf(
+    "Profile" to LensMode.Profile,
     "Auto" to LensMode.Auto,
     "Off" to LensMode.Off,
     "Typical phone" to LensMode.Fixed(MultiPointCalibration.PRESET_K.getValue("Typical phone")),
@@ -105,6 +107,9 @@ fun RulerTickPanel(
             Text(preview.summary, style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
                 TextButton(onClick = actions.onCancel) { Text("Cancel") }
+                if (session.lensMode == LensMode.Auto) {
+                    TextButton(onClick = actions.onApplyAndSaveProfile, enabled = preview.canApply) { Text("Apply and save camera profile") }
+                }
                 Button(onClick = actions.onApply, enabled = preview.canApply) { Text("Apply calibration") }
             }
         }

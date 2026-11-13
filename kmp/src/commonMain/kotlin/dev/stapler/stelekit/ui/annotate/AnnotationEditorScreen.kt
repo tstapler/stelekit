@@ -719,6 +719,20 @@ fun AnnotationEditorScreen(
                 )
             }
 
+            state.cameraProfileNotice?.let { notice ->
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(start = 8.dp, end = 8.dp, bottom = with(density) { toolbarHeightPx.toDp() } + 16.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 12.dp)) {
+                        Text(notice, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f, fill = false))
+                        TextButton(onClick = { viewModel.dismissCameraProfileNotice() }) { Text("OK") }
+                    }
+                }
+            }
             // Multi-point calibration: tick list, live fit and Apply, sitting just above the toolbar.
             val rulerSession = state.rulerSession
             val rulerPreview = viewModel.rulerPreview()
@@ -733,6 +747,7 @@ fun AnnotationEditorScreen(
                             onUnitChange = { viewModel.setRulerUnit(it) },
                             onLensModeChange = { viewModel.setRulerLensMode(it) },
                             onApply = { viewModel.confirmRulerSession() },
+                            onApplyAndSaveProfile = { viewModel.confirmRulerSession(saveCameraProfile = true) },
                             onCancel = { viewModel.cancelRulerSession() },
                         )
                     },

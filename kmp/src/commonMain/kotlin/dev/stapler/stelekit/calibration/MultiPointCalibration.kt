@@ -31,6 +31,9 @@ sealed interface LensMode {
     /** A user preset / slider value. */
     data class Fixed(val k: Double) : LensMode
 
+    /** Use the matching camera profile's k (see [CameraProfiles.resolve]); per-photo [Auto] when there is none or it fails the self-check. */
+    data object Profile : LensMode
+
     /** Estimate k from the tick residuals when the evidence supports it, else fall back to 0. */
     data object Auto : LensMode
 }
@@ -108,11 +111,20 @@ object MultiPointCalibration {
      * Builds a basis-v2 [Calibration] from ruler ticks. Returns null when the ticks cannot define a scale.
      * The returned `pixelsPerMeter` is in the same pixel units as [widthPx] x [heightPx].
      */
-    fun calibrate(ticks: List<CalibrationTick>, widthPx: Double, heightPx: Double, mode: LensMode): Calibration? {
-        val k = when (mode) {
-            LensMode.Off -> 0.0
-            is LensMode.Fixed -> mode.k.coerceIn(-RadialLens.MAX_ABS_K, RadialLens.MAX_ABS_K)
-            LensMode.Auto -> estimateK(ticks, widthPx, heightPx)
+    fun calibrate(
+        ticks: List<CalibrationTick>,
+        widthPx: Double,
+        heightPx: Double,
+        mode: LensMode,
+        profile: CameraProfile? = null,
+    ): Calibration? {
+        val applied = (CameraProfiles.resolve(profile, ticks, widthPx, heightPx) as? ProfileOutcome.Applied)
+            ?.profile?.takeIf { mode == LensMode.Profile }
+        val k = when {
+            applied != null -> applied.k
+            mode == LensMode.Off -> 0.0
+            mode is LensMode.Fixed -> mode.k.coerceIn(-RadialLens.MAX_ABS_K, RadialLens.MAX_ABS_K)
+            else -> estimateK(ticks, widthPx, heightPx)
         }
         val fit = fitScale(ticks, k, widthPx, heightPx) ?: return null
         return Calibration(
@@ -120,7 +132,12 @@ object MultiPointCalibration {
             pixelsPerMeter = fit.pixelsPerMeter,
             confidencePercent = 100,
             basisVersion = CalibrationBasis.NATIVE_PIXELS_LENS,
-            lens = LensCalibration(k, ticks, fit.residualPercent, kEstimated = mode == LensMode.Auto && k != 0.0),
+            lens = LensCalibration(
+                k, ticks, fit.residualPercent,
+                kEstimated = applied == null && mode != LensMode.Off && mode !is LensMode.Fixed && k != 0.0,
+                profileId = applied?.id,
+                profileLabel = applied?.label,
+            ),
         )
     }
 
