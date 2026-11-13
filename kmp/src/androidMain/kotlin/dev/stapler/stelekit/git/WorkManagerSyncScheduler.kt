@@ -145,21 +145,27 @@ internal interface GitSyncWorkerHooks {
     suspend fun shouldYieldToCloneWorker(context: Context, graphId: String): Boolean
     suspend fun postRun(context: Context, key: TaskKey, input: androidx.work.Data, result: TaskRunResult)
 
+    /** A skip reason when this job should not run (disabled or removed graph), else null. */
+    suspend fun staleJobReason(context: Context, graphId: String, periodic: Boolean): String? = null
+
     object Default : GitSyncWorkerHooks {
         override suspend fun runWatchdog(context: Context, graphId: String) = GitSyncAdapterHooks.runWatchdog(context, graphId)
         override suspend fun shouldYieldToCloneWorker(context: Context, graphId: String) =
             GitSyncAdapterHooks.shouldYieldToCloneWorker(context, graphId)
         override suspend fun postRun(context: Context, key: TaskKey, input: androidx.work.Data, result: TaskRunResult) =
             GitSyncAdapterHooks.postRun(context, key, input, result)
+        override suspend fun staleJobReason(context: Context, graphId: String, periodic: Boolean) =
+            GitSyncAdapterHooks.staleJobReason(graphId, periodic)
     }
 }
 
 /**
  * WorkManager worker for scheduled git sync: a THIN WRAPPER (Story 3.1.2, ADR-001). With the app alive it
  * runs the policy-gated [ScheduledSyncRunner] tick on the registered service; with no live service it
- * hands the single fetch to [ColdSyncRunner], which cannot touch the working tree. It does no registry
- * lookup, no `enabled` gate and no store read, so a stale or pre-upgrade job still runs; disable goes
- * through `apply`/`cancel`. It evaluates the shared `NetworkGate` (policy from [KEY_NETWORK_POLICY],
+ * hands the single fetch to [ColdSyncRunner], which cannot touch the working tree. It takes no registry or store
+ * itself; the stale-job check (explicitly disabled periodic job, or a graph absent from a readable
+ * `KnownScopes`) is a [GitSyncWorkerHooks] call, and an absent entry or `Unknown` scopes still runs, so a
+ * pre-upgrade job is unaffected. It evaluates the shared `NetworkGate` (policy from [KEY_NETWORK_POLICY],
  * absent = `Any`) and appends one run-log record through the shared [recordRun].
  *
  * Order: watchdog -> gate -> clone-yield -> body -> notify. Failure is never `retry()` (ADR-002: the
@@ -196,6 +202,13 @@ class GitSyncWorker(
 
             // A side-effecting observation only: never allowed to affect this worker's own Result.
             hooks.runWatchdog(applicationContext, graphId)
+
+            // A surviving job (failed cancel, removed graph) must not keep syncing; periodic-only for `enabled`.
+            val staleReason = hooks.staleJobReason(applicationContext, graphId, periodic = KEY_INTERVAL_MINUTES in inputData.keyValueMap)
+            if (staleReason != null) {
+                recorded = TaskRunResult.Skipped(staleReason)
+                return Result.success()
+            }
 
             val snapshot = readSnapshot()
             if (snapshot != null) constraintState = ConstraintState(snapshot.online, snapshot.isMetered, charging = null)
