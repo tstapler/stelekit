@@ -41,6 +41,7 @@ class SyncStatusSheetUiTest {
         var review = 0
         var settings = 0
         var dismiss = 0
+        var problem = 0
     }
 
     private fun actions(taps: Taps) = SyncStatusSheetActions(
@@ -48,6 +49,7 @@ class SyncStatusSheetUiTest {
         onReviewFirstSync = { taps.review++ },
         onOpenSettings = { taps.settings++ },
         onDismiss = { taps.dismiss++ },
+        onOpenProblem = { taps.problem++ },
     )
 
     private fun show(
@@ -91,6 +93,33 @@ class SyncStatusSheetUiTest {
 
         composeTestRule.onNodeWithText("Sync now").assertIsNotEnabled()
         composeTestRule.onNodeWithText("Review first sync").assertDoesNotExist()
+    }
+
+    @Test
+    fun sheet_showsAConflictAndLetsTheOwnerResolveIt() {
+        val taps = Taps()
+        val conflict = SyncState.ConflictPending(listOf(dev.stapler.stelekit.git.model.ConflictFile("a", "pages/a.md", emptyList())))
+        show(SyncStaleness(behindCount = 1), taps, syncState = conflict)
+
+        composeTestRule.onNodeWithText("Merge conflict in 1 file. Nothing is merged until you resolve it.").assertExists()
+        composeTestRule.onNodeWithText("Sync now").assertIsEnabled()
+        composeTestRule.onNodeWithText("Resolve conflicts").performClick()
+        assertEquals(1, taps.problem)
+    }
+
+    @Test
+    fun sheet_explainsWhySyncNowIsDisabled() {
+        show(SyncStaleness(), syncState = SyncState.Merging)
+
+        composeTestRule.onNodeWithText("A sync is already running. Sync now is available once it finishes.").assertExists()
+    }
+
+    @Test
+    fun sheet_showsAFailureWithNoActionWhenThereIsNothingToOpen() {
+        show(SyncStaleness(), syncState = SyncState.Error(dev.stapler.stelekit.error.DomainError.GitError.Offline))
+
+        composeTestRule.onNodeWithText("Offline — sync will resume when connected", substring = true).assertExists()
+        composeTestRule.onNodeWithText("Resolve conflicts").assertDoesNotExist()
     }
 
     @Test
