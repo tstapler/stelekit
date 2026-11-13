@@ -61,7 +61,7 @@ jobs:
 
   # ── CI proof check ─────────────────────────────────────────────────────────
   # Decides whether the safety gate below may be skipped. Skips only when a
-  # green ci.yml or bazel-ci.yml run exists for the nearest code commit at or
+  # green bazel-ci.yml run exists for the nearest code commit at or
   # before this one, walking past bot-only commits (version bump, benchmark
   # summaries, formula bumps). Logic and tests: scripts/ci/release-proof.py.
   # No proof (or any lookup error) means the full gate runs.

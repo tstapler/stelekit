@@ -28,8 +28,8 @@ class ReleaseProofTest(unittest.TestCase):
         self.assertEqual(rp.find_proof("r", "rel", cf, rf)[:2], ("code", "bazel-ci.yml"))
 
     def test_acceptsCiYml(self):
-        cf, rf = history(self.chain, {("code", "ci.yml")})
-        self.assertEqual(rp.find_proof("r", "rel", cf, rf)[:2], ("code", "ci.yml"))
+        cf, rf = history(self.chain, {("code", "ci.yml")})  # ci.yml's push run has no JVM tests
+        self.assertIsNone(rp.find_proof("r", "rel", cf, rf)[0])
 
     def test_noProof_when_codeCommitNotGreen(self):
         cf, rf = history(self.chain, {("older", "ci.yml")})  # must not skip past a code commit

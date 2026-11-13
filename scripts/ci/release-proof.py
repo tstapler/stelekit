@@ -3,7 +3,7 @@
 
 Walks first-parent history from the release commit past bot-only commits (version
 bumps, benchmark summaries, formula bumps) to the nearest code commit, then asks
-GitHub for a green ci.yml or bazel-ci.yml run on exactly that commit. A workflow
+GitHub for a green bazel-ci.yml run on exactly that commit. A workflow
 run is green only if every job in it passed, so "all required checks" is implied.
 
 Usage: release-proof.py --repo OWNER/REPO --sha SHA
@@ -23,7 +23,8 @@ BOT_EXACT = {
     "Casks/stelekit.rb",
 }
 BOT_PREFIXES = ("benchmarks/",)
-PROOF_WORKFLOWS = ("ci.yml", "bazel-ci.yml")
+# bazel-ci.yml only: its push run executes `bazel test //kmp:jvm_tests`; ci.yml's push run has no JVM test job.
+PROOF_WORKFLOWS = ("bazel-ci.yml",)
 MAX_WALK = 25
 GH_FILE_LIMIT = 300  # commits API truncates the file list here; treat as non-bot
 
