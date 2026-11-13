@@ -82,7 +82,7 @@ class ModelDownloadTaskTest {
     @Test
     fun run_should_putReadyFileInPlaceAndReportProgress_When_serverServesModel() = runBlocking<Unit> {
         val percents = mutableListOf<Int>()
-        val result = ModelDownloadTask(context, server.url).run(
+        val result = ModelDownloadTask(context, server.url, server.sha256).run(
             ModelDownloadTask.KEY, ctx.copy(reportProgress = { percents += it }),
         )
 
@@ -95,15 +95,40 @@ class ModelDownloadTaskTest {
     @Test
     fun run_should_beRetryableFailure_When_serverErrors() = runBlocking<Unit> {
         server.status = 503
-        val result = ModelDownloadTask(context, server.url).run(ModelDownloadTask.KEY, ctx)
+        val result = ModelDownloadTask(context, server.url, server.sha256).run(ModelDownloadTask.KEY, ctx)
         assertTrue(result is TaskRunResult.Failed && result.retryable, "$result")
     }
 
     @Test
     fun run_should_failTerminally_When_downloadedFileIsTooSmall() = runBlocking<Unit> {
         server.body = ByteArray(1024)
-        val result = ModelDownloadTask(context, server.url).run(ModelDownloadTask.KEY, ctx)
+        val result = ModelDownloadTask(context, server.url, server.sha256).run(ModelDownloadTask.KEY, ctx)
         assertTrue(result is TaskRunResult.Failed && !result.retryable, "$result")
+    }
+
+    @Test
+    fun run_should_installModel_When_checksumMatches() = runBlocking<Unit> {
+        val result = ModelDownloadTask(context, server.url, server.sha256.uppercase()).run(ModelDownloadTask.KEY, ctx)
+        assertEquals(TaskRunResult.Success, result)
+        assertTrue(DepthModelStorage.isReady(target))
+    }
+
+    @Test
+    fun run_should_failTerminallyAndLeaveNoFiles_When_checksumMismatches() = runBlocking<Unit> {
+        // Same size as a valid model, different bytes: only the checksum can catch it.
+        server.body = ByteArray(server.payload.size) { 1 }
+        val result = ModelDownloadTask(context, server.url, server.sha256).run(ModelDownloadTask.KEY, ctx)
+
+        assertTrue(result is TaskRunResult.Failed && !result.retryable, "$result")
+        assertEquals(ModelDownloadTask.CHECKSUM_MISMATCH_MESSAGE, (result as TaskRunResult.Failed).message)
+        assertTrue(!target.exists(), "model must not be installed")
+        assertTrue(!java.io.File(target.parentFile, "${target.name}.part").exists(), ".part must be deleted")
+    }
+
+    @Test
+    fun modelPin_should_useImmutableRevisionAndWellFormedSha256() {
+        assertTrue(Regex("/resolve/[0-9a-f]{40}/").containsMatchIn(DepthModelDownloader.MODEL_URL), DepthModelDownloader.MODEL_URL)
+        assertTrue(Regex("[0-9a-f]{64}").matches(DepthModelDownloader.MODEL_SHA256))
     }
 
     @Test

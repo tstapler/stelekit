@@ -24,6 +24,7 @@ class DepthModelDownloadWorker(context: Context, params: WorkerParameters) : Cor
     override suspend fun doWork(): Result {
         if (DepthModelStorage.isReady(DepthModelStorage.modelFile(applicationContext))) return Result.success()
         val url = inputData.getString(KEY_URL) ?: DepthModelDownloader.MODEL_URL
+        val sha256 = inputData.getString(KEY_SHA256) ?: DepthModelDownloader.MODEL_SHA256
         try {
             setForeground(getForegroundInfo())
         } catch (e: CancellationException) {
@@ -32,7 +33,7 @@ class DepthModelDownloadWorker(context: Context, params: WorkerParameters) : Cor
             // Foreground promotion can be denied while backgrounded; the transfer itself is still fine.
             logger.warn("setForeground denied, continuing without it", e)
         }
-        return when (val outcome = ModelDownloadTask(applicationContext, url).download(url) { setProgress(workDataOf(KEY_PROGRESS to it)) }) {
+        return when (val outcome = ModelDownloadTask(applicationContext, url, sha256).download(url) { setProgress(workDataOf(KEY_PROGRESS to it)) }) {
             is TaskRunResult.Failed ->
                 if (outcome.retryable && runAttemptCount + 1 < MAX_ATTEMPTS) Result.retry() // the .part file stays, so the retry resumes
                 else Result.failure(workDataOf(KEY_ERROR to outcome.message))
@@ -44,6 +45,7 @@ class DepthModelDownloadWorker(context: Context, params: WorkerParameters) : Cor
 
     companion object {
         const val KEY_URL = "url"
+        const val KEY_SHA256 = "sha256"
         const val KEY_PROGRESS = "progress"
         const val KEY_ERROR = "error"
         const val MAX_ATTEMPTS = 5
