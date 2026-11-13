@@ -92,6 +92,16 @@ class GitSafetyScansJvmTest {
     }
 
     @Test
+    fun `an oversize binary photo does not stop the scan`() = runTest {
+        val c = clone()
+        File(c.dir, "assets/images").mkdirs()
+        File(c.dir, "assets/images/photo.jpg").writeBytes(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0) + ByteArray((MARKER_SCAN_FILE_CAP_BYTES + 1).toInt()))
+        c.stageAll()
+
+        assertEquals(MarkerScan.Clean, repository.scanForConflictMarkers(c.config, GuardScope.Staged))
+    }
+
+    @Test
     fun `an oversize file fails closed`() = runTest {
         val c = clone()
         c.write("big.md", "x".repeat((MARKER_SCAN_FILE_CAP_BYTES + 1).toInt()))

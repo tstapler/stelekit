@@ -13,6 +13,7 @@ import kotlinx.coroutines.withContext
 import org.eclipse.jgit.api.LsRemoteCommand
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.diff.DiffEntry
+import org.eclipse.jgit.diff.RawText
 import org.eclipse.jgit.diff.DiffFormatter
 import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.ObjectId
@@ -131,7 +132,9 @@ private fun scanDiff(repo: Repository, entries: List<DiffEntry>): MarkerScan {
         sizing.setRepository(repo)
         for (entry in entries) {
             if (entry.changeType == DiffEntry.ChangeType.DELETE || entry.newId.toObjectId() == ObjectId.zeroId()) continue
-            val size = repo.open(entry.newId.toObjectId()).size
+            val loader = repo.open(entry.newId.toObjectId())
+            if (isBinaryBlob(loader)) continue // images and other binaries cannot hold text conflict markers
+            val size = loader.size
             if (size > MARKER_SCAN_FILE_CAP_BYTES) return MarkerScan.Incomplete("${entry.newPath} is larger than ${MARKER_SCAN_FILE_CAP_BYTES / KIB} KiB")
             total += size
             if (total > MARKER_SCAN_TOTAL_CAP_BYTES) return MarkerScan.Incomplete("changed files exceed ${MARKER_SCAN_TOTAL_CAP_BYTES / KIB / KIB} MiB")
@@ -150,6 +153,12 @@ private fun scanDiff(repo: Repository, entries: List<DiffEntry>): MarkerScan {
     }
     return if (found.isEmpty()) MarkerScan.Clean else MarkerScan.Found(found)
 }
+
+/** Git's own heuristic: a NUL byte in the first 8000 bytes. Reads only that prefix, so a large photo costs no memory. */
+private fun isBinaryBlob(loader: org.eclipse.jgit.lib.ObjectLoader): Boolean =
+    loader.openStream().use { RawText.isBinary(it.readNBytes(BINARY_SNIFF_BYTES)) }
+
+private const val BINARY_SNIFF_BYTES = 8000
 
 private const val FULL_CONTEXT_LINES = 1_000_000
 
