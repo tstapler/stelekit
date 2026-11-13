@@ -142,3 +142,7 @@ fun readoutOf(shape: SketchPrimitive): String = when (shape) {
 
 /** A drag draws something real only when the shape has extent. */
 fun DragPreview.hasExtent(): Boolean = shape.vertices.distinct().size > 1
+
+/** True when a finished drag has a shape worth committing (pans and zero-extent drags commit nothing). */
+fun shouldCommitDrag(intent: DragIntent?, preview: DragPreview?): Boolean =
+    intent != null && intent != DragIntent.Pan && preview?.hasExtent() == true
