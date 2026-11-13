@@ -1724,9 +1724,10 @@ tasks.register<Exec>("diffCoverage") {
     doFirst {
         outDir.get().asFile.mkdirs()
         val report = xml.get().asFile
-        check(report.isFile) { "JaCoCo XML missing at $report — run jvmTest first" }
         val androidReport = layout.buildDirectory.file("reports/jacoco/jacoco-android.xml").get().asFile
-        val reports = listOfNotNull(report, androidReport.takeIf { it.isFile })
+        // An Android-only diff can select no JVM tests, so only the Android report exists; either one is enough.
+        val reports = listOfNotNull(report.takeIf { it.isFile }, androidReport.takeIf { it.isFile })
+        check(reports.isNotEmpty()) { "No JaCoCo XML at $report or $androidReport — run jvmTest or testDebugUnitTest first" }
         val roots = listOf("commonMain", "jvmCommonMain", "jvmMain", "androidMain").map { "kmp/src/$it/kotlin" }
         commandLine(
             listOf(
