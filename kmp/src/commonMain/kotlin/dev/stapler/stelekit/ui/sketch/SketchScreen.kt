@@ -22,6 +22,20 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.foundation.focusable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.testTag
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -42,7 +56,18 @@ fun SketchScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     var panelsOpen by remember { mutableStateOf(false) }
-    Column(modifier.fillMaxSize()) {
+    val selected = state.document.scene.primitives.firstOrNull { it.id == state.selectedId }
+    val keyFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { keyFocus.requestFocus() } }
+    Column(
+        modifier.fillMaxSize()
+            .focusRequester(keyFocus)
+            .focusable()
+            .onKeyEvent { event ->
+                val delete = event.type == KeyEventType.KeyDown && (event.key == Key.Delete || event.key == Key.Backspace)
+                if (delete && selected != null) { viewModel.deleteSelected(); true } else false
+            },
+    ) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onNavigateBack) { Text("Back") }
             Row(
@@ -57,32 +82,39 @@ fun SketchScreen(
                 TextButton(onClick = { panelsOpen = !panelsOpen }) { Text(if (panelsOpen) "Hide sheet panels" else "Sheet panels") }
                 Text(state.statusText(), style = MaterialTheme.typography.labelMedium)
             }
-            // Undo and redo stay pinned: they must never scroll off a phone-width toolbar.
+            // Delete, undo and redo stay pinned: they must never scroll off a phone-width toolbar.
+            if (selected != null) {
+                IconButton(onClick = viewModel::deleteSelected, modifier = Modifier.testTag(SKETCH_DELETE_TAG)) {
+                    Icon(Icons.Default.Delete, contentDescription = DELETE_SELECTED_DESCRIPTION, tint = MaterialTheme.colorScheme.error)
+                }
+            }
             TextButton(onClick = viewModel::undo, enabled = state.canUndo) { Text("Undo") }
             TextButton(onClick = viewModel::redo, enabled = state.canRedo) { Text("Redo") }
         }
         if (panelsOpen) {
             SketchPanels(state, viewModel, Modifier.heightIn(max = PANELS_MAX_HEIGHT).verticalScroll(rememberScrollState()))
         }
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
             if (state.phase == SketchPhase.READY) {
                 SketchNonDragMode(state, viewModel, Modifier.fillMaxSize())
-                state.document.scene.primitives.firstOrNull { it.id == state.selectedId }?.let { selected ->
-                    SelectionBar(selected, viewModel, Modifier.align(Alignment.TopStart).padding(8.dp))
-                }
             } else {
                 Text(state.error ?: "Loading sketch", Modifier.align(Alignment.Center).padding(16.dp))
             }
         }
+        if (state.phase == SketchPhase.READY && selected != null) {
+            SelectionBar(selected, viewModel, Modifier.fillMaxWidth())
+        }
     }
 }
 
-/** What the selected shape offers right now: delete and exact typed sizes, kept on the canvas where the finger already is. */
+const val SKETCH_DELETE_TAG = "sketch-delete"
+const val DELETE_SELECTED_DESCRIPTION = "Delete selected shape"
+
+/** Exact typed sizes for the selected shape, anchored below the canvas so it never covers the shape being edited. */
 @Composable
 private fun SelectionBar(selected: SketchPrimitive, vm: SketchViewModel, modifier: Modifier = Modifier) {
-    Surface(modifier, shape = MaterialTheme.shapes.medium, tonalElevation = 3.dp, shadowElevation = 2.dp) {
+    Surface(modifier, tonalElevation = 3.dp, shadowElevation = 2.dp) {
         Column(Modifier.padding(vertical = 4.dp)) {
-            TextButton(onClick = vm::deleteSelected) { Text("Delete") }
             when (selected) {
                 is SketchPrimitive.Line -> DimensionField(initial = selected.axisLengthText(), onCommit = { vm.setLineLength(selected.id, it) })
                 is SketchPrimitive.Rect -> {

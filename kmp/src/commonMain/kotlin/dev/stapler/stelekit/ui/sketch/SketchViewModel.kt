@@ -90,6 +90,7 @@ class SketchViewModel(
     private val writeActor: DatabaseWriteActor? = null,
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val onSaved: ((SketchDocument, String) -> Unit)? = null,
+    private val onPersisted: ((slug: String) -> Unit)? = null,
     private val newId: () -> String = { UuidGenerator.generateV7() },
 ) : RememberObserver {
     private val logger = Logger("SketchViewModel")
@@ -230,6 +231,7 @@ class SketchViewModel(
             ifRight = {
                 persisted = wanted.associateBy { it.uuid }
                 publishPreview(doc)
+                _uiState.value.slug?.let { onPersisted?.invoke(it) }
                 _uiState.update { if (it.document.sameContent(doc)) it.copy(saveStatus = SaveStatus.SAVED) else it }
             },
         )
@@ -297,7 +299,7 @@ class SketchViewModel(
 private fun withHistory(state: SketchUiState, history: SketchHistory): SketchUiState =
     state.copy(history = history, zoneReport = ZoneConstraints.resolve(history.present.zones, history.present.sheet.viewDirection).getOrNull(), saveStatus = SaveStatus.PENDING, error = null)
 
-private fun SketchSheet.toSheetProps(): SheetProps = SheetProps.fromStored(kind, viewDirection, scaleSixteenthsPerUnit, layers)
+internal fun SketchSheet.toSheetProps(): SheetProps = SheetProps.fromStored(kind, viewDirection, scaleSixteenthsPerUnit, layers)
 
 private fun SheetProps.applyTo(stored: SketchSheet): SketchSheet = stored.copy(
     kind = kind.wire, viewDirection = viewDirection.wire, scaleSixteenthsPerUnit = scaleSixteenths, layers = layers.map { it.encode() },
@@ -308,7 +310,7 @@ private fun SketchPrimitive.toStored(sheet: SheetUuid, z: Long): StoredPrimitive
     is SketchPrimitive.Rect -> StoredPrimitive(id, sheet, "rect", a.x.sixteenths, a.y.sixteenths, b.x.sixteenths, b.y.sixteenths, layer = layer, z = z)
 }
 
-private fun StoredPrimitive.toScenePrimitive(): SketchPrimitive? {
+internal fun StoredPrimitive.toScenePrimitive(): SketchPrimitive? {
     val a = SketchPoint(Inches(x1), Inches(y1))
     val b = SketchPoint(Inches(x2), Inches(y2))
     return when (kind) {
@@ -342,4 +344,5 @@ fun sketchViewModelFor(
     writeActor: DatabaseWriteActor?,
     projectUuid: String?,
     onSaved: ((SketchDocument, String) -> Unit)? = null,
-): SketchViewModel = SketchViewModel(repos, projectUuid?.let(::ProjectUuid), writeActor, onSaved = onSaved)
+    onPersisted: ((slug: String) -> Unit)? = null,
+): SketchViewModel = SketchViewModel(repos, projectUuid?.let(::ProjectUuid), writeActor, onSaved = onSaved, onPersisted = onPersisted)
