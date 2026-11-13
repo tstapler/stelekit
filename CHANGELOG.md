@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.113.1](https://github.com/tstapler/stelekit/compare/v0.113.0...v0.113.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **sketch:** visible delete button and native journal sketch preview ([#671](https://github.com/tstapler/stelekit/issues/671)) ([bea8f57](https://github.com/tstapler/stelekit/commit/bea8f57a11e951f728afde96bb4d50c0112fafa8))
+* **sync:** skip binary files in the conflict-marker scan ([#670](https://github.com/tstapler/stelekit/issues/670)) ([7a2a49a](https://github.com/tstapler/stelekit/commit/7a2a49a53bba8a740687194fc0e72ee0d7415480))
+
 ## [0.113.0](https://github.com/tstapler/stelekit/compare/v0.112.0...v0.113.0) (2026-11-13)
 
 
