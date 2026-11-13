@@ -64,6 +64,7 @@ class DepthModelDownloader internal constructor(
     private val settlePollMs: Long = SETTLE_POLL_MS,
     /** Test seam: runs between computing a snapshot's state and writing it, to hold the window open deterministically. */
     private val beforeStateWrite: suspend () -> Unit = {},
+    private val afterStateWrite: () -> Unit = {},
 ) {
     constructor(context: Context) : this(context, scheduler = null)
 
@@ -237,6 +238,7 @@ class DepthModelDownloader internal constructor(
                 else -> next
             }
         }
+        afterStateWrite()
     }
 
     /** Queued: explains why it is not running yet. The snapshot is taken at emission time, so it can go stale. */

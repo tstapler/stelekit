@@ -15,7 +15,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -51,6 +50,7 @@ class DepthModelDownloaderAbsentRaceTest {
     fun staleAbsentSnapshot_should_notOverwriteDownloading_When_downloadStartedAfterItWasComputed() = runBlocking<Unit> {
         val reached = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
+        val written = CompletableDeferred<Unit>()
         val firstWrite = AtomicBoolean(true)
         // runOnce is a suspend Unit method: a null return resumes it with Unit.
         val noopScheduler = Proxy.newProxyInstance(
@@ -66,13 +66,14 @@ class DepthModelDownloaderAbsentRaceTest {
                     release.await()
                 }
             },
+            afterStateWrite = { written.complete(Unit) },
         )
         withTimeout(10_000) { reached.await() } // snapshot computed as Absent with inFlight == 0; write held
 
         val waiting = scope.async { downloader.downloadModel() }
         withTimeout(10_000) { downloader.modelState.first { it is DepthModelDownloader.ModelState.Downloading } }
         release.complete(Unit)
-        delay(300) // let the released stale write land
+        withTimeout(10_000) { written.await() } // the released stale write has been applied (or skipped)
 
         assertEquals(DepthModelDownloader.ModelState.Downloading(progress = -1), downloader.modelState.value)
         waiting.cancel()
