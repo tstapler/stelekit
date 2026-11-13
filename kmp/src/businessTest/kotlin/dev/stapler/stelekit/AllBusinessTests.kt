@@ -944,5 +944,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.projectbridge.ProseExtractorsTest::class,
     dev.stapler.stelekit.projectbridge.ProseExtractorsClosetTest::class,
     dev.stapler.stelekit.projectbridge.ClosetEndToEndTest::class,
+    dev.stapler.stelekit.projectbridge.FusionHarnessTest::class,
+    dev.stapler.stelekit.projectbridge.FusionHarnessLocalRunTest::class,
 )
 class AllBusinessTests
