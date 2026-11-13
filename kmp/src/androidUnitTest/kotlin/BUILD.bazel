@@ -42,6 +42,7 @@ kt_android_library(
             "**/HomeSketchFlowEntryPointTest.kt",
             "**/DimensionFieldTest.kt",
             "**/SketchSheetPanelsTest.kt",
+            "**/SketchDeleteAndPreviewTest.kt",
             "**/SketchA11yTest.kt",
             # Compose host test for the Labs settings toggle (Gradle-only, R-AU)
             "**/LabsFlagToggleTest.kt",
