@@ -40,7 +40,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.time.Clock
@@ -149,6 +148,7 @@ class GitSyncService(
 
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
+    private val runGuard = SyncRunGuard(_syncState, logger)
 
     /**
      * Working-tree status (dirty file count), refreshed by [refreshLocalStatus] independently of
@@ -244,17 +244,7 @@ class GitSyncService(
         err: DomainError.GitError,
         authFailureMeansExpired: Boolean = false,
         retry: suspend (String) -> Unit,
-    ) {
-        _syncState.value = when {
-            err is DomainError.GitError.RateLimited -> {
-                rateLimitRetry.schedule(graphId, err.retryAfterSeconds, retry)
-                SyncState.RateLimited(err.retryAfterSeconds)
-            }
-            err is DomainError.GitError.CredentialExpired ||
-                (authFailureMeansExpired && err is DomainError.GitError.AuthFailed) -> SyncState.CredentialExpired(graphId)
-            else -> SyncState.Error(err)
-        }
-    }
+    ) = runGuard.publishFailure(rateLimitRetry, graphId, err, authFailureMeansExpired, retry)
 
     /**
      * Full sync sequence ([SyncTrigger.Automatic] callers wait while a first-sync review is pending):
@@ -497,29 +487,14 @@ class GitSyncService(
             _syncState.value = if (lfsAttention.isEmpty()) success else SyncState.LfsActionRequired(lfsAttention)
             success.right()
             } catch (e: CancellationException) {
-                releaseRunningState(SyncState.Idle)
+                runGuard.cancelled()
                 throw e
             } catch (e: Exception) {
-                failUnexpectedly("sync", e)
+                runGuard.crashed("sync", e)
             } finally {
                 gitSyncBusyCounter.end()
             }
         }
-
-    /** A step that dies mid-pipeline must not leave a running state behind: Sync now is disabled while one is shown. */
-    private fun releaseRunningState(to: SyncState) {
-        _syncState.update { current ->
-            if (current is SyncState.Fetching || current is SyncState.Merging || current is SyncState.Pushing || current is SyncState.Committing) to else current
-        }
-    }
-
-    /** An exception from the git backend (not an [Either.Left]) becomes a visible [SyncState.Error] instead of a silent stuck state. */
-    private fun failUnexpectedly(step: String, e: Exception): Either<DomainError.GitError, Nothing> {
-        val err = DomainError.GitError.FetchFailed("$step crashed: ${e::class.simpleName}: ${e.message}")
-        logger.error("$step threw unexpectedly: ${e::class.simpleName}: ${e.message}")
-        _syncState.value = SyncState.Error(err)
-        return err.left()
-    }
 
     /** Publishes the guard's refusal on [syncState] and returns it as the failure of the calling operation. */
     private val refuse: (DomainError.GitError) -> Either<DomainError.GitError, Nothing> = { err ->
@@ -587,10 +562,10 @@ class GitSyncService(
                 }
             }
             } catch (e: CancellationException) {
-                releaseRunningState(SyncState.Idle)
+                runGuard.cancelled()
                 throw e
             } catch (e: Exception) {
-                failUnexpectedly("fetch", e)
+                runGuard.crashed("fetch", e)
             } finally {
                 gitSyncBusyCounter.end()
             }
