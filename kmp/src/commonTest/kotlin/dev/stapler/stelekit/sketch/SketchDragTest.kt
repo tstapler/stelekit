@@ -1,19 +1,7 @@
 package dev.stapler.stelekit.sketch
 
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Canvas
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.LayoutDirection
 import dev.stapler.stelekit.ui.sketch.DragIntent
 import dev.stapler.stelekit.ui.sketch.DragPreview
-import dev.stapler.stelekit.ui.sketch.DrawFrame
-import dev.stapler.stelekit.ui.sketch.drawHandle
-import dev.stapler.stelekit.ui.sketch.drawPreviewShape
-import dev.stapler.stelekit.ui.sketch.drawSnapFeedback
 import dev.stapler.stelekit.ui.sketch.indicatorLabel
 import dev.stapler.stelekit.ui.sketch.shouldCommitDrag
 import dev.stapler.stelekit.ui.sketch.SketchTool
@@ -92,29 +80,6 @@ class SketchDragTest {
         assertEquals(pt(112, 48), (sized.scene.primitives.single() as SketchPrimitive.Rect).b)
         assertTrue(SketchCommand.SetRectSize("nope", null, null).apply(doc).isLeft())
         assertTrue(SketchCommand.SetRectSize("l", null, null).apply(doc.copy(scene = sceneOf(line))).isLeft())
-    }
-
-    private fun drawInto(block: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit) {
-        val bitmap = ImageBitmap(200, 200)
-        CanvasDrawScope().draw(Density(1f), LayoutDirection.Ltr, Canvas(bitmap), Size(200f, 200f), block)
-    }
-
-    @Test
-    fun snapFeedbackLabelsTheSnapAndTheReadout() {
-        val frame = DrawFrame(10f, 10f, 96f)
-        val labels = mutableListOf<String>()
-        val locked = DragPreview(SketchPrimitive.Line("p", pt(0, 0), pt(32, 0)), pt(32, 0), SnapKind.AXIS_LOCK, pt(0, 0))
-        val none = DragPreview(SketchPrimitive.Rect("p", pt(0, 0), pt(16, 16)), pt(16, 16), SnapKind.NONE, null)
-        drawInto {
-            drawSnapFeedback(locked, frame, Color.Blue, Color.Black, 1f) { t, _: Offset, _, _ -> labels += t }
-            drawSnapFeedback(none, frame, Color.Blue, Color.Black, 1f) { t, _: Offset, _, _ -> labels += t }
-            drawPreviewShape(locked.shape, Color.Blue, 0.05f)
-            drawPreviewShape(none.shape, Color.Blue, 0.05f)
-            drawHandle(pt(16, 16), frame, Color.Blue, 1f)
-        }
-        assertEquals(3, labels.size)
-        assertEquals("Straight", labels[0])
-        assertTrue(labels[2].contains(" x "), labels[2])
     }
 
     @Test

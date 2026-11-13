@@ -202,6 +202,7 @@ import dev.stapler.stelekit.repository.SqlDelightBacklinkRepositoryTest
 import dev.stapler.stelekit.repository.SqlDelightBlockRepositoryOutdentTest
 import dev.stapler.stelekit.repository.SqlDelightBlockRepositoryWarmPathTest
 import dev.stapler.stelekit.repository.SqlDelightImageAnnotationRepositoryTest
+import dev.stapler.stelekit.ui.sketch.SketchCanvasDrawTest
 import dev.stapler.stelekit.repository.SqlDelightMeasurementAnnotationRepositoryTest
 import dev.stapler.stelekit.repository.UpgradeResilienceTest
 import dev.stapler.stelekit.annotate.AnnotationExporterTest
@@ -548,6 +549,7 @@ import org.junit.runners.Suite
     SqlDelightBlockRepositoryOutdentTest::class,
     SqlDelightBlockRepositoryWarmPathTest::class,
     SqlDelightImageAnnotationRepositoryTest::class,
+    SketchCanvasDrawTest::class,
     SqlDelightMeasurementAnnotationRepositoryTest::class,
     UpgradeResilienceTest::class,
     AnnotationExporterTest::class,
