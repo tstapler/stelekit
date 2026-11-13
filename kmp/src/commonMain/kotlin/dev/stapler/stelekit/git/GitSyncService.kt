@@ -40,6 +40,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.time.Clock
@@ -495,10 +496,30 @@ class GitSyncService(
             val lfsAttention = lfsHeld + gitRepository.lastPushLfsViolations
             _syncState.value = if (lfsAttention.isEmpty()) success else SyncState.LfsActionRequired(lfsAttention)
             success.right()
+            } catch (e: CancellationException) {
+                releaseRunningState(SyncState.Idle)
+                throw e
+            } catch (e: Exception) {
+                failUnexpectedly("sync", e)
             } finally {
                 gitSyncBusyCounter.end()
             }
         }
+
+    /** A step that dies mid-pipeline must not leave a running state behind: Sync now is disabled while one is shown. */
+    private fun releaseRunningState(to: SyncState) {
+        _syncState.update { current ->
+            if (current is SyncState.Fetching || current is SyncState.Merging || current is SyncState.Pushing || current is SyncState.Committing) to else current
+        }
+    }
+
+    /** An exception from the git backend (not an [Either.Left]) becomes a visible [SyncState.Error] instead of a silent stuck state. */
+    private fun failUnexpectedly(step: String, e: Exception): Either<DomainError.GitError, Nothing> {
+        val err = DomainError.GitError.FetchFailed("$step crashed: ${e::class.simpleName}: ${e.message}")
+        logger.error("$step threw unexpectedly: ${e::class.simpleName}: ${e.message}")
+        _syncState.value = SyncState.Error(err)
+        return err.left()
+    }
 
     /** Publishes the guard's refusal on [syncState] and returns it as the failure of the calling operation. */
     private val refuse: (DomainError.GitError) -> Either<DomainError.GitError, Nothing> = { err ->
@@ -565,6 +586,11 @@ class GitSyncService(
                     fetchResult.right()
                 }
             }
+            } catch (e: CancellationException) {
+                releaseRunningState(SyncState.Idle)
+                throw e
+            } catch (e: Exception) {
+                failUnexpectedly("fetch", e)
             } finally {
                 gitSyncBusyCounter.end()
             }

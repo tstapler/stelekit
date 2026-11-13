@@ -301,6 +301,7 @@ import dev.stapler.stelekit.git.GitRefDiagnosticsTest
 import dev.stapler.stelekit.domain.HtmlBlockConverterTest
 import dev.stapler.stelekit.mcp.McpServerControllerTest
 import dev.stapler.stelekit.git.GitSyncServiceStepRoutingTest
+import dev.stapler.stelekit.git.GitSyncServiceStuckStateTest
 import dev.stapler.stelekit.capture.ActiveWriteHooksTest
 import dev.stapler.stelekit.tags.LlmTagProviderBranchesTest
 import dev.stapler.stelekit.llm.LlmSuggestionWriterEditsTest
@@ -681,6 +682,7 @@ import org.junit.runners.Suite
     HtmlBlockConverterTest::class,
     McpServerControllerTest::class,
     GitSyncServiceStepRoutingTest::class,
+    GitSyncServiceStuckStateTest::class,
     ActiveWriteHooksTest::class,
     LlmTagProviderBranchesTest::class,
     LlmSuggestionWriterEditsTest::class,
