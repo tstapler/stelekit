@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.111.0](https://github.com/tstapler/stelekit/compare/v0.110.0...v0.111.0) (2026-11-13)
+
+
+### Features
+
+* **scheduling:** background task scheduling port with configurable git sync ([#642](https://github.com/tstapler/stelekit/issues/642)) ([9656e5e](https://github.com/tstapler/stelekit/commit/9656e5e3f6647acb6947610ca905c90114cf1641))
+* **sketch:** one-tap New sketch, journal embeds, fix project list layout ([#650](https://github.com/tstapler/stelekit/issues/650)) ([63be14a](https://github.com/tstapler/stelekit/commit/63be14a27beb1a199ca38010098c5ce139ab5a8f))
+
 ## [0.110.0](https://github.com/tstapler/stelekit/compare/v0.109.0...v0.110.0) (2026-11-12)
 
 
