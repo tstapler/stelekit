@@ -550,6 +550,7 @@ import org.junit.runners.Suite
     SqlDelightBlockRepositoryWarmPathTest::class,
     SqlDelightImageAnnotationRepositoryTest::class,
     SketchCanvasDrawTest::class,
+    dev.stapler.stelekit.ui.sketch.SketchPreviewRenderTest::class,
     SqlDelightMeasurementAnnotationRepositoryTest::class,
     UpgradeResilienceTest::class,
     AnnotationExporterTest::class,
