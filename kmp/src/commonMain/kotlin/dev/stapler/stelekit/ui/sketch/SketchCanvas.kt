@@ -32,6 +32,7 @@ import dev.stapler.stelekit.sketch.ScreenPoint
 import dev.stapler.stelekit.sketch.ViewTransform
 import dev.stapler.stelekit.sketch.SketchPoint
 import dev.stapler.stelekit.units.Rational
+import dev.stapler.stelekit.sketch.SketchPrimitive
 
 const val SKETCH_CANVAS_TAG = "sketch-canvas"
 
@@ -56,9 +57,11 @@ fun SketchCanvas(
     crosshair: SketchPoint? = null,
     onCrosshairTap: ((SketchPoint) -> Unit)? = null,
     onSizeChange: (IntSize) -> Unit = {},
+    onCommitDrag: (DragIntent, DragPreview) -> Unit = { _, _ -> },
 ) {
     var view by remember { mutableStateOf(initialSketchView()) }
     var hover by remember { mutableStateOf<SketchPoint?>(null) }
+    var drag by remember { mutableStateOf<DragPreview?>(null) }
     val cache = remember { SketchRenderCache() }
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current.density
@@ -69,6 +72,7 @@ fun SketchCanvas(
     val currentViewChange by rememberUpdatedState(onViewChange)
     val currentCrosshairTap by rememberUpdatedState(onCrosshairTap)
     val currentSizeChange by rememberUpdatedState(onSizeChange)
+    val currentCommitDrag by rememberUpdatedState(onCommitDrag)
     val ink = MaterialTheme.colorScheme.onSurface
     val accent = MaterialTheme.colorScheme.primary
     val labelStyle = MaterialTheme.typography.labelSmall.copy(color = ink)
@@ -88,12 +92,15 @@ fun SketchCanvas(
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val classifier = TapOrDragClassifier(slop)
                     var transforming = false
+                    var intent: DragIntent? = null
                     fun screenOf(o: Offset) = ScreenPoint(pxToDp(o.x, density), pxToDp(o.y, density))
                     do {
                         val event = awaitPointerEvent()
                         val pressed = event.changes.count { it.pressed }
                         if (pressed >= 2) {
+                            // A second finger always navigates: abandon any shape being drawn or moved.
                             transforming = true
+                            drag = null
                             val zoom = event.calculateZoom()
                             val pan = event.calculatePan()
                             val centroid = event.calculateCentroid()
@@ -103,9 +110,19 @@ fun SketchCanvas(
                             val change = event.changes.firstOrNull { it.id == down.id } ?: event.changes.first()
                             val moved = change.position - down.position
                             if (classifier.update(moved.x, moved.y)) {
-                                val delta = change.positionChange()
-                                setView(applyDrag(view, delta.x, delta.y, density))
+                                val s = currentState
+                                val resolved = intent ?: (if (currentCrosshairTap != null) DragIntent.Pan else resolveDragStart(
+                                    s.tool, s.document.visibleScene, s.selectedId, view, screenOf(down.position), s.document.sheet.gridStep,
+                                )).also { intent = it }
                                 hover = null
+                                if (resolved == DragIntent.Pan) {
+                                    val delta = change.positionChange()
+                                    setView(applyDrag(view, delta.x, delta.y, density))
+                                } else {
+                                    drag = previewDrag(
+                                        resolved, s.tool, s.document.visibleScene, view, screenOf(down.position), screenOf(change.position), s.document.sheet.gridStep,
+                                    )
+                                }
                                 change.consume()
                             } else {
                                 hover = resolveSnap(currentState, view, screenOf(change.position))
@@ -113,10 +130,15 @@ fun SketchCanvas(
                         }
                     } while (event.changes.any { it.pressed })
                     hover = null
+                    val finished = drag
+                    drag = null
+                    val committed = intent
                     val crosshairTap = currentCrosshairTap
-                    if (!transforming && !classifier.isDrag && crosshairTap != null) {
+                    if (!transforming && classifier.isDrag) {
+                        if (committed != null && committed != DragIntent.Pan && finished != null && finished.hasExtent()) currentCommitDrag(committed, finished)
+                    } else if (!transforming && crosshairTap != null) {
                         view.toSheet(screenOf(down.position)).onRight(crosshairTap)
-                    } else if (!transforming && !classifier.isDrag) {
+                    } else if (!transforming) {
                         val s = currentState
                         resolveTap(s.tool, s.document.visibleScene, view, screenOf(down.position), s.document.sheet.gridStep, s.pendingStart).onRight { action ->
                             when (action) {
@@ -138,10 +160,13 @@ fun SketchCanvas(
             translate(frame.originX, frame.originY)
             scale(scale, scale, pivot = Offset.Zero)
         }) {
+            val dragging = drag
             for (shape in shapes) {
                 val selected = shape.id == state.selectedId
+                if (dragging != null && shape.id == dragging.shape.id) continue // its preview is drawn instead
                 drawPath(shape.path, if (selected) accent else ink, style = Stroke(if (selected) frame.strokeInSheetUnits(SELECTED_STROKE_DP, density) else strokeWidth))
             }
+            dragging?.let { drawPreviewShape(it.shape, accent, frame.strokeInSheetUnits(SELECTED_STROKE_DP, density)) }
             state.pendingStart?.let { start ->
                 val a = Offset(start.x.toInchesFloat(), start.y.toInchesFloat())
                 drawCircle(accent, radius = frame.strokeInSheetUnits(ANCHOR_RADIUS_DP, density), center = a)
@@ -149,6 +174,9 @@ fun SketchCanvas(
             }
         }
         crosshair?.let { drawCrosshair(it, frame, accent, density) }
+        val handleOwner = drag?.shape ?: state.document.visibleScene.primitives.firstOrNull { it.id == state.selectedId }
+        handleOwner?.let { owner -> owner.vertices.forEach { drawHandle(it, frame, accent, density) } }
+        drag?.let { drawSnapFeedback(it, frame, accent, ink, measurer, labelStyle, density) }
         if (v.dpPerInch.toFloat() >= LABEL_SKIP_BELOW_DP_PER_INCH) {
             drawLabels(shapes, frame, measurer, labelStyle)
         }
@@ -182,4 +210,45 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLabels(
         val (x, y) = frame.px(shape.labelX, shape.labelY)
         drawText(measurer, text, Offset(x, y), style)
     }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawPreviewShape(shape: SketchPrimitive, color: androidx.compose.ui.graphics.Color, strokeInSheetUnits: Float) {
+    val path = androidx.compose.ui.graphics.Path()
+    shape.segments.forEachIndexed { i, seg ->
+        if (i == 0) path.moveTo(seg.a.x.toInchesFloat(), seg.a.y.toInchesFloat())
+        path.lineTo(seg.b.x.toInchesFloat(), seg.b.y.toInchesFloat())
+    }
+    drawPath(path, color, style = Stroke(strokeInSheetUnits))
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHandle(at: SketchPoint, frame: DrawFrame, color: androidx.compose.ui.graphics.Color, density: Float) {
+    val (x, y) = frame.px(at.x.toInchesFloat(), at.y.toInchesFloat())
+    val c = Offset(x, y)
+    drawCircle(androidx.compose.ui.graphics.Color.White, HANDLE_RADIUS_DP * density, c)
+    drawCircle(color, HANDLE_RADIUS_DP * density, c, style = Stroke(2f * density))
+}
+
+/** Ring and name at the snapped point, a guide back to the anchor on a straight lock, and the live size above the finger. */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSnapFeedback(
+    drag: DragPreview,
+    frame: DrawFrame,
+    accent: androidx.compose.ui.graphics.Color,
+    ink: androidx.compose.ui.graphics.Color,
+    measurer: TextMeasurer,
+    style: androidx.compose.ui.text.TextStyle,
+    density: Float,
+) {
+    val (x, y) = frame.px(drag.point.x.toInchesFloat(), drag.point.y.toInchesFloat())
+    val at = Offset(x, y)
+    if (drag.snap == dev.stapler.stelekit.sketch.SnapKind.AXIS_LOCK) {
+        drag.axisAnchor?.let { a ->
+            val (ax, ay) = frame.px(a.x.toInchesFloat(), a.y.toInchesFloat())
+            drawLine(accent, Offset(ax, ay), at, 1f * density, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(8f * density, 6f * density)))
+        }
+    }
+    if (drag.snap != dev.stapler.stelekit.sketch.SnapKind.NONE) {
+        drawCircle(accent, 14f * density, at, style = Stroke(2f * density))
+        drag.snap.indicatorLabel()?.let { drawText(measurer, it, Offset(x + 18f * density, y + 6f * density), style.copy(color = accent)) }
+    }
+    drawText(measurer, readoutOf(drag.shape), Offset(x - 24f * density, y - 52f * density), style.copy(color = ink, background = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.85f)))
 }

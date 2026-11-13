@@ -17,6 +17,7 @@ sealed interface CommandError {
     data class LayerLocked(val name: String) : CommandError
     data object TooManyLayers : CommandError
     data class NotALine(val id: String) : CommandError
+    data class NotARect(val id: String) : CommandError
 
     /** Only horizontal and vertical lines take a typed length; a slanted one has no exact-sixteenth length. */
     data class NotAxisAligned(val id: String) : CommandError
@@ -41,6 +42,7 @@ fun CommandError.message(): String = when (this) {
     is CommandError.LayerLocked -> if (name.isEmpty()) "the default layer is locked" else "layer $name is locked"
     CommandError.TooManyLayers -> "too many layers"
     is CommandError.NotALine -> "only lines have a length"
+    is CommandError.NotARect -> "only rectangles have a width and height"
     is CommandError.NotAxisAligned -> "only horizontal or vertical lines take a typed length"
     is CommandError.ZeroLengthLine -> "the line has no direction yet"
     is CommandError.InvalidScale -> "scale out of range"
@@ -65,6 +67,15 @@ fun SketchPrimitive.withVertex(index: Int, to: SketchPoint): SketchPrimitive? = 
         2 -> copy(b = to)
         3 -> copy(a = SketchPoint(to.x, a.y), b = SketchPoint(b.x, to.y))
         else -> null
+    }
+}
+
+/** The primitive shifted by ([dx], [dy]) sixteenths. */
+fun SketchPrimitive.translated(dx: Long, dy: Long): SketchPrimitive {
+    fun p(q: SketchPoint) = SketchPoint(Inches(q.x.sixteenths + dx), Inches(q.y.sixteenths + dy))
+    return when (this) {
+        is SketchPrimitive.Line -> copy(a = p(a), b = p(b))
+        is SketchPrimitive.Rect -> copy(a = p(a), b = p(b))
     }
 }
 
@@ -136,6 +147,26 @@ sealed interface SketchCommand {
             val target = doc.primitive(id) ?: return CommandError.UnknownPrimitive(id).left()
             doc.lockedLayerOf(target)?.let { return it.left() }
             val moved = target.withVertex(index, to) ?: return CommandError.UnknownPrimitive(id).left()
+            return doc.scene.replace(moved).mapLeft { CommandError.Scene(it) }.map { doc.copy(scene = it) }
+        }
+    }
+
+    /** Moves a whole shape by ([dx], [dy]) sixteenths. */
+    data class MoveShape(val id: String, val dx: Long, val dy: Long) : SketchCommand {
+        override fun apply(doc: SketchDocument): Either<CommandError, SketchDocument> {
+            val target = doc.primitive(id) ?: return CommandError.UnknownPrimitive(id).left()
+            doc.lockedLayerOf(target)?.let { return it.left() }
+            return doc.scene.replace(target.translated(dx, dy)).mapLeft { CommandError.Scene(it) }.map { doc.copy(scene = it) }
+        }
+    }
+
+    /** Sets a rectangle's [width] and/or [height], keeping corner `a` and the drawn direction; null leaves that side alone. */
+    data class SetRectSize(val id: String, val width: Inches?, val height: Inches?) : SketchCommand {
+        override fun apply(doc: SketchDocument): Either<CommandError, SketchDocument> {
+            val rect = doc.primitive(id) as? SketchPrimitive.Rect ?: return (doc.primitive(id)?.let { CommandError.NotARect(id) } ?: CommandError.UnknownPrimitive(id)).left()
+            doc.lockedLayerOf(rect)?.let { return it.left() }
+            fun end(a: Long, b: Long, size: Inches?) = if (size == null) b else a + size.sixteenths * (if (b < a) -1 else 1)
+            val moved = rect.copy(b = SketchPoint(Inches(end(rect.a.x.sixteenths, rect.b.x.sixteenths, width)), Inches(end(rect.a.y.sixteenths, rect.b.y.sixteenths, height))))
             return doc.scene.replace(moved).mapLeft { CommandError.Scene(it) }.map { doc.copy(scene = it) }
         }
     }

@@ -135,6 +135,7 @@ fun SketchViewModel.applyCommit(commit: PlacementCommit) = when (commit) {
 }
 
 private val PAD_CELL = 56.dp
+private val MIC_CLEARANCE = 72.dp
 
 /**
  * The sketch canvas plus the non-drag placement mode (Story 3.6): a crosshair moved by nudge
@@ -161,8 +162,14 @@ fun SketchNonDragMode(state: SketchUiState, viewModel: SketchViewModel, modifier
             crosshair = session.state.crosshairPoint,
             onCrosshairTap = if (session.active) { point -> session = session.tapped(space, point) } else null,
             onSizeChange = { size = it },
+            onCommitDrag = { intent, preview -> viewModel.commitDrag(intent, preview) },
         )
-        Column(Modifier.align(Alignment.BottomCenter).padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        // The shell's docked mic button rises above the bottom bar at the centre, so controls sit at the end
+        // edge, and the open pad clears the mic's height.
+        Column(
+            Modifier.align(Alignment.BottomEnd).padding(start = 8.dp, top = 8.dp, end = 8.dp, bottom = if (session.active) MIC_CLEARANCE else 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             if (session.active) {
                 NudgePad(
                     step = step,
