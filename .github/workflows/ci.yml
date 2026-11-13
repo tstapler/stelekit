@@ -9,7 +9,8 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Main-push runs are release proof (see scripts/ci/release-proof.py); only PR runs are superseded.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   checks: write
@@ -399,6 +400,9 @@ jobs:
 
       - name: Python summarizer tests
         run: python3 scripts/android-benchmark-summarize_test.py
+
+      - name: Release proof walk-back tests
+        run: python3 scripts/ci/release_proof_test.py
 
       - name: Budgets file matches the probe catalog
         run: node scripts/bench-budget-check.js --validate
