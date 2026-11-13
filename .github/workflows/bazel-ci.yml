@@ -13,7 +13,7 @@ permissions:
 # Only one CI run per branch at a time; newer push cancels in-progress run.
 concurrency:
   group: bazel-ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # ── JVM / Desktop tests ────────────────────────────────────────────────────

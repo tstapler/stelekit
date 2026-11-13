@@ -59,11 +59,12 @@ jobs:
             echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
           fi
 
-  # ── CI status check ────────────────────────────────────────────────────────
-  # Checks whether ci.yml already passed for this commit or its parent. The
-  # parent check covers the normal Release Please path: RP commits only bump
-  # version files, so the parent (the feature-merge commit) is the one that ran
-  # CI. If either passed, the test-kmp safety gate below is skipped.
+  # ── CI proof check ─────────────────────────────────────────────────────────
+  # Decides whether the safety gate below may be skipped. Skips only when a
+  # green ci.yml or bazel-ci.yml run exists for the nearest code commit at or
+  # before this one, walking past bot-only commits (version bump, benchmark
+  # summaries, formula bumps). Logic and tests: scripts/ci/release-proof.py.
+  # No proof (or any lookup error) means the full gate runs.
   check-ci-status:
     name: Check CI status
     runs-on: ubuntu-latest
@@ -74,48 +75,29 @@ jobs:
         (needs.release-please.result == 'skipped' && github.event_name == 'workflow_dispatch')
       )
     outputs:
-      ci_passed: ${{ steps.check.outputs.ci_passed }}
+      ci_passed: ${{ steps.check.outputs.proof }}
     permissions:
       actions: read
+      contents: read
     steps:
-      - name: Check if ci.yml passed for this commit or its parent
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/ci
+          persist-credentials: false
+      - name: Look for a green CI run on the release commit tree
         id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
         run: |
-          SHA="${{ github.sha }}"
-          # Release Please commits only bump version files; check parent too so
-          # the feature-merge commit's CI run counts as validation.
-          PARENT_SHA=$(gh api "/repos/${{ github.repository }}/commits/${SHA}" \
-            --jq '.parents[0].sha // empty' 2>/dev/null || true)
-
-          ci_passed_for() {
-            local commit="$1"
-            [ -z "$commit" ] && return 1
-            local count
-            count=$(gh run list \
-              --repo "${{ github.repository }}" \
-              --workflow ci.yml \
-              --commit "$commit" \
-              --status success \
-              --limit 1 \
-              --json databaseId \
-              --jq 'length' 2>/dev/null || echo 0)
-            [ "${count:-0}" -gt 0 ]
-          }
-
-          if ci_passed_for "$SHA" || ci_passed_for "$PARENT_SHA"; then
-            echo "ci.yml passed for ${SHA} or parent — skipping redundant tests"
-            echo "ci_passed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "No successful ci.yml run found — will run tests as safety gate"
-            echo "ci_passed=false" >> "$GITHUB_OUTPUT"
-          fi
+          python3 scripts/ci/release-proof.py --repo "$REPO" --sha "$SHA" | tee "$GITHUB_OUTPUT"
+          grep '^reason=' "$GITHUB_OUTPUT" | sed 's/^reason=//' >> "$GITHUB_STEP_SUMMARY"
 
   # ── KMP safety gate ────────────────────────────────────────────────────────
-  # Runs JVM + Android unit tests only when ci.yml has NOT passed for this
-  # commit or its parent (e.g. a direct push to main bypassed PR checks).
-  # Skipped on the normal PR → merge path — adds zero release latency then.
+  # Runs JVM + Android unit tests only when check-ci-status found no green CI
+  # proof for the release commit tree. Runs in parallel with the build jobs;
+  # github-release (and so every publish step) needs it to pass or be skipped.
   #
   # Split into two jobs (own runner each) rather than one `jvmTest
   # testDebugUnitTest` invocation: the combined job intermittently failed
@@ -224,11 +206,8 @@ jobs:
   android-release:
     name: Android Release APK
     runs-on: ubuntu-latest
-    needs: [resolve-version, test-kmp-jvm, test-kmp-android]
-    if: |
-      always() && needs.resolve-version.result == 'success' &&
-      (needs.test-kmp-jvm.result == 'success' || needs.test-kmp-jvm.result == 'skipped') &&
-      (needs.test-kmp-android.result == 'success' || needs.test-kmp-android.result == 'skipped')
+    needs: [resolve-version]
+    if: always() && needs.resolve-version.result == 'success'
     permissions:
       contents: read
 
@@ -286,11 +265,8 @@ jobs:
   desktop-linux:
     name: Desktop (Linux)
     runs-on: ubuntu-latest
-    needs: [resolve-version, test-kmp-jvm, test-kmp-android]
-    if: |
-      always() && needs.resolve-version.result == 'success' &&
-      (needs.test-kmp-jvm.result == 'success' || needs.test-kmp-jvm.result == 'skipped') &&
-      (needs.test-kmp-android.result == 'success' || needs.test-kmp-android.result == 'skipped')
+    needs: [resolve-version]
+    if: always() && needs.resolve-version.result == 'success'
     permissions:
       contents: read
 
@@ -459,11 +435,8 @@ jobs:
   desktop-macos:
     name: Desktop (macOS)
     runs-on: macos-latest
-    needs: [resolve-version, test-kmp-jvm, test-kmp-android]
-    if: |
-      always() && needs.resolve-version.result == 'success' &&
-      (needs.test-kmp-jvm.result == 'success' || needs.test-kmp-jvm.result == 'skipped') &&
-      (needs.test-kmp-android.result == 'success' || needs.test-kmp-android.result == 'skipped')
+    needs: [resolve-version]
+    if: always() && needs.resolve-version.result == 'success'
     permissions:
       contents: read
 
@@ -554,11 +527,8 @@ jobs:
   desktop-windows:
     name: Desktop (Windows)
     runs-on: windows-latest
-    needs: [resolve-version, test-kmp-jvm, test-kmp-android]
-    if: |
-      always() && needs.resolve-version.result == 'success' &&
-      (needs.test-kmp-jvm.result == 'success' || needs.test-kmp-jvm.result == 'skipped') &&
-      (needs.test-kmp-android.result == 'success' || needs.test-kmp-android.result == 'skipped')
+    needs: [resolve-version]
+    if: always() && needs.resolve-version.result == 'success'
     permissions:
       contents: read
 
@@ -628,8 +598,11 @@ jobs:
   github-release:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
-    needs: [resolve-version, android-release, desktop-linux, desktop-macos, desktop-windows]
-    if: ${{ always() && needs.resolve-version.result == 'success' && needs.android-release.result == 'success' && needs.desktop-linux.result == 'success' && needs.desktop-macos.result == 'success' && needs.desktop-windows.result == 'success' }}
+    # The build jobs run in parallel with the safety gate; this is the first job
+    # that publishes anything, so it is where the gate is enforced. Everything
+    # that ships to users (Homebrew, F-Droid, site) needs this job.
+    needs: [resolve-version, test-kmp-jvm, test-kmp-android, android-release, desktop-linux, desktop-macos, desktop-windows]
+    if: ${{ always() && needs.resolve-version.result == 'success' && (needs.test-kmp-jvm.result == 'success' || needs.test-kmp-jvm.result == 'skipped') && (needs.test-kmp-android.result == 'success' || needs.test-kmp-android.result == 'skipped') && needs.android-release.result == 'success' && needs.desktop-linux.result == 'success' && needs.desktop-macos.result == 'success' && needs.desktop-windows.result == 'success' }}
     permissions:
       contents: write
 
