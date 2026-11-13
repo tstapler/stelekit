@@ -3,90 +3,101 @@
 
 package dev.stapler.stelekit.git
 
-import dev.stapler.stelekit.model.RepoRoot
 import android.content.Context
-import androidx.work.Constraints
 import androidx.work.CoroutineWorker
-import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ListenableWorker
-import androidx.work.NetworkType
-import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import arrow.core.right
 import dev.stapler.stelekit.db.DriverFactory
-import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
-import dev.stapler.stelekit.platform.PlatformFileSystem
+import dev.stapler.stelekit.jobs.schedule.AppliedConfigLedger
+import dev.stapler.stelekit.jobs.schedule.AndroidNetworkSnapshotProvider
+import dev.stapler.stelekit.jobs.schedule.ConstraintState
+import dev.stapler.stelekit.jobs.schedule.NetworkGate
+import dev.stapler.stelekit.jobs.schedule.NetworkGateResult
+import dev.stapler.stelekit.jobs.schedule.NetworkPolicy
+import dev.stapler.stelekit.jobs.schedule.NetworkSkipReason
+import dev.stapler.stelekit.jobs.schedule.NetworkSnapshot
+import dev.stapler.stelekit.jobs.schedule.NetworkSnapshotProvider
+import dev.stapler.stelekit.jobs.schedule.RestrictionReason
+import dev.stapler.stelekit.jobs.schedule.RunSource
+import dev.stapler.stelekit.jobs.schedule.Schedule
+import dev.stapler.stelekit.jobs.schedule.SettingsTaskRunLog
+import dev.stapler.stelekit.jobs.schedule.TaskConfig
+import dev.stapler.stelekit.jobs.schedule.TaskKey
+import dev.stapler.stelekit.jobs.schedule.TaskRunContext
+import dev.stapler.stelekit.jobs.schedule.TaskRunLog
+import dev.stapler.stelekit.jobs.schedule.TaskRunRecord
+import dev.stapler.stelekit.jobs.schedule.TaskRunResult
+import dev.stapler.stelekit.jobs.schedule.TaskScope
+import dev.stapler.stelekit.jobs.schedule.redactedFailureMessage
+import dev.stapler.stelekit.jobs.schedule.TaskSettingsStore
+import dev.stapler.stelekit.jobs.schedule.TaskWorkKeys
+import dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime
+import dev.stapler.stelekit.jobs.schedule.WorkManagerTaskScheduler
+import dev.stapler.stelekit.jobs.schedule.recordThenPostRun
+import dev.stapler.stelekit.jobs.schedule.runTaskBody
+import dev.stapler.stelekit.jobs.schedule.toTaskRunResult
+import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.platform.PlatformSettings
-import dev.stapler.stelekit.platform.security.CredentialStore
+import dev.stapler.stelekit.platform.SteleKitContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
-import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.runBlocking
 
 /**
- * Android implementation of [BackgroundSyncScheduler] using WorkManager.
+ * Legacy Android entry point for [BackgroundSyncScheduler], now a shim over [WorkManagerTaskScheduler]
+ * (Story 3.1.2). Kept so existing hosts and the pinned tests compile and behave as before; the work
+ * keeps the unique name `stelekit_git_sync_<graphId>` and the [GitSyncWorker] class, so the clone
+ * worker's pause/resume protocol and in-flight pre-upgrade jobs are unaffected.
  *
- * Schedules [GitSyncWorker] with a [NetworkType.CONNECTED] constraint.
- * Android enforces a minimum 15-minute repeat interval for periodic work.
- *
- * For sub-15-minute polling when the app is foregrounded, [GitSyncService] manages
- * its own coroutine timer via [GitSyncService.startPeriodicSync].
+ * Android enforces a minimum 15-minute repeat interval for periodic work. For sub-15-minute polling
+ * while foregrounded, [GitSyncService] manages its own coroutine timer.
  */
 class WorkManagerSyncScheduler(
     private val context: Context,
     private val graphId: String,
 ) : BackgroundSyncScheduler {
 
-    private val workName get() = workNameFor(graphId)
+    private val key get() = TaskKey(GitSyncTask.KIND, TaskScope(graphId))
 
-    override fun schedule(intervalMinutes: Int) = schedule(intervalMinutes, ExistingPeriodicWorkPolicy.UPDATE)
-
-    /** [policy] `CANCEL_AND_REENQUEUE` is for [resumeFor]: after a clone ran under the shared
-     * unique name, `UPDATE` can't convert the finished one-time work back into a periodic job. */
-    internal fun schedule(intervalMinutes: Int, policy: ExistingPeriodicWorkPolicy) {
-        val repeatInterval = maxOf(intervalMinutes.toLong(), MIN_INTERVAL_MINUTES)
-
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
-
-        val request = PeriodicWorkRequestBuilder<GitSyncWorker>(repeatInterval, TimeUnit.MINUTES)
-            .setConstraints(constraints)
-            .setInputData(
-                androidx.work.Data.Builder()
-                    .putString(GitSyncWorker.KEY_GRAPH_ID, graphId)
-                    .putLong(GitSyncWorker.KEY_INTERVAL_MINUTES, repeatInterval)
-                    .build()
+    /**
+     * Persists intent through the port: jitter and constraints come from [TaskSettingsStore] (the spec
+     * defaults when nothing is stored), the interval is the caller's. Blocks briefly on the adapter, which
+     * guards every WorkManager failure itself, so this never throws.
+     */
+    @Deprecated("Use BackgroundTaskScheduler.apply(TaskKey(git-sync, graphId), config); kept for one release.")
+    override fun schedule(intervalMinutes: Int) {
+        runBlocking {
+            val adapter = legacyAdapter(context)
+            val stored = legacyStore(context).read(key)
+            adapter.apply(
+                key,
+                TaskConfig(enabled = true, schedule = Schedule.coerce(intervalMinutes, stored.schedule.jitterMinutes), constraints = stored.constraints),
             )
-            .build()
-
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            workName,
-            policy,
-            request,
-        )
+        }
     }
 
+    @Deprecated("Use BackgroundTaskScheduler.cancel(TaskKey(git-sync, graphId)); kept for one release.")
     override fun cancel() {
-        WorkManager.getInstance(context).cancelUniqueWork(workName)
+        runBlocking { legacyAdapter(context).cancel(key) }
     }
 
     companion object {
-        /** Android's floor for periodic work — matches [schedule]'s existing clamp. */
+        /** Android's floor for periodic work. */
         const val MIN_PERIODIC_INTERVAL_MINUTES = 15L
-        private const val MIN_INTERVAL_MINUTES = MIN_PERIODIC_INTERVAL_MINUTES
 
         /** Not `private` (Story 5.1.2): [AndroidGitCloneWorkerLauncher] shares this name so
          * WorkManager's own uniqueness guarantee serializes it against the periodic job. */
-        internal fun workNameFor(graphId: String) = "stelekit_git_sync_$graphId"
+        internal fun workNameFor(graphId: String) = TaskKey(GitSyncTask.KIND, TaskScope(graphId)).workName()
 
         /**
          * Pauses [graphId]'s scheduled periodic sync job ahead of a relocate/link's copy step
          * (Story 3.2.1), so a concurrent WorkManager fetch never races the foreground copy of
-         * `.git`. Cancels the enqueued unique periodic work outright rather than merely skipping
-         * one run — [resumeFor] re-enqueues it once the move completes.
+         * `.git`. The adapter snapshots the live work first, then cancels it; [resumeFor] restores it.
          *
          * A `Context`-scoped companion function rather than an instance method: the caller
          * ([AndroidGraphMoveQuiesceStrategy]) quiesces an arbitrary [graphId] from a
@@ -94,30 +105,65 @@ class WorkManagerSyncScheduler(
          * a per-graph [WorkManagerSyncScheduler] instance for.
          */
         fun pauseFor(context: Context, graphId: String) {
-            WorkManager.getInstance(context).cancelUniqueWork(workNameFor(graphId))
+            runBlocking { legacyAdapter(context).pause(TaskScope(graphId)) }
         }
 
         /**
-         * Re-schedules [graphId]'s periodic sync job after a relocate/link's [release] step
-         * completes. Re-enqueues at Android's minimum interval rather than the graph's previously
-         * configured interval — [GitSyncService] re-applies the graph's real configured interval
-         * the next time it starts, so this is a safety net restoring background coverage, not the
-         * source of truth for the interval.
+         * Re-enqueues what [pauseFor] paused, with the interval, flex and remaining delay the live work had
+         * (falling back to the last applied config, then the store). A graph the user disabled meanwhile
+         * stays off.
          */
         fun resumeFor(context: Context, graphId: String) {
-            WorkManagerSyncScheduler(context, graphId)
-                .schedule(MIN_INTERVAL_MINUTES.toInt(), ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE)
+            runBlocking { legacyAdapter(context).resume(TaskScope(graphId)) }
+        }
+
+        /** The port adapter built from a [Context] and process statics alone (no UI state); also what a cold process can build. */
+        internal fun legacyAdapter(context: Context): WorkManagerTaskScheduler {
+            SteleKitContext.init(context)
+            val settings = PlatformSettings()
+            val registry = TaskWorkerRuntime.registry
+            return WorkManagerTaskScheduler(
+                context = context,
+                registry = registry,
+                store = TaskSettingsStore(settings, TaskWorkerRuntime.legacySeed, registry),
+                ledger = AppliedConfigLedger(settings),
+                workers = GitSyncWorkerBinding.resolver,
+            )
+        }
+
+        private fun legacyStore(context: Context): TaskSettingsStore {
+            SteleKitContext.init(context)
+            val registry = TaskWorkerRuntime.registry
+            return TaskSettingsStore(PlatformSettings(), TaskWorkerRuntime.legacySeed, registry)
         }
     }
 }
 
+/** The androidMain side effects around a git-sync tick; [Default] is [GitSyncAdapterHooks]. A seam so tests can observe order and inject failures. */
+internal interface GitSyncWorkerHooks {
+    suspend fun runWatchdog(context: Context, graphId: String)
+    suspend fun shouldYieldToCloneWorker(context: Context, graphId: String): Boolean
+    suspend fun postRun(context: Context, key: TaskKey, input: androidx.work.Data, result: TaskRunResult)
+
+    object Default : GitSyncWorkerHooks {
+        override suspend fun runWatchdog(context: Context, graphId: String) = GitSyncAdapterHooks.runWatchdog(context, graphId)
+        override suspend fun shouldYieldToCloneWorker(context: Context, graphId: String) =
+            GitSyncAdapterHooks.shouldYieldToCloneWorker(context, graphId)
+        override suspend fun postRun(context: Context, key: TaskKey, input: androidx.work.Data, result: TaskRunResult) =
+            GitSyncAdapterHooks.postRun(context, key, input, result)
+    }
+}
+
 /**
- * WorkManager worker for scheduled sync. With the app alive it runs the policy-gated
- * [ScheduledSyncRunner] tick on the registered service (the same state a manual sync produces); with no live
- * service it hands the single fetch to [ColdSyncRunner], which cannot touch the working tree.
+ * WorkManager worker for scheduled git sync: a THIN WRAPPER (Story 3.1.2, ADR-001). With the app alive it
+ * runs the policy-gated [ScheduledSyncRunner] tick on the registered service; with no live service it
+ * hands the single fetch to [ColdSyncRunner], which cannot touch the working tree. It does no registry
+ * lookup, no `enabled` gate and no store read, so a stale or pre-upgrade job still runs; disable goes
+ * through `apply`/`cancel`. It evaluates the shared `NetworkGate` (policy from [KEY_NETWORK_POLICY],
+ * absent = `Any`) and appends one run-log record through the shared [recordRun].
  *
- * The [GitSyncService] instance is obtained from [GitSyncServiceRegistry], which must be
- * populated from the Application class before WorkManager starts any work.
+ * Order: watchdog -> gate -> clone-yield -> body -> notify. Failure is never `retry()` (ADR-002: the
+ * transport retry already ran inside the git layer).
  */
 class GitSyncWorker(
     context: Context,
@@ -127,95 +173,103 @@ class GitSyncWorker(
     companion object {
         const val KEY_GRAPH_ID = "graph_id"
         const val KEY_INTERVAL_MINUTES = "interval_minutes"
+        const val KEY_NETWORK_POLICY = TaskWorkKeys.KEY_NETWORK_POLICY
+
+        /** Test seams; null in production. */
+        @Volatile internal var snapshotProviderOverride: ((Context) -> NetworkSnapshotProvider)? = null
+        @Volatile internal var runLogOverride: ((Context) -> TaskRunLog)? = null
+        @Volatile internal var coldPathOverride: ColdPathRunner? = null
+        @Volatile internal var hooksOverride: GitSyncWorkerHooks? = null
     }
 
     override suspend fun doWork(): Result {
         val graphId = inputData.getString(KEY_GRAPH_ID) ?: return Result.failure()
+        val startedAtMs = System.currentTimeMillis()
+        var constraintState = ConstraintState(online = false, isMetered = null, charging = null)
+        var recorded: TaskRunResult? = null
+        var bodyRan = false
+        val hooks = hooksOverride ?: GitSyncWorkerHooks.Default
+        try {
+            SteleKitContext.init(applicationContext)
+            val key = TaskKey(GitSyncTask.KIND, TaskScope(graphId))
+            val policy = TaskWorkKeys.decode(inputData.getString(KEY_NETWORK_POLICY))
 
-        // Story 3.1.7: a side-effecting observation only, piggybacked on this worker's existing
-        // periodic schedule — never allowed to affect this worker's own Result (ADR-002 governs
-        // GitCloneWorker's own retry ownership, not this unrelated watchdog check).
-        runCatching { checkAndSurfaceStuckGitCloneWorker(applicationContext, graphId) }
+            // A side-effecting observation only: never allowed to affect this worker's own Result.
+            hooks.runWatchdog(applicationContext, graphId)
 
-        val intervalMinutes = inputData.getLong(KEY_INTERVAL_MINUTES, WorkManagerSyncScheduler.MIN_PERIODIC_INTERVAL_MINUTES).toInt()
-
-        // Fast path: app is running and service is registered
-        val service = GitSyncServiceRegistry.getService(graphId)
-        if (service != null) {
-            return try {
-                // The tick reports failure through TickOutcome.Failure, not by throwing — it must be
-                // inspected, or every failed fetch would read as Result.success() (Story 1.2.3).
-                val outcome = service.scheduled.run(graphId)
-                notifyUpdatesWaiting(graphId, service.staleness.value, intervalMinutes)
-                if (outcome is TickOutcome.Failure) Result.failure() else Result.success()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                // ADR-002: GitOperationSupport.runGitTransportOpWithRetry (Story 1.2.2) already
-                // retried internally before the tick failed here — a second WorkManager-level
-                // Result.retry() would stack a second, uncoordinated retry layer on top of the
-                // first. Result.failure() leaves the next attempt to WorkManager's own periodic schedule.
-                Result.failure()
+            val snapshot = readSnapshot()
+            if (snapshot != null) constraintState = ConstraintState(snapshot.online, snapshot.isMetered, charging = null)
+            val gate = when {
+                snapshot != null -> NetworkGate.evaluate(policy, snapshot.online, snapshot.isMetered)
+                // WorkManager's CONNECTED constraint already held, so an unreadable provider proceeds for Any.
+                policy == NetworkPolicy.Any -> NetworkGateResult.Proceed
+                else -> NetworkGateResult.Skip(NetworkSkipReason.UnknownNetwork)
             }
-        }
+            if (gate is NetworkGateResult.Skip) {
+                recorded = gate.toTaskRunResult()
+                return Result.success()
+            }
 
-        // Slow path: process was killed and WorkManager restarted it.
-        // Application.onCreate() has run, so DriverFactory is initialized.
-        // Perform a standalone fetch directly without a full GitSyncService.
+            if (hooks.shouldYieldToCloneWorker(applicationContext, graphId)) {
+                recorded = TaskRunResult.Skipped(GitSyncAdapterHooks.YIELD_REASON)
+                return Result.success()
+            }
 
-        // Story 5.1.3: belt-and-suspenders — yield if a GitCloneWorker is already RUNNING for
-        // this graph in this freshly-restarted process, rather than racing it at the JGit level.
-        if (isGitCloneWorkerRunningFor(applicationContext, graphId)) {
-            return Result.success()
-        }
-
-        return try {
-            CredentialStore.init(applicationContext)
-            DriverFactory.setContext(applicationContext)
-
-            // A throwaway, uninitialized PlatformFileSystem() is deliberately fine here (unlike
-            // MainActivity's construction site — see buildGitRepository): fetch() only updates
-            // remote-tracking refs and never touches the working tree, so no ensureFresh/shadow
-            // write-back happens on this call path even though resolveForJGit's shadowWorktreeFor
-            // still correctly targets the shadow directory. The user's next foreground merge()
-            // call is what surfaces fetched changes into SAF (plan.md Task 5.1.2b).
-            val settings = PlatformSettings()
-            val staleness = SyncStalenessStore(settings)
-            val result = runSlowPathFetch(
-                loadConfig = { loadGitConfigFromDb(graphId) },
-                gitRepository = AndroidGitRepository(
-                    context = applicationContext,
-                    fileSystem = PlatformFileSystem(),
-                ),
-                staleness = staleness,
-            )
-            notifyUpdatesWaiting(graphId, staleness.read(graphId), intervalMinutes)
-            result
+            val liveService = GitSyncServiceRegistry.getService(graphId)
+            val ctx = TaskRunContext(scheduledAtMs = null, startedAtMs = startedAtMs, appOpen = liveService != null, constraintState = constraintState)
+            val result = runTaskBody(GitSyncTask(cold = coldPathOverride ?: AndroidColdPathRunner(applicationContext)), key, ctx)
+            recorded = result
+            bodyRan = true
+            return if (result is TaskRunResult.Failed) Result.failure() else Result.success()
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
-            // ADR-002: gitRepository.fetch() (Story 1.2.2e) already retried internally via
-            // runGitTransportOpWithRetry — see the fast path's identical comment above.
-            Result.failure()
-        }
-    }
-
-    /** Never affects the worker's own result: a notification problem must not make a good fetch look failed. */
-    private fun notifyUpdatesWaiting(graphId: String, staleness: SyncStaleness, intervalMinutes: Int) {
-        runCatching {
-            SyncNotifier(applicationContext, PlatformSettings()).onBackgroundTick(graphId, "", staleness, intervalMinutes)
-        }
-    }
-
-    private fun loadGitConfigFromDb(graphId: String): dev.stapler.stelekit.git.model.GitConfig? {
-        val factory = DriverFactory()
-        val driver = factory.createDriver(factory.getDatabaseUrl(graphId))
-        try {
-            val db = dev.stapler.stelekit.db.SteleDatabase(driver)
-            return db.steleDatabaseQueries.selectGitConfig(graphId).executeAsOneOrNull()?.toGitConfig()
+        } catch (e: Throwable) {
+            Logger("GitSyncWorker").error("git-sync worker failed", e)
+            // ADR-002: a second WorkManager-level retry would stack on the git layer's own retry.
+            recorded = TaskRunResult.Failed(redactedFailureMessage(e), retryable = false)
+            return Result.failure()
         } finally {
-            driver.close()
+            recorded?.let { final ->
+                val key = TaskKey(GitSyncTask.KIND, TaskScope(graphId))
+                // postRun (the notifier) only follows a body that ran: a skipped tick has nothing new to announce.
+                recordThenPostRun(
+                    buildRunLog(graphId),
+                    TaskRunRecord(key, RunSource.Background, scheduledAtMs = null, startedAtMs = startedAtMs, result = final, constraintState = constraintState),
+                    postRun = if (bodyRan) { r -> hooks.postRun(applicationContext, key, inputData, r) } else null,
+                )
+            }
         }
+    }
+
+    private suspend fun readSnapshot(): NetworkSnapshot? = try {
+        (snapshotProviderOverride?.invoke(applicationContext) ?: AndroidNetworkSnapshotProvider(applicationContext)).snapshot()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        Logger("GitSyncWorker").warn("network snapshot unavailable", e)
+        null
+    }
+
+    /** Building the log may fail (settings unavailable); that must never change the worker's Result. */
+    private fun buildRunLog(graphId: String): TaskRunLog? = try {
+        runLogOverride?.invoke(applicationContext) ?: SettingsTaskRunLog(PlatformSettings())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        Logger("GitSyncWorker").warn("run log unavailable for $graphId", e)
+        null
+    }
+}
+
+/** The DB-backed config read for a graph that may not be open in this process (cold worker, legacy seed). Opens and closes one driver. */
+internal fun loadGitConfigFromDb(graphId: String): GitConfig? {
+    val factory = DriverFactory()
+    val driver = factory.createDriver(factory.getDatabaseUrl(graphId))
+    try {
+        val db = dev.stapler.stelekit.db.SteleDatabase(driver)
+        return db.steleDatabaseQueries.selectGitConfig(graphId).executeAsOneOrNull()?.toGitConfig()
+    } finally {
+        driver.close()
     }
 }
 
@@ -226,23 +280,32 @@ class GitSyncWorker(
  * must be inspected (Story 1.2.3, ADR-002: failure, never retry — the retry loop already ran).
  */
 internal suspend fun runSlowPathFetch(
-    loadConfig: suspend () -> dev.stapler.stelekit.git.model.GitConfig?,
+    loadConfig: suspend () -> GitConfig?,
     gitRepository: GitRepository,
     staleness: SyncStalenessStore = SyncStalenessStore(InMemorySettings()),
     clock: () -> Long = { System.currentTimeMillis() },
     locks: NamedLocks = ColdSyncLocks,
-): ListenableWorker.Result {
-    val config = loadConfig() ?: return ListenableWorker.Result.success()
+): ListenableWorker.Result = when (runColdFetch(loadConfig, gitRepository, staleness, clock, locks)) {
+    is ColdSyncOutcome.Error -> ListenableWorker.Result.failure()
+    is ColdSyncOutcome.Fetched, ColdSyncOutcome.NoConfig -> ListenableWorker.Result.success()
+}
+
+/** [runSlowPathFetch]'s decision as a typed outcome, shared with [AndroidColdPathRunner]. */
+internal suspend fun runColdFetch(
+    loadConfig: suspend () -> GitConfig?,
+    gitRepository: GitRepository,
+    staleness: SyncStalenessStore,
+    clock: () -> Long,
+    locks: NamedLocks = ColdSyncLocks,
+): ColdSyncOutcome {
+    val config = loadConfig() ?: return ColdSyncOutcome.NoConfig
     val configs = object : GitConfigRepository {
         override suspend fun getConfig(graphId: String) = config.right()
-        override suspend fun saveConfig(config: dev.stapler.stelekit.git.model.GitConfig) = Unit.right()
+        override suspend fun saveConfig(config: GitConfig) = Unit.right()
         override suspend fun deleteConfig(graphId: String) = Unit.right()
         override fun observeConfig(graphId: String) = kotlinx.coroutines.flow.flowOf(config.right())
     }
-    return when (ColdSyncRunner(gitRepository, configs, staleness, locks, clock).run(config.graphId)) {
-        is ColdSyncOutcome.Error -> ListenableWorker.Result.failure()
-        is ColdSyncOutcome.Fetched, ColdSyncOutcome.NoConfig -> ListenableWorker.Result.success()
-    }
+    return ColdSyncRunner(gitRepository, configs, staleness, locks, clock).run(config.graphId)
 }
 
 /** One lock registry per process, shared by every closed-app fetch. */
@@ -282,7 +345,7 @@ private fun dev.stapler.stelekit.db.Git_config.toGitConfig() =
  * "restricted"; Doze is transient and deliberately not reported (it ends on its own).
  */
 class AndroidBackgroundRestrictionProbe(private val context: Context) : BackgroundRestrictionProbe {
-    override fun isRestricted(): Boolean = runCatching {
+    override fun restriction(): RestrictionReason = runCatching {
         val power = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
         val activity = context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
         val usage = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
@@ -293,8 +356,13 @@ class AndroidBackgroundRestrictionProbe(private val context: Context) : Backgrou
         val bucketRestricted = usage != null && usage.appStandbyBucket >= STANDBY_BUCKET_RESTRICTED
         val appRestricted = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P &&
             activity?.isBackgroundRestricted == true
-        power?.isPowerSaveMode == true || appRestricted || bucketRestricted
-    }.getOrDefault(false)
+        when {
+            appRestricted -> RestrictionReason.AppRestricted
+            bucketRestricted -> RestrictionReason.StandbyRestricted
+            power?.isPowerSaveMode == true -> RestrictionReason.BatterySaver
+            else -> RestrictionReason.None
+        }
+    }.getOrDefault(RestrictionReason.None)
 
     private companion object {
         /** `UsageStatsManager.STANDBY_BUCKET_RESTRICTED` (API 28). */

@@ -14,7 +14,9 @@ import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.testsupport.StubGitRepository
 import dev.stapler.stelekit.git.testsupport.sampleConfig
 import dev.stapler.stelekit.logging.LogLevel
+import dev.stapler.stelekit.logging.LogEntry
 import dev.stapler.stelekit.logging.LogManager
+import dev.stapler.stelekit.logging.LogSink
 import dev.stapler.stelekit.platform.SCHEDULED_SYNC_ENABLED_KEY
 import dev.stapler.stelekit.ui.GitSyncServiceSeams
 import dev.stapler.stelekit.ui.GraphContentGitSyncStack
@@ -26,6 +28,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import java.io.File
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.createTempDirectory
 import kotlin.test.AfterTest
@@ -73,8 +76,16 @@ class GitSyncStackEntryPointTest {
     private var stack: GraphContentGitSyncStack? = null
     private var graphId = ""
 
+    // LogManager.logs is a process-global 1000-entry ring shared with every other test; this sink sees every
+    // line ever logged during this test, so assertions cannot lose lines to eviction by other tests' logging.
+    private val captured = CopyOnWriteArrayList<LogEntry>()
+    private val sinkHandle = LogManager.addSink(object : LogSink {
+        override fun write(entry: LogEntry, formatted: String) { captured.add(entry) }
+    })
+
     @AfterTest
     fun tearDown() {
+        sinkHandle.close()
         headless?.close()
         fixture?.let { runBlocking { it.close() } }
         dataDir.deleteRecursively()
@@ -148,7 +159,7 @@ class GitSyncStackEntryPointTest {
         settleUntilFetches(expected)
     }
 
-    private fun syncTickLines() = LogManager.logs.value.filter {
+    private fun syncTickLines() = captured.filter {
         it.tag == "PeriodicSyncDriver" && it.message.startsWith("SyncTick") && it.message.contains("graph=$graphId ")
     }
 

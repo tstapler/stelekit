@@ -108,6 +108,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/capture/CaptureTargetResolverTest.kt",
         # PullIndexingTest's fake. Not the whole common_test_fixtures target: it bundles unregistered @Test
         # classes that AllBusinessTestsCompletenessTest would then find on the classpath.
+        "dev/stapler/stelekit/db/GraphRegistryKnownScopesTest.kt",
         "dev/stapler/stelekit/db/sidecar/FakeFileSystem.kt",
         "dev/stapler/stelekit/domain/HtmlBlockConverterTest.kt",
         "dev/stapler/stelekit/sketchimport/PngTagSourcesTest.kt",
@@ -120,12 +121,20 @@ kt_jvm_library(
         "dev/stapler/stelekit/fusion/LinearSolverPropertyTest.kt",
         "dev/stapler/stelekit/fusion/LinearSolverTest.kt",
         "dev/stapler/stelekit/git/BannerPrecedenceTest.kt",
+        "dev/stapler/stelekit/git/ConfigRepositoryLegacyConfigSourceTest.kt",
+        "dev/stapler/stelekit/git/GitLastSuccessSourceTest.kt",
+        "dev/stapler/stelekit/git/GitSyncScheduleControllerTest.kt",
+        "dev/stapler/stelekit/git/PeriodicSyncDriverJitterTest.kt",
+        "dev/stapler/stelekit/git/PeriodicSyncDriverRunRecordTest.kt",
+        "dev/stapler/stelekit/git/GitSyncTaskMappingTest.kt",
         "dev/stapler/stelekit/git/StalenessChipStateTest.kt",
         "dev/stapler/stelekit/git/SyncNotificationLogicTest.kt",
         "dev/stapler/stelekit/git/SyncSafetyConfirmTest.kt",
         "dev/stapler/stelekit/git/SyncStalenessStoreTest.kt",
         "dev/stapler/stelekit/git/SyncStatusSheetModelTest.kt",
         "dev/stapler/stelekit/git/UpdatesNotificationToggleTest.kt",
+        "dev/stapler/stelekit/git/FakeGitLegacyConfigSource.kt",
+        "dev/stapler/stelekit/git/LegacyGitSyncMigrationTest.kt",
         "dev/stapler/stelekit/git/lfs/GitAttributesMatcherPropertyTest.kt",
         "dev/stapler/stelekit/git/lfs/GitAttributesMatcherTest.kt",
         "dev/stapler/stelekit/git/lfs/GitAttributesParserTest.kt",
@@ -136,6 +145,22 @@ kt_jvm_library(
         "dev/stapler/stelekit/git/lfs/LfsPathPolicyTest.kt",
         "dev/stapler/stelekit/git/lfs/LfsPointerPropertyTest.kt",
         "dev/stapler/stelekit/git/lfs/LfsPointerTest.kt",
+        "dev/stapler/stelekit/jobs/schedule/BackgroundTaskSchedulerContract.kt",
+        "dev/stapler/stelekit/jobs/schedule/FakeBackgroundTaskScheduler.kt",
+        "dev/stapler/stelekit/jobs/schedule/FakeBackgroundTaskSchedulerContractTest.kt",
+        "dev/stapler/stelekit/jobs/schedule/GraphRemovalTasksTest.kt",
+        "dev/stapler/stelekit/jobs/schedule/JitterPolicyPropertyTest.kt",
+        "dev/stapler/stelekit/jobs/schedule/MapSettings.kt",
+        "dev/stapler/stelekit/jobs/schedule/TaskConfigCodecTest.kt",
+        "dev/stapler/stelekit/jobs/schedule/TaskRunLogTest.kt",
+        "dev/stapler/stelekit/jobs/schedule/TaskSettingsStoreMigrationTest.kt",
+        "dev/stapler/stelekit/jobs/schedule/NetworkGateTest.kt",
+        "dev/stapler/stelekit/git/lfs/LfsNetworkGateTest.kt",
+        "dev/stapler/stelekit/git/ScheduledSyncPresentationTest.kt",
+        "dev/stapler/stelekit/git/ScheduleHealthTest.kt",
+        "dev/stapler/stelekit/jobs/schedule/NoopTaskSchedulerTest.kt",
+        "dev/stapler/stelekit/jobs/schedule/ScheduleLatenessTest.kt",
+        "dev/stapler/stelekit/jobs/schedule/TaskKeyTest.kt",
         "dev/stapler/stelekit/parser/MarkdownParserInlineStorageTest.kt",
         "dev/stapler/stelekit/platform/diagnostics/ExitRecordFormatterTest.kt",
         "dev/stapler/stelekit/platform/diagnostics/LogRedactorTest.kt",
@@ -157,6 +182,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/ui/annotate/AnnotationViewTransformTest.kt",
         "dev/stapler/stelekit/ui/assets/AssetImageReferenceTest.kt",
         "dev/stapler/stelekit/ui/PageSelectionTest.kt",
+        "dev/stapler/stelekit/ui/theme/MutedTextContrastTest.kt",
         "dev/stapler/stelekit/sketch/SketchGesturesTest.kt",
         "dev/stapler/stelekit/sketch/export/SketchExportRoundTripTest.kt",
         "dev/stapler/stelekit/sketch/SketchHistoryTest.kt",
@@ -190,6 +216,46 @@ kt_jvm_library(
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
     ],
     visibility = ["//kmp/src:__subpackages__"],
+)
+
+# scheduler_contract_fixtures_jvm — abstract BackgroundTaskSchedulerContract + FakeBackgroundTaskScheduler for
+# jvm_tests adapter subclasses (e.g. an in-process scheduler). No concrete *Test classes, so no completeness
+# guard sees them; the fake's own concrete test lives in business_common_tests.
+kt_jvm_library(
+    name = "scheduler_contract_fixtures_jvm",
+    srcs = [
+        "dev/stapler/stelekit/jobs/schedule/BackgroundTaskSchedulerContract.kt",
+        "dev/stapler/stelekit/jobs/schedule/FakeBackgroundTaskScheduler.kt",
+    ],
+    testonly = True,
+    kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
+    deps = [
+        "//kmp/src/jvmMain/kotlin:jvm_main_lib",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+    ],
+    visibility = ["//kmp/src:__subpackages__"],
+)
+
+# Same sources for android_unit_test_lib (WorkManagerTaskScheduler contract subclass), compiled against
+# android_main so Android's `actual`s are used, not JVM's (see :git_testsupport).
+kt_android_library(
+    name = "scheduler_contract_fixtures_android",
+    srcs = [
+        "dev/stapler/stelekit/jobs/schedule/BackgroundTaskSchedulerContract.kt",
+        "dev/stapler/stelekit/jobs/schedule/FakeBackgroundTaskScheduler.kt",
+    ],
+    custom_package = "dev.stapler.stelekit.jobs.schedule",
+    testonly = True,
+    kotlinc_opts = "//:kmp_android_kotlinc_opts",
+    visibility = ["//kmp/src/androidUnitTest/kotlin:__pkg__"],
+    deps = [
+        "//kmp/src/androidMain/kotlin:android_main",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+    ],
 )
 
 # merge_fixtures — MergeFixtures only (no @Test classes); shared by business_tests and jvm_tests.

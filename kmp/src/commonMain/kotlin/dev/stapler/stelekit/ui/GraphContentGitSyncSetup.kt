@@ -10,16 +10,35 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import dev.stapler.stelekit.git.BatterySettingsLauncher
 import dev.stapler.stelekit.git.GitConfigRepository
+import dev.stapler.stelekit.git.GitLastSuccessSource
+import dev.stapler.stelekit.git.ScheduleHealth
+import dev.stapler.stelekit.git.SyncStalenessStore
+import dev.stapler.stelekit.git.computeScheduleHealth
+import dev.stapler.stelekit.jobs.schedule.RestrictionReason
+import dev.stapler.stelekit.jobs.schedule.SchedulerCapabilities
 import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.GitSyncServiceRegistry
 import dev.stapler.stelekit.git.FirstSyncConfirmation
-import dev.stapler.stelekit.git.ScheduledSyncPreferences
+import dev.stapler.stelekit.git.ConfigRepositoryLegacyConfigSource
+import dev.stapler.stelekit.git.GitSyncScheduleController
+import dev.stapler.stelekit.git.GitSyncTask
+import dev.stapler.stelekit.git.LegacyGitSyncMigration
+import dev.stapler.stelekit.git.asForegroundRecorder
+import dev.stapler.stelekit.jobs.schedule.Schedule
+import dev.stapler.stelekit.jobs.schedule.SettingsTaskRunLog
+import dev.stapler.stelekit.jobs.schedule.TaskConfig
+import dev.stapler.stelekit.jobs.schedule.TaskKey
+import dev.stapler.stelekit.jobs.schedule.TaskScope
+import dev.stapler.stelekit.jobs.schedule.TaskSettingsStore
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.git.ScheduledSyncStatus
 import dev.stapler.stelekit.git.GitRepository
@@ -71,6 +90,14 @@ internal class ScheduledSyncControls(
     val setIntervalMinutes: suspend (Int) -> Unit,
     /** True once a manual, previewed sync succeeded for the current `(remote, branch)`; scheduled sync only fetches until then. */
     val firstSyncConfirmed: () -> Boolean = { true },
+    val capabilities: SchedulerCapabilities? = null,
+    val restriction: RestrictionReason = RestrictionReason.None,
+    /** Lateness and unreadable-settings state, from the git last-success source (never the run log alone). */
+    val health: ScheduleHealth = ScheduleHealth.Healthy,
+    /** Re-reads the settings store and clears the unreadable marker when that succeeds. */
+    val retrySettings: () -> Unit = {},
+    /** Re-reads the stored `git-sync` entry into the running loop; call after Settings writes the store directly. */
+    val reconcileRunning: () -> Unit = {},
 ) {
     companion object {
         val Unavailable = ScheduledSyncControls(
@@ -134,6 +161,9 @@ internal fun rememberScheduledSyncSettingsState(
     stack: GraphContentGitSyncStack,
     onReviewFirstSync: () -> Unit = {},
     onOpenStatus: () -> Unit = {},
+    onUnlock: () -> Unit = {},
+    onReviewConflict: () -> Unit = {},
+    batterySettingsLauncher: BatterySettingsLauncher? = null,
     onSetUpGit: () -> Unit,
 ): ScheduledSyncSettingsState? {
     val controls = stack.scheduledSync
@@ -162,7 +192,70 @@ internal fun rememberScheduledSyncSettingsState(
         firstSyncReviewRequired = controls.hasRemote && !firstSyncConfirmed,
         onReviewFirstSync = onReviewFirstSync,
         onOpenStatus = onOpenStatus,
+        lateness = controls.health.lateness,
+        capabilities = controls.capabilities,
+        restriction = controls.restriction,
+        settingsUnreadable = controls.health.settingsUnreadable,
+        onRetrySettings = controls.retrySettings,
+        onUnlock = onUnlock,
+        onReviewConflict = onReviewConflict,
+        batterySettingsLauncher = batterySettingsLauncher,
     )
+}
+
+/** A SAF-backed graph: a registry root `saf://` or `content://` path (SAF check, not a notes-folder read). */
+@OptIn(dev.stapler.stelekit.model.RegistryRootPath::class)
+private fun isSafGraph(graph: dev.stapler.stelekit.model.GraphInfo): Boolean =
+    graph.path.startsWith("saf://") || graph.path.startsWith("content://")
+
+/**
+ * Settings model for Background tasks, or null when git config is unavailable on this platform (the
+ * legacy seed needs it, and a graph first read without it would record a wrong "nothing to migrate" marker).
+ */
+@Composable
+internal fun rememberBackgroundTasksSettingsState(
+    deps: GraphContentDeps,
+    stack: GraphContentGitSyncStack,
+    graphs: List<dev.stapler.stelekit.model.GraphInfo>,
+    onSetUpGit: () -> Unit = {},
+    onReviewFirstSync: () -> Unit = {},
+    onAddGraph: () -> Unit,
+): dev.stapler.stelekit.ui.components.settings.BackgroundTasksSettingsState? {
+    val configRepository = stack.gitConfigRepository ?: return null
+    val scheduler = deps.platformIntegrations.backgroundTaskScheduler
+    val registry = deps.platformIntegrations.taskRegistry
+    val controls = stack.scheduledSync
+    val activeGraphIdForSaves = stack.gitSyncGraphId
+    val reconcileRunning by rememberUpdatedState(controls.reconcileRunning)
+    val controller = remember(deps.platformSettings, configRepository, scheduler, registry, activeGraphIdForSaves) {
+        val seed = LegacyGitSyncMigration(deps.platformSettings, ConfigRepositoryLegacyConfigSource(configRepository, activeGraphIdForSaves))
+        dev.stapler.stelekit.ui.components.settings.BackgroundTaskSettingsController(
+            TaskSettingsStore(deps.platformSettings, seed, registry), scheduler, registry,
+            onSaved = { key -> if (key.kind == GitSyncTask.KIND && key.scope.value == activeGraphIdForSaves) reconcileRunning() },
+        )
+    }
+    val rows = graphs.map {
+        dev.stapler.stelekit.ui.components.settings.BackgroundTaskGraph(
+            id = it.id.value,
+            name = it.displayName,
+            fetchOnly = isSafGraph(it),
+            active = it.id.value == stack.gitSyncGraphId,
+        )
+    }
+    val hasRemote = controls.hasRemote
+    val reviewRequired = hasRemote && !controls.firstSyncConfirmed()
+    val activeGraphId = stack.gitSyncGraphId
+    return remember(controller, rows, onAddGraph, hasRemote, reviewRequired, activeGraphId) {
+        val gate: (dev.stapler.stelekit.jobs.schedule.TaskKind, String) -> dev.stapler.stelekit.ui.components.settings.SwitchGate? = { kind, graphId ->
+            when {
+                kind != GitSyncTask.KIND || graphId != activeGraphId -> null
+                !hasRemote -> dev.stapler.stelekit.ui.components.settings.SwitchGate.NoRemote(onSetUpGit)
+                reviewRequired -> dev.stapler.stelekit.ui.components.settings.SwitchGate.FirstSyncReview(onReviewFirstSync)
+                else -> null
+            }
+        }
+        dev.stapler.stelekit.ui.components.settings.BackgroundTasksSettingsState(controller, rows, onAddGraph, gate)
+    }
 }
 
 /**
@@ -192,10 +285,14 @@ private sealed interface ConfigLoad {
 }
 
 /**
- * Starts, restarts and stops the in-app loop and the closed-app job from `(service, flag, interval)`.
- * One composition owns one loop: an interval edit restarts it (the next check is one new interval
- * away), turning the switch off stops both, and disposal stops the loop through the service's
- * `shutdown()`. The closed-app job deliberately outlives the composition.
+ * Starts, restarts and stops the in-app loop and the closed-app job from the graph's stored
+ * `git-sync` schedule ([GitSyncScheduleController]) and its git config. One composition owns one loop:
+ * an interval edit restarts it (the next check is one new interval away), turning the switch off stops
+ * it, and disposal stops the loop through the service's `shutdown()`. The closed-app job deliberately
+ * outlives the composition, and is driven by the controller only where the scheduler can run it.
+ *
+ * Opening the graph here runs the lazy legacy migration (`scheduled_sync_enabled` + the graph's
+ * remote and interval), so an upgrading user's sync never turns off.
  */
 @Composable
 internal fun rememberGraphContentScheduledSyncControls(
@@ -207,24 +304,57 @@ internal fun rememberGraphContentScheduledSyncControls(
     if (configRepository == null) return ScheduledSyncControls.Unavailable
 
     val factory = deps.platformIntegrations.backgroundSyncSchedulerFactory
+    val taskScheduler = deps.platformIntegrations.backgroundTaskScheduler
     val probe = deps.platformIntegrations.backgroundRestrictionProbe
-    val prefs = remember(deps.platformSettings) { ScheduledSyncPreferences(deps.platformSettings) }
     val firstSyncConfirmation = remember(deps.platformSettings) { FirstSyncConfirmation(deps.platformSettings) }
-    val enabled by prefs.enabled.collectAsState()
+    // The seed reads this graph's own config through [configRepository]; building it here (not in the
+    // host) is what lets a graph whose config repository is not the host's still migrate.
+    val controller = remember(deps.platformSettings, configRepository, taskScheduler) {
+        val seed = LegacyGitSyncMigration(deps.platformSettings, ConfigRepositoryLegacyConfigSource(configRepository, graphId))
+        GitSyncScheduleController(
+            TaskSettingsStore(deps.platformSettings, seed, deps.platformIntegrations.taskRegistry),
+            taskScheduler,
+        )
+    }
+    val scope = rememberCoroutineScope()
     val configLoad: State<ConfigLoad> = remember(configRepository, graphId) {
         configRepository.observeConfig(graphId).map { ConfigLoad.Loaded(it.getOrNull()) }
     }.collectAsState(ConfigLoad.Loading)
     val config = (configLoad.value as? ConfigLoad.Loaded)?.config
     val loaded = configLoad.value is ConfigLoad.Loaded
-    val interval = config?.pollIntervalMinutes?.let { scheduledLoopIntervalMinutes(it, factory.minimumIntervalMinutes) }
+
+    // Null until the store has been read once (and while it is unreadable): neither starts nor stops anything.
+    var taskConfig by remember(controller, graphId) { mutableStateOf<TaskConfig?>(null) }
+    LaunchedEffect(controller, graphId, loaded) {
+        if (loaded) taskConfig = controller.reconcile(graphId)
+    }
+
+    // An interval edited elsewhere (the git setup wizard) changes the config flow; carry it into the schedule.
+    val lastConfiguredInterval = remember(graphId) { intArrayOf(NO_INTERVAL) }
+    LaunchedEffect(controller, graphId, config?.pollIntervalMinutes, taskConfig != null) {
+        val polled = config?.pollIntervalMinutes ?: return@LaunchedEffect
+        val current = taskConfig ?: return@LaunchedEffect
+        val previous = lastConfiguredInterval[0]
+        lastConfiguredInterval[0] = polled
+        if (previous != NO_INTERVAL && polled > 0 && polled != current.schedule.intervalMinutes) {
+            controller.setSchedule(graphId, Schedule.coerce(polled, current.schedule.jitterMinutes))?.let { taskConfig = it }
+        }
+    }
+
+    val enabled = taskConfig?.enabled == true
+    val storedSchedule = taskConfig?.schedule
+    // A zero poll interval means "no loop" (PR #591) and is never raised to the platform floor.
+    val interval = if (config == null || config.pollIntervalMinutes <= 0 || storedSchedule == null) null
+    else scheduledLoopIntervalMinutes(storedSchedule.intervalMinutes, factory.minimumIntervalMinutes)
+    val jitter = storedSchedule?.jitterMinutes ?: 0
     val active = enabled && interval != null && interval > 0
 
     val loopRunning = remember(service) { booleanArrayOf(false) }
-    LaunchedEffect(service, active, interval) {
-        if (service == null || !loaded) return@LaunchedEffect
+    LaunchedEffect(service, active, interval, jitter, taskConfig != null) {
+        if (service == null || !loaded || taskConfig == null) return@LaunchedEffect
         if (active && interval != null) {
             // First start after enable/open checks right away; an interval edit waits one new interval.
-            service.startPeriodicSync(graphId, interval, immediateFirstTick = !loopRunning[0])
+            service.startPeriodicSync(graphId, interval, immediateFirstTick = !loopRunning[0], jitterMinutes = jitter)
             loopRunning[0] = true
         } else {
             service.stopPeriodicSync()
@@ -232,17 +362,27 @@ internal fun rememberGraphContentScheduledSyncControls(
         }
     }
 
-    val scheduler = remember(factory, graphId) { factory.create(graphId) }
-    LaunchedEffect(scheduler, active, interval, loaded) {
-        if (scheduler == null || !loaded) return@LaunchedEffect
-        if (active && interval != null) scheduler.schedule(interval) else scheduler.cancel()
-    }
-
-    val restricted by produceState(false, probe) {
+    val restriction by produceState(RestrictionReason.None, probe) {
         if (probe == null) return@produceState
         while (true) {
-            value = probe.isRestricted()
+            value = probe.restriction()
             delay(RESTRICTION_POLL_MILLIS)
+        }
+    }
+
+    // The one place GitLastSuccessSource is built: lateness reads it (run log plus foreground staleness), nothing else.
+    val runLog = remember(deps.platformSettings) { SettingsTaskRunLog(deps.platformSettings) }
+    val lastSuccess = remember(runLog, deps.platformSettings) { GitLastSuccessSource(runLog, SyncStalenessStore(deps.platformSettings)) }
+    val readHealth = deps.platformIntegrations.settingsReadHealth
+    val caps = taskScheduler.capabilities
+    val wallClock = deps.gitSyncSeams.wallClockMs ?: { kotlin.time.Clock.System.now().toEpochMilliseconds() }
+    val gitKey = remember(graphId) { TaskKey(GitSyncTask.KIND, TaskScope(graphId)) }
+    var healthRefresh by remember(graphId) { mutableIntStateOf(0) }
+    val effectiveInterval = maxOf(storedSchedule?.intervalMinutes ?: 0, factory.minimumIntervalMinutes)
+    val health by produceState(ScheduleHealth.Healthy, enabled, effectiveInterval, healthRefresh, caps, lastSuccess) {
+        while (true) {
+            value = computeScheduleHealth(gitKey, enabled, effectiveInterval, caps, lastSuccess, runLog, readHealth, wallClock())
+            delay(HEALTH_POLL_MILLIS)
         }
     }
 
@@ -251,11 +391,35 @@ internal fun rememberGraphContentScheduledSyncControls(
         enabled = enabled,
         configuredIntervalMinutes = config?.pollIntervalMinutes ?: 0,
         minimumIntervalMinutes = factory.minimumIntervalMinutes,
-        closedAppChecks = scheduler != null,
-        backgroundRestricted = restricted,
-        setEnabled = prefs::setEnabled,
+        closedAppChecks = taskScheduler.capabilities.runsWhenClosed,
+        backgroundRestricted = restriction != RestrictionReason.None,
+        capabilities = caps,
+        restriction = restriction,
+        health = health,
+        retrySettings = {
+            scope.launch {
+                // reconcile returns null while the store is still unreadable; only a real read clears the marker.
+                controller.reconcile(graphId)?.let {
+                    taskConfig = it
+                    readHealth?.clear()
+                    healthRefresh++
+                }
+            }
+        },
+        reconcileRunning = {
+            scope.launch { controller.reconcile(graphId)?.let { taskConfig = it } }
+        },
+        setEnabled = { on ->
+            scope.launch {
+                val default = config?.pollIntervalMinutes?.takeIf { it > 0 }?.let { Schedule.coerce(it, 0) }
+                controller.setEnabled(graphId, on, default)?.let { taskConfig = it }
+            }
+        },
         setIntervalMinutes = { minutes ->
             configRepository.getConfig(graphId).getOrNull()?.let { configRepository.saveConfig(it.copy(pollIntervalMinutes = minutes)) }
+            if (minutes > 0) {
+                controller.setSchedule(graphId, Schedule.coerce(minutes, taskConfig?.schedule?.jitterMinutes ?: 0))?.let { taskConfig = it }
+            }
         },
         firstSyncConfirmed = {
             config != null && firstSyncConfirmation.isConfirmed(graphId, config.remoteName, config.remoteBranch) &&
@@ -264,7 +428,11 @@ internal fun rememberGraphContentScheduledSyncControls(
     )
 }
 
+private const val NO_INTERVAL = -1
+
 private const val RESTRICTION_POLL_MILLIS = 30_000L
+
+private const val HEALTH_POLL_MILLIS = 30_000L
 
 private fun buildGitSyncService(
     deps: GraphContentDeps,
@@ -298,5 +466,7 @@ private fun buildGitSyncService(
         periodicSyncContext = seams.periodicSyncContext,
         wallClockMs = seams.wallClockMs ?: { kotlin.time.Clock.System.now().toEpochMilliseconds() },
         jobTracker = deps.jobTracker,
+        tickRunRecorder = SettingsTaskRunLog(deps.platformSettings)
+            .asForegroundRecorder(TaskKey(GitSyncTask.KIND, TaskScope(gitSyncGraphId))),
     )
 }

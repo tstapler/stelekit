@@ -74,11 +74,12 @@ class LfsTransferPolicyTest {
         return bytes
     }
 
-    private fun support(policy: LfsTransferPolicy, metered: Boolean = false) =
+    private fun support(policy: LfsTransferPolicy, metered: Boolean? = false, detects: Boolean = true) =
         LfsRepositorySupport({ throw IllegalStateException() }, { HttpClient(OkHttp) { configureLfsTimeouts() } }).also {
             it.jobTracker = jobs
             it.policy = { policy }
             it.isMetered = { metered }
+            it.meteredDetectionSupported = detects
         }
 
     private fun cloneWith(support: LfsRepositorySupport): File {
@@ -138,6 +139,26 @@ class LfsTransferPolicyTest {
         assertEquals(before, server.requests.size, "no request may reach the LFS server while metered")
         assertTrue(File(b, ".git/lfs/pending").exists())
         assertTrue(runBlocking { jobs.jobs.first() }.isEmpty())
+    }
+
+    @Test
+    fun download_should_BeHeld_When_MeteringIsUnknownAndDetectionIsSupported() {
+        publish(120_000)
+        val before = server.requests.size
+
+        val b = cloneWith(support(LfsTransferPolicy(deferOnMetered = true), metered = null, detects = true))
+
+        assertEquals(before, server.requests.size, "unknown network fails closed")
+        assertTrue(File(b, ".git/lfs/pending").exists())
+    }
+
+    @Test
+    fun download_should_Proceed_When_DetectionIsUnsupported_EvenIfReportedMeteredOrUnknown() {
+        val bytes = publish(120_000)
+
+        val b = cloneWith(support(LfsTransferPolicy(deferOnMetered = true), metered = null, detects = false))
+
+        assertContentEquals(bytes, File(b, "img.bin").readBytes())
     }
 
     @Test

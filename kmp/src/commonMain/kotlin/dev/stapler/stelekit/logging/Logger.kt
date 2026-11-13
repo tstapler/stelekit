@@ -4,6 +4,7 @@ import dev.stapler.stelekit.security.Redactor
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -43,7 +44,8 @@ object LogManager {
     val logs: StateFlow<List<LogEntry>> = _logs.asStateFlow()
 
     private const val MAX_LOGS = 1000
-    private val sinks = mutableListOf<LogSink>()
+    // Immutable snapshot swapped atomically: addLog iterates while other threads add/remove sinks.
+    private val sinks = MutableStateFlow<List<LogSink>>(emptyList())
 
     /** Minimum level for in-memory log buffer and sinks. */
     var minLevel: LogLevel = LogLevel.DEBUG
@@ -55,9 +57,9 @@ object LogManager {
      * Process-lifetime sinks (e.g. file log) may discard the handle.
      */
     fun addSink(sink: LogSink): SinkHandle {
-        sinks.add(sink)
+        sinks.update { it + sink }
         return SinkHandle {
-            sinks.remove(sink)
+            sinks.update { it - sink }
             sink.close()
         }
     }
@@ -65,7 +67,7 @@ object LogManager {
     /** @deprecated Use the [SinkHandle] returned by [addSink] to remove a specific sink. */
     @Deprecated("Hold and close the SinkHandle returned by addSink() instead.")
     fun removeSink(sink: LogSink) {
-        sinks.remove(sink)
+        sinks.update { it - sink }
         sink.close()
     }
 
@@ -75,12 +77,7 @@ object LogManager {
         val entry = raw.copy(message = Redactor.redact(raw.message))
 
         // In-memory buffer for the Logs screen
-        val currentLogs = _logs.value.toMutableList()
-        currentLogs.add(0, entry)
-        if (currentLogs.size > MAX_LOGS) {
-            currentLogs.removeAt(currentLogs.lastIndex)
-        }
-        _logs.value = currentLogs
+        _logs.update { (listOf(entry) + it).take(MAX_LOGS) }
 
         // Format once, send to all sinks
         val formatted = Redactor.redact(formatLogEntry(entry))
@@ -90,7 +87,7 @@ object LogManager {
         entry.throwable?.printStackTrace()
 
         // Write to registered sinks
-        for (sink in sinks) {
+        for (sink in sinks.value) {
             try {
                 sink.write(entry, formatted)
             } catch (e: CancellationException) {
@@ -102,7 +99,7 @@ object LogManager {
     }
 
     fun flush() {
-        for (sink in sinks) {
+        for (sink in sinks.value) {
             try { sink.flush() } catch (_: Exception) {}
         }
     }

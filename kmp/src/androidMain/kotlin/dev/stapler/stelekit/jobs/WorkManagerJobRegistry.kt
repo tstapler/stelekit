@@ -6,9 +6,7 @@ package dev.stapler.stelekit.jobs
 import android.content.Context
 import androidx.work.Data
 import androidx.work.WorkInfo
-import androidx.work.WorkManager
 import dev.stapler.stelekit.git.GitCloneWorkerData
-import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.ml.DepthModelDownloadWorker
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -39,27 +37,18 @@ class WorkManagerJobRegistry(
     private val progressOf: (JobKind, Data) -> Int? = ::defaultProgressOf,
     private val errorOf: (JobKind, Data) -> String? = ::defaultErrorOf,
 ) : BackgroundJobRegistry {
-    private val logger = Logger("WorkManagerJobRegistry")
-
     override val jobs: Flow<List<JobStatus>> =
-        workManagerOrNull()?.getWorkInfosByTagFlow(JobTags.ANY)
+        workManagerOrNull(context)?.getWorkInfosByTagFlow(JobTags.ANY)
             ?.map { infos -> infos.mapNotNull { it.toJobStatus(progressOf, errorOf) }.activeFirst() }
             ?: emptyFlow()
 
     override fun cancel(id: String) {
         val uuid = runCatching { UUID.fromString(id) }.getOrNull() ?: return
-        workManagerOrNull()?.cancelWorkById(uuid)
+        workManagerOrNull(context)?.cancelWorkById(uuid)
     }
 
     override fun clearFinished() {
-        workManagerOrNull()?.pruneWork()
-    }
-
-    private fun workManagerOrNull(): WorkManager? = try {
-        WorkManager.getInstance(context)
-    } catch (e: IllegalStateException) {
-        logger.warn("WorkManager is not initialised", e)
-        null
+        workManagerOrNull(context)?.pruneWork()
     }
 }
 

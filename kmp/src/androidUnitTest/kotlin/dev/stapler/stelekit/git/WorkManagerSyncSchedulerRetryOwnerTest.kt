@@ -28,6 +28,8 @@ import dev.stapler.stelekit.git.testsupport.StubConfigRepository
 import dev.stapler.stelekit.git.testsupport.StubFileSystem
 import dev.stapler.stelekit.git.testsupport.StubGitRepository
 import dev.stapler.stelekit.git.testsupport.sampleConfig
+import dev.stapler.stelekit.jobs.schedule.NetworkSnapshot
+import dev.stapler.stelekit.jobs.schedule.NetworkSnapshotProvider
 import dev.stapler.stelekit.platform.NetworkMonitor
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
@@ -61,10 +63,14 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
             context,
             Configuration.Builder().setExecutor(SynchronousExecutor()).build(),
         )
+        // Robolectric reports no validated network unless a test fakes one, and the worker now evaluates
+        // NetworkGate (Story 3.1.2). Setup only; every assertion below is unchanged.
+        GitSyncWorker.snapshotProviderOverride = { NetworkSnapshotProvider { NetworkSnapshot(online = true, isMetered = false) } }
     }
 
     @After
     fun tearDown() {
+        GitSyncWorker.snapshotProviderOverride = null
         GitSyncServiceRegistry.unregister(FAST_PATH_GRAPH_ID)
         GitSyncServiceRegistry.unregister(WORK_MANAGER_GRAPH_ID)
     }

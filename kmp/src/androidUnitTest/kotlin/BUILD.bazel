@@ -84,6 +84,7 @@ kt_android_library(
         "//kmp/src/commonTest/kotlin:git_testsupport_android",
         "//kmp/src/commonTest/kotlin:fake_file_system_android",
         "//kmp/src/commonTest/kotlin:observable_effect_android",
+        "//kmp/src/commonTest/kotlin:scheduler_contract_fixtures_android",
     ],
 )
 

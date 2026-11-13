@@ -41,8 +41,11 @@ class LfsRepositorySupport(
     @Volatile var jobTracker: JobTracker = NoJobTracker
     @Volatile var policy: () -> LfsTransferPolicy = { LfsTransferPolicy() }
 
-    /** Platform probe for a metered connection; only consulted when the policy asks to defer on metered. */
-    @Volatile var isMetered: () -> Boolean = { false }
+    /** Platform probe for a metered connection (null = unknown); only consulted when the policy asks to defer on metered. */
+    @Volatile var isMetered: suspend () -> Boolean? = { null }
+
+    /** False where the platform cannot detect metering (Desktop): the defer policy is then a no-op instead of fail-closed. */
+    @Volatile var meteredDetectionSupported: Boolean = false
 
     /** True once a converting filter was written and read back for the last repository touched. */
     @Volatile var filterActive: Boolean = false
@@ -141,8 +144,8 @@ class LfsRepositorySupport(
             return
         }
         val limits = policy()
-        if (limits.deferOnMetered && isMetered()) {
-            logger.info("lfs: on a metered connection; holding ${pointers.size} download(s) until it is unmetered")
+        if (limits.deferOnMetered && limits.defers(meteredDetectionSupported, isMetered())) {
+            logger.info("lfs: $LFS_DEFERRAL_STATUS; holding ${pointers.size} download(s) until it is unmetered")
             pendingMarker(repo).apply { parentFile.mkdirs(); createNewFile() }
             return
         }

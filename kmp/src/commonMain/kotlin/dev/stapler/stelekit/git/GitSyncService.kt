@@ -89,6 +89,10 @@ class GitSyncService(
     jobTracker: JobTracker = NoJobTracker,
     /** Whether the graph sits in a directory this process writes directly; SAF graphs are fetch-only for scheduled work. Throwing counts as false. */
     isAppOwnedPath: (RepoRoot) -> Boolean = { !it.value.startsWith("saf://") && !it.value.startsWith("content://") },
+    /** Write-only record of each in-app tick for the Logs screen; the default records nothing. */
+    tickRunRecorder: TickRunRecorder = TickRunRecorder.None,
+    /** Jitter source for the periodic loop; tests inject a seeded one. */
+    periodicRandom: kotlin.random.Random = kotlin.random.Random.Default,
 ) {
     private val logger = Logger("GitSyncService")
     private val markerGuard = ConflictMarkerGuard(fileSystem)
@@ -156,15 +160,8 @@ class GitSyncService(
     /** Epoch-millis timestamp of the last successful [sync]/[applyJournalMerge], persisted in
      * [settings] so it survives app restarts and graph switches — unlike [SyncState.Success],
      * which only lives for the 3-second badge fade. */
-    private val _lastSyncAt = MutableStateFlow(settings?.getString(lastSyncSettingsKey(), "")?.toLongOrNull())
-    val lastSyncAt: StateFlow<Long?> = _lastSyncAt.asStateFlow()
-
-    private fun lastSyncSettingsKey() = "git_last_synced_at_$graphId"
-
-    private fun recordLastSyncAt(epochMillis: Long) {
-        _lastSyncAt.value = epochMillis
-        settings?.putString(lastSyncSettingsKey(), epochMillis.toString())
-    }
+    private val lastSync = PersistedLastSync(settings, graphId)
+    val lastSyncAt: StateFlow<Long?> = lastSync.at
 
     /**
      * Lightweight working-tree status check — reads git status without running the full
@@ -228,6 +225,8 @@ class GitSyncService(
         tick = { refreshLocalStatus(periodicGraphId); scheduled.run(periodicGraphId) },
         scope = scope, clock = wallClockMs, isBusy = { gitSyncBusyCounter.isBusy.value },
         label = graphId, decision = "scheduled", launchContext = periodicSyncContext,
+        random = periodicRandom, recorder = tickRunRecorder,
+        constraintState = { dev.stapler.stelekit.jobs.schedule.ConstraintState(online = isOnline(), isMetered = null, charging = null) },
     )
 
     /** Observable state of the scheduled-sync loop (last check, next check, pause); see [PeriodicSyncDriver]. */
@@ -487,7 +486,7 @@ class GitSyncService(
                 lastSyncAt = Clock.System.now().toEpochMilliseconds(),
                 autoMergedPaths = autoMergedPaths,
             )
-            recordLastSyncAt(success.lastSyncAt)
+            lastSync.record(success.lastSyncAt)
             guardedAbort.clearRecovery(graphId)
             stalenessTracker.merged(success.lastSyncAt)
             firstSyncConfirmation?.confirm(graphId, config.remoteName, config.remoteBranch)
@@ -734,7 +733,7 @@ class GitSyncService(
 
         refreshLocalStatus(graphId)
         val successAt = Clock.System.now().toEpochMilliseconds()
-        recordLastSyncAt(successAt)
+        lastSync.record(successAt)
         stalenessTracker.merged(successAt)
         _syncState.value = SyncState.Success(
             localCommitsMade = 0,
@@ -766,9 +765,9 @@ class GitSyncService(
      * Starts a periodic sync loop that calls [fetchOnly] every [intervalMinutes] minutes.
      * Cancels any existing periodic sync before starting.
      */
-    fun startPeriodicSync(graphId: String, intervalMinutes: Int, immediateFirstTick: Boolean = false) {
+    fun startPeriodicSync(graphId: String, intervalMinutes: Int, immediateFirstTick: Boolean = false, jitterMinutes: Int = 0) {
         periodicGraphId = graphId
-        periodicDriver.start(intervalMinutes, immediateFirstTick)
+        periodicDriver.start(intervalMinutes, immediateFirstTick, jitterMinutes)
     }
 
     /** Cancels the periodic sync loop without shutting down the service. */

@@ -50,6 +50,8 @@ fun LogDashboard(
     redactionGraphNames: Collection<String> = emptyList(),
     /** Looks up page and asset names to mask as `<name>` in the Copy text; null masks none. */
     redactionPageNames: (suspend () -> Collection<String>)? = null,
+    /** Background task runs shown above the log lines; null shows none. */
+    taskRuns: TaskRunLogSource? = null,
 ) {
     val clipboard = LocalClipboardManager.current
     val logs by LogManager.logs.collectAsState()
@@ -66,6 +68,9 @@ fun LogDashboard(
         statusMessage = shareProvider.saveToDownloads(body, baseName, "txt")
             .fold({ "Save failed: ${it.message}" }, { "Saved to $it" })
     }
+
+    val (runRowsState, retryRuns) = rememberTaskRunRowsState(taskRuns)
+    val runItems = if (taskRuns == null) 0 else 1
 
     val filteredLogs = remember(logs, filterLevel, searchQuery) {
         logs.filter { entry ->
@@ -114,7 +119,7 @@ fun LogDashboard(
             }
             
             IconButton(onClick = { 
-                scope.launch { listState.animateScrollToItem(filteredLogs.lastIndex.coerceAtLeast(0)) }
+                scope.launch { listState.animateScrollToItem((filteredLogs.size + runItems - 1).coerceAtLeast(0)) }
             }) {
                 Icon(Icons.Default.ArrowDownward, contentDescription = "Scroll to Bottom")
             }
@@ -266,6 +271,7 @@ fun LogDashboard(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                if (taskRuns != null) item { TaskRunLogSection(runRowsState, searchQuery, retryRuns) }
                 items(filteredLogs) { log ->
                     LogItem(log)
                 }

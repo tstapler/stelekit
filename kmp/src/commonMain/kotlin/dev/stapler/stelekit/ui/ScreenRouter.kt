@@ -118,6 +118,8 @@ internal fun ScreenRouter(
     graphLoader: dev.stapler.stelekit.db.GraphLoader? = null,
     /** Builds the report behind the Logs screen's diagnostics button; null hides the button. */
     graphDiagnostics: (suspend () -> String)? = null,
+    /** Background task runs for the Logs screen; null hides the section. */
+    taskRuns: dev.stapler.stelekit.ui.components.TaskRunLogSource? = null,
     backgroundJobs: dev.stapler.stelekit.jobs.BackgroundJobRegistry = dev.stapler.stelekit.jobs.NoBackgroundJobs,
     /** Moves an asset into an `assets/` subfolder; null hides the Move action on the asset detail screen. */
     assetMover: AssetMover? = null,
@@ -266,6 +268,7 @@ internal fun ScreenRouter(
                 LogDashboard(
                     diagnostics = graphDiagnostics,
                     initialFilter = currentScreen.initialFilter,
+                    taskRuns = taskRuns,
                     redactionGraphNames = listOfNotNull(
                         appState.currentGraphPath?.trimEnd('/', '\\')?.substringAfterLast('/')?.substringAfterLast('\\'),
                     ),
@@ -564,6 +567,9 @@ internal fun ScreenRouter(
                         },
                         onCancelDownloadDepthModel = downloadableDepthModel?.let {
                             { it.cancelDownload() }
+                        },
+                        onDownloadDepthModelAnyway = downloadableDepthModel?.let {
+                            { depthModelScope.launch { it.downloadNowAnyway() } }
                         },
                         // Real depth estimation (running inference on a captured bitmap) is
                         // unrelated to the download-stall bug this wiring exists for and needs its

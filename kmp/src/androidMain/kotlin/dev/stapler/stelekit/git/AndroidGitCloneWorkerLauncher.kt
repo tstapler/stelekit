@@ -20,6 +20,7 @@ import dev.stapler.stelekit.platform.security.CredentialAccess
 import dev.stapler.stelekit.platform.security.CredentialStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.takeWhile
@@ -88,7 +89,7 @@ class AndroidGitCloneWorkerLauncher(
             resumePeriodic = withContext(Dispatchers.IO) {
                 workManager.getWorkInfosForUniqueWork(workName).get().any { !it.state.isFinished }
             }
-            if (resumePeriodic) WorkManagerSyncScheduler.pauseFor(context, graphId)
+            if (resumePeriodic) withContext(Dispatchers.IO) { WorkManagerSyncScheduler.pauseFor(context, graphId) }
 
             GitCloneWorkTracker.recordStart(context, graphId, request.id, System.currentTimeMillis())
             workManager.beginUniqueWork(workName, ExistingWorkPolicy.REPLACE, request).enqueue()
@@ -103,7 +104,8 @@ class AndroidGitCloneWorkerLauncher(
         } finally {
             GitCloneWorker.clearTransientCredentials(context, graphId, credentialAccessOverride)
             GitCloneWorkTracker.clear(context, graphId)
-            if (resumePeriodic) WorkManagerSyncScheduler.resumeFor(context, graphId)
+            // NonCancellable: the finally also runs after cancellation, and a skipped resume would leave sync paused.
+            if (resumePeriodic) withContext(NonCancellable + Dispatchers.IO) { WorkManagerSyncScheduler.resumeFor(context, graphId) }
         }
     }
 

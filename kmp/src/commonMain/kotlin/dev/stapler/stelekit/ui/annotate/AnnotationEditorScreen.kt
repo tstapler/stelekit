@@ -77,7 +77,9 @@ import dev.stapler.stelekit.ui.placement.crosshairPoint
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntSize
@@ -176,6 +178,7 @@ fun AnnotationEditorScreen(
      * [DepthModelUiState.Downloading].
      */
     onCancelDownloadDepthModel: (() -> Unit)? = null,
+    onDownloadDepthModelAnyway: (() -> Unit)? = null,
     /**
      * When non-null, the "Estimate depth (AI)" button is enabled and tapping it calls this
      * lambda. The caller (Android activity/fragment) should trigger inference and update the
@@ -835,6 +838,7 @@ fun AnnotationEditorScreen(
                     onDownload = onDownloadDepthModel ?: {},
                     onCancel = onCancelDownloadDepthModel,
                     onEstimate = onEstimateDepth,
+                    onDownloadAnyway = onDownloadDepthModelAnyway,
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(start = 8.dp, top = 8.dp),
@@ -1610,14 +1614,19 @@ internal fun DepthEstimationPanel(
     modifier: Modifier = Modifier,
     onCancel: (() -> Unit)? = null,
     onEstimate: (() -> Unit)? = null,
+    onDownloadAnyway: (() -> Unit)? = null,
 ) {
     Surface(
         color = Color(0xDD1A1A1A),
         shape = MaterialTheme.shapes.small,
         modifier = modifier,
     ) {
+        // UX-38: download state changes (waiting, progress, failed, cancelled) are announced politely.
+        val announcesDownload = modelState is DepthModelUiState.Downloading || modelState is DepthModelUiState.Waiting ||
+            modelState is DepthModelUiState.Failed || modelState is DepthModelUiState.Cancelled
         Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                .then(if (announcesDownload) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             when {
@@ -1713,6 +1722,36 @@ internal fun DepthEstimationPanel(
                             }
                         }
                     }
+                    modelState.notice?.let {
+                        Text(text = it, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f))
+                    }
+                }
+
+                // Queued: waiting for an unmetered network, offline, or backing off — always keeps an exit.
+                modelState is DepthModelUiState.Waiting -> {
+                    Text(
+                        text = modelState.message,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                    )
+                    modelState.notice?.let {
+                        Text(text = it, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f))
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (modelState.canDownloadAnyway && onDownloadAnyway != null) {
+                            TextButton(onClick = onDownloadAnyway) {
+                                Text("Download now anyway", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                            }
+                        }
+                        if (onCancel != null) {
+                            TextButton(
+                                onClick = onCancel,
+                                modifier = Modifier.semantics { contentDescription = "Cancel model download" },
+                            ) {
+                                Text("Cancel", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                            }
+                        }
+                    }
                 }
 
                 // Download failed — show retry button. A stall-timeout failure carries a plain-
@@ -1732,6 +1771,18 @@ internal fun DepthEstimationPanel(
                             style = MaterialTheme.typography.labelSmall,
                             color = Color(0xFFEF5350),
                         )
+                    }
+                }
+
+                // Cancelled by the user: say so and keep an exit (UX-20). Copy mirrors ModelDownloadPresentation.CANCELLED.
+                modelState is DepthModelUiState.Cancelled -> {
+                    Text(
+                        text = "Download cancelled.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                    )
+                    TextButton(onClick = onDownload) {
+                        Text("Download again", style = MaterialTheme.typography.labelSmall, color = Color.White)
                     }
                 }
 

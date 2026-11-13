@@ -199,6 +199,7 @@ import dev.stapler.stelekit.db.GraphManagerInitAutoRestoreTest
 import dev.stapler.stelekit.db.GraphManagerOnGraphLocationDeterminedTest
 import dev.stapler.stelekit.db.GraphManagerPendingStorageLocationRemovalTest
 import dev.stapler.stelekit.db.GraphManagerRemoveGraphTest
+import dev.stapler.stelekit.db.GraphManagerRemovalHookTest
 import dev.stapler.stelekit.db.GraphManagerSwitchLockStressTest
 import dev.stapler.stelekit.db.GraphManagerSwitchNotesPathTest
 import dev.stapler.stelekit.db.GraphManagerUpdateGraphPathTest
@@ -328,6 +329,9 @@ import dev.stapler.stelekit.git.SyncStatusSheetModelTest
 import dev.stapler.stelekit.git.UpdatesNotificationToggleTest
 import dev.stapler.stelekit.ui.FirstSyncPreviewLoaderTest
 import dev.stapler.stelekit.ui.GitSyncCoordinatorTest
+import dev.stapler.stelekit.git.GitLastSuccessSourceTest
+import dev.stapler.stelekit.git.GitSyncTaskMappingTest
+import dev.stapler.stelekit.git.GitSyncTaskRunnerPolicyTest
 import dev.stapler.stelekit.git.ScheduledSyncPolicyTest
 import dev.stapler.stelekit.git.EditLockTest
 import dev.stapler.stelekit.git.ScheduledSyncStackE2ETest
@@ -584,6 +588,7 @@ import org.junit.runners.Suite
     GraphManagerOnGraphLocationDeterminedTest::class,
     GraphManagerPendingStorageLocationRemovalTest::class,
     GraphManagerRemoveGraphTest::class,
+    GraphManagerRemovalHookTest::class,
     GraphManagerSwitchLockStressTest::class,
     GraphManagerSwitchNotesPathTest::class,
     GraphManagerUpdateGraphPathTest::class,
@@ -704,6 +709,9 @@ import org.junit.runners.Suite
     UpdatesNotificationToggleTest::class,
     FirstSyncPreviewLoaderTest::class,
     GitSyncCoordinatorTest::class,
+    GitSyncTaskRunnerPolicyTest::class,
+    GitSyncTaskMappingTest::class,
+    GitLastSuccessSourceTest::class,
     ScheduledSyncPolicyTest::class,
     EditLockTest::class,
     ScheduledSyncStackE2ETest::class,
@@ -908,6 +916,28 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.projectbridge.ProjectSidecarStoreTest::class,
     dev.stapler.stelekit.projectbridge.PostSyncProjectJobSidecarTest::class,
     dev.stapler.stelekit.projectbridge.TableParserCharacterizationTest::class,
+    dev.stapler.stelekit.db.GraphRegistryKnownScopesTest::class,
+    dev.stapler.stelekit.jobs.schedule.TaskKeyTest::class,
+    dev.stapler.stelekit.jobs.schedule.JitterPolicyPropertyTest::class,
+    dev.stapler.stelekit.jobs.schedule.NetworkGateTest::class,
+    dev.stapler.stelekit.git.lfs.LfsNetworkGateTest::class,
+    dev.stapler.stelekit.git.ScheduledSyncPresentationTest::class,
+    dev.stapler.stelekit.git.ScheduleHealthTest::class,
+    dev.stapler.stelekit.jobs.schedule.NoopTaskSchedulerTest::class,
+    dev.stapler.stelekit.jobs.schedule.ScheduleLatenessTest::class,
+    dev.stapler.stelekit.jobs.schedule.JobsScheduleImportDirectionTest::class,
+    dev.stapler.stelekit.jobs.schedule.TaskConfigCodecTest::class,
+    dev.stapler.stelekit.jobs.schedule.TaskSettingsStoreMigrationTest::class,
+    dev.stapler.stelekit.git.LegacyGitSyncMigrationTest::class,
+    dev.stapler.stelekit.git.ConfigRepositoryLegacyConfigSourceTest::class,
+    dev.stapler.stelekit.git.GitSyncScheduleControllerTest::class,
+    dev.stapler.stelekit.git.PeriodicSyncDriverJitterTest::class,
+    dev.stapler.stelekit.git.PeriodicSyncDriverRunRecordTest::class,
+    dev.stapler.stelekit.jobs.schedule.TaskRunLogTest::class,
+    dev.stapler.stelekit.jobs.schedule.GraphRemovalTasksTest::class,
+    dev.stapler.stelekit.ui.theme.MutedTextContrastTest::class,
+    dev.stapler.stelekit.jobs.schedule.FakeBackgroundTaskSchedulerContractTest::class,
+    dev.stapler.stelekit.jobs.schedule.FakeBackgroundTaskSchedulerMinimalCapabilitiesContractTest::class,
     dev.stapler.stelekit.projectbridge.TableMeasurementExtractorTest::class,
     dev.stapler.stelekit.projectbridge.TableExtractorPropertyTest::class,
     dev.stapler.stelekit.projectbridge.TableExtractorInlineTest::class,

@@ -483,6 +483,24 @@ Rules:
 
 Regression tests: `TargetWriterContractSuite` (run against both writers), `CopyEditRecopyPropertyTest`, `MergePagePropertyTest`, `MergeRoundTripPropertyTest`, `GraphManagerSwitchLockStressTest`, `TargetWriterRouterInFlightSwitchTest`, `LargeGraphMergeTest`, `OffGraphReconcileRegressionTest`. Decisions: `project_plans/cross-graph-merge-share-target/decisions/ADR-001..004`.
 
+### Background task scheduling — one port, fail-closed gate, lazy migration
+
+Scheduled and one-shot background work goes through `BackgroundTaskScheduler` (`jobs/schedule/` in `commonMain`), with `WorkManagerTaskScheduler` (androidMain), `InProcessTaskScheduler` (Desktop) and `NoopTaskScheduler` (iOS/Web) as adapters. Consumers today: `git-sync` (`git/GitSyncTask.kt`) and `model-download` (`platform/ml/ModelDownloadTask.kt`); LFS shares `NetworkPolicy` but is not scheduled work.
+
+Where things live: `TaskRegistry` (one per process, owned by `SteleKitApplication`), `TaskSettingsStore` (per graph, per kind, in `Settings`), `AppliedConfigLedger` (what was last applied, backs pause/resume), `SettingsTaskRunLog` (run records, Background and Foreground sources), `NetworkGate`, `ScheduleLateness` (the "Late" state), `KnownScopes` + `GraphRemovalTasks` (orphan reconcile), `ScheduleStartup` (androidMain, from `Application.onCreate`).
+
+Rules:
+- **`jobs.schedule` must not import `git`, `ui`, `db` or `merge`** (`JobsScheduleImportDirectionTest`). Consumer-specific behaviour goes in the consumer's `TaskSpec`/task, not the port.
+- **Network policy is fail-closed.** `NetworkGate.evaluate` runs before `task.run`; `Unmetered` runs only when `isMetered == false`, so an unknown network skips. Never reuse an `?: false` default for metered. A skip is recorded in the run log, not treated as a failure.
+- **`enabled` is periodic-only.** Explicit `runOnce` always runs; its network policy travels in the work input data, not the store.
+- **Work names are fixed.** `git-sync` keeps `stelekit_git_sync_<graphId>` (shared with the clone-pause protocol); new kinds use `stelekit_task_<kind>_<hash(scope)>`. `GitSyncWorker` stays a thin worker with no registry or store dependency; it still evaluates the gate and writes one run record via `recordRun`.
+- **Legacy `scheduled_sync_enabled` / `poll_interval_minutes` migrate lazily inside `TaskSettingsStore.read`** through `LegacyConfigSeed`. "Cannot read" is `Unavailable`, never "no remote", and writes no marker. Do not add an eager all-graphs migration.
+- **Orphan cancel never acts on "unknown".** `KnownScopes` returns `Unknown` for an empty, unreadable or corrupt registry and nothing is cancelled; only `GraphManager.removeGraph` success writes a tombstone.
+- **Register each new test class** in `AllBusinessTests` / `AllJvmTests` / `AllAndroidUnitTests` (explicit lists, guarded under Bazel); commonTest files also need a `kmp/src/commonTest/kotlin/BUILD.bazel` entry. A new seam implementation must be constructed in a composition root or `WiringCompletenessTest` fails.
+- Device behaviour (Doze, standby buckets, OEM killers, Keystore on a cold worker) cannot be tested in CI; see `project_plans/background-task-scheduling/implementation/owner-verification.md`.
+
+Regression tests: `TaskSchedulerAndroidEntryPointTest`, `TaskSchedulerDesktopEntryPointTest`, `TaskRegistryBothRootsTest`, `WorkManagerSyncSchedulerUniqueWorkTest`, `NetworkGateTest`, `GraphRemovalTasksTest`, `TaskSettingsStoreMigrationTest`, `JitterPolicyPropertyTest`. Decisions: `project_plans/background-task-scheduling/decisions/ADR-001..006`.
+
 ### Android debugging — persisted logs, no logcat
 
 The owner cannot run `adb logcat` (it crashes their Linux machine). Diagnose from what the app persists: `filesDir/logs/current.log`, `previous.log`, `last-crash.txt` (`AndroidFileLogSink`, `AndroidCrashRecorder`, wired in `SteleKitApplication.installPersistentLogging`). On next launch `PreviousSessionLog` replays the crash, the previous session's tail, and Android's recorded exit reason (OOM / ANR / native crash, API 30+) into the in-app Logs screen.

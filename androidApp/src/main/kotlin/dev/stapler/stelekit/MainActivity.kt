@@ -43,6 +43,8 @@ import dev.stapler.stelekit.git.SyncNotifier
 import dev.stapler.stelekit.git.GitShadowWorktree
 import dev.stapler.stelekit.git.GitSyncBusyCounter
 import dev.stapler.stelekit.git.AndroidBackgroundRestrictionProbe
+import dev.stapler.stelekit.git.AndroidBatterySettingsLauncher
+import dev.stapler.stelekit.jobs.schedule.SettingsReadHealth
 import dev.stapler.stelekit.git.AndroidNotificationPermissionAccess
 import dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory
 import dev.stapler.stelekit.git.WorkManagerSyncScheduler
@@ -56,6 +58,7 @@ import dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations
 import dev.stapler.stelekit.ui.StelekitAppVoiceConfig
 import dev.stapler.stelekit.ui.StelekitViewModel
 import android.speech.SpeechRecognizer
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import dev.stapler.stelekit.performance.OtelExporterConfig
@@ -348,6 +351,37 @@ class MainActivity : ComponentActivity() {
             val gitCloneWorkerLauncher = remember {
                 dev.stapler.stelekit.git.AndroidGitCloneWorkerLauncher(applicationContext)
             }
+            val taskSettings = remember { PlatformSettings() }
+            val taskSettingsStore = remember {
+                dev.stapler.stelekit.jobs.schedule.TaskSettingsStore(
+                    taskSettings, dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime.legacySeed, app.taskRegistry,
+                )
+            }
+            val backgroundTaskScheduler = remember {
+                dev.stapler.stelekit.jobs.schedule.WorkManagerTaskScheduler(
+                    context = applicationContext,
+                    registry = app.taskRegistry,
+                    store = taskSettingsStore,
+                    ledger = dev.stapler.stelekit.jobs.schedule.AppliedConfigLedger(taskSettings),
+                    workers = dev.stapler.stelekit.git.GitSyncWorkerBinding.resolver,
+                )
+            }
+            // Graph removal cancels that graph's scheduled work and tombstones it. Each composition owns one
+            // guarded scope (GraphRemovalCleanup) cancelled on dispose, so rotation never leaks the old one;
+            // ScheduleStartup (Application.onCreate) reconciles at launch and backstops a missed run.
+            DisposableEffect(backgroundTaskScheduler) {
+                val cleanup = dev.stapler.stelekit.jobs.schedule.GraphRemovalCleanup(
+                    backgroundTaskScheduler, taskSettingsStore, app.taskRegistry,
+                )
+                val manager = app.graphManager
+                val handler: (dev.stapler.stelekit.model.GraphId) -> Unit =
+                    { id -> cleanup.onRemoved(dev.stapler.stelekit.jobs.schedule.TaskScope(id.value)) }
+                manager?.onGraphRemoved = handler
+                onDispose {
+                    if (manager?.onGraphRemoved === handler) manager.onGraphRemoved = {}
+                    cleanup.close()
+                }
+            }
             val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity, fileSystem)
             // Null in release variants (GoogleBuildFlags), which hides every Google surface.
             val googleIntegration = remember {
@@ -516,10 +550,15 @@ class MainActivity : ComponentActivity() {
                         onViewModelReady = { vm -> activeViewModel = vm },
                     ),
                     platformIntegrations = StelekitAppPlatformIntegrations(
+                        // The Application's registry is shared, never rebuilt here: kinds register only in onCreate.
+                        backgroundTaskScheduler = backgroundTaskScheduler,
+                        taskRegistry = app.taskRegistry,
                         backgroundSyncSchedulerFactory = BackgroundSyncSchedulerFactory(
                             minimumIntervalMinutes = WorkManagerSyncScheduler.MIN_PERIODIC_INTERVAL_MINUTES.toInt(),
                         ) { graphId -> WorkManagerSyncScheduler(applicationContext, graphId) },
                         backgroundRestrictionProbe = AndroidBackgroundRestrictionProbe(applicationContext),
+                        batterySettingsLauncher = AndroidBatterySettingsLauncher(applicationContext),
+                        settingsReadHealth = SettingsReadHealth(applicationContext),
                         notificationPermission = remember {
                             AndroidNotificationPermissionAccess(
                                 context = applicationContext,

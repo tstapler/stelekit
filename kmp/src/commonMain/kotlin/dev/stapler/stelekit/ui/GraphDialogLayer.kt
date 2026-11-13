@@ -250,6 +250,7 @@ private fun SettingsDialogHost(
         captureTargetSettings = settings.captureTargetSettings,
         captureGraphs = settings.captureGraphs,
         scheduledSync = settings.scheduledSync,
+        backgroundTasks = settings.backgroundTasks,
         lfsTransfer = settings.lfsTransfer,
         updatesNotifications = settings.updatesNotifications,
     )

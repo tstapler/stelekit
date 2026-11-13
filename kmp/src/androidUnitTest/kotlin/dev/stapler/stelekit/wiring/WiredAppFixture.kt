@@ -34,6 +34,8 @@ class WiredAppFixture private constructor(
     val ports: FakePlatformPorts,
     private val dataDir: File,
     schedulerFactory: BackgroundSyncSchedulerFactory,
+    taskScheduler: dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler,
+    taskRegistry: dev.stapler.stelekit.jobs.schedule.TaskRegistry,
 ) {
     internal val deps = GraphContentDeps(
         repos = repos,
@@ -43,6 +45,8 @@ class WiredAppFixture private constructor(
         notificationManager = NotificationManager(),
         platformIntegrations = StelekitAppPlatformIntegrations(
             backgroundSyncSchedulerFactory = schedulerFactory,
+            backgroundTaskScheduler = taskScheduler,
+            taskRegistry = taskRegistry,
             platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
             gitRepository = ports.gitRepository,
         ),
@@ -80,6 +84,9 @@ class WiredAppFixture private constructor(
             ports: FakePlatformPorts = FakePlatformPorts(),
             graphPath: String = "/test/wired-graph",
             schedulerFactory: BackgroundSyncSchedulerFactory = BackgroundSyncSchedulerFactory.None,
+            /** Builds the port adapter over the fixture's settings; the default records nothing and runs nothing when closed. */
+            taskScheduler: (ports: FakePlatformPorts, registry: dev.stapler.stelekit.jobs.schedule.TaskRegistry) ->
+            dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler = { _, _ -> dev.stapler.stelekit.jobs.schedule.NoopTaskScheduler() },
         ): WiredAppFixture {
             SteleKitContext.init(context)
             DriverFactory.setContext(context)
@@ -90,7 +97,8 @@ class WiredAppFixture private constructor(
                 fileSystem = ports.fileSystem,
                 defaultBackend = GraphBackend.IN_MEMORY,
             )
-            return WiredAppFixture(manager, manager.openGraph(graphPath), ports, dataDir, schedulerFactory)
+            val registry = dev.stapler.stelekit.jobs.schedule.TaskRegistry()
+            return WiredAppFixture(manager, manager.openGraph(graphPath), ports, dataDir, schedulerFactory, taskScheduler(ports, registry), registry)
         }
     }
 }

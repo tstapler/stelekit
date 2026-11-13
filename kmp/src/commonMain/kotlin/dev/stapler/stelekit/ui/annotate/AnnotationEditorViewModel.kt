@@ -156,11 +156,20 @@ sealed interface DepthModelUiState {
     /** Model not downloaded. Show "Download depth model (~100MB)" button. */
     data object Absent : DepthModelUiState
 
-    /** Download in progress. [progress] is 0–100 or -1 if indeterminate. */
-    data class Downloading(val progress: Int) : DepthModelUiState
+    /** Download in progress. [progress] is 0–100 or -1 if indeterminate. [notice] is an optional one-line caveat. */
+    data class Downloading(val progress: Int, val notice: String? = null) : DepthModelUiState
+
+    /**
+     * Download queued but not running (waiting for an unmetered network, offline, or backing off). [canDownloadAnyway]
+     * offers "Download now anyway" for the metered case.
+     */
+    data class Waiting(val message: String, val canDownloadAnyway: Boolean, val notice: String? = null) : DepthModelUiState
 
     /** Model ready — show "Estimate depth (AI)" button. */
     data object Ready : DepthModelUiState
+
+    /** Download cancelled — show "Download cancelled." with a "Download again" action. */
+    data object Cancelled : DepthModelUiState
 
     /**
      * Download failed. Show "Download failed — tap to retry", or [reason] followed by

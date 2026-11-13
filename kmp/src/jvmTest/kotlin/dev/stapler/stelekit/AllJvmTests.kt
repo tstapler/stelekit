@@ -336,8 +336,11 @@ import dev.stapler.stelekit.capture.CapturePopupWindowTest
 import dev.stapler.stelekit.capture.CapturePopupWindowUxTest
 import dev.stapler.stelekit.wiring.DesktopWiredAppFixtureTest
 import dev.stapler.stelekit.wiring.GitSyncServiceRegistryBalanceTest
+import dev.stapler.stelekit.logging.LogManagerConcurrencyTest
 import dev.stapler.stelekit.wiring.GitSyncStackEntryPointTest
 import dev.stapler.stelekit.wiring.ScheduledSyncOriginE2ETest
+import dev.stapler.stelekit.wiring.DesktopTaskRootWiringTest
+import dev.stapler.stelekit.wiring.TaskSchedulerDesktopEntryPointTest
 import dev.stapler.stelekit.wiring.JvmPlatformCapsRootTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
@@ -683,9 +686,15 @@ import org.junit.runners.Suite
     SectionsSettingsDialogsTest::class,
     AllJvmTestsCompletenessTest::class,
     DesktopWiredAppFixtureTest::class,
+    LogManagerConcurrencyTest::class,
     GitSyncStackEntryPointTest::class,
     ScheduledSyncOriginE2ETest::class,
+    TaskSchedulerDesktopEntryPointTest::class,
+    DesktopTaskRootWiringTest::class,
     GitSyncServiceRegistryBalanceTest::class,
     JvmPlatformCapsRootTest::class,
+    dev.stapler.stelekit.jobs.schedule.InProcessTaskSchedulerContractTest::class,
+    dev.stapler.stelekit.jobs.schedule.InProcessTaskSchedulerTest::class,
+    dev.stapler.stelekit.ui.settings.ScheduledSyncRadioKeyboardTest::class,
 )
 class AllJvmTests

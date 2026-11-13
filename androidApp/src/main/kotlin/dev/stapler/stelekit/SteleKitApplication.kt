@@ -59,6 +59,12 @@ class SteleKitApplication : Application() {
         dev.stapler.stelekit.platform.diagnostics.EditorDiagnosticsSampler.create()
     }
 
+    /**
+     * The one [dev.stapler.stelekit.jobs.schedule.TaskRegistry] for the process, shared with MainActivity's
+     * scheduler. Populated only in [onCreate]; a worker cold-started by WorkManager sees it after that runs.
+     */
+    val taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry()
+
     /** Runs cross-graph copies in an application-owned scope so they survive Activity teardown. */
     val copyRunHost: dev.stapler.stelekit.merge.CopyRunHost = dev.stapler.stelekit.merge.AndroidCopyRunHost()
 
@@ -217,6 +223,20 @@ class SteleKitApplication : Application() {
         installPersistentLogging()
         try {
             dev.stapler.stelekit.platform.NetworkMonitor.init(this)
+        } catch (e: Throwable) {
+            // Isolated: a connectivity-monitor failure must not skip task registration and the rest of init.
+            logger.warn("NetworkMonitor init failed; continuing startup", e)
+        }
+        try {
+            dev.stapler.stelekit.jobs.schedule.registerAndroidTasks(taskRegistry)
+            dev.stapler.stelekit.git.registerGitSyncTask(taskRegistry, cold = dev.stapler.stelekit.git.AndroidColdPathRunner(this))
+            // Outside jobs.schedule (ADR-001): platform/ml owns the model-download spec, task and foreground notification.
+            dev.stapler.stelekit.platform.ml.registerModelDownloadTask(taskRegistry, this)
+            dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime.knownScopes = dev.stapler.stelekit.db.GraphRegistryKnownScopes(PlatformSettings())
+            // Set here (not in MainActivity) so a cold worker, the shim and MainActivity's store all migrate git-sync identically.
+            dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime.legacySeed = dev.stapler.stelekit.git.LegacyGitSyncMigration(
+                PlatformSettings(), dev.stapler.stelekit.git.AndroidGitLegacyConfigSource(this),
+            )
             // Debug/internal builds expose the Asset indexing switch; release variants stay hidden
             // until the heap-gate flip PR (AssetBuildFlags.RELEASE_TOGGLE_VISIBLE).
             dev.stapler.stelekit.asset.pipeline.AssetBuildFlags.internalBuild =
@@ -267,6 +287,7 @@ class SteleKitApplication : Application() {
                 preFlightJob = startupFlushJob,
             )
             publishShareShortcutsOnRegistryChange(graphManager)
+            startScheduleStartup()
             appScope.launch(Dispatchers.IO) {
                 try {
                     sweepMergeArtifactsOnDisk(filesDir.absolutePath)
@@ -278,6 +299,48 @@ class SteleKitApplication : Application() {
             logger.error("Application init failed — widget/tile/share will show placeholder", e)
             if (!::fileSystem.isInitialized) {
                 fileSystem = PlatformFileSystem()
+            }
+        }
+    }
+
+    /**
+     * Migrate the active graph, reconcile orphaned work and re-apply wiped work from the ledger (Story 3.1.4).
+     * Off the main thread; guarded so it can never fail startup. Replaces MainActivity's own reconcile call.
+     */
+    private fun startScheduleStartup() {
+        appScope.launch(Dispatchers.Default) {
+            try {
+                val settings = PlatformSettings()
+                val knownScopes = dev.stapler.stelekit.db.GraphRegistryKnownScopes(settings)
+                val store = dev.stapler.stelekit.jobs.schedule.TaskSettingsStore(
+                    settings, dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime.legacySeed, taskRegistry,
+                )
+                val ledger = dev.stapler.stelekit.jobs.schedule.AppliedConfigLedger(settings)
+                val health = dev.stapler.stelekit.jobs.schedule.SettingsReadHealth(this@SteleKitApplication)
+                dev.stapler.stelekit.jobs.schedule.ScheduleStartup(
+                    store = store,
+                    scheduler = dev.stapler.stelekit.jobs.schedule.WorkManagerTaskScheduler(
+                        context = this@SteleKitApplication,
+                        registry = taskRegistry,
+                        store = store,
+                        ledger = ledger,
+                        workers = dev.stapler.stelekit.git.GitSyncWorkerBinding.resolver,
+                    ),
+                    registry = taskRegistry,
+                    ledger = ledger,
+                    knownScopes = knownScopes,
+                    activeGraphId = { dev.stapler.stelekit.db.readActiveGraphId(settings) },
+                    reconcile = {
+                        dev.stapler.stelekit.jobs.schedule.ScheduledTaskReconciler(this@SteleKitApplication, knownScopes).reconcile()
+                    },
+                    workManagerReady = { dev.stapler.stelekit.jobs.schedule.isWorkManagerReady(this@SteleKitApplication) },
+                    cloneWorkLive = { key -> dev.stapler.stelekit.jobs.schedule.isCloneWorkLive(this@SteleKitApplication, key) },
+                    onSettingsUnreadable = health::recordFailure,
+                ).run()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                logger.warn("Schedule startup failed", e)
             }
         }
     }

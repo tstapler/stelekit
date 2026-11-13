@@ -66,7 +66,7 @@ fun StelekitApp(
     graphPath: String,
     deps: StelekitAppDeps,
 ) {
-    val platformSettings = remember { PlatformSettings() }
+    val platformSettings = remember { deps.platformIntegrations.settings ?: PlatformSettings() }
     val scope = rememberCoroutineScope()
 
     // Register all content migrations once before any graph is opened

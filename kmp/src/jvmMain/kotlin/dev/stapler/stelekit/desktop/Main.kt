@@ -219,6 +219,11 @@ fun main(args: Array<String>) {
             // null and App.kt's onCancelClone silently no-ops. Owns its own CoroutineScope
             // internally (see JvmGitCloneWorkerLauncher's kdoc), so remember-ing it here is safe.
             val gitCloneWorkerLauncher = remember(gitRepository) { JvmGitCloneWorkerLauncher(gitRepository) }
+            // One registry and one in-process scheduler per window; the scheduler owns its scope, stopped on dispose.
+            val settings = remember { dev.stapler.stelekit.platform.PlatformSettings() }
+            val taskRegistry = remember { createDesktopTaskRegistry() }
+            val taskScheduler = remember(taskRegistry, settings) { createDesktopTaskScheduler(taskRegistry, settings) }
+            androidx.compose.runtime.DisposableEffect(taskScheduler) { onDispose { taskScheduler.stop() } }
             val copyHost = remember {
                 dev.stapler.stelekit.ui.screens.copy.copyHostConfigFor(
                     dev.stapler.stelekit.db.DriverFactory().getDatabaseDirectory(),
@@ -237,6 +242,9 @@ fun main(args: Array<String>) {
                     ),
                     platformIntegrations = StelekitAppPlatformIntegrations(
                         backgroundSyncSchedulerFactory = dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory.None,
+                        backgroundTaskScheduler = taskScheduler,
+                        taskRegistry = taskRegistry,
+                        settings = settings,
                         platformCaps = dev.stapler.stelekit.platform.ml.jvmPlatformCaps(),
                         cryptoEngine = dev.stapler.stelekit.vault.JvmCryptoEngine(),
                         attachmentService = attachmentService,

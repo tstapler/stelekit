@@ -6,6 +6,10 @@ package dev.stapler.stelekit.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import dev.stapler.stelekit.jobs.schedule.SettingsTaskRunLog
+import dev.stapler.stelekit.ui.components.TaskRunLogSource
+import dev.stapler.stelekit.ui.components.settings.BackgroundTaskGraph
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -95,6 +99,14 @@ internal fun GraphContentScreenAndCapture(deps: GraphContentDeps, viewModel: Ste
             inputs.viewModelStack.blockStateManager.insertTextAtCursor(blockUuid, markdown)
         },
     )
+    val graphs by deps.graphManager.graphRegistry.collectAsState()
+    val taskRuns = remember(deps.platformSettings, deps.platformIntegrations.taskRegistry, graphs.graphs) {
+        TaskRunLogSource(
+            runLog = SettingsTaskRunLog(deps.platformSettings),
+            registry = deps.platformIntegrations.taskRegistry,
+            graphs = graphs.graphs.map { BackgroundTaskGraph(it.id.value, it.displayName) },
+        )
+    }
     CompositionLocalProvider(
         LocalQueryBlockContext provides queryContext,
     ) {
@@ -114,6 +126,7 @@ internal fun GraphContentScreenAndCapture(deps: GraphContentDeps, viewModel: Ste
             qrTransferSettings = inputs.tagVoiceStack.qrTransferSettings,
             graphLoader = inputs.graphIoStack.graphLoader,
             graphDiagnostics = diagnosticsCollector::collect,
+            taskRuns = taskRuns,
             backgroundJobs = deps.backgroundJobs,
             assetMover = deps.assets?.moveAsset,
             assetPlugins = deps.assets?.plugins,

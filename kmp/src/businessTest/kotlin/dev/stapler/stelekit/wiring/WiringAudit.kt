@@ -17,6 +17,7 @@ object WiringAudit {
     /** Identical to the plan Glossary's `WiringSeam` list (UT-149). `Plugin` is not a seam. */
     val SEAMS = listOf(
         "BackgroundSyncScheduler",
+        "BackgroundTaskScheduler",
         "AssetPipelinePlugin",
         "ConsoleCommand",
         "MeasurementDeviceFactory",

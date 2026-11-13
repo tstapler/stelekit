@@ -159,7 +159,8 @@ class GraphManagerCloneTest {
     fun `updateWikiSubdir updates graph info effectivePath`() = runTest {
         val gm = graphManager()
         val graphId = gm.addGraph("/tmp/my-repo")
-        
+        gm.awaitBackgroundDetection() // detection saves the registry later and would overwrite the subdir
+
         gm.updateWikiSubdir(graphId, "logseq")
 
         val info = gm.graphRegistry.value.graphs.first { it.id == graphId }

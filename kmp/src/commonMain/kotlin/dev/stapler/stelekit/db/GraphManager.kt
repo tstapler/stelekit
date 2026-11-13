@@ -127,6 +127,15 @@ class GraphManager(
             CoroutineExceptionHandler { _, t -> logger.error("GraphManager background task failed: ${t.message}") },
     )
     private val json = Json { ignoreUnknownKeys = true }
+
+    /**
+     * Called at the end of a successful [removeGraph], after the registry is saved. Non-suspend and
+     * must not block: the root's handler launches the work (cancel scheduled tasks, tombstone) on its own
+     * scope. Never invoked for a refused removal; a throwing callback is logged and does not change the result.
+     */
+    @kotlin.concurrent.Volatile
+    var onGraphRemoved: (GraphId) -> Unit = {}
+
     private val _backgroundDetection = MutableStateFlow<kotlinx.coroutines.Job?>(null)
 
     /** Waits for the latest [addGraph] fire-and-forget git/wiki detection, which saves the registry. */
@@ -625,6 +634,12 @@ class GraphManager(
             cs.delete("git_ssh_passphrase_${id.value}")
         } catch (_: Exception) {
             // Non-critical — credential cleanup failure should not prevent graph removal
+        }
+
+        try {
+            onGraphRemoved(id)
+        } catch (e: Throwable) {
+            logger.error("onGraphRemoved failed for ${id.value}: ${e.message}")
         }
 
         return true

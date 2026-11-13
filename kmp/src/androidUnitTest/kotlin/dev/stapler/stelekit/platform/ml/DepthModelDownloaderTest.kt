@@ -8,7 +8,13 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
+import dev.stapler.stelekit.ui.annotate.DepthModelUiState
+import dev.stapler.stelekit.jobs.schedule.NetworkSnapshot
+import dev.stapler.stelekit.jobs.schedule.NetworkSnapshotProvider
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.yield
 import kotlinx.coroutines.runBlocking
@@ -89,7 +95,7 @@ class DepthModelDownloaderTest {
     }
 
     @Test
-    fun `cancel resolves a waiting caller and returns to Absent`() = runBlocking<Unit> {
+    fun `cancel resolves a waiting caller and surfaces Cancelled`() = runBlocking<Unit> {
         val downloader = DepthModelDownloader(context)
         val waiting = async { downloader.downloadModel() }
         downloader.awaitDownloading()
@@ -97,7 +103,34 @@ class DepthModelDownloaderTest {
         downloader.cancelDownload()
 
         assertTrue(waiting.await().isLeft())
-        assertEquals(DepthModelDownloader.ModelState.Absent, downloader.modelState.value)
+        assertEquals(DepthModelDownloader.ModelState.Cancelled, downloader.modelState.value)
+        assertEquals(DepthModelUiState.Cancelled, downloader.modelState.value.toUiState())
+        assertEquals(ModelDownloadPresentation.CANCELLED, ModelDownloadPresentation.present(ModelDownloadInput(ModelWorkState.Cancelled))?.text)
+    }
+
+    @Test
+    fun `a queued-state snapshot that finishes after cancel never shows Downloading again`() = runBlocking<Unit> {
+        val gate = CompletableDeferred<Unit>()
+        val entered = CompletableDeferred<Unit>()
+        val downloader = DepthModelDownloader(
+            context,
+            network = NetworkSnapshotProvider { entered.complete(Unit); gate.await(); NetworkSnapshot(online = true, isMetered = false) },
+        )
+        val seen = java.util.Collections.synchronizedList(mutableListOf<DepthModelDownloader.ModelState>())
+        val recorder = launch(Dispatchers.Unconfined) { downloader.modelState.collect { seen += it } }
+        val waiting = async { downloader.downloadModel() }
+        // The ENQUEUED emission is now suspended inside the snapshot read: the stale write we guard against.
+        withTimeout(5_000) { entered.await() }
+
+        downloader.cancelDownload()
+        gate.complete(Unit)
+        waiting.await()
+        // WorkManager's CANCELLED emission is applied after the stale one (collect is sequential); wait for it.
+        withTimeout(5_000) { downloader.modelState.first { it is DepthModelDownloader.ModelState.Cancelled } }
+        recorder.cancel()
+
+        val afterCancel = seen.dropWhile { it !is DepthModelDownloader.ModelState.Cancelled }
+        assertTrue(afterCancel.none { it is DepthModelDownloader.ModelState.Downloading }, "saw $afterCancel")
     }
 
     @Test

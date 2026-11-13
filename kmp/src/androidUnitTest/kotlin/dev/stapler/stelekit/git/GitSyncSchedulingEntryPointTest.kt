@@ -64,6 +64,21 @@ class GitSyncSchedulingEntryPointTest {
     private fun workInfos(): List<WorkInfo> =
         WorkManager.getInstance(context).getWorkInfosForUniqueWork(WorkManagerSyncScheduler.workNameFor(graphId)).get()
 
+    /** The Android root's port adapter, over the fixture's own settings and a registry that knows `git-sync`. */
+    private fun workManagerScheduler(
+        ports: FakePlatformPorts,
+        registry: dev.stapler.stelekit.jobs.schedule.TaskRegistry,
+    ): dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler {
+        registerGitSyncTask(registry)
+        return dev.stapler.stelekit.jobs.schedule.WorkManagerTaskScheduler(
+            context = context,
+            registry = registry,
+            store = dev.stapler.stelekit.jobs.schedule.TaskSettingsStore(ports.settings, dev.stapler.stelekit.jobs.schedule.LegacyConfigSeed.None, registry),
+            ledger = dev.stapler.stelekit.jobs.schedule.AppliedConfigLedger(ports.settings),
+            workers = GitSyncWorkerBinding.resolver,
+        )
+    }
+
     @Test
     fun androidStack_should_EnqueueOneUniquePeriodic15MinWork_When_FlagOnInterval5_AndCancelWhenOff() {
         WorkManagerTestInitHelper.initializeTestWorkManager(
@@ -79,6 +94,7 @@ class GitSyncSchedulingEntryPointTest {
                 schedulerFactory = BackgroundSyncSchedulerFactory(
                     minimumIntervalMinutes = WorkManagerSyncScheduler.MIN_PERIODIC_INTERVAL_MINUTES.toInt(),
                 ) { id -> WorkManagerSyncScheduler(context, id) },
+                taskScheduler = this@GitSyncSchedulingEntryPointTest::workManagerScheduler,
             )
         }
         fixture = wired
@@ -87,6 +103,8 @@ class GitSyncSchedulingEntryPointTest {
         var controls: ScheduledSyncControls? = null
         composeRule.setContent { controls = rememberGraphContentScheduledSyncControls(wired.deps, null, configRepo, graphId) }
         composeRule.waitForIdle()
+        // The port adapter enqueues from a coroutine launched by the glue, so wait for the work rather than the frame.
+        composeRule.waitUntil(10_000) { workInfos().isNotEmpty() }
 
         ObservableEffect.assert("periodic-work-enqueued") {
             val infos = workInfos()
@@ -99,7 +117,7 @@ class GitSyncSchedulingEntryPointTest {
         assertEquals(15, controls?.minimumIntervalMinutes)
 
         composeRule.runOnIdle { controls!!.setEnabled(false) }
-        composeRule.waitForIdle()
+        composeRule.waitUntil(10_000) { workInfos().single().state == WorkInfo.State.CANCELLED }
         assertEquals(WorkInfo.State.CANCELLED, workInfos().single().state, "turning the switch off cancels the job")
     }
 
@@ -114,6 +132,7 @@ class GitSyncSchedulingEntryPointTest {
                 context,
                 dataDir,
                 schedulerFactory = BackgroundSyncSchedulerFactory(minimumIntervalMinutes = 15) { id -> WorkManagerSyncScheduler(context, id) },
+                taskScheduler = this@GitSyncSchedulingEntryPointTest::workManagerScheduler,
             )
         }
         fixture = wired

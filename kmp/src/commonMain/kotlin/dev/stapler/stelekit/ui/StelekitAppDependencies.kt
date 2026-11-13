@@ -92,10 +92,26 @@ data class StelekitAppPlatformIntegrations(
      */
     val backgroundSyncSchedulerFactory: dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory,
     /**
+     * Neutral background-task scheduler port. No default on purpose: every host names its adapter
+     * (`InProcessTaskScheduler` on Desktop, `NoopTaskScheduler()` where nothing can run in the background).
+     */
+    val backgroundTaskScheduler: dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler,
+    /** Kind-to-task lookup the scheduler runs against. No default: every host passes its registry explicitly. */
+    val taskRegistry: dev.stapler.stelekit.jobs.schedule.TaskRegistry,
+    /**
+     * The one app-wide settings instance, shared with the scheduler and run log the host built. Null makes
+     * [StelekitApp] create its own, which is only safe where nothing else writes the same store.
+     */
+    val settings: dev.stapler.stelekit.platform.Settings? = null,
+    /**
      * Reports OS background restrictions (battery saver, restricted standby bucket) so Settings can
      * say that closed-app checks are limited. Null means the platform has none to report.
      */
     val backgroundRestrictionProbe: dev.stapler.stelekit.git.BackgroundRestrictionProbe? = null,
+    /** Opens the app's system battery settings from the restricted-background hint; null shows the manual path instead. */
+    val batterySettingsLauncher: dev.stapler.stelekit.git.BatterySettingsLauncher? = null,
+    /** Whether a background process recently failed to read task settings; null (Desktop) never reports it. */
+    val settingsReadHealth: dev.stapler.stelekit.jobs.schedule.SettingsReadHealthSource? = null,
     /** Android 13+ `POST_NOTIFICATIONS` access for the Settings "Notify me" toggle; null hides that toggle. */
     val notificationPermission: dev.stapler.stelekit.git.NotificationPermissionAccess? = null,
     /**

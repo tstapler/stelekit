@@ -1,10 +1,33 @@
 package dev.stapler.stelekit
 
 import dev.stapler.stelekit.db.WalConfiguredCallbackTest
+import dev.stapler.stelekit.git.AndroidGitLegacyConfigSourceTest
 import dev.stapler.stelekit.git.AndroidGitRepositoryLfsGuardTest
 import dev.stapler.stelekit.google.AndroidGoogleSupportTest
+import dev.stapler.stelekit.git.AndroidBatterySettingsLauncherTest
 import dev.stapler.stelekit.git.AndroidGitRepositoryTestRemoteTest
 import dev.stapler.stelekit.git.GitSyncBusyCounterSharedWiringTest
+import dev.stapler.stelekit.git.GitSyncTaskRegistrationTest
+import dev.stapler.stelekit.git.GitSyncWorkerGateAndRecordTest
+import dev.stapler.stelekit.git.WorkManagerSyncSchedulerPauseTest
+import dev.stapler.stelekit.git.WorkManagerSyncSchedulerRetryOwnerTest
+import dev.stapler.stelekit.git.WorkManagerSyncSchedulerSlowPathYieldTest
+import dev.stapler.stelekit.git.WorkManagerSyncSchedulerUniqueWorkTest
+import dev.stapler.stelekit.git.WorkManagerSyncSchedulerWatchdogTest
+import dev.stapler.stelekit.jobs.schedule.LegacyWorkUpgradeTest
+import dev.stapler.stelekit.jobs.schedule.PlatformSettingsColdPathTest
+import dev.stapler.stelekit.jobs.schedule.WorkManagerJitterSpikeTest
+import dev.stapler.stelekit.jobs.schedule.TaskRegistryBothRootsTest
+import dev.stapler.stelekit.jobs.schedule.TaskWorkerTest
+import dev.stapler.stelekit.platform.ml.ModelDownloadEndToEndTest
+import dev.stapler.stelekit.platform.ml.ModelDownloadPresentationTest
+import dev.stapler.stelekit.platform.ml.ModelDownloadTaskTest
+import dev.stapler.stelekit.platform.ml.OneShotSkipTest
+import dev.stapler.stelekit.jobs.schedule.ScheduleStartupTest
+import dev.stapler.stelekit.jobs.schedule.ScheduledTaskReconcilerTest
+import dev.stapler.stelekit.jobs.schedule.WorkManagerTaskSchedulerConstraintsTest
+import dev.stapler.stelekit.jobs.schedule.WorkManagerTaskSchedulerPauseResumeTest
+import dev.stapler.stelekit.jobs.schedule.WorkManagerTaskSchedulerContractTest
 import dev.stapler.stelekit.platform.LegacyPathValidationTest
 import dev.stapler.stelekit.platform.PlatformFileSystemPickerTest
 import dev.stapler.stelekit.platform.PlatformFileSystemSafTest
@@ -33,6 +56,29 @@ import org.junit.runners.Suite
 @RunWith(Suite::class)
 @Suite.SuiteClasses(
     WalConfiguredCallbackTest::class,
+    WorkManagerJitterSpikeTest::class,
+    WorkManagerTaskSchedulerContractTest::class,
+    WorkManagerTaskSchedulerConstraintsTest::class,
+    WorkManagerTaskSchedulerPauseResumeTest::class,
+    ScheduledTaskReconcilerTest::class,
+    ScheduleStartupTest::class,
+    TaskWorkerTest::class,
+    ModelDownloadPresentationTest::class,
+    ModelDownloadTaskTest::class,
+    ModelDownloadEndToEndTest::class,
+    OneShotSkipTest::class,
+    AndroidBatterySettingsLauncherTest::class,
+    TaskRegistryBothRootsTest::class,
+    WorkManagerSyncSchedulerPauseTest::class,
+    WorkManagerSyncSchedulerRetryOwnerTest::class,
+    WorkManagerSyncSchedulerSlowPathYieldTest::class,
+    WorkManagerSyncSchedulerUniqueWorkTest::class,
+    WorkManagerSyncSchedulerWatchdogTest::class,
+    LegacyWorkUpgradeTest::class,
+    GitSyncWorkerGateAndRecordTest::class,
+    GitSyncTaskRegistrationTest::class,
+    AndroidGitLegacyConfigSourceTest::class,
+    PlatformSettingsColdPathTest::class,
     PlatformCapsRootTest::class,
     AndroidGoogleSupportTest::class,
     GitSyncBusyCounterSharedWiringTest::class,
@@ -74,5 +120,15 @@ import org.junit.runners.Suite
     // Runs fine under Gradle's testDebugUnitTest.
     //
     // LfsHeldFilesSheetTest is excluded for the same reason (1).
+    //
+    // GitSyncSchedulingEntryPointTest is excluded for the same reason (1): it drives
+    // rememberGraphContentScheduledSyncControls through composeRule.setContent. Runs under Gradle.
+    // TaskSchedulerAndroidEntryPointTest is excluded for the same reason (1).
+    //
+    // BackgroundTasksSectionTest, TaskRunLogRowsTest and ModelDownloadUiTest (background-task scheduling UI)
+    // are excluded for the same reason (1): they drive composables through ComposeContentTestRule.
+    // They run under Gradle's testDebugUnitTest.
+    // BackgroundTasksUxGapsTest, ScheduledSyncStatusActionsTest, TaskSettingsAccessibilityAndErrorsTest,
+    // DepthEstimationPanelLiveRegionTest and ScheduledSyncControlsApplyTest are excluded for the same reason (1).
 )
 class AllAndroidUnitTests
