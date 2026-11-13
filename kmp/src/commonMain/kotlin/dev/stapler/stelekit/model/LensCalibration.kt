@@ -26,6 +26,9 @@ data class LensCalibration(
     val ticks: List<CalibrationTick> = emptyList(),
     val residualPercent: Double = 0.0,
     val kEstimated: Boolean = false,
+    /** Snapshot of the camera profile that supplied [k] (ADR-001), so the annotation stays reproducible if the profile changes. */
+    val profileId: String? = null,
+    val profileLabel: String? = null,
 )
 
 /** JSON text form of [LensCalibration] for the `calibration_lens_json` column; '' means none. */

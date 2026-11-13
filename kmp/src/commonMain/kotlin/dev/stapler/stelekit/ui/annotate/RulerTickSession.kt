@@ -4,8 +4,11 @@
 
 package dev.stapler.stelekit.ui.annotate
 
+import dev.stapler.stelekit.calibration.CameraProfile
+import dev.stapler.stelekit.calibration.CameraProfiles
 import dev.stapler.stelekit.calibration.LensMode
 import dev.stapler.stelekit.calibration.MultiPointCalibration
+import dev.stapler.stelekit.calibration.ProfileOutcome
 import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationTick
 import dev.stapler.stelekit.model.MeasurementUnit
@@ -21,6 +24,8 @@ data class RulerTickSession(
     val unit: MeasurementUnit = MeasurementUnit.CENTIMETERS,
     val entries: List<RulerTickEntry> = emptyList(),
     val lensMode: LensMode = LensMode.Auto,
+    /** The stored camera profile matching this photo, if any; selected by [LensMode.Profile]. */
+    val profile: CameraProfile? = null,
 )
 
 /** What confirming a [RulerTickSession] would do right now; [calibration] is null while it cannot be applied. */
@@ -75,13 +80,22 @@ fun RulerTickSession.usableTicks(): List<CalibrationTick> = entries.mapNotNull {
 fun RulerTickSession.preview(widthPx: Double, heightPx: Double): RulerTickPreview {
     val ticks = usableTicks()
     val skipped = entries.size - ticks.size
-    val calibration = if (ticks.size >= MIN_TICKS) MultiPointCalibration.calibrate(ticks, widthPx, heightPx, lensMode) else null
+    val calibration = if (ticks.size >= MIN_TICKS) MultiPointCalibration.calibrate(ticks, widthPx, heightPx, lensMode, profile) else null
     val summary = when {
         ticks.size < MIN_TICKS -> "Mark and enter a value for at least 2 ruler ticks (${ticks.size} so far)."
         calibration == null -> "These ticks cannot define a scale: give them different positions, spread along a line."
-        else -> describe(calibration, ticks, widthPx, heightPx, skipped)
+        else -> describe(calibration, ticks, widthPx, heightPx, skipped) + profileNote(ticks, widthPx, heightPx)
     }
     return RulerTickPreview(calibration, ticks.size, summary, entryResiduals(calibration, ticks, widthPx, heightPx))
+}
+
+/** Tells the user whether a camera profile is in play: applied, failed its self-check, or simply absent. */
+private fun RulerTickSession.profileNote(ticks: List<CalibrationTick>, w: Double, h: Double): String = when {
+    lensMode != LensMode.Profile -> ""
+    profile == null -> " No camera profile for this photo: fitting the lens from these ticks."
+    CameraProfiles.resolve(profile, ticks, w, h) is ProfileOutcome.Rejected ->
+        " Profile \"${profile.label}\" did not fit this photo: fitting the lens from these ticks instead."
+    else -> " Using camera profile \"${profile.label}\" (k = ${formatDecimals(profile.k, 3)})."
 }
 
 /** Spreads the fit's per-tick residuals back over the entries, leaving unusable entries null. */

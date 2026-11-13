@@ -67,7 +67,13 @@ object MeasurementAdvisor {
             if (lens.ticks.size in 1 until MIN_TICKS_TO_CHECK_DISTORTION) {
                 notes += "Only ${lens.ticks.size} ruler marks: mark a third to check for lens distortion or tilt."
             }
-            if (lens.k != 0.0) notes += "Lens correction applied (k = ${decimals(lens.k, 3)})."
+                        if (lens.k != 0.0) {
+                notes += if (lens.profileLabel != null) {
+                    "Lens correction from camera profile \"${lens.profileLabel}\" (k = ${decimals(lens.k, 3)})."
+                } else {
+                    "Lens correction applied (k = ${decimals(lens.k, 3)})."
+                }
+            }
         }
 
         when (TiltAssessment.tierOf(pitchDeg, rollDeg)) {
