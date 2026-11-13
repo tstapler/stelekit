@@ -15,6 +15,8 @@ import dev.stapler.stelekit.jobs.workManagerOrNull
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -240,7 +242,7 @@ class WorkManagerTaskScheduler(
 
     private suspend fun guarded(what: String, block: suspend () -> Unit) {
         try {
-            block()
+            operationLock.withLock { block() }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
@@ -259,6 +261,11 @@ class WorkManagerTaskScheduler(
             runsWhenClosed = true,
             schedulesWork = true,
         )
+
+        // Every public operation is a read-then-enqueue/cancel sequence over shared WorkManager and ledger state, and a
+        // second adapter instance (e.g. a feature's own) shares both. One process-wide lock, not per work name: pause,
+        // resume and cancelAll span many keys. Held only by `guarded`; block bodies never call back into a public method.
+        private val operationLock = Mutex()
 
         private val GIT_SYNC = TaskKind("git-sync")
         private const val ONE_SHOT_BACKOFF_SECONDS = 30L

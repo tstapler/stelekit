@@ -26,6 +26,7 @@ import dev.stapler.stelekit.platform.ml.OneShotSkipTest
 import dev.stapler.stelekit.jobs.schedule.ScheduleStartupTest
 import dev.stapler.stelekit.jobs.schedule.ScheduledTaskReconcilerTest
 import dev.stapler.stelekit.jobs.schedule.WorkManagerTaskSchedulerConstraintsTest
+import dev.stapler.stelekit.jobs.schedule.WorkManagerTaskSchedulerConcurrencyTest
 import dev.stapler.stelekit.jobs.schedule.WorkManagerTaskSchedulerPauseResumeTest
 import dev.stapler.stelekit.jobs.schedule.WorkManagerTaskSchedulerContractTest
 import dev.stapler.stelekit.platform.LegacyPathValidationTest
@@ -60,6 +61,7 @@ import org.junit.runners.Suite
     WorkManagerTaskSchedulerContractTest::class,
     WorkManagerTaskSchedulerConstraintsTest::class,
     WorkManagerTaskSchedulerPauseResumeTest::class,
+    WorkManagerTaskSchedulerConcurrencyTest::class,
     ScheduledTaskReconcilerTest::class,
     ScheduleStartupTest::class,
     TaskWorkerTest::class,
