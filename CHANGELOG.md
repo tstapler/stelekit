@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.113.0](https://github.com/tstapler/stelekit/compare/v0.112.0...v0.113.0) (2026-11-13)
+
+
+### Features
+
+* **sketch:** mobile-friendly editor (drag-to-draw, handles, snap feedback) ([#663](https://github.com/tstapler/stelekit/issues/663)) ([9451300](https://github.com/tstapler/stelekit/commit/9451300171a06aa726d027543e8e4067153717e1))
+
+
+### Bug Fixes
+
+* **sync:** never leave sync stuck running; surface conflicts and failures ([#662](https://github.com/tstapler/stelekit/issues/662)) ([d1a0290](https://github.com/tstapler/stelekit/commit/d1a02907d022130991aad7abe8c56f8d2fcf46df))
+
 ## [0.112.0](https://github.com/tstapler/stelekit/compare/v0.111.0...v0.112.0) (2026-11-13)
 
 
