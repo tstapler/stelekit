@@ -19,6 +19,7 @@ import dev.stapler.stelekit.export.ClipboardProvider
 import dev.stapler.stelekit.export.ExportService
 import dev.stapler.stelekit.platform.google.GoogleAuthManager
 import dev.stapler.stelekit.git.GitSyncService
+import dev.stapler.stelekit.git.detailsTarget
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.logging.Logger
@@ -316,7 +317,9 @@ class StelekitViewModel(
     fun openSyncDestination(destination: dev.stapler.stelekit.git.NotificationDestination) {
         when (destination) {
             is dev.stapler.stelekit.git.NotificationDestination.FirstSyncReview -> openFirstSyncReview()
-            is dev.stapler.stelekit.git.NotificationDestination.SyncStatusSheet -> openSyncStatusSheet()
+            // A conflict or unfinished merge is why the updates are still waiting: open its resolver, not a dead-end sheet.
+            is dev.stapler.stelekit.git.NotificationDestination.SyncStatusSheet ->
+                if (syncState.value.detailsTarget() != dev.stapler.stelekit.git.SyncDetailsTarget.None) openSyncDetails() else openSyncStatusSheet()
             is dev.stapler.stelekit.git.NotificationDestination.CurrentGraphSheet -> openSyncStatusSheet(destination.notice)
             is dev.stapler.stelekit.git.NotificationDestination.UpToDate -> Unit
         }

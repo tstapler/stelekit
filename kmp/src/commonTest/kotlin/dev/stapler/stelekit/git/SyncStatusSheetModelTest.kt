@@ -87,3 +87,37 @@ class SyncStatusSheetModelTest {
         assertTrue(model(SyncStaleness(), reviewPending = true).canReviewFirstSync)
     }
 }
+
+class SyncStatusSheetProblemTest {
+    private val now = 10_000_000L
+    private fun model(syncState: SyncState) =
+        syncStatusSheetModel(SyncStaleness(behindCount = 1), syncState, now, 15, firstSyncReviewPending = false)
+
+    @Test
+    fun `a conflict is shown with a resolve action`() {
+        val m = model(SyncState.ConflictPending(listOf(dev.stapler.stelekit.git.model.ConflictFile("a", "pages/a.md", emptyList()))))
+        assertTrue(m.problem!!.message.contains("1 file"), m.problem.toString())
+        assertEquals(SyncDetailsTarget.Conflict, m.problem!!.target)
+        assertTrue(m.canSyncNow)
+    }
+
+    @Test
+    fun `an unfinished merge is shown with a fix action`() {
+        val m = model(SyncState.Error(dev.stapler.stelekit.error.DomainError.GitError.RepairNeeded("MERGING")))
+        assertEquals(SyncDetailsTarget.RepairNeeded, m.problem!!.target)
+    }
+
+    @Test
+    fun `any other failure is shown, never silent`() {
+        val m = model(SyncState.Error(dev.stapler.stelekit.error.DomainError.GitError.FetchFailed("Merge failed: x")))
+        assertTrue(m.problem!!.message.contains("Merge failed"), m.problem.toString())
+    }
+
+    @Test
+    fun `sync now says why it is disabled while a sync runs`() {
+        val m = model(SyncState.Merging)
+        assertEquals(false, m.canSyncNow)
+        assertTrue(m.syncNowDisabledReason != null)
+        assertNull(model(SyncState.Idle).syncNowDisabledReason)
+    }
+}

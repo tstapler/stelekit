@@ -3,11 +3,17 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.error.toSyncErrorMessage
 import dev.stapler.stelekit.git.model.SyncState
+import dev.stapler.stelekit.security.Redactor
 
 data class SyncStatusRow(val label: String, val value: String)
 
 /** Everything the standalone sync status sheet shows; the same chip and banner rules as the sidebar and launch banner. */
+/** A failure or conflict the user must see; [target] says which detail surface resolves it (None: nothing to open). */
+data class SyncProblem(val message: String, val target: SyncDetailsTarget)
+
 data class SyncStatusSheetModel(
     val headline: String,
     val severity: StalenessSeverity,
@@ -18,6 +24,10 @@ data class SyncStatusSheetModel(
     /** Newest first. */
     val recent: List<String>,
     val canSyncNow: Boolean,
+    /** Why [canSyncNow] is false; null when Sync now can act. */
+    val syncNowDisabledReason: String?,
+    /** The conflict or error behind a stuck sync; null when the last sync did not fail. */
+    val problem: SyncProblem?,
     val canReviewFirstSync: Boolean,
 )
 
@@ -56,6 +66,8 @@ fun syncStatusSheetModel(
         ),
         recent = staleness.history.asReversed().map { recentLine(it, nowMs) },
         canSyncNow = !syncState.isRunning(),
+        syncNowDisabledReason = if (syncState.isRunning()) "A sync is already running. Sync now is available once it finishes." else null,
+        problem = syncState.toProblem(),
         canReviewFirstSync = firstSyncReviewPending,
     )
 }
@@ -76,3 +88,17 @@ private fun recentLine(outcome: BackgroundOutcome, nowMs: Long): String {
 
 private fun SyncState.isRunning(): Boolean =
     this is SyncState.Fetching || this is SyncState.Merging || this is SyncState.Pushing || this is SyncState.Committing
+
+private fun SyncState.toProblem(): SyncProblem? = when (this) {
+    is SyncState.ConflictPending ->
+        SyncProblem("Merge conflict in ${conflicts.size} ${if (conflicts.size == 1) "file" else "files"}. Nothing is merged until you resolve it.", SyncDetailsTarget.Conflict)
+    is SyncState.JournalMergeReady -> SyncProblem("A journal merge needs your review before sync can finish.", SyncDetailsTarget.None)
+    is SyncState.Error -> SyncProblem(error.describe(), detailsTarget())
+    else -> null
+}
+
+private fun DomainError.GitError.describe(): String {
+    val summary = toSyncErrorMessage()
+    val detail = Redactor.redactGitMessage(message)
+    return if (detail.isBlank() || summary.contains(detail)) summary else "$summary ($detail)"
+}

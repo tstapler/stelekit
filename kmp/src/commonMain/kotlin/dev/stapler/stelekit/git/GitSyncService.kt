@@ -148,6 +148,7 @@ class GitSyncService(
 
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
+    private val runGuard = SyncRunGuard(_syncState, logger)
 
     /**
      * Working-tree status (dirty file count), refreshed by [refreshLocalStatus] independently of
@@ -243,17 +244,7 @@ class GitSyncService(
         err: DomainError.GitError,
         authFailureMeansExpired: Boolean = false,
         retry: suspend (String) -> Unit,
-    ) {
-        _syncState.value = when {
-            err is DomainError.GitError.RateLimited -> {
-                rateLimitRetry.schedule(graphId, err.retryAfterSeconds, retry)
-                SyncState.RateLimited(err.retryAfterSeconds)
-            }
-            err is DomainError.GitError.CredentialExpired ||
-                (authFailureMeansExpired && err is DomainError.GitError.AuthFailed) -> SyncState.CredentialExpired(graphId)
-            else -> SyncState.Error(err)
-        }
-    }
+    ) = runGuard.publishFailure(rateLimitRetry, graphId, err, authFailureMeansExpired, retry)
 
     /**
      * Full sync sequence ([SyncTrigger.Automatic] callers wait while a first-sync review is pending):
@@ -495,6 +486,11 @@ class GitSyncService(
             val lfsAttention = lfsHeld + gitRepository.lastPushLfsViolations
             _syncState.value = if (lfsAttention.isEmpty()) success else SyncState.LfsActionRequired(lfsAttention)
             success.right()
+            } catch (e: CancellationException) {
+                runGuard.cancelled()
+                throw e
+            } catch (e: Exception) {
+                runGuard.crashed("sync", e)
             } finally {
                 gitSyncBusyCounter.end()
             }
@@ -565,6 +561,11 @@ class GitSyncService(
                     fetchResult.right()
                 }
             }
+            } catch (e: CancellationException) {
+                runGuard.cancelled()
+                throw e
+            } catch (e: Exception) {
+                runGuard.crashed("fetch", e)
             } finally {
                 gitSyncBusyCounter.end()
             }

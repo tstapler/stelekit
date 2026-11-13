@@ -27,6 +27,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.git.Banner
 import dev.stapler.stelekit.git.StalenessSeverity
+import dev.stapler.stelekit.git.SyncDetailsTarget
 import dev.stapler.stelekit.git.SyncStatusSheetModel
 
 private const val MIN_TARGET_DP = 48
@@ -37,6 +38,8 @@ class SyncStatusSheetActions(
     val onReviewFirstSync: () -> Unit,
     val onOpenSettings: (() -> Unit)?,
     val onDismiss: () -> Unit,
+    /** Opens the conflict screen or repair dialog behind [SyncStatusSheetModel.problem]. */
+    val onOpenProblem: (() -> Unit)? = null,
 )
 
 /** Standalone sync status (UX-101): the chip's facts in full, reachable from the chip, Settings and the notification tap. */
@@ -68,6 +71,13 @@ fun SyncStatusSheetContent(
                 Text(row.value, style = MaterialTheme.typography.bodyMedium)
             }
         }
+        model.problem?.let { problem ->
+            Text(problem.message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+            val open = actions.onOpenProblem
+            if (open != null && problem.target != SyncDetailsTarget.None) {
+                Button(onClick = open, modifier = Modifier.heightIn(min = MIN_TARGET_DP.dp)) { Text(problemActionLabel(problem.target)) }
+            }
+        }
         model.explanation?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         model.bannerChoice.banner?.let(::bannerSummary)?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
@@ -95,6 +105,7 @@ private fun Actions(model: SyncStatusSheetModel, actions: SyncStatusSheetActions
                 }
             }
         }
+        model.syncNowDisabledReason?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             actions.onOpenSettings?.let { TextButton(onClick = it, modifier = Modifier.heightIn(min = MIN_TARGET_DP.dp)) { Text("Open sync settings") } }
             TextButton(onClick = actions.onDismiss, modifier = Modifier.heightIn(min = MIN_TARGET_DP.dp)) { Text("Close") }
@@ -114,4 +125,11 @@ private fun severityColor(severity: StalenessSeverity): Color = when (severity) 
     StalenessSeverity.Amber -> Color(0xFFF59E0B)
     StalenessSeverity.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
     StalenessSeverity.Healthy -> MaterialTheme.colorScheme.onSurface
+}
+
+private fun problemActionLabel(target: SyncDetailsTarget): String = when (target) {
+    SyncDetailsTarget.Conflict -> "Resolve conflicts"
+    SyncDetailsTarget.RepairNeeded -> "Fix unfinished merge"
+    SyncDetailsTarget.MassChange -> "Review deletions"
+    SyncDetailsTarget.None -> ""
 }

@@ -46,6 +46,10 @@ internal fun SyncStatusSheetHost(
             },
             onOpenSettings = viewModel::openSyncSettingsFromStatusSheet,
             onDismiss = viewModel::dismissSyncStatusSheet,
+            onOpenProblem = {
+                viewModel.dismissSyncStatusSheet()
+                viewModel.openSyncDetails()
+            },
         ),
     )
 }
