@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.112.0](https://github.com/tstapler/stelekit/compare/v0.111.0...v0.112.0) (2026-11-13)
+
+
+### Features
+
+* **annotate:** learned camera profiles pre-seed lens k (measure v1d) ([#660](https://github.com/tstapler/stelekit/issues/660)) ([479fa07](https://github.com/tstapler/stelekit/commit/479fa079adfad04b6cfef6f2c9b16effced1baab))
+
 ## [0.111.0](https://github.com/tstapler/stelekit/compare/v0.110.0...v0.111.0) (2026-11-13)
 
 
