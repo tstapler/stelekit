@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -42,25 +43,23 @@ fun SketchScreen(
     val state by viewModel.uiState.collectAsState()
     var panelsOpen by remember { mutableStateOf(false) }
     Column(modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onNavigateBack) { Text("Back") }
-            SketchTool.entries.forEach { tool ->
-                FilterChip(selected = state.tool == tool, onClick = { viewModel.setTool(tool) }, label = { Text(tool.label()) })
+            Row(
+                Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SketchTool.entries.forEach { tool ->
+                    FilterChip(selected = state.tool == tool, onClick = { viewModel.setTool(tool) }, label = { Text(tool.label()) })
+                }
+                SketchExportButton(state, exporter)
+                TextButton(onClick = { panelsOpen = !panelsOpen }) { Text(if (panelsOpen) "Hide sheet panels" else "Sheet panels") }
+                Text(state.statusText(), style = MaterialTheme.typography.labelMedium)
             }
+            // Undo and redo stay pinned: they must never scroll off a phone-width toolbar.
             TextButton(onClick = viewModel::undo, enabled = state.canUndo) { Text("Undo") }
             TextButton(onClick = viewModel::redo, enabled = state.canRedo) { Text("Redo") }
-            TextButton(onClick = viewModel::deleteSelected, enabled = state.selectedId != null) { Text("Delete") }
-            SketchExportButton(state, exporter)
-            TextButton(onClick = { panelsOpen = !panelsOpen }) { Text(if (panelsOpen) "Hide sheet panels" else "Sheet panels") }
-            Text(state.statusText(), style = MaterialTheme.typography.labelMedium)
-        }
-        val selectedLine = state.document.scene.primitives.firstOrNull { it.id == state.selectedId } as? SketchPrimitive.Line
-        if (selectedLine != null) {
-            DimensionField(initial = selectedLine.axisLengthText(), onCommit = { viewModel.setLineLength(selectedLine.id, it) })
         }
         if (panelsOpen) {
             SketchPanels(state, viewModel, Modifier.heightIn(max = PANELS_MAX_HEIGHT).verticalScroll(rememberScrollState()))
@@ -68,8 +67,28 @@ fun SketchScreen(
         Box(Modifier.fillMaxSize()) {
             if (state.phase == SketchPhase.READY) {
                 SketchNonDragMode(state, viewModel, Modifier.fillMaxSize())
+                state.document.scene.primitives.firstOrNull { it.id == state.selectedId }?.let { selected ->
+                    SelectionBar(selected, viewModel, Modifier.align(Alignment.TopStart).padding(8.dp))
+                }
             } else {
                 Text(state.error ?: "Loading sketch", Modifier.align(Alignment.Center).padding(16.dp))
+            }
+        }
+    }
+}
+
+/** What the selected shape offers right now: delete and exact typed sizes, kept on the canvas where the finger already is. */
+@Composable
+private fun SelectionBar(selected: SketchPrimitive, vm: SketchViewModel, modifier: Modifier = Modifier) {
+    Surface(modifier, shape = MaterialTheme.shapes.medium, tonalElevation = 3.dp, shadowElevation = 2.dp) {
+        Column(Modifier.padding(vertical = 4.dp)) {
+            TextButton(onClick = vm::deleteSelected) { Text("Delete") }
+            when (selected) {
+                is SketchPrimitive.Line -> DimensionField(initial = selected.axisLengthText(), onCommit = { vm.setLineLength(selected.id, it) })
+                is SketchPrimitive.Rect -> {
+                    DimensionField(initial = lengthTextOf(selected.b.x.sixteenths - selected.a.x.sixteenths), label = "Width", onCommit = { vm.setRectSize(selected.id, it, null) })
+                    DimensionField(initial = lengthTextOf(selected.b.y.sixteenths - selected.a.y.sixteenths), label = "Height", onCommit = { vm.setRectSize(selected.id, null, it) })
+                }
             }
         }
     }

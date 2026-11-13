@@ -33,3 +33,25 @@ fun SketchViewModel.removeZone(key: String) = commit(SketchCommand.RemoveZone(ke
 
 /** Non-drag "Move vertex N": one committed history step. */
 fun SketchViewModel.moveVertex(vertex: VertexRef, to: SketchPoint) = commit(SketchCommand.MoveVertex(vertex.primitiveId, vertex.index, to))
+
+/** Sets a rectangle's width and/or height from typed lengths; null leaves that side alone. */
+fun SketchViewModel.setRectSize(id: String, width: Inches?, height: Inches?) = commit(SketchCommand.SetRectSize(id, width, height))
+
+/** Applies a finished drag: draws a new shape, or commits the moved handle or shape as one history step. */
+fun SketchViewModel.commitDrag(intent: DragIntent, preview: DragPreview) {
+    when (intent) {
+        DragIntent.Pan -> Unit
+        is DragIntent.Draw -> drawShape(intent.start, preview.point)
+        is DragIntent.MoveVertex -> {
+            select(intent.ref.primitiveId)
+            moveVertex(intent.ref, preview.point)
+        }
+        is DragIntent.MoveShape -> {
+            select(intent.id)
+            val before = uiState.value.document.scene.primitives.firstOrNull { it.id == intent.id }?.vertices?.firstOrNull() ?: return
+            val dx = preview.shape.vertices.first().x.sixteenths - before.x.sixteenths
+            val dy = preview.shape.vertices.first().y.sixteenths - before.y.sixteenths
+            if (dx != 0L || dy != 0L) commit(SketchCommand.MoveShape(intent.id, dx, dy))
+        }
+    }
+}

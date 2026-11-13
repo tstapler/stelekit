@@ -141,12 +141,20 @@ class SketchViewModel(
             start == null -> _uiState.update { it.copy(pendingStart = point) }
             start == point -> Unit
             else -> {
-                val id = newId()
-                val shape = if (state.tool == SketchTool.LINE) SketchPrimitive.Line(id, start, point) else SketchPrimitive.Rect(id, start, point)
                 _uiState.update { it.copy(pendingStart = null) }
-                commit(SketchCommand.AddPrimitive(shape))
+                drawShape(start, point)
             }
         }
+    }
+
+    /** Adds a line or rectangle (by the active tool) from [a] to [b] and selects it so its handles and length field appear. */
+    fun drawShape(a: SketchPoint, b: SketchPoint) {
+        val state = _uiState.value
+        if (state.phase != SketchPhase.READY || a == b || state.tool == SketchTool.ZONE_SELECT) return
+        val id = newId()
+        val shape = if (state.tool == SketchTool.LINE) SketchPrimitive.Line(id, a, b) else SketchPrimitive.Rect(id, a, b)
+        commit(SketchCommand.AddPrimitive(shape))
+        if (_uiState.value.document.scene.primitives.any { it.id == id }) select(id)
     }
 
     fun deleteSelected() {

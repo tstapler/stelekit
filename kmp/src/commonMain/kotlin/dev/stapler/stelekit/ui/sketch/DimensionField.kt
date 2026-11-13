@@ -3,6 +3,7 @@ package dev.stapler.stelekit.ui.sketch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -23,6 +24,7 @@ import dev.stapler.stelekit.units.LengthFormatter
 import kotlin.math.abs
 
 const val DIMENSION_FIELD_TAG = "sketch-dimension-field"
+private val DIMENSION_FIELD_WIDTH = 168.dp
 
 /** Text of the field a line starts with: its length when it is horizontal or vertical, else empty. */
 fun lengthTextOf(sixteenths: Long): String =
@@ -49,7 +51,7 @@ fun DimensionField(
             singleLine = true,
             isError = error != null,
             supportingText = { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } },
-            modifier = Modifier.testTag(DIMENSION_FIELD_TAG),
+            modifier = Modifier.width(DIMENSION_FIELD_WIDTH).testTag(DIMENSION_FIELD_TAG),
         )
         TextButton(onClick = {
             DimensionInput.parse(text).fold({ error = it.message }, { onCommit(it) })
