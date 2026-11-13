@@ -455,10 +455,12 @@ internal fun ScreenRouter(
                     val sketchExporter = remember(fileSystem, graphPath) {
                         dev.stapler.stelekit.ui.sketch.sketchExporterFor(fileSystem, graphPath)
                     }
-                    val sketchViewModel = remember(currentScreen.projectUuid, sketchExporter) {
+                    val previewLoader = dev.stapler.stelekit.ui.sketch.LocalSketchPreviewLoader.current
+                    val sketchViewModel = remember(currentScreen.projectUuid, sketchExporter, previewLoader) {
                         dev.stapler.stelekit.ui.sketch.sketchViewModelFor(
                             repos.sketchRepositories, repos.writeActor, currentScreen.projectUuid,
                             onSaved = sketchExporter?.let { exporter -> { doc, slug -> exporter.exportPreview(doc, slug) } },
+                            onPersisted = previewLoader?.let { loader -> { slug -> loader.notifySaved(slug) } },
                         )
                     }
                     dev.stapler.stelekit.ui.sketch.SketchScreen(viewModel = sketchViewModel, onNavigateBack = { viewModel.goBack() }, exporter = sketchExporter)

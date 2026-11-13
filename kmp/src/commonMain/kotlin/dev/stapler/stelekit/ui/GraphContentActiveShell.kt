@@ -332,7 +332,10 @@ internal fun GraphContentActiveShell(
             action
         }
 
+        val sketchPreviewLoader = remember(repos) { dev.stapler.stelekit.ui.sketch.SketchPreviewLoader(repos.sketchRepositories) }
+
         CompositionLocalProvider(
+            dev.stapler.stelekit.ui.sketch.LocalSketchPreviewLoader provides sketchPreviewLoader,
             dev.stapler.stelekit.ui.components.LocalOpenSketchAction provides openSketchAction,
             dev.stapler.stelekit.ui.components.LocalArchiveUrlAction provides archiveUrlAction,
             dev.stapler.stelekit.ui.components.LocalAnnotateImageAction provides annotateImageAction,

@@ -910,6 +910,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.SnapEnginePropertyTest::class,
     dev.stapler.stelekit.sketch.SketchNonDragModeTest::class,
     dev.stapler.stelekit.sketch.SketchDragTest::class,
+    dev.stapler.stelekit.sketch.SketchPreviewFitTest::class,
+    dev.stapler.stelekit.sketch.SketchPreviewLoaderTest::class,
     dev.stapler.stelekit.ui.placement.NudgeStepperPropertyTest::class,
     dev.stapler.stelekit.ui.placement.InchesPlacementControllerContractTest::class,
     dev.stapler.stelekit.ui.placement.SketchPlacementControllerContractTest::class,

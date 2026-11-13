@@ -528,6 +528,7 @@ internal fun BlockItem(
                                 onStartEditing = onStartEditing,
                                 onAnnotate = if (sketchSlug != null) null else annotateImage?.let { action -> { action(url, block) } },
                                 onOpenSketch = if (sketchSlug != null && openSketch != null) ({ openSketch(sketchSlug) }) else null,
+                                sketchSlug = sketchSlug,
                                 isInSelectionMode = isInSelectionMode,
                                 onToggleSelect = onToggleSelect,
                                 onLongPressSelect = onLongPressSelect,

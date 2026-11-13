@@ -199,6 +199,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/SnapEnginePropertyTest.kt",
         "dev/stapler/stelekit/sketch/SketchNonDragModeTest.kt",
         "dev/stapler/stelekit/sketch/SketchDragTest.kt",
+        "dev/stapler/stelekit/sketch/SketchPreviewFitTest.kt",
         "dev/stapler/stelekit/ui/placement/NudgeStepperPropertyTest.kt",
         "dev/stapler/stelekit/sketch/ViewTransformTest.kt",
         "dev/stapler/stelekit/units/LengthParserGoldenTest.kt",

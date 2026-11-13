@@ -62,7 +62,19 @@ internal fun ImageBlock(
     onAnnotate: (() -> Unit)? = null,
     /** Set for a sketch embed: a tap reopens the sketch editor instead of the lightbox. */
     onOpenSketch: (() -> Unit)? = null,
+    /** Set for a sketch embed: drawn natively, because the exported preview.svg has no decoder in the image loader. */
+    sketchSlug: String? = null,
 ) {
+    if (sketchSlug != null) {
+        dev.stapler.stelekit.ui.sketch.SketchPreviewBlock(
+            slug = sketchSlug,
+            modifier = modifier.fillMaxWidth().combinedClickable(
+                onLongClick = onLongPressSelect,
+                onClick = { if (isInSelectionMode) onToggleSelect() else onOpenSketch?.invoke() },
+            ),
+        )
+        return
+    }
     val imageLoader = rememberSteleKitImageLoader()
     var showLightbox by remember { mutableStateOf(false) }
 
