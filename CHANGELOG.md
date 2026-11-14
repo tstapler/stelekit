@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.113.3](https://github.com/tstapler/stelekit/compare/v0.113.2...v0.113.3) (2026-11-14)
+
+
+### Bug Fixes
+
+* **sync:** track disk content the DB hasn't applied; reload on every merge exit ([#676](https://github.com/tstapler/stelekit/issues/676)) ([5867273](https://github.com/tstapler/stelekit/commit/58672732eca30c54e835a1e059077a6d1ec213dc))
+
 ## [0.113.2](https://github.com/tstapler/stelekit/compare/v0.113.1...v0.113.2) (2026-11-14)
 
 
