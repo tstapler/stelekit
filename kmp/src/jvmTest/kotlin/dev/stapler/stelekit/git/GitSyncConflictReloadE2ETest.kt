@@ -16,6 +16,8 @@ import dev.stapler.stelekit.platform.NetworkMonitor
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.transport.URIish
@@ -24,7 +26,7 @@ import kotlin.io.path.createTempDirectory
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
-import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -105,29 +107,43 @@ class GitSyncConflictReloadE2ETest {
         return blocks.getBlocksForPage(page.uuid).first().getOrNull().orEmpty().map { it.content }
     }
 
-    /** Remote and local both edit the journal on adjacent lines (union-merged) and `data.json` on one line (a real conflict). */
-    private fun divergeJournalAndConflictingJson() {
-        seed(mapOf(ATTRIBUTES to "*.md merge=logseq-union\n", JOURNAL to "- one\n- two\n", JSON to "base\n"))
+    /** Both sides edit the journal on adjacent lines (union-merged) and a page on the same line (a real conflict). */
+    private fun divergeJournalAndConflictingPage() {
+        seed(mapOf(ATTRIBUTES to "*.md merge=logseq-union\n", JOURNAL to "- one\n- two\n", CONFLICTED to "- keep\n- shared\n"))
         File(other, JOURNAL).writeText("- one\n- TWO\n")
-        File(other, JSON).writeText("remote\n")
+        File(other, CONFLICTED).writeText("- keep\n- shared theirs\n")
         commitAll(other, "remote edits")
         push(other)
         File(local, JOURNAL).writeText("- ONE\n- two\n")
-        File(local, JSON).writeText("local\n")
+        File(local, CONFLICTED).writeText("- keep\n- shared mine\n")
     }
 
     @Test
     fun `an auto-merged journal is reloaded into the DB even when another file conflicts`() = runTest {
-        divergeJournalAndConflictingJson()
+        divergeJournalAndConflictingPage()
 
         val svc = service()
         val result = svc.sync(GRAPH_ID)
 
         assertIs<Either.Left<*>>(result)
         assertIs<SyncState.ConflictPending>(svc.syncState.value)
-        assertEquals("- ONE\n- TWO", File(local, JOURNAL).readText(), "precondition: the journal was auto-merged on disk")
+        val disk = File(local, JOURNAL).readText()
+        assertTrue("ONE" in disk && "TWO" in disk && "<<<<<<<" !in disk, "precondition: the journal was auto-merged on disk, was: $disk")
         val dbBlocks = dbContentOf("2026_10_10")
         assertTrue(dbBlocks.any { "ONE" in it } && dbBlocks.any { "TWO" in it }, "DB must hold the auto-merged journal, was: $dbBlocks")
+        assertFalse(loader.isDiskAheadOfDb(File(local, JOURNAL).absolutePath, disk), "a reloaded journal must not stay flagged unapplied")
+    }
+
+    @Test
+    fun `the conflicted file is left alone - its markers are never fed to the parser`() = runTest {
+        divergeJournalAndConflictingPage()
+        val svc = service()
+        val errors = mutableListOf<Any>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { loader.writeErrors.collect { errors += it } }
+
+        svc.sync(GRAPH_ID)
+
+        assertTrue(errors.isEmpty(), "reloading a conflicted file would emit a conflict-markers WriteError, got: $errors")
     }
 
     private companion object {
@@ -135,6 +151,6 @@ class GitSyncConflictReloadE2ETest {
         const val GRAPH_ID = "g"
         const val ATTRIBUTES = ".gitattributes"
         const val JOURNAL = "journals/2026_10_10.md"
-        const val JSON = "data.json"
+        const val CONFLICTED = "pages/Conflicted.md"
     }
 }

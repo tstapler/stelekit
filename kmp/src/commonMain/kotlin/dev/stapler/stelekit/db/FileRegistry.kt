@@ -117,13 +117,11 @@ class FileRegistry(private val fileSystem: FileSystem) {
         val newFiles = mutableListOf<ChangedFile>()
         val changedFiles = mutableListOf<ChangedFile>()
         val currentPaths = HashSet<String>(currentFilesWithTimes.size * 2)
-        val modTimeByPath = HashMap<String, Long>(currentFilesWithTimes.size * 2)
 
         for ((fileName, modTime) in currentFilesWithTimes) {
             val filePath = "$dirPath/$fileName"
             val filePathKey = FilePath(filePath)
             currentPaths.add(filePath)
-            modTimeByPath[filePath] = modTime
             val lastKnown = modTimes[filePathKey]
             val isEncrypted = fileName.endsWith(".md.stek")
 
@@ -202,7 +200,9 @@ class FileRegistry(private val fileSystem: FileSystem) {
         val deletedPaths = deletedPathKeys.map { it.value }
 
         // Anything reported above is observed-but-unapplied until the loader confirms it.
-        (newFiles + changedFiles).forEach { unapplied.add(FilePath(it.entry.filePath)); retryPending.remove(FilePath(it.entry.filePath)) }
+        // A fresh disk version also restarts its retry budget (the cap is per version, not per file lifetime).
+        for (reported in newFiles) markObservedUnapplied(FilePath(reported.entry.filePath))
+        for (reported in changedFiles) markObservedUnapplied(FilePath(reported.entry.filePath))
 
         // Re-report files whose apply failed: their baseline already advanced, so without this a
         // transient DB error (e.g. SQLITE_BUSY_SNAPSHOT) would drop the change permanently.
@@ -217,13 +217,30 @@ class FileRegistry(private val fileSystem: FileSystem) {
                 fileSystem.readFile(retryPath) ?: continue
             }
             if (!isEncrypted) contentHashes[retryKey] = content.hashCode()
-            changedFiles.add(ChangedFile(FileEntry(retryPath.substringAfterLast('/'), retryPath, modTimeByPath[retryPath] ?: 0L), content))
+            val retryModTime = currentFilesWithTimes.firstOrNull { (name, _) -> "$dirPath/$name" == retryPath }?.second ?: 0L
+            changedFiles.add(ChangedFile(FileEntry(retryPath.substringAfterLast('/'), retryPath, retryModTime), content))
         }
 
         ChangeSet(newFiles, changedFiles, deletedPaths)
     }
 
     // ---- Applied-to-DB tracking ----
+
+    private fun markObservedUnapplied(path: FilePath) {
+        unapplied.add(path)
+        retryPending.remove(path)
+        retryAttempts.remove(path)
+    }
+
+    /**
+     * Pre-write guard: true when writing the page back could overwrite newer disk content — the disk
+     * hash differs from the last observed one, or the content was observed but the DB never applied it.
+     * Decided under one lock so the two facts are read consistently.
+     */
+    suspend fun isDiskAhead(filePath: FilePath, diskHash: Int): Boolean = detectMutex.withLock {
+        val lastKnown = contentHashes[filePath]
+        (lastKnown != null && diskHash != lastKnown) || filePath in unapplied
+    }
 
     /** True while disk content for [filePath] has been observed (or touched by git) but not confirmed applied to the DB. */
     suspend fun isUnapplied(filePath: FilePath): Boolean = detectMutex.withLock { filePath in unapplied }

@@ -1726,6 +1726,9 @@ class StelekitViewModel(
                     diskBlockContent = diskBlockContent
                 )
                 if (conflict == null) {
+                    // Local already matches disk, but the watcher left the file unapplied (the event was
+                    // suppressed above): without this the pre-write guard would silently drop the save.
+                    graphLoader.acknowledgeDiskContent(event.filePath)
                     blockStateManager?.queuePageSave(currentPage.uuid.value)
                     return@collect
                 }

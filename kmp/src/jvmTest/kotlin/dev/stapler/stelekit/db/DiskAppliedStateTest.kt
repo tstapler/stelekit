@@ -12,6 +12,7 @@ import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -29,9 +30,14 @@ import kotlin.test.assertTrue
 class DiskAppliedStateTest {
 
     private class MapFs(val files: MutableMap<String, String>, val mtimes: MutableMap<String, Long> = mutableMapOf()) : FileSystem {
+        val throwOnRead = mutableSetOf<String>()
+        val unreadable = mutableSetOf<String>()
         override fun getDefaultGraphPath() = "/graph"
         override fun expandTilde(path: String) = path
-        override fun readFile(path: String): String? = files[path]
+        override fun readFile(path: String): String? {
+            check(path !in throwOnRead) { "boom reading $path" }
+            return if (path in unreadable) null else files[path]
+        }
         override fun writeFile(path: String, content: String): Boolean { files[path] = content; mtimes[path] = (mtimes[path] ?: 0L) + 1000L; return true }
         override fun listFiles(path: String) = files.keys.filter { it.startsWith("$path/") }.map { it.substringAfterLast("/") }
         override fun listDirectories(path: String) = emptyList<String>()
@@ -166,5 +172,112 @@ class DiskAppliedStateTest {
 
         assertFalse(loader.isDiskAheadOfDb(path, "- new"))
         assertTrue(loader.fileRegistry.detectChanges(dir).changedFiles.isEmpty(), "applied: nothing left to report")
+    }
+
+    // ── Review follow-ups: previously uncovered branches ─────────────────────
+
+    @Test
+    fun `a fresh external edit restarts the retry budget after it was exhausted`() = runTest {
+        val fs = MapFs(mutableMapOf(path to "- old"))
+        val registry = FileRegistry(fs)
+        registry.scanDirectory(dir)
+        fs.externalWrite(path, "- v2")
+        registry.detectChanges(dir)
+        repeat(FileRegistry.MAX_APPLY_RETRIES + 1) { registry.scheduleRetry(FilePath(path)); registry.detectChanges(dir) }
+
+        fs.externalWrite(path, "- v3")
+        assertEquals(1, registry.detectChanges(dir).changedFiles.size, "the new version is reported normally")
+        registry.scheduleRetry(FilePath(path))
+
+        assertEquals(1, registry.detectChanges(dir).changedFiles.size, "and its own failure is retried, not written off")
+    }
+
+    @Test
+    fun `an own write clears the flag and any pending retry`() = runTest {
+        val fs = MapFs(mutableMapOf(path to "- old"))
+        val registry = FileRegistry(fs)
+        registry.scanDirectory(dir)
+        fs.externalWrite(path, "- new")
+        registry.detectChanges(dir)
+        registry.scheduleRetry(FilePath(path))
+
+        registry.markWrittenByUs(path)
+
+        assertFalse(registry.isUnapplied(FilePath(path)))
+        assertTrue(registry.detectChanges(dir).changedFiles.isEmpty(), "no retry left after our own write")
+    }
+
+    @Test
+    fun `a deleted file drops its unapplied state`() = runTest {
+        val fs = MapFs(mutableMapOf(path to "- old"))
+        val registry = FileRegistry(fs)
+        registry.scanDirectory(dir)
+        fs.externalWrite(path, "- new")
+        registry.detectChanges(dir)
+        assertTrue(registry.isUnapplied(FilePath(path)))
+
+        fs.deleteFile(path)
+        registry.detectChanges(dir)
+
+        assertFalse(registry.isUnapplied(FilePath(path)))
+    }
+
+    @Test
+    fun `git-touched non-page files are never flagged`() = runTest {
+        val registry = FileRegistry(MapFs(mutableMapOf()))
+
+        registry.markUnapplied(listOf(FilePath("/graph/assets/pic.png"), FilePath("/graph/.stelekit/pages/x.meta.json")))
+
+        assertFalse(registry.isUnapplied(FilePath("/graph/assets/pic.png")))
+        assertFalse(registry.isUnapplied(FilePath("/graph/.stelekit/pages/x.meta.json")))
+    }
+
+    @Test
+    fun `the guard also fires when disk differs from the last observed hash`() = runTest {
+        val loader = loader(MapFs(mutableMapOf(path to "- a")), FlakyPageRepository(InMemoryPageRepository(), failing = false))
+        loader.fileRegistry.updateContentHash(path, "- a".hashCode())
+
+        assertTrue(loader.isDiskAheadOfDb(path, "- someone else edited this"))
+        assertFalse(loader.isDiskAheadOfDb(path, "- a"))
+    }
+
+    @Test
+    fun `a refused file stays flagged without being retried`() = runTest {
+        val withMarkers = "<<<<<<< HEAD\n- mine\n=======\n- theirs\n>>>>>>> origin/main\n"
+        val fs = MapFs(mutableMapOf(path to withMarkers))
+        val loader = loader(fs, FlakyPageRepository(InMemoryPageRepository(), failing = false))
+        loader.beginGitMerge(listOf(path))
+
+        loader.reloadFiles(listOf(FilePath(path)))
+
+        assertTrue(loader.isDiskAheadOfDb(path, withMarkers), "markers are refused, so the page must not be written back over them")
+        assertTrue(loader.fileRegistry.detectChanges(dir).changedFiles.isEmpty(), "re-reading the same markers would only be refused again")
+    }
+
+    @Test
+    fun `one throwing file does not abandon the rest of the reload set`() = runTest {
+        val good = "$dir/2026_11_14.md"
+        val fs = MapFs(mutableMapOf(path to "- bad", good to "- good"))
+        fs.throwOnRead += path
+        val pages = InMemoryPageRepository()
+        val loader = loader(fs, pages)
+
+        loader.reloadFiles(listOf(FilePath(path), FilePath(good)))
+
+        assertTrue(pages.getPageByName("2026_11_14").first().getOrNull() != null, "the second file must still be applied")
+    }
+
+    @Test
+    fun `an existing but unreadable file is retried not dropped`() = runTest {
+        val fs = MapFs(mutableMapOf(path to "- content"))
+        fs.unreadable += path
+        val loader = loader(fs, InMemoryPageRepository())
+        loader.fileRegistry.scanDirectory(dir)
+
+        loader.reloadFiles(listOf(FilePath(path)))
+        fs.unreadable.clear()
+        fs.externalWrite(path, "- content")   // bump mtime like a real re-delivery
+
+        assertEquals(listOf(path), loader.fileRegistry.detectChanges(dir).changedFiles.map { it.entry.filePath })
     }
 }

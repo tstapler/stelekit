@@ -1014,11 +1014,8 @@ class GraphLoader(
      * would overwrite it: either the content differs from the last observed hash, or it was observed
      * (or rewritten by git) and the DB never confirmed applying it.
      */
-    suspend fun isDiskAheadOfDb(filePath: String, diskContent: String): Boolean {
-        val lastKnown = fileRegistry.getContentHash(FilePath(filePath))
-        if (lastKnown != null && diskContent.hashCode() != lastKnown) return true
-        return fileRegistry.isUnapplied(FilePath(filePath))
-    }
+    suspend fun isDiskAheadOfDb(filePath: String, diskContent: String): Boolean =
+        fileRegistry.isDiskAhead(FilePath(filePath), diskContent.hashCode())
 
     override suspend fun acknowledgeDiskContent(filePath: String) {
         fileRegistry.markApplied(FilePath(filePath))
@@ -1987,7 +1984,8 @@ class GraphLoader(
                     filePathStr, content, existingBlocks, blocksToSave, page, priority, traceId, rootSpan.spanId
                 )
             } finally {
-                recordApplyOutcome(FilePath(filePathStr), outcome)
+                // NonCancellable: a cancelled apply must still record Failed (else it is never retried).
+                withContext(NonCancellable) { recordApplyOutcome(FilePath(filePathStr), outcome) }
                 CurrentSpanContext.set(null)
                 rootSpan.finish("OK", "file.path" to filePathStr.redactPath())
                 PerformanceMonitor.endTrace("parseAndSavePage")
@@ -1995,13 +1993,20 @@ class GraphLoader(
         }
     }
 
+    /** Never throws: it runs from a finally and must not mask the apply's own exception. */
     private suspend fun recordApplyOutcome(path: FilePath, outcome: DiskApplyOutcome) {
-        when (outcome) {
-            DiskApplyOutcome.Applied -> fileRegistry.markApplied(path)
-            DiskApplyOutcome.Failed -> fileRegistry.scheduleRetry(path)
-            // Refused (markers, blank-file/parser-empty guards) stays unapplied without retry: re-reading
-            // the same content would refuse again, and the pre-write guard keeps protecting the file.
-            DiskApplyOutcome.Refused, DiskApplyOutcome.NotTracked -> Unit
+        try {
+            when (outcome) {
+                DiskApplyOutcome.Applied -> fileRegistry.markApplied(path)
+                DiskApplyOutcome.Failed -> fileRegistry.scheduleRetry(path)
+                // Refused (markers, blank-file/parser-empty guards) stays unapplied without retry: re-reading
+                // the same content would refuse again, and the pre-write guard keeps protecting the file.
+                DiskApplyOutcome.Refused, DiskApplyOutcome.NotTracked -> Unit
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn("recording apply outcome failed for ${path.value.redactPath()}: ${e.message}")
         }
     }
 
