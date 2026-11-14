@@ -268,6 +268,7 @@ import dev.stapler.stelekit.git.GitShadowWorktreeNoCoroutineScopeTest
 import dev.stapler.stelekit.git.GitSyncBusyCounterFetchOnlyTest
 import dev.stapler.stelekit.git.GitSyncServiceChangeBackTest
 import dev.stapler.stelekit.git.GitSyncServiceAutoMergeTest
+import dev.stapler.stelekit.git.SidecarConflictResolverTest
 import dev.stapler.stelekit.git.GitSyncServiceConflictResolutionTest
 import dev.stapler.stelekit.git.GitSyncServiceErrorRoutingTest
 import dev.stapler.stelekit.git.GitSyncServiceConflictMarkerGuardTest
@@ -650,6 +651,7 @@ import org.junit.runners.Suite
     GitSyncBusyCounterFetchOnlyTest::class,
     GitSyncServiceChangeBackTest::class,
     GitSyncServiceAutoMergeTest::class,
+    SidecarConflictResolverTest::class,
     GitSyncServiceConflictResolutionTest::class,
     GitSyncServiceErrorRoutingTest::class,
     GitSyncServiceConflictMarkerGuardTest::class,

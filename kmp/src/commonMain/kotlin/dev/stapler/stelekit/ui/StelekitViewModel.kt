@@ -1726,6 +1726,9 @@ class StelekitViewModel(
                     diskBlockContent = diskBlockContent
                 )
                 if (conflict == null) {
+                    // Local already matches disk, but the watcher left the file unapplied (the event was
+                    // suppressed above): without this the pre-write guard would silently drop the save.
+                    graphLoader.acknowledgeDiskContent(event.filePath)
                     blockStateManager?.queuePageSave(currentPage.uuid.value)
                     return@collect
                 }
@@ -1817,6 +1820,8 @@ class StelekitViewModel(
         val conflict = _uiState.value.diskConflict ?: return
         _uiState.update { it.copy(diskConflict = null) }
         scope.launch {
+            // The user chose their version over the disk's: lift the pre-write guard before the save below.
+            graphLoader.acknowledgeDiskContent(conflict.filePath)
             if (conflict.editingBlockUuid != null) {
                 val block = blockRepository.getBlockByUuid(conflict.editingBlockUuid).first().getOrNull()
                 if (block != null) {
@@ -1869,6 +1874,7 @@ class StelekitViewModel(
         val conflict = _uiState.value.diskConflict ?: return
         _uiState.update { it.copy(diskConflict = null) }
         scope.launch {
+            graphLoader.acknowledgeDiskContent(conflict.filePath)
             val conflictContent = buildString {
                 appendLine("<<<<<<< Your edit")
                 append(conflict.localContent)

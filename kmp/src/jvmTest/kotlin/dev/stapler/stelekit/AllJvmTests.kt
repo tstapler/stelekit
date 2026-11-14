@@ -19,6 +19,7 @@ import dev.stapler.stelekit.db.DatabaseWriteActorTest
 import dev.stapler.stelekit.db.DemoGraphIntegrationTest
 import dev.stapler.stelekit.db.DiffMergeTest
 import dev.stapler.stelekit.db.ExternalChangeConflictTest
+import dev.stapler.stelekit.db.DiskAppliedStateTest
 import dev.stapler.stelekit.db.FileRegistryTest
 import dev.stapler.stelekit.db.GraphLoaderIntegrationTest
 import dev.stapler.stelekit.db.GraphLoaderNotesPathTest
@@ -172,6 +173,7 @@ import dev.stapler.stelekit.git.GitHubDeviceFlowClientTest
 import dev.stapler.stelekit.git.GitHubDeviceFlowClientEdgeCasesTest
 import dev.stapler.stelekit.git.GitRefDiagnosticsRedactionTest
 import dev.stapler.stelekit.git.GitSyncAttributeMergeE2ETest
+import dev.stapler.stelekit.git.GitSyncConflictReloadE2ETest
 import dev.stapler.stelekit.git.GitSyncServiceLfsJvmTest
 import dev.stapler.stelekit.git.lfs.JvmGitRepositoryLfsTransferTest
 import dev.stapler.stelekit.git.lfs.LfsTransferPolicyTest
@@ -369,6 +371,7 @@ import org.junit.runners.Suite
     DiffMergeTest::class,
     ExternalChangeConflictTest::class,
     FileRegistryTest::class,
+    DiskAppliedStateTest::class,
     GraphLoaderIntegrationTest::class,
     GraphLoaderNotesPathTest::class,
     ImageSidecarIndexerTest::class,
@@ -519,6 +522,7 @@ import org.junit.runners.Suite
     GitHubDeviceFlowClientEdgeCasesTest::class,
     GitRefDiagnosticsRedactionTest::class,
     GitSyncAttributeMergeE2ETest::class,
+    GitSyncConflictReloadE2ETest::class,
     GitSyncServiceLfsJvmTest::class,
     JvmGitRepositoryLfsTransferTest::class,
     LfsTransferPolicyTest::class,

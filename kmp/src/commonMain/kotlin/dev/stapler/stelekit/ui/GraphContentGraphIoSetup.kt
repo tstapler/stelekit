@@ -201,10 +201,7 @@ private fun rememberGraphWriter(
         sidecarManager = sidecarManager,
         onPreWrite = { filePath -> graphLoader.preMarkFileWrite(filePath) },
         onClearPendingWrite = { filePath -> graphLoader.clearFilePendingWrite(filePath) },
-        checkPreWriteConflict = { filePath, diskContent ->
-            val lastKnown = graphLoader.fileRegistry.getContentHash(dev.stapler.stelekit.model.FilePath(filePath))
-            lastKnown != null && diskContent.hashCode() != lastKnown
-        },
+        checkPreWriteConflict = { filePath, diskContent -> graphLoader.isDiskAheadOfDb(filePath, diskContent) },
         onPreWriteConflict = { filePath, _, diskContent ->
             graphLoader.emitExternalFileChange(filePath, diskContent)
         },
