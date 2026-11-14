@@ -142,6 +142,25 @@ class CaptureSocketListenerTest {
         }
     }
 
+    // Reset only happens when the server closes with unread input, which depends on read chunking; repeat to hit it.
+    @Test
+    fun captureSocketListener_should_ReplyErrWithoutReset_When_OversizedPayloadIsRepeatedlySent() = runBlocking {
+        val (graphManager, fileSystem) = newActiveSetup()
+        val socketPath = newSocketPath()
+        val listener = CaptureSocketListener(fileSystem, socketPath.toString())
+        listener.attachGraphManager(graphManager)
+        listener.start()
+
+        try {
+            val oversized = ByteArray(200 * 1024) { 'a'.code.toByte() }
+            repeat(100) { i ->
+                assertEquals("ERR\n", sendAndReceive(socketPath, oversized), "iteration $i")
+            }
+        } finally {
+            listener.stop()
+        }
+    }
+
     @Test
     fun captureSocketListener_should_DeleteStaleSocketFileAndRebind_When_BindFailsWithAddressAlreadyInUse() = runBlocking {
         val (graphManager, fileSystem) = newActiveSetup()

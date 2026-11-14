@@ -152,6 +152,7 @@ class CaptureSocketListener(
             try {
                 val payload = readPayload(conn)
                 if (payload == null) {
+                    drainInput(conn)
                     writeResponse(conn, ERR_RESPONSE)
                     return
                 }
@@ -203,6 +204,22 @@ class CaptureSocketListener(
         }
     }
 
+    /**
+     * Discards what the client already sent (up to [MAX_DRAIN_BYTES], until EOF). Closing a Unix
+     * socket with unread input makes the peer's next read fail with "Connection reset", losing the
+     * ERR reply for an oversized payload.
+     */
+    private fun drainInput(channel: SocketChannel) {
+        val buffer = ByteBuffer.allocate(READ_CHUNK_BYTES)
+        var drained = 0
+        while (drained < MAX_DRAIN_BYTES) {
+            buffer.clear()
+            val n = channel.read(buffer)
+            if (n < 0) return
+            drained += n
+        }
+    }
+
     private fun writeResponse(channel: SocketChannel, response: ByteArray) {
         val buffer = ByteBuffer.wrap(response)
         while (buffer.hasRemaining()) channel.write(buffer)
@@ -210,6 +227,7 @@ class CaptureSocketListener(
 
     private companion object {
         const val MAX_PAYLOAD_BYTES = 64 * 1024
+        const val MAX_DRAIN_BYTES = 1024 * 1024
         const val READ_CHUNK_BYTES = 8192
         const val NEWLINE: Byte = '\n'.code.toByte()
         val OK_RESPONSE = "OK\n".toByteArray(Charsets.UTF_8)

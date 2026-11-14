@@ -62,6 +62,9 @@ class DepthModelDownloader internal constructor(
     private val readyCheck: (File) -> Boolean = DepthModelStorage::isReady,
     private val settleTimeoutMs: Long = SETTLE_TIMEOUT_MS,
     private val settlePollMs: Long = SETTLE_POLL_MS,
+    /** Test seam: runs between computing a snapshot's state and writing it, to hold the window open deterministically. */
+    private val beforeStateWrite: suspend () -> Unit = {},
+    private val afterStateWrite: () -> Unit = {},
 ) {
     constructor(context: Context) : this(context, scheduler = null)
 
@@ -225,13 +228,17 @@ class DepthModelDownloader internal constructor(
         }
         // queuedState suspends on the network read; a cancel during it must not be undone by this stale snapshot.
         // A snapshot taken before the cancel (or a straggling RUNNING/ENQUEUED one after it) must not reopen a cancelled download.
+        beforeStateWrite()
         _modelState.update { current ->
             when {
                 cancelGeneration.get() != generation -> current
+                // "Nothing yet" was computed while idle; a downloadModel that started since must keep its Downloading.
+                next is ModelState.Absent && inFlight.get() > 0 -> current
                 next is ModelState.Downloading && current is ModelState.Cancelled && inFlight.get() == 0 -> current
                 else -> next
             }
         }
+        afterStateWrite()
     }
 
     /** Queued: explains why it is not running yet. The snapshot is taken at emission time, so it can go stale. */
