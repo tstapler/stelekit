@@ -32,16 +32,18 @@ import dev.stapler.stelekit.platform.download.ResumableDownload
 import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
 
 /**
  * The depth-model download as a one-shot [BackgroundTask]: resumes a partial `.part` file, validates the size and
- * moves it into place. A transport failure is `Failed(retryable = true)`, so the adapter retries with backoff within
+ * SHA-256, then moves it into place. A checksum mismatch is terminal (`retryable = false`) and deletes the `.part`. A transport failure is `Failed(retryable = true)`, so the adapter retries with backoff within
  * the shared attempt budget ([MAX_ATTEMPTS]). It never touches `DepthModelDownloader.ModelState`; that mirrors the
  * WorkManager state ([DepthModelDownloader]).
  */
 class ModelDownloadTask(
     context: Context,
     private val url: String = DepthModelDownloader.MODEL_URL,
+    private val expectedSha256: String = DepthModelDownloader.MODEL_SHA256,
 ) : BackgroundTask {
     private val appContext: Context = context.applicationContext ?: context
     private val logger = Logger("ModelDownloadTask")
@@ -66,6 +68,12 @@ class ModelDownloadTask(
                 part.delete()
                 return TaskRunResult.Failed("The downloaded model was too small to be valid.", retryable = false)
             }
+            val actual = sha256Hex(part)
+            if (!actual.equals(expectedSha256, ignoreCase = true)) {
+                part.delete()
+                logger.error("model checksum mismatch: expected $expectedSha256, got $actual")
+                return TaskRunResult.Failed(CHECKSUM_MISMATCH_MESSAGE, retryable = false)
+            }
             target.delete()
             if (!part.renameTo(target)) {
                 part.copyTo(target, overwrite = true)
@@ -86,6 +94,9 @@ class ModelDownloadTask(
     }
 
     companion object {
+        const val CHECKSUM_MISMATCH_MESSAGE =
+            "The downloaded model failed its integrity check, so it was discarded. Try again later."
+
         val KIND = TaskKind("model-download")
         val KEY = TaskKey(KIND, TaskScope(""))
 
@@ -123,9 +134,23 @@ fun registerModelDownloadTask(
     context: Context,
     foreground: TaskForegroundProvider = TaskWorkerRuntime.foreground,
     url: String = DepthModelDownloader.MODEL_URL,
+    expectedSha256: String = DepthModelDownloader.MODEL_SHA256,
 ) {
-    registry.register(ModelDownloadTask.KIND, ModelDownloadTask.spec, ModelDownloadTask(context, url))
+    registry.register(ModelDownloadTask.KIND, ModelDownloadTask.spec, ModelDownloadTask(context, url, expectedSha256))
     foreground.register(ModelDownloadTask.KIND) { ctx, _ -> ModelDownloadForeground.info(ctx) }
+}
+
+private fun sha256Hex(file: File): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { input ->
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val n = input.read(buffer)
+            if (n < 0) break
+            digest.update(buffer, 0, n)
+        }
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
 }
 
 /** The pre-existing "Downloading depth model" notification, preserved verbatim (no new notification). */

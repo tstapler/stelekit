@@ -312,8 +312,12 @@ class DepthModelDownloader internal constructor(
     }
 
     companion object {
+        /** Pinned to an immutable upstream commit (onnx-community/depth-anything-v2-small), never a mutable ref like `main`. */
         const val MODEL_URL =
-            "https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/main/onnx/model.onnx"
+            "https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/4472b7362082ad9968fee890ca0f1e5aca36b93d/onnx/model.onnx"
+
+        /** SHA-256 of the file at [MODEL_URL]; a download that hashes differently is discarded, never installed. */
+        const val MODEL_SHA256 = "afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c"
         const val UNIQUE_WORK_NAME = "depth-model-download"
         private const val SETTLE_TIMEOUT_MS = 2_000L
         private const val SETTLE_POLL_MS = 100L

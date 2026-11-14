@@ -48,7 +48,7 @@ class DepthModelDownloadWorkerTest {
     }
 
     private fun worker(attempt: Int = 0) = TestListenableWorkerBuilder<DepthModelDownloadWorker>(context)
-        .setInputData(workDataOf(DepthModelDownloadWorker.KEY_URL to "http://127.0.0.1:${server.address.port}/m"))
+        .setInputData(workDataOf(DepthModelDownloadWorker.KEY_URL to "http://127.0.0.1:${server.address.port}/m", DepthModelDownloadWorker.KEY_SHA256 to sha256Hex(payload)))
         .setRunAttemptCount(attempt)
         .build()
 

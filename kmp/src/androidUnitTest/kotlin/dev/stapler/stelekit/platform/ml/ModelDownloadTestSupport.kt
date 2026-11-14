@@ -39,9 +39,15 @@ class ModelDownloadMapSettings : Settings {
     }
 }
 
+internal fun testModelPayload(): ByteArray = Random(11).nextBytes((DepthModelStorage.MIN_MODEL_BYTES + 512 * 1024).toInt())
+
+internal fun sha256Hex(bytes: ByteArray): String =
+    java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+
 /** A local HTTP server that serves a model-sized payload (or an error status) at `/m`. */
 class ModelDownloadFakeServer {
-    val payload = Random(11).nextBytes((DepthModelStorage.MIN_MODEL_BYTES + 512 * 1024).toInt())
+    val payload = testModelPayload()
+    val sha256 = sha256Hex(payload)
     @Volatile var status = 200
     @Volatile var body: ByteArray = payload
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
@@ -70,9 +76,10 @@ class ModelDownloadFixture(
     val settings: ModelDownloadMapSettings = ModelDownloadMapSettings(),
     var network: NetworkSnapshot = NetworkSnapshot(online = true, isMetered = false),
     specTransform: (dev.stapler.stelekit.jobs.schedule.TaskSpec) -> dev.stapler.stelekit.jobs.schedule.TaskSpec = { it },
+    sha256: String = sha256Hex(testModelPayload()),
 ) {
     val registry = TaskRegistry().also {
-        it.register(ModelDownloadTask.KIND, specTransform(ModelDownloadTask.spec), ModelDownloadTask(context, url))
+        it.register(ModelDownloadTask.KIND, specTransform(ModelDownloadTask.spec), ModelDownloadTask(context, url, sha256))
     }
     val store = TaskSettingsStore(settings, LegacyConfigSeed.None, registry)
     val scheduler = WorkManagerTaskScheduler(context, registry, store, AppliedConfigLedger(settings))
