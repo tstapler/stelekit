@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.113.2](https://github.com/tstapler/stelekit/compare/v0.113.1...v0.113.2) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ci:** let diffCoverage run when an Android-only diff selects no JVM tests ([#668](https://github.com/tstapler/stelekit/issues/668)) ([84e0fb9](https://github.com/tstapler/stelekit/commit/84e0fb9359e86fd528a960a7f90e3683c19aed41))
+* flaky OneShotSkipTest and CaptureSocketListenerTest root causes ([#667](https://github.com/tstapler/stelekit/issues/667)) ([fb5cced](https://github.com/tstapler/stelekit/commit/fb5cced28b66624e89a2b7404aee02545efb8a47))
+* **jobs:** serialize WorkManagerTaskScheduler operations across instances ([#665](https://github.com/tstapler/stelekit/issues/665)) ([1b3d94e](https://github.com/tstapler/stelekit/commit/1b3d94e3aea5e1e8c5e9ed1cec0d19fc20f3088a))
+* **ml:** pin depth model URL and verify SHA-256 before install ([#664](https://github.com/tstapler/stelekit/issues/664)) ([7edd63b](https://github.com/tstapler/stelekit/commit/7edd63b17bdc2e8f99922d2c6c602092a26cea43))
+* **sync:** GitSyncWorker honors enabled and KnownScopes ([#666](https://github.com/tstapler/stelekit/issues/666)) ([c5ac2c1](https://github.com/tstapler/stelekit/commit/c5ac2c11eba5d5b432aa11f830eada8db123c24d))
+
 ## [0.113.1](https://github.com/tstapler/stelekit/compare/v0.113.0...v0.113.1) (2026-11-13)
 
 
