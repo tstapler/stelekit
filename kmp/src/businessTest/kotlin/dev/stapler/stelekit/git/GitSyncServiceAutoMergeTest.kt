@@ -147,4 +147,37 @@ class GitSyncServiceAutoMergeTest {
         assertTrue("Auto-merged (logseq-union): clean.md" in repo.commitMessages.single(), repo.commitMessages.toString())
         assertEquals(0, repo.abortCalls)
     }
+
+    private val sidecarRaw = "<<<<<<< HEAD\n{\"uuid\":\"u1\"}\n=======\n{\"uuid\":\"u2\"}\n>>>>>>> origin/main\n"
+    private val sidecar = ConflictFile(
+        filePath = "/repo/.stelekit/pages/2026_11_13.meta.json",
+        wikiRelativePath = ".stelekit/pages/2026_11_13.meta.json",
+        hunks = listOf(ConflictHunk(id = "s", localLines = listOf("{\"uuid\":\"u1\"}"), remoteLines = listOf("{\"uuid\":\"u2\"}"))),
+        rawContent = sidecarRaw,
+    )
+
+    @Test
+    fun `a sidecar conflict is unioned and committed without asking the user`() = runTest {
+        val repo = MergingRepo(listOf(sidecar))
+        val fs = RecordingFs()
+        val svc = service(repo, fs)
+
+        val result = svc.sync("test-graph")
+
+        assertTrue(result.isRight(), "sync must complete, got $result")
+        assertEquals("{\"uuid\":\"u1\"}\n{\"uuid\":\"u2\"}", fs.written[sidecar.filePath])
+        assertEquals(listOf(sidecar.filePath), repo.markedResolved)
+        assertEquals(1, repo.commitMessages.size)
+    }
+
+    @Test
+    fun `a sidecar never adds to the conflicts the user has to resolve`() = runTest {
+        val repo = MergingRepo(listOf(sidecar, real))
+        val svc = service(repo, RecordingFs())
+
+        svc.sync("test-graph")
+
+        val state = assertIs<SyncState.ConflictPending>(svc.syncState.value)
+        assertEquals(listOf(real.filePath), state.conflicts.map { it.filePath })
+    }
 }

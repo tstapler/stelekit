@@ -23,6 +23,7 @@ import dev.stapler.stelekit.jobs.NoJobTracker
 import dev.stapler.stelekit.git.lfs.LfsPlatformCapabilities
 import dev.stapler.stelekit.git.lfs.LfsViolation
 import dev.stapler.stelekit.git.model.CloneDepthState
+import dev.stapler.stelekit.git.merge.SidecarConflictResolver
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.SyncState
@@ -33,6 +34,7 @@ import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.platform.security.CredentialAccess
 import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -257,7 +259,7 @@ class GitSyncService(
                 graphLoader.reloadFiles(paths.map { FilePath(it) })
             }
         } finally {
-            graphLoader.endGitMerge()
+            withContext(NonCancellable) { graphLoader.endGitMerge() }
         }
     }
 
@@ -400,7 +402,9 @@ class GitSyncService(
                 // Files the block-aware merge (honoring .gitattributes) already merged cleanly need
                 // no user decision. Suppress the watcher before writing them so the writes are not
                 // read back as external edits; the finally below clears it on every exit path.
-                val autoResolvable = mergeResult.conflicts.filter { it.autoResolvedBy != null }
+                // Sidecars are app-owned derived data: union them here rather than asking the user.
+                val conflicts = mergeResult.conflicts.map { SidecarConflictResolver.resolve(it) ?: it }
+                val autoResolvable = conflicts.filter { it.autoResolvedBy != null }
                 if (autoResolvable.isNotEmpty()) graphLoader.beginGitMerge(autoResolvable.map { it.filePath })
                 // The working tree changed under the DB the moment merge() returned, so reloading it is
                 // not a success-path step: [reloadMergedFiles] runs from the finally below on EVERY exit
@@ -410,7 +414,7 @@ class GitSyncService(
                     val autoResolved = autoResolveCleanMerges(gitRepository, fileSystem, config, autoResolvable, logger)
                     val autoResolvedPaths = autoResolved.mapTo(HashSet()) { it.filePath }
                     autoMergedPaths = autoResolved.map { it.wikiRelativePath }
-                    val unresolvedConflicts = mergeResult.conflicts.filter { it.filePath !in autoResolvedPaths }
+                    val unresolvedConflicts = conflicts.filter { it.filePath !in autoResolvedPaths }
                     val unresolvedPaths = unresolvedConflicts.mapTo(HashSet()) { it.filePath }
                     reloadPaths = (mergeResult.changedFiles + autoResolvedPaths).distinct().filter { it !in unresolvedPaths }
 
