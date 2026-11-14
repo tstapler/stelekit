@@ -1817,6 +1817,8 @@ class StelekitViewModel(
         val conflict = _uiState.value.diskConflict ?: return
         _uiState.update { it.copy(diskConflict = null) }
         scope.launch {
+            // The user chose their version over the disk's: lift the pre-write guard before the save below.
+            graphLoader.acknowledgeDiskContent(conflict.filePath)
             if (conflict.editingBlockUuid != null) {
                 val block = blockRepository.getBlockByUuid(conflict.editingBlockUuid).first().getOrNull()
                 if (block != null) {
@@ -1869,6 +1871,7 @@ class StelekitViewModel(
         val conflict = _uiState.value.diskConflict ?: return
         _uiState.update { it.copy(diskConflict = null) }
         scope.launch {
+            graphLoader.acknowledgeDiskContent(conflict.filePath)
             val conflictContent = buildString {
                 appendLine("<<<<<<< Your edit")
                 append(conflict.localContent)

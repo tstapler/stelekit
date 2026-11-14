@@ -966,6 +966,9 @@ class GraphLoader(
      * Always paired with [endGitMerge].
      */
     override suspend fun beginGitMerge(pathsBeingMerged: List<String>) {
+        // Git rewrote these files under us: until reloadFiles confirms the DB has them, a stale page
+        // must not be written back over them, whatever path the sync takes out of the merge.
+        fileRegistry.markUnapplied(pathsBeingMerged.map { FilePath(it) })
         fileWatcher.beginGitMerge(pathsBeingMerged)
     }
 
@@ -987,9 +990,38 @@ class GraphLoader(
      */
     override suspend fun reloadFiles(filePaths: List<FilePath>) {
         for (path in filePaths) {
-            val content = readFileDecrypted(path.value) ?: continue
-            parseAndSavePage(path, content, ParseMode.FULL, DatabaseWriteActor.Priority.HIGH, forceReload = true)
+            if (!FileRegistry.isPageFileName(path.value)) continue
+            // One bad file must not abandon the rest of the merge's reload set; its outcome is recorded
+            // in the registry (retry + guard), so swallowing here loses nothing.
+            try {
+                fileSystem.invalidateShadow(path.value) // git rewrote the real file; a cached SAF copy would be pre-merge
+                val content = readFileDecrypted(path.value)
+                if (content == null) {
+                    if (fileSystem.fileExists(path.value)) fileRegistry.scheduleRetry(path)
+                    continue
+                }
+                parseAndSavePage(path, content, ParseMode.FULL, DatabaseWriteActor.Priority.HIGH, forceReload = true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn("reloadFiles: ${path.value.redactPath()} failed: ${e.message}")
+            }
         }
+    }
+
+    /**
+     * True when [filePath]'s disk content is newer than what the DB holds, so writing the page back
+     * would overwrite it: either the content differs from the last observed hash, or it was observed
+     * (or rewritten by git) and the DB never confirmed applying it.
+     */
+    suspend fun isDiskAheadOfDb(filePath: String, diskContent: String): Boolean {
+        val lastKnown = fileRegistry.getContentHash(FilePath(filePath))
+        if (lastKnown != null && diskContent.hashCode() != lastKnown) return true
+        return fileRegistry.isUnapplied(FilePath(filePath))
+    }
+
+    override suspend fun acknowledgeDiskContent(filePath: String) {
+        fileRegistry.markApplied(FilePath(filePath))
     }
 
     override suspend fun loadFullPage(pageUuid: String, force: Boolean) {
@@ -1723,14 +1755,15 @@ class GraphLoader(
         priority: DatabaseWriteActor.Priority,
         traceId: String,
         parentSpanId: String,
-    ) {
+    ): DiskApplyOutcome {
         val pageUuid = page.uuid
         val fileHasContent = content.trim().isNotEmpty()
         val existingBlockCount = existingBlocks.size
-        when {
+        return when {
             blocksToSave.isEmpty() && fileHasContent -> {
                 logger.warn("Parser returned no blocks for non-empty file '$filePath' " +
                     "(${content.length} chars) — skipping block update to prevent data loss")
+                DiskApplyOutcome.Refused
             }
             blocksToSave.isEmpty() && !fileHasContent && existingBlockCount > 0 -> {
                 // Blank-file guard: refuse to destroy non-empty in-memory state with an
@@ -1746,6 +1779,7 @@ class GraphLoader(
                         filePath, "Blank external overwrite suppressed to prevent data loss"
                     )
                 ))
+                DiskApplyOutcome.Refused
             }
             else -> {
                 // FULL mode: diff-based merge instead of delete-all + insert-all
@@ -1802,6 +1836,7 @@ class GraphLoader(
                 if (blocksToInsert.isNotEmpty() || blocksToUpdate.isNotEmpty()) {
                     (blockRepository as? dev.stapler.stelekit.repository.SqlDelightBlockRepository)?.evictHierarchyForPage(pageUuid.value)
                 }
+                if (writeResult.isLeft()) DiskApplyOutcome.Failed else DiskApplyOutcome.Applied
             }
         }
     }
@@ -1844,6 +1879,9 @@ class GraphLoader(
         if (mode == ParseMode.METADATA_ONLY && isPriorityFile(filePathStr)) return
 
         val lock = getFileLock(filePathStr)
+        // FULL-mode loads must end with a recorded outcome; defaulting to Failed means an unexpected
+        // exception schedules a retry instead of silently leaving the DB behind the disk.
+        var outcome = if (mode == ParseMode.FULL) DiskApplyOutcome.Failed else DiskApplyOutcome.NotTracked
         lock.withLock {
             if (mode == ParseMode.METADATA_ONLY && isPriorityFile(filePathStr)) return
 
@@ -1855,7 +1893,7 @@ class GraphLoader(
                 val fileName = filePathStr.replace("\\", "/").substringAfterLast("/")
                 val title = FileUtils.decodeFileName(fileName.stripPageExtension())
                 // Skip Logseq-internal file: protocol artifacts silently
-                if (title.startsWith("file:")) return
+                if (title.startsWith("file:")) { outcome = DiskApplyOutcome.Refused; return }
                 // Reject files with git conflict markers — importing them would corrupt the graph.
                 if (ConflictMarkerDetector.hasConflictMarkers(content)) {
                     logger.warn("Git conflict markers detected in '$filePathStr' — import suppressed")
@@ -1865,6 +1903,7 @@ class GraphLoader(
                             "Git conflict markers detected in '$filePathStr' — resolve conflicts before importing"
                         )
                     ))
+                    outcome = DiskApplyOutcome.Refused
                     return@withLock
                 }
 
@@ -1876,7 +1915,10 @@ class GraphLoader(
                 val lookup = lookupExistingPageAndCheckFreshness(
                     filePathStr, name, isJournal, journalDate, mode, traceId, rootSpan.spanId, forceReload
                 )
-                if (lookup.skip) return@withLock
+                if (lookup.skip) {
+                    if (mode == ParseMode.FULL) outcome = DiskApplyOutcome.Applied
+                    return@withLock
+                }
 
                 val existingPage = lookup.existingPage
 
@@ -1903,6 +1945,7 @@ class GraphLoader(
                 // For METADATA_ONLY, save page + lightweight stub blocks and return.
                 if (mode == ParseMode.METADATA_ONLY) {
                     saveMetadataOnlyBlocks(filePathStr, page, rootBlocks, priority, traceId, rootSpan.spanId)
+                    outcome = DiskApplyOutcome.NotTracked
                     return@withLock
                 }
 
@@ -1940,14 +1983,25 @@ class GraphLoader(
                 )
                 processBlocksSpan.finish("OK", "block.count" to blocksToSave.size.toString())
 
-                dispatchFullBlockWrites(
+                outcome = dispatchFullBlockWrites(
                     filePathStr, content, existingBlocks, blocksToSave, page, priority, traceId, rootSpan.spanId
                 )
             } finally {
+                recordApplyOutcome(FilePath(filePathStr), outcome)
                 CurrentSpanContext.set(null)
                 rootSpan.finish("OK", "file.path" to filePathStr.redactPath())
                 PerformanceMonitor.endTrace("parseAndSavePage")
             }
+        }
+    }
+
+    private suspend fun recordApplyOutcome(path: FilePath, outcome: DiskApplyOutcome) {
+        when (outcome) {
+            DiskApplyOutcome.Applied -> fileRegistry.markApplied(path)
+            DiskApplyOutcome.Failed -> fileRegistry.scheduleRetry(path)
+            // Refused (markers, blank-file/parser-empty guards) stays unapplied without retry: re-reading
+            // the same content would refuse again, and the pre-write guard keeps protecting the file.
+            DiskApplyOutcome.Refused, DiskApplyOutcome.NotTracked -> Unit
         }
     }
 
@@ -2016,3 +2070,6 @@ class GraphLoader(
         destination: MutableList<Block>
     ) = MarkdownPageParser.createStubBlocks(parsedBlocks, pagePath, pageUuid, parentUuid, baseLevel, now, destination)
 }
+
+/** What happened when disk content was applied to the DB; drives [FileRegistry]'s applied/retry bookkeeping. */
+internal enum class DiskApplyOutcome { Applied, Failed, Refused, NotTracked }

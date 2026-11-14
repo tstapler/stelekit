@@ -247,6 +247,21 @@ class GitSyncService(
     ) = runGuard.publishFailure(rateLimitRetry, graphId, err, authFailureMeansExpired, retry)
 
     /**
+     * Reloads [paths] into the DB under watcher suppression, then always lifts the suppression.
+     * Every working-tree change a sync makes funnels through here so no exit path can skip it.
+     */
+    private suspend fun reloadMergedFiles(paths: List<String>) {
+        try {
+            if (paths.isNotEmpty()) {
+                graphLoader.beginGitMerge(paths)
+                graphLoader.reloadFiles(paths.map { FilePath(it) })
+            }
+        } finally {
+            graphLoader.endGitMerge()
+        }
+    }
+
+    /**
      * Full sync sequence ([SyncTrigger.Automatic] callers wait while a first-sync review is pending):
      * 1. Network check
      * 2. Load config
@@ -387,11 +402,17 @@ class GitSyncService(
                 // read back as external edits; the finally below clears it on every exit path.
                 val autoResolvable = mergeResult.conflicts.filter { it.autoResolvedBy != null }
                 if (autoResolvable.isNotEmpty()) graphLoader.beginGitMerge(autoResolvable.map { it.filePath })
+                // The working tree changed under the DB the moment merge() returned, so reloading it is
+                // not a success-path step: [reloadMergedFiles] runs from the finally below on EVERY exit
+                // (conflict, journal-merge proposal, commit failure), not just the clean one.
+                var reloadPaths: List<String> = mergeResult.changedFiles
                 try {
                     val autoResolved = autoResolveCleanMerges(gitRepository, fileSystem, config, autoResolvable, logger)
                     val autoResolvedPaths = autoResolved.mapTo(HashSet()) { it.filePath }
                     autoMergedPaths = autoResolved.map { it.wikiRelativePath }
                     val unresolvedConflicts = mergeResult.conflicts.filter { it.filePath !in autoResolvedPaths }
+                    val unresolvedPaths = unresolvedConflicts.mapTo(HashSet()) { it.filePath }
+                    reloadPaths = (mergeResult.changedFiles + autoResolvedPaths).distinct().filter { it !in unresolvedPaths }
 
                     if (mergeResult.hasConflicts && unresolvedConflicts.isEmpty()) {
                         val message = buildCommitMessage(config, isMerge = true) + autoMergeNote(autoResolved)
@@ -439,12 +460,9 @@ class GitSyncService(
                         return@withContext conflictErr.left()
                     }
 
-                    // 8. Reload merged files with watcher suppression
-                    val reloadPaths = (mergeResult.changedFiles + autoResolvedPaths).distinct()
-                    graphLoader.beginGitMerge(reloadPaths)
-                    graphLoader.reloadFiles(reloadPaths.map { FilePath(it) })
+                    // 8. Reload merged files — see the finally below.
                 } finally {
-                    graphLoader.endGitMerge()
+                    reloadMergedFiles(reloadPaths)
                 }
 
                 remoteCommitsMerged = mergeResult.mergedCommitCount ?: fetchResult.remoteCommitCount
@@ -672,12 +690,7 @@ class GitSyncService(
         val message = buildCommitMessage(config, isMerge = true)
         gitRepository.commit(config, message).onLeft { return@withContext it.left() }
 
-        graphLoader.beginGitMerge(resolvedPaths)
-        try {
-            graphLoader.reloadFiles(resolvedPaths.map { FilePath(it) })
-        } finally {
-            graphLoader.endGitMerge()
-        }
+        reloadMergedFiles(resolvedPaths)
 
         _syncState.value = SyncState.Idle
         Unit.right()
@@ -718,12 +731,7 @@ class GitSyncService(
         val message = buildCommitMessage(config, isMerge = true)
         gitRepository.commit(config, message).onLeft { return@withContext it.left() }
 
-        graphLoader.beginGitMerge(listOf(filePath))
-        try {
-            graphLoader.reloadFiles(listOf(dev.stapler.stelekit.model.FilePath(filePath)))
-        } finally {
-            graphLoader.endGitMerge()
-        }
+        reloadMergedFiles(listOf(filePath))
 
         guards.changes(config, GuardScope.NetPush, liftMassChange = false)?.let { return@withContext refuse(it) }
         _syncState.value = SyncState.Pushing
