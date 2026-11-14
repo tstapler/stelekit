@@ -9,6 +9,7 @@ import dev.stapler.stelekit.git.AndroidGitRepositoryTestRemoteTest
 import dev.stapler.stelekit.git.GitSyncBusyCounterSharedWiringTest
 import dev.stapler.stelekit.git.GitSyncTaskRegistrationTest
 import dev.stapler.stelekit.git.GitSyncWorkerGateAndRecordTest
+import dev.stapler.stelekit.git.GitSyncWorkerStaleGateTest
 import dev.stapler.stelekit.git.WorkManagerSyncSchedulerPauseTest
 import dev.stapler.stelekit.git.WorkManagerSyncSchedulerRetryOwnerTest
 import dev.stapler.stelekit.git.WorkManagerSyncSchedulerSlowPathYieldTest
@@ -76,6 +77,7 @@ import org.junit.runners.Suite
     WorkManagerSyncSchedulerWatchdogTest::class,
     LegacyWorkUpgradeTest::class,
     GitSyncWorkerGateAndRecordTest::class,
+    GitSyncWorkerStaleGateTest::class,
     GitSyncTaskRegistrationTest::class,
     AndroidGitLegacyConfigSourceTest::class,
     PlatformSettingsColdPathTest::class,

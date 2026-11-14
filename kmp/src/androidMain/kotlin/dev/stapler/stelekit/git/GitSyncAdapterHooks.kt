@@ -5,9 +5,14 @@ package dev.stapler.stelekit.git
 
 import android.content.Context
 import androidx.work.Data
+import dev.stapler.stelekit.jobs.schedule.KnownScopesResult
+import dev.stapler.stelekit.jobs.schedule.LegacyConfigSeed
 import dev.stapler.stelekit.jobs.schedule.TaskAdapterHooks
 import dev.stapler.stelekit.jobs.schedule.TaskKey
 import dev.stapler.stelekit.jobs.schedule.TaskRunResult
+import dev.stapler.stelekit.jobs.schedule.TaskScope
+import dev.stapler.stelekit.jobs.schedule.TaskSettingsStore
+import dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime
 import dev.stapler.stelekit.platform.PlatformSettings
 import kotlinx.coroutines.CancellationException
 
@@ -46,6 +51,25 @@ object GitSyncAdapterHooks : TaskAdapterHooks {
     /** Slow path only (no live service in this process): yield when a clone worker is already RUNNING. */
     suspend fun shouldYieldToCloneWorker(context: Context, graphId: String): Boolean =
         GitSyncServiceRegistry.getService(graphId) == null && isGitCloneWorkerRunningFor(context, graphId)
+
+    /**
+     * "disabled" when a periodic job's stored entry (or tombstone) is explicitly disabled, "graph-removed" when
+     * `KnownScopes` is readable and lacks the graph. Absent entries, `Unknown` scopes and read errors return
+     * null: unknown is never acted on (ADR-005). An explicit one-shot ignores `enabled`.
+     */
+    suspend fun staleJobReason(graphId: String, periodic: Boolean): String? = try {
+        val key = TaskKey(GitSyncTask.KIND, TaskScope(graphId))
+        val store = TaskSettingsStore(PlatformSettings(), LegacyConfigSeed.None, TaskWorkerRuntime.registry)
+        when {
+            periodic && store.isExplicitlyDisabled(key) -> "disabled"
+            (TaskWorkerRuntime.knownScopes.read() as? KnownScopesResult.Known)?.let { key.scope !in it.scopes } == true -> "graph-removed"
+            else -> null
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Throwable) {
+        null
+    }
 
     /** Never affects the worker's own result: a notification problem must not make a good fetch look failed. */
     fun notifyUpdatesWaiting(context: Context, graphId: String, staleness: SyncStaleness, intervalMinutes: Int) {
