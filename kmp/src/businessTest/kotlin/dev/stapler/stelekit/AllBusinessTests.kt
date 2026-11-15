@@ -340,6 +340,10 @@ import dev.stapler.stelekit.git.GateKeyAliasTest
 import dev.stapler.stelekit.git.LockRecoveryDecisionTest
 import dev.stapler.stelekit.git.PidNamespaceAbsentPidTest
 import dev.stapler.stelekit.git.RepoOpGateReleaseStructureTest
+import dev.stapler.stelekit.git.ProcStatParserTest
+import dev.stapler.stelekit.git.LockRecoveryClaimTest
+import dev.stapler.stelekit.git.ActiveRunNotClearedOwnTest
+import dev.stapler.stelekit.git.RecoveryLockInProcessMutexTest
 import dev.stapler.stelekit.git.RepoOpGateTest
 import dev.stapler.stelekit.git.TornRecordIsUnknownTest
 import dev.stapler.stelekit.git.GitSyncTaskMappingTest
@@ -733,6 +737,10 @@ import org.junit.runners.Suite
     GateKeyAliasTest::class,
     LockRecoveryDecisionTest::class,
     PidNamespaceAbsentPidTest::class,
+    ProcStatParserTest::class,
+    LockRecoveryClaimTest::class,
+    ActiveRunNotClearedOwnTest::class,
+    RecoveryLockInProcessMutexTest::class,
     RepoOpGateReleaseStructureTest::class,
     RepoOpGateTest::class,
     TornRecordIsUnknownTest::class,

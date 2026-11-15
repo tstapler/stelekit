@@ -3,6 +3,13 @@
 
 package dev.stapler.stelekit.git
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.logging.Logger
+import kotlin.time.Clock
+
 /** Why a claim could not tell whether the repository is free; every reason fails closed (nothing is deleted). */
 enum class UnknownReason {
     TornRecord,
@@ -88,4 +95,136 @@ object LockRecovery {
             Liveness.Dead -> LockVerdict.ClearedDeadOwner
             Liveness.Unknown -> LockVerdict.OwnerUnknown(UnknownReason.LivenessUnknown)
         }
+
+    private val logger = Logger("LockRecovery")
+
+    /**
+     * Claims the repository for [self] (ADR-001 decision 12, steps 0-6). Blocking file I/O through [lockFiles].
+     * [key] is the canonical owner-record path. Left: [DomainError.GitError.SyncInProgress] when another run
+     * (in this process, or another process holding the recovery lock or a live record) owns it, or
+     * [DomainError.GitError.StaleLockFile] when the owner is unknown and nothing was deleted.
+     */
+    fun claim(
+        key: String,
+        lockFiles: LockFiles,
+        liveness: ProcessLiveness,
+        self: LockOwnerRecord,
+        registry: ActiveRunRegistry,
+        nowMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
+    ): Either<DomainError.GitError, ClaimedRun> {
+        // A registered run proves any own-instance record is live, so ClearedOwn below can only be a corpse.
+        if (registry.isActive(key)) return DomainError.GitError.SyncInProgress(registry.originOf(key)).left()
+        val existing = lockFiles.readRecord()
+        val verdict = decide(existing, lockFiles, liveness, self)
+        return when {
+            verdict == LockVerdict.NoLock -> publish(key, lockFiles, self, registry, verdict)
+            verdict.deletes -> recoverThenPublish(key, lockFiles, liveness, self, registry, existing, nowMs)
+            else -> refusal(key, verdict).left()
+        }
+    }
+
+    /** Ends a claimed run: removes our record only if it is still ours, then unregisters. Best-effort. */
+    fun end(run: ClaimedRun, lockFiles: LockFiles, registry: ActiveRunRegistry) {
+        try {
+            val current = lockFiles.readRecord()?.let { (LockOwnerRecord.decode(it.content) as? RecordDecode.Valid)?.record }
+            if (current != null && current.instanceId == run.record.instanceId && current.startedAtMs == run.record.startedAtMs) {
+                lockFiles.deleteRecord()
+            }
+        } catch (e: Exception) {
+            logger.warn("could not remove owner record", e)
+        } finally {
+            registry.unregister(run.key)
+        }
+    }
+
+    private fun refusal(key: String, verdict: LockVerdict): DomainError.GitError = when (verdict) {
+        LockVerdict.OwnerAlive -> DomainError.GitError.SyncInProgress(null)
+        else -> DomainError.GitError.StaleLockFile(key, verdict)
+    }
+
+    private fun recoverThenPublish(
+        key: String,
+        lockFiles: LockFiles,
+        liveness: ProcessLiveness,
+        self: LockOwnerRecord,
+        registry: ActiveRunRegistry,
+        decidedOn: RecordRead?,
+        nowMs: () -> Long,
+    ): Either<DomainError.GitError, ClaimedRun> {
+        if (!registry.tryEnterRecovery(key)) return DomainError.GitError.SyncInProgress(null).left()
+        try {
+            val handle = try {
+                lockFiles.tryLockRecovery()
+            } catch (_: RecoveryLockUnsupportedException) {
+                return refusal(key, LockVerdict.OwnerUnknown(UnknownReason.RecoveryLockUnsupported)).left()
+            } ?: return DomainError.GitError.SyncInProgress(null).left()
+            try {
+                return recoverUnderLock(key, lockFiles, liveness, self, registry, decidedOn, nowMs)
+            } finally {
+                handle.release()
+            }
+        } finally {
+            registry.exitRecovery(key)
+        }
+    }
+
+    // Step 4 onwards: only a record byte-identical to the one decided on, re-probed dead under the lock, proceeds.
+    private fun recoverUnderLock(
+        key: String,
+        lockFiles: LockFiles,
+        liveness: ProcessLiveness,
+        self: LockOwnerRecord,
+        registry: ActiveRunRegistry,
+        decidedOn: RecordRead?,
+        nowMs: () -> Long,
+    ): Either<DomainError.GitError, ClaimedRun> {
+        val reread = lockFiles.readRecord()
+        val verdict = decide(reread, lockFiles, liveness, self)
+        if (verdict == LockVerdict.NoLock) return publish(key, lockFiles, self, registry, verdict)
+        if (!verdict.deletes) return refusal(key, verdict).left()
+        // Another claimer replaced the record we decided on; it is theirs to act on, not ours.
+        if (reread?.content != decidedOn?.content) return DomainError.GitError.SyncInProgress(null).left()
+        if (!withinForeignLockWindow(reread, lockFiles, nowMs())) {
+            return refusal(key, LockVerdict.OwnerUnknown(UnknownReason.ForeignLockSuspected)).left()
+        }
+        deletableLocks(verdict, lockFiles).forEach { lockFiles.delete(it.path) }
+        lockFiles.deleteRecord()
+        return publish(key, lockFiles, self, registry, verdict)
+    }
+
+    // Step 5 placeholder: fails closed until the foreign-lock window rule exists, so no lock is ever deleted.
+    @Suppress("UnusedParameter")
+    private fun withinForeignLockWindow(record: RecordRead?, lockFiles: LockFiles, nowMs: Long): Boolean = false
+
+    // Step 6: atomic exclusive publish, then register and re-read. A write failure is logged, not fatal.
+    private fun publish(
+        key: String,
+        lockFiles: LockFiles,
+        self: LockOwnerRecord,
+        registry: ActiveRunRegistry,
+        verdict: LockVerdict,
+    ): Either<DomainError.GitError, ClaimedRun> {
+        val created = try {
+            lockFiles.createRecordExclusive(self.encode())
+        } catch (e: Exception) {
+            logger.warn("could not write owner record; continuing without one", e)
+            null
+        }
+        if (created == false) return DomainError.GitError.SyncInProgress(null).left()
+        val origin = SyncOrigin.entries.firstOrNull { it.name == self.origin }
+        if (!registry.register(key, origin)) return DomainError.GitError.SyncInProgress(registry.originOf(key)).left()
+        if (created == true && !isOurs(lockFiles.readRecord(), self)) {
+            registry.unregister(key)
+            return DomainError.GitError.SyncInProgress(null).left()
+        }
+        return ClaimedRun(key, self, verdict).right()
+    }
+
+    private fun isOurs(read: RecordRead?, self: LockOwnerRecord): Boolean {
+        val record = (read?.let { LockOwnerRecord.decode(it.content) } as? RecordDecode.Valid)?.record ?: return false
+        return record.instanceId == self.instanceId && record.startedAtMs == self.startedAtMs
+    }
 }
+
+/** Proof that this process claimed the repository; hand it back to [LockRecovery.end]. */
+class ClaimedRun internal constructor(val key: String, val record: LockOwnerRecord, val verdict: LockVerdict)
