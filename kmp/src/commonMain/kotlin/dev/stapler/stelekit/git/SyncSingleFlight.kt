@@ -9,8 +9,14 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Outcome of the read-only key resolution that precedes every gate acquisition (ADR-001 decision 4). */
@@ -24,8 +30,16 @@ internal sealed interface GateKeyResolution {
     data class Unreadable(val reason: String) : GateKeyResolution
 }
 
-/** Who is calling and for which operation; [opName] lands in the owner record. */
-internal data class RunSpec(val graphId: String, val origin: SyncOrigin, val opName: String)
+/**
+ * Who is calling and for which operation; [opName] lands in the owner record. [rerunOnLoss] is true only for a
+ * [SyncOrigin.UiPress] sync without the mass-change lift: losing the race then queues exactly one follow-up.
+ */
+internal data class RunSpec(
+    val graphId: String,
+    val origin: SyncOrigin,
+    val opName: String,
+    val rerunOnLoss: Boolean = false,
+)
 
 /**
  * Single-flight wrapper for [GitSyncService]'s public mutating methods: resolve the gate key, take the lease, claim
@@ -40,6 +54,11 @@ internal class SyncSingleFlight(
     private val inFlight: MutableStateFlow<SyncRunInfo?>,
     private val clock: () -> Long,
     private val publishError: (DomainError.GitError) -> Unit,
+    /** Runs the lease handed over by [RepoOpGate.releaseOrHandOff] as a [SyncOrigin.FollowUp] sync of the graph. */
+    private val launchFollowUp: (graphId: String, FollowUp) -> Unit,
+    /** Owns the heartbeat job; never a composable's scope. */
+    private val scope: CoroutineScope,
+    private val heartbeatIntervalMs: Long = OwnerHeartbeat.DEFAULT_INTERVAL_MS,
 ) {
     private val logger = Logger("SyncSingleFlight")
 
@@ -81,16 +100,40 @@ internal class SyncSingleFlight(
         val resolution = resolveGateKey(graphId)
         val key = (resolution as? GateKeyResolution.Resolved)?.key ?: "graph:$graphId"
         if (resolution is GateKeyResolution.Unreadable && inFlight.value != null) {
-            return coalesced(key, origin, fail, inFlight.value?.origin)
+            return coalesced(key, spec, fail, inFlight.value?.origin)
         }
-        val lease = gate.tryAcquire(key, origin) ?: return coalesced(key, origin, fail, gate.heldBy(key))
-        return execute(lease, spec, (resolution as? GateKeyResolution.Resolved)?.config, fail) {
-            if (resolution is GateKeyResolution.Unreadable) unreadable(resolution.reason) else body()
-        }
+        val lease = gate.tryAcquire(key, origin) ?: return coalesced(key, spec, fail, gate.heldBy(key))
+        return execute(lease, spec, resolution, fail, unreadable, body)
     }
 
-    private fun <T> coalesced(key: String, origin: SyncOrigin, fail: (DomainError.GitError) -> T, heldBy: SyncOrigin?): T {
-        logger.info("decision=coalesced key=$key origin=$origin heldBy=$heldBy")
+    /**
+     * Runs [body] under [followUp]'s already-held lease (a queued press's one rerun). The key is re-resolved because
+     * the repository may have changed since the press; a key that no longer matches only releases.
+     */
+    suspend fun <T> runFollowUp(
+        followUp: FollowUp,
+        spec: RunSpec,
+        fail: (DomainError.GitError) -> T,
+        unreadable: (String) -> T,
+        body: suspend () -> T,
+    ): T {
+        logger.info("rerun started key=${followUp.lease.key} graphId=${spec.graphId}")
+        val resolution = try {
+            resolveGateKey(spec.graphId)
+        } catch (e: CancellationException) {
+            release(followUp.lease, spec.graphId)
+            throw e
+        }
+        if (resolution is GateKeyResolution.Resolved && resolution.key != followUp.lease.key) {
+            release(followUp.lease, spec.graphId)
+            return fail(DomainError.GitError.SyncInProgress(null))
+        }
+        return execute(followUp.lease, spec, resolution, fail, unreadable, body)
+    }
+
+    private fun <T> coalesced(key: String, spec: RunSpec, fail: (DomainError.GitError) -> T, heldBy: SyncOrigin?): T {
+        val queued = spec.rerunOnLoss && gate.requestRerun(key)
+        logger.info("decision=coalesced key=$key origin=${spec.origin} heldBy=$heldBy followUpQueued=$queued")
         return fail(DomainError.GitError.SyncInProgress(heldBy))
     }
 
@@ -98,18 +141,23 @@ internal class SyncSingleFlight(
     private suspend fun <T> execute(
         lease: GateLease,
         spec: RunSpec,
-        config: GitConfig?,
+        resolution: GateKeyResolution,
         fail: (DomainError.GitError) -> T,
+        unreadable: (String) -> T,
         body: suspend () -> T,
     ): T {
+        val config = (resolution as? GateKeyResolution.Resolved)?.takeIf { it.key == lease.key }?.config
         var claimed = false
         var counted = false
+        var heartbeat: Job? = null
         try {
             inFlight.value = SyncRunInfo(lease.origin, clock(), spec.graphId)
+            if (resolution is GateKeyResolution.Unreadable) return unreadable(resolution.reason)
             if (config != null) {
                 val refusal = claim(config, OwnedOperationInfo(spec.opName, lease.origin))
                 if (refusal != null) return fail(refusal)
                 claimed = true
+                heartbeat = startHeartbeat(config)
             }
             busyCounter.begin()
             counted = true
@@ -117,12 +165,31 @@ internal class SyncSingleFlight(
         } finally {
             try {
                 withContext(NonCancellable) {
+                    heartbeat?.cancelAndJoin()
                     if (counted) busyCounter.end()
                     if (claimed && config != null) repository.endOwnedOperation(config)
                 }
             } finally {
                 inFlight.value = null
-                gate.releaseOrHandOff(lease)
+                release(lease, spec.graphId)
+            }
+        }
+    }
+
+    private fun release(lease: GateLease, graphId: String) {
+        gate.releaseOrHandOff(lease)?.let { launchFollowUp(graphId, it) }
+    }
+
+    /** The owner record's mtime is its last proof of life; a failed touch only makes a later claimer fail closed. */
+    private fun startHeartbeat(config: GitConfig): Job = scope.launch {
+        while (isActive) {
+            delay(heartbeatIntervalMs)
+            try {
+                repository.touchOwnedOperation(config)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn("owner heartbeat failed", e)
             }
         }
     }

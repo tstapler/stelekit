@@ -64,7 +64,8 @@ class GitSyncServiceSingleFlightTest {
         var onEnd: () -> Unit = {}
         var begins = 0
         var ends = 0
-        val calls = mutableListOf<String>()
+        val calls = java.util.concurrent.CopyOnWriteArrayList<String>()
+        @Volatile var fetchGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
 
         override fun gateKeyFor(config: GitConfig): String? =
             RepoOpGate.keyForOrNull("${config.repoRoot.value}/.git") { File(it).canonicalFile.path }
@@ -78,7 +79,11 @@ class GitSyncServiceSingleFlightTest {
             onEnd()
         }
         override suspend fun status(config: GitConfig) = GitStatus(false, emptyList(), emptyList()).right()
-        override suspend fun fetch(config: GitConfig) = FetchResult(false, 0).right().also { calls += "fetch" }
+        override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> {
+            calls += "fetch"
+            fetchGate?.takeIf { calls.count { it == "fetch" } == 1 }?.await()
+            return FetchResult(false, 0).right()
+        }
         override suspend fun push(config: GitConfig) = Unit.right().also { calls += "push" }
         override suspend fun commit(config: GitConfig, message: String) = "sha".right().also { calls += "commit" }
         override suspend fun unshallow(config: GitConfig) = Unit.right().also { calls += "unshallow" }
@@ -218,5 +223,104 @@ class GitSyncServiceSingleFlightTest {
         assertIs<DomainError.GitError.SyncInProgress>(svc.fetchOnly("g").leftOrNull())
         assertEquals(1, git.begins, "a coalesced call must not claim")
         gate.releaseOrHandOff(holder)
+    }
+
+    private suspend fun awaitFetches(git: OkRepository, n: Int) {
+        withTimeout(20_000) { while (git.calls.count { it == "fetch" } < n) kotlinx.coroutines.delay(10) }
+    }
+
+    private suspend fun settle() = kotlinx.coroutines.delay(300)
+
+    private suspend fun GitSyncService.startBlockedFirstSync(git: OkRepository): kotlinx.coroutines.Deferred<*> {
+        git.fetchGate = kotlinx.coroutines.CompletableDeferred()
+        val first = scope.async { sync("g") }
+        awaitFetches(git, 1)
+        return first
+    }
+
+    @Test
+    fun threeUiPresses_should_YieldExactlyOneFollowUp_AndScheduledIsDropped() = runBlocking<Unit> {
+        val git = OkRepository()
+        val svc = service(git)
+        val first = svc.startBlockedFirstSync(git)
+
+        repeat(3) { assertIs<DomainError.GitError.SyncInProgress>(svc.sync("g").leftOrNull()) }
+        assertIs<DomainError.GitError.SyncInProgress>(svc.sync("g", SyncTrigger.Automatic).leftOrNull())
+        git.fetchGate?.complete(Unit)
+        withTimeout(20_000) { first.await() }
+        awaitFetches(git, 2)
+        settle()
+
+        assertEquals(2, git.calls.count { it == "fetch" }, "the original run plus exactly one follow-up")
+        assertEquals(2, git.begins)
+        assertFalse(gate.isHeld(key()))
+    }
+
+    @Test
+    fun scheduledAlone_should_NotQueueAFollowUp() = runBlocking<Unit> {
+        val git = OkRepository()
+        val svc = service(git)
+        val first = svc.startBlockedFirstSync(git)
+
+        assertIs<DomainError.GitError.SyncInProgress>(svc.sync("g", SyncTrigger.Automatic).leftOrNull())
+        git.fetchGate?.complete(Unit)
+        withTimeout(20_000) { first.await() }
+        settle()
+
+        assertEquals(1, git.calls.count { it == "fetch" })
+    }
+
+    @Test
+    fun liftedPress_should_BeRefusedAndNeverQueueAFollowUp() = runBlocking<Unit> {
+        val git = OkRepository()
+        val svc = service(git)
+        val first = svc.startBlockedFirstSync(git)
+
+        val lifted = svc.sync("g", SyncTrigger.Manual, liftMassChangeGuard = true)
+        git.fetchGate?.complete(Unit)
+        withTimeout(20_000) { first.await() }
+        settle()
+
+        assertEquals(DomainError.GitError.SyncInProgress(SyncOrigin.UiPress), lifted.leftOrNull())
+        assertEquals(1, git.calls.count { it == "fetch" }, "the lift flag must not ride a rerun")
+    }
+
+    @Test
+    fun pressAgainstQuiesceHold_should_NeverSetTheRerunBit() = runBlocking<Unit> {
+        val git = OkRepository()
+        val svc = service(git)
+        val hold = checkNotNull(gate.tryAcquire(key(), SyncOrigin.Quiesce))
+
+        val press = svc.sync("g")
+        val followUp = gate.releaseOrHandOff(hold)
+        settle()
+
+        assertEquals(DomainError.GitError.SyncInProgress(SyncOrigin.Quiesce), press.leftOrNull())
+        assertNull(followUp)
+        assertEquals(emptyList(), git.calls)
+    }
+
+    @Test
+    fun heartbeat_should_TouchWhileRunningAndStopBeforeTheRecordEnds() = runBlocking<Unit> {
+        val events = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val git = object : OkRepository() {
+            override suspend fun touchOwnedOperation(config: GitConfig) { events += "touch" }
+            override suspend fun endOwnedOperation(config: GitConfig) { events += "end" }
+        }
+        val flight = SyncSingleFlight(
+            gate, git, StubConfigRepository(Either.Right(config)), GitSyncBusyCounter(),
+            kotlinx.coroutines.flow.MutableStateFlow(null), { 0L }, publishError = {},
+            launchFollowUp = { _, _ -> }, scope = scope, heartbeatIntervalMs = 10,
+        )
+
+        flight.run(RunSpec("g", SyncOrigin.UiPress, "sync"), fail = { it }, unreadable = { null }) {
+            kotlinx.coroutines.delay(300)
+            null
+        }
+        kotlinx.coroutines.delay(100)
+
+        assertTrue(events.count { it == "touch" } >= 3, "heartbeat must beat during the run: $events")
+        assertEquals("end", events.last(), "no touch may follow the record end: $events")
+        assertEquals(1, events.count { it == "end" })
     }
 }

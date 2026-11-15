@@ -317,6 +317,9 @@ import dev.stapler.stelekit.git.GitSyncServicePeriodicTest
 import dev.stapler.stelekit.git.SyncSingleFlightRegressionTest
 import dev.stapler.stelekit.git.GitSyncServiceSingleFlightTest
 import dev.stapler.stelekit.git.ResolveGateKeyFailureTest
+import dev.stapler.stelekit.git.SyncOriginTriggerMappingTest
+import dev.stapler.stelekit.git.SyncSingleFlightModelTest
+import dev.stapler.stelekit.git.GateKeyResolutionTest
 import dev.stapler.stelekit.git.GitSyncServiceRegistryTest
 import dev.stapler.stelekit.git.PeriodicSyncDriverTest
 import dev.stapler.stelekit.git.ConflictMarkerDiffScanTest
@@ -725,6 +728,9 @@ import org.junit.runners.Suite
     SyncSingleFlightRegressionTest::class,
     GitSyncServiceSingleFlightTest::class,
     ResolveGateKeyFailureTest::class,
+    SyncOriginTriggerMappingTest::class,
+    SyncSingleFlightModelTest::class,
+    GateKeyResolutionTest::class,
     GitSyncServiceRegistryTest::class,
     PeriodicSyncDriverTest::class,
     ConflictMarkerDiffScanTest::class,
