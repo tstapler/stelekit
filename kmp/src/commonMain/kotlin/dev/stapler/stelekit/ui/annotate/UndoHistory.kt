@@ -19,6 +19,11 @@ class UndoHistory<S>(private val maxHistory: Int = 50) {
         redoStack.clear()
     }
 
+    /** Drops the newest undo point without parking it for redo; for a step that turned out to be a no-op. */
+    fun discardLatest() {
+        undoStack.removeLastOrNull()
+    }
+
     /** Pops the previous state, parking [current] for redo; null when nothing to undo. */
     fun undo(current: S): S? {
         val prev = undoStack.removeLastOrNull() ?: return null
