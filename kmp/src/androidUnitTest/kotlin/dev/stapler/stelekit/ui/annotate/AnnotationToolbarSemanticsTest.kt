@@ -130,22 +130,19 @@ class AnnotationToolbarSemanticsTest {
     }
 
     @Test
-    fun longPressAndDoubleTapOnTheChip_should_ToggleKeepTool_AndASingleTapShouldOnlySelect() {
+    fun longPressOnTheChip_should_ToggleKeepTool_AndASingleTapShouldSelectWithoutWaitingForADoubleTapWindow() {
         var toggles = 0
         val selected = mutableListOf<AnnotationTool>()
         render(AnnotationTool.DISTANCE, onSelect = { selected += it }, onToggle = { toggles++ })
         rule.onNode(hasContentDescription("Distance")).performTouchInput { longClick() }
         rule.waitForIdle()
         assertEquals(1, toggles, "long press")
-        rule.onNode(hasContentDescription("Distance")).performTouchInput { doubleClick() }
-        rule.waitForIdle()
-        assertEquals(2, toggles, "double tap")
-        assertEquals(emptyList(), selected, "neither gesture selects")
+        assertEquals(emptyList(), selected, "long press does not select")
+        rule.mainClock.autoAdvance = false
         rule.onNode(hasContentDescription("Distance")).performClick()
-        rule.mainClock.advanceTimeBy(1_000)
-        rule.waitForIdle()
-        assertEquals(listOf(AnnotationTool.DISTANCE), selected, "a single tap still reaches onToolSelect (the screen disarms the active chip)")
-        assertEquals(2, toggles)
+        rule.mainClock.advanceTimeByFrame()
+        assertEquals(listOf(AnnotationTool.DISTANCE), selected, "a single tap selects within a frame, not after the ~300 ms double-tap window")
+        assertEquals(1, toggles)
     }
 
     @Test

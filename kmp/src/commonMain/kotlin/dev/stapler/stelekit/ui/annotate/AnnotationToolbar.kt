@@ -387,11 +387,12 @@ private fun ToolButton(
             modifier = modifier
                 .sizeIn(minWidth = TARGET_SIZE, minHeight = TARGET_SIZE)
                 .clip(RoundedCornerShape(8.dp))
+                // No onDoubleClick: it would hold every single tap for the ~300 ms double-tap window. Keep tool stays reachable
+                // by long-press, the visible toggle, the K shortcut and the TalkBack custom action.
                 .combinedClickable(
                     role = Role.RadioButton,
                     onClick = { if (enabled) onSelect(tool) else onDisabledTap(tool) },
                     onLongClick = if (keepable) ({ toggleKeep?.invoke() }) else null,
-                    onDoubleClick = if (keepable) ({ toggleKeep?.invoke() }) else null,
                 )
                 .semantics {
                     contentDescription = label
