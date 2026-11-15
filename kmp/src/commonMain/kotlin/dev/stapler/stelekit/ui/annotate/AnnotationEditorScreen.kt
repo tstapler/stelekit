@@ -531,6 +531,23 @@ fun AnnotationEditorScreen(
             )
         }
 
+        // Status strip: a layout slot above the canvas, so it never covers the photo (top 56 dp stays pressable).
+        val toolPrompt = state.placementMessage ?: toolPromptFor(state.currentTool, state.inProgressPoints.size)
+        val (_, stripText) = stripMessage(
+            errorText = state.error?.message,
+            toolPrompt = toolPrompt,
+            fineTuneHint = fineTuneHint,
+            statusText = null,
+        )
+        if (stripText != null) {
+            val showCancel = state.error == null && state.currentTool == AnnotationTool.DISTANCE && state.inProgressPoints.size == 1
+            EditorStatusStrip(
+                text = stripText,
+                onCancel = if (showCancel) ({ viewModel.discardFirstPoint() }) else null,
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 4.dp),
+            )
+        }
+
         Box(modifier = Modifier.weight(1f)) {
         // Viewport: clips the zoomed image and stops above the floating toolbar so the whole image
         // stays reachable by panning instead of sitting under it.
@@ -743,21 +760,6 @@ fun AnnotationEditorScreen(
                 modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp),
             )
 
-            val toolPrompt = state.placementMessage ?: toolPromptFor(state.currentTool, state.inProgressPoints.size)
-            val (_, stripText) = stripMessage(
-                errorText = state.error?.message,
-                toolPrompt = toolPrompt,
-                fineTuneHint = fineTuneHint,
-                statusText = null,
-            )
-            if (stripText != null) {
-                val showCancel = state.error == null && state.currentTool == AnnotationTool.DISTANCE && state.inProgressPoints.size == 1
-                EditorStatusStrip(
-                    text = stripText,
-                    onCancel = if (showCancel) ({ viewModel.discardFirstPoint() }) else null,
-                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
-                )
-            }
 
             if (state.currentTool != AnnotationTool.SELECT) {
                 AnnotationPlacementControls(
@@ -1694,6 +1696,8 @@ internal fun DepthEstimationPanel(
     onEstimate: (() -> Unit)? = null,
     onDownloadAnyway: (() -> Unit)? = null,
 ) {
+    // Nothing can use a ready model yet: show nothing rather than a "coming in a future update" notice over the photo.
+    if (modelState is DepthModelUiState.Ready && !isInferenceRunning && onEstimate == null && depthEstimationError == null) return
     Surface(
         color = Color(0xDD1A1A1A),
         shape = MaterialTheme.shapes.small,
@@ -1725,29 +1729,12 @@ internal fun DepthEstimationPanel(
                     }
                 }
 
-                // Model ready. With real estimation wired (onEstimate != null) show the estimate button.
-                // Otherwise the model IS downloaded but nothing can use it yet: say so, as a status line
-                // rather than a greyed-out button, so it reads as success and not as a failed download.
+                // Model ready: with estimation wired (onEstimate != null) show the estimate button.
                 modelState is DepthModelUiState.Ready -> {
                     if (onEstimate != null) {
                         OutlinedButton(onClick = onEstimate) {
                             Text(
                                 text = "Estimate depth (AI)",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White,
-                            )
-                        }
-                    } else {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = Color(0xFF81C784),
-                                modifier = Modifier.size(14.dp),
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = "Depth model ready — estimation coming in a future update",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color.White,
                             )
