@@ -4,9 +4,11 @@
 
 package dev.stapler.stelekit.ui
 
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
+import dev.stapler.stelekit.jobs.JobHandle
 import dev.stapler.stelekit.jobs.JobKind
 import dev.stapler.stelekit.jobs.JobTracker
 import dev.stapler.stelekit.jobs.NoJobTracker
@@ -140,7 +142,7 @@ class GitSyncCoordinator(
             val service = activeGitSyncService.value ?: return@launch
             val run = coroutineContext.job
             jobTracker.track(JobKind.GitSync, "Syncing with remote", onCancel = { run.cancel() }) { handle ->
-                service.sync(graphId).onLeft { handle.fail(it.message) }
+                service.sync(graphId).onLeft { handle.failUnlessCoalesced(it) }
             }
         }
     }
@@ -152,7 +154,7 @@ class GitSyncCoordinator(
             val service = activeGitSyncService.value ?: return@launch
             val run = coroutineContext.job
             jobTracker.track(JobKind.GitSync, "Checking for remote changes", onCancel = { run.cancel() }) { handle ->
-                service.fetchOnly(graphId).onLeft { handle.fail(it.message) }
+                service.fetchOnly(graphId).onLeft { handle.failUnlessCoalesced(it) }
             }
         }
     }
@@ -267,4 +269,12 @@ class GitSyncCoordinator(
     fun dismissWikiSubdirFixDialog() {
         uiState.update { it.copy(wikiSubdirFixDialogVisible = false) }
     }
+}
+
+/**
+ * Marks the job failed unless the trigger only lost the single-flight race: the running sync owns the outcome,
+ * so a coalesced press is not a failure and must not paint the job red.
+ */
+internal fun JobHandle.failUnlessCoalesced(error: DomainError.GitError) {
+    if (error !is DomainError.GitError.SyncInProgress) fail(error.message)
 }

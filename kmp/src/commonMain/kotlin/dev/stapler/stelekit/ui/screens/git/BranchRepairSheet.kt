@@ -47,6 +47,7 @@ internal fun BranchRepairResult.failureLine(): String? = when (this) {
     is BranchRepairResult.TargetNotOnRemote -> "The remote no longer has '$to'. Pick another branch."
     is BranchRepairResult.SaveFailed -> "Couldn't save the new branch. $message"
     is BranchRepairResult.ReadBackMismatch -> "Couldn't save the new branch."
+    is BranchRepairResult.Busy -> "A sync is running. Try again when it finishes."
 }
 
 /**

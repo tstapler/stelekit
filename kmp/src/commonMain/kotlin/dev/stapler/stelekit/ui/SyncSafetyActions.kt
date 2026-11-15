@@ -98,7 +98,7 @@ class SyncSafetyActions(
         scope.launch {
             val service = activeGitSyncService.value ?: return@launch
             jobTracker.track(JobKind.GitSync, "Syncing with remote") { handle ->
-                service.sync(graphId, liftMassChangeGuard = true).onLeft { handle.fail(it.message) }
+                service.sync(graphId, liftMassChangeGuard = true).onLeft { handle.failUnlessCoalesced(it) }
             }
         }
     }

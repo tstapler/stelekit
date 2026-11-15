@@ -338,6 +338,7 @@ import dev.stapler.stelekit.git.GitLastSuccessSourceTest
 import dev.stapler.stelekit.git.ClockStepStartTimeTest
 import dev.stapler.stelekit.git.GateAssertingGitRepositoryTest
 import dev.stapler.stelekit.git.SyncInProgressConsumersTest
+import dev.stapler.stelekit.git.SyncInProgressUiConsumersTest
 import dev.stapler.stelekit.git.GateBeforeWorktreeOrderTest
 import dev.stapler.stelekit.wiring.NoGateFallbackAuditTest
 import dev.stapler.stelekit.git.GateKeyAliasTest
@@ -745,6 +746,7 @@ import org.junit.runners.Suite
     GateBeforeWorktreeOrderTest::class,
     GateAssertingGitRepositoryTest::class,
     SyncInProgressConsumersTest::class,
+    SyncInProgressUiConsumersTest::class,
     NoGateFallbackAuditTest::class,
     LockRecoveryDecisionTest::class,
     PidNamespaceAbsentPidTest::class,
