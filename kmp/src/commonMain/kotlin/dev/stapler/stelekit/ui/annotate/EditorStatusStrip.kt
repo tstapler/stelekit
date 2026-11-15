@@ -28,6 +28,7 @@ internal const val DRAG_HINT_COUNT_KEY = "annotator_drag_hint_count"
 internal const val DRAG_HINT_MAX_SHOWS = 3
 internal const val FINE_TUNE_HINT = "Drag an end to fine-tune"
 internal const val DISTANCE_DRAG_PROMPT = "Distance: drag from point A to B"
+internal const val DISTANCE_TAP_PROMPT = "Tap point A"
 internal const val POINT_A_PLACED_PROMPT = "Point A placed. Tap point B"
 
 internal fun annotatorDragHintCount(settings: Settings?): Int =
@@ -40,9 +41,10 @@ internal fun recordDragHint(settings: Settings?) {
     settings?.putString(DRAG_HINT_COUNT_KEY, (annotatorDragHintCount(settings) + 1).toString())
 }
 
-/** The prompt for the armed tool; DISTANCE has its own drag wording, the others keep their tap prompts. */
-internal fun toolPromptFor(tool: AnnotationTool, pendingPoints: Int): String? = when {
+/** The prompt for the armed tool; DISTANCE has its own drag wording (tap wording below Fit, where drag-measure is off), the others keep their tap prompts. */
+internal fun toolPromptFor(tool: AnnotationTool, pendingPoints: Int, viewScale: Float = FIT_SCALE): String? = when {
     tool == AnnotationTool.SELECT -> null
+    tool == AnnotationTool.DISTANCE && pendingPoints == 0 && !isFitOrGreater(viewScale) -> DISTANCE_TAP_PROMPT
     tool == AnnotationTool.DISTANCE && pendingPoints == 0 -> DISTANCE_DRAG_PROMPT
     tool == AnnotationTool.DISTANCE && pendingPoints == 1 -> POINT_A_PLACED_PROMPT
     tool == AnnotationTool.AREA && pendingPoints >= 3 -> "Tap near start to close, or tap to add vertex"

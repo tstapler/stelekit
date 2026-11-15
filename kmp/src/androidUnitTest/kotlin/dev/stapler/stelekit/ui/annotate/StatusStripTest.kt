@@ -21,11 +21,14 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /** Strip priority, strip Cancel, active-chip disarm and the Back order of ux.md 3.3 / 3.5. */
+// A tall window keeps the zoom group in the toolbar; at the 320x470 default it folds into the Zoom popup.
 @RunWith(RobolectricTestRunner::class)
+@Config(qualifiers = "w411dp-h891dp-xhdpi")
 class StatusStripTest {
     @get:Rule
     val rule = createAndroidComposeRule<ComponentActivity>()
@@ -63,6 +66,19 @@ class StatusStripTest {
         launch(AnnotationTool.DISTANCE)
         rule.onNodeWithText("Distance: drag from point A to B").assertExists()
         rule.onNodeWithText("Cancel").assertDoesNotExist()
+    }
+
+    @Test
+    fun distanceArmedBelowFit_promptsForATap_notADrag() {
+        assertEquals("Tap point A", toolPromptFor(AnnotationTool.DISTANCE, 0, viewScale = 0.5f))
+        assertEquals(DISTANCE_DRAG_PROMPT, toolPromptFor(AnnotationTool.DISTANCE, 0, viewScale = FIT_SCALE))
+        assertEquals(POINT_A_PLACED_PROMPT, toolPromptFor(AnnotationTool.DISTANCE, 1, viewScale = 0.5f))
+
+        launch(AnnotationTool.DISTANCE)
+        rule.onNodeWithContentDescription(ZOOM_OUT_DESCRIPTION).performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("Tap point A").assertExists()
+        rule.onNodeWithText("Distance: drag from point A to B").assertDoesNotExist()
     }
 
     @Test

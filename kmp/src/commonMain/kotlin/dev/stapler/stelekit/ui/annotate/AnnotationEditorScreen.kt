@@ -597,7 +597,7 @@ fun AnnotationEditorScreen(
         }
 
         // Status strip: a layout slot above the canvas, so it never covers the photo (top 56 dp stays pressable).
-        val toolPrompt = state.placementMessage ?: toolPromptFor(state.currentTool, state.inProgressPoints.size)
+        val toolPrompt = state.placementMessage ?: toolPromptFor(state.currentTool, state.inProgressPoints.size, viewTransform.scale)
         val (_, stripText) = stripMessage(
             errorText = state.error?.message,
             toolPrompt = toolPrompt,
