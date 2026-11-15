@@ -314,6 +314,8 @@ import dev.stapler.stelekit.migration.ChangeApplierBranchesTest
 import dev.stapler.stelekit.migration.PostMigrationFlusherTest
 import dev.stapler.stelekit.git.GitSyncServiceLfsGuardTest
 import dev.stapler.stelekit.git.GitSyncServicePeriodicTest
+import dev.stapler.stelekit.git.SyncSingleFlightRegressionTest
+import dev.stapler.stelekit.git.GitSyncServiceRegistryTest
 import dev.stapler.stelekit.git.PeriodicSyncDriverTest
 import dev.stapler.stelekit.git.ConflictMarkerDiffScanTest
 import dev.stapler.stelekit.git.FirstSyncPreviewSourceTest
@@ -697,6 +699,8 @@ import org.junit.runners.Suite
     PostMigrationFlusherTest::class,
     GitSyncServiceLfsGuardTest::class,
     GitSyncServicePeriodicTest::class,
+    SyncSingleFlightRegressionTest::class,
+    GitSyncServiceRegistryTest::class,
     PeriodicSyncDriverTest::class,
     ConflictMarkerDiffScanTest::class,
     GitSyncServiceChangeGuardsTest::class,
