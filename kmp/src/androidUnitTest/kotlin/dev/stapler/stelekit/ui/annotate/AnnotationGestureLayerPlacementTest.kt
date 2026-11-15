@@ -57,6 +57,7 @@ class AnnotationGestureLayerPlacementTest {
         val dragMeasures = mutableListOf<Pair<Offset, Offset>>()
         var cancels = 0
         var editStarts = 0
+        val handleTaps = mutableListOf<Pair<String, Int>>()
     }
 
     private lateinit var vm: AnnotationEditorViewModel
@@ -105,6 +106,7 @@ class AnnotationGestureLayerPlacementTest {
                             if (a != null && b != null) vm.placeDrag(a, b)
                         },
                         onPlacementCancelled = { rec.cancels++; vm.cancelPlacementGesture() },
+                        onHandleTap = { uuid, index -> rec.handleTaps += uuid to index },
                     ),
                     modifier = layerModifier.testTag(LAYER_TAG),
                     pendingPoints = state.inProgressPoints.size,
@@ -295,6 +297,22 @@ class AnnotationGestureLayerPlacementTest {
         val points = state().committedAnnotations.single().normalizedPoints
         assertPoint(moved, points[0])
         assertNotNull(state().selectedAnnotationUuid)
+    }
+
+    @Test
+    fun selectTapOnHandle_should_ReportHandle_And_DragOrEmptyTapShouldNot() {
+        host()
+        drag(listOf(Offset(200f, 600f), Offset(450f, 1000f), Offset(700f, 1500f)))
+        val uuid = state().committedAnnotations.single().uuid
+        assertEquals(AnnotationTool.SELECT, state().currentTool)
+
+        drag(listOf(Offset(700f, 1500f))) // tap on the end handle
+        assertEquals(listOf(uuid to 1), rec.handleTaps)
+
+        drag(listOf(Offset(200f, 600f), Offset(260f, 700f), Offset(320f, 800f))) // dragging a handle moves it instead
+        assertEquals(1, rec.handleTaps.size)
+        drag(listOf(Offset(1000f, 2300f))) // empty space
+        assertEquals(1, rec.handleTaps.size)
     }
 
     private companion object {

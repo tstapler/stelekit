@@ -151,4 +151,76 @@ class AnnotationPlacementTest {
         assertFalse(vm.state.value.placement.active)
         vm.close()
     }
+
+    // ── Crosshair session lifecycle, nudge steps, edge state (Task 2.3d) ──────
+
+    @Test
+    fun oneShotCommitResetsTheCrosshairSessionWithTheTool() {
+        val vm = newViewModel()
+        vm.togglePlacementMode(space)
+        vm.tapCrosshair(space, NormalizedPoint(0.1, 0.5))
+        assertTrue(vm.confirmCrosshair(space))
+        vm.tapCrosshair(space, NormalizedPoint(0.4, 0.5))
+        assertTrue(vm.confirmCrosshair(space))
+        assertEquals(1, vm.state.value.committedAnnotations.size)
+        assertEquals(AnnotationTool.SELECT, vm.state.value.currentTool)
+        assertFalse(vm.state.value.placement.active)
+        vm.close()
+    }
+
+    @Test
+    fun lockedCommitKeepsTheToolAndTheCrosshairSession() {
+        val vm = newViewModel()
+        vm.setStickiness(ToolStickiness.LOCKED)
+        vm.togglePlacementMode(space)
+        vm.tapCrosshair(space, NormalizedPoint(0.1, 0.5))
+        vm.confirmCrosshair(space)
+        vm.tapCrosshair(space, NormalizedPoint(0.4, 0.5))
+        vm.confirmCrosshair(space)
+        assertEquals(1, vm.state.value.committedAnnotations.size)
+        assertEquals(AnnotationTool.DISTANCE, vm.state.value.currentTool)
+        assertTrue(vm.state.value.placement.active)
+        vm.close()
+    }
+
+    @Test
+    fun movingNudgeStepsAreOnePixelTenPixelsAndOnePercent() {
+        val start = NormalizedPoint(0.5, 0.5)
+        val moving = AnnotationPlacementSession().startMove(space, VertexTarget("a", 0), start)
+        assertTrue(moving.active && moving.moving != null)
+        assertEquals(NormalizedPoint(0.501, 0.5), moving.nudged(space, NudgeDirection.RIGHT, NudgeStep.ONE_PIXEL).state.crosshairPoint)
+        assertEquals(NormalizedPoint(0.51, 0.5), moving.nudged(space, NudgeDirection.RIGHT, NudgeStep.TEN_PIXELS).state.crosshairPoint)
+        assertEquals(NormalizedPoint(0.49, 0.5), moving.nudged(space, NudgeDirection.LEFT, NudgeStep.ONE_PERCENT).state.crosshairPoint)
+    }
+
+    @Test
+    fun applyingAMovingNudgeIsOneUndoEntry() {
+        val vm = newViewModel()
+        vm.addPoint(NormalizedPoint(0.1, 0.5))
+        vm.addPoint(NormalizedPoint(0.3, 0.5))
+        val uuid = vm.state.value.committedAnnotations.single().uuid
+        assertTrue(vm.beginVertexMove(space, uuid, 0))
+        repeat(3) { vm.nudgeCrosshair(space, NudgeDirection.DOWN, NudgeStep.TEN_PIXELS) }
+        assertTrue(vm.confirmCrosshair(space))
+        assertEquals(0.5 + 3 * 0.02, vm.state.value.committedAnnotations.single().normalizedPoints[0].y, 1e-9)
+        vm.undo()
+        val restored = vm.state.value.committedAnnotations.single()
+        assertEquals(NormalizedPoint(0.1, 0.5), restored.normalizedPoints[0])
+        assertEquals(uuid, restored.uuid)
+        vm.close()
+    }
+
+    @Test
+    fun arrowAtTheImageEdgeReportsAtEdgeOnlyInThatDirection() {
+        val atLeft = AnnotationPlacementSession().startMove(space, VertexTarget("a", 0), NormalizedPoint(0.0, 0.5))
+        assertTrue(atLeft.atEdge(NudgeDirection.LEFT))
+        assertFalse(atLeft.atEdge(NudgeDirection.RIGHT))
+        assertFalse(atLeft.atEdge(NudgeDirection.UP))
+        val nudgedIntoEdge = AnnotationPlacementSession().startMove(space, VertexTarget("a", 0), NormalizedPoint(0.995, 1.0))
+            .nudged(space, NudgeDirection.RIGHT, NudgeStep.TEN_PIXELS)
+        assertTrue(nudgedIntoEdge.atEdge(NudgeDirection.RIGHT))
+        assertTrue(nudgedIntoEdge.atEdge(NudgeDirection.DOWN))
+        assertFalse(AnnotationPlacementSession().atEdge(NudgeDirection.LEFT))
+        assertEquals("At image edge", AT_IMAGE_EDGE_DESCRIPTION)
+    }
 }

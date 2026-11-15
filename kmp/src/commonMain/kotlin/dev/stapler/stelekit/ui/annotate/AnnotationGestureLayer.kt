@@ -59,6 +59,8 @@ internal class AnnotationGestureCallbacks(
     val onDragMeasure: ((start: Offset, end: Offset) -> Unit)? = null,
     /** An off-canvas / gesture-inset press or release: nothing placed, tool stays armed. */
     val onPlacementCancelled: () -> Unit = {},
+    /** A Select tap (no drag) on a vertex handle; the host opens the nudge pad in `moving` mode. */
+    val onHandleTap: ((annotationUuid: String, vertexIndex: Int) -> Unit)? = null,
 )
 
 /** Marker at A and ghost line to the finger, in layer-local pixels, shown once the drag passes the commit threshold. */
@@ -365,6 +367,7 @@ private suspend fun AwaitPointerEventScope.dragAnnotation(env: GestureEnv, hit: 
         if (editing && end == GestureEnd.HANDOFF_TO_VIEW) env.callbacks.onEditPoints(hit.uuid, original)
         if (editing) env.callbacks.onEditEnd(hit.uuid)
     }
+    if (!editing && end == GestureEnd.DONE && hit is AnnotationHit.Vertex) env.callbacks.onHandleTap?.invoke(hit.uuid, hit.index)
     return end
 }
 
