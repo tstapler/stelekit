@@ -248,6 +248,10 @@ fun AnnotationEditorScreen(
 
     // Back handling: placed measurements are saved as they are made, so only unfinished points or a failed save need a dialog.
     var leaveDialog by remember { mutableStateOf<BackOutcome?>(null) }
+    // Back with an armed tool and 2+ unfinished points: discard disarms, it does not leave the editor.
+    var disarmConfirmCount by remember { mutableStateOf<Int?>(null) }
+    var fineTuneHint by remember { mutableStateOf(false) }
+    LaunchedEffect(state.currentTool) { if (state.currentTool != AnnotationTool.SELECT) fineTuneHint = false }
     val pendingWrites by viewModel.pendingWrites.collectAsState()
     val backScope = rememberCoroutineScope()
 
@@ -321,12 +325,39 @@ fun AnnotationEditorScreen(
         }
     }
 
+    // Stays enabled = true so predictive back always has a handler; the policy picks the step.
     PlatformBackHandler(enabled = true) {
-        backScope.launch {
-            if (pendingWrites > 0) launch { snackbarHostState.showSnackbar("Saving...", duration = SnackbarDuration.Short) }
-            when (val outcome = viewModel.resolveBack()) {
-                BackOutcome.Close -> onNavigateBack()
-                else -> leaveDialog = outcome
+        val modalOpen = leaveDialog != null || disarmConfirmCount != null || showCalibrationSheet || showHeightOffset ||
+            showCalibrationChangeWarning || showBleDevicePanel || pendingDeleteUuid != null ||
+            state.isGridRefDialogVisible || state.isLabelInputVisible
+        when (
+            EditorBackPolicy.resolve(
+                modalOpen = modalOpen,
+                nudgeOpen = state.placement.active,
+                toolArmed = state.currentTool != AnnotationTool.SELECT,
+                unfinishedPoints = state.inProgressPoints.size,
+            )
+        ) {
+            BackAction.DismissModal -> when {
+                leaveDialog != null -> leaveDialog = null
+                disarmConfirmCount != null -> disarmConfirmCount = null
+                pendingDeleteUuid != null -> pendingDeleteUuid = null
+                showCalibrationChangeWarning -> showCalibrationChangeWarning = false
+                showBleDevicePanel -> showBleDevicePanel = false
+                showHeightOffset -> showHeightOffset = false
+                showCalibrationSheet -> showCalibrationSheet = false
+                state.isGridRefDialogVisible -> viewModel.dismissGridRefDialog()
+                else -> viewModel.dismissLabelInput()
+            }
+            BackAction.CancelNudge -> viewModel.cancelPlacement()
+            BackAction.DisarmSilently -> viewModel.disarm()
+            BackAction.ConfirmDiscardThenDisarm -> disarmConfirmCount = state.inProgressPoints.size
+            BackAction.ResolveLeave -> backScope.launch {
+                if (pendingWrites > 0) launch { snackbarHostState.showSnackbar("Saving...", duration = SnackbarDuration.Short) }
+                when (val outcome = viewModel.resolveBack()) {
+                    BackOutcome.Close -> onNavigateBack()
+                    else -> leaveDialog = outcome
+                }
             }
         }
     }
@@ -623,7 +654,8 @@ fun AnnotationEditorScreen(
                 currentTool = state.currentTool,
                 annotations = state.committedAnnotations,
                 handle = viewHandle,
-                callbacks = remember(viewModel) {
+                pendingPoints = state.inProgressPoints.size,
+                callbacks = remember(viewModel, platformSettings) {
                     AnnotationGestureCallbacks(
                         onTap = { canvasPoint ->
                             val normalized = canvasPoint.toNormalized(canvasSize)
@@ -638,6 +670,18 @@ fun AnnotationEditorScreen(
                         onEditStart = { viewModel.beginAnnotationEdit() },
                         onEditPoints = { uuid, pts -> viewModel.updateAnnotationPoints(uuid, pts) },
                         onEditEnd = { uuid -> viewModel.commitAnnotationEdit(uuid) },
+                        onDragMeasure = { start, end ->
+                            val a = start.toNormalized(canvasSize)
+                            val b = end.toNormalized(canvasSize)
+                            if (a != null && b != null) {
+                                viewModel.placeDrag(a, b)
+                                if (shouldShowDragHint(platformSettings)) {
+                                    recordDragHint(platformSettings)
+                                    fineTuneHint = true
+                                }
+                            }
+                        },
+                        onPlacementCancelled = { viewModel.cancelPlacementGesture() },
                     )
                 },
             )
@@ -677,33 +721,20 @@ fun AnnotationEditorScreen(
                 modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp),
             )
 
-            val contextHint: String? = when {
-                state.currentTool == AnnotationTool.SELECT -> null
-                state.currentTool == AnnotationTool.AREA && state.inProgressPoints.size >= 3 ->
-                    "Tap near start to close, or tap to add vertex"
-                state.currentTool == AnnotationTool.AREA && state.inProgressPoints.size == 1 ->
-                    "Tap to add more vertices"
-                state.currentTool == AnnotationTool.AREA ->
-                    "Tap to place first vertex"
-                state.currentTool == AnnotationTool.ANGLE && state.inProgressPoints.size == 1 ->
-                    "Tap to place vertex"
-                state.currentTool == AnnotationTool.ANGLE && state.inProgressPoints.size == 2 ->
-                    "Tap to complete angle"
-                state.inProgressPoints.isEmpty() -> "Tap to place start point"
-                state.inProgressPoints.size == 1 -> "Tap to place end point"
-                else -> null
-            }
-            if (contextHint != null) {
-                Box(modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp)) {
-                    Surface(color = Color(0xCC000000), shape = MaterialTheme.shapes.small) {
-                        Text(
-                            text = contextHint,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        )
-                    }
-                }
+            val toolPrompt = state.placementMessage ?: toolPromptFor(state.currentTool, state.inProgressPoints.size)
+            val (_, stripText) = stripMessage(
+                errorText = state.error?.message,
+                toolPrompt = toolPrompt,
+                fineTuneHint = fineTuneHint,
+                statusText = null,
+            )
+            if (stripText != null) {
+                val showCancel = state.error == null && state.currentTool == AnnotationTool.DISTANCE && state.inProgressPoints.size == 1
+                EditorStatusStrip(
+                    text = stripText,
+                    onCancel = if (showCancel) ({ viewModel.discardFirstPoint() }) else null,
+                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
+                )
             }
 
             if (state.currentTool != AnnotationTool.SELECT) {
@@ -786,7 +817,9 @@ fun AnnotationEditorScreen(
                 canRedo = canRedo,
                 // Null until an image is loaded keeps the dropdown hidden, as before.
                 displayUnit = state.selectedUnit.takeIf { state.imageAnnotation != null },
-                onToolSelect = { viewModel.selectTool(it) },
+                onToolSelect = { tool ->
+                    if (tool == state.currentTool && tool != AnnotationTool.SELECT) viewModel.disarm() else viewModel.selectTool(tool)
+                },
                 onUndo = { viewModel.undo() },
                 onRedo = { viewModel.redo() },
                 onDeleteSelect = {
@@ -961,6 +994,14 @@ fun AnnotationEditorScreen(
                     // so the caller can do: viewModel.setActiveDevice(device); viewModel.injectMeasurementFromDevice()
                     // For now the reading (valueMeters=$valueMeters) is discarded — a known limitation.
                 },
+            )
+        }
+
+        disarmConfirmCount?.let { count ->
+            UnsavedChangesDialog(
+                unfinishedPoints = count,
+                onDiscard = { disarmConfirmCount = null; viewModel.disarm() },
+                onKeepEditing = { disarmConfirmCount = null },
             )
         }
 
