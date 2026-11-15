@@ -60,6 +60,9 @@ class AnnotationEditorScreenRobolectricTest {
 
         rule.setContent { AnnotationEditorScreen(viewModel = vm, imageAnnotation = img) }
         rule.waitForIdle()
+        // Robolectric's default window is short, so the info rows sit behind the Details toggle.
+        rule.onNodeWithText("Details").performClick()
+        rule.waitForIdle()
         rule.onNodeWithText("Tags").assertExists()
     }
 

@@ -59,6 +59,8 @@ class AnnotationKeyboardShortcutsTest {
         }
         composeTestRule.waitForIdle()
         assertEquals(AnnotationTool.SELECT, vm.state.value.currentTool, "a tool shortcut fired while typing a tag")
+        composeTestRule.onNodeWithContentDescription("Select").performClick()
+        composeTestRule.waitForIdle()
         press(Key.D)
         assertEquals(AnnotationTool.DISTANCE, vm.state.value.currentTool, "control: D works once focus leaves the field")
     }
