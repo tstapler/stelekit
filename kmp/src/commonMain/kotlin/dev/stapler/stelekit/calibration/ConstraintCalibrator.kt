@@ -61,7 +61,9 @@ object ConstraintCalibrator {
                 if (request.tier == FitTier.SCALE) {
                     scale
                 } else {
-                    val eval = evaluate(request.tier, segs, frame, options, scale).flatMap { vetoed(it, scale) }
+                    val eval = evaluate(request.tier, segs, frame, options, scale)
+                        .onRight { shadows += it }
+                        .flatMap { vetoed(it, scale) }
                     eval.fold(
                         {
                             declined += TierDecline(request.tier, it)

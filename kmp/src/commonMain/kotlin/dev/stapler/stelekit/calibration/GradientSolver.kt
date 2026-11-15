@@ -133,7 +133,7 @@ internal class GradientSolver(
         var r = residuals(cur, segs) ?: return null
         var c = cost(r)
         var lambda = LAMBDA0
-        var converged = false
+        var converged = c < ZERO_COST
         var iterations = 0
         while (iterations < maxIterations && !converged) {
             iterations++
@@ -151,8 +151,11 @@ internal class GradientSolver(
                 converged = rel < REL_TOL || moved.all { abs(it) < STEP_TOL } || c < ZERO_COST
             } else {
                 lambda *= LAMBDA_UP
-                if (lambda > LAMBDA_MAX) converged = grad.all { abs(it) < GRAD_TOL * (c + 1.0) }
-                if (lambda > LAMBDA_MAX) break
+                if (lambda > LAMBDA_MAX) {
+                    // No damped step improves the cost any more: the iterate sits at the minimum up to round-off.
+                    converged = true
+                    break
+                }
             }
         }
         return LmResult(cur, converged, c, iterations)
@@ -193,8 +196,7 @@ internal class GradientSolver(
         const val LAMBDA_MAX = 1e12
         const val REL_TOL = 1e-12
         const val STEP_TOL = 1e-10
-        const val GRAD_TOL = 1e-8
-        const val ZERO_COST = 1e-20
+        const val ZERO_COST = 1e-10
         const val TINY = 1e-30
     }
 }

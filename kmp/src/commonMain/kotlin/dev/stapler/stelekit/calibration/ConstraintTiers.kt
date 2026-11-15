@@ -62,8 +62,6 @@ internal object PerAxisTier {
 
 /** GRADIENT and GRADIENT_AND_K: the focal-free scale-gradient tilt model behind its identifiability and significance gates. */
 internal object GradientTier {
-    private const val DEG = 180.0 / kotlin.math.PI
-
     @Suppress("ReturnCount", "LongMethod")
     fun evaluate(tier: FitTier, segs: List<Seg>, frame: CaptureFrameInfo, options: FitOptions, scaleMpp: Double): Either<CalibrationFailure, TierEval> {
         val n = segs.size
