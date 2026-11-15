@@ -497,6 +497,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.ui.annotate.AnnotationEditorCrashGuardTest::class,
     dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModelToolTest::class,
     dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModelPlacementTest::class,
+    dev.stapler.stelekit.ui.annotate.StatusStripHintTest::class,
+    dev.stapler.stelekit.ui.annotate.AnnotationExporterPasteboardTest::class,
     dev.stapler.stelekit.ui.annotate.AnnotationPersistenceQueueTest::class,
     dev.stapler.stelekit.repository.MeasurementWritesPriorityTest::class,
     dev.stapler.stelekit.repository.SqlDelightMeasurementAnnotationWritesTest::class,
