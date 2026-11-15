@@ -351,6 +351,7 @@ import dev.stapler.stelekit.git.LockRecoveryDecisionTest
 import dev.stapler.stelekit.git.PidNamespaceAbsentPidTest
 import dev.stapler.stelekit.git.EntryPointGateTest
 import dev.stapler.stelekit.git.RateLimitRetryGateTest
+import dev.stapler.stelekit.git.SyncStatusSheetModelPresentationTest
 import dev.stapler.stelekit.git.RepoOpGateReleaseStructureTest
 import dev.stapler.stelekit.git.ProcStatParserTest
 import dev.stapler.stelekit.git.LockRecoveryClaimTest
@@ -775,6 +776,7 @@ import org.junit.runners.Suite
     OwnerHeartbeatTest::class,
     EntryPointGateTest::class,
     RateLimitRetryGateTest::class,
+    SyncStatusSheetModelPresentationTest::class,
     RepoOpGateReleaseStructureTest::class,
     RepoOpGateTest::class,
     TornRecordIsUnknownTest::class,

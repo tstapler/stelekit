@@ -14,6 +14,33 @@ data class SyncStatusRow(val label: String, val value: String)
 /** A failure or conflict the user must see; [target] says which detail surface resolves it (None: nothing to open). */
 data class SyncProblem(val message: String, val target: SyncDetailsTarget)
 
+/** What the sync row and sheet say about the run itself (ux.md S1); [Attention] leaves every other failure to [SyncStatusSheetModel.problem]. */
+sealed interface SyncSheetState {
+    data object Idle : SyncSheetState
+
+    /** [phase] is the pipeline step when known; [followUpLine] is set only while a press is queued behind this run. */
+    data class Running(val phase: String?, val followUpLine: String?) : SyncSheetState
+
+    data class Paused(val rowText: String, val body: String, val details: String, val canRemoveLock: Boolean) : SyncSheetState
+
+    data class Failed(val text: String, val canRemoveLock: Boolean) : SyncSheetState
+
+    data object Attention : SyncSheetState
+}
+
+const val SYNC_PAUSED_ROW_TEXT = "Sync paused - retrying automatically"
+const val SYNC_FAILED_TEXT = "Couldn't sync. Your notes are saved on this device."
+const val SYNC_FOLLOW_UP_TEXT = "One more sync will run after this"
+private const val SYNC_PAUSED_ANNOUNCEMENT = "Sync paused. Retrying automatically."
+
+/** One polite live-region message per entry into Paused or Failed; a retry tick inside the same state says nothing. */
+fun syncAnnouncement(previous: SyncSheetState?, current: SyncSheetState): String? = when {
+    previous == null -> null
+    current is SyncSheetState.Paused && previous !is SyncSheetState.Paused -> SYNC_PAUSED_ANNOUNCEMENT
+    current is SyncSheetState.Failed && previous !is SyncSheetState.Failed -> SYNC_FAILED_TEXT
+    else -> null
+}
+
 data class SyncStatusSheetModel(
     val headline: String,
     val severity: StalenessSeverity,
@@ -29,6 +56,10 @@ data class SyncStatusSheetModel(
     /** The conflict or error behind a stuck sync; null when the last sync did not fail. */
     val problem: SyncProblem?,
     val canReviewFirstSync: Boolean,
+    /** Running, Paused, Failed, Idle or Attention; derived from the live run, the lock verdict and the pending retry. */
+    val state: SyncSheetState = SyncSheetState.Idle,
+    /** Hurries the pending automatic retry; non-null exactly while [state] is Paused (enabled iff a retry is pending). */
+    val retryNow: (() -> Unit)? = null,
 )
 
 /** Pure function of the persisted [SyncStaleness] and the live [SyncState]; reuses [stalenessChipState] and [BannerPrecedence]. */
@@ -39,9 +70,19 @@ fun syncStatusSheetModel(
     intervalMinutes: Int,
     firstSyncReviewPending: Boolean,
     contentMismatch: Boolean = false,
+    /** The run holding the repository gate, if any (service `inFlight`). */
+    inFlight: SyncRunInfo? = null,
+    /** The service's last lock verdict; falls back to the one carried by the error. */
+    lastVerdict: LockVerdict? = null,
+    /** The automatic retry waiting after an unknown owner; null once the two tries are spent. */
+    pausedRetry: PausedRetryInfo? = null,
+    /** The service's "Retry now"; surfaced on the model only while a retry is pending. */
+    retryNow: (() -> Unit)? = null,
 ): SyncStatusSheetModel {
     val chip = stalenessChipState(staleness, nowMs, intervalMinutes)
     val behind = staleness.behindCount
+    val state = sheetState(syncState, inFlight, lastVerdict, pausedRetry, nowMs)
+    val running = state is SyncSheetState.Running
     return SyncStatusSheetModel(
         headline = chip.text,
         severity = chip.severity,
@@ -65,11 +106,57 @@ fun syncStatusSheetModel(
             reviewBadge = firstSyncReviewPending,
         ),
         recent = staleness.history.asReversed().map { recentLine(it, nowMs) },
-        canSyncNow = !syncState.isRunning(),
-        syncNowDisabledReason = if (syncState.isRunning()) "A sync is already running. Sync now is available once it finishes." else null,
-        problem = syncState.toProblem(),
+        canSyncNow = !running,
+        syncNowDisabledReason = if (running) "A sync is already running. Sync now is available once it finishes." else null,
+        problem = if (state is SyncSheetState.Paused) null else syncState.toProblem(),
         canReviewFirstSync = firstSyncReviewPending,
+        state = state,
+        retryNow = if (state is SyncSheetState.Paused) retryNow else null,
     )
+}
+
+private const val MS_PER_MINUTE = 60_000L
+
+private fun sheetState(
+    syncState: SyncState,
+    inFlight: SyncRunInfo?,
+    lastVerdict: LockVerdict?,
+    pausedRetry: PausedRetryInfo?,
+    nowMs: Long,
+): SyncSheetState {
+    if (inFlight != null || syncState.isRunning() || lastVerdict == LockVerdict.OwnerAlive) {
+        val phase = when (syncState) {
+            SyncState.Fetching -> "Fetching"
+            SyncState.Merging -> "Merging"
+            SyncState.Pushing -> "Pushing"
+            SyncState.Committing -> "Committing"
+            else -> null
+        }
+        return SyncSheetState.Running(phase, SYNC_FOLLOW_UP_TEXT.takeIf { inFlight?.followUpQueued == true })
+    }
+    val lock = (syncState as? SyncState.Error)?.error as? DomainError.GitError.StaleLockFile ?: return attentionOrIdle(syncState)
+    val verdict = lastVerdict ?: lock.verdict
+    val unsure = verdict == LockVerdict.NoRecord || verdict is LockVerdict.OwnerUnknown
+    if (!unsure) return SyncSheetState.Attention
+    val canRemoveLock = verdict == LockVerdict.NoRecord
+    if (pausedRetry == null) return SyncSheetState.Failed(SYNC_FAILED_TEXT, canRemoveLock = true)
+    val cause = if (canRemoveLock) "Leftover lock file" else "Lock owner unknown"
+    return SyncSheetState.Paused(
+        rowText = SYNC_PAUSED_ROW_TEXT,
+        body = "We couldn't confirm that nothing else is syncing, so we paused to protect your notes. " +
+            "We'll retry automatically (next try ${nextTryText(pausedRetry.nextRetryAtMs - nowMs)}). Your notes are saved on this device.",
+        details = "$cause, try ${pausedRetry.tryNumber} of ${PausedRetryInfo.MAX_TRIES}",
+        canRemoveLock = canRemoveLock,
+    )
+}
+
+private fun attentionOrIdle(syncState: SyncState): SyncSheetState =
+    if (syncState.toProblem() != null) SyncSheetState.Attention else SyncSheetState.Idle
+
+private fun nextTryText(remainingMs: Long): String = when {
+    remainingMs <= 0 -> "now"
+    remainingMs < MS_PER_MINUTE -> "in under a minute"
+    else -> "in ~${(remainingMs + MS_PER_MINUTE - 1) / MS_PER_MINUTE} min"
 }
 
 private fun fetchOnlyExplanation(reason: FetchOnlyReason): String = when (reason) {
