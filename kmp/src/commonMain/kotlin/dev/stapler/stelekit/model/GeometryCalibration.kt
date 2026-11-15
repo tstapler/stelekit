@@ -19,7 +19,14 @@ data class GeometryCalibration(
     val cameraDistanceMeters: Double? = null,
     /** Plane map from a known rectangle; when present, distances are measured on the plane instead of with one scale. */
     val plane: PlaneCalibration? = null,
-)
+    /** Known distances the user entered for the multi-distance fit (ADR-003); empty for older photos. */
+    val constraints: List<CalibrationConstraint> = emptyList(),
+    /** What the last constraint fit produced; non-null means the scale or plane came from [constraints]. */
+    val fit: ConstraintFitRecord? = null,
+) {
+    /** The one "nothing to keep" rule, so a hand-written predicate can never drop a newly added field. */
+    fun isEmpty(): Boolean = this == GeometryCalibration()
+}
 
 /**
  * A homography from undistorted native pixels to metres on the reference plane, fitted from the four
@@ -34,6 +41,8 @@ data class PlaneCalibration(
     val heightMeters: Double,
     /** Distance in millimetres between the sheet centre mapped through [homography] and where it should be; null if not checked. */
     val checkResidualMm: Double? = null,
+    /** Absent in files from before multi-distance calibration, which read as a paper reference. */
+    val kind: PlaneKind = PlaneKind.PAPER_REFERENCE,
 )
 
 /** JSON text form of [GeometryCalibration] for the `calibration_geometry_json` column; '' means none. */

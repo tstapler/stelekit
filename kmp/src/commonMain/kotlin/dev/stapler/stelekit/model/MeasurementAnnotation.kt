@@ -98,7 +98,25 @@ data class MeasurementAnnotation(
     val label: String? = null,
     val colorHex: String = "#FF0000",
     val bleDeviceId: String? = null,
+    /** Column projection of [value]: see [MeasurementValue]. Prefer [value] and [withValue] in new code. */
+    val valueSource: ValueSource = ValueSource.COMPUTED,
+    /** The computed value an override replaced; non-null only when [valueSource] is an override. */
+    val originalValueMeters: Double? = null,
 ) {
+    /** The value with the illegal ([valueSource], [originalValueMeters]) pairs normalised away; null when uncomputed. */
+    val value: MeasurementValue? get() = MeasurementValue.fromColumns(valueMeters, valueSource, originalValueMeters)
+
+    /** Copy carrying [newValue] in the three value columns; null clears the number and returns to computed. */
+    fun withValue(newValue: MeasurementValue?): MeasurementAnnotation = when (newValue) {
+        null -> copy(valueMeters = null, valueSource = ValueSource.COMPUTED, originalValueMeters = null)
+        is MeasurementValue.Computed -> copy(valueMeters = newValue.meters, valueSource = ValueSource.COMPUTED, originalValueMeters = null)
+        is MeasurementValue.Overridden -> copy(
+            valueMeters = newValue.meters,
+            valueSource = ValueSource.USER_OVERRIDE,
+            originalValueMeters = newValue.originalMeters,
+        )
+    }
+
     init {
         Validation.validateUuid(uuid)
         Validation.validateUuid(imageUuid)
