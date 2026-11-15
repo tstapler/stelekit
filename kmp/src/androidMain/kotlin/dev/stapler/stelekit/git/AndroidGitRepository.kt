@@ -670,7 +670,7 @@ class AndroidGitRepository(
     override suspend fun beginOwnedOperation(config: GitConfig, info: OwnedOperationInfo): Either<DomainError.GitError, LockVerdict> =
         withContext(PlatformDispatcher.IO) {
             ownedOperations.begin(gitDirOf(config), info).flatMap { verdict ->
-                if (verdict.deletes) verifyHealthAfterDeletion(config).map { verdict } else verdict.right()
+                if (verdict.deletes) healthyAfterLockDeletion(config).map { verdict } else verdict.right()
             }
         }
 
@@ -684,15 +684,8 @@ class AndroidGitRepository(
 
     override suspend fun forceRemoveLock(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
-            ownedOperations.forceRemove(gitDirOf(config)).flatMap { verifyHealthAfterDeletion(config) }
+            ownedOperations.forceRemove(gitDirOf(config)).flatMap { healthyAfterLockDeletion(config) }
         }
-
-    // A corrupt index after a lock deletion is reported as the existing repair error, never auto-reset.
-    private suspend fun verifyHealthAfterDeletion(config: GitConfig): Either<DomainError.GitError, Unit> {
-        status(config)
-        val health = repositoryHealth(config)
-        return if (health.safe) Unit.right() else DomainError.GitError.RepairNeeded(health.state).left()
-    }
 
     // SAF graphs keep their locks and the owner record in the shadow worktree JGit actually uses.
     private fun gitDirOf(config: GitConfig): File =

@@ -7,6 +7,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.logging.Logger
 import java.io.File
 import java.io.IOException
@@ -145,4 +146,11 @@ class OwnedOperationSupport(
             }
         }
     }
+}
+
+/** After a lock deletion: a corrupt index is reported as the existing repair error, never auto-reset. */
+internal suspend fun GitRepository.healthyAfterLockDeletion(config: GitConfig): Either<DomainError.GitError, Unit> {
+    status(config)
+    val health = repositoryHealth(config)
+    return if (health.safe) Unit.right() else DomainError.GitError.RepairNeeded(health.state).left()
 }
