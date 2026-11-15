@@ -39,6 +39,7 @@ import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.git.AndroidGitRepository
 import dev.stapler.stelekit.git.GitCloneWorker
 import dev.stapler.stelekit.git.NotificationTapRouter
+import dev.stapler.stelekit.git.RepoOpGate
 import dev.stapler.stelekit.git.SyncNotifier
 import dev.stapler.stelekit.git.GitShadowWorktree
 import dev.stapler.stelekit.git.GitSyncBusyCounter
@@ -421,6 +422,9 @@ class MainActivity : ComponentActivity() {
                     createAndroidGraphMoveQuiesceStrategy(
                         context = applicationContext,
                         gitSyncBusyCounter = sharedGitSyncBusyCounter,
+                        // Placeholder until Task 1.3d2 (shared root gate) and 1.3b2 (real key resolver).
+                        gate = RepoOpGate(),
+                        gateKeyFor = { null },
                         shadowWorktreeTarget = { null },
                     )
                 }

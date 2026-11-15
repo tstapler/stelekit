@@ -1,5 +1,7 @@
 package dev.stapler.stelekit
 
+import dev.stapler.stelekit.db.AndroidGraphMoveQuiesceStrategyTest
+import dev.stapler.stelekit.db.QuiesceRealFlushTest
 import dev.stapler.stelekit.db.WalConfiguredCallbackTest
 import dev.stapler.stelekit.git.AndroidGitLegacyConfigSourceTest
 import dev.stapler.stelekit.git.AndroidGitRepositoryLfsGuardTest
@@ -58,6 +60,8 @@ import org.junit.runners.Suite
 @RunWith(Suite::class)
 @Suite.SuiteClasses(
     WalConfiguredCallbackTest::class,
+    AndroidGraphMoveQuiesceStrategyTest::class,
+    QuiesceRealFlushTest::class,
     WorkManagerJitterSpikeTest::class,
     WorkManagerTaskSchedulerContractTest::class,
     WorkManagerTaskSchedulerConstraintsTest::class,

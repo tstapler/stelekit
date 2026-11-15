@@ -336,6 +336,7 @@ import dev.stapler.stelekit.ui.FirstSyncPreviewLoaderTest
 import dev.stapler.stelekit.ui.GitSyncCoordinatorTest
 import dev.stapler.stelekit.git.GitLastSuccessSourceTest
 import dev.stapler.stelekit.git.ClockStepStartTimeTest
+import dev.stapler.stelekit.git.GateBeforeWorktreeOrderTest
 import dev.stapler.stelekit.git.GateKeyAliasTest
 import dev.stapler.stelekit.git.LockRecoveryDecisionTest
 import dev.stapler.stelekit.git.PidNamespaceAbsentPidTest
@@ -738,6 +739,7 @@ import org.junit.runners.Suite
     GitLastSuccessSourceTest::class,
     ClockStepStartTimeTest::class,
     GateKeyAliasTest::class,
+    GateBeforeWorktreeOrderTest::class,
     LockRecoveryDecisionTest::class,
     PidNamespaceAbsentPidTest::class,
     ProcStatParserTest::class,

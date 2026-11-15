@@ -45,10 +45,12 @@ internal class GitShadowFlushActor(
 
     /** Drain all pending write-backs to SAF. Returns one [Either] per queued path processed. */
     suspend fun flush(): List<Either<DomainError.GitError, Unit>> =
-        GitWorktreeLocks.lockFor(worktree.shadowKey).withLock {
-            withContext(PlatformDispatcher.IO) {
-                queue.getAll().map { relativePath -> flushPage(relativePath) }
-            }
+        GitWorktreeLocks.lockFor(worktree.shadowKey).withLock { flushLocked() }
+
+    /** [flush] for a caller that already holds the worktree mutex (it is not reentrant); quiesce's drain uses this. */
+    suspend fun flushLocked(): List<Either<DomainError.GitError, Unit>> =
+        withContext(PlatformDispatcher.IO) {
+            queue.getAll().map { relativePath -> flushPage(relativePath) }
         }
 
     /** Flush a single queued path: read from shadow, race-check, write to SAF, dequeue on success. */

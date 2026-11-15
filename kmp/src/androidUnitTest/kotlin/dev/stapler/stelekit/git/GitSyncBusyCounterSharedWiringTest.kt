@@ -150,6 +150,8 @@ class GitSyncBusyCounterSharedWiringTest {
         )
         val strategy = AndroidGraphMoveQuiesceStrategy(
             gitSyncBusyCounter = sharedCounter,
+            gate = RepoOpGate(),
+            gateKeyFor = { null },
             // No shadow-worktree target — isolates the assertion to busy-counter wiring; see
             // MainActivity.kt's TODO for the still-unwired shadowWorktreeTarget half.
             shadowWorktreeTarget = { null },
