@@ -17,6 +17,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -251,6 +252,14 @@ fun AnnotationEditorScreen(
     var announcement by remember { mutableStateOf("") }
     var toolHint by remember { mutableStateOf<String?>(null) }
     var tagFieldFocused by remember { mutableStateOf(false) }
+    val windowInfo = LocalWindowInfo.current
+    val chromeDensity = LocalDensity.current
+    val collapseDetails = EditorChromePolicy.collapseDetails(
+        windowHeightDp = windowInfo.containerSize.height / chromeDensity.density,
+        fontScale = chromeDensity.fontScale,
+    )
+    var detailsExpanded by remember { mutableStateOf(false) }
+    val showDetails = !collapseDetails || detailsExpanded
     val lastCommit = remember { CommitMemory(state.currentTool, state.committedAnnotations.size) }
     LaunchedEffect(state.committedAnnotations.size, state.currentTool) {
         commitAnnouncement(lastCommit.tool, lastCommit.count, state.currentTool, state.committedAnnotations)?.let { announcement = it }
@@ -462,19 +471,26 @@ fun AnnotationEditorScreen(
             EditorErrorBanner(onRetry = viewModel::retryAfterError, onClose = onNavigateBack)
         }
         // Calibration status indicator bar
-        CalibrationConfidenceBadge(
-            calibration = state.calibration,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-            actionLabel = if (viewModel.isCalibrated()) heightOffsetActionLabel(state.calibration?.geometry) else null,
-            onAction = {
-                heightDraft = draftFor(state.calibration?.geometry)
-                showHeightOffset = true
-            },
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CalibrationConfidenceBadge(
+                calibration = state.calibration,
+                modifier = Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 4.dp),
+                actionLabel = if (viewModel.isCalibrated()) heightOffsetActionLabel(state.calibration?.geometry) else null,
+                onAction = {
+                    heightDraft = draftFor(state.calibration?.geometry)
+                    showHeightOffset = true
+                },
+            )
+            if (collapseDetails) {
+                TextButton(onClick = { detailsExpanded = !detailsExpanded }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text(if (detailsExpanded) "Hide details" else "Details")
+                }
+            }
+        }
 
         // ARCore accuracy warning — shown only when ARCore/LiDAR depth calibration is active
         val cal = state.calibration
-        if (cal != null && cal.method == CalibrationMethod.ARCORE_DEPTH) {
+        if (showDetails && cal != null && cal.method == CalibrationMethod.ARCORE_DEPTH) {
             Surface(
                 color = Color(0xFFFFF3E0),
                 modifier = Modifier.fillMaxWidth(),
@@ -529,7 +545,7 @@ fun AnnotationEditorScreen(
         val sensorData: ImageSensorData? = state.imageAnnotation?.sensorData
         val isTiltExcessive = TiltAssessment.tierOf(sensorData?.pitchDeg, sensorData?.rollDeg) == TiltTier.EXCESSIVE
         var showTiltWarning by remember { mutableStateOf(true) }
-        if (isTiltExcessive && showTiltWarning) {
+        if (showDetails && isTiltExcessive && showTiltWarning) {
             Surface(
                 color = Color(0xFFFFF9C4),
                 modifier = Modifier.fillMaxWidth(),
@@ -560,7 +576,7 @@ fun AnnotationEditorScreen(
         }
 
         // Measurement confidence for the selected (else latest) measurement; recomputed with the editor state.
-        MeasurementAdviceStrip(
+        if (showDetails) MeasurementAdviceStrip(
             reliability = remember(state.calibration, state.committedAnnotations, state.selectedAnnotationUuid, state.imageAnnotation) {
                 viewModel.statusReliability()
             },
@@ -568,7 +584,7 @@ fun AnnotationEditorScreen(
 
         // Story 8.2: GPS metadata row — formatted as "49.2827° N, 123.1207° W".
         val latLng = sensorData?.latLng
-        if (latLng != null) {
+        if (showDetails && latLng != null) {
             GpsMetadataRow(
                 latLng = latLng,
                 altitudeM = sensorData.altitudeM,
@@ -584,7 +600,7 @@ fun AnnotationEditorScreen(
         // reading/filtering on ImageAnnotation.tags. Wired here as a persistent info strip,
         // matching CalibrationConfidenceBadge/GpsMetadataRow's always-visible placement so the
         // affordance is discoverable without an extra toggle tap (social-JTBD discoverability).
-        state.imageAnnotation?.let { annotation ->
+        state.imageAnnotation?.takeIf { showDetails }?.let { annotation ->
             TagEditorPanel(
                 tags = annotation.tags,
                 onAddTag = { viewModel.addTag(it) },

@@ -4,6 +4,7 @@ package dev.stapler.stelekit.ui.annotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
@@ -46,6 +47,20 @@ class AnnotationKeyboardShortcutsTest {
     private fun press(key: Key) {
         composeTestRule.onNodeWithContentDescription("Select").performKeyInput { keyDown(key); keyUp(key) }
         composeTestRule.waitForIdle()
+    }
+
+    @Test
+    fun toolLetters_should_BeIgnored_WhileTheTagFieldHasFocus() {
+        val vm = launch()
+        composeTestRule.onNode(hasSetTextAction()).performClick()
+        composeTestRule.waitForIdle()
+        for (key in listOf(Key.D, Key.A, Key.G, Key.L, Key.R, Key.K, Key.Escape)) {
+            composeTestRule.onNode(hasSetTextAction()).performKeyInput { keyDown(key); keyUp(key) }
+        }
+        composeTestRule.waitForIdle()
+        assertEquals(AnnotationTool.SELECT, vm.state.value.currentTool, "a tool shortcut fired while typing a tag")
+        press(Key.D)
+        assertEquals(AnnotationTool.DISTANCE, vm.state.value.currentTool, "control: D works once focus leaves the field")
     }
 
     @Test

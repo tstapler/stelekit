@@ -43,3 +43,15 @@ object EditorBackPolicy {
         else -> BackAction.ResolveLeave
     }
 }
+
+/** Window-size rules for the chrome around the photo. */
+object EditorChromePolicy {
+    /** Below this window height (dp) the info rows collapse behind a "Details" toggle. */
+    const val COMPACT_HEIGHT_DP: Float = 600f
+
+    /** From this font scale the info rows collapse regardless of window height. */
+    const val LARGE_FONT_SCALE: Float = 1.5f
+
+    fun collapseDetails(windowHeightDp: Float, fontScale: Float): Boolean =
+        windowHeightDp in 1f..COMPACT_HEIGHT_DP || fontScale >= LARGE_FONT_SCALE
+}
