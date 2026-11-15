@@ -2104,6 +2104,9 @@ class StelekitViewModel(
         }
     }
 
+    /** Backing store for the Settings dialog's image-annotator toggles. */
+    val annotatorSettings: Settings get() = platformSettings
+
     fun setLeftHanded(value: Boolean) {
         platformSettings.putBoolean("isLeftHanded", value)
         _uiState.update { it.copy(isLeftHanded = value) }
