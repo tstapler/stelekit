@@ -15,7 +15,11 @@ import dev.stapler.stelekit.model.CalibrationMethod
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.MeasurementUnit
 import dev.stapler.stelekit.model.NormalizedPoint
+import arrow.core.Either
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.platform.Settings
+import dev.stapler.stelekit.repository.DirectRepositoryWrite
+import dev.stapler.stelekit.repository.MeasurementAnnotationRepository
 import dev.stapler.stelekit.repository.InMemoryMeasurementAnnotationRepository
 import org.junit.Rule
 import org.junit.Test
@@ -79,6 +83,42 @@ class StatusStripTest {
         rule.waitForIdle()
         rule.onNodeWithText("Tap point A").assertExists()
         rule.onNodeWithText("Distance: drag from point A to B").assertDoesNotExist()
+    }
+
+    @Test
+    fun zoomedTapTap_should_ShowPromptWithCancelInStripAndPanRowAtTheSameTime_AndErrorOutranksPrompt() {
+        val repo = ThrowingOnDeleteRepository()
+        val vm = AnnotationEditorViewModel(measurementRepository = repo, imageWidthPx = 1000.0, imageHeightPx = 1000.0)
+            .also { it.initialize(img) }
+        vm.selectTool(AnnotationTool.DISTANCE)
+        vm.addPoint(NormalizedPoint(0.1, 0.1))
+        vm.addPoint(NormalizedPoint(0.5, 0.1))
+        val committed = vm.state.value.committedAnnotations.single()
+        vm.selectTool(AnnotationTool.DISTANCE)
+        rule.setContent { AnnotationEditorScreen(viewModel = vm, imageAnnotation = img) }
+        rule.waitForIdle()
+        repeat(ZOOM_STEPS_TO_TWICE_FIT) {
+            rule.onNodeWithContentDescription(ZOOM_IN_DESCRIPTION).performClick()
+            rule.waitForIdle()
+        }
+        rule.onNodeWithText("Pan").performClick()
+        vm.addPoint(NormalizedPoint(0.3, 0.3))
+        rule.waitForIdle()
+
+        rule.onNodeWithText("Point A placed. Tap point B").assertExists()
+        rule.onNodeWithText("Cancel").assertExists()
+        PanDirection.entries.forEach { rule.onNodeWithContentDescription(it.label).assertExists() }
+
+        repo.failing = true
+        vm.deleteAnnotation(committed.uuid)
+        rule.waitUntil(timeoutMillis = 5_000) { vm.state.value.error != null }
+        rule.waitForIdle()
+        rule.onNodeWithText("Point A placed. Tap point B").assertDoesNotExist()
+        rule.onNodeWithText("Cancel").assertDoesNotExist()
+
+        vm.retryAfterError()
+        rule.waitForIdle()
+        rule.onNodeWithText("Distance: drag from point A to B").assertExists()
     }
 
     @Test
@@ -200,6 +240,22 @@ class StatusStripTest {
         assertEquals(AnnotationTool.DISTANCE, vm.state.value.currentTool)
         assertEquals(1, vm.state.value.inProgressPoints.size)
         assertEquals(0, navigatedBack)
+    }
+
+    @OptIn(DirectRepositoryWrite::class)
+    private class ThrowingOnDeleteRepository(
+        private val delegate: MeasurementAnnotationRepository = InMemoryMeasurementAnnotationRepository(),
+    ) : MeasurementAnnotationRepository by delegate {
+        @Volatile var failing = false
+
+        override suspend fun deleteMeasurementAnnotation(uuid: String): Either<DomainError, Unit> {
+            check(!failing) { "save failed" }
+            return delegate.deleteMeasurementAnnotation(uuid)
+        }
+    }
+
+    private companion object {
+        const val ZOOM_STEPS_TO_TWICE_FIT = 2
     }
 
     private class MapSettings : Settings {

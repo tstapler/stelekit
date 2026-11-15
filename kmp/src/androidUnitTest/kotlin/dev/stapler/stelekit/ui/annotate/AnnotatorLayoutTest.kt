@@ -506,6 +506,43 @@ class ZoomControlsTest {
         rule.onNodeWithContentDescription(ZOOM_OUT_DESCRIPTION).assertIsEnabled()
         assertTrue(wcagContrast(frame, pasteboard) >= 3.0, "frame contrast ${wcagContrast(frame, pasteboard)}")
     }
+
+    /** X-18 / UX-18 (ADR-006): zoom out stops at 25 percent, minus is disabled only there, Fit is enabled off Fit. */
+    @Test
+    fun zoomOut_should_StopAt25PercentWithMinusDisabledOnlyThere_AndFitEnabledOffFit() {
+        val geometry = ViewGeometry(1000f, 1000f, 0f, 0f, 1000f, 1000f)
+        var view by mutableStateOf(AnnotationViewTransform.Fit)
+        rule.setContent {
+            Box(Modifier.fillMaxSize()) {
+                AnnotationZoomControls(
+                    view = { view },
+                    onZoomIn = { view = view.stepped(ZOOM_STEP_FACTOR, geometry) },
+                    onZoomOut = { view = view.stepped(1f / ZOOM_STEP_FACTOR, geometry) },
+                    onFit = { view = AnnotationViewTransform.Fit },
+                )
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithContentDescription(ZOOM_FIT_DESCRIPTION).assertIsNotEnabled()
+
+        var enabledClicks = 0
+        while (enabledClicks < MAX_ZOOM_OUT_CLICKS && SemanticsProperties.Disabled !in rule.onNodeWithContentDescription(ZOOM_OUT_DESCRIPTION).fetchSemanticsNode().config) {
+            rule.onNodeWithContentDescription(ZOOM_OUT_DESCRIPTION).performClick()
+            rule.waitForIdle()
+            rule.onNodeWithContentDescription(ZOOM_FIT_DESCRIPTION).assertIsEnabled()
+            enabledClicks++
+        }
+        assertTrue(enabledClicks in 2 until MAX_ZOOM_OUT_CLICKS, "minus stayed enabled for $enabledClicks clicks and then stopped")
+        assertEquals(0.25f, view.scale)
+        rule.onNodeWithContentDescription("Zoom 25 percent").assertExists()
+        rule.onNodeWithContentDescription(ZOOM_OUT_DESCRIPTION).assertIsNotEnabled()
+        rule.onNodeWithContentDescription(ZOOM_IN_DESCRIPTION).assertIsEnabled()
+        rule.onNodeWithContentDescription(ZOOM_FIT_DESCRIPTION).assertIsEnabled()
+    }
+
+    private companion object {
+        const val MAX_ZOOM_OUT_CLICKS = 20
+    }
 }
 
 /** X-49 / UX-49: the tokens this story touches meet 4.5:1 (text) and 3:1 (non-text) in light, dark and stone. */
