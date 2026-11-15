@@ -287,6 +287,9 @@ fun AnnotationEditorScreen(
     // Adaptive labels: show for first 3 sessions (tracked in state per session)
     val showToolLabels by remember { mutableStateOf(true) }
 
+    // The mic FAB is gone while the editor is open (OC-12): hint where voice went on the first three opens. Saved so a rotation is not a second open.
+    val voiceHintVisible = rememberSaveable { platformSettings != null && shouldShowVoiceHint(recordEditorOpen(platformSettings)) }
+
     // Non-drag pan (WCAG 2.5.7): arrows move the view by a quarter of the viewport; at >= 600 dp the zoom group is a rail beside the photo.
     var panOn by rememberSaveable(imageAnnotation.uuid) { mutableStateOf(false) }
     val windowWidthDp = with(density) { LocalWindowInfo.current.containerSize.width.toDp() }
@@ -563,6 +566,7 @@ fun AnnotationEditorScreen(
             toolPrompt = toolPrompt,
             fineTuneHint = fineTuneHint,
             statusText = null,
+            voiceHint = voiceHintVisible,
         )
         if (stripText != null) {
             val showCancel = state.error == null && state.currentTool == AnnotationTool.DISTANCE && state.inProgressPoints.size == 1
@@ -751,6 +755,7 @@ fun AnnotationEditorScreen(
                             }
                         },
                         onPlacementCancelled = { viewModel.cancelPlacementGesture() },
+                        onHandleTap = { uuid, index -> viewModel.beginVertexMove(placementSpace(), uuid, index) },
                     )
                 },
             )
@@ -1731,7 +1736,7 @@ internal fun DepthEstimationPanel(
     onDownloadAnyway: (() -> Unit)? = null,
 ) {
     // Nothing can use a ready model yet: show nothing rather than a "coming in a future update" notice over the photo.
-    if (modelState is DepthModelUiState.Ready && !isInferenceRunning && onEstimate == null && depthEstimationError == null) return
+    if (depthPanelIsEmpty(modelState, isInferenceRunning || depthEstimationError != null, onEstimate)) return
     Surface(
         color = Color(0xDD1A1A1A),
         shape = MaterialTheme.shapes.small,
@@ -1911,6 +1916,10 @@ internal fun DepthEstimationPanel(
 }
 
 internal const val LOUPE_OVERLAY_TAG = "loupe-overlay"
+
+/** A ready model with no estimator wired and nothing else to report has no panel content. */
+private fun depthPanelIsEmpty(modelState: DepthModelUiState, busyOrFailed: Boolean, onEstimate: (() -> Unit)?): Boolean =
+    modelState is DepthModelUiState.Ready && !busyOrFailed && onEstimate == null
 
 private val PAN_SLACK = 24.dp
 private val IMAGE_FRAME_WIDTH = 1.dp

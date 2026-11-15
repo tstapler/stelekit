@@ -37,6 +37,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpRect
@@ -307,6 +308,66 @@ class AnnotatorLayoutTest {
         arrows.forEach { assertFalse(it.intersects(canvas), "$it is over the photo $canvas") }
         val actions = rule.onNodeWithContentDescription(ANNOTATION_CANVAS_DESCRIPTION).fetchSemanticsNode().config[SemanticsActions.CustomActions]
         assertEquals(listOf("Pan left", "Pan up", "Pan down", "Pan right"), actions.map { it.label })
+    }
+
+    // ---- UX-70 voice hint supplied to the strip -----------------------------------------------------------------------
+
+    private class MapSettings(initial: Map<String, String> = emptyMap()) : dev.stapler.stelekit.platform.Settings {
+        val map = initial.toMutableMap()
+        override fun getBoolean(key: String, defaultValue: Boolean) = map[key]?.toBooleanStrictOrNull() ?: defaultValue
+        override fun putBoolean(key: String, value: Boolean) { map[key] = value.toString() }
+        override fun getString(key: String, defaultValue: String) = map[key] ?: defaultValue
+        override fun putString(key: String, value: String) { map[key] = value }
+        override fun containsKey(key: String) = key in map
+    }
+
+    private fun launchWithSettings(settings: MapSettings, tool: AnnotationTool = AnnotationTool.SELECT) {
+        val vm = AnnotationEditorViewModel(
+            measurementRepository = InMemoryMeasurementAnnotationRepository(), imageWidthPx = 1000.0, imageHeightPx = 1000.0,
+        ).also { it.initialize(img) }
+        vm.selectTool(tool)
+        rule.setContent { AnnotationEditorScreen(viewModel = vm, imageAnnotation = img, platformSettings = settings) }
+        rule.waitForIdle()
+    }
+
+    @Test
+    fun voiceHint_should_ShowOnTheFirstThreeOpens() {
+        val settings = MapSettings(mapOf(VOICE_HINT_COUNT_KEY to "2"))
+        launchWithSettings(settings)
+        rule.onNodeWithText(VOICE_HINT_TEXT).assertExists()
+        assertEquals("3", settings.map[VOICE_HINT_COUNT_KEY])
+    }
+
+    @Test
+    fun voiceHint_should_NotShowFromTheFourthOpen() {
+        launchWithSettings(MapSettings(mapOf(VOICE_HINT_COUNT_KEY to "3")))
+        rule.onNodeWithText(VOICE_HINT_TEXT).assertDoesNotExist()
+    }
+
+    @Test
+    fun voiceHint_should_LoseToAToolPrompt() {
+        launchWithSettings(MapSettings(), AnnotationTool.DISTANCE)
+        rule.onNodeWithText(DISTANCE_DRAG_PROMPT).assertExists()
+        rule.onNodeWithText(VOICE_HINT_TEXT).assertDoesNotExist()
+    }
+
+    // ---- Task 2.3d wiring: a Select tap on a vertex handle opens the nudge pad ------------------------------------
+
+    @Test
+    fun selectTapOnAVertexHandle_should_OpenTheNudgePadInTheScreen() {
+        val vm = launchScreen(AnnotationTool.DISTANCE, NormalizedPoint(0.2, 0.2), NormalizedPoint(0.8, 0.8))
+        vm.selectTool(AnnotationTool.SELECT)
+        rule.waitForIdle()
+        val canvas = rule.onNodeWithContentDescription(ANNOTATION_CANVAS_DESCRIPTION)
+        // The first injected gesture is dropped before the pointer handler listens (see the other gesture tests).
+        canvas.performTouchInput { down(Offset(5f, 5f)); up() }
+        rule.waitForIdle()
+        assertTrue(vm.state.value.committedAnnotations.size == 1, "a distance annotation was committed")
+        assertFalse(vm.state.value.placement.active)
+        val size = canvas.fetchSemanticsNode().size
+        canvas.performTouchInput { down(Offset(size.width * 0.2f, size.height * 0.2f)); up() }
+        rule.waitForIdle()
+        assertTrue(vm.state.value.placement.active, "handle tap should have begun a vertex move")
     }
 
     // ---- X-62 / X-68a wrap rules -----------------------------------------------------------------------------------

@@ -58,20 +58,22 @@ internal fun stripMessage(
     toolPrompt: String?,
     fineTuneHint: Boolean,
     statusText: String?,
+    voiceHint: Boolean = false,
 ): Pair<StripPriority, String?> {
     val level = StripPriority.resolve(
         hasError = errorText != null,
         hasToolPrompt = toolPrompt != null,
         hasFirstTimeHint = fineTuneHint,
         hasStatusText = statusText != null,
-        hasVoiceHint = false,
+        hasVoiceHint = voiceHint,
     )
     val text = when (level) {
         StripPriority.ERROR -> errorText
         StripPriority.TOOL_PROMPT -> toolPrompt
         StripPriority.FIRST_TIME_HINT -> FINE_TUNE_HINT
         StripPriority.STATUS_TEXT -> statusText
-        StripPriority.VOICE_HINT, StripPriority.IDLE -> null
+        StripPriority.VOICE_HINT -> VOICE_HINT_TEXT
+        StripPriority.IDLE -> null
     }
     return level to text
 }
