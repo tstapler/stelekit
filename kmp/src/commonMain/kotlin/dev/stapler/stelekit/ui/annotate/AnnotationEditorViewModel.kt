@@ -977,6 +977,7 @@ class AnnotationEditorViewModel(
                             .filter { it.uuid != measurement.uuid },
                         currentTool = nextToolAfterRollback(tool, toolAfter, currentSt.currentTool),
                         selectedAnnotationUuid = currentSt.selectedAnnotationUuid.takeIf { it != measurement.uuid },
+                        placementMessage = SAVE_FAILED_MESSAGE,
                     )
                 }
             }
@@ -1602,4 +1603,5 @@ internal fun parseGridRefLengthToMeters(text: String, unit: MeasurementUnit): Do
 
 private const val PROFILE_ID_CHARS = 8
 private const val CANCELLED_MESSAGE = "Cancelled"
+private const val SAVE_FAILED_MESSAGE = "Couldn't save. Try again"
 private const val IDENTICAL_POINTS_MESSAGE = "Choose a second point away from the first"

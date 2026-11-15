@@ -210,6 +210,7 @@ class AnnotationEditorViewModelToolTest {
         gate1.complete(Unit)
         a.await { it.committedAnnotations.isEmpty() }
         assertEquals(AnnotationTool.DISTANCE, a.state.value.currentTool)
+        assertEquals("Couldn't save. Try again", a.state.value.placementMessage)
         a.close()
 
         // The user picked AREA before the failure landed: that choice wins.
