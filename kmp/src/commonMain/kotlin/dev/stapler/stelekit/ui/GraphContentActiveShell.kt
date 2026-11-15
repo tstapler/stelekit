@@ -613,9 +613,14 @@ internal fun GraphContentActiveShell(
                                     )
                                 }.map { graphManager.addGraph(localPath, location, displayName, description).value }
                             } else {
-                                graphManager.cloneAndAdd(
-                                    gitRepository, url, localPath, auth, onProgress, location, displayName, description, onStateChange,
-                                ).map { it.value }
+                                val gate = deps.platformIntegrations.repoOpGate
+                                if (gate == null) {
+                                    arrow.core.Either.Left(dev.stapler.stelekit.error.DomainError.GitError.CloneFailed("Git is not available on this platform"))
+                                } else {
+                                    graphManager.cloneAndAdd(
+                                        gitRepository, gate, url, localPath, auth, onProgress, location, displayName, description, onStateChange,
+                                    ).map { it.value }
+                                }
                             }
                         }
                     } else null,

@@ -688,7 +688,8 @@ class AndroidGitRepository(
         }
 
     /** The process-gate key for [config]'s resolved git dir; null when it cannot be canonicalised (callers fail closed). */
-    override fun gateKeyFor(config: GitConfig): String? = RepoOpGate.keyForOrNull(gitDirOf(config))
+    override fun gateKeyForRoot(repoRoot: String): String? =
+        RepoOpGate.keyForOrNull(JavaIoLockFiles.resolveGitDir(File(shadow.resolveForJGit(repoRoot))))
 
     // SAF graphs keep their locks and the owner record in the shadow worktree JGit actually uses.
     private fun gitDirOf(config: GitConfig): File =

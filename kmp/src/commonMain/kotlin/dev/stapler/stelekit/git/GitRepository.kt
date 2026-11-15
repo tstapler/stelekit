@@ -95,8 +95,14 @@ interface GitRepository {
      * The process-gate key for [config]'s resolved git dir ([RepoOpGate.keyForOrNull]); null when it cannot be
      * resolved (callers fail closed). JVM and Android canonicalise; this default hashes `<repoRoot>/.git` as written.
      */
-    fun gateKeyFor(config: GitConfig): String? =
-        RepoOpGate.keyForOrNull("${config.repoRoot.value.trimEnd('/')}/.git") { it }
+    fun gateKeyFor(config: GitConfig): String? = gateKeyForRoot(config.repoRoot.value)
+
+    /**
+     * Same key from a bare repo root, for callers with no [GitConfig] yet (a clone destination, a setup form).
+     * It must equal [gateKeyFor] for the same directory before and after the clone.
+     */
+    fun gateKeyForRoot(repoRoot: String): String? =
+        RepoOpGate.keyForOrNull("${repoRoot.trimEnd('/')}/.git") { it }
 
     /** Releases the claim taken by [beginOwnedOperation]. Default: nothing held, nothing to release. */
     suspend fun endOwnedOperation(config: GitConfig) {}

@@ -593,7 +593,8 @@ class JvmGitRepository(
             ownedOperations.forceRemove(gitDirOf(config)).flatMap { healthyAfterLockDeletion(config) }
         }
 
-    override fun gateKeyFor(config: GitConfig): String? = RepoOpGate.keyForOrNull(gitDirOf(config))
+    override fun gateKeyForRoot(repoRoot: String): String? =
+        RepoOpGate.keyForOrNull(JavaIoLockFiles.resolveGitDir(File(repoRoot)))
 
     private fun gitDirOf(config: GitConfig): File = JavaIoLockFiles.resolveGitDir(File(config.repoRoot.value))
 

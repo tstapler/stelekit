@@ -349,6 +349,8 @@ import dev.stapler.stelekit.wiring.NoGateFallbackAuditTest
 import dev.stapler.stelekit.git.GateKeyAliasTest
 import dev.stapler.stelekit.git.LockRecoveryDecisionTest
 import dev.stapler.stelekit.git.PidNamespaceAbsentPidTest
+import dev.stapler.stelekit.git.EntryPointGateTest
+import dev.stapler.stelekit.git.RateLimitRetryGateTest
 import dev.stapler.stelekit.git.RepoOpGateReleaseStructureTest
 import dev.stapler.stelekit.git.ProcStatParserTest
 import dev.stapler.stelekit.git.LockRecoveryClaimTest
@@ -771,6 +773,8 @@ import org.junit.runners.Suite
     JvmGitRepositoryOwnedOperationTest::class,
     ForceRemoveRacesLiveRunTest::class,
     OwnerHeartbeatTest::class,
+    EntryPointGateTest::class,
+    RateLimitRetryGateTest::class,
     RepoOpGateReleaseStructureTest::class,
     RepoOpGateTest::class,
     TornRecordIsUnknownTest::class,

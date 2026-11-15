@@ -80,6 +80,7 @@ class GitCloneWorkerTest {
         foregroundUpdater: ForegroundUpdater = RecordingForegroundUpdater(),
         inputData: Data = defaultInputData(),
         credentialAccess: dev.stapler.stelekit.platform.security.CredentialAccess? = null,
+        gate: RepoOpGate? = null,
     ): GitCloneWorker =
         TestListenableWorkerBuilder<GitCloneWorker>(context)
             .setInputData(inputData)
@@ -90,7 +91,7 @@ class GitCloneWorkerTest {
                     appContext: Context,
                     workerClassName: String,
                     workerParameters: WorkerParameters,
-                ): ListenableWorker = GitCloneWorker(appContext, workerParameters, gitRepository, credentialAccess)
+                ): ListenableWorker = GitCloneWorker(appContext, workerParameters, gitRepository, credentialAccess, gate)
             })
             .build()
 
@@ -126,6 +127,23 @@ class GitCloneWorkerTest {
 
         assertTrue(cloneInvoked, "denial must not short-circuit — the transfer itself continues")
         assertEquals(ListenableWorker.Result.success(), result)
+    }
+
+    @Test
+    fun `doWork() takes the gate for the destination and does not clone when it is already held`() = runBlocking {
+        var cloneInvoked = false
+        val repo = cloningStub { _, _, _, _ -> cloneInvoked = true; Unit.right() }
+        val gate = RepoOpGate()
+        val hold = checkNotNull(gate.tryAcquire(checkNotNull(repo.gateKeyForRoot("/tmp/graph")), SyncOrigin.UiPress))
+
+        val result = buildWorker(repo, gate = gate).doWork()
+
+        assertTrue(!cloneInvoked, "a held destination must not be cloned into")
+        assertTrue(result is ListenableWorker.Result.Failure)
+        gate.releaseOrHandOff(hold)
+
+        buildWorker(repo, gate = gate).doWork()
+        assertTrue(cloneInvoked, "the gate must be free again once the holder released")
     }
 
     @Test

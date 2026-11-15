@@ -180,6 +180,7 @@ import dev.stapler.stelekit.git.lfs.LfsTransferPolicyTest
 import dev.stapler.stelekit.git.lfs.LfsBatchClientStatusTest
 import dev.stapler.stelekit.git.lfs.LfsEndpointTest
 import dev.stapler.stelekit.platform.download.ResumableDownloadTest
+import dev.stapler.stelekit.git.CloneEntryPointGateTest
 import dev.stapler.stelekit.git.JvmGitCloneWorkerLauncherTest
 import dev.stapler.stelekit.git.JvmGitRepositoryTest
 import dev.stapler.stelekit.git.JgitCancelLockTest
@@ -536,6 +537,7 @@ import org.junit.runners.Suite
     LfsBatchClientStatusTest::class,
     LfsEndpointTest::class,
     ResumableDownloadTest::class,
+    CloneEntryPointGateTest::class,
     JvmGitCloneWorkerLauncherTest::class,
     JvmGitRepositoryTest::class,
     JgitCancelLockTest::class,

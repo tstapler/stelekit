@@ -234,6 +234,7 @@ class SteleKitApplication : Application() {
             dev.stapler.stelekit.jobs.schedule.registerAndroidTasks(taskRegistry)
             val coldPathRunner = dev.stapler.stelekit.git.AndroidColdPathRunner(this, repoOpGate)
             dev.stapler.stelekit.git.GitSyncWorker.processColdPathRunner = coldPathRunner
+            dev.stapler.stelekit.git.GitCloneWorker.processGate = repoOpGate
             dev.stapler.stelekit.git.registerGitSyncTask(taskRegistry, cold = coldPathRunner)
             // Outside jobs.schedule (ADR-001): platform/ml owns the model-download spec, task and foreground notification.
             dev.stapler.stelekit.platform.ml.registerModelDownloadTask(taskRegistry, this)

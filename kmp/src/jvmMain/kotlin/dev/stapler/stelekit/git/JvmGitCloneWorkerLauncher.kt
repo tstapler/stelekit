@@ -32,7 +32,7 @@ import kotlinx.coroutines.async
  * caller exactly as [GitCloneWorkerLauncher.cancel]'s kdoc promises, without cancelling the
  * caller's own ambient coroutine.
  *
- * @param gate the process gate the clone takes in Task 1.4d2; required now so no launcher is built on a private one.
+ * @param gate the process gate the clone holds for the destination's `.git`; `SyncInProgress` when it is held.
  */
 class JvmGitCloneWorkerLauncher(
     private val gitRepository: GitRepository,
@@ -52,7 +52,14 @@ class JvmGitCloneWorkerLauncher(
         onStateChange: (GitTransportRetryState) -> Unit,
         graphDisplayName: String?,
     ): Either<DomainError.GitError, Unit> {
-        val deferred = scope.async { gitRepository.clone(url, RepoRoot(localPath), auth, onProgress, onStateChange) }
+        // The lease lives inside the async so it is held until the clone call really returns, even after Cancel.
+        val deferred = scope.async {
+            gate.withExclusiveLease(
+                key = gitRepository.gateKeyForRoot(localPath),
+                origin = SyncOrigin.Clone,
+                unresolved = DomainError.GitError.CloneFailed("Cannot resolve the git directory of $localPath"),
+            ) { gitRepository.clone(url, RepoRoot(localPath), auth, onProgress, onStateChange) }
+        }
         currentClone = deferred
         try {
             return deferred.await()
