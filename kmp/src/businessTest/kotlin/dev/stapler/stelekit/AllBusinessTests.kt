@@ -344,6 +344,9 @@ import dev.stapler.stelekit.git.ProcStatParserTest
 import dev.stapler.stelekit.git.LockRecoveryClaimTest
 import dev.stapler.stelekit.git.ActiveRunNotClearedOwnTest
 import dev.stapler.stelekit.git.RecoveryLockInProcessMutexTest
+import dev.stapler.stelekit.git.ForeignLockNewerThanDeadRecordTest
+import dev.stapler.stelekit.git.ForceRemoveRacesLiveRunTest
+import dev.stapler.stelekit.git.OwnerHeartbeatTest
 import dev.stapler.stelekit.git.RepoOpGateTest
 import dev.stapler.stelekit.git.TornRecordIsUnknownTest
 import dev.stapler.stelekit.git.GitSyncTaskMappingTest
@@ -741,6 +744,9 @@ import org.junit.runners.Suite
     LockRecoveryClaimTest::class,
     ActiveRunNotClearedOwnTest::class,
     RecoveryLockInProcessMutexTest::class,
+    ForeignLockNewerThanDeadRecordTest::class,
+    ForceRemoveRacesLiveRunTest::class,
+    OwnerHeartbeatTest::class,
     RepoOpGateReleaseStructureTest::class,
     RepoOpGateTest::class,
     TornRecordIsUnknownTest::class,

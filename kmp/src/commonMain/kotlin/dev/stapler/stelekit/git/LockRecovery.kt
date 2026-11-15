@@ -184,17 +184,64 @@ object LockRecovery {
         if (!verdict.deletes) return refusal(key, verdict).left()
         // Another claimer replaced the record we decided on; it is theirs to act on, not ours.
         if (reread?.content != decidedOn?.content) return DomainError.GitError.SyncInProgress(null).left()
-        if (!withinForeignLockWindow(reread, lockFiles, nowMs())) {
+        val locks = deletableLocks(verdict, lockFiles)
+        if (!withinForeignLockWindow(reread, locks, nowMs())) {
             return refusal(key, LockVerdict.OwnerUnknown(UnknownReason.ForeignLockSuspected)).left()
         }
-        deletableLocks(verdict, lockFiles).forEach { lockFiles.delete(it.path) }
+        locks.forEach { lockFiles.delete(it.path) }
         lockFiles.deleteRecord()
         return publish(key, lockFiles, self, registry, verdict)
     }
 
-    // Step 5 placeholder: fails closed until the foreign-lock window rule exists, so no lock is ever deleted.
-    @Suppress("UnusedParameter")
-    private fun withinForeignLockWindow(record: RecordRead?, lockFiles: LockFiles, nowMs: Long): Boolean = false
+    // Step 5 (ADR-001 decision 12): a lock is the dead owner's only if it falls between its start and its last
+    // heartbeat (plus slack) and has been quiet for 5 s; anything else may be a terminal or IDE `git` (fail closed).
+    private fun withinForeignLockWindow(record: RecordRead?, locks: List<LockFileEntry>, nowMs: Long): Boolean {
+        val decoded = (record?.let { LockOwnerRecord.decode(it.content) } as? RecordDecode.Valid)?.record ?: return false
+        return locks.all { lock ->
+            lock.mtimeMs >= decoded.startedAtMs - LOCK_START_SLACK_MS &&
+                lock.mtimeMs <= record.mtimeMs + HEARTBEAT_SLACK_MS &&
+                lock.mtimeMs <= nowMs - LOCK_QUIET_MS
+        }
+    }
+
+    private const val LOCK_START_SLACK_MS = 2_000L
+    private const val HEARTBEAT_SLACK_MS = 10_000L
+    private const val LOCK_QUIET_MS = 5_000L
+
+    /**
+     * The user-confirmed "remove lock file" path (ADR-001 decision 12a): the caller holds the gate; this takes the
+     * recovery lock, re-decides, refuses on a live owner or a registered run, and otherwise deletes only allow-listed
+     * locks (and the record when its owner is provably dead or us). Returns the deleted lock paths.
+     */
+    fun forceRemove(
+        key: String,
+        lockFiles: LockFiles,
+        liveness: ProcessLiveness,
+        self: LockOwnerRecord,
+        registry: ActiveRunRegistry,
+    ): Either<DomainError.GitError, List<String>> {
+        if (registry.isActive(key)) return DomainError.GitError.SyncInProgress(registry.originOf(key)).left()
+        if (!registry.tryEnterRecovery(key)) return DomainError.GitError.SyncInProgress(null).left()
+        try {
+            val handle = try {
+                lockFiles.tryLockRecovery()
+            } catch (_: RecoveryLockUnsupportedException) {
+                return refusal(key, LockVerdict.OwnerUnknown(UnknownReason.RecoveryLockUnsupported)).left()
+            } ?: return DomainError.GitError.SyncInProgress(null).left()
+            try {
+                val verdict = decide(lockFiles.readRecord(), lockFiles, liveness, self)
+                if (verdict == LockVerdict.OwnerAlive) return DomainError.GitError.SyncInProgress(null).left()
+                val locks = lockFiles.listAllowListedLocks().filter { LockAllowList.isAllowListed(it.path) }
+                locks.forEach { lockFiles.delete(it.path) }
+                if (verdict.deletes) lockFiles.deleteRecord()
+                return locks.map { it.path }.right()
+            } finally {
+                handle.release()
+            }
+        } finally {
+            registry.exitRecovery(key)
+        }
+    }
 
     // Step 6: atomic exclusive publish, then register and re-read. A write failure is logged, not fatal.
     private fun publish(

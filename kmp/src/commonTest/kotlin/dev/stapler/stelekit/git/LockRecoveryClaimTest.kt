@@ -142,16 +142,14 @@ class LockRecoveryClaimTest {
     }
 
     @Test
-    fun claim_should_FailClosed_When_DeletingVerdictReachesForeignLockStepWithoutWindowRule() {
-        val files = filesWithDeadOwner(2_000)
+    fun claim_should_DeleteLocksThenRecordThenPublish_When_DeadOwnerLocksWithinWindow() {
+        val files = filesWithDeadOwner(2_000, 3_000)
 
-        val left = claim(files).leftOrNull()
+        val result = claim(files)
 
-        assertEquals(
-            DomainError.GitError.StaleLockFile(key, LockVerdict.OwnerUnknown(UnknownReason.ForeignLockSuspected)),
-            left,
-        )
-        assertTrue(files.deletions.isEmpty())
+        assertIs<Either.Right<ClaimedRun>>(result)
+        assertEquals(listOf("delete:index.lock", "delete:refs/heads/b1.lock", "deleteRecord", "create"), files.mutations)
+        assertEquals(self.encode(), files.record?.content)
         assertEquals(1, files.releaseCalls, "recovery lock must be released in finally")
     }
 
