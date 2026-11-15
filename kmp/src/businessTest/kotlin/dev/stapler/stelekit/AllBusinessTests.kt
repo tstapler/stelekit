@@ -335,6 +335,13 @@ import dev.stapler.stelekit.git.UpdatesNotificationToggleTest
 import dev.stapler.stelekit.ui.FirstSyncPreviewLoaderTest
 import dev.stapler.stelekit.ui.GitSyncCoordinatorTest
 import dev.stapler.stelekit.git.GitLastSuccessSourceTest
+import dev.stapler.stelekit.git.ClockStepStartTimeTest
+import dev.stapler.stelekit.git.GateKeyAliasTest
+import dev.stapler.stelekit.git.LockRecoveryDecisionTest
+import dev.stapler.stelekit.git.PidNamespaceAbsentPidTest
+import dev.stapler.stelekit.git.RepoOpGateReleaseStructureTest
+import dev.stapler.stelekit.git.RepoOpGateTest
+import dev.stapler.stelekit.git.TornRecordIsUnknownTest
 import dev.stapler.stelekit.git.GitSyncTaskMappingTest
 import dev.stapler.stelekit.git.GitSyncTaskRunnerPolicyTest
 import dev.stapler.stelekit.git.ScheduledSyncPolicyTest
@@ -722,6 +729,13 @@ import org.junit.runners.Suite
     GitSyncTaskRunnerPolicyTest::class,
     GitSyncTaskMappingTest::class,
     GitLastSuccessSourceTest::class,
+    ClockStepStartTimeTest::class,
+    GateKeyAliasTest::class,
+    LockRecoveryDecisionTest::class,
+    PidNamespaceAbsentPidTest::class,
+    RepoOpGateReleaseStructureTest::class,
+    RepoOpGateTest::class,
+    TornRecordIsUnknownTest::class,
     ScheduledSyncPolicyTest::class,
     EditLockTest::class,
     ScheduledSyncStackE2ETest::class,
