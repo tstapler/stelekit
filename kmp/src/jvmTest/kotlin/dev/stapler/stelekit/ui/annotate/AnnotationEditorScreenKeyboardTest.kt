@@ -85,8 +85,9 @@ class AnnotationEditorScreenKeyboardTest {
         }
         composeTestRule.waitForIdle()
 
-        // Commit one DISTANCE annotation directly through the ViewModel (default currentTool is
-        // DISTANCE, which auto-commits once 2 points are collected).
+        // Commit one DISTANCE annotation directly through the ViewModel (the default tool is SELECT,
+        // so DISTANCE is armed explicitly; it auto-commits once 2 points are collected).
+        viewModel.selectTool(AnnotationTool.DISTANCE)
         viewModel.addPoint(NormalizedPoint(0.1, 0.1))
         viewModel.addPoint(NormalizedPoint(0.5, 0.5))
         composeTestRule.waitForIdle()
@@ -132,6 +133,7 @@ class AnnotationEditorScreenKeyboardTest {
         }
         composeTestRule.waitForIdle()
 
+        viewModel.selectTool(AnnotationTool.DISTANCE)
         viewModel.addPoint(NormalizedPoint(0.1, 0.1))
         viewModel.addPoint(NormalizedPoint(0.5, 0.5))
         composeTestRule.waitForIdle()

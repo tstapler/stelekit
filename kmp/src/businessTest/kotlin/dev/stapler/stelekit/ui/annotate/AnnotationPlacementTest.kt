@@ -109,6 +109,8 @@ class AnnotationPlacementTest {
     @Test
     fun crosshairConfirmsTwoPointsIntoOneDistanceAndHapticsCallerSeesTheCommit() {
         val vm = newViewModel()
+        vm.selectTool(AnnotationTool.DISTANCE)
+        vm.setStickiness(ToolStickiness.LOCKED) // one-shot return to SELECT would reset the placement session
         vm.togglePlacementMode(space)
         vm.tapCrosshair(space, NormalizedPoint(0.1, 0.5))
         assertTrue(vm.confirmCrosshair(space))

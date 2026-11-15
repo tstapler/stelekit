@@ -59,6 +59,7 @@ class AnnotationEditorViewModelTest {
     @Test
     fun selectTool_clearsInProgressPoints() {
         val vm = makeViewModel()
+        vm.selectTool(AnnotationTool.DISTANCE)
         vm.addPoint(NormalizedPoint(0.1, 0.1))
         assertEquals(1, vm.state.value.inProgressPoints.size)
 
@@ -191,10 +192,9 @@ class AnnotationEditorViewModelTest {
     @Test
     fun undoStack_limitedTo50() {
         val vm = makeViewModel()
-        vm.selectTool(AnnotationTool.DISTANCE)
-
         // Commit 55 annotations — stack should cap at 50
         repeat(55) {
+            vm.selectTool(AnnotationTool.DISTANCE) // each commit returns the tool to SELECT
             val x = (it * 2 + 1).toDouble() / 1000.0
             vm.addPoint(NormalizedPoint(x.coerceAtMost(0.99), 0.1))
             vm.addPoint(NormalizedPoint((x + 0.01).coerceAtMost(1.0), 0.1))
