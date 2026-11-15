@@ -81,6 +81,9 @@ import dev.stapler.stelekit.ui.placement.crosshairPoint
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -283,6 +286,28 @@ fun AnnotationEditorScreen(
 
     // Adaptive labels: show for first 3 sessions (tracked in state per session)
     val showToolLabels by remember { mutableStateOf(true) }
+
+    // Non-drag pan (WCAG 2.5.7): arrows move the view by a quarter of the viewport; at >= 600 dp the zoom group is a rail beside the photo.
+    var panOn by rememberSaveable(imageAnnotation.uuid) { mutableStateOf(false) }
+    val windowWidthDp = with(density) { LocalWindowInfo.current.containerSize.width.toDp() }
+    val zoomRail = windowWidthDp >= ZOOM_RAIL_MIN_WIDTH
+    fun panDeltaFor(direction: PanDirection) = panDelta(direction, viewportSize.width.toFloat(), viewportSize.height.toFloat())
+    fun panBy(direction: PanDirection) {
+        viewTransform = viewTransform.panned(panDeltaFor(direction), viewHandle.geometry())
+    }
+    fun panAtEdge(direction: PanDirection): Boolean =
+        viewTransform.panned(panDeltaFor(direction), viewHandle.geometry()).approximatelyEquals(viewTransform)
+    val toolbarZoom = ToolbarZoom(
+        view = { viewTransform },
+        onZoomIn = { viewTransform = viewTransform.stepped(ZOOM_STEP_FACTOR, viewHandle.geometry()) },
+        onZoomOut = { viewTransform = viewTransform.stepped(1f / ZOOM_STEP_FACTOR, viewHandle.geometry()) },
+        onFit = { viewTransform = AnnotationViewTransform.Fit },
+        panOn = panOn,
+        onPanToggle = { panOn = it },
+        onPan = ::panBy,
+        panAtEdge = ::panAtEdge,
+        showZoomGroup = !zoomRail,
+    )
 
     // Story 5.7: wire the active device into the ViewModel so injectMeasurementFromDevice()
     // can find it. Effect re-runs when activeDevice reference changes.
@@ -555,7 +580,7 @@ fun AnnotationEditorScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(bottom = with(density) { toolbarHeightPx.toDp() } + TOOLBAR_CLEARANCE)
-                .padding(start = gestureInsetStart, end = gestureInsetEnd)
+                .padding(start = gestureInsetStart, end = gestureInsetEnd + if (zoomRail) ZOOM_RAIL_WIDTH else 0.dp)
                 .background(pasteboardColor)
                 .clipToBounds()
                 .onSizeChanged { viewportSize = it },
@@ -631,7 +656,12 @@ fun AnnotationEditorScreen(
 
             // Semantics-only node exactly the size of the image box: tests and TalkBack address the image
             // through it, while the viewport-sized gesture layer above receives the touches.
-            Box(Modifier.fillMaxSize().semantics { contentDescription = ANNOTATION_CANVAS_DESCRIPTION })
+            Box(
+                Modifier.fillMaxSize().semantics {
+                    contentDescription = ANNOTATION_CANVAS_DESCRIPTION
+                    customActions = PanDirection.entries.map { d -> CustomAccessibilityAction(d.label) { panBy(d); true } }
+                },
+            )
 
             // Layer 3: In-progress preview (drawing only; the gesture layer above owns the touches)
             InProgressPreviewCanvas(
@@ -752,14 +782,17 @@ fun AnnotationEditorScreen(
 
             } // end viewport Box
 
-            AnnotationZoomControls(
-                view = { viewTransform },
-                onZoomIn = { viewTransform = viewTransform.stepped(ZOOM_STEP_FACTOR, viewHandle.geometry()) },
-                onZoomOut = { viewTransform = viewTransform.stepped(1f / ZOOM_STEP_FACTOR, viewHandle.geometry()) },
-                onFit = { viewTransform = AnnotationViewTransform.Fit },
-                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp),
-            )
-
+            // Wide windows: the zoom group is a rail in the strip reserved beside the viewport, never over the photo.
+            if (zoomRail) {
+                AnnotationZoomControls(
+                    view = { viewTransform },
+                    onZoomIn = toolbarZoom.onZoomIn,
+                    onZoomOut = toolbarZoom.onZoomOut,
+                    onFit = toolbarZoom.onFit,
+                    vertical = true,
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp),
+                )
+            }
 
             if (state.currentTool != AnnotationTool.SELECT) {
                 AnnotationPlacementControls(
@@ -863,6 +896,7 @@ fun AnnotationEditorScreen(
                 },
                 onUnitSelect = { viewModel.setDisplayUnit(it) },
                 showLabels = showToolLabels,
+                zoom = toolbarZoom,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(8.dp)
@@ -1881,6 +1915,10 @@ internal const val LOUPE_OVERLAY_TAG = "loupe-overlay"
 private val PAN_SLACK = 24.dp
 private val IMAGE_FRAME_WIDTH = 1.dp
 private val TOOLBAR_CLEARANCE = 16.dp
+
+/** Window width from which the zoom group is a vertical rail beside the photo instead of a toolbar row. */
+internal val ZOOM_RAIL_MIN_WIDTH = 600.dp
+private val ZOOM_RAIL_WIDTH = 64.dp
 private const val ZOOM_DECODE_FACTOR = 2.5f
 
 /** Survives rotation and process recreation; the view is cheap state, so a plain list of floats. */
