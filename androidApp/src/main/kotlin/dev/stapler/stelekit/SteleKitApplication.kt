@@ -65,6 +65,9 @@ class SteleKitApplication : Application() {
      */
     val taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry()
 
+    /** The one per-repo gate for the process, shared by the sync service, cold runner, scheduler and quiesce. */
+    val repoOpGate = dev.stapler.stelekit.git.RepoOpGate()
+
     /** Runs cross-graph copies in an application-owned scope so they survive Activity teardown. */
     val copyRunHost: dev.stapler.stelekit.merge.CopyRunHost = dev.stapler.stelekit.merge.AndroidCopyRunHost()
 

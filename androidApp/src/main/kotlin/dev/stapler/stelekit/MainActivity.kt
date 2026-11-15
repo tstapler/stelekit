@@ -39,7 +39,6 @@ import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.git.AndroidGitRepository
 import dev.stapler.stelekit.git.GitCloneWorker
 import dev.stapler.stelekit.git.NotificationTapRouter
-import dev.stapler.stelekit.git.RepoOpGate
 import dev.stapler.stelekit.git.SyncNotifier
 import dev.stapler.stelekit.git.GitShadowWorktree
 import dev.stapler.stelekit.git.GitSyncBusyCounter
@@ -422,8 +421,8 @@ class MainActivity : ComponentActivity() {
                     createAndroidGraphMoveQuiesceStrategy(
                         context = applicationContext,
                         gitSyncBusyCounter = sharedGitSyncBusyCounter,
-                        // Placeholder until Task 1.3d2 (shared root gate) and 1.3b2 (real key resolver).
-                        gate = RepoOpGate(),
+                        // gateKeyFor is a placeholder until Task 1.3b2 supplies the real key resolver.
+                        gate = app.repoOpGate,
                         gateKeyFor = { null },
                         shadowWorktreeTarget = { null },
                     )
@@ -557,6 +556,7 @@ class MainActivity : ComponentActivity() {
                         // The Application's registry is shared, never rebuilt here: kinds register only in onCreate.
                         backgroundTaskScheduler = backgroundTaskScheduler,
                         taskRegistry = app.taskRegistry,
+                        repoOpGate = app.repoOpGate,
                         backgroundSyncSchedulerFactory = BackgroundSyncSchedulerFactory(
                             minimumIntervalMinutes = WorkManagerSyncScheduler.MIN_PERIODIC_INTERVAL_MINUTES.toInt(),
                         ) { graphId -> WorkManagerSyncScheduler(applicationContext, graphId) },
