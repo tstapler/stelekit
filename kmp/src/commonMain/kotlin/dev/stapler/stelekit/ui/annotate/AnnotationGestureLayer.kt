@@ -397,14 +397,25 @@ private fun applyEdit(
     }
 }
 
-/** SELECT on empty space: a tap deselects (and can complete a double tap); a second finger starts a pinch. */
+/** SELECT on empty space: a tap deselects (and can complete a double tap), a drag pans the view, a second finger starts a pinch. */
 private suspend fun AwaitPointerEventScope.emptySpaceGesture(env: GestureEnv, down: PointerInputChange): GestureEnd {
+    val handle = env.handle
+    var panning = false
     while (true) {
         val event = awaitPointerEvent()
         if (event.pressedCount() >= 2) return GestureEnd.HANDOFF_TO_VIEW
         val change = event.changeFor(down) ?: return GestureEnd.DONE
+        val travel = (change.position - down.position).getDistance()
+        if (!panning && travel >= env.tapThresholdPx) {
+            panning = true
+            handle.setView(handle.view().panned(change.position - down.position, handle.geometry()))
+            change.consume()
+        } else if (panning) {
+            handle.setView(handle.view().panned(change.position - change.previousPosition, handle.geometry()))
+            change.consume()
+        }
         if (change.pressed) continue
-        if ((change.position - down.position).getDistance() < env.tapThresholdPx) {
+        if (!panning && travel < env.tapThresholdPx) {
             env.callbacks.onSelect(null)
             env.onEmptyTap(TapRecord(change.uptimeMillis, change.position))
         }

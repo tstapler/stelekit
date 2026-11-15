@@ -1610,7 +1610,7 @@ private const val TOOL_HINT_MILLIS = 4_000L
 private class CommitMemory(var tool: AnnotationTool, var count: Int)
 
 /**
- * Tool shortcuts: a tool key arms that tool (or disarms it when already armed, like tapping the chip) and
+ * Tool shortcuts: a tool key arms that tool (or disarms it when already armed, like tapping the chip), Esc disarms, and
  * [KEEP_TOOL_KEY] toggles Keep tool while a tool is armed. Plain keys only, and only while no text field has focus.
  */
 internal fun onAnnotationToolKeyEvent(
@@ -1623,6 +1623,11 @@ internal fun onAnnotationToolKeyEvent(
 ): Boolean {
     val plain = !keyEvent.isCtrlPressed && !keyEvent.isMetaPressed && !keyEvent.isAltPressed && !keyEvent.isShiftPressed
     if (!enabled || !plain || keyEvent.type != KeyEventType.KeyDown) return false
+    if (keyEvent.key == Key.Escape) {
+        if (currentTool == AnnotationTool.SELECT) return false
+        onSelectTool(AnnotationTool.SELECT)
+        return true
+    }
     if (keyEvent.key == KEEP_TOOL_KEY) {
         if (currentTool == AnnotationTool.SELECT) return false
         onToggleKeep()
