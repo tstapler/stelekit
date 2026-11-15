@@ -301,6 +301,8 @@ fun AnnotationEditorScreen(
     val canUndo by viewModel.canUndo.collectAsState()
     val canRedo by viewModel.canRedo.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val valueHost = rememberValueEditHost()
+    val calibrationPresentation = rememberCalibrationPresentation(viewModel, state, valueHost)
 
     // Back handling: placed measurements are saved as they are made, so only unfinished points or a failed save need a dialog.
     var leaveDialog by remember { mutableStateOf<BackOutcome?>(null) }
@@ -410,7 +412,7 @@ fun AnnotationEditorScreen(
     PlatformBackHandler(enabled = true) {
         val modalOpen = leaveDialog != null || disarmConfirmCount != null || showCalibrationSheet || showHeightOffset ||
             showCalibrationChangeWarning || showBleDevicePanel || pendingDeleteUuid != null ||
-            state.isGridRefDialogVisible || state.isLabelInputVisible
+            state.isGridRefDialogVisible || state.isLabelInputVisible || valueHost.isModalOpen
         when (
             EditorBackPolicy.resolve(
                 modalOpen = modalOpen,
@@ -424,6 +426,8 @@ fun AnnotationEditorScreen(
                 disarmConfirmCount != null -> disarmConfirmCount = null
                 pendingDeleteUuid != null -> pendingDeleteUuid = null
                 showCalibrationChangeWarning -> showCalibrationChangeWarning = false
+                valueHost.editingUuid != null -> valueHost.dismissEditor(viewModel)
+                valueHost.showKnownDistances -> valueHost.showKnownDistances = false
                 showBleDevicePanel -> showBleDevicePanel = false
                 showHeightOffset -> showHeightOffset = false
                 showCalibrationSheet -> showCalibrationSheet = false
@@ -534,6 +538,16 @@ fun AnnotationEditorScreen(
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
+                onOpenKnownDistances = { valueHost.showKnownDistances = true },
+            )
+        }
+        if (isCalibrated || hasStartedAnnotating) {
+            CalibrationPill(
+                state = calibrationPresentation.pill,
+                onClick = { valueHost.showKnownDistances = true },
+                calibration = state.calibration,
+                onAction = { viewModel.beginKnownDistance() },
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
             )
         }
         // Once calibrated, mark first-use as done and persist across sessions.
@@ -618,7 +632,7 @@ fun AnnotationEditorScreen(
         }
 
         // Status strip: a layout slot above the canvas, so it never covers the photo (top 56 dp stays pressable).
-        val toolPrompt = state.placementMessage ?: toolPromptFor(state.currentTool, state.inProgressPoints.size, viewTransform.scale)
+        val toolPrompt = valueHost.scopeMessage ?: state.placementMessage ?: toolPromptFor(state.currentTool, state.inProgressPoints.size, viewTransform.scale)
         val (_, stripText) = stripMessage(
             errorText = state.error?.message,
             toolPrompt = toolPrompt,
@@ -787,6 +801,7 @@ fun AnnotationEditorScreen(
                 canvasSize = canvasSize,
                 onAnnotationSelect = { uuid -> viewModel.selectAnnotation(uuid) },
                 onMoveVertex = { uuid, index -> viewModel.beginVertexMove(placementSpace(), uuid, index) },
+                onEditValue = { uuid -> valueHost.openEditor(uuid) },
                 modifier = Modifier.fillMaxSize(),
                 view = { viewTransform },
             )
@@ -826,6 +841,9 @@ fun AnnotationEditorScreen(
                         },
                         onPlacementCancelled = { viewModel.cancelPlacementGesture() },
                         onHandleTap = { uuid, index -> viewModel.beginVertexMove(placementSpace(), uuid, index) },
+                        onLabelTap = { uuid ->
+                            viewModel.state.value.committedAnnotations.firstOrNull { it.uuid == uuid }?.let(valueHost::onValueTap)
+                        },
                     )
                 },
             )
@@ -1096,6 +1114,16 @@ fun AnnotationEditorScreen(
                 },
             )
         }
+
+        AnnotationValueHooks(
+            viewModel = viewModel,
+            state = state,
+            host = valueHost,
+            presentation = calibrationPresentation,
+            snackbar = snackbarHostState,
+            onCalibrateLegacy = { showCalibrationSheet = true },
+            onUseBle = { showBleDevicePanel = true },
+        )
 
         if (showCalibrationChangeWarning) {
             CalibrationChangeWarningDialog(

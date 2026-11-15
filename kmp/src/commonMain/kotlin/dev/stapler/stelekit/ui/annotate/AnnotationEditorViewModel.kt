@@ -383,6 +383,13 @@ class AnnotationEditorViewModel(
         depthCoordinator.setImageSize(imageWidthPx, imageHeightPx)
     }
 
+    /** Image-pixel length of the committed two-point line [uuid]; 0 when it is missing or too short to set a scale. */
+    fun segmentPixelLength(uuid: String): Double {
+        val points = _state.value.committedAnnotations.firstOrNull { it.uuid == uuid }?.normalizedPoints ?: return 0.0
+        if (points.size < 2) return 0.0
+        return kotlin.math.hypot((points[1].x - points[0].x) * imageWidthPx, (points[1].y - points[0].y) * imageHeightPx)
+    }
+
     /**
      * Set to true on the first call to [initialize] to prevent a second call from
      * re-issuing the one-shot repository load.

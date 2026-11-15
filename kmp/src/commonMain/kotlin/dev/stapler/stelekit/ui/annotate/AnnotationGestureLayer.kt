@@ -61,6 +61,8 @@ internal class AnnotationGestureCallbacks(
     val onPlacementCancelled: () -> Unit = {},
     /** A Select tap (no drag) on a vertex handle; the host opens the nudge pad in `moving` mode. */
     val onHandleTap: ((annotationUuid: String, vertexIndex: Int) -> Unit)? = null,
+    /** A Select tap on a measurement's value pill; the host opens the value editor or explains why it cannot. Null leaves pills unhittable. */
+    val onLabelTap: ((annotationUuid: String) -> Unit)? = null,
 )
 
 /** Marker at A and ghost line to the finger, in layer-local pixels, shown once the drag passes the commit threshold. */
@@ -89,6 +91,9 @@ private class GestureEnv(
     val tapThresholdPx: Float,
     val vertexRadiusPx: Float,
     val edgeRadiusPx: Float,
+    val labelOffsetPx: Float,
+    val labelHalfWidthPx: Float,
+    val labelHalfHeightPx: Float,
     val dragCommitPx: Float,
     val onPreview: (DragPreview?) -> Unit,
     val onEmptyTap: (TapRecord) -> Unit,
@@ -178,6 +183,9 @@ private fun newGestureEnv(
         tapThresholdPx = with(density) { 16.dp.toPx() },
         vertexRadiusPx = with(density) { 28.dp.toPx() },
         edgeRadiusPx = with(density) { 20.dp.toPx() },
+        labelOffsetPx = with(density) { 40.dp.toPx() },
+        labelHalfWidthPx = with(density) { 32.dp.toPx() },
+        labelHalfHeightPx = with(density) { 24.dp.toPx() },
         onEmptyTap = { tap ->
             if (isDoubleTap(lastTap, tap, DOUBLE_TAP_WINDOW_MILLIS, doubleTapSlopPx)) {
                 handle.setView(handle.view().toggledAt(handle.local(tap.position), handle.geometry()))
@@ -323,14 +331,23 @@ private fun AwaitPointerEventScope.commitPlacement(env: GestureEnv, press: Offse
 
 private suspend fun AwaitPointerEventScope.selectGesture(env: GestureEnv, down: PointerInputChange): GestureEnd {
     val handle = env.handle
+    val position = handle.local(down.position)
     val hit = hitTestAnnotations(
         annotations = env.annotations(),
-        position = handle.local(down.position),
+        position = position,
         canvasSize = handle.canvasSize(),
         vertexRadiusPx = env.vertexRadiusPx,
         edgeRadiusPx = env.edgeRadiusPx,
         view = handle.view(),
     )
+    // A vertex under the finger wins over a pill that happens to overlap it.
+    val labelUuid = if (hit is AnnotationHit.Vertex || env.callbacks.onLabelTap == null) null else {
+        hitTestValueLabel(
+            env.annotations(), position, handle.canvasSize(), handle.view(),
+            env.labelOffsetPx, env.labelHalfWidthPx, env.labelHalfHeightPx,
+        )
+    }
+    if (labelUuid != null) return labelTapGesture(env, down, labelUuid)
     if (hit == null) {
         env.handleTapArmed = null
         return emptySpaceGesture(env, down)
@@ -341,6 +358,23 @@ private suspend fun AwaitPointerEventScope.selectGesture(env: GestureEnv, down: 
     env.handleTapArmed = hit.uuid
     env.callbacks.onSelect(hit.uuid)
     return dragAnnotation(env, hit, down, repeatTap)
+}
+
+/** A press on a value pill selects the measurement; a release within the tap slop then reports the pill tap. */
+private suspend fun AwaitPointerEventScope.labelTapGesture(env: GestureEnv, down: PointerInputChange, uuid: String): GestureEnd {
+    down.consume()
+    env.callbacks.onSelect(uuid)
+    while (true) {
+        val event = awaitPointerEvent()
+        if (event.pressedCount() >= 2) return GestureEnd.HANDOFF_TO_VIEW
+        val change = event.changeFor(down) ?: return GestureEnd.DONE
+        change.consume()
+        if ((change.position - down.position).getDistance() >= env.tapThresholdPx) return GestureEnd.DONE
+        if (!change.pressed) {
+            env.callbacks.onLabelTap?.invoke(uuid)
+            return GestureEnd.DONE
+        }
+    }
 }
 
 private suspend fun AwaitPointerEventScope.dragAnnotation(env: GestureEnv, hit: AnnotationHit, down: PointerInputChange, repeatTap: Boolean): GestureEnd {

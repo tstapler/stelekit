@@ -89,7 +89,7 @@ class AnnotationEditorScreenRobolectricTest {
         val vm = viewModel(img)
         rule.setContent { AnnotationEditorScreen(viewModel = vm, imageAnnotation = img) }
         rule.waitForIdle()
-        rule.onNodeWithText("Set a scale to measure distances").assertExists()
+        rule.onNodeWithText(CalibrationStatePresenter.NOT_CALIBRATED).assertExists()
     }
 
     @Test

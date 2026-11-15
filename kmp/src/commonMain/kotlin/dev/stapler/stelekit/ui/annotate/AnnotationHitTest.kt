@@ -59,6 +59,49 @@ fun hitTestAnnotations(
     return bestVertex ?: bestEdge
 }
 
+/** Where the label overlay draws a value pill: the annotation's anchor, in screen pixels (distance midpoint, area centroid, angle vertex, label point). */
+internal fun labelAnchor(annotation: MeasurementAnnotation, canvasSize: IntSize, view: AnnotationViewTransform): Offset? {
+    val pts = annotation.normalizedPoints.map { view.toView(it.toScreen(canvasSize)) }
+    if (pts.isEmpty()) return null
+    return when (annotation.annotationType) {
+        AnnotationType.DISTANCE, AnnotationType.GRID_REF ->
+            if (pts.size >= 2) Offset((pts[0].x + pts[1].x) / 2, (pts[0].y + pts[1].y) / 2) else pts[0]
+        AnnotationType.AREA -> Offset(pts.map { it.x }.average().toFloat(), pts.map { it.y }.average().toFloat())
+        AnnotationType.ANGLE -> if (pts.size >= 2) pts[1] else pts[0]
+        AnnotationType.LABEL -> pts[0]
+    }
+}
+
+/**
+ * The annotation whose value pill is under [position], or null. The pill sits [labelOffsetPx] above its anchor
+ * (as the label overlay draws it); the box is a fixed touch target, so a pill nudged by label collision avoidance
+ * is hit at its unshifted place.
+ */
+internal fun hitTestValueLabel(
+    annotations: List<MeasurementAnnotation>,
+    position: Offset,
+    canvasSize: IntSize,
+    view: AnnotationViewTransform,
+    labelOffsetPx: Float,
+    halfWidthPx: Float,
+    halfHeightPx: Float,
+): String? {
+    var best: String? = null
+    var bestDist = Float.MAX_VALUE
+    for (a in annotations) {
+        if (a.valueDisplay.isNullOrBlank() && a.label.isNullOrBlank()) continue
+        val anchor = labelAnchor(a, canvasSize, view) ?: continue
+        val center = Offset(anchor.x, anchor.y - labelOffsetPx)
+        if (kotlin.math.abs(position.x - center.x) > halfWidthPx || kotlin.math.abs(position.y - center.y) > halfHeightPx) continue
+        val d = (position - center).getDistance()
+        if (d < bestDist) {
+            bestDist = d
+            best = a.uuid
+        }
+    }
+    return best
+}
+
 /** Shifts every point by ([dx], [dy]) in normalized space, clamped so none leaves [0,1]. */
 internal fun translateClamped(points: List<NormalizedPoint>, dx: Double, dy: Double): List<NormalizedPoint> {
     if (points.isEmpty()) return points
