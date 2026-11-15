@@ -12,10 +12,13 @@ import dev.stapler.stelekit.git.model.GitConfig
  * key held (`RepoOpGate.isHeld`), so a service path that skips single-flight fails the test instead of racing.
  * [keyFor] must produce the same key the service under test resolves for [GitConfig]; the default hashes the
  * un-canonicalised `<repoRoot>/.git`, which matches only when the test path has no symlinks.
+ * [beginOwnedOperation] answers [beginVerdict] (default `NoLock`) instead of delegating: the production defaults are
+ * fail-closed and would pause every fixture.
  */
 class GateAssertingGitRepository(
     private val delegate: GitRepository,
     private val gate: RepoOpGate,
+    private val beginVerdict: LockVerdict = LockVerdict.NoLock,
     private val keyFor: (GitConfig) -> String = { config ->
         RepoOpGate.keyFor("${config.repoRoot.value.trimEnd('/')}/.git") { it }
     },
@@ -79,5 +82,15 @@ class GateAssertingGitRepository(
     override suspend fun writeWorkingBytes(config: GitConfig, path: String, bytes: ByteArray): Boolean {
         requireGate("writeWorkingBytes", config)
         return delegate.writeWorkingBytes(config, path, bytes)
+    }
+
+    override suspend fun beginOwnedOperation(config: GitConfig, info: OwnedOperationInfo): Either<DomainError.GitError, LockVerdict> {
+        requireGate("beginOwnedOperation", config)
+        return Either.Right(beginVerdict)
+    }
+
+    override suspend fun forceRemoveLock(config: GitConfig): Either<DomainError.GitError, Unit> {
+        requireGate("forceRemoveLock", config)
+        return delegate.forceRemoveLock(config)
     }
 }
