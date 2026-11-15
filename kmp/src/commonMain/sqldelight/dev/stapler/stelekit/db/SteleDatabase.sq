@@ -1070,6 +1070,8 @@ CREATE TABLE IF NOT EXISTS measurement_annotations (
     label             TEXT,
     color_hex         TEXT NOT NULL DEFAULT '#FF0000',
     ble_device_id     TEXT,
+    value_source          TEXT NOT NULL DEFAULT 'COMPUTED',
+    value_original_meters REAL,
     FOREIGN KEY (image_uuid) REFERENCES image_annotations(uuid) ON DELETE CASCADE
 );
 
@@ -1140,8 +1142,9 @@ SELECT * FROM measurement_annotations WHERE image_uuid = ? ORDER BY rowid;
 insertMeasurementAnnotation:
 INSERT OR REPLACE INTO measurement_annotations (
     uuid, image_uuid, annotation_type, normalized_points,
-    value_meters, value_display, label, color_hex, ble_device_id
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+    value_meters, value_display, label, color_hex, ble_device_id,
+    value_source, value_original_meters
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteMeasurementsForImage:
 DELETE FROM measurement_annotations WHERE image_uuid = ?;
