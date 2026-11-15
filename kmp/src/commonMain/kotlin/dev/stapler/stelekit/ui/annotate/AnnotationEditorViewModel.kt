@@ -35,6 +35,8 @@ import dev.stapler.stelekit.model.angleBetweenThreePoints
 import dev.stapler.stelekit.model.metersToDisplayString
 import dev.stapler.stelekit.model.polygonAreaMeters
 import dev.stapler.stelekit.platform.Settings
+import dev.stapler.stelekit.platform.annotatorAutoReturnToSelect
+import dev.stapler.stelekit.platform.annotatorStickyTools
 import dev.stapler.stelekit.platform.setDefaultMeasurementUnit
 import dev.stapler.stelekit.platform.diagnostics.EditorDiagnosticsSnapshot
 import dev.stapler.stelekit.platform.diagnostics.EditorDiagnosticsSource
@@ -105,7 +107,11 @@ fun AnnotationTool.isOpenEnded(): Boolean = this == AnnotationTool.AREA
  * normalized [0,1] image space — never screen pixels.
  */
 data class AnnotationEditorState(
-    val currentTool: AnnotationTool = AnnotationTool.DISTANCE,
+    val currentTool: AnnotationTool = AnnotationTool.SELECT,
+    /** Whether a placement tool disarms after a commit (ONE_SHOT) or stays armed ("Keep tool"). */
+    val stickiness: ToolStickiness = ToolStickiness.ONE_SHOT,
+    /** Story 3.6: the next committed distance is a known-distance reference. */
+    val pendingKnownDistance: Boolean = false,
     val inProgressPoints: List<NormalizedPoint> = emptyList(),
     val committedAnnotations: List<MeasurementAnnotation> = emptyList(),
     val calibration: Calibration? = null,
@@ -367,7 +373,9 @@ class AnnotationEditorViewModel(
         onUnhandledThrowable = { t -> reportThrowable(t) },
     )
 
-    private val _state = MutableStateFlow(AnnotationEditorState())
+    private val initialStickiness =
+        if (settings.annotatorStickyTools()) ToolStickiness.LOCKED else ToolStickiness.ONE_SHOT
+    private val _state = MutableStateFlow(AnnotationEditorState(stickiness = initialStickiness))
     val state: StateFlow<AnnotationEditorState> = _state.asStateFlow()
 
     init {
@@ -453,6 +461,18 @@ class AnnotationEditorViewModel(
                 placement = if (tool == AnnotationTool.SELECT) AnnotationPlacementSession() else it.placement,
             )
         }
+    }
+
+    fun setStickiness(stickiness: ToolStickiness) = _state.update { it.copy(stickiness = stickiness) }
+
+    fun toggleKeepTool() = _state.update {
+        it.copy(stickiness = if (it.stickiness == ToolStickiness.LOCKED) ToolStickiness.ONE_SHOT else ToolStickiness.LOCKED)
+    }
+
+    /** The tool to arm once a multi-step calibration session is confirmed (ADR-005). */
+    private fun returnToolAfterConfirm() {
+        val autoReturn = settings.annotatorAutoReturnToSelect()
+        _state.update { it.copy(currentTool = nextToolAfterCommit(it.currentTool, it.stickiness, autoReturn)) }
     }
 
     /** Applies [transform] to the non-drag placement session; see the extensions in AnnotationPlacement.kt. */
@@ -646,6 +666,7 @@ class AnnotationEditorViewModel(
             )
         }
         updateCalibration(keepingGeometry(calibration))
+        returnToolAfterConfirm()
         logger.info("GRID_REF calibration applied: ${calibration.pixelsPerMeter} px/m from ${lengthMeters}m reference")
     }
 
@@ -718,6 +739,7 @@ class AnnotationEditorViewModel(
         if (session.preview(imageWidthPx, imageHeightPx).canApply.not()) return
         confirmMultiPointCalibration(session.usableTicks(), session.lensMode, session.profile)
         setRulerSession(null)
+        returnToolAfterConfirm()
         if (saveCameraProfile) saveCameraProfileFromCalibration()
     }
 
@@ -870,11 +892,20 @@ class AnnotationEditorViewModel(
         // (HapticFeedbackType.LongPress). On desktop / in tests this is a no-op.
         onHapticFeedback()
 
+        val toolAfter = nextToolAfterCommit(
+            tool, st.stickiness, settings.annotatorAutoReturnToSelect(),
+            multiStepSessionOpen = st.rulerSession != null || st.planeSession != null,
+        )
+        val returned = toolAfter == AnnotationTool.SELECT && tool != AnnotationTool.SELECT
+
         // Optimistic update: add to committed list immediately
         _state.update { currentSt ->
             currentSt.copy(
                 inProgressPoints = emptyList(),
                 committedAnnotations = currentSt.committedAnnotations + measurement,
+                currentTool = toolAfter,
+                selectedAnnotationUuid = if (returned) measurement.uuid else currentSt.selectedAnnotationUuid,
+                placement = if (returned) AnnotationPlacementSession() else currentSt.placement,
             )
         }
 
@@ -886,6 +917,8 @@ class AnnotationEditorViewModel(
                     currentSt.copy(
                         committedAnnotations = currentSt.committedAnnotations
                             .filter { it.uuid != measurement.uuid },
+                        currentTool = nextToolAfterRollback(tool, toolAfter, currentSt.currentTool),
+                        selectedAnnotationUuid = currentSt.selectedAnnotationUuid.takeIf { it != measurement.uuid },
                     )
                 }
             }
@@ -1178,6 +1211,7 @@ class AnnotationEditorViewModel(
         )
         updateCalibration(calibration.copy(geometry = merged))
         setPlaneSession(null)
+        returnToolAfterConfirm()
     }
 
     /** Lens-aware and plane-mapped calibrations measure through [LensMeasurement]; the rest use the plain scale. */
@@ -1448,6 +1482,7 @@ class AnnotationEditorViewModel(
      * Call when the editor is permanently dismissed.
      */
     fun close() {
+        _state.update { it.copy(stickiness = initialStickiness) }
         depthCoordinator.close()
         persistence.close()
         scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
