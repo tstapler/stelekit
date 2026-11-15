@@ -183,6 +183,8 @@ import dev.stapler.stelekit.platform.download.ResumableDownloadTest
 import dev.stapler.stelekit.git.JvmGitCloneWorkerLauncherTest
 import dev.stapler.stelekit.git.JvmGitRepositoryTest
 import dev.stapler.stelekit.git.JgitCancelLockTest
+import dev.stapler.stelekit.git.LockClaimIntegrationTest
+import dev.stapler.stelekit.git.TwoJvmRecoveryRaceTest
 import dev.stapler.stelekit.git.JgitCancelSweepTest
 import dev.stapler.stelekit.git.RemoteBranchResolutionTest
 import dev.stapler.stelekit.git.GitSafetyScansJvmTest
@@ -534,6 +536,8 @@ import org.junit.runners.Suite
     JvmGitCloneWorkerLauncherTest::class,
     JvmGitRepositoryTest::class,
     JgitCancelLockTest::class,
+    LockClaimIntegrationTest::class,
+    TwoJvmRecoveryRaceTest::class,
     JgitCancelSweepTest::class,
     RemoteBranchResolutionTest::class,
     GitSafetyScansJvmTest::class,
