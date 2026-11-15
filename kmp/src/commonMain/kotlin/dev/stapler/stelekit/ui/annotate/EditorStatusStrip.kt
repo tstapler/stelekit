@@ -19,6 +19,9 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.model.AnnotationType
+import dev.stapler.stelekit.model.MeasurementAnnotation
+import dev.stapler.stelekit.model.NormalizedPoint
 import dev.stapler.stelekit.platform.Settings
 
 internal const val DRAG_HINT_COUNT_KEY = "annotator_drag_hint_count"
@@ -77,6 +80,34 @@ internal fun stripMessage(
     }
     return level to text
 }
+
+internal const val POINT_A_PLACED_ANNOUNCEMENT = "Point A placed"
+
+private fun AnnotationType.spokenName(): String = when (this) {
+    AnnotationType.DISTANCE -> "Distance"
+    AnnotationType.AREA -> "Area"
+    AnnotationType.ANGLE -> "Angle"
+    AnnotationType.LABEL -> "Label"
+    AnnotationType.GRID_REF -> "Reference"
+}
+
+/** Live-region text for a commit: "Distance 90 cm added, returned to Select"; null unless exactly one annotation was added with a tool armed. */
+internal fun commitAnnouncement(
+    previousTool: AnnotationTool,
+    previousCount: Int,
+    tool: AnnotationTool,
+    annotations: List<MeasurementAnnotation>,
+): String? {
+    if (previousTool == AnnotationTool.SELECT || annotations.size != previousCount + 1) return null
+    val added = annotations.last()
+    val value = added.valueDisplay?.let { " $it" }.orEmpty()
+    val returned = if (tool == AnnotationTool.SELECT) ", returned to Select" else ""
+    return "${added.annotationType.spokenName()}$value added$returned"
+}
+
+/** Live-region text for a crosshair move; [liveLength] is appended once a first point exists. */
+internal fun crosshairAnnouncement(point: NormalizedPoint, liveLength: String?): String =
+    crosshairDescription(point) + liveLength?.let { ", length $it" }.orEmpty()
 
 @Composable
 internal fun EditorStatusStrip(

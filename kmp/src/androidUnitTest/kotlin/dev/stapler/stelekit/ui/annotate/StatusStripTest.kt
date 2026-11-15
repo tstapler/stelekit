@@ -89,6 +89,8 @@ class StatusStripTest {
     fun tappingTheActiveChip_disarmsAndDiscardsPointA() {
         val vm = launch(AnnotationTool.DISTANCE, NormalizedPoint(0.2, 0.2))
         rule.onNodeWithContentDescription("Distance").performClick()
+        // A chip waits out the double-tap window (Keep tool) before a single tap counts.
+        rule.mainClock.advanceTimeBy(1_000)
         rule.waitForIdle()
         assertEquals(AnnotationTool.SELECT, vm.state.value.currentTool)
         assertTrue(vm.state.value.inProgressPoints.isEmpty())

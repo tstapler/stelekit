@@ -510,6 +510,13 @@ class AnnotationEditorViewModel(
         it.copy(stickiness = if (it.stickiness == ToolStickiness.LOCKED) ToolStickiness.ONE_SHOT else ToolStickiness.LOCKED)
     }
 
+    /** The length from the pending first DISTANCE point to [to], formatted like a commit; null with no first point. */
+    fun liveDistanceDisplay(to: NormalizedPoint): String? {
+        val st = _state.value
+        if (st.currentTool != AnnotationTool.DISTANCE || st.inProgressPoints.size != 1) return null
+        return computeMeasurement(listOf(st.inProgressPoints[0], to), AnnotationTool.DISTANCE, st.calibration, st.selectedUnit).second
+    }
+
     /** The tool to arm once a multi-step calibration session is confirmed (ADR-005). */
     private fun returnToolAfterConfirm() {
         val autoReturn = settings.annotatorAutoReturnToSelect()

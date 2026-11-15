@@ -115,6 +115,8 @@ import dev.stapler.stelekit.platform.measurement.DeviceConnectionState
 import dev.stapler.stelekit.platform.measurement.ExternalMeasurementDevice
 import kotlin.math.abs
 import dev.stapler.stelekit.util.roundTo
+import androidx.compose.ui.focus.onFocusChanged
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -244,6 +246,33 @@ fun AnnotationEditorScreen(
         if (crosshair != null && canvasSize != IntSize.Zero) {
             viewTransform = viewTransform.revealing(crosshair.toScreen(canvasSize), panSlackPx * 2, viewHandle.geometry())
         }
+    }
+    // TalkBack live region: commits, crosshair moves and the first point. The strip hint explains a disabled chip.
+    var announcement by remember { mutableStateOf("") }
+    var toolHint by remember { mutableStateOf<String?>(null) }
+    var tagFieldFocused by remember { mutableStateOf(false) }
+    val lastCommit = remember { CommitMemory(state.currentTool, state.committedAnnotations.size) }
+    LaunchedEffect(state.committedAnnotations.size, state.currentTool) {
+        commitAnnouncement(lastCommit.tool, lastCommit.count, state.currentTool, state.committedAnnotations)?.let { announcement = it }
+        lastCommit.tool = state.currentTool
+        lastCommit.count = state.committedAnnotations.size
+    }
+    LaunchedEffect(crosshair) {
+        if (crosshair != null) announcement = crosshairAnnouncement(crosshair, viewModel.liveDistanceDisplay(crosshair))
+    }
+    LaunchedEffect(state.inProgressPoints.size) {
+        if (state.placement.active && state.currentTool == AnnotationTool.DISTANCE && state.inProgressPoints.size == 1) {
+            announcement = POINT_A_PLACED_ANNOUNCEMENT
+        }
+    }
+    LaunchedEffect(toolHint) {
+        if (toolHint != null) {
+            delay(TOOL_HINT_MILLIS)
+            toolHint = null
+        }
+    }
+    fun selectOrDisarm(tool: AnnotationTool) {
+        if (tool == state.currentTool && tool != AnnotationTool.SELECT) viewModel.disarm() else viewModel.selectTool(tool)
     }
     val haptic = LocalHapticFeedback.current
     var showCalibrationSheet by remember { mutableStateOf(false) }
@@ -414,6 +443,13 @@ fun AnnotationEditorScreen(
                 canRedo = canRedo,
                 onUndo = { viewModel.undo() },
                 onRedo = { viewModel.redo() },
+            ) || onAnnotationToolKeyEvent(
+                keyEvent = event,
+                enabled = !state.isLabelInputVisible && !state.isGridRefDialogVisible && !tagFieldFocused,
+                currentTool = state.currentTool,
+                isCalibrated = viewModel.isCalibrated(),
+                onSelectTool = ::selectOrDisarm,
+                onToggleKeep = { viewModel.toggleKeepTool() },
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -554,6 +590,7 @@ fun AnnotationEditorScreen(
                 onAddTag = { viewModel.addTag(it) },
                 onRemoveTag = { viewModel.removeTag(it) },
                 modifier = Modifier
+                    .onFocusChanged { tagFieldFocused = it.hasFocus }
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 4.dp),
             )
@@ -565,7 +602,7 @@ fun AnnotationEditorScreen(
             errorText = state.error?.message,
             toolPrompt = toolPrompt,
             fineTuneHint = fineTuneHint,
-            statusText = null,
+            statusText = toolHint,
             voiceHint = voiceHintVisible,
         )
         if (stripText != null) {
@@ -663,7 +700,20 @@ fun AnnotationEditorScreen(
             Box(
                 Modifier.fillMaxSize().semantics {
                     contentDescription = ANNOTATION_CANVAS_DESCRIPTION
-                    customActions = PanDirection.entries.map { d -> CustomAccessibilityAction(d.label) { panBy(d); true } }
+                    customActions = PanDirection.entries.map { d -> CustomAccessibilityAction(d.label) { panBy(d); true } } +
+                        listOfNotNull(
+                            CustomAccessibilityAction(PLACE_POINT_WITH_CROSSHAIR_ACTION) {
+                                if (!viewModel.state.value.placement.active) viewModel.togglePlacementMode(placementSpace())
+                                true
+                            }.takeIf { state.currentTool != AnnotationTool.SELECT },
+                        )
+                },
+            )
+            // Polite live region (1 dp, no drawing): TalkBack reads each new announcement without moving focus.
+            Box(
+                Modifier.align(Alignment.TopStart).size(1.dp).semantics {
+                    liveRegion = LiveRegionMode.Polite
+                    if (announcement.isNotEmpty()) contentDescription = announcement
                 },
             )
 
@@ -879,9 +929,9 @@ fun AnnotationEditorScreen(
                 canRedo = canRedo,
                 // Null until an image is loaded keeps the dropdown hidden, as before.
                 displayUnit = state.selectedUnit.takeIf { state.imageAnnotation != null },
-                onToolSelect = { tool ->
-                    if (tool == state.currentTool && tool != AnnotationTool.SELECT) viewModel.disarm() else viewModel.selectTool(tool)
-                },
+                onToolSelect = ::selectOrDisarm,
+                keep = ToolbarKeep(locked = state.stickiness == ToolStickiness.LOCKED, onToggle = { viewModel.toggleKeepTool() }),
+                onDisabledToolTap = { toolHint = calibrateFirstHint(toolLabel(it)) },
                 onUndo = { viewModel.undo() },
                 onRedo = { viewModel.redo() },
                 onDeleteSelect = {
@@ -1551,6 +1601,37 @@ private fun onAnnotationEditorKeyEvent(
         isShift && canRedo -> { onRedo(); true }
         else -> false
     }
+}
+
+internal const val PLACE_POINT_WITH_CROSSHAIR_ACTION = "Place point with crosshair"
+private const val TOOL_HINT_MILLIS = 4_000L
+
+/** The tool and annotation count of the previous composition, so a commit is recognised as one added annotation under an armed tool. */
+private class CommitMemory(var tool: AnnotationTool, var count: Int)
+
+/**
+ * Tool shortcuts: a tool key arms that tool (or disarms it when already armed, like tapping the chip) and
+ * [KEEP_TOOL_KEY] toggles Keep tool while a tool is armed. Plain keys only, and only while no text field has focus.
+ */
+internal fun onAnnotationToolKeyEvent(
+    keyEvent: KeyEvent,
+    enabled: Boolean,
+    currentTool: AnnotationTool,
+    isCalibrated: Boolean,
+    onSelectTool: (AnnotationTool) -> Unit,
+    onToggleKeep: () -> Unit,
+): Boolean {
+    val plain = !keyEvent.isCtrlPressed && !keyEvent.isMetaPressed && !keyEvent.isAltPressed && !keyEvent.isShiftPressed
+    if (!enabled || !plain || keyEvent.type != KeyEventType.KeyDown) return false
+    if (keyEvent.key == KEEP_TOOL_KEY) {
+        if (currentTool == AnnotationTool.SELECT) return false
+        onToggleKeep()
+        return true
+    }
+    val tool = toolForShortcutKey(keyEvent.key) ?: return false
+    if (tool != AnnotationTool.SELECT && !isCalibrated) return false
+    onSelectTool(tool)
+    return true
 }
 
 // ── GRID_REF calibration dialog ───────────────────────────────────────────────

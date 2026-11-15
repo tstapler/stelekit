@@ -2,7 +2,9 @@
 
 package dev.stapler.stelekit.ui.annotate
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -22,6 +25,8 @@ import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.LinearScale
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Redo
@@ -50,10 +55,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -102,6 +114,22 @@ internal class ToolbarZoom(
     /** False when the zoom group is a rail beside the photo (window >= 600 dp). */
     val showZoomGroup: Boolean = true,
 )
+
+/** Keep tool wiring: [locked] is `stickiness == LOCKED`; null hides the toggle, the chip gestures and the TalkBack actions. */
+internal class ToolbarKeep(val locked: Boolean, val onToggle: () -> Unit)
+
+internal const val KEEP_TOOL_LABEL = "Keep tool"
+internal const val RELEASE_TOOL_LABEL = "Release tool"
+internal const val KEEP_TOOL_LOCKED_DESCRIPTION = "locked"
+internal const val KEEP_TOOL_UNLOCKED_DESCRIPTION = "unlocked"
+internal const val CALIBRATE_FIRST_DESCRIPTION = "Calibrate first"
+internal const val TOOL_LOCK_BADGE_TAG = "tool-lock-badge"
+
+/** Strip hint shown when a disabled chip is tapped before calibration. */
+internal fun calibrateFirstHint(toolLabel: String) = "Calibrate first to use $toolLabel"
+
+/** Display name of a tool, as on its chip. */
+internal fun toolLabel(tool: AnnotationTool): String = TOOL_CHIPS.first { it.tool == tool }.label
 
 /** Largest share of the window height the toolbar may take before the zoom group and pan row fold into a popup. */
 internal const val TOOLBAR_MAX_HEIGHT_FRACTION = 0.4f
@@ -158,6 +186,8 @@ internal fun AnnotationToolbar(
     zoom: ToolbarZoom?,
     modifier: Modifier = Modifier,
     showLabels: Boolean = true,
+    keep: ToolbarKeep? = null,
+    onDisabledToolTap: (AnnotationTool) -> Unit = {},
 ) {
     val windowHeightPx = LocalWindowInfo.current.containerSize.height
     val density = LocalDensity.current
@@ -176,7 +206,7 @@ internal fun AnnotationToolbar(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (zoom != null && !showFoldedZoom) PanRow(zoom)
-        ToolRow(currentTool, isCalibrated, onToolSelect, onCalibrate, showLabels)
+        ToolRow(currentTool, isCalibrated, onToolSelect, onCalibrate, showLabels, keep, onDisabledToolTap)
         Spacer(Modifier.height(4.dp))
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
@@ -184,6 +214,7 @@ internal fun AnnotationToolbar(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             itemVerticalAlignment = Alignment.CenterVertically,
         ) {
+            if (keep != null && currentTool != AnnotationTool.SELECT) KeepToolToggle(keep)
             UndoRedoButtons(canUndo, canRedo, onUndo, onRedo)
             if (displayUnit != null) UnitDropdown(currentUnit = displayUnit, onUnitSelect = onUnitSelect)
             if (hasSelection) {
@@ -211,9 +242,11 @@ private fun ToolRow(
     onToolSelect: (AnnotationTool) -> Unit,
     onCalibrate: () -> Unit,
     showLabels: Boolean,
+    keep: ToolbarKeep?,
+    onDisabledToolTap: (AnnotationTool) -> Unit,
 ) {
     FlowRow(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().selectableGroup(),
         horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
@@ -226,6 +259,8 @@ private fun ToolRow(
                 onSelect = onToolSelect,
                 enabled = chip.tool == AnnotationTool.SELECT || isCalibrated,
                 showLabels = showLabels,
+                keep = keep,
+                onDisabledTap = onDisabledToolTap,
             )
         }
         CalibrateButton(onClick = onCalibrate, showLabels = showLabels)
@@ -313,6 +348,7 @@ private fun FoldedZoomButton(zoom: ToolbarZoom) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ToolButton(
     tool: AnnotationTool,
@@ -323,6 +359,8 @@ private fun ToolButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     showLabels: Boolean = true,
+    keep: ToolbarKeep? = null,
+    onDisabledTap: (AnnotationTool) -> Unit = {},
 ) {
     val bg = if (isActive && enabled) TOOLBAR_ACTIVE_FILL_COLOR else Color.Transparent
     val iconTint = when {
@@ -336,22 +374,53 @@ private fun ToolButton(
         !enabled -> DISABLED_TINT_COLOR
         else -> TOOLBAR_INACTIVE_TINT_COLOR
     }
+    val keepable = keep != null && enabled && tool != AnnotationTool.SELECT
+    val toggleKeep = keep?.onToggle
     TooltipBox(
         positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
         tooltip = { PlainTooltip { Text("$label (${toolShortcut(tool)})") } },
         state = rememberTooltipState(),
     ) {
+        // A disabled chip keeps its click so a tap can explain why; the disabled flag is semantic only.
         Column(
-            modifier = modifier.sizeIn(minWidth = TARGET_SIZE),
+            modifier = modifier
+                .sizeIn(minWidth = TARGET_SIZE, minHeight = TARGET_SIZE)
+                .clip(RoundedCornerShape(8.dp))
+                .combinedClickable(
+                    role = Role.RadioButton,
+                    onClick = { if (enabled) onSelect(tool) else onDisabledTap(tool) },
+                    onLongClick = if (keepable) ({ toggleKeep?.invoke() }) else null,
+                    onDoubleClick = if (keepable) ({ toggleKeep?.invoke() }) else null,
+                )
+                .semantics {
+                    contentDescription = label
+                    selected = isActive
+                    if (!enabled) {
+                        disabled()
+                        stateDescription = CALIBRATE_FIRST_DESCRIPTION
+                    }
+                    if (keepable) {
+                        val action = if (keep?.locked == true) RELEASE_TOOL_LABEL else KEEP_TOOL_LABEL
+                        customActions = listOf(CustomAccessibilityAction(action) { toggleKeep?.invoke(); true })
+                    }
+                },
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(
                 modifier = Modifier
+                    .size(TARGET_SIZE)
                     .clip(RoundedCornerShape(8.dp))
                     .background(bg),
+                contentAlignment = Alignment.Center,
             ) {
-                IconButton(onClick = { onSelect(tool) }, enabled = enabled, modifier = Modifier.size(TARGET_SIZE)) {
-                    Icon(imageVector = icon, contentDescription = label, tint = iconTint)
+                Icon(imageVector = icon, contentDescription = null, tint = iconTint)
+                if (isActive && enabled && keep?.locked == true && tool != AnnotationTool.SELECT) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = null,
+                        tint = TOOLBAR_ACTIVE_LABEL_COLOR,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(12.dp).testTag(TOOL_LOCK_BADGE_TAG),
+                    )
                 }
             }
             if (showLabels) {
@@ -368,14 +437,49 @@ private fun ToolButton(
     }
 }
 
-private fun toolShortcut(tool: AnnotationTool): String = when (tool) {
-    AnnotationTool.SELECT -> "S"
-    AnnotationTool.DISTANCE -> "D"
-    AnnotationTool.AREA -> "A"
-    AnnotationTool.ANGLE -> "G"
-    AnnotationTool.LABEL -> "L"
-    AnnotationTool.GRID_REF -> "R"
+/** The 48 dp "Keep tool" switch in the action row; the caller shows it only while a non-Select tool is armed. */
+@Composable
+private fun KeepToolToggle(keep: ToolbarKeep) {
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text("$KEEP_TOOL_LABEL ($KEEP_TOOL_SHORTCUT_LABEL)") } },
+        state = rememberTooltipState(),
+    ) {
+        Row(
+            modifier = Modifier
+                .sizeIn(minWidth = TARGET_SIZE, minHeight = TARGET_SIZE)
+                .clip(RoundedCornerShape(8.dp))
+                .background(if (keep.locked) TOOLBAR_ACTIVE_FILL_COLOR else Color.Transparent)
+                .toggleable(value = keep.locked, role = Role.Switch, onValueChange = { keep.onToggle() })
+                .semantics { stateDescription = if (keep.locked) KEEP_TOOL_LOCKED_DESCRIPTION else KEEP_TOOL_UNLOCKED_DESCRIPTION }
+                .padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(if (keep.locked) Icons.Default.Lock else Icons.Default.LockOpen, contentDescription = null, tint = Color.White)
+            Text(KEEP_TOOL_LABEL, style = MaterialTheme.typography.labelLarge, color = Color.White)
+        }
+    }
 }
+
+/** The single shortcut map: a tool key arms that tool; [KEEP_TOOL_KEY] toggles Keep tool while one is armed. */
+private class ToolShortcut(val tool: AnnotationTool, val key: Key, val label: String)
+
+private val TOOL_SHORTCUTS = listOf(
+    ToolShortcut(AnnotationTool.SELECT, Key.S, "S"),
+    ToolShortcut(AnnotationTool.DISTANCE, Key.D, "D"),
+    ToolShortcut(AnnotationTool.AREA, Key.A, "A"),
+    ToolShortcut(AnnotationTool.ANGLE, Key.G, "G"),
+    ToolShortcut(AnnotationTool.LABEL, Key.L, "L"),
+    ToolShortcut(AnnotationTool.GRID_REF, Key.R, "R"),
+)
+
+internal val KEEP_TOOL_KEY: Key = Key.K
+private const val KEEP_TOOL_SHORTCUT_LABEL = "K"
+
+internal fun toolForShortcutKey(key: Key): AnnotationTool? = TOOL_SHORTCUTS.firstOrNull { it.key == key }?.tool
+
+private fun toolShortcut(tool: AnnotationTool): String = TOOL_SHORTCUTS.first { it.tool == tool }.label
 
 @Composable
 private fun CalibrateButton(
