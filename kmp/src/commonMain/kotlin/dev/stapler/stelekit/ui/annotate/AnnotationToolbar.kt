@@ -376,6 +376,7 @@ private fun ToolButton(
     }
     val keepable = keep != null && enabled && tool != AnnotationTool.SELECT
     val toggleKeep = keep?.onToggle
+    val showLockBadge = keepable && isActive && keep?.locked == true
     TooltipBox(
         positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
         tooltip = { PlainTooltip { Text("$label (${toolShortcut(tool)})") } },
@@ -414,7 +415,7 @@ private fun ToolButton(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(imageVector = icon, contentDescription = null, tint = iconTint)
-                if (isActive && enabled && keep?.locked == true && tool != AnnotationTool.SELECT) {
+                if (showLockBadge) {
                     Icon(
                         imageVector = Icons.Default.Lock,
                         contentDescription = null,

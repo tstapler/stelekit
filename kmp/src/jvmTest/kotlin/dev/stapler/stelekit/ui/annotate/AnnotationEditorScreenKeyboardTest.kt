@@ -115,6 +115,30 @@ class AnnotationEditorScreenKeyboardTest {
     }
 
     @Test
+    fun `plain tool key dispatched through the screen arms that tool and a Ctrl chord does not`() {
+        val viewModel = AnnotationEditorViewModel(
+            measurementRepository = InMemoryMeasurementAnnotationRepository(),
+            imageWidthPx = 1000.0,
+            imageHeightPx = 1000.0,
+        )
+        val imageAnnotation = makeImageAnnotation()
+        viewModel.initialize(imageAnnotation)
+        composeTestRule.setContent { AnnotationEditorScreen(viewModel = viewModel, imageAnnotation = imageAnnotation) }
+        composeTestRule.waitForIdle()
+        focusScreen()
+
+        composeTestRule.onNodeWithContentDescription("Select").performKeyInput {
+            withKeyDown(Key.CtrlLeft) { keyDown(Key.D); keyUp(Key.D) }
+        }
+        composeTestRule.waitForIdle()
+        assertEquals(AnnotationTool.SELECT, viewModel.state.value.currentTool, "Ctrl+D is not the Distance shortcut")
+
+        composeTestRule.onNodeWithContentDescription("Select").performKeyInput { keyDown(Key.D); keyUp(Key.D) }
+        composeTestRule.waitForIdle()
+        assertEquals(AnnotationTool.DISTANCE, viewModel.state.value.currentTool)
+    }
+
+    @Test
     fun `Ctrl+Shift+Z dispatched through the screen redoes the most recently undone annotation`() {
         val repo = InMemoryMeasurementAnnotationRepository()
         val viewModel = AnnotationEditorViewModel(
