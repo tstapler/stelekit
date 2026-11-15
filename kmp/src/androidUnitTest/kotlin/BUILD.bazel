@@ -58,6 +58,8 @@ kt_android_library(
             # Compose host tests for annotator layout/contrast/voice hint (Gradle-only)
             "**/AnnotatorLayoutTest.kt",
             "**/VoiceHintTest.kt",
+            "**/AnnotationToolbarSemanticsTest.kt",
+            "**/AnnotationA11yActionsTest.kt",
             # Compose host test for annotate zoom/pan (Gradle-only, no Compose plugin here)
             "**/AnnotationZoomPanTest.kt",
             # Compose host test for the plane reference panel (Gradle-only, no Compose plugin here)
