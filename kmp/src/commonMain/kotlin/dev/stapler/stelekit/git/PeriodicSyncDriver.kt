@@ -48,14 +48,18 @@ sealed interface TickOutcome {
     data class Skip(val reason: SkipReason) : TickOutcome
 }
 
-/** A fetch result as a tick outcome: offline is a skip (not a failure), anything else is a failure. */
+/** A fetch result as a tick outcome: offline and a lost gate race are skips (not failures), anything else is a failure. */
 internal fun Either<DomainError.GitError, FetchResult>.toTickOutcome(): TickOutcome = fold(
-    { err ->
-        if (err is DomainError.GitError.Offline) TickOutcome.Skip(SkipReason.Offline)
-        else TickOutcome.Failure(err.message, err)
-    },
+    { err -> err.toSkipOrFailure() ?: TickOutcome.Failure(err.message, err) },
     { TickOutcome.Fetched },
 )
+
+/** The non-failure outcome for a git error that is a deliberate skip, or null when it is a real failure. */
+internal fun DomainError.GitError.toSkipOrFailure(): TickOutcome? = when (this) {
+    is DomainError.GitError.Offline -> TickOutcome.Skip(SkipReason.Offline)
+    is DomainError.GitError.SyncInProgress -> TickOutcome.Skip(SkipReason.Busy)
+    else -> null
+}
 
 /**
  * What the Settings section and the sync badge read. All timestamps are wall-clock epoch millis
