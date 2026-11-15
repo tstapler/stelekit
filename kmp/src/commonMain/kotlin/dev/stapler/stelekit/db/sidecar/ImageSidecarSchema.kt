@@ -67,7 +67,15 @@ data class SidecarMeasurement(
     @SerialName("label") val label: String? = null,
     @SerialName("colorHex") val colorHex: String = "#FF0000",
     @SerialName("bleDeviceId") val bleDeviceId: String? = null,
-)
+    /** `COMPUTED` or `USER_OVERRIDE` (a String so an unknown future value still decodes). Additive, v2. */
+    @SerialName("valueSource") val valueSource: String = SOURCE_COMPUTED,
+    /** The computed value an override replaced. Additive, v2. */
+    @SerialName("originalValueMeters") val originalValueMeters: Double? = null,
+) {
+    companion object {
+        const val SOURCE_COMPUTED = "COMPUTED"
+    }
+}
 
 @Serializable
 data class SidecarPoint(
