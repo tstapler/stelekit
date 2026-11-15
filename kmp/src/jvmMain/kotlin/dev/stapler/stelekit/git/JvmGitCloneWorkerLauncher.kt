@@ -31,8 +31,13 @@ import kotlinx.coroutines.async
  * cancelled `Deferred` then throws that same `CancellationException` here, propagating to the
  * caller exactly as [GitCloneWorkerLauncher.cancel]'s kdoc promises, without cancelling the
  * caller's own ambient coroutine.
+ *
+ * @param gate the process gate the clone takes in Task 1.4d2; required now so no launcher is built on a private one.
  */
-class JvmGitCloneWorkerLauncher(private val gitRepository: GitRepository) : GitCloneWorkerLauncher {
+class JvmGitCloneWorkerLauncher(
+    private val gitRepository: GitRepository,
+    val gate: RepoOpGate,
+) : GitCloneWorkerLauncher {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 

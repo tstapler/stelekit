@@ -55,6 +55,7 @@ import dev.stapler.stelekit.ui.components.MermaidWebViewSettingsTest
 import dev.stapler.stelekit.ui.transfer.QrDecodeViewModelBackgroundingTest
 import dev.stapler.stelekit.voice.AndroidSpeechRecognizerPermissionTest
 import dev.stapler.stelekit.wiring.PlatformCapsRootTest
+import dev.stapler.stelekit.wiring.RepoGateSharedEntryPointTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
 
@@ -89,6 +90,7 @@ import org.junit.runners.Suite
     AndroidGitLegacyConfigSourceTest::class,
     PlatformSettingsColdPathTest::class,
     PlatformCapsRootTest::class,
+    RepoGateSharedEntryPointTest::class,
     AndroidGoogleSupportTest::class,
     GitSyncBusyCounterSharedWiringTest::class,
     AndroidGitRepositoryTestRemoteTest::class,

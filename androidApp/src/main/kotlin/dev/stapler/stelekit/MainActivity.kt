@@ -417,13 +417,15 @@ class MainActivity : ComponentActivity() {
             // (shadowKey/queue/flush) once AndroidGitRepository exposes a public accessor for its
             // internal shadowWorktreeFor()/GitShadowFlushActor — currently always null, not wired.
             val androidGraphMoveQuiesceStrategy = remember(app.graphManager, sharedGitSyncBusyCounter) {
-                app.graphManager?.let {
+                app.graphManager?.let { gm ->
                     createAndroidGraphMoveQuiesceStrategy(
                         context = applicationContext,
                         gitSyncBusyCounter = sharedGitSyncBusyCounter,
-                        // gateKeyFor is a placeholder until Task 1.3b2 supplies the real key resolver.
                         gate = app.repoOpGate,
-                        gateKeyFor = { null },
+                        // The same canonical key the sync service and cold runner derive; null (no config, unreadable) means no gate.
+                        gateKeyFor = { op ->
+                            gm.createGitConfigRepository()?.getConfig(op.graphId)?.getOrNull()?.let(gitRepository::gateKeyFor)
+                        },
                         shadowWorktreeTarget = { null },
                     )
                 }
