@@ -62,6 +62,8 @@ class GitSyncService(
     private val configRepository: GitConfigRepository,
     private val networkMonitor: NetworkMonitor,
     private val fileSystem: FileSystem,
+    /** Process-wide per-repo gate; required, never defaulted (a private one would not exclude other entry points). */
+    internal val gate: RepoOpGate,
     /** Returns the active [CredentialAccess] for checking vault availability before sync. Null means always available. */
     private val credentialAccessProvider: (() -> CredentialAccess)? = null,
     private val journalMergeService: JournalMergeService? = null,
