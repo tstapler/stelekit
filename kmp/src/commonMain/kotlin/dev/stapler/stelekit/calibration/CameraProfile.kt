@@ -26,7 +26,42 @@ data class CameraProfileMatch(
     val focalLength35mmEq: Double? = null,
     /** Short side divided by long side of the photo the profile was learned from (4:3 = 0.75). */
     val aspect: Double,
+    /** E4's lens id when the profile was learned from a photo that recorded one; null matches any photo lens id. */
+    val lensId: String? = null,
 )
+
+/** The part of E4's capture lens record that profile matching reads; E4 maps its own record onto this. */
+data class LensRecordInput(
+    val lensId: String?,
+    val zoomRatio: Double?,
+    val focalLengthMm: Double?,
+    val exifFocalMm: Double?,
+    /** True for a record that only names the selected chip, not the lens that took the photo (ADR-004 decision 5). */
+    val isSelectedLensSource: Boolean,
+)
+
+/**
+ * Optional lens evidence for [CameraProfiles.match]. A field that is null on either side is not compared.
+ * [disabled] means the record contradicts the photo's EXIF, so no profile may be matched for it.
+ */
+data class LensMatchKey(val lensId: String?, val zoomRatio: Double?, val disabled: Boolean = false) {
+    companion object {
+        private const val EXIF_DISAGREEMENT = 0.15
+
+        /** No record gives no key, so matching equals the plain make/model/focal match. */
+        fun from(record: LensRecordInput?): LensMatchKey? {
+            record ?: return null
+            val focal = record.focalLengthMm?.takeIf { it.isFinite() && it > 0.0 }
+            val exif = record.exifFocalMm?.takeIf { it.isFinite() && it > 0.0 }
+            val disagrees = focal != null && exif != null && abs(focal - exif) / exif > EXIF_DISAGREEMENT
+            return LensMatchKey(
+                lensId = record.lensId.takeUnless { record.isSelectedLensSource },
+                zoomRatio = record.zoomRatio,
+                disabled = disagrees,
+            )
+        }
+    }
+}
 
 /** Where a profile came from; profiles are learned from saved JPEGs, never from Camera2 distortion data (ADR-001). */
 @Serializable
@@ -65,6 +100,15 @@ sealed class ProfileRejection(val message: String) {
     data object SpanTooShort :
         ProfileRejection("The ruler spans less than half the photo; a short ruler cannot pin down lens distortion.")
 
+    data object LensMismatch :
+        ProfileRejection("This photo was taken with a different lens than the saved profile.")
+
+    data object ZoomedFrame :
+        ProfileRejection("This photo is cropped or zoomed, so a lens profile does not apply.")
+
+    data object LensRecordUntrusted :
+        ProfileRejection("The recorded lens disagrees with the photo's own metadata, so no profile was matched.")
+
     data object ResidualTooHigh :
         ProfileRejection("Ruler marks still disagree after correction; re-tap the off ticks before saving a profile.")
 }
@@ -87,6 +131,7 @@ object CameraProfiles {
     const val MAX_RESIDUAL_PERCENT = 0.5
     private const val ASPECT_TOLERANCE = 0.01
     private const val EQ_TOLERANCE_MM = 1.0
+    private const val ZOOM_TOLERANCE = 1e-6
 
     /** ADR-001 self-check: drop a profile that fits the ticks worse than no correction by more than 20%. */
     private const val SELF_CHECK_WORSENING = 1.2
@@ -99,20 +144,36 @@ object CameraProfiles {
     /**
      * The newest profile whose every field matches the photo's EXIF identity and pixel size, else null.
      * Never a nearest guess: missing make, model or focal length on the photo means no match.
+     * [lens] is optional E4 evidence; without it this is the plain make/model/focal match.
      */
-    fun match(profiles: List<CameraProfile>, sensor: ImageSensorData?, widthPx: Double, heightPx: Double): CameraProfile? {
-        val make = sensor?.cameraMake?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-        val model = sensor.cameraModel?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-        val focal = sensor.focalLengthMm?.takeIf { it.isFinite() && it > 0.0 } ?: return null
+    fun match(profiles: List<CameraProfile>, sensor: ImageSensorData?, widthPx: Double, heightPx: Double, lens: LensMatchKey? = null): CameraProfile? =
+        matchDetailed(profiles, sensor, widthPx, heightPx, lens).getOrNull()
+
+    /** Like [match] but says why a lens record ruled profiles out: lens-mismatch, zoomed frame or untrusted record. */
+    fun matchDetailed(
+        profiles: List<CameraProfile>,
+        sensor: ImageSensorData?,
+        widthPx: Double,
+        heightPx: Double,
+        lens: LensMatchKey? = null,
+    ): Either<ProfileRejection, CameraProfile?> {
+        val make = sensor?.cameraMake?.trim()?.takeIf { it.isNotEmpty() } ?: return null.right()
+        val model = sensor.cameraModel?.trim()?.takeIf { it.isNotEmpty() } ?: return null.right()
+        val focal = sensor.focalLengthMm?.takeIf { it.isFinite() && it > 0.0 } ?: return null.right()
+        if (lens?.disabled == true) return ProfileRejection.LensRecordUntrusted.left()
+        if (lens?.zoomRatio?.let { abs(it - 1.0) > ZOOM_TOLERANCE } == true) return ProfileRejection.ZoomedFrame.left()
         val aspect = aspectOf(widthPx, heightPx)
-        return profiles.filter { p ->
+        val sameCamera = profiles.filter { p ->
             val m = p.match
             m.make.trim().equals(make, ignoreCase = true) &&
                 m.model.trim().equals(model, ignoreCase = true) &&
                 abs(m.focalLengthMm - focal) <= m.focalLengthToleranceMm &&
                 abs(m.aspect - aspect) <= ASPECT_TOLERANCE &&
                 eqCompatible(m.focalLength35mmEq, sensor.focalLength35mmEq)
-        }.maxByOrNull { it.source.createdAtMs }
+        }
+        val matching = sameCamera.filter { p -> p.match.lensId == null || lens?.lensId == null || p.match.lensId == lens.lensId }
+        if (matching.isEmpty() && sameCamera.isNotEmpty()) return ProfileRejection.LensMismatch.left()
+        return matching.maxByOrNull { it.source.createdAtMs }.right()
     }
 
     /** A digital zoom shows as a changed 35 mm-equivalent focal length even when the lens focal length is unchanged. */
@@ -127,6 +188,7 @@ object CameraProfiles {
         heightPx: Double,
         id: String,
         nowMs: Long,
+        lensId: String? = null,
     ): Either<ProfileRejection, CameraProfile> {
         val lens = calibration.lens
         if (lens == null || !lens.kEstimated || lens.k == 0.0) return ProfileRejection.NotLensFitted.left()
@@ -150,6 +212,7 @@ object CameraProfiles {
                 focalLengthMm = focal,
                 focalLength35mmEq = sensor.focalLength35mmEq,
                 aspect = aspectOf(widthPx, heightPx),
+                lensId = lensId,
             ),
             k = lens.k,
             source = CameraProfileSource(tickCount = lens.ticks.size, residualPercent = lens.residualPercent, createdAtMs = nowMs),
