@@ -12,10 +12,9 @@ const val DRAG_COMMIT_DP: Int = 48
 const val IDENTICAL_POINT_IMAGE_PX: Float = 2f
 
 /** One rule: an off-canvas or system-gesture-inset release cancels but keeps the tool armed (OC-9). */
+@Suppress("TopLevelPropertyNaming") // lowerCamelCase name is the ADR-007 / OC-9 flag the plan and tests cite
 const val disarmOnOffCanvas: Boolean = false
 
-// Stand-in until the view transform's Fit scale is wired in (Task 2.4a owns the real constant).
-private const val DEFAULT_FIT_SCALE: Float = 1f
 private const val SCALE_EPSILON: Float = 1e-4f
 
 sealed interface PlacementGesture {
@@ -24,7 +23,7 @@ sealed interface PlacementGesture {
 }
 
 /** True when [viewScale] is at or above Fit; tolerant of float rounding so Fit itself counts. */
-fun isFitOrGreater(viewScale: Float, fitScale: Float = DEFAULT_FIT_SCALE): Boolean =
+fun isFitOrGreater(viewScale: Float, fitScale: Float = FIT_SCALE): Boolean =
     viewScale >= fitScale - SCALE_EPSILON
 
 /**
@@ -39,7 +38,7 @@ fun classifyPlacement(
     pendingPoints: Int,
     tool: AnnotationTool,
     viewScale: Float,
-    fitScale: Float = DEFAULT_FIT_SCALE,
+    fitScale: Float = FIT_SCALE,
 ): PlacementGesture {
     val travel = hypot(releasePx.x - pressPx.x, releasePx.y - pressPx.y)
     val dragEligible = tool == AnnotationTool.DISTANCE &&

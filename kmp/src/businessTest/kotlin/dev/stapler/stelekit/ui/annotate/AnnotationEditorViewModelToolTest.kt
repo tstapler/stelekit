@@ -164,6 +164,22 @@ class AnnotationEditorViewModelToolTest {
     }
 
     @Test
+    fun tapTapIdenticalPoints_should_RejectSecondAndKeepFirst() {
+        val vm = vm()
+        vm.selectTool(AnnotationTool.DISTANCE)
+        val first = NormalizedPoint(0.5, 0.5)
+        vm.addPoint(first)
+        // 0.0015 of a 1000 px image is 1.5 image px, inside the 2 px identical-point radius.
+        vm.addPoint(NormalizedPoint(0.5015, 0.5))
+        val st = vm.state.value
+        assertTrue(st.committedAnnotations.isEmpty())
+        assertEquals(listOf(first), st.inProgressPoints)
+        assertEquals(AnnotationTool.DISTANCE, st.currentTool)
+        assertEquals("Choose a second point away from the first", st.placementMessage)
+        vm.close()
+    }
+
+    @Test
     fun undoRedo_should_NotRearmTool_And_NotChangeStickiness() {
         val vm = vm()
         vm.selectTool(AnnotationTool.DISTANCE)

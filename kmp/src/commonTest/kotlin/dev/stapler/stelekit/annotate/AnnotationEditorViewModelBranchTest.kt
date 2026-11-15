@@ -567,7 +567,7 @@ class AnnotationEditorViewModelBranchTest {
     @Test
     fun distanceTooShort_isDiscarded() {
         val v = vm()
-        v.drawDistance(0.001)
+        v.drawDistance(0.003)
         assertTrue(v.state.value.committedAnnotations.isEmpty())
         assertTrue(v.state.value.inProgressPoints.isEmpty())
     }

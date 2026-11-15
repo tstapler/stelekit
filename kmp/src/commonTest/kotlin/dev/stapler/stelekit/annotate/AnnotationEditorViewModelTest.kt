@@ -249,9 +249,9 @@ class AnnotationEditorViewModelTest {
         val vm = makeViewModel()
         vm.selectTool(AnnotationTool.DISTANCE)
 
-        // Commit a very short line (normalized distance ≈ 0.001 — well below 0.005 threshold)
+        // 0.003 normalized = 3 image px: past the 2 px identical-point rejection, below the 0.005 length guard
         vm.addPoint(NormalizedPoint(0.5, 0.5))
-        vm.addPoint(NormalizedPoint(0.5005, 0.5)) // dx = 0.0005, length = 0.0005
+        vm.addPoint(NormalizedPoint(0.503, 0.5))
         assertEquals(0, vm.state.value.committedAnnotations.size, "Line shorter than 0.005 threshold should be dropped")
 
         // Commit a line at the threshold (normalized distance = 0.01 — above threshold)
