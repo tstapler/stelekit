@@ -4,6 +4,7 @@ import dev.stapler.stelekit.db.AndroidGraphMoveQuiesceStrategyTest
 import dev.stapler.stelekit.db.QuiesceRealFlushTest
 import dev.stapler.stelekit.db.WalConfiguredCallbackTest
 import dev.stapler.stelekit.git.AndroidGitLegacyConfigSourceTest
+import dev.stapler.stelekit.git.AndroidGitRepositoryClaimTest
 import dev.stapler.stelekit.git.AndroidGitRepositoryLfsGuardTest
 import dev.stapler.stelekit.google.AndroidGoogleSupportTest
 import dev.stapler.stelekit.git.AndroidBatterySettingsLauncherTest
@@ -91,6 +92,7 @@ import org.junit.runners.Suite
     AndroidGoogleSupportTest::class,
     GitSyncBusyCounterSharedWiringTest::class,
     AndroidGitRepositoryTestRemoteTest::class,
+    AndroidGitRepositoryClaimTest::class,
     AndroidGitRepositoryLfsGuardTest::class,
     LegacyPathValidationTest::class,
     PlatformFileSystemPickerTest::class,

@@ -8,6 +8,7 @@ import dev.stapler.stelekit.security.Redactor
 import dev.stapler.stelekit.model.RepoRoot
 import android.content.Context
 import arrow.core.Either
+import arrow.core.flatMap
 import arrow.core.getOrElse
 import arrow.core.left
 import arrow.core.right
@@ -62,6 +63,7 @@ class AndroidGitRepository(
     // app's real fileSystem instance — Kotlin's `internal` doesn't extend across a
     // `project(":kmp")` dependency edge, so only `public` compiles there (plan.md Task 5.1.2a).
     val fileSystem: FileSystem,
+    private val ownedOperations: OwnedOperationSupport = AndroidOwnedOperations.support(context),
 ) : GitRepository {
 
     private val logger = Logger("AndroidGitRepository")
@@ -211,10 +213,9 @@ class AndroidGitRepository(
                 ).left()
             }
 
-            val retryLoopStartMs = System.currentTimeMillis()
             runGitTransportOpWithRetry(
                 schedule = RetryPolicies.gitTransportTransient,
-                beforeRetry = { deleteLockFileIfStaleForRetry(indexLockFile(config), retryLoopStartMs) },
+                beforeRetry = { recoverLocksBeforeRetry(config) },
                 onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
                 onFailed = { e -> DomainError.GitError.FetchFailed(e.message ?: "Unshallow failed") },
                 onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
@@ -235,10 +236,9 @@ class AndroidGitRepository(
 
     override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> =
         withContext(PlatformDispatcher.IO) {
-            val retryLoopStartMs = System.currentTimeMillis()
             runGitTransportOpWithRetry(
                 schedule = RetryPolicies.gitTransportTransient,
-                beforeRetry = { deleteLockFileIfStaleForRetry(indexLockFile(config), retryLoopStartMs) },
+                beforeRetry = { recoverLocksBeforeRetry(config) },
                 onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
                 onFailed = { e -> DomainError.GitError.FetchFailed(e.message ?: "Fetch failed") },
                 onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
@@ -418,10 +418,9 @@ class AndroidGitRepository(
         withContext(PlatformDispatcher.IO) {
             pushAudit = emptyList()
             val previousRemoteTip = remoteTrackingTip(config)
-            val retryLoopStartMs = System.currentTimeMillis()
             runGitTransportOpWithRetry(
                 schedule = RetryPolicies.gitTransportTransient,
-                beforeRetry = { deleteLockFileIfStaleForRetry(indexLockFile(config), retryLoopStartMs) },
+                beforeRetry = { recoverLocksBeforeRetry(config) },
                 onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Push authentication failed") },
                 onFailed = { e -> DomainError.GitError.PushFailed(e.message ?: "Push failed") },
                 onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
@@ -662,28 +661,45 @@ class AndroidGitRepository(
 
     override suspend fun removeStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
-            runGitOp({ _ -> DomainError.GitError.StaleLockFile("${config.repoRoot.value}/.git/index.lock") }) {
-                deleteStaleLockFile(config)
+            val gitDir = gitDirOf(config)
+            if (JavaIoLockFiles(gitDir).listAllowListedLocks().isEmpty()) return@withContext Unit.right()
+            // Never deletes: removal is the claim's job (beginOwnedOperation) or the confirm-gated forceRemoveLock.
+            DomainError.GitError.StaleLockFile(File(gitDir, "index.lock").absolutePath, ownedOperations.peekVerdict(gitDir)).left()
+        }
+
+    override suspend fun beginOwnedOperation(config: GitConfig, info: OwnedOperationInfo): Either<DomainError.GitError, LockVerdict> =
+        withContext(PlatformDispatcher.IO) {
+            ownedOperations.begin(gitDirOf(config), info).flatMap { verdict ->
+                if (verdict.deletes) verifyHealthAfterDeletion(config).map { verdict } else verdict.right()
             }
         }
 
-    /** `.git/index.lock` path for [config]'s repo — shared by [deleteStaleLockFile] (user-initiated,
-     * fixed 60s age) and [runGitTransportOpWithRetry]'s `beforeRetry` cleanup (retry-loop-relative
-     * age, Task 1.2.2c). */
-    private fun indexLockFile(config: GitConfig): File =
-        File(shadow.resolveForJGit(config.repoRoot.value), ".git/index.lock")
-
-    private fun deleteStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit> {
-        val lockFile = indexLockFile(config)
-        if (!lockFile.exists()) return Unit.right()
-
-        val ageMs = System.currentTimeMillis() - lockFile.lastModified()
-        return if (ageMs > 60_000L) {
-            if (lockFile.delete()) Unit.right() else DomainError.GitError.StaleLockFile(lockFile.absolutePath).left()
-        } else {
-            DomainError.GitError.StaleLockFile(lockFile.absolutePath).left()
-        }
+    override suspend fun endOwnedOperation(config: GitConfig) {
+        withContext(PlatformDispatcher.IO) { ownedOperations.end(gitDirOf(config)) }
     }
+
+    override suspend fun touchOwnedOperation(config: GitConfig) {
+        withContext(PlatformDispatcher.IO) { ownedOperations.touch(gitDirOf(config)) }
+    }
+
+    override suspend fun forceRemoveLock(config: GitConfig): Either<DomainError.GitError, Unit> =
+        withContext(PlatformDispatcher.IO) {
+            ownedOperations.forceRemove(gitDirOf(config)).flatMap { verifyHealthAfterDeletion(config) }
+        }
+
+    // A corrupt index after a lock deletion is reported as the existing repair error, never auto-reset.
+    private suspend fun verifyHealthAfterDeletion(config: GitConfig): Either<DomainError.GitError, Unit> {
+        status(config)
+        val health = repositoryHealth(config)
+        return if (health.safe) Unit.right() else DomainError.GitError.RepairNeeded(health.state).left()
+    }
+
+    // SAF graphs keep their locks and the owner record in the shadow worktree JGit actually uses.
+    private fun gitDirOf(config: GitConfig): File =
+        JavaIoLockFiles.resolveGitDir(File(shadow.resolveForJGit(config.repoRoot.value)))
+
+    /** Retry hook for the transport loops: clears only a provably dead owner's locks, via the claim. */
+    private fun recoverLocksBeforeRetry(config: GitConfig) = ownedOperations.recoverBeforeRetry(gitDirOf(config))
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
