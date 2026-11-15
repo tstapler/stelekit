@@ -1408,7 +1408,8 @@ private fun InProgressPreviewCanvas(
  *
  * Returns null if [canvasSize] has zero dimensions.
  */
-internal fun Offset.toNormalized(canvasSize: IntSize): NormalizedPoint? {
+// Public: Bazel compiles commonMain and commonTest as separate modules, so tests cannot see `internal`.
+fun Offset.toNormalized(canvasSize: IntSize): NormalizedPoint? {
     if (canvasSize.width == 0 || canvasSize.height == 0) return null
     val nx = (x / canvasSize.width).coerceIn(0.0f, 1.0f).toDouble()
     val ny = (y / canvasSize.height).coerceIn(0.0f, 1.0f).toDouble()
@@ -1420,7 +1421,8 @@ internal fun Offset.toNormalized(canvasSize: IntSize): NormalizedPoint? {
  *
  * Applied only at draw time, never stored.
  */
-internal fun NormalizedPoint.toScreen(canvasSize: IntSize): Offset =
+// Public: Bazel compiles commonMain and commonTest as separate modules, so tests cannot see `internal`.
+fun NormalizedPoint.toScreen(canvasSize: IntSize): Offset =
     Offset(
         x = (this.x * canvasSize.width).toFloat(),
         y = (this.y * canvasSize.height).toFloat(),

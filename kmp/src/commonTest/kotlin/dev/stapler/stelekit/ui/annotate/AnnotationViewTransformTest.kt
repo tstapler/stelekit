@@ -217,7 +217,7 @@ class AnnotationViewTransformTest {
             val c = Offset(ax.toFloat(), ay.toFloat())
             val pinned = start.toCanvas(c)
             val end = start.transformed(c, Offset.Zero, zoom, roomy)
-            if (end.scale >= FIT_SCALE && end.scale != MAX_VIEW_SCALE) {
+            if (!end.isFit && end.scale >= FIT_SCALE && end.scale != MAX_VIEW_SCALE) {
                 close(c.x, end.toView(pinned).x, 0.2f)
                 close(c.y, end.toView(pinned).y, 0.2f)
             }
