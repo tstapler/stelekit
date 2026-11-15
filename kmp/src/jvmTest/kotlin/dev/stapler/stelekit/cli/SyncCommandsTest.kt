@@ -14,6 +14,7 @@ import dev.stapler.stelekit.git.FetchResult
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitStatus
 import dev.stapler.stelekit.git.MergeResult
+import dev.stapler.stelekit.git.RepoOpGate
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
@@ -192,7 +193,7 @@ class SyncCommandsTest {
         val manager = GraphManager(MapSettings(), DriverFactory(), PlatformFileSystem().also { it.registerGraphRoot(root.absolutePath) }, GraphBackend.SQLDELIGHT)
         try {
             val failure = assertFailsWith<SyncExitException> {
-                runSyncWithManager(SyncArgs(jsonOutput = true), manager, StubGitRepository(), json, EffectiveNotesPath(root.absolutePath))
+                runSyncWithManager(SyncArgs(jsonOutput = true), manager, StubGitRepository(), json, EffectiveNotesPath(root.absolutePath), RepoOpGate())
             }
 
             assertEquals(4, failure.code)

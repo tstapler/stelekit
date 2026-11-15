@@ -13,6 +13,7 @@ object WiringRoots {
         "jvmMain/$PKG/desktop/Main.kt",
         "jvmMain/$PKG/desktop/ui/App.kt",
         "jvmMain/$PKG/desktop/DesktopTaskScheduling.kt",
+        "jvmMain/$PKG/cli/SyncMain.kt",
         "wasmJsMain/$PKG/browser/Main.kt",
         "androidApp.main/$PKG/MainActivity.kt",
         "androidApp.main/$PKG/SteleKitApplication.kt",
