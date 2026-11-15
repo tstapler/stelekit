@@ -37,6 +37,9 @@ class WiredAppFixture private constructor(
     taskScheduler: dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler,
     taskRegistry: dev.stapler.stelekit.jobs.schedule.TaskRegistry,
 ) {
+    /** The one gate the fixture's root hands every participant; tests assert identity against it. */
+    val repoOpGate = dev.stapler.stelekit.git.RepoOpGate()
+
     internal val deps = GraphContentDeps(
         repos = repos,
         fileSystem = ports.fileSystem,
@@ -49,6 +52,7 @@ class WiredAppFixture private constructor(
             taskRegistry = taskRegistry,
             platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
             gitRepository = ports.gitRepository,
+            repoOpGate = repoOpGate,
         ),
     )
 
