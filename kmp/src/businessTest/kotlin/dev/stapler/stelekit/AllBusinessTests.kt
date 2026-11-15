@@ -495,6 +495,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.platform.diagnostics.ProcStatParserTest::class,
     dev.stapler.stelekit.platform.diagnostics.LogRedactorTest::class,
     dev.stapler.stelekit.ui.annotate.AnnotationEditorCrashGuardTest::class,
+    dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModelToolTest::class,
     dev.stapler.stelekit.ui.annotate.AnnotationPersistenceQueueTest::class,
     dev.stapler.stelekit.repository.MeasurementWritesPriorityTest::class,
     dev.stapler.stelekit.repository.SqlDelightMeasurementAnnotationWritesTest::class,
