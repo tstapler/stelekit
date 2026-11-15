@@ -95,6 +95,7 @@ class GitSyncWorkerGateAndRecordTest {
             Configuration.Builder().setExecutor(SynchronousExecutor()).build(),
         )
         GitSyncWorker.runLogOverride = { log }
+        GitSyncWorker.processColdPathRunner = AndroidColdPathRunner(context, RepoOpGate())
     }
 
     private val events = mutableListOf<String>()
@@ -116,6 +117,7 @@ class GitSyncWorkerGateAndRecordTest {
         GitSyncWorker.hooksOverride = null
         GitSyncWorker.snapshotProviderOverride = null
         GitSyncWorker.runLogOverride = null
+        GitSyncWorker.processColdPathRunner = null
         GitSyncServiceRegistry.unregister(graphId)
     }
 

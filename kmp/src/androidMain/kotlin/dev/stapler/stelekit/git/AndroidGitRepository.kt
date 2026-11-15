@@ -687,6 +687,9 @@ class AndroidGitRepository(
             ownedOperations.forceRemove(gitDirOf(config)).flatMap { healthyAfterLockDeletion(config) }
         }
 
+    /** The process-gate key for [config]'s resolved git dir; null when it cannot be canonicalised (callers fail closed). */
+    fun gateKeyFor(config: GitConfig): String? = RepoOpGate.keyForOrNull(gitDirOf(config))
+
     // SAF graphs keep their locks and the owner record in the shadow worktree JGit actually uses.
     private fun gitDirOf(config: GitConfig): File =
         JavaIoLockFiles.resolveGitDir(File(shadow.resolveForJGit(config.repoRoot.value)))

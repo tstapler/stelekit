@@ -181,6 +181,9 @@ class GitSyncWorker(
         const val KEY_INTERVAL_MINUTES = "interval_minutes"
         const val KEY_NETWORK_POLICY = TaskWorkKeys.KEY_NETWORK_POLICY
 
+        /** The process's cold runner, built on the shared `RepoOpGate`; set once by `SteleKitApplication.onCreate`. */
+        @Volatile var processColdPathRunner: ColdPathRunner? = null
+
         /** Test seams; null in production. */
         @Volatile internal var snapshotProviderOverride: ((Context) -> NetworkSnapshotProvider)? = null
         @Volatile internal var runLogOverride: ((Context) -> TaskRunLog)? = null
@@ -230,7 +233,7 @@ class GitSyncWorker(
 
             val liveService = GitSyncServiceRegistry.getService(graphId)
             val ctx = TaskRunContext(scheduledAtMs = null, startedAtMs = startedAtMs, appOpen = liveService != null, constraintState = constraintState)
-            val result = runTaskBody(GitSyncTask(cold = coldPathOverride ?: AndroidColdPathRunner(applicationContext)), key, ctx)
+            val result = runTaskBody(GitSyncTask(cold = coldPathOverride ?: checkNotNull(processColdPathRunner) { "SteleKitApplication.onCreate must set GitSyncWorker.processColdPathRunner" }), key, ctx)
             recorded = result
             bodyRan = true
             return if (result is TaskRunResult.Failed) Result.failure() else Result.success()
@@ -295,11 +298,14 @@ internal fun loadGitConfigFromDb(graphId: String): GitConfig? {
 internal suspend fun runSlowPathFetch(
     loadConfig: suspend () -> GitConfig?,
     gitRepository: GitRepository,
+    gate: RepoOpGate,
+    gateKeyFor: (GitConfig) -> String?,
     staleness: SyncStalenessStore = SyncStalenessStore(InMemorySettings()),
     clock: () -> Long = { System.currentTimeMillis() },
-    locks: NamedLocks = ColdSyncLocks,
-): ListenableWorker.Result = when (runColdFetch(loadConfig, gitRepository, staleness, clock, locks)) {
-    is ColdSyncOutcome.Error -> ListenableWorker.Result.failure()
+): ListenableWorker.Result = when (val outcome = runColdFetch(loadConfig, gitRepository, staleness, clock, gate, gateKeyFor)) {
+    // A busy repository is a deliberate skip, not a failure.
+    is ColdSyncOutcome.Error ->
+        if (outcome.cause is dev.stapler.stelekit.error.DomainError.GitError.SyncInProgress) ListenableWorker.Result.success() else ListenableWorker.Result.failure()
     is ColdSyncOutcome.Fetched, ColdSyncOutcome.NoConfig -> ListenableWorker.Result.success()
 }
 
@@ -309,7 +315,8 @@ internal suspend fun runColdFetch(
     gitRepository: GitRepository,
     staleness: SyncStalenessStore,
     clock: () -> Long,
-    locks: NamedLocks = ColdSyncLocks,
+    gate: RepoOpGate,
+    gateKeyFor: (GitConfig) -> String?,
 ): ColdSyncOutcome {
     val config = loadConfig() ?: return ColdSyncOutcome.NoConfig
     val configs = object : GitConfigRepository {
@@ -318,11 +325,8 @@ internal suspend fun runColdFetch(
         override suspend fun deleteConfig(graphId: String) = Unit.right()
         override fun observeConfig(graphId: String) = kotlinx.coroutines.flow.flowOf(config.right())
     }
-    return ColdSyncRunner(gitRepository, configs, staleness, locks, clock).run(config.graphId)
+    return ColdSyncRunner(gitRepository, configs, staleness, gate, gateKeyFor, clock).run(config.graphId)
 }
-
-/** One lock registry per process, shared by every closed-app fetch. */
-private val ColdSyncLocks = NamedLocks()
 
 private class InMemorySettings : dev.stapler.stelekit.platform.Settings {
     private val values = mutableMapOf<String, String>()
