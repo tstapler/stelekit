@@ -121,6 +121,13 @@ class GitSyncService(
 
     /** Applies [proposal] (no sync is run) and refreshes [firstSyncReviewPending]. */
     suspend fun repairBranch(proposal: BranchRepairProposal): BranchRepairResult =
+        singleFlight.run(
+            RunSpec(proposal.graphId, SyncOrigin.Repair, "repair-branch"),
+            fail = { BranchRepairResult.Busy },
+            unreadable = { reason -> BranchRepairResult.SaveFailed(reason) },
+        ) { repairBranchLocked(proposal) }
+
+    private suspend fun repairBranchLocked(proposal: BranchRepairProposal): BranchRepairResult =
         branchRepair.apply(proposal).also {
             reviewState.onRepaired()
             // The missing-branch error described the old setting; a stale red badge would reopen a dead repair.
@@ -138,10 +145,17 @@ class GitSyncService(
      * Returns null when no repair is recorded.
      */
     suspend fun changeBackBranch(): BranchRepairResult? =
+        singleFlight.run(
+            RunSpec(graphId, SyncOrigin.Repair, "change-back-branch"),
+            fail = { BranchRepairResult.Busy },
+            unreadable = { reason -> BranchRepairResult.SaveFailed(reason) },
+        ) { changeBackBranchLocked() }
+
+    private suspend fun changeBackBranchLocked(): BranchRepairResult? =
         when (val change = branchRepair.changeBackProposal(gitRepository, graphId)) {
             null -> null
             is Either.Left -> change.value
-            is Either.Right -> repairBranch(change.value)
+            is Either.Right -> repairBranchLocked(change.value)
         }
 
     /** Read-only facts for the first-sync review; never changes the repository. */
@@ -153,6 +167,16 @@ class GitSyncService(
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
     private val runGuard = SyncRunGuard(_syncState, logger)
+
+    private val _inFlight = MutableStateFlow<SyncRunInfo?>(null)
+
+    /** The run holding this graph's repository gate, or null; written only by that holder. */
+    val inFlight: StateFlow<SyncRunInfo?> = _inFlight.asStateFlow()
+
+    private val singleFlight = SyncSingleFlight(
+        gate, gitRepository, configRepository, gitSyncBusyCounter, _inFlight, wallClockMs,
+        publishError = { _syncState.value = SyncState.Error(it) },
+    )
 
     /**
      * Working-tree status (dirty file count), refreshed by [refreshLocalStatus] independently of
@@ -188,7 +212,14 @@ class GitSyncService(
      * is the one collaborator that already holds both. No settings-screen UI calls this yet
      * (backend capability only, per plan.md).
      */
-    suspend fun deepen(graphId: String): Either<DomainError, Unit> = either {
+    suspend fun deepen(graphId: String): Either<DomainError, Unit> =
+        singleFlight.run(
+            RunSpec(graphId, SyncOrigin.Deepen, "deepen"),
+            fail = { it.left() },
+            unreadable = { reason -> DomainError.GitError.FetchFailed(reason).left() },
+        ) { deepenLocked(graphId) }
+
+    private suspend fun deepenLocked(graphId: String): Either<DomainError, Unit> = either {
         val config = configRepository.getConfig(graphId).bind() ?: raise(DomainError.DatabaseError.NotFound("GitConfig", graphId))
         gitRepository.unshallow(config).bind()
         configRepository.saveConfig(config.copy(cloneDepthState = CloneDepthState.FullHistory)).bind()
@@ -282,16 +313,27 @@ class GitSyncService(
         trigger: SyncTrigger = SyncTrigger.Manual,
         /** One-run override of the mass-change guard from the foreground typed-count confirm; ignored for [SyncTrigger.Automatic]. */
         liftMassChangeGuard: Boolean = false,
+        /** Who started this run; logging and single-flight bookkeeping only, never guard semantics. */
+        origin: SyncOrigin = if (trigger == SyncTrigger.Manual) SyncOrigin.UiPress else SyncOrigin.Scheduled,
+    ): Either<DomainError.GitError, SyncState.Success> {
+        // Read the persisted flag, not the cached StateFlow: the review is confirmed in settings.
+        if (trigger == SyncTrigger.Automatic && firstSyncConfirmation?.isReviewPending(graphId) == true) {
+            logger.info("skipping automatic sync graphId=$graphId: first-sync review is pending")
+            return DomainError.GitError.FirstSyncReviewPending.left()
+        }
+        return singleFlight.run(
+            RunSpec(graphId, origin, "sync"),
+            fail = { it.left() },
+            unreadable = { reason -> refuse(DomainError.GitError.FetchFailed(reason)) },
+        ) { syncLocked(graphId, trigger, liftMassChangeGuard) }
+    }
+
+    private suspend fun syncLocked(
+        graphId: String,
+        trigger: SyncTrigger,
+        liftMassChangeGuard: Boolean,
     ): Either<DomainError.GitError, SyncState.Success> =
         withContext(PlatformDispatcher.IO) {
-            // Read the persisted flag, not the cached StateFlow: the review is confirmed in settings.
-            if (trigger == SyncTrigger.Automatic && firstSyncConfirmation?.isReviewPending(graphId) == true) {
-                logger.info("skipping automatic sync graphId=$graphId: first-sync review is pending")
-                return@withContext DomainError.GitError.FirstSyncReviewPending.left()
-            }
-            // Bracket the whole pipeline so gitSyncBusyCounter is decremented on every
-            // return@withContext exit path below, not just the success path.
-            gitSyncBusyCounter.begin()
             try {
 
             // Task 3.4.2c: a manual sync trigger always supersedes any pending scheduled retry.
@@ -337,11 +379,7 @@ class GitSyncService(
             // 3a2. Mid-merge / unmerged repository: nothing may be staged, committed or pushed until repaired.
             guards.repositoryState(config)?.let { return@withContext refuse(it) }
 
-            // 3b. Remove stale lock file
-            gitRepository.removeStaleLockFile(config).onLeft { lockErr ->
-                _syncState.value = SyncState.Error(lockErr)
-                return@withContext lockErr.left()
-            }
+            // 3b. The stale-lock decision is the owner-record claim [singleFlight] takes before this body runs.
 
             // 4. Flush pending writes + await idle editing
             graphWriter.flush()
@@ -515,8 +553,6 @@ class GitSyncService(
                 throw e
             } catch (e: Exception) {
                 runGuard.crashed("sync", e)
-            } finally {
-                gitSyncBusyCounter.end()
             }
         }
 
@@ -532,12 +568,18 @@ class GitSyncService(
      * Emits [SyncState.MergeAvailable] if remote changes were found.
      * Used by background schedulers and manual "check for updates" actions.
      */
-    suspend fun fetchOnly(graphId: String): Either<DomainError.GitError, FetchResult> =
+    suspend fun fetchOnly(
+        graphId: String,
+        origin: SyncOrigin = SyncOrigin.Scheduled,
+    ): Either<DomainError.GitError, FetchResult> =
+        singleFlight.run(
+            RunSpec(graphId, origin, "fetch"),
+            fail = { it.left() },
+            unreadable = { reason -> DomainError.GitError.FetchFailed(reason).left() },
+        ) { fetchOnlyLocked(graphId) }
+
+    private suspend fun fetchOnlyLocked(graphId: String): Either<DomainError.GitError, FetchResult> =
         withContext(PlatformDispatcher.IO) {
-            // Bracket the whole pipeline so gitSyncBusyCounter is decremented on every
-            // return@withContext exit path below, not just the success path — mirrors sync()'s
-            // bracketing (git-sync-resilience Story 5.1.1).
-            gitSyncBusyCounter.begin()
             try {
 
             // Task 3.4.2c: a manual fetchOnly trigger always supersedes any pending scheduled retry.
@@ -590,8 +632,6 @@ class GitSyncService(
                 throw e
             } catch (e: Exception) {
                 runGuard.crashed("fetch", e)
-            } finally {
-                gitSyncBusyCounter.end()
             }
         }
 
@@ -600,6 +640,13 @@ class GitSyncService(
      * Returns the commit SHA on success, or null if there was nothing to commit.
      */
     suspend fun commitLocalChanges(graphId: String): Either<DomainError.GitError, String?> =
+        singleFlight.run(
+            RunSpec(graphId, SyncOrigin.UiPress, "commit"),
+            fail = { it.left() },
+            unreadable = { reason -> DomainError.GitError.CommitFailed(reason).left() },
+        ) { commitLocalChangesLocked(graphId) }
+
+    private suspend fun commitLocalChangesLocked(graphId: String): Either<DomainError.GitError, String?> =
         withContext(PlatformDispatcher.IO) {
             val config = when (val result = configRepository.getConfig(graphId)) {
                 is Either.Left -> return@withContext DomainError.GitError.CommitFailed(
@@ -650,6 +697,18 @@ class GitSyncService(
         conflicts: List<ConflictFile>,
         sideResolutions: Map<String, MergeSide> = emptyMap(),
         hunkResolutions: Map<String, List<dev.stapler.stelekit.git.model.ConflictHunk>> = emptyMap(),
+    ): Either<DomainError.GitError, Unit> =
+        singleFlight.run(
+            RunSpec(graphId, SyncOrigin.Resolve, "resolve"),
+            fail = { it.left() },
+            unreadable = { reason -> DomainError.GitError.CommitFailed(reason).left() },
+        ) { resolveConflictsLocked(graphId, conflicts, sideResolutions, hunkResolutions) }
+
+    private suspend fun resolveConflictsLocked(
+        graphId: String,
+        conflicts: List<ConflictFile>,
+        sideResolutions: Map<String, MergeSide>,
+        hunkResolutions: Map<String, List<dev.stapler.stelekit.git.model.ConflictHunk>>,
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
         val config = when (val result = configRepository.getConfig(graphId)) {
             is Either.Left -> return@withContext DomainError.GitError.CommitFailed(
@@ -711,6 +770,17 @@ class GitSyncService(
         graphId: String,
         filePath: String,
         mergedContent: String,
+    ): Either<DomainError.GitError, Unit> =
+        singleFlight.run(
+            RunSpec(graphId, SyncOrigin.Resolve, "journal-merge"),
+            fail = { it.left() },
+            unreadable = { reason -> DomainError.GitError.CommitFailed(reason).left() },
+        ) { applyJournalMergeLocked(graphId, filePath, mergedContent) }
+
+    private suspend fun applyJournalMergeLocked(
+        graphId: String,
+        filePath: String,
+        mergedContent: String,
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
         val config = when (val result = configRepository.getConfig(graphId)) {
             is Either.Left -> return@withContext DomainError.GitError.CommitFailed(
@@ -763,6 +833,16 @@ class GitSyncService(
      * Call this when the user cancels conflict resolution.
      */
     suspend fun abortActiveMerge(graphId: String, confirm: suspend (AbortPreservation) -> Boolean = { true }): Either<DomainError.GitError, Unit> =
+        singleFlight.run(
+            RunSpec(graphId, SyncOrigin.Resolve, "abort-merge"),
+            fail = { it.left() },
+            unreadable = { reason -> DomainError.GitError.CommitFailed(reason).left() },
+        ) { abortActiveMergeLocked(graphId, confirm) }
+
+    private suspend fun abortActiveMergeLocked(
+        graphId: String,
+        confirm: suspend (AbortPreservation) -> Boolean,
+    ): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             val config = when (val result = configRepository.getConfig(graphId)) {
                 is Either.Left -> return@withContext DomainError.GitError.CommitFailed(

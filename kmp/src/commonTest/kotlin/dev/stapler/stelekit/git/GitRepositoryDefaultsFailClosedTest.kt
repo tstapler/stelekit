@@ -12,8 +12,12 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class GitRepositoryDefaultsFailClosedTest {
-    // StubGitRepository overrides none of the strangler methods, so it exercises the interface defaults.
-    private val bare = object : StubGitRepository() {}
+    // StubGitRepository answers NoLock for beginOwnedOperation (service fixtures need it); this implementer routes
+    // that one method back to the interface default so the fail-closed default is still what is asserted.
+    private val bare = object : StubGitRepository(), GitRepository {
+        override suspend fun beginOwnedOperation(config: dev.stapler.stelekit.git.model.GitConfig, info: OwnedOperationInfo) =
+            super<GitRepository>.beginOwnedOperation(config, info)
+    }
 
     @Test
     fun defaultBeginOwnedOperation_should_ReturnOwnerUnknownNeverNoLock_AndForceRemoveLockShould_Refuse_ForAnImplementerWithoutOverrides() = runTest {

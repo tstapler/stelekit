@@ -91,6 +91,13 @@ interface GitRepository {
     suspend fun beginOwnedOperation(config: GitConfig, info: OwnedOperationInfo): Either<DomainError.GitError, LockVerdict> =
         Either.Right(LockVerdict.OwnerUnknown(UnknownReason.RecoveryLockUnsupported))
 
+    /**
+     * The process-gate key for [config]'s resolved git dir ([RepoOpGate.keyForOrNull]); null when it cannot be
+     * resolved (callers fail closed). JVM and Android canonicalise; this default hashes `<repoRoot>/.git` as written.
+     */
+    fun gateKeyFor(config: GitConfig): String? =
+        RepoOpGate.keyForOrNull("${config.repoRoot.value.trimEnd('/')}/.git") { it }
+
     /** Releases the claim taken by [beginOwnedOperation]. Default: nothing held, nothing to release. */
     suspend fun endOwnedOperation(config: GitConfig) {}
 
