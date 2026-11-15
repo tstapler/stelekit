@@ -29,7 +29,7 @@ import kotlin.test.assertTrue
  * Task 1.1a regression tests for single-flight sync (I-E1-01, I-E1-02 and the coalesce-during-state-write
  * ACs). They are written against today's tree, so they compile without the gate types and are expected to
  * FAIL until Story 1.4 lands: on `main` a second `sync` runs concurrently, deletes an old live lock and
- * rewrites `syncState`. Story 1.4 tightens [isSyncInProgress] to an `is DomainError.GitError.SyncInProgress` check.
+ * rewrites `syncState`.
  */
 class SyncSingleFlightRegressionTest {
     private val gitDir: File = Files.createTempDirectory("single_flight_").toFile()
@@ -60,9 +60,8 @@ class SyncSingleFlightRegressionTest {
         override fun isAvailable(): Boolean = available()
     }
 
-    /** Name-based so this compiles before `GitError.SyncInProgress` exists (added in Task 1.4a). */
     private fun isSyncInProgress(r: Either<DomainError.GitError, *>): Boolean =
-        r.leftOrNull()?.let { it::class.simpleName == "SyncInProgress" } == true
+        r.leftOrNull() is DomainError.GitError.SyncInProgress
 
     private fun startFirstSync(): Deferred<Either<DomainError.GitError, SyncState.Success>> =
         runBlocking { CoroutineScopeHolder.scope.async(start = CoroutineStart.DEFAULT) { service.sync("g", SyncTrigger.Manual) } }
