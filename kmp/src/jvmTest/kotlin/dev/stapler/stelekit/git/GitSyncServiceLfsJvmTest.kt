@@ -108,6 +108,7 @@ class GitSyncServiceLfsJvmTest {
             fileSystem = fs,
             graphId = "g",
             isOnline = { true },
+            gate = RepoOpGate(),
         )
     }
 

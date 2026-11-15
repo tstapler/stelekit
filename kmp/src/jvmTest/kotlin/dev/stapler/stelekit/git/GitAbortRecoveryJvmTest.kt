@@ -63,6 +63,7 @@ class GitAbortRecoveryJvmTest {
                 networkMonitor = NetworkMonitor(),
                 fileSystem = fileSystem,
                 wallClockMs = { 1_700_000_000_000L },
+                gate = RepoOpGate(),
             )
         }
 

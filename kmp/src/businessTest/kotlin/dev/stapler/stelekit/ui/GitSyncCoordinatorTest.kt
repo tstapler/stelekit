@@ -14,6 +14,7 @@ import dev.stapler.stelekit.git.FetchResult
 import dev.stapler.stelekit.git.GitStatus
 import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.GuardScope
+import dev.stapler.stelekit.git.RepoOpGate
 import dev.stapler.stelekit.git.RepositoryHealth
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
@@ -94,6 +95,7 @@ class GitSyncCoordinatorTest {
                 fileSystem = fs,
                 graphId = "test-graph",
                 isOnline = { true },
+                gate = RepoOpGate(),
             )
         }
         val coordinator = GitSyncCoordinator(

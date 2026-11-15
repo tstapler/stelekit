@@ -128,6 +128,7 @@ class GitSyncServiceLfsGuardTest {
             lfsCapabilities = capabilities,
             lfsGuardCoordinator = coordinator,
             isOnline = { true },
+            gate = RepoOpGate(),
         )
         return Fixture(service, repo, fs, settings)
     }

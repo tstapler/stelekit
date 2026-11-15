@@ -99,6 +99,7 @@ class GitSyncConflictReloadE2ETest {
             networkMonitor = NetworkMonitor(),
             fileSystem = fs,
             isOnline = { true },
+            gate = RepoOpGate(),
         )
     }
 

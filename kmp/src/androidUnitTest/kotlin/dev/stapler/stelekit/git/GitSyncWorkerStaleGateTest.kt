@@ -125,6 +125,7 @@ class GitSyncWorkerStaleGateTest {
             settings = MapSettings(),
             isOnline = { true },
             isAppOwnedPath = { true },
+            gate = RepoOpGate(),
         )
         GitSyncServiceRegistry.register(graphId, service)
     }

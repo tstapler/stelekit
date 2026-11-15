@@ -117,6 +117,7 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
             configRepository = StubConfigRepository(sampleConfig.right()),
             networkMonitor = NetworkMonitor(),
             fileSystem = stubFs,
+            gate = RepoOpGate(),
         )
         GitSyncServiceRegistry.register(graphId, service)
     }
@@ -169,6 +170,7 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
             isOnline = { true },
             // A SAF-style graph: only the policy path records this reason; fetchOnly alone never does.
             isAppOwnedPath = { false },
+            gate = RepoOpGate(),
         )
         GitSyncServiceRegistry.register(FAST_PATH_GRAPH_ID, service)
 

@@ -14,6 +14,7 @@ import dev.stapler.stelekit.git.FetchResult
 import dev.stapler.stelekit.git.GitStatus
 import dev.stapler.stelekit.git.GitSyncBusyCounter
 import dev.stapler.stelekit.git.GitSyncService
+import dev.stapler.stelekit.git.RepoOpGate
 import dev.stapler.stelekit.git.lfs.MemoryFileSystem
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
@@ -95,6 +96,7 @@ class PostSyncProjectJobEntryPointTest {
             settings = settings,
             gitSyncBusyCounter = busyCounter,
             isOnline = { true },
+            gate = RepoOpGate(),
         ).also { services += it }
     }
 

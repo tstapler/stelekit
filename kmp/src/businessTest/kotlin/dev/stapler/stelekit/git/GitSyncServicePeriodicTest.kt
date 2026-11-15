@@ -64,6 +64,7 @@ class GitSyncServicePeriodicTest {
             fileSystem = fs,
             isOnline = { true },
             periodicSyncContext = dispatcher,
+            gate = RepoOpGate(),
         ).also { service = it }
     }
 

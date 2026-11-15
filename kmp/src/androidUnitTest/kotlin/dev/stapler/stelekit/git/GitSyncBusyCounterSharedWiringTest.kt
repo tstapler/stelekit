@@ -147,6 +147,7 @@ class GitSyncBusyCounterSharedWiringTest {
             networkMonitor = NetworkMonitor(),
             fileSystem = stubFs,
             gitSyncBusyCounter = sharedCounter,
+            gate = RepoOpGate(),
         )
         val strategy = AndroidGraphMoveQuiesceStrategy(
             gitSyncBusyCounter = sharedCounter,

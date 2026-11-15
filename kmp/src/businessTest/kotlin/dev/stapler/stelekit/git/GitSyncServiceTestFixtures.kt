@@ -43,6 +43,7 @@ internal fun buildGitSyncTestService(
     networkMonitor: NetworkMonitor = NetworkMonitor(),
     credentialAccessProvider: (() -> CredentialAccess)? = null,
     isOnline: (() -> Boolean)? = null,
+    gate: RepoOpGate = RepoOpGate(),
 ): GitSyncService {
     val stubFs = StubFileSystem()
     val graphLoader = GraphLoader(
@@ -57,6 +58,7 @@ internal fun buildGitSyncTestService(
         graphWriter = graphWriter,
         editLock = EditLock(),
         configRepository = configRepository,
+        gate = gate,
         networkMonitor = networkMonitor,
         fileSystem = fileSystem,
         credentialAccessProvider = credentialAccessProvider,

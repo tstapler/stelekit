@@ -64,6 +64,7 @@ class GitSyncServiceChangeBackTest {
             fileSystem = fs,
             graphId = graphId,
             settings = MapSettings(),
+            gate = RepoOpGate(),
         )
         service.repairBranch(BranchRepairProposal(graphId, from = "main", to = "master", available = listOf("master")))
         assertEquals("master", configRepo.config.remoteBranch)

@@ -62,6 +62,7 @@ class GitSyncBusyCounterFetchOnlyTest {
             networkMonitor = NetworkMonitor(),
             fileSystem = stubFs,
             gitSyncBusyCounter = counter,
+            gate = RepoOpGate(),
         )
     }
 

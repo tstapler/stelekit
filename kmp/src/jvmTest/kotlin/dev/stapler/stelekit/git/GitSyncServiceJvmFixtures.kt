@@ -22,6 +22,7 @@ import dev.stapler.stelekit.ui.fixtures.FakeFileSystem
 fun buildTestGitSyncService(
     gitRepository: GitRepository = StubGitRepository(),
     configRepository: GitConfigRepository = StubConfigRepository(sampleConfig.right()),
+    gate: RepoOpGate = RepoOpGate(),
 ): GitSyncService {
     val fileSystem = FakeFileSystem()
     val graphLoader = GraphLoader(
@@ -38,5 +39,6 @@ fun buildTestGitSyncService(
         configRepository = configRepository,
         networkMonitor = NetworkMonitor(),
         fileSystem = fileSystem,
+        gate = gate,
     )
 }
