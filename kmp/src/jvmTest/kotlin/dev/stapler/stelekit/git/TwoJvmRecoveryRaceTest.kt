@@ -42,9 +42,11 @@ internal class ChildJvm private constructor(private val process: Process) {
     }
 
     companion object {
-        fun spawn(vararg args: String): ChildJvm {
+        fun spawn(vararg args: String): ChildJvm = spawnMain(RecoveryRaceChildMain::class.java.name, *args)
+
+        fun spawnMain(mainClass: String, vararg args: String): ChildJvm {
             val java = File(System.getProperty("java.home"), "bin/java").absolutePath
-            val command = listOf(java, "-Xmx256m", "-cp", System.getProperty("java.class.path"), RecoveryRaceChildMain::class.java.name) + args
+            val command = listOf(java, "-Xmx256m", "-cp", System.getProperty("java.class.path"), mainClass) + args
             return ChildJvm(ProcessBuilder(command).redirectError(ProcessBuilder.Redirect.INHERIT).start())
         }
     }

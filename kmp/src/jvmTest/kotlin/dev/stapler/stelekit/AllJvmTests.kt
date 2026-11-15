@@ -184,6 +184,8 @@ import dev.stapler.stelekit.git.JvmGitCloneWorkerLauncherTest
 import dev.stapler.stelekit.git.JvmGitRepositoryTest
 import dev.stapler.stelekit.git.JgitCancelLockTest
 import dev.stapler.stelekit.git.LockClaimIntegrationTest
+import dev.stapler.stelekit.git.BeginOwnedOperationOrderingTest
+import dev.stapler.stelekit.git.ProcessKillOrphanLockTest
 import dev.stapler.stelekit.git.TwoJvmRecoveryRaceTest
 import dev.stapler.stelekit.git.JgitCancelSweepTest
 import dev.stapler.stelekit.git.RemoteBranchResolutionTest
@@ -538,6 +540,8 @@ import org.junit.runners.Suite
     JvmGitRepositoryTest::class,
     JgitCancelLockTest::class,
     LockClaimIntegrationTest::class,
+    BeginOwnedOperationOrderingTest::class,
+    ProcessKillOrphanLockTest::class,
     TwoJvmRecoveryRaceTest::class,
     JgitCancelSweepTest::class,
     RemoteBranchResolutionTest::class,

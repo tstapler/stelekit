@@ -19,7 +19,7 @@ import kotlin.test.assertTrue
  * Task 1.1b / I-E1-04: cancels a real JGit add, commit, fetch and merge at eight instants each after the
  * call starts (32 cases) and asserts no `*.lock` survives the join and `git status` still works.
  * JvmGitRepository exposes no per-call progress callback, so the instants are spin-count offsets after a
- * latch signals the call began. The "fresh claim returns NoLock/ClearedOwn" half is added in Task 1.2g.
+ * latch signals the call began. After each, `endOwnedOperation` plus a fresh claim must return NoLock/ClearedOwn (Task 1.2g).
  */
 class JgitCancelSweepTest {
     private enum class Op { Add, Commit, Fetch, Merge }
@@ -33,6 +33,8 @@ class JgitCancelSweepTest {
                 Op.Merge -> { fx.commitLocally(); fx.advanceOrigin(); repo.fetch(fx.config) }
                 Op.Add -> Unit
             }
+            val info = OwnedOperationInfo(op.name, SyncOrigin.UiPress)
+            repo.beginOwnedOperation(fx.config, info)
             val started = CountDownLatch(1)
             val job = CoroutineScope(Dispatchers.Default).launch {
                 started.countDown()
@@ -47,7 +49,12 @@ class JgitCancelSweepTest {
             repeat(spins) { Thread.onSpinWait() }
             job.cancelAndJoin()
             assertTrue(fx.statusIsHealthy(), "git status failed after cancelling $op at $spins spins")
-            fx.locksUnderGitDir()
+            repo.endOwnedOperation(fx.config)
+            val fresh = repo.beginOwnedOperation(fx.config, info).getOrNull()
+            repo.endOwnedOperation(fx.config)
+            fx.locksUnderGitDir() + listOfNotNull(
+                "fresh claim returned $fresh".takeIf { fresh != LockVerdict.NoLock && fresh != LockVerdict.ClearedOwn },
+            )
         }
     }
 
