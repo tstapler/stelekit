@@ -31,7 +31,7 @@ import kotlin.math.roundToInt
  *
  * Renders a transparent [Box] that fills the canvas, then places one
  * [AnnotationSemanticNode] per annotation. Each node is sized and positioned to match
- * the annotation's bounding rectangle in screen pixels (with a minimum 44×44 dp touch
+ * the annotation's bounding rectangle in screen pixels (with a minimum 48×48 dp touch
  * target) and exposes a TalkBack-readable content description + click action.
  *
  * This composable must be stacked on top of the [androidx.compose.foundation.Canvas]
@@ -49,6 +49,8 @@ fun AnnotationSemanticOverlay(
     modifier: Modifier = Modifier,
     /** TalkBack "Move vertex N" (non-drag placement); null omits the actions. */
     onMoveVertex: ((String, Int) -> Unit)? = null,
+    /** TalkBack "Edit value" on Distance nodes only (Area and Angle values are not editable); null omits it. */
+    onEditValue: ((String) -> Unit)? = null,
     view: () -> AnnotationViewTransform = { AnnotationViewTransform.Fit },
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -59,6 +61,8 @@ fun AnnotationSemanticOverlay(
                 view = view,
                 onSelect = { onAnnotationSelect(annotation.uuid) },
                 onMoveVertex = onMoveVertex?.let { move -> { index: Int -> move(annotation.uuid, index) } },
+                onEditValue = onEditValue?.takeIf { annotation.annotationType == AnnotationType.DISTANCE }
+                    ?.let { edit -> { edit(annotation.uuid) } },
             )
         }
     }
@@ -68,7 +72,7 @@ fun AnnotationSemanticOverlay(
  * A single invisible semantic node representing one [MeasurementAnnotation].
  *
  * Positioned absolutely over the annotation's bounding rect in screen space.
- * Enforces a minimum 44×44 dp touch target as per Material / WCAG guidelines.
+ * Enforces a minimum 48×48 dp touch target as per Material / WCAG guidelines.
  */
 @Composable
 private fun AnnotationSemanticNode(
@@ -77,9 +81,10 @@ private fun AnnotationSemanticNode(
     view: () -> AnnotationViewTransform,
     onSelect: () -> Unit,
     onMoveVertex: ((Int) -> Unit)?,
+    onEditValue: (() -> Unit)?,
 ) {
     val density = LocalDensity.current
-    val minTouchTargetPx = with(density) { 44.dp.toPx() }
+    val minTouchTargetPx = with(density) { 48.dp.toPx() }
 
     val points = annotation.normalizedPoints
     if (points.isEmpty()) return
@@ -111,11 +116,11 @@ private fun AnnotationSemanticNode(
                 contentDescription = annotation.toAccessibleDescription()
                 role = Role.Button
                 onClick(label = "Select annotation") { onSelect(); true }
-                if (onMoveVertex != null) {
-                    customActions = points.indices.map { index ->
-                        CustomAccessibilityAction(moveVertexLabel(index)) { onMoveVertex(index); true }
-                    }
+                val moves = if (onMoveVertex == null) emptyList() else points.indices.map { index ->
+                    CustomAccessibilityAction(moveVertexLabel(index)) { onMoveVertex(index); true }
                 }
+                val edit = onEditValue?.let { CustomAccessibilityAction("Edit value") { it(); true } }
+                if (moves.isNotEmpty() || edit != null) customActions = moves + listOfNotNull(edit)
             },
     )
 }
@@ -131,7 +136,7 @@ private fun AnnotationSemanticNode(
  */
 private fun MeasurementAnnotation.toAccessibleDescription(): String {
     val labelPart = if (!label.isNullOrBlank()) ": $label" else ""
-    val valuePart = if (valueDisplay != null) ", $valueDisplay" else ""
+    val valuePart = if (valueDisplay != null) ", $valueDisplay" + (if (isValueEdited()) " (edited)" else "") else ""
     return when (annotationType) {
         AnnotationType.DISTANCE,
         AnnotationType.GRID_REF -> "Distance measurement$labelPart$valuePart"
