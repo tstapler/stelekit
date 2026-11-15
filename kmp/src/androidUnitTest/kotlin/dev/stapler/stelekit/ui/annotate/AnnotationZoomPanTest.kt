@@ -62,7 +62,7 @@ class AnnotationZoomPanTest {
     fun zoomControlsStartAtFitAndEnableOnceZoomed() {
         launch(AnnotationTool.DISTANCE)
         rule.onNodeWithContentDescription(ZOOM_FIT_DESCRIPTION).assertIsNotEnabled()
-        rule.onNodeWithContentDescription(ZOOM_OUT_DESCRIPTION).assertIsNotEnabled()
+        rule.onNodeWithContentDescription(ZOOM_OUT_DESCRIPTION).assertIsEnabled()
         rule.onNodeWithContentDescription(ZOOM_IN_DESCRIPTION).performClick()
         rule.waitForIdle()
         rule.onNodeWithContentDescription(ZOOM_FIT_DESCRIPTION).assertIsEnabled()

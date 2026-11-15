@@ -10,7 +10,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.systemGestures
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -201,6 +205,13 @@ fun AnnotationEditorScreen(
     }
     val density = LocalDensity.current
     val panSlackPx = with(density) { PAN_SLACK.toPx() }
+    // Lay the viewport out inside the system-gesture zones so the outermost pixel is pressable (ADR-006 d6); zero off Android.
+    val gestureInsets = WindowInsets.systemGestures
+    val layoutDirection = LocalLayoutDirection.current
+    val gestureInsetStart = with(density) { gestureInsets.getLeft(density, layoutDirection).toDp() }
+    val gestureInsetEnd = with(density) { gestureInsets.getRight(density, layoutDirection).toDp() }
+    val pasteboardColor = MaterialTheme.colorScheme.surfaceVariant
+    val imageFrameColor = MaterialTheme.colorScheme.onSurfaceVariant
     val viewHandle = remember(panSlackPx) {
         AnnotationViewHandle(
             canvasSize = { canvasSize },
@@ -214,7 +225,6 @@ fun AnnotationEditorScreen(
                     canvasTop = canvasOrigin.y,
                     viewportWidth = viewportSize.width.toFloat(),
                     viewportHeight = viewportSize.height.toFloat(),
-                    slack = panSlackPx,
                 )
             },
             setView = { viewTransform = it },
@@ -528,6 +538,8 @@ fun AnnotationEditorScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(bottom = with(density) { toolbarHeightPx.toDp() } + TOOLBAR_CLEARANCE)
+                .padding(start = gestureInsetStart, end = gestureInsetEnd)
+                .background(pasteboardColor)
                 .clipToBounds()
                 .onSizeChanged { viewportSize = it },
         ) {
@@ -537,7 +549,17 @@ fun AnnotationEditorScreen(
             modifier = Modifier
                 .align(Alignment.Center)
                 .then(imageAspect?.let { Modifier.aspectRatio(it) } ?: Modifier.fillMaxSize())
-                .onGloballyPositioned { coords -> canvasOrigin = coords.positionInParent() },
+                .onGloballyPositioned { coords -> canvasOrigin = coords.positionInParent() }
+                // Thin frame just outside the image bounds, through the same transform as the image (view-only, never exported).
+                .drawBehind {
+                    val v = viewTransform
+                    val edge = IMAGE_FRAME_WIDTH.toPx()
+                    drawRect(
+                        color = imageFrameColor,
+                        topLeft = Offset(v.offsetX - edge, v.offsetY - edge),
+                        size = androidx.compose.ui.geometry.Size(size.width * v.scale + 2 * edge, size.height * v.scale + 2 * edge),
+                    )
+                },
         ) {
             // Layer 1: Zoomed/pannable image
             // We use Coil AsyncImage which handles subsampling for large images.
@@ -1870,6 +1892,7 @@ internal fun DepthEstimationPanel(
 internal const val LOUPE_OVERLAY_TAG = "loupe-overlay"
 
 private val PAN_SLACK = 24.dp
+private val IMAGE_FRAME_WIDTH = 1.dp
 private val TOOLBAR_CLEARANCE = 16.dp
 private const val ZOOM_DECODE_FACTOR = 2.5f
 

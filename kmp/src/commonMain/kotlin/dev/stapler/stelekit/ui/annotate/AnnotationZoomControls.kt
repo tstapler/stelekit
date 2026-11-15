@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 internal const val ZOOM_IN_DESCRIPTION = "Zoom in"
 internal const val ZOOM_OUT_DESCRIPTION = "Zoom out"
 internal const val ZOOM_FIT_DESCRIPTION = "Fit image to screen"
+private const val ZOOM_FLOOR_EPSILON = 1e-3f
 
 /**
  * Zoom in, zoom out and fit buttons for users who cannot pinch (TalkBack, desktop). [view] is read
@@ -38,7 +39,7 @@ internal fun AnnotationZoomControls(
         ) { Text("+") }
         FilledTonalIconButton(
             onClick = onZoomOut,
-            enabled = !current.isFit,
+            enabled = current.scale > MIN_VIEW_SCALE + ZOOM_FLOOR_EPSILON,
             modifier = Modifier.semantics { contentDescription = ZOOM_OUT_DESCRIPTION },
         ) { Text("−") }
         FilledTonalIconButton(
