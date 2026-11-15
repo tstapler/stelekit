@@ -15,6 +15,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -62,6 +63,12 @@ internal class SyncSingleFlight(
 ) {
     private val logger = Logger("SyncSingleFlight")
 
+    /** Last key this service resolved; lets the synchronous driver ask the gate whether anything holds the repository. */
+    @kotlin.concurrent.Volatile private var lastKey: String? = null
+
+    /** True while any operation (this service's, a worker's or a quiesce hold) holds the repository gate. */
+    fun isGateHeld(): Boolean = lastKey?.let(gate::isHeld) == true
+
     /** Reads config and derives the canonical key; retries once and never lets a transient failure pick another key. */
     suspend fun resolveGateKey(graphId: String): GateKeyResolution {
         var last = "unknown"
@@ -72,7 +79,10 @@ internal class SyncSingleFlight(
                     is Either.Right -> {
                         val config = r.value ?: return GateKeyResolution.NoConfig
                         val key = withContext(PlatformDispatcher.IO) { repository.gateKeyFor(config) }
-                        if (key != null) return GateKeyResolution.Resolved(key, config)
+                        if (key != null) {
+                            lastKey = key
+                            return GateKeyResolution.Resolved(key, config)
+                        }
                         last = "cannot resolve the git directory of ${config.repoRoot.value}"
                     }
                 }
@@ -133,6 +143,7 @@ internal class SyncSingleFlight(
 
     private fun <T> coalesced(key: String, spec: RunSpec, fail: (DomainError.GitError) -> T, heldBy: SyncOrigin?): T {
         val queued = spec.rerunOnLoss && gate.requestRerun(key)
+        if (queued) inFlight.update { it?.copy(followUpQueued = true) }
         logger.info("decision=coalesced key=$key origin=${spec.origin} heldBy=$heldBy followUpQueued=$queued")
         return fail(DomainError.GitError.SyncInProgress(heldBy))
     }
@@ -151,7 +162,7 @@ internal class SyncSingleFlight(
         var counted = false
         var heartbeat: Job? = null
         try {
-            inFlight.value = SyncRunInfo(lease.origin, clock(), spec.graphId)
+            inFlight.value = SyncRunInfo(lease.origin, clock(), spec.graphId, gate.isRerunRequested(lease.key))
             if (resolution is GateKeyResolution.Unreadable) return unreadable(resolution.reason)
             if (config != null) {
                 val refusal = claim(config, OwnedOperationInfo(spec.opName, lease.origin))

@@ -228,4 +228,30 @@ class GitSyncServiceConflictResolutionTest {
 
         assertEquals(null, service.localStatus.value)
     }
+
+    /** U-E1-19: the gate is not held across ConflictPending, so a tick is refused by the repository-state guard instead. */
+    @Test
+    fun tickDuringPendingMerge_should_BeSkipped_When_ConflictPending_AndGateReleased() = runTest {
+        val gate = RepoOpGate()
+        var merging = true
+        val repo = object : ResolvingGitRepository() {
+            override fun gateKeyFor(config: GitConfig): String = "k"
+            override suspend fun repositoryHealth(config: GitConfig) =
+                if (merging) RepositoryHealth(safe = false, state = "MERGING") else RepositoryHealth.Clean
+            override suspend fun status(config: GitConfig) = GitStatus(false, emptyList(), emptyList()).right()
+        }
+        val service = buildGitSyncTestService(
+            gitRepository = repo,
+            configRepository = StubConfigRepository(Either.Right(sampleConfig)),
+            isOnline = { true },
+            gate = gate,
+        )
+
+        val tick = service.sync("test-graph", SyncTrigger.Automatic)
+
+        assertIs<DomainError.GitError.RepairNeeded>(tick.leftOrNull())
+        assertEquals(false, gate.isHeld("k"), "a pending merge must not keep the gate")
+        merging = false
+        service.shutdown()
+    }
 }

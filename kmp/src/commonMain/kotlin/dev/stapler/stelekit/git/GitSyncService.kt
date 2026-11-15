@@ -278,7 +278,7 @@ class GitSyncService(
     @kotlin.concurrent.Volatile private var periodicGraphId: String = graphId
     private val periodicDriver = PeriodicSyncDriver(
         tick = { refreshLocalStatus(periodicGraphId); scheduled.run(periodicGraphId) },
-        scope = scope, clock = wallClockMs, isBusy = { gitSyncBusyCounter.isBusy.value },
+        scope = scope, clock = wallClockMs, isBusy = { singleFlight.isGateHeld() || gitSyncBusyCounter.isBusy.value },
         label = graphId, decision = "scheduled", launchContext = periodicSyncContext,
         random = periodicRandom, recorder = tickRunRecorder,
         constraintState = { dev.stapler.stelekit.jobs.schedule.ConstraintState(online = isOnline(), isMetered = null, charging = null) },
@@ -290,7 +290,9 @@ class GitSyncService(
     /** Runs one scheduled-sync tick now, even while paused; success clears the pause. */
     suspend fun resumeScheduledSync() = periodicDriver.resume()
 
-    private val rateLimitRetry = RateLimitRetry(scope)
+    private val rateLimitRetry = RateLimitRetry(scope, awaitFree = { g ->
+        (singleFlight.resolveGateKey(g) as? GateKeyResolution.Resolved)?.let { gate.awaitFree(it.key) }
+    })
 
     /** Publishes the state for a failed git step: rate limit (with auto-retry), expired credentials, or the plain error. */
     private fun publishFailure(
@@ -844,25 +846,26 @@ class GitSyncService(
      * Aborts an in-progress git merge, leaving the repository in its pre-merge state.
      * Call this when the user cancels conflict resolution.
      */
-    suspend fun abortActiveMerge(graphId: String, confirm: suspend (AbortPreservation) -> Boolean = { true }): Either<DomainError.GitError, Unit> =
-        singleFlight.run(
+    suspend fun abortActiveMerge(graphId: String, confirm: suspend (AbortPreservation) -> Boolean = { true }): Either<DomainError.GitError, Unit> {
+        // The confirm dialog can stay open for minutes, so it runs before the gate is taken; the gated step re-checks.
+        val config = when (val result = configRepository.getConfig(graphId)) {
+            is Either.Left -> return DomainError.GitError.CommitFailed(result.value.message).left()
+            is Either.Right -> result.value
+        } ?: return Unit.right()
+        val prepared = withContext(PlatformDispatcher.IO) { guardedAbort.prepare(graphId, config) }.getOrElse { return it.left() }
+        prepared.preservation?.let { if (!confirm(it)) return DomainError.GitError.CommitFailed("Abort cancelled").left() }
+        return singleFlight.run(
             RunSpec(graphId, SyncOrigin.Resolve, "abort-merge"),
             fail = { it.left() },
             unreadable = { reason -> DomainError.GitError.CommitFailed(reason).left() },
         ) {
             withContext(PlatformDispatcher.IO) {
-                val config = when (val result = configRepository.getConfig(graphId)) {
-                    is Either.Left -> return@withContext DomainError.GitError.CommitFailed(
-                        result.value.message
-                    ).left()
-                    is Either.Right -> result.value
-                } ?: return@withContext Unit.right()
-    
-                guardedAbort.abort(graphId, config, confirm).also { result ->
+                guardedAbort.execute(config, prepared).also { result ->
                     if (result.isRight()) _syncState.value = SyncState.Idle
                 }
             }
         }
+    }
 
 
     /**

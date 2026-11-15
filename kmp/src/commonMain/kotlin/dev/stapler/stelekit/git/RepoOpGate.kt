@@ -45,6 +45,9 @@ class RepoOpGate {
 
     fun isHeld(key: String): Boolean = key in state.value
 
+    /** True while a coalesced press has queued the one follow-up for [key]. */
+    fun isRerunRequested(key: String): Boolean = state.value[key]?.rerun == true
+
     /** Origin of the current holder, or null when free. */
     fun heldBy(key: String): SyncOrigin? = state.value[key]?.lease?.origin
 

@@ -174,7 +174,7 @@ class GitSyncServiceSingleFlightTest {
         val second = withTimeout(20_000) { svc.sync("g") }
 
         assertEquals(DomainError.GitError.SyncInProgress(SyncOrigin.UiPress), second.leftOrNull())
-        assertEquals(before, svc.inFlight.value)
+        assertEquals(before.copy(followUpQueued = true), svc.inFlight.value, "only the queued-follow-up bit may change")
         assertEquals(SyncState.Committing, svc.syncState.value)
         git.releaseBlocked()
         withTimeout(20_000) { first.await() }
@@ -322,5 +322,98 @@ class GitSyncServiceSingleFlightTest {
         assertTrue(events.count { it == "touch" } >= 3, "heartbeat must beat during the run: $events")
         assertEquals("end", events.last(), "no touch may follow the record end: $events")
         assertEquals(1, events.count { it == "end" })
+    }
+
+    @Test
+    fun inFlight_should_CarryFollowUpQueuedOnlyForAQueuedUiPress() = runBlocking<Unit> {
+        val git = OkRepository()
+        val svc = service(git)
+        val first = svc.startBlockedFirstSync(git)
+        assertEquals(false, svc.inFlight.value?.followUpQueued)
+
+        svc.sync("g", SyncTrigger.Automatic)
+        svc.sync("g", SyncTrigger.Manual, liftMassChangeGuard = true)
+        assertEquals(false, svc.inFlight.value?.followUpQueued, "a scheduled or lifted loser queues nothing")
+
+        svc.sync("g")
+        assertEquals(true, svc.inFlight.value?.followUpQueued)
+        assertEquals(SyncOrigin.UiPress, svc.inFlight.value?.origin)
+
+        git.fetchGate?.complete(Unit)
+        withTimeout(20_000) { first.await() }
+        awaitFetches(git, 2)
+        settle()
+        assertNull(svc.inFlight.value)
+    }
+
+    @Test
+    fun isGateHeld_should_FollowTheRepositoryGate_IncludingAForeignHolder() = runBlocking<Unit> {
+        val flight = SyncSingleFlight(
+            gate, OkRepository(), StubConfigRepository(Either.Right(config)), GitSyncBusyCounter(),
+            kotlinx.coroutines.flow.MutableStateFlow(null), { 0L }, publishError = {},
+            launchFollowUp = { _, _ -> }, scope = scope,
+        )
+        assertFalse(flight.isGateHeld())
+        flight.resolveGateKey("g")
+        assertFalse(flight.isGateHeld())
+
+        val foreign = checkNotNull(gate.tryAcquire(key(), SyncOrigin.Worker))
+        assertTrue(flight.isGateHeld(), "a worker's hold must make the periodic driver skip")
+        gate.releaseOrHandOff(foreign)
+        assertFalse(flight.isGateHeld())
+    }
+
+    /** In-memory byte store so the abort's recovery snapshot can be written and verified. */
+    private class MemoryFs : dev.stapler.stelekit.git.testsupport.StubFileSystem() {
+        private val files = java.util.concurrent.ConcurrentHashMap<String, ByteArray>()
+        override fun writeFileBytes(path: String, data: ByteArray): Boolean { files[path] = data; return true }
+        override fun readFileBytes(path: String): ByteArray? = files[path]
+    }
+
+    private class AbortRepository : OkRepository() {
+        @Volatile var bytes: ByteArray = "mine".toByteArray()
+        override suspend fun editsAtRiskOfReset(config: GitConfig) = listOf("a.md").right()
+        override suspend fun readWorkingBytes(config: GitConfig, path: String): ByteArray = bytes
+        override suspend fun writeWorkingBytes(config: GitConfig, path: String, bytes: ByteArray): Boolean = true
+    }
+
+    private fun abortService(git: GitRepository): GitSyncService =
+        buildGitSyncTestService(
+            gitRepository = git,
+            configRepository = StubConfigRepository(Either.Right(config)),
+            fileSystem = MemoryFs(),
+            isOnline = { true },
+            gate = gate,
+        ).also { services += it }
+
+    @Test
+    fun confirmDialog_should_NotHoldGate_When_AwaitingUserConfirm() = runBlocking<Unit> {
+        val git = AbortRepository()
+        val svc = abortService(git)
+        val confirmShown = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val answer = kotlinx.coroutines.CompletableDeferred<Boolean>()
+
+        val abort = scope.async { svc.abortActiveMerge("g") { confirmShown.complete(Unit); answer.await() } }
+        withTimeout(20_000) { confirmShown.await() }
+
+        assertFalse(gate.isHeld(key()), "an open dialog must not hold the gate")
+        assertTrue(svc.sync("g").isRight(), "a tick during the dialog must run")
+
+        answer.complete(true)
+        assertTrue(withTimeout(20_000) { abort.await() }.isRight())
+        assertTrue("abort" in git.calls)
+        assertFalse(gate.isHeld(key()))
+    }
+
+    @Test
+    fun abort_should_RefuseAndResetNothing_When_FilesChangeWhileTheDialogIsOpen() = runBlocking<Unit> {
+        val git = AbortRepository()
+        val svc = abortService(git)
+
+        val result = svc.abortActiveMerge("g") { git.bytes = "edited later".toByteArray(); true }
+
+        assertTrue(result.isLeft())
+        assertFalse("abort" in git.calls, "unconfirmed edits must not be reset")
+        assertFalse(gate.isHeld(key()))
     }
 }
