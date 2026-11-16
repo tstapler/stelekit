@@ -8,7 +8,7 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 
 /** Small dense-matrix and Student-t helpers for the constraint fits. Pure; no dependencies. */
-internal object FitStatistics {
+object FitStatistics {
     /** Two-sided 99 percent (`t_{0.995}`) critical values for 1..30 degrees of freedom (standard tables). */
     private val T995 = doubleArrayOf(
         63.657, 9.925, 5.841, 4.604, 4.032, 3.707, 3.499, 3.355, 3.250, 3.169,

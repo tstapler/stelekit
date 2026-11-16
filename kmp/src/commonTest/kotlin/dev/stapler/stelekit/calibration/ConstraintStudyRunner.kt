@@ -5,22 +5,28 @@
 package dev.stapler.stelekit.calibration
 
 import dev.stapler.stelekit.model.NormalizedPoint
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.round
 
 /** A tapped point as a fraction of the photo's width and height, the same normalisation the editor stores. */
-@Serializable
 data class StudyPoint(val x: Double, val y: Double)
 
 /** One tape-measured distance: where it was tapped and its true length in metres. */
-@Serializable
 data class StudyDistance(val id: String, val p1: StudyPoint, val p2: StudyPoint, val trueMeters: Double)
 
 /** [set] is "A" (tunes thresholds) or "B" (never seen by tuning, decides the verdict). */
-@Serializable
 data class StudyPhoto(
     val id: String,
     val set: String,
@@ -31,7 +37,6 @@ data class StudyPhoto(
     val distances: List<StudyDistance>,
 )
 
-@Serializable
 data class StudyFixture(val photos: List<StudyPhoto>)
 
 /** One withheld distance: its true length and the absolute error of a solver's prediction, both in metres. */
@@ -146,11 +151,61 @@ object ConstraintStudyRunner {
     const val GRADIENT_NAME = "gradient-tier"
     val SOLVER_NAMES = listOf(SINGLE_SCALE_NAME, MEAN_SCALE_NAME, DEFAULT_NAME, GRADIENT_NAME)
 
-    private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
+    // Hand-rolled JSON: the Bazel commonTest target has no kotlinx-serialization compiler plugin.
+    private val json = Json { prettyPrint = true }
 
-    fun parse(text: String): StudyFixture = json.decodeFromString(StudyFixture.serializer(), text)
+    fun parse(text: String): StudyFixture =
+        StudyFixture(json.parseToJsonElement(text).jsonObject.getValue("photos").jsonArray.map { photo(it.jsonObject) })
 
-    fun toJson(fixture: StudyFixture): String = json.encodeToString(StudyFixture.serializer(), fixture)
+    fun toJson(fixture: StudyFixture): String = json.encodeToString(
+        JsonElement.serializer(),
+        JsonObject(mapOf("photos" to JsonArray(fixture.photos.map(::photoJson)))),
+    )
+
+    private fun point(o: JsonObject) = StudyPoint(o.getValue("x").jsonPrimitive.content.toDouble(), o.getValue("y").jsonPrimitive.content.toDouble())
+
+    private fun photo(o: JsonObject) = StudyPhoto(
+        id = o.getValue("id").jsonPrimitive.content,
+        set = o.getValue("set").jsonPrimitive.content,
+        doorFrame = o["doorFrame"]?.jsonPrimitive?.booleanOrNull ?: false,
+        widthPx = o.getValue("widthPx").jsonPrimitive.content.toDouble(),
+        heightPx = o.getValue("heightPx").jsonPrimitive.content.toDouble(),
+        exifFocal35mmEq = o["exifFocal35mmEq"]?.jsonPrimitive?.doubleOrNull,
+        distances = o.getValue("distances").jsonArray.map { d ->
+            val dob = d.jsonObject
+            StudyDistance(
+                dob.getValue("id").jsonPrimitive.content,
+                point(dob.getValue("p1").jsonObject),
+                point(dob.getValue("p2").jsonObject),
+                dob.getValue("trueMeters").jsonPrimitive.content.toDouble(),
+            )
+        },
+    )
+
+    private fun pointJson(p: StudyPoint) = JsonObject(mapOf("x" to JsonPrimitive(p.x), "y" to JsonPrimitive(p.y)))
+
+    private fun photoJson(p: StudyPhoto) = JsonObject(
+        mapOf(
+            "id" to JsonPrimitive(p.id),
+            "set" to JsonPrimitive(p.set),
+            "doorFrame" to JsonPrimitive(p.doorFrame),
+            "widthPx" to JsonPrimitive(p.widthPx),
+            "heightPx" to JsonPrimitive(p.heightPx),
+            "exifFocal35mmEq" to (p.exifFocal35mmEq?.let { JsonPrimitive(it) } ?: JsonNull),
+            "distances" to JsonArray(
+                p.distances.map {
+                    JsonObject(
+                        mapOf(
+                            "id" to JsonPrimitive(it.id),
+                            "p1" to pointJson(it.p1),
+                            "p2" to pointJson(it.p2),
+                            "trueMeters" to JsonPrimitive(it.trueMeters),
+                        ),
+                    )
+                },
+            ),
+        ),
+    )
 
     /** The shipped default (`FitOptions()` follows [ConstraintTuning.GRADIENT_DEFAULT_ON]) and the GRADIENT tier forced on. */
     private fun calibrated(options: FitOptions) = HeldOutSolver { scene, train, target ->

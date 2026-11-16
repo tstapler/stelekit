@@ -16,7 +16,7 @@ import kotlin.math.max
 import kotlin.math.sqrt
 
 /** PER_AXIS: two metric scales along the image axes, by linear least squares on squared lengths (optional, off by default). */
-internal object PerAxisTier {
+object PerAxisTier {
     private class Sol(val a: Double, val b: Double)
 
     fun evaluate(segs: List<Seg>, frame: CaptureFrameInfo): Either<CalibrationFailure, TierEval> {
@@ -61,7 +61,7 @@ internal object PerAxisTier {
 }
 
 /** GRADIENT and GRADIENT_AND_K: the focal-free scale-gradient tilt model behind its identifiability and significance gates. */
-internal object GradientTier {
+object GradientTier {
     @Suppress("ReturnCount", "LongMethod")
     fun evaluate(tier: FitTier, segs: List<Seg>, frame: CaptureFrameInfo, options: FitOptions, scaleMpp: Double): Either<CalibrationFailure, TierEval> {
         val n = segs.size
@@ -131,7 +131,7 @@ internal object GradientTier {
     }
 
     /** Midpoints must span the frame in both axes: the gradient is the scale difference between places. */
-    internal fun spreadGate(segs: List<Seg>, frame: CaptureFrameInfo): CalibrationFailure? {
+    fun spreadGate(segs: List<Seg>, frame: CaptureFrameInfo): CalibrationFailure? {
         val diag = hypot(frame.widthPx, frame.heightPx)
         var span = 0.0
         for (i in segs.indices) for (j in i + 1 until segs.size) {

@@ -12,7 +12,7 @@ import kotlin.math.ln
 import kotlin.math.sqrt
 
 /** One known distance prepared for fitting: raw taps, taps undistorted with the current `k`, and a noise prior. */
-internal class Seg(
+class Seg(
     val id: String,
     val meters: Double,
     val raw1: NormalizedPoint,
@@ -28,14 +28,14 @@ internal class Seg(
 }
 
 /** Parameters of the focal-free tilt model `w0 * p / (1 + g . p)` in half-diagonal units; [k] only for the k tier. */
-internal class GradSol(val lnW0: Double, val gx: Double, val gy: Double, val k: Double) {
+class GradSol(val lnW0: Double, val gx: Double, val gy: Double, val k: Double) {
     val magnitude: Double get() = hypot(gx, gy)
 }
 
-internal class LmResult(val sol: GradSol, val converged: Boolean, val ssr: Double, val iterations: Int)
+class LmResult(val sol: GradSol, val converged: Boolean, val ssr: Double, val iterations: Int)
 
 /** Standard error of the gradient along its own direction, and of `k`, from the fitted covariance. */
-internal class GradSignificance(val gradient: Double, val gradientSe: Double, val kSe: Double?, val rankOk: Boolean) {
+class GradSignificance(val gradient: Double, val gradientSe: Double, val kSe: Double?, val rankOk: Boolean) {
     val t: Double get() = if (gradientSe > 0.0) gradient / gradientSe else 0.0
 }
 
@@ -43,7 +43,7 @@ internal class GradSignificance(val gradient: Double, val gradientSe: Double, va
  * Levenberg-Marquardt over `(ln w0, gx, gy[, k])` with a numeric Jacobian (ADR-003 decision 5). Residuals are
  * relative log-length errors divided by each constraint's noise prior. No focal length enters the base model.
  */
-internal class GradientSolver(
+class GradientSolver(
     private val widthPx: Double,
     private val heightPx: Double,
     private val withK: Boolean,

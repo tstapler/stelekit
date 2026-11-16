@@ -23,7 +23,7 @@ import kotlin.math.min
 import kotlin.math.sqrt
 
 /** One tier's answer on one input, whether or not it is selected. */
-internal class TierEval(
+class TierEval(
     val tier: FitTier,
     val signedResidualsPct: List<Double>,
     val loo: Double?,
@@ -231,7 +231,7 @@ object ConstraintCalibrator {
     internal fun roundTenth(v: Double) = kotlin.math.round(v * ROUND) / ROUND
 
     /** Why [frame] cannot carry the focal-free tilt model, or null when it can (ADR-003 crop and zoom rule). */
-    internal fun cropReason(frame: CaptureFrameInfo): CropReason? {
+    fun cropReason(frame: CaptureFrameInfo): CropReason? {
         val zoom = frame.zoomRatio
         if (zoom != null && abs(zoom - 1.0) > ZOOM_EPSILON) return CropReason.ZOOM_RATIO
         val digital = frame.exifDigitalZoomRatio

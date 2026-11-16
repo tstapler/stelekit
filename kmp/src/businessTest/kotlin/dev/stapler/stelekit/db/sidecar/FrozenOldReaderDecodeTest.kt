@@ -6,12 +6,13 @@ package dev.stapler.stelekit.db.sidecar
 
 import dev.stapler.stelekit.model.CalibrationMethod
 import dev.stapler.stelekit.model.GeometryCalibrationCodec
-import dev.stapler.stelekit.model.LensCalibration
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.double
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -19,97 +20,81 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Frozen copies of the v0.113.3 data classes (as shipped before multi-distance calibration). Do not edit. */
-@Serializable
-private data class OldSidecarFile(
-    @SerialName("schemaVersion") val schemaVersion: Int = 1,
-    @SerialName("imageAnnotation") val imageAnnotation: OldSidecarImageAnnotation,
-    @SerialName("measurements") val measurements: List<OldSidecarMeasurement> = emptyList(),
-)
+/**
+ * Frozen key sets of the v0.113.3 data classes (as shipped before multi-distance calibration). Do not edit.
+ * An ignoreUnknownKeys decode followed by a re-save keeps exactly these keys, so a JSON projection onto them
+ * models the old reader without the serialization compiler plugin, which the Bazel business_tests target lacks.
+ */
+private object OldReader {
+    private val file = setOf("schemaVersion", "imageAnnotation", "measurements")
+    private val annotation = setOf(
+        "uuid", "blockUuid", "pageUuid", "graphPath", "filePath", "importedAtMs", "calibrationMethod", "pixelsPerMeter",
+        "calibrationConfidencePct", "calibrationBasisVersion", "calibrationLens", "calibrationGeometry", "unit",
+    )
+    private val measurement = setOf(
+        "uuid", "imageUuid", "annotationType", "normalizedPoints", "valueMeters", "valueDisplay", "label", "colorHex", "bleDeviceId",
+    )
+    private val geometry = setOf("heightOffsetMeters", "cameraDistanceMeters", "plane")
+    private val plane = setOf("homography", "referenceName", "widthMeters", "heightMeters", "checkResidualMm")
 
-@Serializable
-private data class OldSidecarImageAnnotation(
-    @SerialName("uuid") val uuid: String,
-    @SerialName("blockUuid") val blockUuid: String,
-    @SerialName("pageUuid") val pageUuid: String,
-    @SerialName("graphPath") val graphPath: String,
-    @SerialName("filePath") val filePath: String,
-    @SerialName("importedAtMs") val importedAtMs: Long = 0L,
-    @SerialName("calibrationMethod") val calibrationMethod: String = "NONE",
-    @SerialName("pixelsPerMeter") val pixelsPerMeter: Double = 0.0,
-    @SerialName("calibrationConfidencePct") val calibrationConfidencePct: Int = 0,
-    @SerialName("calibrationBasisVersion") val calibrationBasisVersion: Int = 0,
-    @SerialName("calibrationLens") val calibrationLens: LensCalibration? = null,
-    @SerialName("calibrationGeometry") val calibrationGeometry: OldGeometryCalibration? = null,
-    @SerialName("unit") val unit: String = "METERS",
-)
+    private fun JsonObject.keep(keys: Set<String>) = JsonObject(filterKeys { it in keys })
 
-@Serializable
-private data class OldSidecarMeasurement(
-    @SerialName("uuid") val uuid: String,
-    @SerialName("imageUuid") val imageUuid: String,
-    @SerialName("annotationType") val annotationType: String,
-    @SerialName("normalizedPoints") val normalizedPoints: List<SidecarPoint> = emptyList(),
-    @SerialName("valueMeters") val valueMeters: Double? = null,
-    @SerialName("valueDisplay") val valueDisplay: String? = null,
-    @SerialName("label") val label: String? = null,
-    @SerialName("colorHex") val colorHex: String = "#FF0000",
-    @SerialName("bleDeviceId") val bleDeviceId: String? = null,
-)
+    fun geometry(raw: JsonObject): JsonObject {
+        val kept = raw.keep(geometry)
+        val p = kept["plane"] as? JsonObject ?: return kept
+        return JsonObject(kept + ("plane" to p.keep(plane)))
+    }
 
-@Serializable
-private data class OldGeometryCalibration(
-    val heightOffsetMeters: Double = 0.0,
-    val cameraDistanceMeters: Double? = null,
-    val plane: OldPlaneCalibration? = null,
-)
-
-@Serializable
-private data class OldPlaneCalibration(
-    val homography: List<Double>,
-    val referenceName: String,
-    val widthMeters: Double,
-    val heightMeters: Double,
-    val checkResidualMm: Double? = null,
-)
+    fun file(raw: JsonObject): JsonObject {
+        val kept = raw.keep(file).toMutableMap()
+        val ann = (kept.getValue("imageAnnotation") as JsonObject).keep(annotation).toMutableMap()
+        (ann["calibrationGeometry"] as? JsonObject)?.let { ann["calibrationGeometry"] = geometry(it) }
+        kept["imageAnnotation"] = JsonObject(ann)
+        (kept["measurements"] as? JsonArray)?.let { kept["measurements"] = JsonArray(it.map { m -> (m as JsonObject).keep(measurement) }) }
+        return JsonObject(kept)
+    }
+}
 
 /** Task 3.2c2 (I-E3-02): a v0.113.3 reader reads new data as calibrated and only loses the new keys on re-save. */
 class FrozenOldReaderDecodeTest {
-    private val oldJson = Json { ignoreUnknownKeys = true; prettyPrint = false }
+    private fun JsonObject.obj(key: String) = getValue(key).jsonObject
+    private fun JsonObject.num(key: String) = getValue(key).jsonPrimitive.double
 
     /** The old `usableScale` rule: a method other than NONE and a positive finite scale. */
-    private fun oldUsable(a: OldSidecarImageAnnotation): Boolean {
-        val method = runCatching { CalibrationMethod.valueOf(a.calibrationMethod) }.getOrDefault(CalibrationMethod.NONE)
-        return method != CalibrationMethod.NONE && a.pixelsPerMeter.isFinite() && a.pixelsPerMeter > 0.0
+    private fun oldUsable(annotation: JsonObject): Boolean {
+        val method = runCatching { CalibrationMethod.valueOf(annotation.getValue("calibrationMethod").jsonPrimitive.content) }
+            .getOrDefault(CalibrationMethod.NONE)
+        val scale = annotation.num("pixelsPerMeter")
+        return method != CalibrationMethod.NONE && scale.isFinite() && scale > 0.0
     }
 
-    private fun decode(text: String) = oldJson.decodeFromString(OldSidecarFile.serializer(), text)
+    private fun decode(text: String) = OldReader.file(Json.parseToJsonElement(text).jsonObject)
 
     private val droppedKeys = listOf("constraints", "\"fit\"", "\"kind\"", "valueSource", "originalValueMeters")
 
     @Test
     fun frozen0113Decoder_should_ReadNewSidecarAndDbJsonAsCalibrated_WithOverridesLostOnlyOnResave() {
         val file = decode(SidecarFixtures.V2)
-        val annotation = file.imageAnnotation
+        val annotation = file.obj("imageAnnotation")
         assertTrue(oldUsable(annotation))
-        assertEquals(1843.7512345, annotation.pixelsPerMeter)
-        val plane = assertNotNull(annotation.calibrationGeometry?.plane)
-        assertEquals(9, plane.homography.size)
-        assertTrue(plane.widthMeters > 0.0 && plane.heightMeters > 0.0)
-        assertNull(plane.checkResidualMm)
-        assertEquals(0.9, file.measurements.single().valueMeters)
+        assertEquals(1843.7512345, annotation.num("pixelsPerMeter"))
+        val plane = annotation.obj("calibrationGeometry").obj("plane")
+        assertEquals(9, plane.getValue("homography").jsonArray.size)
+        assertTrue(plane.num("widthMeters") > 0.0 && plane.num("heightMeters") > 0.0)
+        assertNull(plane["checkResidualMm"])
+        assertEquals(0.9, file.getValue("measurements").jsonArray.single().jsonObject.num("valueMeters"))
 
-        val resaved = oldJson.encodeToString(OldSidecarFile.serializer(), file)
+        val resaved = file.toString()
         droppedKeys.forEach { assertFalse(it in resaved, "$it survived an old-reader re-save: $resaved") }
         assertTrue("\"pixelsPerMeter\":1843.7512345" in resaved && "\"homography\"" in resaved)
     }
 
     @Test
     fun scaleTierFit_should_NotBeReadAsUncalibrated_ByTheOldLoader() {
-        val file = decode(SidecarFixtures.V2_SCALE)
-        assertTrue(oldUsable(file.imageAnnotation))
-        assertNull(file.imageAnnotation.calibrationGeometry?.plane)
-        assertEquals(CalibrationMethod.MANUAL_REFERENCE, CalibrationMethod.valueOf(file.imageAnnotation.calibrationMethod))
+        val annotation = decode(SidecarFixtures.V2_SCALE).obj("imageAnnotation")
+        assertTrue(oldUsable(annotation))
+        assertNull(annotation["calibrationGeometry"]?.jsonObject?.get("plane"))
+        assertEquals(CalibrationMethod.MANUAL_REFERENCE, CalibrationMethod.valueOf(annotation.getValue("calibrationMethod").jsonPrimitive.content))
         assertFalse(CalibrationMethod.entries.any { it.name in setOf("CONSTRAINT_FIT", "KNOWN_DISTANCES") })
     }
 
@@ -120,8 +105,8 @@ class FrozenOldReaderDecodeTest {
         val current = assertNotNull(GeometryCalibrationCodec.decode(text))
         assertEquals(1, current.constraints.size)
         assertNotNull(current.fit)
-        val old = oldJson.decodeFromString(OldGeometryCalibration.serializer(), text)
-        assertEquals(0.002, old.heightOffsetMeters)
-        assertNotNull(old.plane)
+        val old = OldReader.geometry(raw)
+        assertEquals(0.002, old.num("heightOffsetMeters"))
+        assertNotNull(old["plane"])
     }
 }

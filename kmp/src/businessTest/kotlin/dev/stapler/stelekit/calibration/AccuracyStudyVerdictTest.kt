@@ -70,10 +70,11 @@ class AccuracyStudyVerdictTest {
 
     @Test
     fun accuracyStudyDoc_should_EndWithExactlyOneOfTheTwoVerdictsAndListAtLeast5RealPhotosWith6DistancesEach() {
-        val text = DocRepoLocator.repoRoot
-            .resolve("project_plans/sync-lock-and-image-annotator/implementation/accuracy-study.md")
-            .takeIf { it.isFile }?.readText()
-            ?: DocRepoLocator::class.java.classLoader.getResourceAsStream("accuracy-study.md")?.bufferedReader()?.readText()
+        // Bazel bundles the doc as a classpath resource (repoRoot cannot resolve there); Gradle reads the real file.
+        val text = DocRepoLocator::class.java.classLoader.getResourceAsStream("accuracy-study.md")?.bufferedReader()?.readText()
+            ?: DocRepoLocator.repoRoot
+                .resolve("project_plans/sync-lock-and-image-annotator/implementation/accuracy-study.md")
+                .takeIf { it.isFile }?.readText()
             ?: error("accuracy-study.md not found")
         val audit = AccuracyStudyAudit.audit(text)
         assertEquals(emptyList(), audit.violations)
