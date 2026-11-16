@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.114.0](https://github.com/tstapler/stelekit/compare/v0.113.3...v0.114.0) (2026-11-16)
+
+
+### Features
+
+* **annotator:** edit measurement values and multi-distance calibration ([#679](https://github.com/tstapler/stelekit/issues/679)) ([5dccd04](https://github.com/tstapler/stelekit/commit/5dccd04336a1089737adf980b19ec734cc2cf7b2))
+* **annotator:** one-shot tools, auto-return to Select, pasteboard zoom-out, accessible toolbar (E2) ([#678](https://github.com/tstapler/stelekit/issues/678)) ([657e1ca](https://github.com/tstapler/stelekit/commit/657e1ca988de8b2f84605fdff7e55e85cca68c0e))
+* **camera:** lens switching and capture lens metadata ([#680](https://github.com/tstapler/stelekit/issues/680)) ([36cc2c2](https://github.com/tstapler/stelekit/commit/36cc2c286631a1b2e36272839234dc85751a4331))
+
+
+### Bug Fixes
+
+* **sync:** round-2 review of [#682](https://github.com/tstapler/stelekit/issues/682) (claim atomicity, wired lock removal, mac/win liveness, reload unit) ([#683](https://github.com/tstapler/stelekit/issues/683)) ([b314907](https://github.com/tstapler/stelekit/commit/b314907c8c2f65d7139b257068a62a9d9a4109cd))
+* **sync:** single-flight gate and safe lock recovery ([#682](https://github.com/tstapler/stelekit/issues/682)) ([abba657](https://github.com/tstapler/stelekit/commit/abba65718b4d31a44827d243289eadc5e81e52da))
+
 ## [0.113.3](https://github.com/tstapler/stelekit/compare/v0.113.2...v0.113.3) (2026-11-14)
 
 
