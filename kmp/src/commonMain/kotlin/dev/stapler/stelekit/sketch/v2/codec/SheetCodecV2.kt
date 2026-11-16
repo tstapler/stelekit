@@ -118,7 +118,7 @@ object SheetCodecV2 {
         sb.append(",\"extras\":").append(canonical(doc.extras, limits).bind())
         sb.append(",\"layers\":").append(canonical(JsonArray(scene.layers.map { ElementWriter().layer(it).bind() }), limits).bind())
         if (!doc.nameCounters.isEmpty()) {
-            val counters = JsonObject(doc.nameCounters.issued.toSortedMap().mapValues { JsonPrimitive(it.value) })
+            val counters = JsonObject(doc.nameCounters.issued.entries.sortedBy { it.key }.associate { it.key to JsonPrimitive(it.value) })
             sb.append(",\"nameCounters\":").append(canonical(counters, limits).bind())
         }
         sb.append('}')
