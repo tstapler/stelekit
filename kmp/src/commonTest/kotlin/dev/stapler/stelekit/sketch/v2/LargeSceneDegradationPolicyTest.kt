@@ -130,7 +130,8 @@ class LargeSceneDegradationPolicyTest {
     }
 
     @Test
-    fun recordedTargets_should_AllDrawSketchy_UntilAMeasurementSaysOtherwise() {
-        for (target in SketchTarget.entries) assertSame(SketchyStatus.Available, SketchyAvailability().status(target), "$target")
+    fun recordedTargets_should_DrawSketchy_ExceptWhereAMeasurementSaidOtherwise() {
+        for (target in SketchTarget.entries - SketchTarget.Web) assertSame(SketchyStatus.Available, SketchyAvailability().status(target), "$target")
+        assertIs<SketchyStatus.Unavailable>(SketchyAvailability().status(SketchTarget.Web))
     }
 }

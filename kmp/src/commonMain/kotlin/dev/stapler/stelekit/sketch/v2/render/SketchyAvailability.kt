@@ -49,8 +49,14 @@ class SketchyAvailability(private val entries: Map<SketchTarget, SketchyStatus> 
         /** The Sketchy draw-list build may take at most this many times the Clean build on the same host. */
         const val BUILD_RATIO_LIMIT = 2.0
 
-        /** What the measuring tests found; ADR-004 "Sketchy availability per target" records the numbers. Every target draws Sketchy. */
-        val RECORDED: Map<SketchTarget, SketchyStatus> = emptyMap()
+        /**
+         * What the measuring tests found; ADR-004 "Sketchy availability per target" records the numbers. Web is Unavailable:
+         * its 500-element Sketchy build took about 2.2x Clean (`SketchyBuildRatioWasmTest`, Task 6.2.9a). iOS is unmeasured
+         * (BUG-001 blocks its compile on this host) and stays Available until a device run says otherwise.
+         */
+        val RECORDED: Map<SketchTarget, SketchyStatus> = mapOf(
+            SketchTarget.Web to SketchyStatus.Unavailable("wasmJs Sketchy build about 2.2x Clean for 500 elements, over the 2x limit (Task 6.2.9a)"),
+        )
 
         /** The abort rule as one function, so the tests and the ADR apply the same one. */
         fun assess(measurement: SketchyMeasurement): SketchyStatus {
