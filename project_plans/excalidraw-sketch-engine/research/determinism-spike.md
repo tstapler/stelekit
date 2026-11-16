@@ -47,7 +47,22 @@ Double to Float to Double, 100,000 uniform values per range (same numbers on JVM
 | +/-16,777,216 | 0.50 |
 | +/-2^28 (SceneLimits) | 8.0 |
 
-The solver residual bar is 1e-6 (ADR-003), so Float storage drifts 30x to 4,000x past it at realistic sheet sizes: model, codec and solver stay `Double`; Float appears only at the Compose draw boundary (drift there is sub-pixel). PENDING: running the Spike 0.1.2c solver fixtures through a Float round trip needs that spike's output, which was not available; the table above is the general bound, not a fixture result.
+The solver residual bar is 1e-6 (ADR-003), so Float storage drifts 30x to 4,000x past it at realistic sheet sizes: model, codec and solver stay `Double`; Float appears only at the Compose draw boundary (drift there is sub-pixel).
+
+**Solver fixtures (Task 0.1.3d, closed 2026-11-16)**: `SolverSpikeTest.floatRoundTripOfSolvedFixturesMissesTheResidualBar` solves the 31 generated 100-constraint sketches of Spike 0.1.2 (seeds 1 and 100..129; 40 lines, Coincident/Horizontal/Vertical/Equal/Distance), translates each solution to a stated sheet offset (all those constraints are translation invariant), rounds every coordinate to Float and re-evaluates every constraint. Worst case over the 31 fixtures, from the JVM run (`./gradlew :kmp:jvmTest --tests '*SolverSpikeTest'`, printed `SPIKE_FLOAT_DRIFT_SOLVER` lines):
+
+| Sheet offset (units) | max residual, Double solution | max residual, after Float round trip | max coordinate drift |
+|---|---|---|---|
+| 0 (coordinates within about +/-40) | 1.81e-8 | 1.48e-6 | 9.5e-7 |
+| 1,000 | 1.81e-8 | 7.27e-5 | 5.8e-5 |
+| 16,000 | 1.81e-8 | 9.77e-4 | 4.9e-4 |
+| 100,000 | 1.81e-8 | 7.81e-3 | 3.9e-3 |
+| 1,048,576 | 1.81e-8 | 0.125 | 0.0625 |
+
+The Double solution meets the 1e-6 bar everywhere (its residual is the solver's stop tolerance, not the storage). The Float copy misses 1e-6 already at the origin (1.48e-6) and by 70x or more from 1,000 units on, so Float storage cannot hold a solved sketch. The test asserts the Double residual stays under 1e-6 and the Float residual exceeds 1e-5 at every offset of 1,000 or more; it also passed on wasmJs (`./gradlew :kmp:wasmJsBrowserTest -PenableJs=true --tests '*SolverSpikeTest.floatRoundTrip*'`, ChromeHeadless 146: 1 test, 0 failures; the wasm run does not capture stdout, so the wasm figures themselves are not recorded and only the assertions are evidenced there).
+
+## 1.1.2 follow-up: the wasmJs parser (2026-11-16)
+The first `CanonicalJsonTest` run on wasmJs (ChromeHeadless 146) failed `decodeOfEncode_should_EqualTheInput_*` while the corpus hashes and the fixture-scene SHA-256 passed: the codec's own shortest digits are byte-identical to JVM, but `String.toDouble()` on wasmJs does not read them back to the same double. So both halves of the platform round trip are unreliable there (the 0.1.3a note above left open which half was wrong; it is both, or at least the parser). Story 1.1.2 therefore ships its own correctly rounded parser (`DecimalParser`) beside the Burger-Dybvig printer (`ShortestDouble`); `CanonicalJsonOracleTest` matches the JDK on 200,000 random bit patterns for printing and on about 120,000 strings (shortest, exact binary expansions of up to 770 digits, random 1-40 digit decimals with exponents -340..330, subnormal boundaries) for parsing, and `CanonicalJsonTest` passes 12/12 on wasmJs. Consumers must read a decoded number with `CanonicalJson.parseDouble` / `doubleOf`, never `String.toDouble` or `JsonPrimitive.double`.
 
 ## 0.1.3e Android pixel render under Robolectric native graphics
 Same fixture (white fill, 80x40 stroked rect, "Auth" text at 20 px, bundled font), 200x100, JVM vs Robolectric (SDK 34, `GraphicsMode.NATIVE`): 306 of 20,000 pixels differ (1.5%), all in the text half of the image; the shape half (x < 100) is pixel-exact (0 differing pixels); maximum channel delta 204. Cause consistent with the 1 px line-height difference of 0.1.3b. Verdict: Robolectric native graphics is reliable for shapes and strokes (exact) and gives a usable text render with a 1 px vertical shift; recorded tolerance for Task 2.1.3c: shapes exact, text region at most 2% of pixels differing, or compare text by draw list. One run only: run-to-run determinism on Android is INFERRED, not measured. On-device parity (Story 6.2.4c) is untouched and not run.

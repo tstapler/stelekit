@@ -136,6 +136,36 @@ class SolverSpikeTest {
         assertTrue(worstRes < 1e-6)
     }
 
+    /**
+     * Spike 0.1.3d (cross-link 0.1.2c): the solved 100-constraint fixtures (seeds 1 and 100..129) pushed through a
+     * Float round trip. The constraints are translation invariant, so each solution is translated to a stated sheet
+     * offset in Double (exact to about 1e-10 here) and then rounded to Float coordinate by coordinate.
+     */
+    @Test
+    fun floatRoundTripOfSolvedFixturesMissesTheResidualBar() {
+        val solver = LmSolver()
+        val offsets = doubleArrayOf(0.0, 1_000.0, 16_000.0, 100_000.0, 1_048_576.0)
+        val worstDouble = DoubleArray(offsets.size); val worstFloat = DoubleArray(offsets.size); val worstDrift = DoubleArray(offsets.size)
+        for (seed in listOf(1) + (100 until 130)) {
+            val p = hundredConstraintProblem(seed)
+            val res = solver.solve(p.constraints, p.start)
+            assertTrue(res is SpikeResult.Solved, "seed $seed: ${res::class.simpleName}")
+            offsets.forEachIndexed { k, off ->
+                val moved = DoubleArray(res.x.size) { res.x[it] + off }
+                val viaFloat = DoubleArray(moved.size) { moved[it].toFloat().toDouble() }
+                worstDouble[k] = max(worstDouble[k], maxResidual(p.constraints, moved))
+                worstFloat[k] = max(worstFloat[k], maxResidual(p.constraints, viaFloat))
+                for (i in moved.indices) worstDrift[k] = max(worstDrift[k], abs(moved[i] - viaFloat[i]))
+            }
+        }
+        offsets.forEachIndexed { k, off ->
+            println("SPIKE_FLOAT_DRIFT_SOLVER offset=$off worstDoubleResidual=${worstDouble[k]} worstFloatResidual=${worstFloat[k]} worstCoordDrift=${worstDrift[k]}")
+            assertTrue(worstDouble[k] < 1e-6, "Double residual ${worstDouble[k]} at offset $off")
+        }
+        // At every realistic sheet offset (>= 1,000 units) the Float copy misses the 1e-6 acceptance bar by 10x or more.
+        for (k in 1 until offsets.size) assertTrue(worstFloat[k] > 1e-5, "Float residual ${worstFloat[k]} at offset ${offsets[k]}")
+    }
+
     @Test
     fun redundantDuplicateHorizontalIsClassifiedAndDofMatchesAnalytic() {
         val sk = SpikeSketch()
