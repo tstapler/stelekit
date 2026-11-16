@@ -167,7 +167,8 @@ internal class SyncSingleFlight(
                 return unreadable(resolution.reason)
             }
             if (config != null) {
-                val refusal = claim(config, OwnedOperationInfo(spec.opName, lease.origin))
+                // Uncancellable: a claim that completed must reach `claimed = true`, or the run's record and registry entry leak.
+                val refusal = withContext(NonCancellable) { claim(config, OwnedOperationInfo(spec.opName, lease.origin)) }
                 if (refusal != null) {
                     logger.info("sync origin=${lease.origin} decision=skipped reason=${refusal::class.simpleName}")
                     return fail(refusal)

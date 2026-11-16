@@ -129,6 +129,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/git/PidNamespaceAbsentPidTest.kt",
         "dev/stapler/stelekit/git/ProcStatParserTest.kt",
         "dev/stapler/stelekit/git/LockRecoveryClaimTest.kt",
+        "dev/stapler/stelekit/git/LockRecoveryReviewFixesTest.kt",
         "dev/stapler/stelekit/git/ActiveRunNotClearedOwnTest.kt",
         "dev/stapler/stelekit/git/RecoveryLockInProcessMutexTest.kt",
         "dev/stapler/stelekit/git/ForeignLockNewerThanDeadRecordTest.kt",

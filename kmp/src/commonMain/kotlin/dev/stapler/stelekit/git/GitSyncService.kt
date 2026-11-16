@@ -38,6 +38,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.ensureActive
@@ -247,7 +248,8 @@ class GitSyncService(
                 var next: FollowUp? = followUp
                 while (next != null) next = gate.releaseOrHandOff(next.lease)
             } else {
-                scope.launch {
+                // ATOMIC: a scope cancelled after the check above must still start the coroutine so it releases the lease.
+                scope.launch(start = CoroutineStart.ATOMIC) {
                     val result = singleFlight.runFollowUp(
                         followUp,
                         RunSpec(graphId, SyncOrigin.FollowUp, "sync"),
@@ -538,7 +540,8 @@ class GitSyncService(
             guards.changes(config, GuardScope.NetPush, liftMassChange)?.let { return@withContext refuse(it) }
             ensureActive()
             _syncState.value = SyncState.Pushing
-            withContext(NonCancellable) { gitRepository.push(config) }.onLeft { err ->
+            // Cancellable on purpose: push does not touch the working tree, and a hung push must not hold the gate forever.
+            gitRepository.push(config).onLeft { err ->
                 if (err is DomainError.GitError.MergeConflict) {
                     // Task 3.2.3b: a push-time conflict (GitHub's ref-PATCH 409/422, or GitLab's
                     // commits-POST 400) is a *conflict*, not a generic push failure — route it to

@@ -182,6 +182,8 @@ object LockRecovery {
         val verdict = decide(reread, lockFiles, liveness, self)
         if (verdict == LockVerdict.NoLock) return publish(key, lockFiles, self, registry, verdict)
         if (!verdict.deletes) return refusal(key, verdict).left()
+        // A sibling claimer registers before it publishes, so a registered run means this record is live, not a corpse.
+        if (registry.isActive(key)) return DomainError.GitError.SyncInProgress(registry.originOf(key)).left()
         // Another claimer replaced the record we decided on; it is theirs to act on, not ours.
         if (reread?.content != decidedOn?.content) return DomainError.GitError.SyncInProgress(null).left()
         val locks = deletableLocks(verdict, lockFiles)
@@ -231,9 +233,11 @@ object LockRecovery {
             try {
                 val verdict = decide(lockFiles.readRecord(), lockFiles, liveness, self)
                 if (verdict == LockVerdict.OwnerAlive) return DomainError.GitError.SyncInProgress(null).left()
+                if (registry.isActive(key)) return DomainError.GitError.SyncInProgress(registry.originOf(key)).left()
                 val locks = lockFiles.listAllowListedLocks().filter { LockAllowList.isAllowListed(it.path) }
                 locks.forEach { lockFiles.delete(it.path) }
-                if (verdict.deletes) lockFiles.deleteRecord()
+                // The user confirmed: an unreadable or unattributable record would otherwise wedge the repo forever.
+                if (verdict.deletes || verdict is LockVerdict.OwnerUnknown) lockFiles.deleteRecord()
                 return locks.map { it.path }.right()
             } finally {
                 handle.release()
@@ -243,7 +247,8 @@ object LockRecovery {
         }
     }
 
-    // Step 6: atomic exclusive publish, then register and re-read. A write failure is logged, not fatal.
+    // Step 6: register first (so a record never exists unregistered), then publish exclusively and re-read.
+    // A record we cannot write fails closed: running unrecorded would let a second process sync concurrently.
     private fun publish(
         key: String,
         lockFiles: LockFiles,
@@ -251,20 +256,38 @@ object LockRecovery {
         registry: ActiveRunRegistry,
         verdict: LockVerdict,
     ): Either<DomainError.GitError, ClaimedRun> {
-        val created = try {
-            lockFiles.createRecordExclusive(self.encode())
-        } catch (e: Exception) {
-            logger.warn("could not write owner record; continuing without one", e)
-            null
-        }
-        if (created == false) return DomainError.GitError.SyncInProgress(null).left()
         val origin = SyncOrigin.entries.firstOrNull { it.name == self.origin }
         if (!registry.register(key, origin)) return DomainError.GitError.SyncInProgress(registry.originOf(key)).left()
-        if (created == true && !isOurs(lockFiles.readRecord(), self)) {
-            registry.unregister(key)
-            return DomainError.GitError.SyncInProgress(null).left()
+        var created = false
+        var replaced = false
+        var claimed = false
+        try {
+            created = try {
+                lockFiles.createRecordExclusive(self.encode())
+            } catch (e: Exception) {
+                logger.warn("could not write owner record; failing closed", e)
+                return refusal(key, LockVerdict.OwnerUnknown(UnknownReason.RecoveryLockUnsupported)).left()
+            }
+            if (!created) return DomainError.GitError.SyncInProgress(null).left()
+            if (!isOurs(lockFiles.readRecord(), self)) {
+                replaced = true
+                return DomainError.GitError.SyncInProgress(null).left()
+            }
+            claimed = true
+            return ClaimedRun(key, self, verdict).right()
+        } finally {
+            if (!claimed) abandon(key, lockFiles, registry, deleteRecord = created && !replaced)
         }
-        return ClaimedRun(key, self, verdict).right()
+    }
+
+    private fun abandon(key: String, lockFiles: LockFiles, registry: ActiveRunRegistry, deleteRecord: Boolean) {
+        try {
+            if (deleteRecord) lockFiles.deleteRecord()
+        } catch (e: Exception) {
+            logger.warn("could not remove our unclaimed owner record", e)
+        } finally {
+            registry.unregister(key)
+        }
     }
 
     private fun isOurs(read: RecordRead?, self: LockOwnerRecord): Boolean {

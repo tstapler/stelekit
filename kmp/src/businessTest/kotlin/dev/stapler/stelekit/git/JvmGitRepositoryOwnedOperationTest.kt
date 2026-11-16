@@ -91,6 +91,18 @@ class JvmGitRepositoryOwnedOperationTest {
     }
 
     @Test
+    fun touchOwnedOperation_should_NotTouchARecordThatIsNoLongerOurs() = runTest {
+        val f = fixture()
+        val repo = repo(Liveness.Dead)
+        repo.beginOwnedOperation(f.config, info)
+        writeRecord(f, "intruder", startedAtMs = now + 5, mtimeMs = 1_234_000)
+
+        repo.touchOwnedOperation(f.config)
+
+        assertEquals(1_234_000L, File(f.gitDir, JavaIoLockFiles.RECORD_NAME).lastModified(), "must not refresh a stranger's mtime")
+    }
+
+    @Test
     fun beginOwnedOperation_should_LeaveLiveOwnersFilesAndReportOwnerAlive() = runTest {
         val f = fixture()
         writeRecord(f, "other", startedAtMs = now - 100_000, mtimeMs = now - 1_000)

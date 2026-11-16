@@ -64,9 +64,16 @@ class OwnedOperationSupport(
 
     /** Heartbeat; a no-op unless this support holds a run for [gitDir]. */
     fun touch(gitDir: File) {
-        if (!runs.containsKey(keyFor(gitDir))) return
+        val run = runs[keyFor(gitDir)] ?: return
         try {
-            lockFilesFor(gitDir).touchRecord()
+            val files = lockFilesFor(gitDir)
+            val current = files.readRecord()?.let { (LockOwnerRecord.decode(it.content) as? RecordDecode.Valid)?.record }
+            // Touching a record that is gone or someone else's would fake our proof of life.
+            if (current?.instanceId != run.record.instanceId || current.startedAtMs != run.record.startedAtMs) {
+                logger.warn("owner record is no longer ours; heartbeat skipped")
+                return
+            }
+            files.touchRecord()
         } catch (e: IOException) {
             logger.warn("owner heartbeat failed", e)
         }

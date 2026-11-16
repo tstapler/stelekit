@@ -19,6 +19,7 @@ import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.security.CredentialStore
+import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -158,7 +159,8 @@ internal suspend fun runOwned(
     }
     val lease = gate.tryAcquire(key, SyncOrigin.Cli) ?: busy(output, graphPath, config)
     try {
-        val verdict = gitRepository.beginOwnedOperation(config, OwnedOperationInfo("sync", SyncOrigin.Cli))
+        // Uncancellable: a claim that completed must reach the try/finally that ends it.
+        val verdict = withContext(NonCancellable) { gitRepository.beginOwnedOperation(config, OwnedOperationInfo("sync", SyncOrigin.Cli)) }
         verdict.onLeft { err ->
             if (err is DomainError.GitError.SyncInProgress) busy(output, graphPath, config)
             handleGitError(err, output, graphPath, config.remoteBranch)
@@ -177,7 +179,14 @@ internal suspend fun runOwned(
                 val heartbeat = launch {
                     while (isActive) {
                         delay(heartbeatIntervalMs)
-                        gitRepository.touchOwnedOperation(config)
+                        try {
+                            gitRepository.touchOwnedOperation(config)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            // A failed touch only makes a later claimer fail closed; it must not abort the sync body.
+                            heartbeatLogger.warn("owner heartbeat failed", e)
+                        }
                     }
                 }
                 try {
@@ -193,6 +202,8 @@ internal suspend fun runOwned(
         gate.releaseOrHandOff(lease)
     }
 }
+
+private val heartbeatLogger = Logger("SyncMain")
 
 private fun busy(output: SyncOutput, graphPath: EffectiveNotesPath, config: GitConfig): Nothing {
     output.error("Another sync is already running for this graph; try again when it finishes")

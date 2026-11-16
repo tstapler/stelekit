@@ -119,7 +119,7 @@ class AndroidGraphMoveQuiesceStrategy(
         // Gate first: a running sync may need the worktree mutex, so it is never taken while waiting here.
         val lease = gateKeyFor(op)?.let { gate.acquire(it, SyncOrigin.Quiesce) }
         val hold = QuiesceHold(gate, lease)
-        holds[op.graphId] = hold
+        holds.put(op.graphId, hold)?.release()
         try {
             if (target != null) {
                 val worktreeLock = GitWorktreeLocks.lockFor(target.shadowKey)

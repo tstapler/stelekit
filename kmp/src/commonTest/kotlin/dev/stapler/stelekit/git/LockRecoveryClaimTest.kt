@@ -154,16 +154,6 @@ class LockRecoveryClaimTest {
     }
 
     @Test
-    fun claim_should_ContinueWithoutRecord_When_RecordWriteFails() {
-        val files = FakeLockFiles().apply { failCreate = true }
-        val registry = ActiveRunRegistry()
-
-        assertIs<Either.Right<ClaimedRun>>(claim(files, registry))
-        assertTrue(registry.isActive(key))
-        assertNull(files.record)
-    }
-
-    @Test
     fun end_should_DeleteOnlyOurOwnRecordAndUnregister() {
         val files = FakeLockFiles()
         val registry = ActiveRunRegistry()

@@ -367,6 +367,8 @@ import dev.stapler.stelekit.git.SyncStatusSheetModelPresentationTest
 import dev.stapler.stelekit.git.RepoOpGateReleaseStructureTest
 import dev.stapler.stelekit.git.ProcStatParserTest
 import dev.stapler.stelekit.git.LockRecoveryClaimTest
+import dev.stapler.stelekit.git.LockRecoveryReviewFixesTest
+import dev.stapler.stelekit.git.SyncSingleFlightCancellationTest
 import dev.stapler.stelekit.git.ActiveRunNotClearedOwnTest
 import dev.stapler.stelekit.git.RecoveryLockInProcessMutexTest
 import dev.stapler.stelekit.git.ForeignLockNewerThanDeadRecordTest
@@ -790,6 +792,8 @@ import org.junit.runners.Suite
     PidNamespaceAbsentPidTest::class,
     ProcStatParserTest::class,
     LockRecoveryClaimTest::class,
+    LockRecoveryReviewFixesTest::class,
+    SyncSingleFlightCancellationTest::class,
     ActiveRunNotClearedOwnTest::class,
     RecoveryLockInProcessMutexTest::class,
     ForeignLockNewerThanDeadRecordTest::class,
