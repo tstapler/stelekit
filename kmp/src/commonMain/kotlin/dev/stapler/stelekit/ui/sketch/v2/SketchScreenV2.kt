@@ -77,8 +77,6 @@ data class SketchShellConfig(
     val edgeStripAtEnd: Boolean = false,
     /** The pan pad's centre "Fit" (the host knows the scene bounds). */
     val onFit: () -> Unit = {},
-    /** The user toggled Finger drawing from the top-bar chip: the host stores it as an explicit choice (UX-80). */
-    val onFingerDrawingChosen: (Boolean) -> Unit = {},
     /** The one banner slot and the onboarding sequencer (Tasks 3.6.8b, 3.6.6c); null shows neither the coach mark nor the empty state. */
     val banner: BannerSlotState? = null,
     /** The sheet holds no element: the empty state may show (Task 3.6.6c). */
@@ -86,6 +84,8 @@ data class SketchShellConfig(
     val emptyActions: EmptyStateActions = EmptyStateActions(),
     /** Opens the shortcuts sheet (the overflow entry "Keyboard shortcuts"). */
     val onShortcuts: () -> Unit = {},
+    /** The user toggled Finger drawing from the top-bar chip: the host stores it as an explicit choice (UX-80). */
+    val onFingerDrawingChosen: (Boolean) -> Unit = {},
 )
 
 object ShellTags {
@@ -365,14 +365,15 @@ private fun CanvasArea(state: SketchEditorState, config: SketchShellConfig, focu
 /** The tools that draw by dragging: with Finger drawing OFF and a touch pointer present they say how to draw with touch (UX-80). */
 private val DRAG_TOOLS = setOf(ToolId.Rectangle, ToolId.Diamond, ToolId.Ellipse, ToolId.Arrow, ToolId.Freedraw, ToolId.Frame)
 
-private fun hintLine(state: SketchEditorState, pointer: PointerClass): String {
-    val touchHint = !state.fingerDrawing && pointer == PointerClass.TouchOrPen && state.activeTool in DRAG_TOOLS
-    val base = if (touchHint) FingerDrawingController.TOOL_HINT_OFF else HINTS[state.activeTool].orEmpty()
-    return if (state.toolLock) "Tool lock on. $base" else base
 /** The hint of the active tool in the wording of the last input device: touch and pen name no key (UX-124). */
-internal fun hintLine(state: SketchEditorState): String {
+internal fun hintLine(state: SketchEditorState, pointer: PointerClass = PointerClass.MouseOnly): String {
     val hint = SketchStrings.Hints.of(state.activeTool)
-    val base = if (state.lastInput == InputKind.TouchOrPen) hint.touch else hint.keyboard
+    val touchHint = !state.fingerDrawing && pointer == PointerClass.TouchOrPen && state.activeTool in DRAG_TOOLS
+    val base = when {
+        touchHint -> FingerDrawingController.TOOL_HINT_OFF
+        state.lastInput == InputKind.TouchOrPen -> hint.touch
+        else -> hint.keyboard
+    }
     return if (state.toolLock) "${SketchStrings.Hints.TOOL_LOCK_ON} $base" else base
 }
 
