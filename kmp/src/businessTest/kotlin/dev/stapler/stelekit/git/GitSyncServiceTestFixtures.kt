@@ -45,6 +45,8 @@ internal fun buildGitSyncTestService(
     isOnline: (() -> Boolean)? = null,
     gate: RepoOpGate = RepoOpGate(),
     pausedRetryPolicy: PausedRetryPolicy = PausedRetryPolicy(),
+    /** Wraps [gitRepository] so a mutating call without the gate held throws; opt out only to test the wrapper itself. */
+    assertGate: Boolean = true,
     graphLoader: GraphLoader = GraphLoader(
         fileSystem = StubFileSystem(),
         pageRepository = InMemoryPageRepository(),
@@ -53,7 +55,7 @@ internal fun buildGitSyncTestService(
 ): GitSyncService {
     val graphWriter = GraphWriter(fileSystem = fileSystem)
     return GitSyncService(
-        gitRepository = gitRepository,
+        gitRepository = if (assertGate) GateAssertingGitRepository(gitRepository, gate) else gitRepository,
         graphLoader = graphLoader,
         graphWriter = graphWriter,
         editLock = EditLock(),

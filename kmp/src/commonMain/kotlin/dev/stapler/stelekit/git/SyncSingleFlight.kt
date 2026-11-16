@@ -144,7 +144,7 @@ internal class SyncSingleFlight(
     private fun <T> coalesced(key: String, spec: RunSpec, fail: (DomainError.GitError) -> T, heldBy: SyncOrigin?): T {
         val queued = spec.rerunOnLoss && gate.requestRerun(key)
         if (queued) inFlight.update { it?.copy(followUpQueued = true) }
-        logger.info("decision=coalesced key=$key origin=${spec.origin} heldBy=$heldBy followUpQueued=$queued")
+        logger.info("sync origin=${spec.origin} decision=coalesced key=$key heldBy=$heldBy followUpQueued=$queued")
         return fail(DomainError.GitError.SyncInProgress(heldBy))
     }
 
@@ -163,15 +163,22 @@ internal class SyncSingleFlight(
         var heartbeat: Job? = null
         try {
             inFlight.value = SyncRunInfo(lease.origin, clock(), spec.graphId, gate.isRerunRequested(lease.key))
-            if (resolution is GateKeyResolution.Unreadable) return unreadable(resolution.reason)
+            if (resolution is GateKeyResolution.Unreadable) {
+                logger.info("sync origin=${lease.origin} decision=skipped reason=config-unreadable")
+                return unreadable(resolution.reason)
+            }
             if (config != null) {
                 val refusal = claim(config, OwnedOperationInfo(spec.opName, lease.origin))
-                if (refusal != null) return fail(refusal)
+                if (refusal != null) {
+                    logger.info("sync origin=${lease.origin} decision=skipped reason=${refusal::class.simpleName}")
+                    return fail(refusal)
+                }
                 claimed = true
                 heartbeat = startHeartbeat(config)
             }
             busyCounter.begin()
             counted = true
+            logger.info("sync origin=${lease.origin} decision=started key=${lease.key}")
             return body()
         } finally {
             try {
@@ -209,7 +216,7 @@ internal class SyncSingleFlight(
     private suspend fun claim(config: GitConfig, info: OwnedOperationInfo): DomainError.GitError? =
         when (val r = repository.beginOwnedOperation(config, info)) {
             is Either.Left -> r.value.also { if (it !is DomainError.GitError.SyncInProgress) publishError(it) }
-            is Either.Right -> when (val verdict = r.value) {
+            is Either.Right -> when (val verdict = r.value.also { logger.info("lock verdict=$it") }) {
                 LockVerdict.NoLock, LockVerdict.ClearedOwn, LockVerdict.ClearedDeadOwner -> null
                 LockVerdict.OwnerAlive -> DomainError.GitError.SyncInProgress(null)
                 is LockVerdict.OwnerUnknown, LockVerdict.NoRecord ->

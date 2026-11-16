@@ -10,17 +10,17 @@ import dev.stapler.stelekit.git.model.GitConfig
 /**
  * Delegating [GitRepository] that throws [AssertionError] when a mutating call arrives without the repo's gate
  * key held (`RepoOpGate.isHeld`), so a service path that skips single-flight fails the test instead of racing.
- * [keyFor] must produce the same key the service under test resolves for [GitConfig]; the default hashes the
- * un-canonicalised `<repoRoot>/.git`, which matches only when the test path has no symlinks.
- * [beginOwnedOperation] answers [beginVerdict] (default `NoLock`) instead of delegating: the production defaults are
- * fail-closed and would pause every fixture.
+ * [keyFor] must produce the same key the service under test resolves for [GitConfig]; the default asks the wrapped
+ * repository's `gateKeyFor`, as the service does.
+ * [beginOwnedOperation] answers [beginVerdict] when set; otherwise it delegates, and a test stub that scripts no
+ * verdict answers `NoLock` (the production default is fail-closed and would pause every fixture).
  */
 class GateAssertingGitRepository(
     private val delegate: GitRepository,
     private val gate: RepoOpGate,
-    private val beginVerdict: LockVerdict = LockVerdict.NoLock,
+    private val beginVerdict: LockVerdict? = null,
     private val keyFor: (GitConfig) -> String = { config ->
-        RepoOpGate.keyFor("${config.repoRoot.value.trimEnd('/')}/.git") { it }
+        delegate.gateKeyFor(config) ?: RepoOpGate.keyFor("${config.repoRoot.value.trimEnd('/')}/.git") { it }
     },
 ) : GitRepository by delegate {
 
@@ -86,7 +86,7 @@ class GateAssertingGitRepository(
 
     override suspend fun beginOwnedOperation(config: GitConfig, info: OwnedOperationInfo): Either<DomainError.GitError, LockVerdict> {
         requireGate("beginOwnedOperation", config)
-        return Either.Right(beginVerdict)
+        return beginVerdict?.let { Either.Right(it) } ?: delegate.beginOwnedOperation(config, info)
     }
 
     override suspend fun forceRemoveLock(config: GitConfig): Either<DomainError.GitError, Unit> {

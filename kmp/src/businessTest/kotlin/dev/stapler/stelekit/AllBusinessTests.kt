@@ -354,6 +354,7 @@ import dev.stapler.stelekit.git.PausedRetryPolicyTest
 import dev.stapler.stelekit.git.GateBeforeWorktreeOrderTest
 import dev.stapler.stelekit.wiring.NoGateFallbackAuditTest
 import dev.stapler.stelekit.git.GitGateAuditTest
+import dev.stapler.stelekit.git.SyncObservabilityLogTest
 import dev.stapler.stelekit.audit.NewCodeAuditTest
 import dev.stapler.stelekit.audit.ScopeEscapeAuditTest
 import dev.stapler.stelekit.ux.ExitPathAuditTest
@@ -781,6 +782,7 @@ import org.junit.runners.Suite
     PausedRetryPolicyTest::class,
     NoGateFallbackAuditTest::class,
     GitGateAuditTest::class,
+    SyncObservabilityLogTest::class,
     NewCodeAuditTest::class,
     ScopeEscapeAuditTest::class,
     ExitPathAuditTest::class,

@@ -188,6 +188,7 @@ import dev.stapler.stelekit.git.LockClaimIntegrationTest
 import dev.stapler.stelekit.git.BeginOwnedOperationOrderingTest
 import dev.stapler.stelekit.git.ProcessKillOrphanLockTest
 import dev.stapler.stelekit.git.TwoJvmRecoveryRaceTest
+import dev.stapler.stelekit.git.CrossProcessSyncOverDeadRecordTest
 import dev.stapler.stelekit.git.JgitCancelSweepTest
 import dev.stapler.stelekit.git.RemoteBranchResolutionTest
 import dev.stapler.stelekit.git.GitSafetyScansJvmTest
@@ -545,6 +546,7 @@ import org.junit.runners.Suite
     BeginOwnedOperationOrderingTest::class,
     ProcessKillOrphanLockTest::class,
     TwoJvmRecoveryRaceTest::class,
+    CrossProcessSyncOverDeadRecordTest::class,
     JgitCancelSweepTest::class,
     RemoteBranchResolutionTest::class,
     GitSafetyScansJvmTest::class,
