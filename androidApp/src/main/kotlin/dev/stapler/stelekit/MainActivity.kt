@@ -553,6 +553,8 @@ class MainActivity : ComponentActivity() {
                         // The Application's registry is shared, never rebuilt here: kinds register only in onCreate.
                         backgroundTaskScheduler = backgroundTaskScheduler,
                         taskRegistry = app.taskRegistry,
+                        sketchWriterLease = dev.stapler.stelekit.ui.SketchStorageDefaults.writerLease(),
+                        browserPersistence = dev.stapler.stelekit.ui.SketchStorageDefaults.browserPersistence(),
                         backgroundSyncSchedulerFactory = BackgroundSyncSchedulerFactory(
                             minimumIntervalMinutes = WorkManagerSyncScheduler.MIN_PERIODIC_INTERVAL_MINUTES.toInt(),
                         ) { graphId -> WorkManagerSyncScheduler(applicationContext, graphId) },

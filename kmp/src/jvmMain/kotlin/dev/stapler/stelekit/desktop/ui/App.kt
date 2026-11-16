@@ -30,6 +30,8 @@ fun App(
                     backgroundSyncSchedulerFactory = dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory.None,
                     backgroundTaskScheduler = dev.stapler.stelekit.jobs.schedule.NoopTaskScheduler(),
                     taskRegistry = dev.stapler.stelekit.desktop.createDesktopTaskRegistry(),
+                    sketchWriterLease = dev.stapler.stelekit.ui.SketchStorageDefaults.writerLease(),
+                    browserPersistence = dev.stapler.stelekit.ui.SketchStorageDefaults.browserPersistence(),
                     platformCaps = dev.stapler.stelekit.platform.ml.jvmPlatformCaps(),
                 ),
                 coreServices = StelekitAppCoreServices(

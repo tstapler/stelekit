@@ -92,6 +92,7 @@ class DesktopWiredAppFixture private constructor(
     seams: GitSyncServiceSeams,
     busyCounter: GitSyncBusyCounter?,
     taskScheduler: dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler?,
+    sketchWriterLease: dev.stapler.stelekit.platform.SketchWriterLease,
 ) {
     /** Built by the same factories `desktop/Main.kt` uses, so a registry that forgets a task fails here too. */
     val taskRegistry = dev.stapler.stelekit.desktop.createDesktopTaskRegistry()
@@ -110,6 +111,8 @@ class DesktopWiredAppFixture private constructor(
             backgroundSyncSchedulerFactory = BackgroundSyncSchedulerFactory.None,
             backgroundTaskScheduler = backgroundTaskScheduler,
             taskRegistry = taskRegistry,
+            sketchWriterLease = sketchWriterLease,
+            browserPersistence = dev.stapler.stelekit.ui.SketchStorageDefaults.browserPersistence(),
             platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
             gitRepository = ports.gitRepository,
             gitSyncBusyCounter = busyCounter,
@@ -143,6 +146,8 @@ class DesktopWiredAppFixture private constructor(
             seams: GitSyncServiceSeams = GitSyncServiceSeams(),
             busyCounter: GitSyncBusyCounter? = null,
             taskScheduler: dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler? = null,
+            /** The lease the sketch store consults; a test passes one that answers `HeldElsewhere` (Task 1.4.3q). */
+            sketchWriterLease: dev.stapler.stelekit.platform.SketchWriterLease = dev.stapler.stelekit.ui.SketchStorageDefaults.writerLease(),
         ): DesktopWiredAppFixture {
             System.setProperty("stelekit.devDataDir", dataDir.absolutePath)
             val manager = GraphManager(
@@ -151,7 +156,7 @@ class DesktopWiredAppFixture private constructor(
                 fileSystem = ports.fileSystem,
                 defaultBackend = GraphBackend.SQLDELIGHT,
             )
-            return DesktopWiredAppFixture(manager, manager.openGraph(graphPath), ports, dataDir, seams, busyCounter, taskScheduler)
+            return DesktopWiredAppFixture(manager, manager.openGraph(graphPath), ports, dataDir, seams, busyCounter, taskScheduler, sketchWriterLease)
         }
     }
 }
