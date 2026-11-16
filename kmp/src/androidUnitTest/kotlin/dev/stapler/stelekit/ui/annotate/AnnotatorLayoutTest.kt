@@ -367,6 +367,9 @@ class AnnotatorLayoutTest {
         val size = canvas.fetchSemanticsNode().size
         canvas.performTouchInput { down(Offset(size.width * 0.2f, size.height * 0.2f)); up() }
         rule.waitForIdle()
+        assertFalse(vm.state.value.placement.active, "the first tap after a commit only selects")
+        canvas.performTouchInput { down(Offset(size.width * 0.2f, size.height * 0.2f)); up() }
+        rule.waitForIdle()
         assertTrue(vm.state.value.placement.active, "handle tap should have begun a vertex move")
     }
 

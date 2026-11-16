@@ -65,7 +65,7 @@ class AnnotationA11yActionsTest {
 
     private fun announced(text: String) {
         val live = rule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion)).fetchSemanticsNodes()
-            .mapNotNull { it.config.getOrNull(SemanticsProperties.ContentDescription)?.firstOrNull() }
+            .mapNotNull { it.config.getOrNull(SemanticsProperties.ContentDescription)?.firstOrNull()?.trimEnd('\u200B') }
         assertTrue(text in live, "expected live-region announcement '$text', found $live")
     }
 
@@ -118,7 +118,7 @@ class AnnotationA11yActionsTest {
         rule.onNodeWithContentDescription("Nudge right, 10 pixels step").performSemanticsAction(SemanticsActions.OnClick)
         rule.waitForIdle()
         val live = rule.onNode(hasContentDescription("Crosshair at", substring = true) and SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion))
-            .fetchSemanticsNode().config[SemanticsProperties.ContentDescription].first()
+            .fetchSemanticsNode().config[SemanticsProperties.ContentDescription].first().trimEnd('\u200B')
         assertTrue(", length " in live, "nudge announces the live length once a first point exists: $live")
 
         rule.runOnUiThread { vm.tapCrosshair(AnnotationPlacementSpace(1000, 1000), NormalizedPoint(0.59, 0.5)) }

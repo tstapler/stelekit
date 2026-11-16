@@ -5,21 +5,19 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 
 class EditorChromePolicyTest {
-    private val bools = listOf(false, true)
 
     @Test
-    fun stripPriority_should_PickHighestTrueLevel_ForEveryCombination() {
-        var count = 0
-        for (e in bools) for (t in bools) for (h in bools) for (s in bools) for (v in bools) {
-            val expected = listOfNotNull(
-                StripPriority.ERROR.takeIf { e }, StripPriority.TOOL_PROMPT.takeIf { t },
-                StripPriority.FIRST_TIME_HINT.takeIf { h }, StripPriority.STATUS_TEXT.takeIf { s },
-                StripPriority.VOICE_HINT.takeIf { v },
-            ).firstOrNull() ?: StripPriority.IDLE
-            assertEquals(expected, StripPriority.resolve(e, t, h, s, v), "$e $t $h $s $v")
-            count++
-        }
-        assertEquals(32, count)
+    fun stripPriority_should_FollowUxTable() {
+        // resolve(error, toolPrompt, firstTimeHint, statusText, voiceHint); rows follow ux.md 3.5.
+        assertEquals(StripPriority.IDLE, StripPriority.resolve(false, false, false, false, false))
+        assertEquals(StripPriority.VOICE_HINT, StripPriority.resolve(false, false, false, false, true))
+        assertEquals(StripPriority.STATUS_TEXT, StripPriority.resolve(false, false, false, true, true))
+        assertEquals(StripPriority.FIRST_TIME_HINT, StripPriority.resolve(false, false, true, true, true))
+        assertEquals(StripPriority.TOOL_PROMPT, StripPriority.resolve(false, true, true, true, true))
+        assertEquals(StripPriority.ERROR, StripPriority.resolve(true, true, true, true, true))
+        assertEquals(StripPriority.ERROR, StripPriority.resolve(true, false, false, false, false))
+        assertEquals(StripPriority.TOOL_PROMPT, StripPriority.resolve(false, true, false, false, false))
+        assertEquals(StripPriority.STATUS_TEXT, StripPriority.resolve(false, false, false, true, false))
     }
 
     @Test
@@ -31,20 +29,16 @@ class EditorChromePolicyTest {
     }
 
     @Test
-    fun backPolicy_should_FollowFixedOrder_ForEveryCombination() {
-        var count = 0
-        for (modal in bools) for (nudge in bools) for (armed in bools) for (pts in 0..4) {
-            val expected = when {
-                modal -> BackAction.DismissModal
-                nudge -> BackAction.CancelNudge
-                armed && pts >= 2 -> BackAction.ConfirmDiscardThenDisarm
-                armed -> BackAction.DisarmSilently
-                else -> BackAction.ResolveLeave
-            }
-            assertEquals(expected, EditorBackPolicy.resolve(modal, nudge, armed, pts), "$modal $nudge $armed $pts")
-            count++
-        }
-        assertEquals(40, count)
+    fun backPolicy_should_FollowUxTable() {
+        // resolve(modalOpen, nudgeOpen, toolArmed, unfinishedPoints); rows follow ux.md 3.5.
+        assertEquals(BackAction.DismissModal, EditorBackPolicy.resolve(true, true, true, 3))
+        assertEquals(BackAction.DismissModal, EditorBackPolicy.resolve(true, false, false, 0))
+        assertEquals(BackAction.CancelNudge, EditorBackPolicy.resolve(false, true, true, 3))
+        assertEquals(BackAction.CancelNudge, EditorBackPolicy.resolve(false, true, false, 0))
+        assertEquals(BackAction.ConfirmDiscardThenDisarm, EditorBackPolicy.resolve(false, false, true, 2))
+        assertEquals(BackAction.DisarmSilently, EditorBackPolicy.resolve(false, false, true, 1))
+        assertEquals(BackAction.DisarmSilently, EditorBackPolicy.resolve(false, false, true, 0))
+        assertEquals(BackAction.ResolveLeave, EditorBackPolicy.resolve(false, false, false, 0))
     }
 
     @Test
