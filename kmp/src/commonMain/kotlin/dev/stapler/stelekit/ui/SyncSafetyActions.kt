@@ -98,7 +98,8 @@ class SyncSafetyActions(
         is DomainError.GitError.SyncInProgress -> SyncUiEvent.AlreadySyncing
         is DomainError.GitError.StaleLockFile -> SyncUiEvent.LockRemovalRefused(
             "The lock file was kept: it changed recently or another git process or device may still be using it. " +
-                "Wait about five minutes after closing other git tools, then try again.",
+                (error.retryAfterMs?.takeIf { it > 0 }?.let { "Close other git tools, then try again in about ${(it + 59_999) / 60_000} minutes." }
+                    ?: "Close other git tools and devices using this folder, then try again."),
         )
         else -> SyncUiEvent.LockRemovalRefused("The lock file could not be removed: ${error.message}")
     }

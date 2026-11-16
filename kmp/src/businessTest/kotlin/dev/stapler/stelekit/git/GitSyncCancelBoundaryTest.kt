@@ -318,10 +318,11 @@ class GitSyncCancelBoundaryTest {
         assertTrue(svc.reloadIncomplete.value, "a reload stopped by cancellation must be flagged for the next open")
     }
 
-    // PR #683 review M5: the uncancellable commit unit is bounded, so a hung hook cannot hold the gate forever.
+    // PR #683 round 2 (C1): only the caller's wait is bounded; the lease and record stay until the unit really ends.
     @Test
-    fun resolveConflicts_should_FailAndReleaseTheGate_When_TheCommitNeverReturns() = runBlocking<Unit> {
-        val git = Repo().apply { onCommit = { CompletableDeferred<Unit>().await() } }
+    fun resolveConflicts_should_KeepTheLease_UntilALateCommitFinishes_ThenReleaseAndClearTheFlag() = runBlocking<Unit> {
+        val late = CompletableDeferred<Unit>()
+        val git = Repo().apply { onCommit = { late.await() } }
         val svc = service(git).also { it.commitUnitTimeoutMs = 300 }
 
         val result = withTimeout(20_000) {
@@ -329,8 +330,34 @@ class GitSyncCancelBoundaryTest {
         }
 
         assertIs<DomainError.GitError.CommitFailed>(result.leftOrNull())
-        assertFalse(gate.isHeld(key()), "the lease must be released after the abandoned commit")
-        assertTrue(svc.reloadIncomplete.value, "an abandoned commit unit leaves the DB possibly behind the disk")
+        assertTrue(result.leftOrNull()!!.message.contains("still running"))
+        assertTrue(gate.isHeld(key()), "the abandoned commit still owns the repository")
+        assertTrue(svc.reloadIncomplete.value)
+        val second = svc.sync("g", origin = SyncOrigin.Scheduled)
+        assertIs<DomainError.GitError.SyncInProgress>(second.leftOrNull(), "no second commit may start under the first")
+        assertEquals(1, git.count("commit.start"))
+
+        late.complete(Unit)
+        withTimeout(20_000) { while (gate.isHeld(key()) || svc.reloadIncomplete.value) kotlinx.coroutines.delay(20) }
+        assertFalse(gate.isHeld(key()))
+        assertFalse(svc.reloadIncomplete.value, "the sentinel clears when the abandoned unit ends")
+    }
+
+    @Test
+    fun sync_should_KeepTheLeaseAndNotFlagReload_When_TheMainCommitOutlivesTheWait() = runBlocking<Unit> {
+        val late = CompletableDeferred<Unit>()
+        val git = Repo(localChanges = true).apply { onCommit = { late.await() } }
+        val svc = service(git).also { it.commitUnitTimeoutMs = 300 }
+
+        val result = withTimeout(20_000) { svc.sync("g") }
+
+        assertIs<DomainError.GitError.CommitFailed>(result.leftOrNull())
+        assertTrue(gate.isHeld(key()))
+        assertFalse(svc.reloadIncomplete.value, "a plain commit reloads nothing, so it must not flag the DB")
+        assertIs<DomainError.GitError.SyncInProgress>(svc.sync("g", origin = SyncOrigin.Scheduled).leftOrNull())
+
+        late.complete(Unit)
+        withTimeout(20_000) { while (gate.isHeld(key())) kotlinx.coroutines.delay(20) }
     }
 
     // PR #683 review m1: a later complete reload of other files must not clear an earlier incomplete one.

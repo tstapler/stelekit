@@ -216,13 +216,17 @@ object LockRecovery {
         }
     }
 
-    // Unsure owner. A lock inside the owner's window is most likely the owner's own live lock, so the window proves
-    // nothing here; only a record that stopped heartbeating, and locks idle for minutes, may be removed (and never
-    // while a git process for the repository is visible). Git holds index.lock for a whole editor session unchanged.
-    private fun safeToForceRemove(record: RecordRead?, locks: List<LockFileEntry>, lockFiles: LockFiles, nowMs: Long): Boolean {
-        if (record != null && nowMs - record.mtimeMs < UNSURE_STALE_MS) return false
-        if (!locks.all { it.mtimeMs <= nowMs - UNSURE_STALE_MS }) return false
-        return lockFiles.gitProcessMayBeRunning() != true
+    // Null when removal may proceed, else how long to wait (0: waiting alone will not help). A visible git process always
+    // blocks. A dead or own owner's lock must sit inside that owner's window. An unsure owner's lock inside its window is
+    // most likely live, so it needs idle record and locks: 5 min where no external git can exist, else 30 min because
+    // git holds index.lock unchanged for a whole editor session and "cannot tell" is not "none".
+    private fun removalWaitMs(verdict: LockVerdict, record: RecordRead?, locks: List<LockFileEntry>, lockFiles: LockFiles, nowMs: Long): Long? {
+        val scan = lockFiles.gitProcessMayBeRunning()
+        if (scan == true) return 0L
+        if (verdict.deletes) return if (withinForeignLockWindow(record, locks, nowMs)) null else 0L
+        val threshold = if (scan == false) UNSURE_STALE_MS else UNSURE_BLIND_STALE_MS
+        val youngestAge = (locks.map { nowMs - it.mtimeMs } + listOfNotNull(record?.let { nowMs - it.mtimeMs })).minOrNull() ?: return null
+        return if (youngestAge >= threshold) null else threshold - youngestAge
     }
 
     // Re-stat each lock right before deleting it: a different git run may have replaced it since it was examined.
@@ -237,6 +241,7 @@ object LockRecovery {
 
     /** A record or lock idle this long (60 heartbeats; also covers sync lag of a shared folder) is treated as abandoned. */
     private const val UNSURE_STALE_MS = 300_000L
+    private const val UNSURE_BLIND_STALE_MS = 1_800_000L
 
     private const val LOCK_START_SLACK_MS = 2_000L
     private const val HEARTBEAT_SLACK_MS = 10_000L
@@ -269,8 +274,8 @@ object LockRecovery {
                 if (verdict == LockVerdict.OwnerAlive) return DomainError.GitError.SyncInProgress(null).left()
                 if (registry.isActive(key)) return DomainError.GitError.SyncInProgress(registry.originOf(key)).left()
                 val locks = lockFiles.listAllowListedLocks().filter { LockAllowList.isAllowListed(it.path) }
-                if (!verdict.deletes && !safeToForceRemove(record, locks, lockFiles, nowMs())) {
-                    return refusal(key, LockVerdict.OwnerUnknown(UnknownReason.ForeignLockSuspected)).left()
+                removalWaitMs(verdict, record, locks, lockFiles, nowMs())?.let { wait ->
+                    return DomainError.GitError.StaleLockFile(key, LockVerdict.OwnerUnknown(UnknownReason.ForeignLockSuspected), wait).left()
                 }
                 if (!deleteUnchanged(lockFiles, locks)) {
                     return refusal(key, LockVerdict.OwnerUnknown(UnknownReason.ForeignLockSuspected)).left()

@@ -19,9 +19,15 @@ object AndroidOwnedOperations {
         pidNs = AndroidProcessLiveness.selfPidNamespace(),
         host = AndroidProcessLiveness.HOST,
         bootId = AndroidProcessLiveness.bootId { bootCount(context) },
+        machineId = InstallId.loadOrCreate(java.io.File(context.noBackupFilesDir, "stelekit-install-id")),
     )
 
-    fun support(context: Context): OwnedOperationSupport = OwnedOperationSupport(AndroidProcessLiveness(), identity(context))
+    fun support(context: Context): OwnedOperationSupport = OwnedOperationSupport(
+        AndroidProcessLiveness(),
+        identity(context),
+        // Only this app can run git on its private shadow repository, so a process scan can prove "none".
+        lockFilesFor = { JavaIoLockFiles(it, externalGitPossible = false) },
+    )
 
     private fun bootCount(context: Context): String? = try {
         Settings.Global.getInt(context.contentResolver, "boot_count").toString()

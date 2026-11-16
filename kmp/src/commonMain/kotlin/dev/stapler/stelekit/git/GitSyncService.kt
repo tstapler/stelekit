@@ -358,7 +358,7 @@ class GitSyncService(
     val reloadIncomplete: StateFlow<Boolean> = _reloadIncomplete.asStateFlow()
 
     private fun markReload(paths: Collection<String>, complete: Boolean) {
-        val next = incompleteReloads.updateAndGet { if (complete) it - paths.toSet() - ABANDONED_UNIT else it + paths }
+        val next = incompleteReloads.updateAndGet { if (complete) it - paths.toSet() else it + paths }
         _reloadIncomplete.value = next.isNotEmpty()
     }
 
@@ -396,19 +396,23 @@ class GitSyncService(
     internal var commitUnitTimeoutMs: Long = COMMIT_UNIT_TIMEOUT_MS
 
     /**
-     * Runs [work] (a commit, optionally followed by its reload) uncancellable, as #676 requires, but bounded: a hung
-     * hook or pinentry is abandoned on the service scope after the timeout so the gate lease is released and the
-     * failure surfaces, instead of wedging every later sync.
+     * Runs [work] uncancellable, as #676 requires, but only the caller's wait is bounded: after the timeout the user
+     * is told the unit is still running ([timedOut]), while it keeps the gate lease and owner record until it really
+     * ends, so no second commit can start under it and its lock is never treated as removable.
      */
-    private suspend fun boundedCommitUnit(work: suspend () -> Either<DomainError.GitError, String>): Either<DomainError.GitError, String> =
+    private suspend fun <T> boundedUnit(reloads: Boolean, timedOut: (DomainError.GitError) -> T, work: suspend () -> T): T =
         withContext(NonCancellable) {
             val running = scope.async { work() }
             try {
                 withTimeout(commitUnitTimeoutMs) { running.await() }
             } catch (_: TimeoutCancellationException) {
-                logger.error("commit unit abandoned after ${commitUnitTimeoutMs}ms")
-                markReload(listOf(ABANDONED_UNIT), complete = false)
-                DomainError.GitError.CommitFailed("The commit did not finish in time and was abandoned; check for a hung hook or signing prompt.").left()
+                logger.error("commit unit still running after ${commitUnitTimeoutMs}ms; keeping the lease")
+                singleFlight.holdLeaseUntil(running)
+                if (reloads) {
+                    markReload(listOf(ABANDONED_UNIT), complete = false)
+                    running.invokeOnCompletion { markReload(listOf(ABANDONED_UNIT), complete = true) }
+                }
+                timedOut(DomainError.GitError.CommitFailed("The commit is still running (a hook or signing prompt may be waiting). Sync stays paused until it finishes."))
             }
         }
 
@@ -532,7 +536,7 @@ class GitSyncService(
                     guards.changes(config, GuardScope.Staged, liftMassChange)?.let { return@withContext refuse(it) }
                     ensureActive()
                     // Non-cancellable: once the commit starts it finishes, then the pipeline stops at the next boundary.
-                    withContext(NonCancellable) { gitRepository.commit(config, buildCommitMessage(config)) }.onLeft { err ->
+                    boundedUnit(false, { it.left() }) { gitRepository.commit(config, buildCommitMessage(config)) }.onLeft { err ->
                         publishFailure(graphId, err) { g -> sync(g, SyncTrigger.Automatic) }
                         return@withContext err.left()
                     }
@@ -619,7 +623,10 @@ class GitSyncService(
      * which inside a nested `withContext(NonCancellable)` would bind to the inner lambda and fall through to push.
      */
     private suspend fun mergeUnit(graphId: String, config: GitConfig, fetchResult: FetchResult): MergeUnitOutcome =
-        withContext(NonCancellable) { runMergeUnit(graphId, config, fetchResult) }
+        boundedUnit(
+            true,
+            { err -> _syncState.value = SyncState.Error(err); MergeUnitOutcome.Exit(Either.Left(err)) },
+        ) { runMergeUnit(graphId, config, fetchResult) }
 
     private suspend fun runMergeUnit(graphId: String, config: GitConfig, fetchResult: FetchResult): MergeUnitOutcome {
         var autoMergedPaths: List<String> = emptyList()
@@ -838,7 +845,7 @@ class GitSyncService(
                 val staged = lfsStaging.stage(config, status).getOrElse { return@withContext it.left() }
                 val sha = if (staged.commitNeeded) {
                     guards.changes(config, GuardScope.Staged, liftMassChange = false)?.let { return@withContext refuse(it) }
-                    when (val r = boundedCommitUnit { gitRepository.commit(config, buildCommitMessage(config)) }) {
+                    when (val r = boundedUnit(false, { it.left() }) { gitRepository.commit(config, buildCommitMessage(config)) }) {
                         is Either.Left -> return@withContext r.value.left()
                         is Either.Right -> r.value
                     }
@@ -920,7 +927,7 @@ class GitSyncService(
             guards.markers(config, GuardScope.Staged)?.let { return@withContext refuse(it) }
     
             val message = buildCommitMessage(config, isMerge = true)
-            boundedCommitUnit { gitRepository.commit(config, message).also { if (it.isRight()) reloadMergedFiles(resolvedPaths) } }.onLeft { return@withContext it.left() }
+            boundedUnit(true, { it.left() }) { gitRepository.commit(config, message).also { if (it.isRight()) reloadMergedFiles(resolvedPaths) } }.onLeft { return@withContext it.left() }
     
             _syncState.value = SyncState.Idle
             Unit.right()
@@ -967,7 +974,7 @@ class GitSyncService(
     
             guards.markers(config, GuardScope.Staged)?.let { return@withContext refuse(it) }
             val message = buildCommitMessage(config, isMerge = true)
-            boundedCommitUnit { gitRepository.commit(config, message).also { if (it.isRight()) reloadMergedFiles(listOf(filePath)) } }.onLeft { return@withContext it.left() }
+            boundedUnit(true, { it.left() }) { gitRepository.commit(config, message).also { if (it.isRight()) reloadMergedFiles(listOf(filePath)) } }.onLeft { return@withContext it.left() }
     
             guards.changes(config, GuardScope.NetPush, liftMassChange = false)?.let { return@withContext refuse(it) }
             _syncState.value = SyncState.Pushing

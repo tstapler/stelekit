@@ -368,6 +368,7 @@ import dev.stapler.stelekit.git.RepoOpGateReleaseStructureTest
 import dev.stapler.stelekit.git.ProcStatParserTest
 import dev.stapler.stelekit.git.LockRecoveryClaimTest
 import dev.stapler.stelekit.git.StaleLockRecoveryFollowUpTest
+import dev.stapler.stelekit.git.InstallIdTest
 import dev.stapler.stelekit.git.LockRecoveryReviewFixesTest
 import dev.stapler.stelekit.git.SyncSingleFlightCancellationTest
 import dev.stapler.stelekit.git.ActiveRunNotClearedOwnTest
@@ -804,6 +805,7 @@ import org.junit.runners.Suite
     ProcStatParserTest::class,
     LockRecoveryClaimTest::class,
     StaleLockRecoveryFollowUpTest::class,
+    InstallIdTest::class,
     LockRecoveryReviewFixesTest::class,
     SyncSingleFlightCancellationTest::class,
     ActiveRunNotClearedOwnTest::class,

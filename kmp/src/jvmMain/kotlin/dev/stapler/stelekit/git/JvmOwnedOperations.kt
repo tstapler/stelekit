@@ -18,15 +18,8 @@ object JvmOwnedOperations {
         }
     }
 
-    /** Random id persisted under the user's home: unlike a hostname it is not shared by cloned images or default names. */
     private val installId: String? by lazy {
-        try {
-            val file = java.io.File(System.getProperty("user.home"), ".stelekit/install-id")
-            file.takeIf { it.isFile }?.readText()?.trim()?.takeIf { it.isNotEmpty() }
-                ?: UUID.randomUUID().toString().also { file.parentFile.mkdirs(); file.writeText(it) }
-        } catch (_: java.io.IOException) {
-            null
-        }
+        InstallId.loadOrCreate(java.io.File(System.getProperty("user.home"), ".stelekit/install-id"))
     }
 
     fun identity(): ProcessIdentity = ProcessIdentity(

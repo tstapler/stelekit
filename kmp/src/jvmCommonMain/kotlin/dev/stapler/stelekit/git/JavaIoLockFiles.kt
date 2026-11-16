@@ -19,7 +19,7 @@ import java.util.UUID
  * [LockFiles] over one resolved git directory, shared by JVM and Android. Blocking I/O: call off the main thread.
  * Pass the directory returned by [resolveGitDir]; a non-directory makes the recovery lock unsupported (fail closed).
  */
-class JavaIoLockFiles(private val gitDir: File) : LockFiles {
+class JavaIoLockFiles(private val gitDir: File, private val externalGitPossible: Boolean = true) : LockFiles {
     private val recordFile = File(gitDir, RECORD_NAME)
     private val recoverFile = File(gitDir, RECOVER_NAME)
 
@@ -96,6 +96,7 @@ class JavaIoLockFiles(private val gitDir: File) : LockFiles {
 
     // Linux/Android procfs only; any other platform, or an unreadable table, is "cannot tell" (null), never "none".
     override fun gitProcessMayBeRunning(): Boolean? {
+        if (!externalGitPossible) return false
         val proc = File("/proc")
         val entries = proc.listFiles { f -> f.name.all(Char::isDigit) } ?: return null
         val root = try { (gitDir.parentFile ?: return null).canonicalPath } catch (_: IOException) { return null }
