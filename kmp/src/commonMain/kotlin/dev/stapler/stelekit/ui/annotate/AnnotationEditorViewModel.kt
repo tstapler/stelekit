@@ -1511,23 +1511,22 @@ class AnnotationEditorViewModel(
         }
         val calibrated = current?.takeIf { it.method != CalibrationMethod.NONE }
         val hints = captureHints
-        val focal = FocalSourceResolver.resolve(
-            userConfirmed35mmEq = hints.userConfirmedFocal35mmEq,
-            lensRecord = hints.lensRecord ?: lensRecord ?: _state.value.imageAnnotation?.sensorData?.lensRecord,
-            profileMatched = false,
-            exifFocal35mmEq = _state.value.imageAnnotation?.sensorData?.focalLength35mmEq,
-        )
+        val sensor = _state.value.imageAnnotation?.sensorData
+        val fromSidecar = lensRecord ?: sensor?.lensRecord
+        val focal = if (hints.lensRecord != null) {
+            FocalSourceResolver.resolve(hints.userConfirmedFocal35mmEq, hints.lensRecord, false, sensor?.focalLength35mmEq)
+        } else {
+            CalibrationService.focalResolution(fromSidecar, hints.userConfirmedFocal35mmEq, false, sensor?.focalLength35mmEq)
+        }
         val frame = CaptureFrameInfo(
             imageWidthPx, imageHeightPx, focal.focal35mmEq,
-            zoomRatio = hints.zoomRatio ?: hints.lensRecord?.zoomRatio,
+            zoomRatio = hints.zoomRatio ?: hints.lensRecord?.zoomRatio ?: fromSidecar?.zoomRatio,
             exifDigitalZoomRatio = hints.exifDigitalZoomRatio,
         )
         val options = FitOptions(
             focalSource = focal.source,
             focal35mmEq = focal.focal35mmEq,
             request = request,
-            focalSource = focal.source,
-            focal35mmEq = focal.focal35mmEq,
             gradientEnabled = gradientTierEnabled(),
             k = current?.lens?.k ?: 0.0,
             basisVersion = calibrated?.basisVersion ?: CalibrationBasis.NATIVE_PIXELS_LENS,
