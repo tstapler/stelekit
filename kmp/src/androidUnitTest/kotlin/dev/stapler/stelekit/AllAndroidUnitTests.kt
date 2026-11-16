@@ -100,6 +100,7 @@ import org.junit.runners.Suite
     SafPermissionPersistenceTest::class,
     SafPermissionStateTransitionTest::class,
     ShadowFileCacheTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.UxOrganisationAcceptanceTest::class,
     UpgradePathTest::class,
     AndroidCredentialStoreCommitTest::class,
     AndroidCredentialStoreFailsLoudTest::class,
@@ -131,6 +132,7 @@ import org.junit.runners.Suite
     // GitSyncSchedulingEntryPointTest is excluded for the same reason (1): it drives
     // rememberGraphContentScheduledSyncControls through composeRule.setContent. Runs under Gradle.
     // TaskSchedulerAndroidEntryPointTest is excluded for the same reason (1).
+    // LayersPanelTest, StylePanelTest and ShortcutsSheetTest (sketch v2) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
     // PointerAdapterTest and TextEditorTest (sketch v2) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
     // HandleLayoutTest (sketch v2 selection overlay) is excluded for the same reason (1) and composes @Composable lambdas (no Compose plugin in this target).
     // TextMetricsAndroidEntryPointTest is excluded for the same reason (1) and composes a @Composable (no Compose plugin in this target).

@@ -36,6 +36,7 @@ import dev.stapler.stelekit.sketch.v2.scene.ImageElement
 import dev.stapler.stelekit.sketch.v2.scene.Layer
 import dev.stapler.stelekit.sketch.v2.scene.LayerId
 import dev.stapler.stelekit.sketch.v2.scene.LineElement
+import dev.stapler.stelekit.sketch.v2.scene.NameCounters
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
 import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.scene.Roundness
@@ -116,6 +117,10 @@ object SheetCodecV2 {
         if (elementLines.isEmpty()) sb.append("[]") else sb.append("[\n").append(elementLines.joinToString(",\n")).append("\n]")
         sb.append(",\"extras\":").append(canonical(doc.extras, limits).bind())
         sb.append(",\"layers\":").append(canonical(JsonArray(scene.layers.map { ElementWriter().layer(it).bind() }), limits).bind())
+        if (!doc.nameCounters.isEmpty()) {
+            val counters = JsonObject(doc.nameCounters.issued.toSortedMap().mapValues { JsonPrimitive(it.value) })
+            sb.append(",\"nameCounters\":").append(canonical(counters, limits).bind())
+        }
         sb.append('}')
         val out = sb.toString().encodeToByteArray()
         if (out.size > limits.maxSheetBytes) raise(SheetError.TooLarge(out.size.toLong(), limits.maxSheetBytes))
@@ -155,6 +160,10 @@ object SheetCodecV2 {
         }
         // A constraint whose operand is not in the sheet is dropped, the same repair `reconcile` makes for other dangling references.
         SketchDocumentV2(reconcile(scene).scene, sheetUuid, typedConstraints, extras).withoutOrphans()
+        val counters = (root["nameCounters"] as? JsonObject)?.let { o ->
+            NameCounters.of(o.mapNotNull { (k, v) -> (v as? JsonPrimitive)?.let { CanonicalJson.doubleOf(it) }?.toInt()?.let { k to it } }.toMap())
+        } ?: NameCounters.Empty
+        SketchDocumentV2(reconcile(scene).scene, sheetUuid, constraintObjects, extras, counters)
     }
 
     /** True when every non-string literal is a boolean, null or a finite number (so `extras` and constraints re-encode). */

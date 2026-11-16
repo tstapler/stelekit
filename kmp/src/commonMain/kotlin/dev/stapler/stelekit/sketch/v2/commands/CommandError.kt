@@ -68,6 +68,12 @@ sealed interface CommandError {
     /** A layer name is longer than `SceneLimits.maxNameChars`. */
     data class NameTooLong(val limit: Int) : CommandError
 
+    /** Another layer already has this name; the panel shows "A layer with this name exists" and keeps editing. */
+    data class DuplicateLayerName(val name: String) : CommandError
+
+    /** Another element already has this name; the list shows "An element with this name exists" and keeps editing. */
+    data class NameTaken(val name: String) : CommandError
+
     /** The default layer cannot be deleted (ADR-006: it exists on every sheet). */
     data object DefaultLayerProtected : CommandError
 }

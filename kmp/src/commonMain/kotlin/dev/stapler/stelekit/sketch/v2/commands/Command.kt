@@ -12,6 +12,7 @@ import dev.stapler.stelekit.sketch.v2.constraints.Constraint
 import dev.stapler.stelekit.sketch.v2.constraints.withoutOrphans
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.Layer
+import dev.stapler.stelekit.sketch.v2.scene.NameCounters
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
 import dev.stapler.stelekit.sketch.v2.scene.reconcile
@@ -26,6 +27,8 @@ data class SketchDocumentV2(
     val sheetUuid: String = "",
     val constraints: List<Constraint> = emptyList(),
     val extras: JsonObject = JsonObject(emptyMap()),
+    /** Per-kind element ordinals handed out so far; never decreases, so names are never reused (Story 3.5.7). */
+    val nameCounters: NameCounters = NameCounters.Empty,
 )
 
 /** A command's result: the new document and the ids of the elements it touched (drives caches and the spatial index). */

@@ -43,6 +43,7 @@ data class RenameLayer(val id: LayerId, val name: String) : Command {
     override fun apply(doc: SketchDocumentV2): Either<CommandError, Applied> = either {
         val limit = doc.scene.limits.maxNameChars
         if (name.length > limit) raise(CommandError.NameTooLong(limit))
+        if (doc.scene.layers.any { it.id != id && it.name == name }) raise(CommandError.DuplicateLayerName(name))
         doc.updateLayer(id) { it.copy(name = name) }.bind()
     }
 }
@@ -105,5 +106,21 @@ data class DeleteLayer(val id: LayerId, val into: LayerId = LayerId.Default) : C
         val moved = MoveElementsToLayer(members, into).apply(doc).bind()
         val scene = moved.doc.scene
         Applied(moved.doc.withLayers(scene.layers.filter { it.id != id }), moved.changedIds)
+    }
+}
+
+/** "Move elements to Base then delete" of the delete-layer dialog (UX-18): the same as [DeleteLayer] into the default layer. */
+data class MoveToBaseThenDelete(val id: LayerId) : Command {
+    override fun apply(doc: SketchDocumentV2): Either<CommandError, Applied> = DeleteLayer(id, LayerId.Default).apply(doc)
+}
+
+/** "Delete layer and elements" of the delete-layer dialog (UX-18): removes the layer and every element on it. */
+data class DeleteLayerAndElements(val id: LayerId) : Command {
+    override fun apply(doc: SketchDocumentV2): Either<CommandError, Applied> = either {
+        if (id == LayerId.Default) raise(CommandError.DefaultLayerProtected)
+        doc.scene.layerOrFail(id).bind()
+        val members = doc.scene.elementsInOrder.filter { it.base.layerId == id }.map { it.id }
+        val removed = if (members.isEmpty()) Applied(doc, emptySet()) else DeleteElements(members).apply(doc).bind()
+        Applied(removed.doc.withLayers(removed.doc.scene.layers.filter { it.id != id }), removed.changedIds + members)
     }
 }

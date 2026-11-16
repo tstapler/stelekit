@@ -97,7 +97,8 @@ data class AddElement(val element: SceneElement) : Command {
 
 data class AddElements(val elements: List<SceneElement>) : Command {
     override fun apply(doc: SketchDocumentV2): Either<CommandError, Applied> = either {
-        finish(doc, addOnTop(doc.scene, elements).bind(), elements.mapTo(LinkedHashSet()) { it.id })
+        val (named, counters) = doc.nameCounters.assign(elements)
+        finish(doc.copy(nameCounters = counters), addOnTop(doc.scene, named).bind(), named.mapTo(LinkedHashSet()) { it.id })
     }
 }
 
@@ -123,7 +124,7 @@ private fun withPoints(e: SceneElement, points: List<ScenePoint>): SceneElement 
     else -> e
 }
 
-private fun SceneElement.shifted(dx: Double, dy: Double, limits: SceneLimits): Either<CommandError, SceneElement> = either {
+internal fun SceneElement.shifted(dx: Double, dy: Double, limits: SceneLimits): Either<CommandError, SceneElement> = either {
     fun u(v: SceneUnit, d: Double) = sceneUnit(v.value + d, limits).bind()
     fun p(pt: ScenePoint) = ScenePoint(u(pt.x, dx), u(pt.y, dy))
     when (val e = this@shifted) {
@@ -396,7 +397,9 @@ data class PasteElements(val elements: List<SceneElement>, val idMap: Map<Elemen
             remapped(e, idMap, groups, layer).shifted(dx, dy, scene.limits).bind()
         }
         val ordered = copies.sortedWith(compareBy({ it.base.layerId.value }, { it.base.zKey }))
-        finish(doc, addOnTop(scene, ordered).bind(), copies.mapTo(LinkedHashSet()) { it.id })
+        // A copy is a new element: it takes the next ordinal of its kind and drops the source's user name.
+        val (named, counters) = doc.nameCounters.assign(ordered.map { it.withBase(it.base.copy(ordinal = 0, name = if (it is FrameElement) it.base.name else null)) })
+        finish(doc.copy(nameCounters = counters), addOnTop(scene, named).bind(), copies.mapTo(LinkedHashSet()) { it.id })
     }
 }
 
