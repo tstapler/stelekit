@@ -1,0 +1,24 @@
+# ADR-003: Bespoke pure-Kotlin LM/DogLeg constraint solver, clean-room from planegcs
+
+**Status**: Proposed (gated by Spike 0.1.2; flips to Accepted when the spike meets its exit criteria)
+**Date**: 2026-11-14
+
+## Context
+Success metric 3 needs a FreeCAD-style 2D solver on all targets. Candidates (research/build-vs-buy.md): planegcs (LGPL-2.1+, C++/Eigen/Boost, no Kotlin/wasm build found), SolveSpace libslvs (GPL-3.0+), Multik (alpha), EJML (JVM only).
+The repo license is Elastic License 2.0 (`LICENSE`, source headers `SPDX-License-Identifier: Elastic-2.0`), which is not LGPL/GPL-compatible for linking or derivative code. VERIFIED by reading `LICENSE` and a source header.
+
+## Decision
+1. Build the solver in `kmp/.../sketch/constraints/` (commonMain, pure Kotlin, dense `DoubleArray`), no new dependency. Contract: `solve(ConstraintProblem) -> SolveResult` = `Solved | Conflict(ids) | Redundant(ids) | NoConvergence`, per-component, with iteration and wall-time caps; never throws to the UI.
+2. Algorithms: Levenberg-Marquardt with analytic Jacobians as the baseline; DogLeg and BFGS fallbacks only if Spike 0.1.2 shows need; QR with column pivoting for rank (DOF, redundancy, conflict); connected-component decomposition; warm start from the last solution during drag.
+3. **Clean-room boundary**: the implementer reads planegcs/SolveSpace documentation and the published algorithm names (DogLeg, LM, BFGS, constraint list from `Constraint.h`) but does not copy or translate source. The spike and implementation tasks record "no planegcs source open while writing" in the task notes. Planegcs/SolveSpace may be used only as an offline test oracle in the spike (results captured as fixtures; no linking, no vendoring). Any direct port is out unless the owner makes a licensing decision (OD-3).
+4. Package import direction: `sketch.constraints` imports nothing from `ui`, `db`, `repository`, `merge` (`SketchSolverImportDirectionTest`, mirrors `JobsScheduleImportDirectionTest`).
+5. v1 constraint set: coincident, point-on-object, horizontal, vertical, parallel, perpendicular, tangent (line-circle, circle-circle, line-arc, endpoint), equal, symmetric, fixed/block, distance (+X/Y), angle, radius, diameter, driven (reference) dimensions. Geometry: point, line, circle, arc, rect (4 lines + implicit constraints), polyline. Out: ellipse/conics, B-splines, external geometry. **Scene mapping (consistency B1, owner decision OD-8)**: a circle is an `EllipseElement` with equal radii (an ellipse with unequal radii is NOT a constraint target), and `PointElement` and `ArcElement` are added to the `SceneElement` hierarchy as technical geometry so every geometry kind above has a scene element. If OD-8 is declined, arc, free point and the line-arc/circle-arc tangent cases are dropped from this list (and from success metric 3's tangent wording).
+6. Spike exit criteria: maximum constraint residual under 1e-6 scene units after every successful solve over the randomised property corpus (a solve that stops above it is `NoConvergence`, never committed as solved; the solver's own stop tolerance is 1e-9 relative to sketch scale); 100-constraint solve under 50 ms on JVM and under 150 ms on wasmJs (hard bars; 50 ms on wasmJs is an advisory target, owner-confirmable D-30); no NaN on a degenerate fuzz corpus; redundancy and conflict ids correct on generated cases; no branch flip across a 200-step scripted drag; JVM vs wasm max abs difference under 1e-6.
+
+7. **Fallback acceptance (iteration 9, P4) and per-target tier (iteration 15, D-114)**: the spike decides a `SolverTier` (`Full`, `GeometricOnly` or `Hidden`) PER TARGET (JVM, standing for desktop and Android, and wasmJs): a miss of a target-independent criterion (residual, `Redundant`/`Conflict` classification, branch flip, NaN) selects `GeometricOnly` on every target, a time miss only on its own target, so a wasmJs time miss never takes the full solver from desktop and Android; the geometric-only set is re-measured on the missing target and that target is `Hidden` if it misses too. For a target whose tier is `GeometricOnly` (Coincident, Horizontal, Vertical, Equal, Distance), the acceptance scenario is the "fallback plate" of requirements metric 3 (plate 6 x 4 in plus a square pocket; analytic DOF 4; conflicting Distance rejected with both ids named), because the bracket plate needs Fixed, Radius and Parallel. Metric 3 keeps every numeric bar under the fallback; only the named scenario changes, and it changes back when Fixed, Radius and Parallel each pass their randomised property test.
+
+## Alternatives rejected
+Port planegcs (LGPL derivative); link libslvs (GPL + cinterop on 4 targets); Multik/EJML (alpha / JVM-only, unneeded at 200x200); WebView solver (no).
+
+## Consequences
+First-release robustness may trail FreeCAD; non-convergence returns the last good geometry plus diagnostics, so failure is visible, not corrupting.
