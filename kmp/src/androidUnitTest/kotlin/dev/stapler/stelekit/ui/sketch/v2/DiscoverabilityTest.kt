@@ -186,7 +186,8 @@ class DiscoverabilityTest {
 
     @Test
     fun hint_should_UseTheTouchWording_AfterATouch_AndTheKeyboardWordingAfterAKeyPress() {
-        val state = show(desktop)
+        // Finger drawing ON: with it OFF a touch user gets the finger-off hint instead (UX-80, FingerDrawingController.TOOL_HINT_OFF).
+        val state = show(desktop, SketchEditorState(fingerDrawing = true))
         state.chooseTool(ToolId.Rectangle)
         rule.waitForIdle()
         val hint = SketchStrings.Hints.of(ToolId.Rectangle)
@@ -206,7 +207,7 @@ class DiscoverabilityTest {
 
     @Test
     fun hint_should_FollowTheActiveTool_AndPrefixToolLock() {
-        val state = show(desktop)
+        val state = show(desktop, SketchEditorState(fingerDrawing = true))
         state.chooseTool(ToolId.Arrow)
         state.toolLock = true
         rule.waitForIdle()
