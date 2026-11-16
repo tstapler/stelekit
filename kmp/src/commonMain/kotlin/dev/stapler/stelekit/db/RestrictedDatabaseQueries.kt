@@ -801,10 +801,15 @@ class RestrictedDatabaseQueries(
         layer_json: String,
         zones_json: String,
         position: Long,
+        schema_version: Long,
     ): Long = queries.insertSketchSheet(
         uuid, project_uuid, kind, view_direction, unit, scale_sixteenths_per_unit, source_asset_uuid,
-        layer_json, zones_json, position,
+        layer_json, zones_json, position, schema_version,
     )
+
+    @DirectSqlWrite
+    suspend fun updateSketchSheetSchemaVersion(schema_version: Long, uuid: String): Long =
+        queries.updateSketchSheetSchemaVersion(schema_version, uuid)
 
     @DirectSqlWrite
     suspend fun insertSketchPrimitive(

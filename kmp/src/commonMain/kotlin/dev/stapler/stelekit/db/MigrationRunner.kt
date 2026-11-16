@@ -953,6 +953,14 @@ object MigrationRunner {
                 SchemaOp.AddColumn("image_annotations", "calibration_geometry_json", "TEXT NOT NULL DEFAULT ''"),
             ),
         ),
+        Migration(
+            name = "sketch_sheets_schema_version",
+            // DB mirror of the sheet file's schema; 1 for every existing row (excalidraw-sketch-engine Story 1.4.1).
+            // No sketch_elements / sketch_constraints tables: the sidecar file is authoritative.
+            schemaOps = listOf(
+                SchemaOp.AddColumn("sketch_sheets", "schema_version", "INTEGER NOT NULL DEFAULT 1"),
+            ),
+        ),
     )
 
     /**

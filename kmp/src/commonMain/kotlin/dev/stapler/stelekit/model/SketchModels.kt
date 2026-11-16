@@ -41,6 +41,8 @@ data class SketchSheet(
     val layers: List<String> = emptyList(),
     val zones: JsonArray = JsonArray(emptyList()),
     val position: Long = 0,
+    /** DB mirror of the sheet file's schema (1 or 2); the file wins, see ADR-001. Copy it, never rebuild it. */
+    val schemaVersion: Long = 1,
 )
 
 /** Coordinates are sixteenths of the sheet unit. */

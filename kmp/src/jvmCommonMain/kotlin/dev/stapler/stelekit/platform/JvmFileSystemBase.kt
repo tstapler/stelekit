@@ -255,6 +255,20 @@ abstract class JvmFileSystemBase {
         }
     }
 
+    /** Reads at most [maxBytes] bytes; never more than that is read from disk. Null when absent or unreadable. */
+    open fun readFilePrefix(path: String, maxBytes: Int): ByteArray? {
+        return try {
+            val validatedPath = validatePath(path)
+            val file = File(validatedPath)
+            if (!file.exists() || !file.isFile) return null
+            file.inputStream().use { it.readNBytes(maxBytes.coerceAtLeast(0)) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     open fun writeFileBytes(path: String, data: ByteArray): Boolean {
         return try {
             val validatedPath = validatePath(path, addToWhitelist = false)

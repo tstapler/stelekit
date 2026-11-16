@@ -63,6 +63,8 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
 
     override fun readFileBytes(path: String): ByteArray? = super<JvmFileSystemBase>.readFileBytes(path)
 
+    override fun readFilePrefix(path: String, maxBytes: Int): ByteArray? = super<JvmFileSystemBase>.readFilePrefix(path, maxBytes)
+
     override fun getFileSize(path: String): Long? = super<JvmFileSystemBase>.getFileSize(path)
 
     override fun writeFileBytes(path: String, data: ByteArray): Boolean = super<JvmFileSystemBase>.writeFileBytes(path, data)

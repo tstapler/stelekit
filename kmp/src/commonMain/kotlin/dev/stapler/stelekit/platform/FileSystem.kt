@@ -1,5 +1,8 @@
 package dev.stapler.stelekit.platform
 
+import arrow.core.Either
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
 import kotlinx.coroutines.CoroutineScope
 
 interface FileSystem {
@@ -200,6 +203,41 @@ interface FileSystem {
      */
     fun writeFileBytes(path: String, data: ByteArray): Boolean =
         throw UnsupportedOperationException("writeFileBytes is not implemented for this platform. Override in a platform-specific FileSystem implementation.")
+
+    /**
+     * Reads at most the first [maxBytes] bytes of [path]; null means "cannot read" (absent, or no byte reads on
+     * this platform). The default truncates [readFileBytes] and maps its [UnsupportedOperationException] to null.
+     * JVM and Android override it so that a header probe never reads a whole sheet.
+     */
+    fun readFilePrefix(path: String, maxBytes: Int): ByteArray? {
+        val bytes = try {
+            readFileBytes(path)
+        } catch (_: UnsupportedOperationException) {
+            null
+        } ?: return null
+        return if (bytes.size > maxBytes) bytes.copyOf(maxBytes) else bytes
+    }
+
+    /**
+     * Whether v2 sketch files can be stored here right now (Story 1.4.3). The default is Ready for platforms whose
+     * byte writes are real files; the wasm file system overrides it with the OPFS verdict and preload state.
+     */
+    val storageStatus: V2StorageStatus get() = V2StorageStatus.Ready(sessionOnly = false, privateSuspected = false)
+
+    /** Completes when every write queued for [path] has reached durable storage; default Right (writes are synchronous). */
+    suspend fun awaitDurable(path: String): Either<DomainError, Unit> = Unit.right()
+
+    /** Writes a temp file that [renameFile] / [replaceFileAtomically] will move into place; default is [writeFileBytes]. */
+    fun writeTempBytes(path: String, data: ByteArray): Boolean = writeFileBytes(path, data)
+
+    /** Deletes a temp file written by [writeTempBytes]; default is [deleteFile]. */
+    fun deleteTempBytes(path: String): Boolean = deleteFile(path)
+
+    /**
+     * Reads bytes on demand for files a preloading platform does not hold in memory (`backup/`, `conflicts/`,
+     * sources, D-143); default is [readFileBytes].
+     */
+    suspend fun readFileBytesSuspend(path: String): ByteArray? = readFileBytes(path)
 
     /**
      * Write-behind hook: writes [content] to shadow storage and enqueues [path] in the

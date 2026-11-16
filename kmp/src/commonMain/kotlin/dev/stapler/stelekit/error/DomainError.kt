@@ -29,6 +29,14 @@ sealed interface DomainError {
         data class SymlinkRefused(val path: String) : FileSystemError {
             override val message: String = "Refusing to replace a symbolic link: $path"
         }
+        /** The browser refused the write for lack of storage quota (OPFS); nothing was committed to [path]. */
+        data class StorageQuotaExceeded(val path: String) : FileSystemError {
+            override val message: String = "Not enough browser storage to write: $path"
+        }
+        /** This tab does not hold the sketch writer lease, so it must not write under the sidecar root. */
+        data class WriterLeaseNotHeld(val path: String) : FileSystemError {
+            override val message: String = "Another tab is editing this graph's sketches: $path"
+        }
     }
 
     sealed interface ParseError : DomainError {
@@ -361,6 +369,8 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.FileSystemError.DeleteFailed -> "File delete failed"
     is DomainError.FileSystemError.AtomicWriteUnsupported -> "Safe file writes are not supported here"
     is DomainError.FileSystemError.SymlinkRefused -> "File is a symbolic link"
+    is DomainError.FileSystemError.StorageQuotaExceeded -> "Not enough browser storage to save"
+    is DomainError.FileSystemError.WriterLeaseNotHeld -> "Another tab is editing these sketches"
     is DomainError.ParseError.EmptyFile -> "File is empty"
     is DomainError.ParseError.InvalidSyntax -> "Parse error"
     is DomainError.ParseError.UnsupportedForm -> "Unsupported form"

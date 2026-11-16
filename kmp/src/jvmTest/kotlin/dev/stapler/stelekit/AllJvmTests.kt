@@ -591,6 +591,7 @@ import org.junit.runners.Suite
     JvmFileSystemBaseWhitelistTest::class,
     OpenInBrowserJvmTest::class,
     ReplaceFileAtomicallyTest::class,
+    dev.stapler.stelekit.platform.FilePrefixReadTest::class,
     JvmCredentialStoreTest::class,
     DesktopFilePickerTest::class,
     AttachmentFileNamingTest::class,

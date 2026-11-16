@@ -295,7 +295,9 @@ private class SteleDatabaseImpl(
           |    source_asset_uuid         TEXT,
           |    layer_json                TEXT NOT NULL,
           |    zones_json                TEXT NOT NULL,
-          |    position                  INTEGER NOT NULL
+          |    position                  INTEGER NOT NULL,
+          |    -- DB mirror of the sheet FILE's schema (ADR-001: the file wins); the reconciler repairs a stale value.
+          |    schema_version            INTEGER NOT NULL DEFAULT 1
           |)
           """.trimMargin(), 0).await()
       driver.execute(null, """
