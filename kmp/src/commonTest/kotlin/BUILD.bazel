@@ -226,6 +226,7 @@ kt_jvm_library(
     testonly = True,
     kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
     deps = [
+        ":git_testsupport",
         "//kmp/src/jvmMain/kotlin:jvm_main_lib",
         "@maven//:io_kotest_kotest_property_jvm",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
