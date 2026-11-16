@@ -461,6 +461,8 @@ internal fun ScreenRouter(
                             repos.sketchRepositories, repos.writeActor, currentScreen.projectUuid,
                             onSaved = sketchExporter?.let { exporter -> { doc, slug -> exporter.exportPreview(doc, slug) } },
                             onPersisted = previewLoader?.let { loader -> { slug -> loader.notifySaved(slug) } },
+                            leases = viewModel.sheetLeaseRegistry(),
+                            v2Probe = viewModel.projectSidecarStore()?.let { dev.stapler.stelekit.projectbridge.SheetFileSchemaProbe(it) },
                         )
                     }
                     dev.stapler.stelekit.ui.sketch.SketchScreen(viewModel = sketchViewModel, onNavigateBack = { viewModel.goBack() }, exporter = sketchExporter)

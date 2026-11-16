@@ -110,8 +110,12 @@ internal object MixedProjectFixtures {
     }
 
     /** A device holding the project in its database and its sidecar folder. */
-    suspend fun device(convertA: Boolean, extraInA: List<dev.stapler.stelekit.sketch.v2.scene.SceneElement> = emptyList()): Device {
-        val d = Device()
+    suspend fun device(
+        convertA: Boolean,
+        extraInA: List<dev.stapler.stelekit.sketch.v2.scene.SceneElement> = emptyList(),
+        lease: dev.stapler.stelekit.platform.SketchWriterLease = dev.stapler.stelekit.platform.AlwaysHeldSketchWriterLease(),
+    ): Device {
+        val d = Device(lease = lease)
         val bundle = bundle(convertA, extraInA)
         d.store.write(slug, SidecarCodec.encode(bundle))
         d.repos.projects.replaceProjectContents(SketchTestSupport.P, bundle).getOrNull() ?: error("seed failed")

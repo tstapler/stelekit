@@ -9,6 +9,7 @@ import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.jobs.JobTracker
 import dev.stapler.stelekit.merge.TargetWriterRouter
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.sketch.v2.runtime.session.SheetLeaseRegistry
 import dev.stapler.stelekit.repository.SketchRepositories
 import kotlinx.coroutines.flow.Flow
 
@@ -44,4 +45,6 @@ class ProjectBridgeDeps(
     val fusionSetup: suspend () -> ProjectFusionSetup? = { null },
     /** The PNG sheets' calibration records for the graph's project (Story 4.5b); empty when none is tagged. */
     val pngTags: suspend () -> List<PngCalibrationRecord> = { emptyList() },
+    /** The graph's one [SheetLeaseRegistry], shared by the legacy editor, the v2 editor, the preview path and the importer. */
+    val sheetLeases: SheetLeaseRegistry,
 )

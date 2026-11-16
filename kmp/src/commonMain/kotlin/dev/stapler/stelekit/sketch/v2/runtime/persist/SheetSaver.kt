@@ -66,9 +66,15 @@ sealed interface SaveState {
     /** The file changed under the editor. [copyPath] is the saved copy of the in-memory scene, null when there were no unsaved edits. */
     data class Conflict(val copyPath: String?) : SaveState
 
+    /** Another tab holds the writer lease: read-only, the debounce is stopped and nothing is written (never a [Failed]). */
+    data object LeaseConflict : SaveState
+
     /** True while the user's latest edits are not on disk, which is when leaving the sheet must ask first. */
     val hasUnsavedWork: Boolean get() = this != Saved
 }
+
+/** A conflict or a lost writer lease stops the debounce: no further write is attempted from this state. */
+private val SaveState.blocksSaving: Boolean get() = this is SaveState.Conflict || this == SaveState.LeaseConflict
 
 /** The sheet a saver owns: where its file lives and the sha of the bytes it loaded (null for a sheet never saved). */
 class SheetTarget(val slug: String, val projectUuid: ProjectUuid, val sheet: SheetUuid, val loadedSha: String? = null)
@@ -163,7 +169,7 @@ class SheetSaver(
     fun submit(doc: SketchDocumentV2) {
         if (closed) return
         latest.value = Submitted((latest.value?.version ?: 0L) + 1, doc)
-        if (mutableState.value !is SaveState.Conflict) mutableState.value = SaveState.Pending
+        if (!mutableState.value.blocksSaving) mutableState.value = SaveState.Pending
         wake.trySend(false)
     }
 
@@ -235,7 +241,7 @@ class SheetSaver(
 
     private suspend fun saveLatest() = saveGate.withLock {
         val snap = latest.value ?: return@withLock
-        if (snap.version == savedVersion || mutableState.value is SaveState.Conflict) return@withLock
+        if (snap.version == savedVersion || mutableState.value.blocksSaving) return@withLock
         mutableState.value = SaveState.Saving
         try {
             saveSnapshot(snap)
@@ -257,6 +263,11 @@ class SheetSaver(
             Persist.Deferred -> deferWrite()
             is Persist.Conflict -> conflict(encoded, result.diskSha)
             is Persist.Failed -> fail(result.reason)
+            Persist.LeaseLost -> {
+                // The store refused for lack of the writer lease: read-only, the debounce stops, the scene stays in memory.
+                mutableState.value = SaveState.LeaseConflict
+                ports.diagnostics.raise(BannerRowId.LeaseConflict, "Edited in another tab.")
+            }
         }
     }
 

@@ -11,3 +11,7 @@ BackgroundTaskScheduler  TaskSchedulerDesktopEntryPointTest  effect:in-process-t
 AssetPipelinePlugin  CloudStackEntryPointTest  effect:cloud-description-persisted
 TextMetricsProvider  TextMetricsAndroidEntryPointTest  effect:text-metrics-measured-android
 TextMetricsProvider  TextMetricsDesktopEntryPointTest  effect:text-metrics-measured-desktop
+SketchWriterLease  SketchStorageAndroidEntryPointTest  effect:sketch-writer-lease-held-android
+BrowserPersistence  SketchStorageAndroidEntryPointTest  effect:browser-persistence-unsupported-android
+SketchWriterLease  SketchStorageDesktopEntryPointTest  effect:sketch-writer-lease-held-desktop
+BrowserPersistence  SketchStorageDesktopEntryPointTest  effect:browser-persistence-unsupported-desktop

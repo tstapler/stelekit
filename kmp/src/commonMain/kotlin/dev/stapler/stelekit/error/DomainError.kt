@@ -37,6 +37,10 @@ sealed interface DomainError {
         data class WriterLeaseNotHeld(val path: String) : FileSystemError {
             override val message: String = "Another tab is editing this graph's sketches: $path"
         }
+        /** The sheet's file is schema 2, so the classic editor must not load it (the new editor owns it). */
+        data class SheetIsV2(val sheet: String) : FileSystemError {
+            override val message: String = "This sketch uses the new editor: $sheet"
+        }
     }
 
     sealed interface ParseError : DomainError {
@@ -371,6 +375,7 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.FileSystemError.SymlinkRefused -> "File is a symbolic link"
     is DomainError.FileSystemError.StorageQuotaExceeded -> "Not enough browser storage to save"
     is DomainError.FileSystemError.WriterLeaseNotHeld -> "Another tab is editing these sketches"
+    is DomainError.FileSystemError.SheetIsV2 -> "This sketch uses the new editor"
     is DomainError.ParseError.EmptyFile -> "File is empty"
     is DomainError.ParseError.InvalidSyntax -> "Parse error"
     is DomainError.ParseError.UnsupportedForm -> "Unsupported form"

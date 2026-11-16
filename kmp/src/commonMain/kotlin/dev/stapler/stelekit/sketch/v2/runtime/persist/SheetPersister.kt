@@ -24,6 +24,9 @@ internal sealed interface Persist {
     data object Deferred : Persist
     data class Conflict(val diskSha: String?) : Persist
     data class Failed(val reason: SaveFailure) : Persist
+
+    /** The store refused the write because this tab no longer holds the sketch writer lease (D-142). */
+    data object LeaseLost : Persist
 }
 
 /**
@@ -73,14 +76,17 @@ internal class SheetPersister(private val target: SheetTarget, private val ports
         val modelFiles = SidecarCodec.encode(bundle)
         val others = bundle.sheetPayloads.filterKeys { it != target.sheet }
             .mapNotNull { (uuid, payload) -> (payload as? SheetPayload.V2Opaque)?.let { SheetPaths.pathFor(uuid, SheetPaths.SCHEMA_V2) to it.sha256 } }.toMap()
-        return when (ports.store.writeNow(target.slug, modelFiles - others.keys, others)) {
+        return when (val outcome = ports.store.writeNow(target.slug, modelFiles - others.keys, others)) {
             SidecarWriteOutcome.Written -> finishWrite(loaded.project, updatedRow, SidecarCodec.bundleHash(modelFiles))
             SidecarWriteOutcome.Deferred -> Persist.Deferred
             SidecarWriteOutcome.StaleOpaque -> null
             SidecarWriteOutcome.Unavailable -> Persist.Failed(SaveFailure.Unavailable)
-            is SidecarWriteOutcome.Failed -> Persist.Failed(SaveFailure.Write)
+            is SidecarWriteOutcome.Failed -> failureOf(outcome.error)
         }
     }
+
+    private fun failureOf(error: DomainError): Persist =
+        if (error is DomainError.FileSystemError.WriterLeaseNotHeld) Persist.LeaseLost else Persist.Failed(SaveFailure.Write)
 
     /** The files are written: mirror the sheet row and move the reconcile base so the next reconcile reads `Unchanged`. */
     @OptIn(DirectRepositoryWrite::class)

@@ -65,6 +65,8 @@ kt_android_library(
             "**/HomeSketchFlowEntryPointTest.kt",
             # Composes the root text-metrics provider (Gradle-only, no Compose plugin here)
             "**/TextMetricsAndroidEntryPointTest.kt",
+            # Composes the root store provider and needs the commonTest FakeFileSystem (Gradle-only, no Compose plugin here)
+            "**/SketchStorageAndroidEntryPointTest.kt",
             "**/DimensionFieldTest.kt",
             "**/SketchSheetPanelsTest.kt",
             "**/SketchDeleteAndPreviewTest.kt",

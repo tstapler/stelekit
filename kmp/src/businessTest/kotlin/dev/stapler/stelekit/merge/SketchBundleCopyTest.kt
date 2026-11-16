@@ -76,6 +76,10 @@ class SketchBundleCopyTest {
         override suspend fun retentionSize(slug: String): RetentionPolicy.Size = unused()
         override suspend fun deleteV2Sheet(slug: String, sheetUuid: String): Either<DomainError, Unit> = unused()
         override suspend fun readV2SheetFile(slug: String, sheetUuid: String): ByteArray? = null
+        override suspend fun readModel(slug: String): SidecarRead = unused()
+        override suspend fun readSheetPrefix(slug: String, relPath: String, maxBytes: Int): ByteArray? = unused()
+        override fun isAvailable(): Boolean = unused()
+        override fun storageStatus(): dev.stapler.stelekit.platform.V2StorageStatus = unused()
         override suspend fun flushPending(): Int = unused()
         override suspend fun slugsOnDisk(): List<String> = unused()
         private fun <T> unused(): T = error("not used by SketchBundleCopy")

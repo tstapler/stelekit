@@ -10,6 +10,8 @@ import dev.stapler.stelekit.model.RevisionToken
 import dev.stapler.stelekit.model.SheetUuid
 import dev.stapler.stelekit.model.SketchProject
 import dev.stapler.stelekit.model.SketchSheet
+import dev.stapler.stelekit.projectbridge.SheetFileSchemaProbe
+import dev.stapler.stelekit.projectbridge.SheetPaths
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.SketchRepositories
 import dev.stapler.stelekit.repository.SketchSheetRepository
@@ -18,7 +20,11 @@ import kotlinx.coroutines.flow.first
 import dev.stapler.stelekit.model.SketchPrimitive as StoredPrimitive
 
 /** The editor's repository access: bounded reads, and writes serialised through the actor when there is one. */
-internal class SketchStore(private val repos: SketchRepositories, private val writeActor: DatabaseWriteActor?) {
+internal class SketchStore(
+    private val repos: SketchRepositories,
+    private val writeActor: DatabaseWriteActor?,
+    private val v2Probe: SheetFileSchemaProbe? = null,
+) {
 
     suspend fun write(op: suspend () -> Either<DomainError, Unit>): Either<DomainError, Unit> =
         writeActor?.execute { op() } ?: op()
@@ -51,6 +57,9 @@ internal class SketchStore(private val repos: SketchRepositories, private val wr
     suspend fun loadSheet(uuid: ProjectUuid, newId: () -> String): Either<DomainError, Pair<LoadedSketchProject, SketchSheet>> = either {
         val loaded = repos.projects.loadProject(uuid).bind() ?: raise(DomainError.DatabaseError.ReadFailed("project not found"))
         val first = repos.sheets.getSheets(uuid, 1).first().bind().items.firstOrNull() ?: blankSheet(uuid, loaded.token, newId).bind()
+        // The file is the arbiter: a mirror reset can leave a v2 sheet's row at schema 1, and the classic editor must never open it.
+        val fileIsV2 = first.schemaVersion == SheetPaths.SCHEMA_V2 || v2Probe?.isV2(loaded.project.slug, first.uuid) == true
+        if (fileIsV2) raise(DomainError.FileSystemError.SheetIsV2(first.uuid.value))
         loaded to first
     }
 

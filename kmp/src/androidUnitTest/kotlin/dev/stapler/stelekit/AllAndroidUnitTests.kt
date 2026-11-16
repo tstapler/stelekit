@@ -141,6 +141,7 @@ import org.junit.runners.Suite
     // ToolStripTest, AdaptiveStateSurvivalTest, SketchCanvasRecompositionTest and ScenePainterAndroidTest (sketch v2, Stories 3.1.3 and 2.1.3)
     // are excluded for the same reason (1) and compose @Composable lambdas or need commonTest fixtures (no Compose plugin or commonTest in this target).
     // TextMetricsAndroidEntryPointTest is excluded for the same reason (1) and composes a @Composable (no Compose plugin in this target).
+    // SketchStorageAndroidEntryPointTest (Task 1.4.3q) is excluded for the same reason (1), composes @Composable calls and needs the commonTest FakeFileSystem.
     // LeaveSketchPromptTest is excluded for the same reason (1) and composes a @Composable (no Compose plugin in this target).
     // RestoreBackupDialogTest (sketch backup restore, Tasks 6.2.6b and 6.2.6c) is excluded for the same reason (1) and composes @Composable lambdas (no Compose plugin in this target).
     // SketchCopyDialogTest (sketch copy result dialog, Task 6.1.2c) is excluded for the same reason (1) and composes a @Composable (no Compose plugin in this target).

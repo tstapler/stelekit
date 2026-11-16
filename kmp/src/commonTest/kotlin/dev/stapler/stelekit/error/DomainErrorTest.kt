@@ -89,6 +89,7 @@ class DomainErrorTest {
             DomainError.FileSystemError.SymlinkRefused("/path"),
             DomainError.FileSystemError.StorageQuotaExceeded("/path"),
             DomainError.FileSystemError.WriterLeaseNotHeld("/path"),
+            DomainError.FileSystemError.SheetIsV2("s1"),
             DomainError.StorageError.VerificationFailed("/path", "hash mismatch"),
             DomainError.StorageError.SourceInFlight("sync in progress"),
             DomainError.StorageError.DestinationNotWritable("/path"),
@@ -113,6 +114,7 @@ class DomainErrorTest {
                 is DomainError.FileSystemError.SymlinkRefused -> err.message
                 is DomainError.FileSystemError.StorageQuotaExceeded -> err.message
                 is DomainError.FileSystemError.WriterLeaseNotHeld -> err.message
+                is DomainError.FileSystemError.SheetIsV2 -> err.message
                 is DomainError.ParseError.EmptyFile -> err.message
                 is DomainError.ParseError.InvalidSyntax -> err.message
                 is DomainError.ParseError.MalformedMarkdown -> err.message

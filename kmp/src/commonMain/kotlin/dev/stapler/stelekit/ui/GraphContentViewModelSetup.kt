@@ -19,6 +19,7 @@ import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.platform.AtomicFileWriter
 import dev.stapler.stelekit.projectbridge.FileProjectSidecarStore
+import dev.stapler.stelekit.sketch.v2.runtime.session.SheetLeaseRegistry
 import dev.stapler.stelekit.projectbridge.LoaderPageSettleProbe
 import dev.stapler.stelekit.projectbridge.ProjectSidecarStore
 import dev.stapler.stelekit.projectbridge.ProjectBridgeDeps
@@ -202,7 +203,7 @@ private fun buildViewModelDependencies(
  * Dormant until the `homeSketch` flag is on: the coordinator built from this reads the flag at trigger time.
  * [ProjectBridgeDeps.hasConfiguredProject] is true once the project list (Story 5.9a) has created a project.
  */
-private fun buildProjectBridgeDeps(
+internal fun buildProjectBridgeDeps(
     deps: GraphContentDeps,
     effectiveFileSystem: dev.stapler.stelekit.platform.FileSystem,
     graphIoStack: GraphContentGraphIoStack,
@@ -221,7 +222,8 @@ private fun buildProjectBridgeDeps(
     val sidecarStore = {
         graphManager.getActiveGraphInfo()?.takeIf { !it.isDemo }?.effectiveNotesPath?.value?.let { root ->
             cachedStore?.takeIf { it.first == root }?.second ?: FileProjectSidecarStore(
-                effectiveFileSystem, root, AtomicFileWriter(effectiveFileSystem, { it }, ".tmp"), isGitSyncBusy,
+                effectiveFileSystem, root, AtomicFileWriter(effectiveFileSystem, { it }, ".tmp"),
+                deps.platformIntegrations.sketchWriterLease, isGitSyncBusy,
             ).also { cachedStore = root to it }
         }
     }
@@ -252,6 +254,7 @@ private fun buildProjectBridgeDeps(
         },
         fusionSetup = { loadFusionSetup(deps.repos.sketchRepositories) },
         pngTags = { readPngTags(deps.repos.sketchRepositories) },
+        sheetLeases = SheetLeaseRegistry(deps.platformIntegrations.sketchWriterLease),
         pageSettleProbe = LoaderPageSettleProbe(
             isIndexOnlyStub = { page ->
                 deps.repos.pageRepository.getPageByName(page.pageName).first().getOrNull()?.isContentLoaded == false

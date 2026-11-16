@@ -29,6 +29,16 @@ class ScriptedSidecarStore(var latency: suspend () -> Unit = {}, val onWrite: ()
 
     override suspend fun read(slug: String): SidecarRead = if (files.isEmpty()) SidecarRead.Absent else SidecarRead.Present(files.toMap())
 
+    override suspend fun readModel(slug: String): SidecarRead = read(slug)
+
+    override suspend fun readSheetPrefix(slug: String, relPath: String, maxBytes: Int): ByteArray? =
+        files[relPath]?.let { if (it.size > maxBytes) it.copyOf(maxBytes) else it }
+
+    override fun isAvailable(): Boolean = true
+
+    override fun storageStatus(): dev.stapler.stelekit.platform.V2StorageStatus =
+        dev.stapler.stelekit.platform.V2StorageStatus.Ready(sessionOnly = false, privateSuspected = false)
+
     override suspend fun write(slug: String, files: Map<String, ByteArray>, opaque: Map<String, String>): SidecarWriteOutcome =
         writeNow(slug, files, opaque)
 

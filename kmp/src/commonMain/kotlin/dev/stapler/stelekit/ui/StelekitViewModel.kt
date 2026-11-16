@@ -501,6 +501,9 @@ class StelekitViewModel(
     /** The graph's sidecar store (null where unsupported); the Sketch screen's YAML picker writes through it. */
     fun projectSidecarStore(): dev.stapler.stelekit.projectbridge.ProjectSidecarStore? = projectBridgeDeps?.sidecarStore?.invoke()
 
+    /** The graph's one sheet edit-lease registry; null where the project bridge is not wired. */
+    fun sheetLeaseRegistry(): dev.stapler.stelekit.sketch.v2.runtime.session.SheetLeaseRegistry? = projectBridgeDeps?.sheetLeases
+
     private val postSyncProjectCoordinator = projectBridgeDeps?.let {
         PostSyncProjectCoordinator(it, gitLastSyncAt, { activeGitSyncService.value?.syncState?.value }, activeGraphIdProvider, scope.coroutineContext)
     }

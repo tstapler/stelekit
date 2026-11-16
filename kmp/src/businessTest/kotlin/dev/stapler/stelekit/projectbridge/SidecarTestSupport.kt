@@ -5,7 +5,9 @@
 package dev.stapler.stelekit.projectbridge
 
 import dev.stapler.stelekit.db.FakeRelocationFileSystem
+import dev.stapler.stelekit.platform.AlwaysHeldSketchWriterLease
 import dev.stapler.stelekit.platform.AtomicFileWriter
+import dev.stapler.stelekit.platform.SketchWriterLease
 import dev.stapler.stelekit.repository.SketchRepositories
 import dev.stapler.stelekit.repository.SketchTestSupport
 import dev.stapler.stelekit.model.ProjectBundle
@@ -13,7 +15,7 @@ import dev.stapler.stelekit.model.ProjectBundle
 internal const val GRAPH = "/g"
 
 /** In-memory file system with a switchable crash (every mutation throws once [dead]), like a killed process. */
-internal class SidecarFs : FakeRelocationFileSystem() {
+internal open class SidecarFs : FakeRelocationFileSystem() {
     var tempRenameSupported = true
     var crashAtRename = false
     var dead = false
@@ -70,13 +72,20 @@ internal class SidecarFs : FakeRelocationFileSystem() {
 
 internal fun sidecarPath(slug: String, rel: String) = "$GRAPH/assets/stelekit-sketch/$slug/$rel"
 
-internal fun newStore(fs: SidecarFs, busy: () -> Boolean = { false }) =
-    FileProjectSidecarStore(fs, GRAPH, AtomicFileWriter(fs, { it }, ".tmp") { 1_000_000_000L }, busy)
+internal fun newStore(
+    fs: SidecarFs,
+    lease: SketchWriterLease = AlwaysHeldSketchWriterLease(),
+    busy: () -> Boolean = { false },
+) = FileProjectSidecarStore(fs, GRAPH, AtomicFileWriter(fs, { it }, ".tmp") { 1_000_000_000L }, lease, busy)
 
 /** One device: its own repositories, its own idea of the file system (a git working tree). */
-internal class Device(val fs: SidecarFs = SidecarFs(), var busy: Boolean = false) {
+internal class Device(
+    val fs: SidecarFs = SidecarFs(),
+    var busy: Boolean = false,
+    lease: SketchWriterLease = AlwaysHeldSketchWriterLease(),
+) {
     val repos: SketchRepositories = SketchTestSupport.backends().first { it.name == "sqldelight" }.repos
-    val store = newStore(fs) { busy }
+    val store = newStore(fs, lease) { busy }
     val reconciler = SidecarReconciler(repos, store)
 
     /** Copies the sidecar directory of [from], as a git pull would. */
