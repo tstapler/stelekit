@@ -228,6 +228,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/KeymapSpecTest.kt",
         "dev/stapler/stelekit/sketch/v2/TextWrapTest.kt",
         "dev/stapler/stelekit/sketch/v2/SceneLimitsTest.kt",
+        "dev/stapler/stelekit/sketch/v2/CanonicalJsonTest.kt",
         "dev/stapler/stelekit/sketch/constraints/SolverSpikeTest.kt",
         "dev/stapler/stelekit/sketch/constraints/LinalgPropertyTest.kt",
         "dev/stapler/stelekit/ui/library/LibraryFilterRulesPropertyTest.kt",

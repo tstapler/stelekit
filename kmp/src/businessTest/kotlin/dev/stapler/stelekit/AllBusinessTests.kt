@@ -910,6 +910,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.KeymapSpecTest::class,
     dev.stapler.stelekit.sketch.v2.TextWrapTest::class,
     dev.stapler.stelekit.sketch.v2.SceneLimitsTest::class,
+    dev.stapler.stelekit.sketch.v2.CanonicalJsonTest::class,
+    dev.stapler.stelekit.sketch.v2.CanonicalJsonOracleTest::class,
     dev.stapler.stelekit.sketch.v2.SceneLimitsGrepTest::class,
     dev.stapler.stelekit.sketch.constraints.SolverSpikeTest::class,
     dev.stapler.stelekit.db.SketchV2MigrationTest::class,
