@@ -353,6 +353,10 @@ import dev.stapler.stelekit.git.PausedRetryNowAndDurabilityTest
 import dev.stapler.stelekit.git.PausedRetryPolicyTest
 import dev.stapler.stelekit.git.GateBeforeWorktreeOrderTest
 import dev.stapler.stelekit.wiring.NoGateFallbackAuditTest
+import dev.stapler.stelekit.git.GitGateAuditTest
+import dev.stapler.stelekit.audit.NewCodeAuditTest
+import dev.stapler.stelekit.audit.ScopeEscapeAuditTest
+import dev.stapler.stelekit.ux.ExitPathAuditTest
 import dev.stapler.stelekit.git.GateKeyAliasTest
 import dev.stapler.stelekit.git.LockRecoveryDecisionTest
 import dev.stapler.stelekit.git.PidNamespaceAbsentPidTest
@@ -776,6 +780,10 @@ import org.junit.runners.Suite
     PausedRetryNowAndDurabilityTest::class,
     PausedRetryPolicyTest::class,
     NoGateFallbackAuditTest::class,
+    GitGateAuditTest::class,
+    NewCodeAuditTest::class,
+    ScopeEscapeAuditTest::class,
+    ExitPathAuditTest::class,
     LockRecoveryDecisionTest::class,
     PidNamespaceAbsentPidTest::class,
     ProcStatParserTest::class,

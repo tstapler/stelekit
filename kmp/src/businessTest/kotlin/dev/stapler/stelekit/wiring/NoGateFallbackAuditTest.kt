@@ -13,6 +13,9 @@ import kotlin.test.assertTrue
  */
 class NoGateFallbackAuditTest {
     companion object {
+        /** A clone worker that starts before `Application.onCreate` has no peer to exclude, so it logs and uses a private gate. */
+        private const val CLONE_WORKER_PRIVATE_GATE = "androidMain/dev/stapler/stelekit/git/GitCloneWorker.kt"
+
         private val CONSTRUCTION = Regex("""\bRepoOpGate\(\)""")
 
         /** Non-root files that construct a gate; comment lines are ignored. */
@@ -30,7 +33,7 @@ class NoGateFallbackAuditTest {
         val sources = WiringInputs.productionSources
         val roots = WiringRoots.resolve(sources).requireComplete().keys
 
-        assertEquals(emptyList(), violations(sources, roots), "RepoOpGate() outside a composition root")
+        assertEquals(emptyList(), violations(sources, roots + CLONE_WORKER_PRIVATE_GATE), "RepoOpGate() outside a composition root")
         assertTrue(
             sources.filterKeys { it in roots }.values.any { CONSTRUCTION.containsMatchIn(it) },
             "no root constructs the gate; an empty scan would pass vacuously",
