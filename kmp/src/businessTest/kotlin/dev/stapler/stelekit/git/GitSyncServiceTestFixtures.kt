@@ -44,6 +44,7 @@ internal fun buildGitSyncTestService(
     credentialAccessProvider: (() -> CredentialAccess)? = null,
     isOnline: (() -> Boolean)? = null,
     gate: RepoOpGate = RepoOpGate(),
+    pausedRetryPolicy: PausedRetryPolicy = PausedRetryPolicy(),
     graphLoader: GraphLoader = GraphLoader(
         fileSystem = StubFileSystem(),
         pageRepository = InMemoryPageRepository(),
@@ -62,6 +63,7 @@ internal fun buildGitSyncTestService(
         fileSystem = fileSystem,
         credentialAccessProvider = credentialAccessProvider,
         isOnline = isOnline ?: { networkMonitor.isOnline },
+        pausedRetryPolicy = pausedRetryPolicy,
     )
 }
 

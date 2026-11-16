@@ -102,6 +102,8 @@ class GitSyncService(
     tickRunRecorder: TickRunRecorder = TickRunRecorder.None,
     /** Jitter source for the periodic loop; tests inject a seeded one. */
     periodicRandom: kotlin.random.Random = kotlin.random.Random.Default,
+    /** Waits between the automatic retries after an unknown lock owner; tests inject short ones. */
+    pausedRetryPolicy: PausedRetryPolicy = PausedRetryPolicy(),
 ) {
     private val logger = Logger("GitSyncService")
     private val markerGuard = ConflictMarkerGuard(fileSystem)
@@ -246,12 +248,13 @@ class GitSyncService(
                 while (next != null) next = gate.releaseOrHandOff(next.lease)
             } else {
                 scope.launch {
-                    singleFlight.runFollowUp(
+                    val result = singleFlight.runFollowUp(
                         followUp,
                         RunSpec(graphId, SyncOrigin.FollowUp, "sync"),
                         fail = { it.left() },
                         unreadable = { reason -> refuse(DomainError.GitError.FetchFailed(reason)) },
                     ) { syncLocked(graphId, SyncTrigger.Manual, liftMassChangeGuard = false) }
+                    trackPausedRetry(graphId, SyncOrigin.FollowUp, result)
                 }
             }
         },
@@ -297,6 +300,42 @@ class GitSyncService(
     private val rateLimitRetry = RateLimitRetry(scope, awaitFree = { g ->
         (singleFlight.resolveGateKey(g) as? GateKeyResolution.Resolved)?.let { gate.awaitFree(it.key) }
     })
+
+    private val pausedRetries = PausedRetryController(
+        scope, wallClockMs, pausedRetryPolicy,
+        awaitFree = { g -> (singleFlight.resolveGateKey(g) as? GateKeyResolution.Resolved)?.let { gate.awaitFree(it.key) } },
+        attempt = { g -> sync(g, SyncTrigger.Automatic, origin = SyncOrigin.RateLimitRetry).toPausedAttemptResult() },
+    )
+
+    /** The automatic retry waiting after an unknown lock owner; null when none is, and Failed once both tries are spent. */
+    val pausedRetry: StateFlow<PausedRetryInfo?> = pausedRetries.observed
+
+    /**
+     * "Retry now": one extra attempt through the gate that leaves the try number and budget alone. A press while
+     * a run holds the gate coalesces and calls [onCoalesced].
+     */
+    fun retryNow(onCoalesced: () -> Unit = {}) = pausedRetries.retryNow(onCoalesced)
+
+    private suspend fun trackPausedRetry(graphId: String, origin: SyncOrigin, result: Either<DomainError.GitError, SyncState.Success>) {
+        if (origin == SyncOrigin.RateLimitRetry) return
+        when (result.toPausedAttemptResult()) {
+            PausedAttemptResult.StillUnsure -> pausedRetries.onUnsure(
+                graphId,
+                if (origin == SyncOrigin.UiPress || origin == SyncOrigin.FollowUp) PausedSource.User else PausedSource.Background,
+            )
+            PausedAttemptResult.Settled -> if (result.leftOrNull() !is DomainError.GitError.FirstSyncReviewPending) pausedRetries.onSettled()
+            PausedAttemptResult.Coalesced -> Unit
+        }
+    }
+
+    private fun Either<DomainError.GitError, SyncState.Success>.toPausedAttemptResult(): PausedAttemptResult {
+        val error = leftOrNull() ?: return PausedAttemptResult.Settled
+        return when {
+            error is DomainError.GitError.SyncInProgress -> PausedAttemptResult.Coalesced
+            PausedRetryPolicy.isUnsure(error) -> PausedAttemptResult.StillUnsure
+            else -> PausedAttemptResult.Settled
+        }
+    }
 
     /** Publishes the state for a failed git step: rate limit (with auto-retry), expired credentials, or the plain error. */
     private fun publishFailure(
@@ -369,11 +408,13 @@ class GitSyncService(
             logger.info("skipping automatic sync graphId=$graphId: first-sync review is pending")
             return DomainError.GitError.FirstSyncReviewPending.left()
         }
-        return singleFlight.run(
+        val result = singleFlight.run(
             RunSpec(graphId, origin, "sync", rerunOnLoss = origin == SyncOrigin.UiPress && !liftMassChangeGuard),
             fail = { it.left() },
             unreadable = { reason -> refuse(DomainError.GitError.FetchFailed(reason)) },
         ) { syncLocked(graphId, trigger, liftMassChangeGuard) }
+        trackPausedRetry(graphId, origin, result)
+        return result
     }
 
     private suspend fun syncLocked(

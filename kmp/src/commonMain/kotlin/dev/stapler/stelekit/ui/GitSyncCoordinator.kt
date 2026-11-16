@@ -170,6 +170,11 @@ class GitSyncCoordinator(
         }
     }
 
+    /** "Retry now" in the paused sheet: an extra attempt through the gate; a press that coalesces announces it. */
+    fun retryNow() {
+        activeGitSyncService.value?.retryNow { _syncEvents.tryEmit(SyncUiEvent.AlreadySyncing) }
+    }
+
     private fun announceIfCoalesced(error: DomainError.GitError) {
         if (error is DomainError.GitError.SyncInProgress) _syncEvents.tryEmit(SyncUiEvent.AlreadySyncing)
     }

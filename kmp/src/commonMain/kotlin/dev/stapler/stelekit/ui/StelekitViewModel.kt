@@ -300,6 +300,8 @@ class StelekitViewModel(
 
     /** Triggers a full sync (commit → fetch → merge → push) on the active graph. */
     fun triggerSync() = gitSyncCoordinator.triggerSync()
+    fun retrySyncNow() = gitSyncCoordinator.retryNow()
+    val syncEvents: kotlinx.coroutines.flow.SharedFlow<SyncUiEvent> get() = gitSyncCoordinator.syncEvents
     fun openBranchRepair() = _uiState.update { it.copy(branchRepairVisible = true) }
     fun dismissBranchRepair() = _uiState.update { it.copy(branchRepairVisible = false) }
     fun openFirstSyncReview() = _uiState.update { it.copy(firstSyncReviewVisible = true, branchRepairVisible = false) }
