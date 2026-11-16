@@ -13,3 +13,4 @@ InitializingDebugScreen  false-positive enum used inside ui/SettingsDialogHost.k
 MarkdownEngineBenchmark  entry-point kotlinx-benchmark class run by ./gradlew :kmp:jvmBenchmark (4 benchmarks in kmp/build/reports/benchmarks/main/*/jvm.json)  2026-10-27  renewals=0
 OtelSpanElement  false-positive consumed via the in-file currentSpan extension used by OtelSqlDelightExtensions.kt  2026-10-27  renewals=0
 SearchBenchmark  entry-point kotlinx-benchmark class run by ./gradlew :kmp:jvmBenchmark (6 benchmarks in kmp/build/reports/benchmarks/main/*/jvm.json)  2026-10-27  renewals=0
+ProbingLensCatalog  false-positive constructed inside androidMain defaultCameraLensCatalog(), which SteleKitApplication.kt calls (androidApp is the only root that can; roots are a fixed list)  2026-11-15  renewals=0

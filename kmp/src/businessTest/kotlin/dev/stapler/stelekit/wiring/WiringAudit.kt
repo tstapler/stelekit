@@ -23,6 +23,7 @@ object WiringAudit {
         "MeasurementDeviceFactory",
         "WaybackMachineService",
         "CameraProvider",
+        "CameraLensCatalog",
     )
 
     const val MAX_RENEWALS = 2

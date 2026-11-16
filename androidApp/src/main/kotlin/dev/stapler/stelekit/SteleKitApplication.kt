@@ -265,6 +265,7 @@ class SteleKitApplication : Application() {
             // same as cameraProvider above — no Activity launcher is available yet at this point.
             SensorModule.cameraFrameSource = AndroidCameraFrameSource(applicationContext)
             SensorModule.depthSensorProvider = ARCoreDepthProvider(applicationContext)
+            SensorModule.cameraLensCatalog = dev.stapler.stelekit.platform.sensor.defaultCameraLensCatalog(applicationContext)
             SensorModule.motionSensorProvider = AndroidMotionSensorProvider(applicationContext)
             SensorModule.monocularDepthEstimator = OnnxMonocularDepthEstimator(applicationContext)
             defaultMeasurementDeviceFactories(applicationContext).forEach(MeasurementDeviceRegistry::register)

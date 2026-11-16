@@ -1068,6 +1068,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.platform.sensor.CaptureLensRecordTest::class,
     dev.stapler.stelekit.platform.sensor.CameraControlsStateTest::class,
     dev.stapler.stelekit.platform.sensor.CapabilityProbeFormatTest::class,
+    dev.stapler.stelekit.audit.CameraBinderAuditTest::class,
     dev.stapler.stelekit.db.sidecar.GoldenSidecarMeasurementIdentityTest::class,
     dev.stapler.stelekit.db.sidecar.FrozenOldReaderDecodeTest::class,
     dev.stapler.stelekit.calibration.AccuracyStudyVerdictTest::class,
