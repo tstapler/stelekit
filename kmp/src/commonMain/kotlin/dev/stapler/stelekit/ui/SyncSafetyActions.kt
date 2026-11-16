@@ -94,13 +94,22 @@ class SyncSafetyActions(
         activeGitSyncService.value?.retryNow { emit(SyncUiEvent.AlreadySyncing) }
     }
 
+    private fun removalRefusal(error: DomainError.GitError): SyncUiEvent = when (error) {
+        is DomainError.GitError.SyncInProgress -> SyncUiEvent.AlreadySyncing
+        is DomainError.GitError.StaleLockFile -> SyncUiEvent.LockRemovalRefused(
+            "The lock file was kept: it changed recently or another git process or device may still be using it. " +
+                "Wait about five minutes after closing other git tools, then try again.",
+        )
+        else -> SyncUiEvent.LockRemovalRefused("The lock file could not be removed: ${error.message}")
+    }
+
     /** Confirmed "Remove lock file" in the sheet: removes the leftover lock, then syncs so the user sees it work. */
     fun removeLockFile() {
         val graphId = graphId() ?: return
         scope.launch {
             val service = activeGitSyncService.value ?: return@launch
             service.removeLockFile(graphId).fold(
-                { if (it is DomainError.GitError.SyncInProgress) emit(SyncUiEvent.AlreadySyncing) },
+                { emit(removalRefusal(it)) },
                 { service.sync(graphId) },
             )
         }

@@ -88,6 +88,30 @@ class JavaIoLockFiles(private val gitDir: File) : LockFiles {
         Files.deleteIfExists(recordFile.toPath())
     }
 
+    override fun statLock(path: String): LockFileEntry? {
+        if (!LockAllowList.isAllowListed(path)) return null
+        val file = File(gitDir, path)
+        return file.takeIf { it.isFile }?.let { LockFileEntry(path, it.lastModified()) }
+    }
+
+    // Linux/Android procfs only; any other platform, or an unreadable table, is "cannot tell" (null), never "none".
+    override fun gitProcessMayBeRunning(): Boolean? {
+        val proc = File("/proc")
+        val entries = proc.listFiles { f -> f.name.all(Char::isDigit) } ?: return null
+        val root = try { (gitDir.parentFile ?: return null).canonicalPath } catch (_: IOException) { return null }
+        val found = entries.any { dir ->
+            try {
+                val args = File(dir, "cmdline").readText().split('\u0000')
+                val exe = args.firstOrNull()?.substringAfterLast('/').orEmpty()
+                (exe == "git" || exe.startsWith("git-")) &&
+                    (args.any { it.startsWith(root) } || File(dir, "cwd").canonicalPath.startsWith(root))
+            } catch (_: IOException) {
+                false
+            }
+        }
+        return if (found) true else null
+    }
+
     override fun delete(path: String) {
         require(LockAllowList.isAllowListed(path)) { "not an allow-listed lock: $path" }
         Files.deleteIfExists(File(gitDir, path).toPath())

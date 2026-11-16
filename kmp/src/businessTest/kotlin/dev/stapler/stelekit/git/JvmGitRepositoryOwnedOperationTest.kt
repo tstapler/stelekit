@@ -22,7 +22,7 @@ import kotlin.test.assertTrue
 class JvmGitRepositoryOwnedOperationTest {
     private val dirs = mutableListOf<File>()
     private val now = 1_000_000_000_000L
-    private val self = ProcessIdentity(InstanceId("self"), pid = 11, startTicks = 5, pidNs = null, host = "h", bootId = null)
+    private val self = ProcessIdentity(InstanceId("self"), pid = 11, startTicks = 5, pidNs = null, host = "h", bootId = null, machineId = "m")
     private val info = OwnedOperationInfo("sync", SyncOrigin.UiPress)
 
     @AfterTest
@@ -49,7 +49,7 @@ class JvmGitRepositoryOwnedOperationTest {
     )
 
     private fun writeRecord(f: Fixture, instance: String, startedAtMs: Long, mtimeMs: Long) {
-        val record = LockOwnerRecord(InstanceId(instance), 99, 7, null, "h", null, "sync", "UiPress", startedAtMs)
+        val record = LockOwnerRecord(InstanceId(instance), 99, 7, null, "h", null, "sync", "UiPress", startedAtMs, "m")
         val file = File(f.gitDir, JavaIoLockFiles.RECORD_NAME).apply { writeText(record.encode()) }
         file.setLastModified(mtimeMs)
     }

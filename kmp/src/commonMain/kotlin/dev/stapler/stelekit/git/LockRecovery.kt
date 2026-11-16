@@ -75,9 +75,9 @@ object LockRecovery {
         }
         return when {
             record.instanceId == self.instanceId -> LockVerdict.ClearedOwn
-            record.host != self.host -> LockVerdict.OwnerUnknown(UnknownReason.DifferentHost)
+            record.host != self.host || machinesDiffer(record, self) -> LockVerdict.OwnerUnknown(UnknownReason.DifferentHost)
             bootIdsDiffer(record, self) -> LockVerdict.ClearedDeadOwner
-            else -> probe(record, liveness)
+            else -> probe(record, liveness, self)
         }
     }
 
@@ -89,10 +89,18 @@ object LockRecovery {
     private fun bootIdsDiffer(record: LockOwnerRecord, self: LockOwnerRecord): Boolean =
         record.bootId != null && self.bootId != null && record.bootId != self.bootId
 
-    private fun probe(record: LockOwnerRecord, liveness: ProcessLiveness): LockVerdict =
+    private fun machinesDiffer(record: LockOwnerRecord, self: LockOwnerRecord): Boolean =
+        record.machineId != null && self.machineId != null && record.machineId != self.machineId
+
+    // Without pid namespaces "this pid is gone" only holds on the machine that wrote it; a shared hostname proves nothing.
+    private fun sameProvenMachine(record: LockOwnerRecord, self: LockOwnerRecord): Boolean =
+        record.pidNs != null || self.pidNs != null || (record.machineId != null && record.machineId == self.machineId)
+
+    private fun probe(record: LockOwnerRecord, liveness: ProcessLiveness, self: LockOwnerRecord): LockVerdict =
         when (liveness.probe(record.pid, record.processStartTicks, record.pidNs, record.host)) {
             Liveness.Alive -> LockVerdict.OwnerAlive
-            Liveness.Dead -> LockVerdict.ClearedDeadOwner
+            Liveness.Dead ->
+                if (sameProvenMachine(record, self)) LockVerdict.ClearedDeadOwner else LockVerdict.OwnerUnknown(UnknownReason.LivenessUnknown)
             Liveness.Unknown -> LockVerdict.OwnerUnknown(UnknownReason.LivenessUnknown)
         }
 
@@ -190,7 +198,9 @@ object LockRecovery {
         if (!withinForeignLockWindow(reread, locks, nowMs())) {
             return refusal(key, LockVerdict.OwnerUnknown(UnknownReason.ForeignLockSuspected)).left()
         }
-        locks.forEach { lockFiles.delete(it.path) }
+        if (!deleteUnchanged(lockFiles, locks)) {
+            return refusal(key, LockVerdict.OwnerUnknown(UnknownReason.ForeignLockSuspected)).left()
+        }
         lockFiles.deleteRecord()
         return publish(key, lockFiles, self, registry, verdict)
     }
@@ -206,11 +216,27 @@ object LockRecovery {
         }
     }
 
-    // Unsure owner: a readable record must still bracket the locks; otherwise (none, torn) only recent activity refuses.
-    private fun unsureLocksQuiet(record: RecordRead?, locks: List<LockFileEntry>, nowMs: Long): Boolean {
-        val readable = record?.let { LockOwnerRecord.decode(it.content) } is RecordDecode.Valid
-        return if (readable) withinForeignLockWindow(record, locks, nowMs) else locks.all { it.mtimeMs <= nowMs - LOCK_QUIET_MS }
+    // Unsure owner. A lock inside the owner's window is most likely the owner's own live lock, so the window proves
+    // nothing here; only a record that stopped heartbeating, and locks idle for minutes, may be removed (and never
+    // while a git process for the repository is visible). Git holds index.lock for a whole editor session unchanged.
+    private fun safeToForceRemove(record: RecordRead?, locks: List<LockFileEntry>, lockFiles: LockFiles, nowMs: Long): Boolean {
+        if (record != null && nowMs - record.mtimeMs < UNSURE_STALE_MS) return false
+        if (!locks.all { it.mtimeMs <= nowMs - UNSURE_STALE_MS }) return false
+        return lockFiles.gitProcessMayBeRunning() != true
     }
+
+    // Re-stat each lock right before deleting it: a different git run may have replaced it since it was examined.
+    private fun deleteUnchanged(lockFiles: LockFiles, locks: List<LockFileEntry>): Boolean {
+        for (lock in locks) {
+            val now = lockFiles.statLock(lock.path) ?: continue
+            if (now.mtimeMs != lock.mtimeMs) return false
+            lockFiles.delete(lock.path)
+        }
+        return true
+    }
+
+    /** A record or lock idle this long (60 heartbeats; also covers sync lag of a shared folder) is treated as abandoned. */
+    private const val UNSURE_STALE_MS = 300_000L
 
     private const val LOCK_START_SLACK_MS = 2_000L
     private const val HEARTBEAT_SLACK_MS = 10_000L
@@ -238,15 +264,18 @@ object LockRecovery {
                 return refusal(key, LockVerdict.OwnerUnknown(UnknownReason.RecoveryLockUnsupported)).left()
             } ?: return DomainError.GitError.SyncInProgress(null).left()
             try {
-                val verdict = decide(lockFiles.readRecord(), lockFiles, liveness, self)
+                val record = lockFiles.readRecord()
+                val verdict = decide(record, lockFiles, liveness, self)
                 if (verdict == LockVerdict.OwnerAlive) return DomainError.GitError.SyncInProgress(null).left()
                 if (registry.isActive(key)) return DomainError.GitError.SyncInProgress(registry.originOf(key)).left()
                 val locks = lockFiles.listAllowListedLocks().filter { LockAllowList.isAllowListed(it.path) }
-                if (!verdict.deletes && !unsureLocksQuiet(lockFiles.readRecord(), locks, nowMs())) {
+                if (!verdict.deletes && !safeToForceRemove(record, locks, lockFiles, nowMs())) {
                     return refusal(key, LockVerdict.OwnerUnknown(UnknownReason.ForeignLockSuspected)).left()
                 }
-                locks.forEach { lockFiles.delete(it.path) }
-                // The user confirmed: an unreadable or unattributable record would otherwise wedge the repo forever.
+                if (!deleteUnchanged(lockFiles, locks)) {
+                    return refusal(key, LockVerdict.OwnerUnknown(UnknownReason.ForeignLockSuspected)).left()
+                }
+                // The user confirmed; the record is cleared only after the staleness proof above, never on a live-looking owner.
                 if (verdict.deletes || verdict is LockVerdict.OwnerUnknown) lockFiles.deleteRecord()
                 return locks.map { it.path }.right()
             } finally {

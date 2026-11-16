@@ -31,7 +31,7 @@ import kotlin.test.assertTrue
 class AndroidGitRepositoryClaimTest {
     private val context: Context get() = ApplicationProvider.getApplicationContext()
     private val now = 1_000_000_000_000L
-    private val self = ProcessIdentity(InstanceId("self"), pid = 11, startTicks = 5, pidNs = null, host = AndroidProcessLiveness.HOST, bootId = null)
+    private val self = ProcessIdentity(InstanceId("self"), pid = 11, startTicks = 5, pidNs = "pid:[1]", host = AndroidProcessLiveness.HOST, bootId = null)
     private val info = OwnedOperationInfo("sync", SyncOrigin.UiPress)
     private val dirs = mutableListOf<File>()
 
@@ -56,7 +56,7 @@ class AndroidGitRepositoryClaimTest {
     )
 
     private fun writeRecord(gitDir: File, instance: String, startedAtMs: Long, mtimeMs: Long) {
-        val record = LockOwnerRecord(InstanceId(instance), 99, 7, null, AndroidProcessLiveness.HOST, null, "sync", "UiPress", startedAtMs)
+        val record = LockOwnerRecord(InstanceId(instance), 99, 7, "pid:[1]", AndroidProcessLiveness.HOST, null, "sync", "UiPress", startedAtMs)
         File(gitDir, JavaIoLockFiles.RECORD_NAME).apply { writeText(record.encode()); setLastModified(mtimeMs) }
     }
 

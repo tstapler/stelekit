@@ -317,4 +317,38 @@ class GitSyncCancelBoundaryTest {
 
         assertTrue(svc.reloadIncomplete.value, "a reload stopped by cancellation must be flagged for the next open")
     }
+
+    // PR #683 review M5: the uncancellable commit unit is bounded, so a hung hook cannot hold the gate forever.
+    @Test
+    fun resolveConflicts_should_FailAndReleaseTheGate_When_TheCommitNeverReturns() = runBlocking<Unit> {
+        val git = Repo().apply { onCommit = { CompletableDeferred<Unit>().await() } }
+        val svc = service(git).also { it.commitUnitTimeoutMs = 300 }
+
+        val result = withTimeout(20_000) {
+            svc.resolveConflicts("g", listOf(realConflict), sideResolutions = mapOf("/repo/real.md" to MergeSide.LOCAL))
+        }
+
+        assertIs<DomainError.GitError.CommitFailed>(result.leftOrNull())
+        assertFalse(gate.isHeld(key()), "the lease must be released after the abandoned commit")
+        assertTrue(svc.reloadIncomplete.value, "an abandoned commit unit leaves the DB possibly behind the disk")
+    }
+
+    // PR #683 review m1: a later complete reload of other files must not clear an earlier incomplete one.
+    @Test
+    fun reloadIncomplete_should_StaySticky_UntilTheFailedPathsReloadCompletely() = runBlocking<Unit> {
+        val failing = java.util.concurrent.atomic.AtomicBoolean(true)
+        val fs = object : StubFileSystem() {
+            override fun invalidateShadow(path: String) { if (failing.get() && path == "/repo/a.md") throw CancellationException("reload interrupted") }
+        }
+        val loader = GraphLoader(fs, InMemoryPageRepository(), InMemoryBlockRepository())
+        val svc = service(Repo(), loader, fs)
+
+        scope.async { svc.applyJournalMerge("g", "/repo/a.md", "- a\n") }.join()
+        assertTrue(svc.reloadIncomplete.value, "the failed reload is flagged")
+        scope.async { svc.applyJournalMerge("g", "/repo/b.md", "- b\n") }.join()
+        assertTrue(svc.reloadIncomplete.value, "reloading another file must not hide it")
+        failing.set(false)
+        scope.async { svc.applyJournalMerge("g", "/repo/a.md", "- a\n") }.join()
+        assertFalse(svc.reloadIncomplete.value, "cleared once the failed path reloads completely")
+    }
 }

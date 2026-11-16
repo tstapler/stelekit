@@ -25,7 +25,7 @@ import kotlin.test.assertTrue
 class StaleLockRecoveryFollowUpTest {
     private val dirs = mutableListOf<File>()
     private val services = mutableListOf<GitSyncService>()
-    private val self = ProcessIdentity(InstanceId("self"), pid = 11, startTicks = 5, pidNs = null, host = "h", bootId = null)
+    private val self = ProcessIdentity(InstanceId("self"), pid = 11, startTicks = 5, pidNs = null, host = "h", bootId = null, machineId = "m")
     private val info = OwnedOperationInfo("sync", SyncOrigin.UiPress)
 
     @AfterTest
@@ -40,7 +40,7 @@ class StaleLockRecoveryFollowUpTest {
         OwnedOperationSupport(liveness = { _, _, _, _ -> liveness }, identity = self, registry = registry)
 
     private fun writeDeadOwner(gitDir: File) {
-        val record = LockOwnerRecord(InstanceId("dead"), 99, 7, null, "h", null, "sync", "UiPress", System.currentTimeMillis() - 100_000)
+        val record = LockOwnerRecord(InstanceId("dead"), 99, 7, null, "h", null, "sync", "UiPress", System.currentTimeMillis() - 100_000, "m")
         File(gitDir, JavaIoLockFiles.RECORD_NAME).apply { writeText(record.encode()); setLastModified(System.currentTimeMillis() - 60_000) }
         File(gitDir, "index.lock").apply { writeText(""); setLastModified(System.currentTimeMillis() - 60_000) }
     }
@@ -92,6 +92,41 @@ class StaleLockRecoveryFollowUpTest {
 
         val synced = service.sync("g", SyncTrigger.Manual)
         assertTrue(synced.isRight(), "sync must proceed after the confirmed removal, got $synced")
+    }
+
+    @Test
+    fun removeLockFile_should_Refuse_When_TheLockIsOnlyMinutesOld() = runBlocking<Unit> {
+        val root = tempDir()
+        Git.init().setDirectory(root).setInitialBranch("main").call().close()
+        val lock = File(root, ".git/index.lock").apply { writeText(""); setLastModified(System.currentTimeMillis() - 120_000) }
+
+        assertTrue(serviceFor(root).removeLockFile("g").isLeft(), "an editor-held index.lock can sit unchanged for minutes")
+        assertTrue(lock.exists())
+    }
+
+    @Test
+    fun removeLockFileAction_should_SurfaceTheRefusal_When_TheLockIsKept() = runBlocking<Unit> {
+        val root = tempDir()
+        Git.init().setDirectory(root).setInitialBranch("main").call().close()
+        File(root, ".git/index.lock").writeText("")
+        val service = serviceFor(root)
+        val events = kotlinx.coroutines.CompletableDeferred<dev.stapler.stelekit.ui.SyncUiEvent>()
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+        try {
+            val actions = dev.stapler.stelekit.ui.SyncSafetyActions(
+                kotlinx.coroutines.flow.MutableStateFlow(service), { "g" }, scope,
+                kotlinx.coroutines.flow.MutableStateFlow(dev.stapler.stelekit.ui.AppState()),
+                dev.stapler.stelekit.jobs.InProcessJobs(),
+                emit = { events.complete(it) },
+            ) { dev.stapler.stelekit.git.model.SyncState.Idle }
+
+            actions.removeLockFile()
+
+            val event = kotlinx.coroutines.withTimeout(20_000) { events.await() }
+            assertIs<dev.stapler.stelekit.ui.SyncUiEvent.LockRemovalRefused>(event)
+        } finally {
+            scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+        }
     }
 
     @Test

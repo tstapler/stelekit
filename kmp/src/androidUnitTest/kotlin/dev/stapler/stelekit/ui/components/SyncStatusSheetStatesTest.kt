@@ -155,10 +155,10 @@ class SyncStatusSheetStatesTest {
 
         composeTestRule.onNodeWithText("Remove lock file...").performScrollTo().performClick()
 
-        composeTestRule.onNodeWithText("Do this only if no other sync or git app is running", substring = true).assertExists()
+        composeTestRule.onNodeWithText("other device is running git or syncing this same folder", substring = true).assertExists()
         composeTestRule.onNodeWithText("Cancel").assertIsFocused()
         assertEquals(0, taps.removeLock, "nothing is removed until confirmed")
-        composeTestRule.onNodeWithText("Remove").performClick()
+        composeTestRule.onNodeWithText("Remove lock file").performClick()
         assertEquals(1, taps.removeLock)
     }
 
@@ -170,7 +170,7 @@ class SyncStatusSheetStatesTest {
 
         composeTestRule.onNodeWithText("Remove lock file...").performScrollTo().performClick()
         assertEquals(0, taps.removeLock, "nothing is removed until confirmed")
-        composeTestRule.onNodeWithText("Remove").performClick()
+        composeTestRule.onNodeWithText("Remove lock file").performClick()
         assertEquals(1, taps.removeLock)
     }
 

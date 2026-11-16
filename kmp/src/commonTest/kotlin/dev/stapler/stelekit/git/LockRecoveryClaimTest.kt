@@ -19,6 +19,8 @@ internal class FakeLockFiles(
     var recoveryMode = RecoveryMode.Free
     var onTryLock: (() -> Unit)? = null
     var failCreate = false
+    var gitRunning: Boolean? = null
+    var restatMtimeMs: Long? = null
     var nowMs = 100_000L
     val mutations = mutableListOf<String>()
     var tryLockCalls = 0
@@ -26,6 +28,9 @@ internal class FakeLockFiles(
     private var held = false
 
     override fun listAllowListedLocks(): List<LockFileEntry> = locks.toList()
+    override fun gitProcessMayBeRunning(): Boolean? = gitRunning
+    override fun statLock(path: String): LockFileEntry? =
+        locks.firstOrNull { it.path == path }?.let { e -> restatMtimeMs?.let { e.copy(mtimeMs = it) } ?: e }
     override fun readRecord(): RecordRead? = record
     override fun createRecordExclusive(content: String): Boolean {
         if (failCreate) error("disk full")

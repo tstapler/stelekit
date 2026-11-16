@@ -22,6 +22,7 @@ data class ProcessIdentity(
     val pidNs: String?,
     val host: String,
     val bootId: String?,
+    val machineId: String? = null,
 )
 
 /**
@@ -162,6 +163,7 @@ class OwnedOperationSupport(
         op = op,
         origin = origin,
         startedAtMs = nowMs(),
+        machineId = identity.machineId,
     )
 
     companion object {

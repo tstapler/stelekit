@@ -139,7 +139,6 @@ fun syncSheetState(
     val verdict = lastVerdict ?: lock.verdict
     val unsure = verdict == LockVerdict.NoRecord || verdict is LockVerdict.OwnerUnknown
     if (!unsure) return SyncSheetState.Attention
-    val canRemoveLock = true
     if (pausedRetry == null) return SyncSheetState.Failed(SYNC_FAILED_TEXT, canRemoveLock = true)
     val cause = if (verdict == LockVerdict.NoRecord) "Leftover lock file" else "Lock owner unknown"
     return SyncSheetState.Paused(
@@ -147,7 +146,7 @@ fun syncSheetState(
         body = "We couldn't confirm that nothing else is syncing, so we paused to protect your notes. " +
             "We'll retry automatically (next try ${nextTryText(pausedRetry.nextRetryAtMs - nowMs)}). Your notes are saved on this device.",
         details = "$cause, try ${pausedRetry.tryNumber} of ${PausedRetryInfo.MAX_TRIES}",
-        canRemoveLock = canRemoveLock,
+        canRemoveLock = true,
     )
 }
 

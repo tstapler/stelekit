@@ -299,6 +299,9 @@ sealed interface SyncUiEvent {
         override val announcement = "Already syncing"
     }
 
+    /** The confirmed lock removal was refused or failed; [announcement] says why and what to do. */
+    data class LockRemovalRefused(override val announcement: String) : SyncUiEvent
+
     /** The typed-count confirm was pressed while a run was in flight; the lift is never queued. */
     data object MassChangeConfirmRefused : SyncUiEvent {
         override val announcement = "Wait for the running sync to finish, then confirm again"

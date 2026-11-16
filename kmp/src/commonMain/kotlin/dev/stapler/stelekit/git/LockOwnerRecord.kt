@@ -30,6 +30,8 @@ data class LockOwnerRecord(
     val op: String,
     val origin: String,
     val startedAtMs: Long,
+    /** Stable per-install id; hostnames collide and change, so liveness proof on namespace-less platforms needs this. */
+    val machineId: String? = null,
 ) {
     fun encode(): String = CODEC.encodeToString(serializer(), this)
 
