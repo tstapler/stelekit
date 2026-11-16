@@ -448,7 +448,7 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.StorageError.DestinationNotWritable -> "Can't write to the selected location"
     is DomainError.StorageError.PartialCopyDetected -> "Copy is incomplete — nothing was changed"
     is DomainError.StorageError.InsufficientSpace -> "Not enough free space at the destination"
-    is DomainError.StorageError.QuiesceTimedOut -> "Timed out waiting for sync to finish — please try again"
+    is DomainError.StorageError.QuiesceTimedOut -> "A sync is still finishing — please try again in a moment"
     is DomainError.StorageError.ReopenFailed -> "Move may have partially completed — please restart the app"
     is DomainError.StorageError.RelocationFailed -> "Couldn't move file — nothing was changed"
 }

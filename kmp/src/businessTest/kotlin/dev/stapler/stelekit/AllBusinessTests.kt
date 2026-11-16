@@ -317,6 +317,7 @@ import dev.stapler.stelekit.git.GitSyncServiceLfsGuardTest
 import dev.stapler.stelekit.git.GitSyncServicePeriodicTest
 import dev.stapler.stelekit.git.SyncSingleFlightRegressionTest
 import dev.stapler.stelekit.git.GitSyncCancelBoundaryTest
+import dev.stapler.stelekit.git.GitSyncMergeUnitContainmentTest
 import dev.stapler.stelekit.git.GitSyncServiceSingleFlightTest
 import dev.stapler.stelekit.git.ResolveGateKeyFailureTest
 import dev.stapler.stelekit.git.SyncOriginTriggerMappingTest
@@ -734,6 +735,7 @@ import org.junit.runners.Suite
     SyncSingleFlightRegressionTest::class,
     GitSyncServiceSingleFlightTest::class,
     GitSyncCancelBoundaryTest::class,
+    GitSyncMergeUnitContainmentTest::class,
     ResolveGateKeyFailureTest::class,
     SyncOriginTriggerMappingTest::class,
     SyncSingleFlightModelTest::class,

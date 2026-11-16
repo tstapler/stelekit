@@ -47,6 +47,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.time.TimeSource
 import kotlin.time.Clock
 
 /**
@@ -57,6 +58,7 @@ import kotlin.time.Clock
  *
  * Created and owned by [GraphManager]; one instance per active graph.
  */
+@Suppress("TooManyFunctions") // one entry point per sync operation plus the extracted merge-unit steps
 class GitSyncService(
     private val gitRepository: GitRepository,
     private val graphLoader: GraphLoader,
@@ -304,19 +306,42 @@ class GitSyncService(
         retry: suspend (String) -> Unit,
     ) = runGuard.publishFailure(rateLimitRetry, graphId, err, authFailureMeansExpired, retry)
 
+    private val _reloadIncomplete = MutableStateFlow(false)
+
+    /** True when the last merged-files reload stopped early; the files are on disk and the next graph open reconciles them. */
+    val reloadIncomplete: StateFlow<Boolean> = _reloadIncomplete.asStateFlow()
+
     /**
      * Reloads [paths] into the DB under watcher suppression, then always lifts the suppression.
      * Every working-tree change a sync makes funnels through here so no exit path can skip it.
      */
     private suspend fun reloadMergedFiles(paths: List<String>) {
+        _reloadIncomplete.value = false
+        val started = TimeSource.Monotonic.markNow()
         try {
             if (paths.isNotEmpty()) {
                 graphLoader.beginGitMerge(paths)
-                graphLoader.reloadFiles(paths.map { FilePath(it) })
+                var done = 0
+                for (chunk in paths.chunked(RELOAD_CHUNK_SIZE)) {
+                    graphLoader.reloadFiles(chunk.map { FilePath(it) })
+                    done += chunk.size
+                    logger.info("reload progress done=$done/${paths.size}")
+                    warnIfHeldTooLong(started.elapsedNow().inWholeMilliseconds)
+                }
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            // The merged files are already on disk, so the next graph open reconciles them; nothing may reach the platform handler.
+            logger.error("reload aborted reason=${e::class.simpleName}: ${e.message}")
+            _reloadIncomplete.value = true
         } finally {
             withContext(NonCancellable) { graphLoader.endGitMerge() }
         }
+    }
+
+    private fun warnIfHeldTooLong(heldMs: Long) {
+        if (heldMs > GATE_HELD_WARN_MS) logger.warn("gate heldMs=$heldMs exceeds ${GATE_HELD_WARN_MS}ms while reloading merged files")
     }
 
     /**
@@ -923,6 +948,10 @@ class GitSyncService(
     }
 
     companion object {
+        /** Paths reloaded per chunk inside the merge unit; bounds each progress step. */
+        internal const val RELOAD_CHUNK_SIZE = 200
+        private const val GATE_HELD_WARN_MS = 30_000L
+
         /**
          * Task 3.4.2a: fallback delay (seconds) for [RateLimitRetry] when a
          * [DomainError.GitError.RateLimited] carries no `retryAfterSeconds` — matches the existing
