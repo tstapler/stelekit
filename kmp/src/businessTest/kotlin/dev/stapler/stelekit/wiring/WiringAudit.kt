@@ -24,6 +24,8 @@ object WiringAudit {
         "WaybackMachineService",
         "CameraProvider",
         "TextMetricsProvider",
+        "SketchWriterLease",
+        "BrowserPersistence",
     )
 
     const val MAX_RENEWALS = 2

@@ -99,7 +99,7 @@ class WiringCompletenessTest {
     @Test
     fun seamList_should_EqualGlossaryList_When_Parsed() {
         assertEquals(
-            listOf("BackgroundSyncScheduler", "BackgroundTaskScheduler", "AssetPipelinePlugin", "ConsoleCommand", "MeasurementDeviceFactory", "WaybackMachineService", "CameraProvider", "TextMetricsProvider"),
+            listOf("BackgroundSyncScheduler", "BackgroundTaskScheduler", "AssetPipelinePlugin", "ConsoleCommand", "MeasurementDeviceFactory", "WaybackMachineService", "CameraProvider", "TextMetricsProvider", "SketchWriterLease", "BrowserPersistence"),
             WiringAudit.SEAMS,
         )
         assertTrue("Plugin" !in WiringAudit.SEAMS, "Plugin is not a seam (Task 5.5d deletes it)")

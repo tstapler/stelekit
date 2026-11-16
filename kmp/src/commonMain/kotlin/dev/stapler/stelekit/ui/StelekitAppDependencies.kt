@@ -171,6 +171,10 @@ data class StelekitAppPlatformIntegrations(
      */
     val google: dev.stapler.stelekit.platform.google.GoogleIntegration? = null,
     val requestCameraPermission: (suspend () -> Boolean)? = null,
+    /** Single-writer lease for v2 sheet writes (D-146). Temporary default until Task 1.4.3t wires each host. */
+    val sketchWriterLease: dev.stapler.stelekit.platform.SketchWriterLease = SketchStorageDefaults.writerLease(),
+    /** Browser persistence request for v2 sheets (D-146). Temporary default until Task 1.4.3t wires each host. */
+    val browserPersistence: dev.stapler.stelekit.platform.BrowserPersistence = SketchStorageDefaults.browserPersistence(),
     /** Downloads, clones and other work that finishes later; shown on the Background jobs screen. */
     val backgroundJobs: dev.stapler.stelekit.jobs.BackgroundJobRegistry = dev.stapler.stelekit.jobs.NoBackgroundJobs,
     /** Reads HTML from the system clipboard (bounded). Null disables rich-text paste; set on Desktop. */
@@ -370,6 +374,15 @@ data class GraphContentDeps(
     /** Per-graph asset index/move stack; set by [GraphContent] itself (see GraphContentAssetSetup.kt), null in hosts. */
     val assets: GraphContentAssetStack? = null,
 )
+
+/** Temporary defaults of the two sketch storage ports (D-146); Task 1.4.3t deletes this object. */
+object SketchStorageDefaults {
+    fun writerLease(): dev.stapler.stelekit.platform.SketchWriterLease =
+        dev.stapler.stelekit.platform.AlwaysHeldSketchWriterLease()
+
+    fun browserPersistence(): dev.stapler.stelekit.platform.BrowserPersistence =
+        dev.stapler.stelekit.platform.UnsupportedBrowserPersistence
+}
 
 /**
  * Composition root of the sketch engine's text measurer (Task 2.1.2b): the one construction of
