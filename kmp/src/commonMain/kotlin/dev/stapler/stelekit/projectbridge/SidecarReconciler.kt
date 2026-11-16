@@ -11,6 +11,9 @@ import arrow.core.right
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.ProjectBundle
+import dev.stapler.stelekit.model.SheetPayload
+import dev.stapler.stelekit.model.SheetUuid
+import dev.stapler.stelekit.util.ContentHasher
 import dev.stapler.stelekit.model.SketchPrimitive
 import dev.stapler.stelekit.model.SketchProject
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
@@ -89,6 +92,8 @@ class SidecarReconciler(
     private val store: ProjectSidecarStore,
     /** Null only in tests without an actor; production writes are serialised through it. */
     private val writeActor: DatabaseWriteActor? = null,
+    /** Shared with every other sidecar writer of the graph so no two interleave on one slug. */
+    private val slugLock: SidecarSlugLock = SidecarSlugLock(),
 ) {
     private suspend fun write(op: suspend () -> Either<DomainError, Unit>): Either<DomainError, Unit> =
         writeActor?.execute { op() } ?: op()
@@ -111,21 +116,40 @@ class SidecarReconciler(
         return ReconcileSummary(outcomes)
     }
 
-    suspend fun reconcile(project: SketchProject): ReconcileOutcome {
+    /**
+     * Holds the project's [SidecarSlugLock] across read, plan and write. A push that finds a v2 sheet changed under it
+     * ([SidecarWriteOutcome.StaleOpaque]) writes nothing and is re-planned from a fresh read.
+     */
+    suspend fun reconcile(project: SketchProject): ReconcileOutcome = slugLock.withSlug(project.slug) {
+        repeat(MAX_REPLANS) { attempt ->
+            // A re-plan starts from the project as the other writer left it (its base hash moved with its write).
+            val current = if (attempt == 0) project else repos.projects.loadProject(project.uuid).getOrNull()?.project ?: project
+            reconcileOnce(current)?.let { return@withSlug it }
+        }
+        ReconcileOutcome.Failed(project.slug, "a v2 sheet kept changing during the reconcile")
+    }
+
+    /** One read-plan-write pass; null means a v2 sheet changed under the push and the pass must be redone. */
+    private suspend fun reconcileOnce(project: SketchProject): ReconcileOutcome? {
         val slug = project.slug
-        val local = loadLocal(project).getOrElse { return ReconcileOutcome.Failed(slug, it.message) }
+        val read = store.read(slug)
+        if (read is SidecarRead.Unavailable) return ReconcileOutcome.DeviceLocal(slug)
+        val presentFiles = (read as? SidecarRead.Present)?.files.orEmpty()
+        // A v2 sheet whose bytes do not hash to the sha its model names is corrupt: kept, never repaired by a push.
+        val corruptReason = (read as? SidecarRead.Corrupt)?.reason ?: if (v2ShaMismatch(presentFiles)) CorruptReason.Truncated else null
+        val disk = when {
+            corruptReason != null -> DiskState.Corrupt
+            read is SidecarRead.Present -> DiskState.Bundle(SidecarCodec.bundleHash(read.files))
+            else -> DiskState.Absent
+        }
+        val local = loadLocal(project, presentFiles).getOrElse {
+            return if (corruptReason != null) ReconcileOutcome.CorruptKept(slug, corruptReason, null) else ReconcileOutcome.Failed(slug, it.message)
+        }
         val localFiles = SidecarCodec.encode(local)
         val localHash = SidecarCodec.bundleHash(localFiles)
-        val read = store.read(slug)
-        val disk = when (read) {
-            SidecarRead.Unavailable -> return ReconcileOutcome.DeviceLocal(slug)
-            SidecarRead.Absent -> DiskState.Absent
-            is SidecarRead.Corrupt -> DiskState.Corrupt
-            is SidecarRead.Present -> DiskState.Bundle(SidecarCodec.bundleHash(read.files))
-        }
         return when (val action = ReconcileDecision.decide(localHash, project.lastSyncedSidecarHash, disk)) {
             is ReconcileAction.SetBase -> setBase(project, action.hash).let { if (it == null) ReconcileOutcome.Unchanged(slug) else ReconcileOutcome.Failed(slug, it) }
-            ReconcileAction.WriteLocal -> push(project, localFiles, localHash)
+            ReconcileAction.WriteLocal -> push(project, local, localFiles, localHash)
             ReconcileAction.Rebuild -> pull(project, (read as SidecarRead.Present).files, (disk as DiskState.Bundle).hash, conflictPath = null)
             ReconcileAction.Conflict -> {
                 val path = store.writeConflict(slug, localFiles).getOrNull()
@@ -133,18 +157,32 @@ class SidecarReconciler(
             }
             ReconcileAction.KeepCorrupt -> {
                 val path = store.writeConflict(slug, localFiles).getOrNull()
-                ReconcileOutcome.CorruptKept(slug, (read as SidecarRead.Corrupt).reason, path)
+                ReconcileOutcome.CorruptKept(slug, checkNotNull(corruptReason), path)
             }
         }
     }
 
-    private suspend fun push(project: SketchProject, files: Map<String, ByteArray>, hash: String): ReconcileOutcome =
-        when (val w = store.write(project.slug, files)) {
+    private fun v2ShaMismatch(files: Map<String, ByteArray>): Boolean {
+        val named = files[SidecarCodec.MODEL_PATH]?.let { SidecarCodec.v2SheetShas(it) } ?: return false
+        return named.any { (path, sha) -> files[path]?.let { ContentHasher.sha256(it) } != sha }
+    }
+
+    /**
+     * Writes the model and the v1 sheets. A v2 sheet's bytes are never written here (they belong to the saver, the
+     * converter and restore): the store only verifies each v2 file still has the sha this pass planned against.
+     */
+    private suspend fun push(project: SketchProject, local: ProjectBundle, files: Map<String, ByteArray>, hash: String): ReconcileOutcome? {
+        val opaque = local.sheets.filter { it.schemaVersion == SheetPaths.SCHEMA_V2 }.associate { s ->
+            SheetPaths.pathFor(s.uuid, SheetPaths.SCHEMA_V2) to checkNotNull(local.sheetPayloads[s.uuid] as? SheetPayload.V2Opaque).sha256
+        }
+        return when (val w = store.write(project.slug, files - opaque.keys, opaque)) {
             SidecarWriteOutcome.Written -> setBase(project, hash)?.let { ReconcileOutcome.Failed(project.slug, it) } ?: ReconcileOutcome.Pushed(project.slug)
             SidecarWriteOutcome.Deferred -> ReconcileOutcome.Deferred(project.slug)
             SidecarWriteOutcome.Unavailable -> ReconcileOutcome.DeviceLocal(project.slug)
             is SidecarWriteOutcome.Failed -> ReconcileOutcome.Failed(project.slug, w.error.message)
+            SidecarWriteOutcome.StaleOpaque -> null
         }
+    }
 
     /** Rebuilds from the pulled files; [conflictPath] non-null marks a both-changed conflict ("" when the copy failed). */
     private suspend fun pull(project: SketchProject, files: Map<String, ByteArray>, hash: String, conflictPath: String?): ReconcileOutcome {
@@ -159,7 +197,9 @@ class SidecarReconciler(
         )
     }
 
-    private suspend fun importNew(slug: String): ReconcileOutcome {
+    private suspend fun importNew(slug: String): ReconcileOutcome = slugLock.withSlug(slug) { importNewLocked(slug) }
+
+    private suspend fun importNewLocked(slug: String): ReconcileOutcome {
         val read = store.read(slug)
         if (read is SidecarRead.Corrupt) return ReconcileOutcome.CorruptKept(slug, read.reason, null)
         if (read !is SidecarRead.Present) return ReconcileOutcome.Unchanged(slug)
@@ -186,12 +226,23 @@ class SidecarReconciler(
         baseRevision = fromFile.modelRevision, lastSyncedSidecarHash = hash,
     )
 
-    private suspend fun loadLocal(project: SketchProject): Either<DomainError, ProjectBundle> {
+    /**
+     * The local bundle. The database holds no v2 content, so a v2 sheet's bytes come from [sidecarFiles] (the files
+     * read from the local sidecar); a v2 sheet whose file is not there makes the local bundle unbuildable.
+     */
+    private suspend fun loadLocal(project: SketchProject, sidecarFiles: Map<String, ByteArray>): Either<DomainError, ProjectBundle> {
         val fresh = repos.projects.loadProject(project.uuid).fold({ return it.left() }, { it })?.project ?: project
         val sheetPage = repos.sheets.getSheets(fresh.uuid, MAX_SHEETS).first().fold({ return it.left() }, { it })
         if (sheetPage.hasMore) return DomainError.DatabaseError.ReadFailed("more than $MAX_SHEETS sheets").left()
         val primitives = mutableListOf<SketchPrimitive>()
+        val payloads = linkedMapOf<SheetUuid, SheetPayload>()
         for (sheet in sheetPage.items) {
+            if (sheet.schemaVersion == SheetPaths.SCHEMA_V2) {
+                val bytes = sidecarFiles[SheetPaths.pathFor(sheet.uuid, SheetPaths.SCHEMA_V2)]
+                    ?: return DomainError.DatabaseError.ReadFailed("v2 sheet ${sheet.uuid.value} has no sidecar file on this device").left()
+                payloads[sheet.uuid] = SheetPayload.V2Opaque.of(bytes)
+                continue
+            }
             var offset = 0
             while (true) {
                 val page = repos.sheets.getPrimitives(sheet.uuid, SketchSheetRepository.MAX_PRIMITIVE_PAGE, offset).first()
@@ -210,10 +261,11 @@ class SidecarReconciler(
             if (page.size < SketchDimensionRepository.MAX_DIMENSION_PAGE) break
             dOffset += page.size
         }
-        return ProjectBundle(fresh, sheetPage.items, primitives, dimensions).right()
+        return ProjectBundle(fresh, sheetPage.items, primitives, dimensions, payloads).right()
     }
 
     private companion object {
+        const val MAX_REPLANS = 3
         const val PAGE = 100
         const val MAX_SHEETS = 500
     }

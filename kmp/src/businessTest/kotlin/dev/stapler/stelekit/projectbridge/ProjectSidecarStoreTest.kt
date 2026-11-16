@@ -22,14 +22,14 @@ class ProjectSidecarStoreTest {
     )
 
     @Test
-    fun write_should_AddTheTmpIgnoreRuleOnce() = runBlocking<Unit> {
+    fun write_should_AddTheTmpAndConflictsIgnoreRulesOnce() = runBlocking<Unit> {
         val fs = SidecarFs()
         fs.seed("$GRAPH/.gitignore", "*.db".encodeToByteArray())
         val store = newStore(fs)
         store.write(slug, files)
         store.write(slug, files + ("sheets/s2.json" to "{\"schema\":1}".encodeToByteArray()))
         val ignore = fs.readFile("$GRAPH/.gitignore")!!
-        assertEquals("*.db\nassets/stelekit-sketch/**/*.tmp\n", ignore)
+        assertEquals("*.db\nassets/stelekit-sketch/**/*.tmp\n${RetentionPolicy.CONFLICTS_IGNORE_RULE}\n", ignore)
     }
 
     @Test

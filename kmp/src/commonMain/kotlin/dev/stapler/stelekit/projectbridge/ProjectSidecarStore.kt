@@ -36,6 +36,12 @@ sealed interface SidecarWriteOutcome {
     /** A git sync or merge is in flight; the files are queued and flushed on the next trigger. */
     data object Deferred : SidecarWriteOutcome
     data class Failed(val error: DomainError) : SidecarWriteOutcome
+
+    /**
+     * An opaque (v2) sheet file on disk no longer has the sha the caller planned against, so another writer changed it.
+     * Nothing was written; the caller re-reads and re-plans.
+     */
+    data object StaleOpaque : SidecarWriteOutcome
 }
 
 /**
@@ -44,7 +50,15 @@ sealed interface SidecarWriteOutcome {
  */
 interface ProjectSidecarStore {
     suspend fun read(slug: String): SidecarRead
-    suspend fun write(slug: String, files: Map<String, ByteArray>): SidecarWriteOutcome
+    /**
+     * Writes [files]. [opaque] maps each v2 sheet path to the sha the caller planned against: those paths are never
+     * replaced or deleted here, and a mismatch with the bytes on disk (checked under the store mutex, and again when a
+     * parked write is replayed) writes nothing and returns [SidecarWriteOutcome.StaleOpaque].
+     */
+    suspend fun write(slug: String, files: Map<String, ByteArray>, opaque: Map<String, String> = emptyMap()): SidecarWriteOutcome
+
+    /** Like [write] but never parks: while a git sync is in flight it returns [SidecarWriteOutcome.Deferred] and keeps nothing. */
+    suspend fun writeNow(slug: String, files: Map<String, ByteArray>, opaque: Map<String, String> = emptyMap()): SidecarWriteOutcome
 
     /** Keeps [files] (the local state) beside a sidecar the reconcile would not overwrite; returns the path. */
     suspend fun writeConflict(slug: String, files: Map<String, ByteArray>): Either<DomainError, String>
@@ -94,7 +108,13 @@ class FileProjectSidecarStore(
     private val isGitSyncBusy: () -> Boolean,
 ) : ProjectSidecarStore {
     private val mutex = Mutex()
-    private val pending = LinkedHashMap<String, Map<String, ByteArray>>()
+    private class PendingWrite(val files: Map<String, ByteArray>, val opaque: Map<String, String>)
+
+    private val pending = LinkedHashMap<String, PendingWrite>()
+
+    /** How many parked writes [flushPending] dropped as stale since this store was created (diagnostics and tests). */
+    var staleOpaqueDropped = 0
+        private set
 
     private fun root() = "${graphRoot.trimEnd('/')}/$ROOT_DIR"
     private fun dir(slug: String) = "${root()}/$slug"
@@ -156,23 +176,58 @@ class FileProjectSidecarStore(
         }
     }
 
-    override suspend fun write(slug: String, files: Map<String, ByteArray>): SidecarWriteOutcome = mutex.withLock {
+    override suspend fun write(slug: String, files: Map<String, ByteArray>, opaque: Map<String, String>): SidecarWriteOutcome = mutex.withLock {
         if (unavailable()) return SidecarWriteOutcome.Unavailable
         if (isGitSyncBusy()) {
-            pending[slug] = files
+            pending[slug] = PendingWrite(files, opaque)
             return SidecarWriteOutcome.Deferred
         }
-        writeLocked(slug, files)
+        writeLocked(slug, files, opaque)
     }
 
-    private fun writeLocked(slug: String, files: Map<String, ByteArray>): SidecarWriteOutcome {
+    override suspend fun writeNow(slug: String, files: Map<String, ByteArray>, opaque: Map<String, String>): SidecarWriteOutcome = mutex.withLock {
+        if (unavailable()) return SidecarWriteOutcome.Unavailable
+        if (isGitSyncBusy()) return SidecarWriteOutcome.Deferred
+        writeLocked(slug, files, opaque)
+    }
+
+    /** True when any opaque path's bytes on disk no longer hash to the sha the writer planned against. */
+    private fun opaqueChanged(slug: String, opaque: Map<String, String>): Boolean = opaque.any { (rel, sha) ->
+        fs.readFileBytes("${dir(slug)}/$rel")?.let { ContentHasher.sha256(it) } != sha
+    }
+
+    /**
+     * A parked write is an intent built from the model it read: it is stale when an opaque file changed or when the
+     * model on disk now names a different file for a sheet the parked model also names (a conversion or restore
+     * flipped it), so a replay can never revert that flip or delete a v2 file.
+     */
+    private fun parkedIsStale(slug: String, parked: PendingWrite): Boolean {
+        if (opaqueChanged(slug, parked.opaque)) return true
+        val parkedModel = parked.files[SidecarCodec.MODEL_PATH]?.let { sheetFiles(it) } ?: return false
+        val diskModel = fs.readFileBytes("${dir(slug)}/${SidecarCodec.MODEL_PATH}")?.let { sheetFiles(it) } ?: return false
+        return parkedModel.any { (uuid, file) -> diskModel[uuid]?.let { it != file } == true }
+    }
+
+    /** uuid to referenced sheet file (rule default when no `file`), or null when [modelBytes] is not a model. */
+    private fun sheetFiles(modelBytes: ByteArray): Map<String, String>? = try {
+        Json.parseToJsonElement(modelBytes.decodeToString()).jsonObject["sheets"]?.jsonArray.orEmpty().associate { ref ->
+            val o = ref.jsonObject
+            val uuid = o.getValue("uuid").jsonPrimitive.content
+            uuid to (o["file"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.content ?: "${SidecarCodec.SHEETS_DIR}/$uuid.json")
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun writeLocked(slug: String, files: Map<String, ByteArray>, opaque: Map<String, String> = emptyMap()): SidecarWriteOutcome {
+        if (opaqueChanged(slug, opaque)) return SidecarWriteOutcome.StaleOpaque
         val d = dir(slug)
         ensureIgnoreRule()?.let { return SidecarWriteOutcome.Failed(it) }
         fs.createDirectory(root())
         fs.createDirectory(d)
         fs.createDirectory("$d/${SidecarCodec.SHEETS_DIR}")
         // Sheets first, the model last: it names each sheet's hash, so a torn bundle reads as Corrupt, never as valid.
-        val ordered = files.entries.sortedBy { it.key == SidecarCodec.MODEL_PATH }
+        val ordered = files.entries.filter { it.key !in opaque }.sortedBy { it.key == SidecarCodec.MODEL_PATH }
         for ((rel, bytes) in ordered) {
             val err = replace("$d/$rel", bytes)
             if (err != null) return SidecarWriteOutcome.Failed(err)
@@ -180,7 +235,8 @@ class FileProjectSidecarStore(
         // Only unreferenced schema-1 files are swept. A schema-2 file (incl. a staged `<uuid>.v2.json`), a newer or an
         // unparseable one is left alone: deleteV2Sheet is the only remover. `backup/` and `conflicts/` are never touched.
         for (name in fs.listFiles("$d/${SidecarCodec.SHEETS_DIR}").filter { it.endsWith(".json") }) {
-            if ("${SidecarCodec.SHEETS_DIR}/$name" in files) continue
+            val rel = "${SidecarCodec.SHEETS_DIR}/$name"
+            if (rel in files || rel in opaque) continue
             val path = "$d/${SidecarCodec.SHEETS_DIR}/$name"
             if (SidecarClassifier.schemaOf(fs.readFileBytes(path)) == 1L) fs.deleteFile(path)
         }
@@ -289,8 +345,14 @@ class FileProjectSidecarStore(
         val queued = pending.entries.toList()
         pending.clear()
         var written = 0
-        for ((slug, files) in queued) {
-            if (writeLocked(slug, files) == SidecarWriteOutcome.Written) written++ else pending[slug] = files
+        for ((slug, parked) in queued) {
+            // A parked write is an intent, not a byte map: a stale one is dropped and the reconciler re-plans.
+            if (parkedIsStale(slug, parked)) { staleOpaqueDropped++; continue }
+            when (writeLocked(slug, parked.files, parked.opaque)) {
+                SidecarWriteOutcome.Written -> written++
+                SidecarWriteOutcome.StaleOpaque -> staleOpaqueDropped++
+                else -> pending[slug] = parked
+            }
         }
         written
     }
