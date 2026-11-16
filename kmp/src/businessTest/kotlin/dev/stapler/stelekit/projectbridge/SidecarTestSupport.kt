@@ -25,8 +25,14 @@ internal class SidecarFs : FakeRelocationFileSystem() {
             .filter { it.isNotEmpty() }.distinct()
     }
 
+    private val mtimes = HashMap<String, Long>()
+    private var clock = 0L
+
+    override fun getLastModifiedTime(path: String): Long? = if (fileExists(path)) mtimes[path] ?: 0L else null
+
     override fun writeFileBytes(path: String, data: ByteArray): Boolean {
         if (dead) error("process is gone")
+        mtimes[path] = ++clock
         return super.writeFileBytes(path, data)
     }
 
@@ -38,7 +44,9 @@ internal class SidecarFs : FakeRelocationFileSystem() {
     override fun renameFile(from: String, to: String): Boolean {
         if (dead) error("process is gone")
         if (crashAtRename && to.endsWith("project-model.json")) { dead = true; error("crash between delete and rename") }
-        return super.renameFile(from, to)
+        val moved = super.renameFile(from, to)
+        if (moved) mtimes[to] = mtimes.remove(from) ?: ++clock
+        return moved
     }
 
     fun seed(path: String, bytes: ByteArray) { super.writeFileBytes(path, bytes) }

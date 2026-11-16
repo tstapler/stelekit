@@ -67,6 +67,15 @@ interface ProjectSidecarStore {
      */
     suspend fun writeSheetConflictCopy(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String>
 
+    /**
+     * Prunes `conflicts/` copies of [sheetUuid] per [RetentionPolicy] (newest kept, [unresolved] file names never
+     * deleted); returns how many were deleted. `backup/` is never pruned.
+     */
+    suspend fun pruneConflictCopies(slug: String, sheetUuid: String, unresolved: Set<String>): Either<DomainError, Int>
+
+    /** File counts and bytes held by this project's `backup/` and `conflicts/` (for Settings; Task 6.2.6c). */
+    suspend fun retentionSize(slug: String): RetentionPolicy.Size
+
     /** Deletes `sheets/<sheetUuid>.v2.json`; the only way a schema-2 file is removed (converter cleanup, restore). */
     suspend fun deleteV2Sheet(slug: String, sheetUuid: String): Either<DomainError, Unit>
 
@@ -212,6 +221,32 @@ class FileProjectSidecarStore(
         path.right()
     }
 
+    override suspend fun pruneConflictCopies(slug: String, sheetUuid: String, unresolved: Set<String>): Either<DomainError, Int> = mutex.withLock {
+        val dir = "${dir(slug)}/$CONFLICTS_DIR"
+        if (unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(dir).left()
+        if (!SAFE_SEGMENT.matches(sheetUuid)) return DomainError.FileSystemError.WriteFailed(dir, "unsafe sheet uuid").left()
+        val copies = fs.listFiles(dir).filter { RetentionPolicy.sheetOfConflictCopy(it) == sheetUuid }
+            .map { RetentionPolicy.ConflictCopy(it, fs.getLastModifiedTime("$dir/$it") ?: 0L) }
+        var deleted = 0
+        for (name in RetentionPolicy.conflictCopiesToPrune(copies, unresolved)) {
+            if (!fs.deleteFile("$dir/$name")) return DomainError.FileSystemError.WriteFailed("$dir/$name", "delete failed").left()
+            deleted++
+        }
+        deleted.right()
+    }
+
+    override suspend fun retentionSize(slug: String): RetentionPolicy.Size = mutex.withLock {
+        if (unavailable()) return RetentionPolicy.Size(0, 0, 0, 0)
+        fun measure(sub: String): Pair<Int, Long> {
+            val dir = "${dir(slug)}/$sub"
+            val names = fs.listFiles(dir)
+            return names.size to names.sumOf { fs.getFileSize("$dir/$it") ?: 0L }
+        }
+        val (bf, bb) = measure(BACKUP_DIR)
+        val (cf, cb) = measure(CONFLICTS_DIR)
+        RetentionPolicy.Size(bf, bb, cf, cb)
+    }
+
     override suspend fun deleteV2Sheet(slug: String, sheetUuid: String): Either<DomainError, Unit> = mutex.withLock {
         val path = "${dir(slug)}/${SidecarCodec.SHEETS_DIR}/$sheetUuid.v2.json"
         if (unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
@@ -264,14 +299,19 @@ class FileProjectSidecarStore(
         if (unavailable()) emptyList() else fs.listDirectories(root()).sorted()
     }
 
-    /** Adds `assets/stelekit-sketch/**/*.tmp` to the graph's `.gitignore` so a crash leftover is never committed. */
+    /**
+     * Adds `assets/stelekit-sketch/**/*.tmp` (a crash leftover is never committed) and the device-local `conflicts/`
+     * rule to the graph's `.gitignore`. Only missing lines are appended; an existing line is never rewritten.
+     */
     private fun ensureIgnoreRule(): DomainError? {
         val path = "${graphRoot.trimEnd('/')}/.gitignore"
         val existing = fs.readFileBytes(path)
         val text = existing?.decodeToString().orEmpty()
-        if (text.lineSequence().any { it.trim() == IGNORE_RULE }) return null
+        val present = text.lineSequence().map { it.trim() }.toSet()
+        val missing = listOf(IGNORE_RULE, RetentionPolicy.CONFLICTS_IGNORE_RULE).filter { it !in present }
+        if (missing.isEmpty()) return null
         val sep = if (text.isEmpty() || text.endsWith("\n")) "" else "\n"
-        return writer.write(path, (text + sep + IGNORE_RULE + "\n").encodeToByteArray(), original = existing).leftOrNull()
+        return writer.write(path, (text + sep + missing.joinToString("") { it + "\n" }).encodeToByteArray(), original = existing).leftOrNull()
     }
 
     companion object {
