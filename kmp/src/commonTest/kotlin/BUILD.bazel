@@ -238,6 +238,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/tools/ToolScenarioHarness.kt",
         "dev/stapler/stelekit/sketch/v2/tools/ToolCancelTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/ToolInventoryCompletenessTest.kt",
+        "dev/stapler/stelekit/sketch/v2/BannerCandidateTest.kt",
         "dev/stapler/stelekit/sketch/excalidraw/ExcalidrawTestData.kt",
         "dev/stapler/stelekit/sketch/excalidraw/JsonSpanScannerTest.kt",
         "dev/stapler/stelekit/sketch/excalidraw/ParserBudgetTest.kt",
