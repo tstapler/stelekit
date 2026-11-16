@@ -59,6 +59,7 @@ class AnnotationEditorViewModelTest {
     @Test
     fun selectTool_clearsInProgressPoints() {
         val vm = makeViewModel()
+        vm.selectTool(AnnotationTool.DISTANCE)
         vm.addPoint(NormalizedPoint(0.1, 0.1))
         assertEquals(1, vm.state.value.inProgressPoints.size)
 
@@ -191,10 +192,9 @@ class AnnotationEditorViewModelTest {
     @Test
     fun undoStack_limitedTo50() {
         val vm = makeViewModel()
-        vm.selectTool(AnnotationTool.DISTANCE)
-
         // Commit 55 annotations — stack should cap at 50
         repeat(55) {
+            vm.selectTool(AnnotationTool.DISTANCE) // each commit returns the tool to SELECT
             val x = (it * 2 + 1).toDouble() / 1000.0
             vm.addPoint(NormalizedPoint(x.coerceAtMost(0.99), 0.1))
             vm.addPoint(NormalizedPoint((x + 0.01).coerceAtMost(1.0), 0.1))
@@ -249,9 +249,9 @@ class AnnotationEditorViewModelTest {
         val vm = makeViewModel()
         vm.selectTool(AnnotationTool.DISTANCE)
 
-        // Commit a very short line (normalized distance ≈ 0.001 — well below 0.005 threshold)
+        // 0.003 normalized = 3 image px: past the 2 px identical-point rejection, below the 0.005 length guard
         vm.addPoint(NormalizedPoint(0.5, 0.5))
-        vm.addPoint(NormalizedPoint(0.5005, 0.5)) // dx = 0.0005, length = 0.0005
+        vm.addPoint(NormalizedPoint(0.503, 0.5))
         assertEquals(0, vm.state.value.committedAnnotations.size, "Line shorter than 0.005 threshold should be dropped")
 
         // Commit a line at the threshold (normalized distance = 0.01 — above threshold)

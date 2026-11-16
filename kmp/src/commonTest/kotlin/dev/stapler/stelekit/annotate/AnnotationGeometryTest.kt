@@ -192,6 +192,8 @@ class AnnotationGeometryTest {
             calibration = Calibration(CalibrationMethod.MANUAL_REFERENCE, pixelsPerMeter = 100.0, confidencePercent = 100),
         )
         viewModel.initialize(fakeImage)
+        viewModel.setStickiness(dev.stapler.stelekit.ui.annotate.ToolStickiness.LOCKED)
+        viewModel.selectTool(dev.stapler.stelekit.ui.annotate.AnnotationTool.DISTANCE)
 
         val cal1 = Calibration(CalibrationMethod.MANUAL_REFERENCE, pixelsPerMeter = 100.0, confidencePercent = 100)
         viewModel.updateCalibration(cal1)

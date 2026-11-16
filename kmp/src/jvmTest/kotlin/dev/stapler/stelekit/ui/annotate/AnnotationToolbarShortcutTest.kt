@@ -10,6 +10,7 @@ import androidx.compose.ui.test.performTouchInput
 import dev.stapler.stelekit.model.MeasurementUnit
 import org.junit.Rule
 import org.junit.Test
+import kotlin.test.assertEquals
 
 /**
  * Regression test for GAP-G02 (gap-backlog.md): Undo/Redo were the only two buttons in
@@ -42,6 +43,22 @@ class AnnotationToolbarShortcutTest {
                 hasSelection = false,
             )
         }
+    }
+
+    @Test
+    fun keepToolToggleAndToolChips_should_ShowTheirShortcutInTheTooltip() {
+        composeTestRule.setContent {
+            AnnotationToolbar(
+                currentTool = AnnotationTool.DISTANCE, canUndo = false, canRedo = false, displayUnit = MeasurementUnit.METERS,
+                isCalibrated = true, onToolSelect = {}, onUndo = {}, onRedo = {}, onDeleteSelect = {}, onCalibrate = {},
+                onUnitSelect = {}, hasSelection = false, zoom = null, keep = ToolbarKeep(locked = false, onToggle = {}),
+            )
+        }
+
+        composeTestRule.onNodeWithText("Keep tool").performTouchInput { longClick() }
+        composeTestRule.onNodeWithText("Keep tool (K)").assertIsDisplayed()
+        assertEquals(AnnotationTool.AREA, toolForShortcutKey(androidx.compose.ui.input.key.Key.A))
+        assertEquals(null, toolForShortcutKey(KEEP_TOOL_KEY), "the Keep tool key is not a tool key")
     }
 
     @Test

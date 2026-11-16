@@ -48,6 +48,21 @@ kt_android_library(
             "**/LabsFlagToggleTest.kt",
             # Compose host test for the annotate non-drag placement UI (Gradle-only, no Compose plugin here)
             "**/AnnotationNonDragModeTest.kt",
+            # Compose host test for the annotator Settings rows (Gradle-only, same reason)
+            "**/AnnotatorSettingsRowsTest.kt",
+            # Compose host tests for the annotator status strip, pasteboard inset and gesture layer (Gradle-only)
+            "**/StatusStripTest.kt",
+            "**/PasteboardInsetTest.kt",
+            "**/AnnotationGestureLayerPlacementTest.kt",
+            "**/PlacementCountersLogTest.kt",
+            # Compose host tests for annotator layout/contrast/voice hint (Gradle-only)
+            "**/AnnotatorLayoutTest.kt",
+            "**/VoiceHintTest.kt",
+            "**/AnnotationToolbarSemanticsTest.kt",
+            "**/AnnotationA11yActionsTest.kt",
+            "**/OneShotToolFlowTest.kt",
+            "**/ToolDisarmTest.kt",
+            "**/PasteboardPlacementTest.kt",
             # Compose host test for annotate zoom/pan (Gradle-only, no Compose plugin here)
             "**/AnnotationZoomPanTest.kt",
             # Compose host test for the plane reference panel (Gradle-only, no Compose plugin here)

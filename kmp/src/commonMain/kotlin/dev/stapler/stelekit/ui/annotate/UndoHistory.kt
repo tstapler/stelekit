@@ -43,6 +43,8 @@ class UndoHistory<S>(private val maxHistory: Int = 50) {
 fun AnnotationEditorState.restoredOver(current: AnnotationEditorState): AnnotationEditorState =
     copy(
         currentTool = current.currentTool,
+        stickiness = current.stickiness,
+        pendingKnownDistance = current.pendingKnownDistance,
         inProgressPoints = emptyList(),
         error = current.error,
         placement = current.placement,

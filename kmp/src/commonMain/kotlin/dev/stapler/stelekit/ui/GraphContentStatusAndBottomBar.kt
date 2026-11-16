@@ -94,14 +94,24 @@ internal fun GraphContentBottomBar(
         onToggleSidebar = { viewModel.setMoreSheetOpen(true) },
         isLeftHanded = appState.isLeftHanded,
         voiceCaptureButton = {
-            VoiceCaptureButton(
-                state = inputs.voiceCaptureState,
-                onTap = { inputs.voiceCaptureViewModel.onMicTapped() },
-                onDismissError = { inputs.voiceCaptureViewModel.dismissError() },
-                onAutoReset = { inputs.voiceCaptureViewModel.resetToIdle() },
-                amplitudeFlow = inputs.voicePipeline.effectiveAmplitudeFlow,
-                isSupported = inputs.voicePipeline.isSupported,
-            )
+            VoiceCaptureButtonSlot(appState.currentScreen) {
+                VoiceCaptureButton(
+                    state = inputs.voiceCaptureState,
+                    onTap = { inputs.voiceCaptureViewModel.onMicTapped() },
+                    onDismissError = { inputs.voiceCaptureViewModel.dismissError() },
+                    onAutoReset = { inputs.voiceCaptureViewModel.resetToIdle() },
+                    amplitudeFlow = inputs.voicePipeline.effectiveAmplitudeFlow,
+                    isSupported = inputs.voicePipeline.isSupported,
+                )
+            }
         },
     )
+}
+
+/** The editor's toolbar occupies the FAB's corner, so voice capture is unavailable there (OC-12). */
+internal fun shouldShowVoiceCaptureButton(screen: Screen): Boolean = screen !is Screen.AnnotationEditor
+
+@Composable
+internal fun VoiceCaptureButtonSlot(screen: Screen, button: @Composable () -> Unit) {
+    if (shouldShowVoiceCaptureButton(screen)) button()
 }

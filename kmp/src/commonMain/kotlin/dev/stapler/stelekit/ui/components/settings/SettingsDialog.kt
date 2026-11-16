@@ -137,6 +137,8 @@ fun SettingsDialog(
     lfsTransfer: LfsTransferSettingsState? = null,
     // "Notify me when updates are waiting" toggle; null where the platform has no notification permission seam.
     updatesNotifications: UpdatesNotificationSettingsState? = null,
+    // Image-annotator toggles (auto-return, sticky tools); null hides the rows.
+    annotatorSettings: dev.stapler.stelekit.platform.Settings? = null,
 ) {
     if (visible) {
         Dialog(
@@ -223,9 +225,9 @@ fun SettingsDialog(
                             LfsTransferSection(lfsTransfer)
                         }
                     }
-                    SettingsCategory.EDITOR -> EditorSettings()
+                    SettingsCategory.EDITOR -> EditorSettings(annotatorSettings)
                     SettingsCategory.PLUGINS -> PluginsSettings(assetIndexing, assetPlugins, onViewPipelineLog, scrollToPluginList)
-                    SettingsCategory.ADVANCED -> AdvancedSettings(onReindex)
+                    SettingsCategory.ADVANCED -> AdvancedSettings(onReindex, annotatorSettings)
                     SettingsCategory.VOICE -> if (voiceSettings != null && onRebuildVoicePipeline != null) {
                         VoiceCaptureSettings(
                             voiceSettings = voiceSettings,

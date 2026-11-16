@@ -22,12 +22,15 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import kotlin.math.pow
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /** Zoom controls and pinch change the view, and a tap while zoomed lands on the right normalized point. */
+// A tall window keeps the zoom group in the toolbar; at the 320x470 default it folds into the Zoom popup (40% height budget).
 @RunWith(RobolectricTestRunner::class)
+@Config(qualifiers = "w411dp-h891dp-xhdpi")
 class AnnotationZoomPanTest {
     @get:Rule
     val rule = createComposeRule()
@@ -62,7 +65,7 @@ class AnnotationZoomPanTest {
     fun zoomControlsStartAtFitAndEnableOnceZoomed() {
         launch(AnnotationTool.DISTANCE)
         rule.onNodeWithContentDescription(ZOOM_FIT_DESCRIPTION).assertIsNotEnabled()
-        rule.onNodeWithContentDescription(ZOOM_OUT_DESCRIPTION).assertIsNotEnabled()
+        rule.onNodeWithContentDescription(ZOOM_OUT_DESCRIPTION).assertIsEnabled()
         rule.onNodeWithContentDescription(ZOOM_IN_DESCRIPTION).performClick()
         rule.waitForIdle()
         rule.onNodeWithContentDescription(ZOOM_FIT_DESCRIPTION).assertIsEnabled()

@@ -266,6 +266,7 @@ import dev.stapler.stelekit.benchmark.LibsqlSequentialWriteBenchmarkTest
 import dev.stapler.stelekit.benchmark.UnifiedBenchmarkRunner
 import dev.stapler.stelekit.benchmark.UserSessionBenchmarkTest
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorScreenKeyboardTest
+import dev.stapler.stelekit.ui.annotate.AnnotationKeyboardShortcutsTest
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorScreenTagWiringTest
 import dev.stapler.stelekit.ui.annotate.AnnotationToolbarShortcutTest
 import dev.stapler.stelekit.ui.annotate.DisabledTintContrastTest
@@ -625,6 +626,7 @@ import org.junit.runners.Suite
     UnifiedBenchmarkRunner::class,
     UserSessionBenchmarkTest::class,
     AnnotationEditorScreenKeyboardTest::class,
+    AnnotationKeyboardShortcutsTest::class,
     AnnotationEditorScreenTagWiringTest::class,
     AnnotationToolbarShortcutTest::class,
     DisabledTintContrastTest::class,
