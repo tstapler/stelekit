@@ -139,7 +139,7 @@ fun TextEditorOverlay(
                         },
                 )
                 Row(Modifier.background(MaterialTheme.colorScheme.surface), horizontalArrangement = Arrangement.spacedBy(HINT_GAP), verticalAlignment = Alignment.CenterVertically) {
-                    Text(TextEditorHints.forInput(hasHardwareKeyboard), style = MaterialTheme.typography.labelSmall, modifier = Modifier.testTag("sketch.text.hint"))
+                    Text(TextEditorHints.forInput(hasHardwareKeyboard), color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.labelSmall, modifier = Modifier.testTag("sketch.text.hint"))
                     if (!hasHardwareKeyboard) {
                         TextButton(onClick = onCommit, modifier = Modifier.testTag("sketch.text.done")) { Text(TextEditorHints.DONE) }
                     }

@@ -136,7 +136,6 @@ class PersistentHashTrie<V> private constructor(private val root: Array<Any?>, v
         private const val BITS = 5
         private const val WIDTH = 1 shl BITS
         private const val HASH_BITS = 32
-        private const val LEVELS = (HASH_BITS + BITS - 1) / BITS
 
         private fun chunk(hash: Int, shift: Int): Int = (hash ushr shift) and (WIDTH - 1)
 

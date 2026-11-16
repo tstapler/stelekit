@@ -101,6 +101,75 @@ class JsonSpanScanner(
 
 private fun malformed(why: String): Nothing = throw ImportAbort(ImportError(ImportReason.MalformedJson, why))
 
+private const val BYTE_MASK = 0xFF
+private const val SPACE = 0x20
+private const val TAB = 0x09
+private const val LF = 0x0A
+private const val CR = 0x0D
+private const val QUOTE = 0x22
+private const val COMMA = 0x2C
+private const val COLON = 0x3A
+private const val SLASH = 0x2F
+private const val BACKSLASH = 0x5C
+private const val OPEN_BRACE = 0x7B
+private const val CLOSE_BRACE = 0x7D
+private const val OPEN_BRACKET = 0x5B
+private const val CLOSE_BRACKET = 0x5D
+private val BOM = intArrayOf(0xEF, 0xBB, 0xBF)
+
+private fun isWhitespace(b: Int) = b == SPACE || b == TAB || b == LF || b == CR
+
+/** A byte that ends a bare scalar (number, literal) or cannot start a value. */
+private fun isStructuralEnd(b: Int) = b == COMMA || b == CLOSE_BRACE || b == CLOSE_BRACKET
+
+/** Accumulates the bytes of one object key and decodes it (unescaping when needed). */
+private class KeyAccumulator(private val maxBytes: Long, private val decoder: SpanDecoder) {
+    private var buf = ByteArray(KEY_BUF_START)
+    private var len = 0
+    private var escaping = false
+    private var hadEscape = false
+
+    fun reset() {
+        len = 0
+        escaping = false
+        hadEscape = false
+    }
+
+    /** Returns true when [b] is the closing quote; the key is then available from [key]. */
+    fun accept(b: Int): Boolean {
+        if (escaping) {
+            escaping = false
+        } else if (b == BACKSLASH) {
+            escaping = true
+            hadEscape = true
+        } else if (b == QUOTE) {
+            return true
+        }
+        if (len >= buf.size) {
+            if (buf.size >= maxBytes) throw ImportAbort(ImportError(ImportReason.ImportSpanTooLarge, "a key is larger than the span limit", maxBytes))
+            buf = buf.copyOf(buf.size * 2)
+        }
+        buf[len++] = b.toByte()
+        return false
+    }
+
+    fun key(): String {
+        if (!hadEscape) return buf.decodeToString(0, len)
+        val quoted = "\"" + buf.decodeToString(0, len) + "\""
+        return try {
+            (decoder.decode(quoted) as? kotlinx.serialization.json.JsonPrimitive)?.content ?: malformed("bad key")
+        } catch (e: ImportAbort) {
+            throw e
+        } catch (e: Exception) {
+            malformed("bad escape in a key")
+        }
+    }
+
+    private companion object {
+        const val KEY_BUF_START = 64
+    }
+}
+
 /** The resumable automaton; see [JsonSpanScanner]. */
 private class SpanMachine(
     private val limits: SceneLimits,
@@ -119,10 +188,7 @@ private class SpanMachine(
     private var top = 0
 
     // Key accumulation.
-    private var keyBuf = ByteArray(KEY_BUF_START)
-    private var keyLen = 0
-    private var keyEscape = false
-    private var keyHadEscape = false
+    private val keyAcc = KeyAccumulator(limits.maxImportSpanBytes, decoder)
 
     // Span state.
     private var spanKind = 0
@@ -164,16 +230,19 @@ private class SpanMachine(
             S_DONE -> if (!isWhitespace(b)) malformed("data after the root object")
             S_OBJ_OPEN -> when {
                 isWhitespace(b) -> Unit
-                b == QUOTE -> startKey()
+                b == QUOTE -> beginKey()
                 b == CLOSE_BRACE -> closeObject()
                 else -> malformed("expected a key or }")
             }
             S_OBJ_KEY_NEXT -> when {
                 isWhitespace(b) -> Unit
-                b == QUOTE -> startKey()
+                b == QUOTE -> beginKey()
                 else -> malformed("expected a key")
             }
-            S_KEY -> keyByte(b)
+            S_KEY -> if (keyAcc.accept(b)) {
+                keys[top - 1] = keyAcc.key()
+                state = S_COLON
+            }
             S_COLON -> when {
                 isWhitespace(b) -> Unit
                 b == COLON -> state = S_VAL_START
@@ -223,53 +292,29 @@ private class SpanMachine(
 
     // ---- keys
 
-    private fun startKey() {
-        keyLen = 0
-        keyEscape = false
-        keyHadEscape = false
+    private fun beginKey() {
+        keyAcc.reset()
         state = S_KEY
-    }
-
-    private fun keyByte(b: Int) {
-        if (keyEscape) {
-            keyEscape = false
-        } else if (b == BACKSLASH) {
-            keyEscape = true
-            keyHadEscape = true
-        } else if (b == QUOTE) {
-            keys[top - 1] = currentKey()
-            state = S_COLON
-            return
-        }
-        if (keyLen >= keyBuf.size) {
-            if (keyBuf.size >= limits.maxImportSpanBytes) throw ImportAbort(ImportError(ImportReason.ImportSpanTooLarge, "a key is larger than the span limit", limits.maxImportSpanBytes))
-            keyBuf = keyBuf.copyOf(keyBuf.size * 2)
-        }
-        keyBuf[keyLen++] = b.toByte()
-    }
-
-    private fun currentKey(): String {
-        if (!keyHadEscape) return keyBuf.decodeToString(0, keyLen)
-        val quoted = "\"" + keyBuf.decodeToString(0, keyLen) + "\""
-        return try {
-            (decoder.decode(quoted) as? kotlinx.serialization.json.JsonPrimitive)?.content ?: malformed("bad key")
-        } catch (e: ImportAbort) {
-            throw e
-        } catch (e: Exception) {
-            malformed("bad escape in a key")
-        }
     }
 
     // ---- values
 
     private fun startValue(b: Int, off: Long) {
-        if (b == COMMA || b == COLON || b == CLOSE_BRACE || b == CLOSE_BRACKET) malformed("unexpected token where a value is expected")
+        if (b == COLON || isStructuralEnd(b)) malformed("unexpected token where a value is expected")
         val role = roles[top - 1]
         val key = keys[top - 1]
         when (role) {
             ROLE_ROOT -> when {
-                key in arrayKeys && b == OPEN_BRACKET -> openArray()
-                descendFiles && key == JsonSpanScanner.FILES_KEY && b == OPEN_BRACE -> openFiles()
+                key in arrayKeys && b == OPEN_BRACKET -> {
+                    arraySpans = ArrayList()
+                    push(ROLE_ARRAY)
+                    state = S_ARR_OPEN
+                }
+                descendFiles && key == JsonSpanScanner.FILES_KEY && b == OPEN_BRACE -> {
+                    fileEntries = LinkedHashMap()
+                    push(ROLE_FILES)
+                    state = S_OBJ_OPEN
+                }
                 else -> beginSpan(b, off, K_TOP)
             }
             ROLE_ARRAY -> beginSpan(b, off, K_ELEMENT)
@@ -278,18 +323,6 @@ private class SpanMachine(
             }
             else -> if (key == JsonSpanScanner.DATA_URL_KEY && b == QUOTE) beginRaw(off) else beginSpan(b, off, K_FILE_MEMBER)
         }
-    }
-
-    private fun openArray() {
-        arraySpans = ArrayList()
-        push(ROLE_ARRAY)
-        state = S_ARR_OPEN
-    }
-
-    private fun openFiles() {
-        fileEntries = LinkedHashMap()
-        push(ROLE_FILES)
-        state = S_OBJ_OPEN
     }
 
     private fun openEntry() {
@@ -361,7 +394,7 @@ private class SpanMachine(
 
     private fun spanByte(b: Int, off: Long): Boolean {
         if (scalar) {
-            if (isWhitespace(b) || b == COMMA || b == CLOSE_BRACE || b == CLOSE_BRACKET) {
+            if (isWhitespace(b) || isStructuralEnd(b)) {
                 endSpan(off)
                 return false
             }
@@ -448,8 +481,6 @@ private class SpanMachine(
         }
     }
 
-    private fun isWhitespace(b: Int) = b == SPACE || b == TAB || b == LF || b == CR
-
     private companion object {
         const val S_ROOT_BEFORE = 0
         const val S_OBJ_OPEN = 1
@@ -476,21 +507,5 @@ private class SpanMachine(
         const val K_FILE_NONOBJECT = 3
 
         const val CTX_SLOTS = 8
-        const val KEY_BUF_START = 64
-        const val BYTE_MASK = 0xFF
-        const val SPACE = 0x20
-        const val TAB = 0x09
-        const val LF = 0x0A
-        const val CR = 0x0D
-        const val QUOTE = 0x22
-        const val COMMA = 0x2C
-        const val COLON = 0x3A
-        const val SLASH = 0x2F
-        const val BACKSLASH = 0x5C
-        const val OPEN_BRACE = 0x7B
-        const val CLOSE_BRACE = 0x7D
-        const val OPEN_BRACKET = 0x5B
-        const val CLOSE_BRACKET = 0x5D
-        val BOM = intArrayOf(0xEF, 0xBB, 0xBF)
     }
 }

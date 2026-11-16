@@ -132,7 +132,10 @@ internal object DecimalParser {
         var m = q ushr drop
         val rem = q and ((1L shl drop) - 1)
         val half = 1L shl (drop - 1)
-        if (rem > half || (rem == half && (sticky || (m and 1L) == 1L))) m++
+        if (roundsUp(rem, half, sticky, odd = (m and 1L) == 1L)) m++
         return m
     }
+
+    private fun roundsUp(rem: Long, half: Long, sticky: Boolean, odd: Boolean): Boolean =
+        rem > half || (rem == half && (sticky || odd))
 }

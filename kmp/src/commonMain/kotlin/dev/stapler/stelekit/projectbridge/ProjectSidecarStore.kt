@@ -116,12 +116,10 @@ class FileProjectSidecarStore(
     var staleOpaqueDropped = 0
         private set
 
-    private fun root() = "${graphRoot.trimEnd('/')}/$ROOT_DIR"
-    private fun dir(slug: String) = "${root()}/$slug"
-    private fun unavailable() = writer.mode(root()) == AtomicWriteMode.UNSUPPORTED
+    private val disk = SidecarDisk(fs, graphRoot, writer)
 
     override suspend fun read(slug: String): SidecarRead = mutex.withLock {
-        if (unavailable()) return SidecarRead.Unavailable
+        if (disk.unavailable()) return SidecarRead.Unavailable
         readLocked(slug)
     }
 
@@ -131,7 +129,7 @@ class FileProjectSidecarStore(
      * or enter `files` and `bundleHash`; `backup/` and `conflicts/` are never listed.
      */
     private fun readLocked(slug: String): SidecarRead {
-        val d = dir(slug)
+        val d = disk.dir(slug)
         val modelPath = "$d/${SidecarCodec.MODEL_PATH}"
         val model = fs.readFileBytes(modelPath)
         // A model deleted by a torn replace (crash between delete and rename) is Absent: the database restores it.
@@ -142,7 +140,7 @@ class FileProjectSidecarStore(
             is SidecarFileState.Corrupt -> return SidecarRead.Corrupt(state.reason, modelPath)
             is SidecarFileState.Valid -> files[SidecarCodec.MODEL_PATH] = state.bytes
         }
-        val sheetPaths = referencedSheetPaths(model) ?: return SidecarRead.Corrupt(CorruptReason.InvalidJson, modelPath)
+        val sheetPaths = ModelSheetRefs.referencedSheetPaths(model) ?: return SidecarRead.Corrupt(CorruptReason.InvalidJson, modelPath)
         for (rel in sheetPaths) {
             val abs = "$d/$rel"
             when (val state = SidecarClassifier.classifyJson(fs.readFileBytes(abs), SidecarFileKind.Sheet)) {
@@ -154,30 +152,8 @@ class FileProjectSidecarStore(
         return SidecarRead.Present(files)
     }
 
-    /**
-     * Sorted relative paths of the sheet files [modelBytes] references. A `file` that is not the rule path of its
-     * uuid (`sheets/<uuid>.json` or `sheets/<uuid>.v2.json`), or a uuid that is not one path segment, yields null:
-     * no arbitrary path is read from git-synced input.
-     */
-    private fun referencedSheetPaths(modelBytes: ByteArray): List<String>? {
-        return try {
-            val refs = Json.parseToJsonElement(modelBytes.decodeToString()).jsonObject["sheets"]?.jsonArray.orEmpty()
-            refs.map { ref ->
-                val o = ref.jsonObject
-                val uuid = o.getValue("uuid").jsonPrimitive.content
-                if (!SAFE_SEGMENT.matches(uuid)) return null
-                val default = "${SidecarCodec.SHEETS_DIR}/$uuid.json"
-                val file = o["file"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.content ?: default
-                if (file != default && file != "${SidecarCodec.SHEETS_DIR}/$uuid.v2.json") return null
-                file
-            }.distinct().sorted()
-        } catch (_: Exception) {
-            null
-        }
-    }
-
     override suspend fun write(slug: String, files: Map<String, ByteArray>, opaque: Map<String, String>): SidecarWriteOutcome = mutex.withLock {
-        if (unavailable()) return SidecarWriteOutcome.Unavailable
+        if (disk.unavailable()) return SidecarWriteOutcome.Unavailable
         if (isGitSyncBusy()) {
             pending[slug] = PendingWrite(files, opaque)
             return SidecarWriteOutcome.Deferred
@@ -186,14 +162,9 @@ class FileProjectSidecarStore(
     }
 
     override suspend fun writeNow(slug: String, files: Map<String, ByteArray>, opaque: Map<String, String>): SidecarWriteOutcome = mutex.withLock {
-        if (unavailable()) return SidecarWriteOutcome.Unavailable
+        if (disk.unavailable()) return SidecarWriteOutcome.Unavailable
         if (isGitSyncBusy()) return SidecarWriteOutcome.Deferred
         writeLocked(slug, files, opaque)
-    }
-
-    /** True when any opaque path's bytes on disk no longer hash to the sha the writer planned against. */
-    private fun opaqueChanged(slug: String, opaque: Map<String, String>): Boolean = opaque.any { (rel, sha) ->
-        fs.readFileBytes("${dir(slug)}/$rel")?.let { ContentHasher.sha256(it) } != sha
     }
 
     /**
@@ -202,34 +173,23 @@ class FileProjectSidecarStore(
      * flipped it), so a replay can never revert that flip or delete a v2 file.
      */
     private fun parkedIsStale(slug: String, parked: PendingWrite): Boolean {
-        if (opaqueChanged(slug, parked.opaque)) return true
-        val parkedModel = parked.files[SidecarCodec.MODEL_PATH]?.let { sheetFiles(it) } ?: return false
-        val diskModel = fs.readFileBytes("${dir(slug)}/${SidecarCodec.MODEL_PATH}")?.let { sheetFiles(it) } ?: return false
+        if (disk.opaqueChanged(slug, parked.opaque)) return true
+        val parkedModel = parked.files[SidecarCodec.MODEL_PATH]?.let { ModelSheetRefs.sheetFiles(it) } ?: return false
+        val diskModel = fs.readFileBytes("${disk.dir(slug)}/${SidecarCodec.MODEL_PATH}")?.let { ModelSheetRefs.sheetFiles(it) } ?: return false
         return parkedModel.any { (uuid, file) -> diskModel[uuid]?.let { it != file } == true }
     }
 
-    /** uuid to referenced sheet file (rule default when no `file`), or null when [modelBytes] is not a model. */
-    private fun sheetFiles(modelBytes: ByteArray): Map<String, String>? = try {
-        Json.parseToJsonElement(modelBytes.decodeToString()).jsonObject["sheets"]?.jsonArray.orEmpty().associate { ref ->
-            val o = ref.jsonObject
-            val uuid = o.getValue("uuid").jsonPrimitive.content
-            uuid to (o["file"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.content ?: "${SidecarCodec.SHEETS_DIR}/$uuid.json")
-        }
-    } catch (_: Exception) {
-        null
-    }
-
     private fun writeLocked(slug: String, files: Map<String, ByteArray>, opaque: Map<String, String> = emptyMap()): SidecarWriteOutcome {
-        if (opaqueChanged(slug, opaque)) return SidecarWriteOutcome.StaleOpaque
-        val d = dir(slug)
-        ensureIgnoreRule()?.let { return SidecarWriteOutcome.Failed(it) }
-        fs.createDirectory(root())
+        if (disk.opaqueChanged(slug, opaque)) return SidecarWriteOutcome.StaleOpaque
+        val d = disk.dir(slug)
+        disk.ensureIgnoreRule()?.let { return SidecarWriteOutcome.Failed(it) }
+        fs.createDirectory(disk.root())
         fs.createDirectory(d)
         fs.createDirectory("$d/${SidecarCodec.SHEETS_DIR}")
         // Sheets first, the model last: it names each sheet's hash, so a torn bundle reads as Corrupt, never as valid.
         val ordered = files.entries.filter { it.key !in opaque }.sortedBy { it.key == SidecarCodec.MODEL_PATH }
         for ((rel, bytes) in ordered) {
-            val err = replace("$d/$rel", bytes)
+            val err = disk.replace("$d/$rel", bytes)
             if (err != null) return SidecarWriteOutcome.Failed(err)
         }
         // Only unreferenced schema-1 files are swept. A schema-2 file (incl. a staged `<uuid>.v2.json`), a newer or an
@@ -243,43 +203,36 @@ class FileProjectSidecarStore(
         return SidecarWriteOutcome.Written
     }
 
-    /** Skips identical bytes so an unchanged file never dirties the git tree. */
-    private fun replace(path: String, bytes: ByteArray): DomainError? {
-        val existing = fs.readFileBytes(path)
-        if (existing != null && existing.contentEquals(bytes)) return null
-        return writer.write(path, bytes, original = existing).leftOrNull()
-    }
-
     override suspend fun writeConflict(slug: String, files: Map<String, ByteArray>): Either<DomainError, String> = mutex.withLock {
-        if (unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(dir(slug)).left()
+        if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(disk.dir(slug)).left()
         val model = files[SidecarCodec.MODEL_PATH]
-            ?: return DomainError.FileSystemError.WriteFailed(dir(slug), "no local model to keep").left()
-        val path = "${dir(slug)}/project-model.conflict-${SidecarCodec.bundleHash(files).take(HASH8)}.json"
-        fs.createDirectory(dir(slug))
-        replace(path, model)?.let { return it.left() }
+            ?: return DomainError.FileSystemError.WriteFailed(disk.dir(slug), "no local model to keep").left()
+        val path = "${disk.dir(slug)}/project-model.conflict-${SidecarCodec.bundleHash(files).take(HASH8)}.json"
+        fs.createDirectory(disk.dir(slug))
+        disk.replace(path, model)?.let { return it.left() }
         path.right()
     }
 
     override suspend fun writeBackup(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String> = mutex.withLock {
-        val path = "${dir(slug)}/$BACKUP_DIR/$sheetUuid.v1.json"
-        if (unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
+        val path = "${disk.dir(slug)}/$BACKUP_DIR/$sheetUuid.v1.json"
+        if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
         if (!SAFE_SEGMENT.matches(sheetUuid)) return DomainError.FileSystemError.WriteFailed(path, "unsafe sheet uuid").left()
         if (fs.fileExists(path)) return path.right()
-        writeVerified(path, bytes)?.let { return it.left() }
+        disk.writeVerified(path, bytes)?.let { return it.left() }
         path.right()
     }
 
     override suspend fun writeSheetConflictCopy(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String> = mutex.withLock {
-        val path = "${dir(slug)}/$CONFLICTS_DIR/$sheetUuid.v2.conflict-${ContentHasher.sha256(bytes).take(HASH8)}.json"
-        if (unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
+        val path = "${disk.dir(slug)}/$CONFLICTS_DIR/$sheetUuid.v2.conflict-${ContentHasher.sha256(bytes).take(HASH8)}.json"
+        if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
         if (!SAFE_SEGMENT.matches(sheetUuid)) return DomainError.FileSystemError.WriteFailed(path, "unsafe sheet uuid").left()
-        writeVerified(path, bytes)?.let { return it.left() }
+        disk.writeVerified(path, bytes)?.let { return it.left() }
         path.right()
     }
 
     override suspend fun pruneConflictCopies(slug: String, sheetUuid: String, unresolved: Set<String>): Either<DomainError, Int> = mutex.withLock {
-        val dir = "${dir(slug)}/$CONFLICTS_DIR"
-        if (unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(dir).left()
+        val dir = "${disk.dir(slug)}/$CONFLICTS_DIR"
+        if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(dir).left()
         if (!SAFE_SEGMENT.matches(sheetUuid)) return DomainError.FileSystemError.WriteFailed(dir, "unsafe sheet uuid").left()
         val copies = fs.listFiles(dir).filter { RetentionPolicy.sheetOfConflictCopy(it) == sheetUuid }
             .map { RetentionPolicy.ConflictCopy(it, fs.getLastModifiedTime("$dir/$it") ?: 0L) }
@@ -292,9 +245,9 @@ class FileProjectSidecarStore(
     }
 
     override suspend fun retentionSize(slug: String): RetentionPolicy.Size = mutex.withLock {
-        if (unavailable()) return RetentionPolicy.Size(0, 0, 0, 0)
+        if (disk.unavailable()) return RetentionPolicy.Size(0, 0, 0, 0)
         fun measure(sub: String): Pair<Int, Long> {
-            val dir = "${dir(slug)}/$sub"
+            val dir = "${disk.dir(slug)}/$sub"
             val names = fs.listFiles(dir)
             return names.size to names.sumOf { fs.getFileSize("$dir/$it") ?: 0L }
         }
@@ -304,44 +257,30 @@ class FileProjectSidecarStore(
     }
 
     override suspend fun deleteV2Sheet(slug: String, sheetUuid: String): Either<DomainError, Unit> = mutex.withLock {
-        val path = "${dir(slug)}/${SidecarCodec.SHEETS_DIR}/$sheetUuid.v2.json"
-        if (unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
+        val path = "${disk.dir(slug)}/${SidecarCodec.SHEETS_DIR}/$sheetUuid.v2.json"
+        if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
         if (!SAFE_SEGMENT.matches(sheetUuid)) return DomainError.FileSystemError.WriteFailed(path, "unsafe sheet uuid").left()
         if (fs.fileExists(path) && !fs.deleteFile(path)) return DomainError.FileSystemError.WriteFailed(path, "delete failed").left()
         Unit.right()
     }
 
-    /** Creates the parent directories, writes through temp+rename, then re-reads and compares the sha. */
-    private fun writeVerified(path: String, bytes: ByteArray): DomainError? {
-        val dir = path.substringBeforeLast('/')
-        fs.createDirectory(root())
-        fs.createDirectory(dir.substringBeforeLast('/'))
-        fs.createDirectory(dir)
-        replace(path, bytes)?.let { return it }
-        val back = fs.readFileBytes(path)
-        if (back == null || ContentHasher.sha256(back) != ContentHasher.sha256(bytes)) {
-            return DomainError.FileSystemError.WriteFailed(path, "read-back sha mismatch")
-        }
-        return null
-    }
-
     override suspend fun writeSourceSnapshot(slug: String, hash8: String, bytes: ByteArray): SidecarWriteOutcome = mutex.withLock {
-        if (unavailable()) return SidecarWriteOutcome.Unavailable
+        if (disk.unavailable()) return SidecarWriteOutcome.Unavailable
         if (isGitSyncBusy()) return SidecarWriteOutcome.Deferred
-        val d = "${dir(slug)}/sources"
-        fs.createDirectory(root())
-        fs.createDirectory(dir(slug))
+        val d = "${disk.dir(slug)}/sources"
+        fs.createDirectory(disk.root())
+        fs.createDirectory(disk.dir(slug))
         fs.createDirectory(d)
-        replace("$d/yaml-$hash8.yaml", bytes)?.let { return SidecarWriteOutcome.Failed(it) }
+        disk.replace("$d/yaml-$hash8.yaml", bytes)?.let { return SidecarWriteOutcome.Failed(it) }
         SidecarWriteOutcome.Written
     }
 
     override suspend fun readSourceSnapshot(slug: String, hash8: String): ByteArray? = mutex.withLock {
-        if (unavailable() || !YamlSourceEntry.isValidHash(hash8)) null else fs.readFileBytes("${dir(slug)}/sources/yaml-$hash8.yaml")
+        if (disk.unavailable() || !YamlSourceEntry.isValidHash(hash8)) null else fs.readFileBytes("${disk.dir(slug)}/sources/yaml-$hash8.yaml")
     }
 
     override suspend fun flushPending(): Int = mutex.withLock {
-        if (pending.isEmpty() || isGitSyncBusy() || unavailable()) return 0
+        if (pending.isEmpty() || isGitSyncBusy() || disk.unavailable()) return 0
         val queued = pending.entries.toList()
         pending.clear()
         var written = 0
@@ -358,22 +297,7 @@ class FileProjectSidecarStore(
     }
 
     override suspend fun slugsOnDisk(): List<String> = mutex.withLock {
-        if (unavailable()) emptyList() else fs.listDirectories(root()).sorted()
-    }
-
-    /**
-     * Adds `assets/stelekit-sketch/**/*.tmp` (a crash leftover is never committed) and the device-local `conflicts/`
-     * rule to the graph's `.gitignore`. Only missing lines are appended; an existing line is never rewritten.
-     */
-    private fun ensureIgnoreRule(): DomainError? {
-        val path = "${graphRoot.trimEnd('/')}/.gitignore"
-        val existing = fs.readFileBytes(path)
-        val text = existing?.decodeToString().orEmpty()
-        val present = text.lineSequence().map { it.trim() }.toSet()
-        val missing = listOf(IGNORE_RULE, RetentionPolicy.CONFLICTS_IGNORE_RULE).filter { it !in present }
-        if (missing.isEmpty()) return null
-        val sep = if (text.isEmpty() || text.endsWith("\n")) "" else "\n"
-        return writer.write(path, (text + sep + missing.joinToString("") { it + "\n" }).encodeToByteArray(), original = existing).leftOrNull()
+        if (disk.unavailable()) emptyList() else fs.listDirectories(disk.root()).sorted()
     }
 
     companion object {
@@ -382,6 +306,91 @@ class FileProjectSidecarStore(
         const val HASH8 = 8
         const val BACKUP_DIR = "backup"
         const val CONFLICTS_DIR = "conflicts"
-        private val SAFE_SEGMENT = Regex("[A-Za-z0-9][A-Za-z0-9_-]*")
+    }
+}
+
+private val SAFE_SEGMENT = Regex("[A-Za-z0-9][A-Za-z0-9_-]*")
+
+/** Reads the sheet references out of a project model's JSON; pure, no I/O. */
+private object ModelSheetRefs {
+    /**
+     * Sorted relative paths of the sheet files [modelBytes] references. A `file` that is not the rule path of its
+     * uuid (`sheets/<uuid>.json` or `sheets/<uuid>.v2.json`), or a uuid that is not one path segment, yields null:
+     * no arbitrary path is read from git-synced input.
+     */
+    fun referencedSheetPaths(modelBytes: ByteArray): List<String>? {
+        return try {
+            val refs = Json.parseToJsonElement(modelBytes.decodeToString()).jsonObject["sheets"]?.jsonArray.orEmpty()
+            refs.map { ref ->
+                val o = ref.jsonObject
+                val uuid = o.getValue("uuid").jsonPrimitive.content
+                if (!SAFE_SEGMENT.matches(uuid)) return null
+                val default = "${SidecarCodec.SHEETS_DIR}/$uuid.json"
+                val file = o["file"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.content ?: default
+                if (file != default && file != "${SidecarCodec.SHEETS_DIR}/$uuid.v2.json") return null
+                file
+            }.distinct().sorted()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** uuid to referenced sheet file (rule default when no `file`), or null when [modelBytes] is not a model. */
+    fun sheetFiles(modelBytes: ByteArray): Map<String, String>? = try {
+        Json.parseToJsonElement(modelBytes.decodeToString()).jsonObject["sheets"]?.jsonArray.orEmpty().associate { ref ->
+            val o = ref.jsonObject
+            val uuid = o.getValue("uuid").jsonPrimitive.content
+            uuid to (o["file"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.content ?: "${SidecarCodec.SHEETS_DIR}/$uuid.json")
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
+
+/** File-level operations of [FileProjectSidecarStore]: path layout, temp-and-rename writes, the `.gitignore` rule. */
+private class SidecarDisk(private val fs: FileSystem, private val graphRoot: String, private val writer: AtomicFileWriter) {
+    fun root() = "${graphRoot.trimEnd('/')}/${FileProjectSidecarStore.ROOT_DIR}"
+    fun dir(slug: String) = "${root()}/$slug"
+    fun unavailable() = writer.mode(root()) == AtomicWriteMode.UNSUPPORTED
+
+    /** True when any opaque path's bytes on disk no longer hash to the sha the writer planned against. */
+    fun opaqueChanged(slug: String, opaque: Map<String, String>): Boolean = opaque.any { (rel, sha) ->
+        fs.readFileBytes("${dir(slug)}/$rel")?.let { ContentHasher.sha256(it) } != sha
+    }
+
+    /** Skips identical bytes so an unchanged file never dirties the git tree. */
+    fun replace(path: String, bytes: ByteArray): DomainError? {
+        val existing = fs.readFileBytes(path)
+        if (existing != null && existing.contentEquals(bytes)) return null
+        return writer.write(path, bytes, original = existing).leftOrNull()
+    }
+
+    /** Creates the parent directories, writes through temp+rename, then re-reads and compares the sha. */
+    fun writeVerified(path: String, bytes: ByteArray): DomainError? {
+        val dir = path.substringBeforeLast('/')
+        fs.createDirectory(root())
+        fs.createDirectory(dir.substringBeforeLast('/'))
+        fs.createDirectory(dir)
+        replace(path, bytes)?.let { return it }
+        val back = fs.readFileBytes(path)
+        if (back == null || ContentHasher.sha256(back) != ContentHasher.sha256(bytes)) {
+            return DomainError.FileSystemError.WriteFailed(path, "read-back sha mismatch")
+        }
+        return null
+    }
+
+    /**
+     * Adds `assets/stelekit-sketch/**/*.tmp` (a crash leftover is never committed) and the device-local `conflicts/`
+     * rule to the graph's `.gitignore`. Only missing lines are appended; an existing line is never rewritten.
+     */
+    fun ensureIgnoreRule(): DomainError? {
+        val path = "${graphRoot.trimEnd('/')}/.gitignore"
+        val existing = fs.readFileBytes(path)
+        val text = existing?.decodeToString().orEmpty()
+        val present = text.lineSequence().map { it.trim() }.toSet()
+        val missing = listOf(FileProjectSidecarStore.IGNORE_RULE, RetentionPolicy.CONFLICTS_IGNORE_RULE).filter { it !in present }
+        if (missing.isEmpty()) return null
+        val sep = if (text.isEmpty() || text.endsWith("\n")) "" else "\n"
+        return writer.write(path, (text + sep + missing.joinToString("") { it + "\n" }).encodeToByteArray(), original = existing).leftOrNull()
     }
 }

@@ -277,7 +277,6 @@ class ExcalidrawParser(
         val issues = ArrayList<ImportIssue>()
         val out = ArrayList<ExcalidrawLibraryItem>()
         var storedBytes = 0L
-        val sanitizer = ElementSanitizer(limits)
         for ((i, ref) in items.spans.withIndex()) {
             if (ref !is SpanRef.Ok) {
                 issues += ImportIssue((ref as SpanRef.Dropped).reason, "libraryItems[$i]", "${ref.range.length} bytes")
@@ -292,12 +291,12 @@ class ExcalidrawParser(
                 throw ImportAbort(ImportError(ImportReason.LibraryTooLarge, "the library is larger than ${limits.maxLibraryBytes} bytes", limits.maxLibraryBytes))
             }
             budget.tick(ref.range.length, 1)
-            out += libraryItem(decodeSpan(source, ref.range), i, sanitizer, budget, issues)
+            out += libraryItem(decodeSpan(source, ref.range), i, budget, issues)
         }
         return ImportedLibrary(out, ImportReport(issues))
     }
 
-    private suspend fun libraryItem(item: JsonElement, index: Int, sanitizer: ElementSanitizer, budget: ParseBudget, issues: MutableList<ImportIssue>): ExcalidrawLibraryItem {
+    private suspend fun libraryItem(item: JsonElement, index: Int, budget: ParseBudget, issues: MutableList<ImportIssue>): ExcalidrawLibraryItem {
         val obj = item as? JsonObject
         val id = (obj?.get("id") as? JsonPrimitive)?.takeIf { it.isString }?.content ?: "item-$index"
         val name = (obj?.get("name") as? JsonPrimitive)?.takeIf { it.isString }?.content

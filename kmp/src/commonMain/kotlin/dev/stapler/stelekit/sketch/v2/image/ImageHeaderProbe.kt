@@ -77,7 +77,6 @@ object ImageHeaderProbe {
     private const val JPEG_SEGMENT_HEADER = 4
     private const val JPEG_SOF_HEIGHT_AT = 5
     private const val JPEG_SOF_WIDTH_AT = 7
-    private const val JPEG_SOF_BYTES = 9
     private const val JPEG_SOS = 0xDA
     private const val JPEG_DHT = 0xC4
     private const val JPEG_JPG = 0xC8
@@ -122,7 +121,7 @@ object ImageHeaderProbe {
                 i += JPEG_SOI_BYTES
                 continue
             }
-            if (marker in jpegSof && marker != JPEG_DHT && marker != JPEG_JPG && marker != JPEG_DAC) {
+            if (isSofMarker(marker)) {
                 if (i + JPEG_SOF_WIDTH_AT + JPEG_SOI_BYTES + 1 > b.size) return null
                 return ImageHeader(ImageFormat.Jpeg, be16(b, i + JPEG_SOF_WIDTH_AT), be16(b, i + JPEG_SOF_HEIGHT_AT))
             }
@@ -131,6 +130,9 @@ object ImageHeaderProbe {
         }
         return null
     }
+
+    /** SOF0..SOF15 except the three codes in that range that are not frame headers (DHT, JPG, DAC). */
+    private fun isSofMarker(marker: Int) = marker in jpegSof && marker != JPEG_DHT && marker != JPEG_JPG && marker != JPEG_DAC
 
     private fun webp(b: ByteArray): ImageHeader? {
         if (b.size < WEBP_DATA_AT) return null

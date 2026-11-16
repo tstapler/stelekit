@@ -139,7 +139,7 @@ class Solver(private val options: SolverOptions = SolverOptions()) {
             overall = listOf(solveComponent(problem, whole, finalX, tolerance, clock))
             if (!overall[0].converged) finalX = start.copyOf()
         }
-        return diagnose(problem, start, finalX, overall, tolerance)
+        return diagnose(problem, finalX, overall, tolerance)
     }
 
     private class ComponentRun(val component: Component, val converged: Boolean, val iterations: Int, val algorithm: SolveAlgorithm?, val reason: StopReason?, val stalledAt: DoubleArray? = null)
@@ -168,7 +168,7 @@ class Solver(private val options: SolverOptions = SolverOptions()) {
         return ComponentRun(comp, false, iterations, last, reason, ws.snapshot())
     }
 
-    private fun diagnose(problem: ConstraintProblem, start: DoubleArray, x: DoubleArray, runs: List<ComponentRun>, tolerance: Double): SolveResult {
+    private fun diagnose(problem: ConstraintProblem, x: DoubleArray, runs: List<ComponentRun>, tolerance: Double): SolveResult {
         val iterations = runs.sumOf { it.iterations }
         val algorithm = runs.mapNotNull { it.algorithm }.maxByOrNull { it.ordinal }
         val residual = fullResidualInf(problem, x)
@@ -203,7 +203,10 @@ class Solver(private val options: SolverOptions = SolverOptions()) {
         val r = DoubleArray(problem.rowCount)
         for ((i, eq) in problem.equations.withIndex()) eq.residual(x, r, problem.rowOffsets[i])
         var worst = 0.0
-        for (v in r) { if (v.isNaN()) return Double.NaN; worst = max(worst, abs(v)) }
+        for (v in r) {
+            if (v.isNaN()) return Double.NaN
+            worst = max(worst, abs(v))
+        }
         return worst
     }
 
@@ -396,6 +399,14 @@ class Solver(private val options: SolverOptions = SolverOptions()) {
         private fun wallTimeUp(clock: TimeSource.Monotonic.ValueTimeMark): Boolean = clock.elapsedNow().inWholeMilliseconds >= options.wallTimeMillis
     }
 
-    private fun infNorm(v: DoubleArray): Double { var s = 0.0; for (a in v) { if (a.isNaN()) return Double.NaN; s = max(s, abs(a)) }; return s }
+    private fun infNorm(v: DoubleArray): Double {
+        var s = 0.0
+        for (a in v) {
+            if (a.isNaN()) return Double.NaN
+            s = max(s, abs(a))
+        }
+        return s
+    }
+
     private fun norm(v: DoubleArray): Double { var s = 0.0; for (a in v) s += a * a; return sqrt(s) }
 }

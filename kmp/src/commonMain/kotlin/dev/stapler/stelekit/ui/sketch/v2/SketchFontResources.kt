@@ -48,7 +48,7 @@ fun rememberSketchFontState(): State<SketchFontState> {
             false
         }
     }
-    return remember {
+    return remember(readable, fonts) {
         derivedStateOf<SketchFontState> {
             when (readable.value) {
                 null -> SketchFontState.Loading
