@@ -101,11 +101,11 @@ object ConstraintCalibrator {
 
     // ---- SCALE ----
 
-    /** Noise-weighted log-mean of the scales that agree with the median within [ConstraintTuning.CONFLICT_RATIO]. */
+    /** Noise-weighted log-mean of the scales that agree with the median within [ConstraintTuning.TRIM_RATIO]. */
     private fun scaleModel(segs: List<Seg>): Double {
         val logs = segs.map { ln(it.meters / it.lengthPx) }
         val centre = if (segs.size >= MIN_ROBUST_N) FitStatistics.median(logs) else null
-        val limit = ln(ConstraintTuning.CONFLICT_RATIO)
+        val limit = ln(ConstraintTuning.TRIM_RATIO)
         var sw = 0.0
         var s = 0.0
         for ((i, g) in segs.withIndex()) {
@@ -194,7 +194,15 @@ object ConstraintCalibrator {
         return null
     }
 
+    /** Two distances that disagree by [ConstraintTuning.CONFLICT_RATIO] or more cannot say which is right, so neither is trusted. */
+    private fun pair(segs: List<Seg>): CalibrationFailure.ConflictingConstraints? {
+        if (segs.size != 2) return null
+        val ratio = exp(abs(ln(segs[0].meters / segs[0].lengthPx) - ln(segs[1].meters / segs[1].lengthPx)))
+        return if (ratio >= ConstraintTuning.CONFLICT_RATIO) CalibrationFailure.ConflictingConstraints(segs[1].id, ratio) else null
+    }
+
     private fun conflict(segs: List<Seg>): CalibrationFailure.ConflictingConstraints? {
+        pair(segs)?.let { return it }
         lone(segs)?.let { return it }
         if (segs.size < CONFLICT_MIN_N) return null
         val sorted = segs.map { it to ln(it.meters / it.lengthPx) }.sortedBy { it.second }

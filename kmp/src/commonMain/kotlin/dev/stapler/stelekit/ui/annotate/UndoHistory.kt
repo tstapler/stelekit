@@ -55,6 +55,15 @@ fun AnnotationEditorState.restoredOver(current: AnnotationEditorState): Annotati
         placement = current.placement,
         // A unit change is not an undoable step: keep the chosen unit and show restored measurements in it.
         selectedUnit = current.selectedUnit,
-        imageAnnotation = imageAnnotation?.copy(unit = current.selectedUnit),
+        // Calibration is not an undoable step here (see undoCalibration): a restored snapshot must not leave the saved
+        // image row on one scale and the shown values on another.
+        calibration = current.calibration,
+        imageAnnotation = imageAnnotation?.copy(
+            unit = current.selectedUnit,
+            calibration = current.imageAnnotation?.calibration ?: imageAnnotation.calibration,
+        ),
         committedAnnotations = committedAnnotations.map { it.relabeled(current.selectedUnit) },
+        // Rows this step removed stay deleted for a late load; rows it brought back are no longer deleted.
+        sessionDeleted = (current.sessionDeleted + (current.committedAnnotations.map { it.uuid }.toSet() - committedAnnotations.map { it.uuid }.toSet()))
+            - committedAnnotations.map { it.uuid }.toSet(),
     )

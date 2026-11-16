@@ -62,6 +62,9 @@ object ConstraintTuning {
     /** A scale this many times off the median is flagged as a probable unit or typo error. */
     const val CONFLICT_RATIO = 2.0
 
+    /** With three or more distances, scales this many times off the median get no say in the fitted scale. */
+    const val TRIM_RATIO = 1.25
+
     /** Image aspect (long / short) must be 4:3 or 3:2 within this fraction or the frame is treated as cropped. */
     const val ASPECT_TOLERANCE = 0.02
 

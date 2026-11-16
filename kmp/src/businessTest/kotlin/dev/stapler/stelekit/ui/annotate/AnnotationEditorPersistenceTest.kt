@@ -42,14 +42,16 @@ class AnnotationEditorPersistenceTest {
     }
 
     private class RecordingRepository(
-        private val loadResult: Either<DomainError, List<MeasurementAnnotation>> = emptyList<MeasurementAnnotation>().right(),
+        @Volatile var loadResult: Either<DomainError, List<MeasurementAnnotation>> = emptyList<MeasurementAnnotation>().right(),
         private val delegate: InMemoryMeasurementAnnotationRepository = InMemoryMeasurementAnnotationRepository(),
+        /** When set, the initial load waits for it, so a test can act inside the load window. */
+        private val loadGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null,
     ) : MeasurementAnnotationRepository by delegate {
         val calls = CopyOnWriteArrayList<String>()
         @Volatile var failSaves = false
 
         override fun getMeasurementsForImage(imageUuid: String): Flow<Either<DomainError, List<MeasurementAnnotation>>> =
-            flowOf(loadResult)
+            kotlinx.coroutines.flow.flow { loadGate?.await(); emit(loadResult) }
 
         override suspend fun saveMeasurementAnnotation(measurement: MeasurementAnnotation): Either<DomainError, Unit> {
             calls += "save:${measurement.uuid}"
@@ -127,8 +129,11 @@ class AnnotationEditorPersistenceTest {
     @Test
     fun undo_should_UpsertRowsNotBulkReplace_When_InitialLoadFailed() = await {
         val repo = RecordingRepository(loadResult = DomainError.DatabaseError.ReadFailed("locked").left())
+        val failures = { dev.stapler.stelekit.logging.LogManager.logs.value.count { it.message.contains("Failed to load saved measurements") } }
+        val before = failures()
         val vm = newViewModel(repo)
-        vm.state.first { vm.state.value.imageAnnotation != null }
+        // The failed load is recorded asynchronously; without waiting, undo can race it and take the bulk path.
+        while (failures() == before) kotlinx.coroutines.delay(5)
         commitDistance(vm)
         commitDistance(vm)
         vm.resolveBack()
@@ -184,6 +189,23 @@ class AnnotationEditorPersistenceTest {
             assertTrue(vm.state.value.committedAnnotations.none { it.uuid == "old-1" }, "row resurrected in round $round")
             vm.close()
         }
+    }
+
+    @Test
+    fun undoOfDelete_should_KeepTheRestoredRow_When_TheLoadLandsAfterwards() = await {
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val repo = RecordingRepository(loadGate = gate)
+        val vm = newViewModel(repo)
+        commitDistance(vm)
+        val y = vm.state.value.committedAnnotations.single().uuid
+        vm.deleteAnnotation(y)
+        vm.undo()
+        repo.loadResult = listOf(persisted(y)).right()
+        gate.complete(Unit)
+        vm.resolveBack()
+        kotlinx.coroutines.delay(100)
+        assertEquals(listOf(y), vm.state.value.committedAnnotations.map { it.uuid })
+        vm.close()
     }
 
     private companion object {

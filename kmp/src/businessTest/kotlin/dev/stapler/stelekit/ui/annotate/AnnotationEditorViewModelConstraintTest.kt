@@ -208,6 +208,34 @@ class AnnotationEditorViewModelConstraintTest {
     }
 
     @Test
+    fun generalUndo_should_NotRevertCalibration_AndLeaveSavedAndShownScaleAgreeing() {
+        val vm = vm().also { it.calibrate() }
+        val line = vm.draw(0.2)
+        vm.confirmConstraintCalibration(listOf(c1, c2, c3))
+        val fitted = vm.calibration
+
+        vm.undo()
+
+        assertEquals(fitted, vm.calibration)
+        assertEquals(fitted, vm.state.value.imageAnnotation?.calibration)
+        vm.redo()
+        assertEquals(fitted, vm.calibration)
+        val back = vm.state.value.committedAnnotations.single { it.uuid == line.uuid }
+        assertEquals(1000.0 / vm.calibration.pixelsPerMeter, back.valueMeters!!, 1000.0 / vm.calibration.pixelsPerMeter * 0.01)
+        vm.close()
+    }
+
+    @Test
+    fun zoomedFrame_should_DeclineGradientAndKeepScale_When_CaptureHintsSayDigitalZoom() {
+        val vm = vm(MapSettings(ConstraintTuning.SETTINGS_KEY_GRADIENT_TIER to true)).also { it.calibrate() }
+        vm.setCaptureHints(AnnotationEditorViewModel.CaptureHints(zoomRatio = 2.0))
+        vm.confirmConstraintCalibration(listOf(c1, c2, c3, c4, constraint("c5", 0.7, 0.3, 0.9, 0.5, 0.3)), TierRequest.Only(FitTier.GRADIENT))
+        assertNotNull(vm.constraintFitResult.value?.fallbackNote, vm.constraintFitResult.value.toString())
+        assertNull(vm.geometry?.plane)
+        vm.close()
+    }
+
+    @Test
     fun promotingAnOverriddenLine_should_DropTheOldOverrideSoItFollowsTheFit() {
         val vm = vm().also { it.calibrate() }
         val target = vm.draw(0.2)

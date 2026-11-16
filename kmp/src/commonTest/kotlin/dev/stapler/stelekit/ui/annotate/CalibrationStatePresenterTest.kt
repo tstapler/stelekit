@@ -113,7 +113,7 @@ class CalibrationStatePresenterTest {
     }
 
     @Test
-    fun rows_should_FlagTheWorstOffender_OnlyAboveThreeTimesTheMeanAndThreePercent() {
+    fun rows_should_FlagTheWorstOffender_OnlyAboveTwiceTheMeanAndThreePercent() {
         val report = FitReport(
             tier = FitTier.SCALE, n = 3, residualMeanPct = 2.0,
             perConstraint = listOf(ConstraintResidual("a", 1.0), ConstraintResidual("b", 6.0), ConstraintResidual("c", 2.9)),
@@ -125,6 +125,19 @@ class CalibrationStatePresenterTest {
 
         val below = report.copy(perConstraint = listOf(ConstraintResidual("a", 1.0), ConstraintResidual("b", 2.9), ConstraintResidual("c", 1.0)), residualMeanPct = 0.5)
         assertTrue(present(spread, report = below).rows.none { it.flagged })
+    }
+
+    @Test
+    fun rows_should_FlagADistanceTypedTooLarge_AtNEqualsThree_AndDowngradeTheCheck() {
+        val report = FitReport(
+            tier = FitTier.SCALE, n = 3, residualMeanPct = 10.0,
+            perConstraint = listOf(ConstraintResidual("a", 8.0), ConstraintResidual("b", 8.0), ConstraintResidual("c", -24.0)),
+        )
+        val p = present(spread, fit = fit(3, residual = 10.0), report = report)
+        assertEquals(listOf(false, false, true), p.rows.map { it.flagged })
+        assertEquals("disagrees by 24.0% - re-measure or remove?", p.rows[2].flagText)
+        assertEquals(PillIcon.WARNING, p.pill.icon)
+        assertFalse(p.pill.showConfidenceBadge)
     }
 
     @Test

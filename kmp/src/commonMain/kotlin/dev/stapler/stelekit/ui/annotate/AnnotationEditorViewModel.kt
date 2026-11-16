@@ -12,6 +12,8 @@ import dev.stapler.stelekit.calibration.ConstraintCalibrator
 import dev.stapler.stelekit.calibration.ConstraintFitApplier
 import dev.stapler.stelekit.calibration.ConstraintTuning
 import dev.stapler.stelekit.calibration.FitOptions
+import dev.stapler.stelekit.calibration.FocalSourceResolver
+import dev.stapler.stelekit.calibration.LensRecordFocal
 import dev.stapler.stelekit.calibration.TierRequest
 import dev.stapler.stelekit.calibration.describe
 import dev.stapler.stelekit.calibration.CameraProfile
@@ -130,6 +132,11 @@ data class AnnotationEditorState(
     val stickiness: ToolStickiness = ToolStickiness.ONE_SHOT,
     /** Story 3.6: the next committed distance is a known-distance reference. */
     val pendingKnownDistance: Boolean = false,
+    /**
+     * Persisted rows deleted this session. Lives in the state (not beside it) so a delete changes the state's
+     * equality: a late load merge computed before the delete then fails its compare-and-set and recomputes.
+     */
+    val sessionDeleted: Set<String> = emptySet(),
     val inProgressPoints: List<NormalizedPoint> = emptyList(),
     val committedAnnotations: List<MeasurementAnnotation> = emptyList(),
     val calibration: Calibration? = null,
@@ -338,10 +345,6 @@ class AnnotationEditorViewModel(
     // Rows this session added or deleted; a late initial load must not re-add them (e.g. after undo).
     private val sessionTouched = Atomic<Set<String>>(emptySet())
 
-    // Rows deleted this session. StateFlow CAS compares by equality, so a delete that changes nothing can't
-    // invalidate an in-flight load merge computed from a stale [sessionTouched]; the load re-applies this after merging.
-    private val sessionDeleted = Atomic<Set<String>>(emptySet())
-
     // True when the initial load failed: a bulk replace would wipe rows that were never shown.
     private val loadFailed = AtomicBoolean(false)
 
@@ -466,11 +469,20 @@ class AnnotationEditorViewModel(
         if (inputStopped()) return
         val current = _state.value
         val prev = history.undo(current) ?: return
-        _state.value = prev.restoredOver(current)
+        restoreSnapshot(prev, current)
         _canUndo.value = history.canUndo
         _canRedo.value = history.canRedo
         persistCommittedSet()
         countUndoAfterDragMeasure()
+    }
+
+    /** Calibration is undone only through [undoCalibration]; here computed values are re-derived under the live scale. */
+    private fun restoreSnapshot(snapshot: AnnotationEditorState, current: AnnotationEditorState) {
+        val restored = snapshot.restoredOver(current)
+        _state.value = restored.copy(
+            committedAnnotations = rederive(restored.committedAnnotations, restored.calibration, restored.selectedUnit)
+                .map { it.relabeled(restored.selectedUnit) },
+        )
     }
 
     private fun countUndoAfterDragMeasure() {
@@ -486,7 +498,7 @@ class AnnotationEditorViewModel(
         if (inputStopped()) return
         val current = _state.value
         val next = history.redo(current) ?: return
-        _state.value = next.restoredOver(current)
+        restoreSnapshot(next, current)
         _canUndo.value = history.canUndo
         _canRedo.value = history.canRedo
         persistCommittedSet()
@@ -600,14 +612,9 @@ class AnnotationEditorViewModel(
                         committedAnnotations = mergeInitialLoad(
                             list.map { it.relabeled(currentSt.selectedUnit) },
                             currentSt.committedAnnotations,
-                            sessionTouched.value,
+                            sessionTouched.value + currentSt.sessionDeleted,
                         ),
                     )
-                }
-                val persistedUuids = list.mapTo(HashSet()) { it.uuid }
-                _state.update { cur ->
-                    val deleted = sessionDeleted.value
-                    cur.copy(committedAnnotations = cur.committedAnnotations.filterNot { it.uuid in deleted && it.uuid in persistedUuids })
                 }
             }
         }
@@ -1086,7 +1093,7 @@ class AnnotationEditorViewModel(
     }
 
     /** An edited value is the user's word: only computed measurements follow [calibration]. */
-    private fun rederive(annotations: List<MeasurementAnnotation>, calibration: Calibration, unit: MeasurementUnit): List<MeasurementAnnotation> =
+    private fun rederive(annotations: List<MeasurementAnnotation>, calibration: Calibration?, unit: MeasurementUnit): List<MeasurementAnnotation> =
         annotations.map { annotation ->
             if (annotation.valueSource == ValueSource.USER_OVERRIDE) {
                 annotation
@@ -1252,10 +1259,10 @@ class AnnotationEditorViewModel(
 
         // Before the state change, so a load landing in between can't re-add the row.
         sessionTouched.getAndUpdate { it + uuid }
-        sessionDeleted.getAndUpdate { it + uuid }
         _state.update { currentSt ->
             currentSt.copy(
                 committedAnnotations = currentSt.committedAnnotations.filter { it.uuid != uuid },
+                sessionDeleted = currentSt.sessionDeleted + uuid,
                 selectedAnnotationUuid = if (currentSt.selectedAnnotationUuid == uuid) null else currentSt.selectedAnnotationUuid,
             )
         }
@@ -1495,9 +1502,22 @@ class AnnotationEditorViewModel(
             return
         }
         val calibrated = current?.takeIf { it.method != CalibrationMethod.NONE }
-        val frame = CaptureFrameInfo(imageWidthPx, imageHeightPx, _state.value.imageAnnotation?.sensorData?.focalLength35mmEq)
+        val hints = captureHints
+        val focal = FocalSourceResolver.resolve(
+            userConfirmed35mmEq = hints.userConfirmedFocal35mmEq,
+            lensRecord = hints.lensRecord,
+            profileMatched = false,
+            exifFocal35mmEq = _state.value.imageAnnotation?.sensorData?.focalLength35mmEq,
+        )
+        val frame = CaptureFrameInfo(
+            imageWidthPx, imageHeightPx, focal.focal35mmEq,
+            zoomRatio = hints.zoomRatio ?: hints.lensRecord?.zoomRatio,
+            exifDigitalZoomRatio = hints.exifDigitalZoomRatio,
+        )
         val options = FitOptions(
             request = request,
+            focalSource = focal.source,
+            focal35mmEq = focal.focal35mmEq,
             gradientEnabled = gradientTierEnabled(),
             k = current?.lens?.k ?: 0.0,
             basisVersion = calibrated?.basisVersion ?: CalibrationBasis.NATIVE_PIXELS_LENS,
@@ -1531,7 +1551,25 @@ class AnnotationEditorViewModel(
         }
     }
 
-    private fun gradientTierEnabled(): Boolean {
+    /** What the host knows about how the photo was captured; unset values mean "unknown", never "uncropped". */
+    data class CaptureHints(
+        val zoomRatio: Double? = null,
+        val exifDigitalZoomRatio: Double? = null,
+        val lensRecord: LensRecordFocal? = null,
+        val userConfirmedFocal35mmEq: Double? = null,
+    )
+
+    @kotlin.concurrent.Volatile private var captureHints = CaptureHints()
+
+    /** Feeds the crop/zoom refusal and the focal source ranking of the next known-distance fit. */
+    fun setCaptureHints(hints: CaptureHints) {
+        captureHints = hints
+    }
+
+    internal val frameWidthPx: Double get() = imageWidthPx
+    internal val frameHeightPx: Double get() = imageHeightPx
+
+    internal fun gradientTierEnabled(): Boolean {
         val key = ConstraintTuning.SETTINGS_KEY_GRADIENT_TIER
         val stored = settings?.takeIf { it.containsKey(key) }?.getBoolean(key, ConstraintTuning.GRADIENT_DEFAULT_ON)
         return ConstraintTuning.gradientEnabled(stored)

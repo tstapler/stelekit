@@ -47,4 +47,38 @@ class ConstraintOutlierPropertyTest {
             assertTrue(response.requested.isRight(), "clean scene was refused: ${response.requested}")
         }
     }
+
+    /** 1.2x-2x typos are not refused, but they must not drag the scale off the clean majority nor go unflagged. */
+    @Test
+    fun fit_should_KeepScaleOfTheCleanMajorityAndFlagTheTypo_When_OneOfNIsOff1p2To2x() {
+        val rnd = Random(681)
+        repeat(300) {
+            val n = 4 + rnd.nextInt(5)
+            val bad = rnd.nextInt(n)
+            val factor = (1.3 + rnd.nextDouble() * 0.6).let { if (rnd.nextBoolean()) it else 1.0 / it }
+            val response = ConstraintCalibrator.fit(scene(rnd, n, bad, factor), frame)
+            val fit = response.requested.right()
+            val scaleErrorPct = kotlin.math.abs(1.0 / fit.pixelsPerMeter / mpp - 1.0) * 100.0
+            assertTrue(scaleErrorPct < 4.0, "n=$n factor=$factor scale off by $scaleErrorPct%")
+            val worst = fit.report.worst
+            assertEquals("c$bad", worst?.id, "n=$n factor=$factor")
+            val residual = kotlin.math.abs(fit.report.perConstraint.first { it.id == "c$bad" }.residualPct)
+            assertTrue(residual > ConstraintTuningProbe.FLAG_MIN_PCT, "typo residual only $residual%")
+        }
+    }
+
+    @Test
+    fun fit_should_RefuseTwoDistancesThatDisagreeBy2xOrMore_AndAcceptCloseOnes() {
+        val rnd = Random(682)
+        repeat(100) {
+            val apart = scene(rnd, 2, 1, 2.3 + rnd.nextDouble() * 4.0)
+            assertTrue(ConstraintCalibrator.fit(apart, frame).requested.left() is CalibrationFailure.ConflictingConstraints)
+            val close = scene(rnd, 2, 1, 1.0 + rnd.nextDouble() * 0.3)
+            assertTrue(ConstraintCalibrator.fit(close, frame).requested.isRight())
+        }
+    }
+
+    private object ConstraintTuningProbe {
+        const val FLAG_MIN_PCT = 3.0
+    }
 }

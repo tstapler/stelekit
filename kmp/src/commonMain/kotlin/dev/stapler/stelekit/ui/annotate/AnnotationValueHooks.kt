@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import dev.stapler.stelekit.calibration.ConstraintTuning
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.CalibrationConstraint
 import dev.stapler.stelekit.model.CalibrationMethod
@@ -142,6 +143,10 @@ internal fun rememberCalibrationPresentation(
             constraints = geometry?.constraints.orEmpty(),
             fit = geometry?.fit,
             report = fitResult?.report,
+            gradientTierEnabled = viewModel.gradientTierEnabled(),
+            perAxisTierEnabled = ConstraintTuning.PER_AXIS_DEFAULT_ON,
+            imageWidthPx = viewModel.frameWidthPx,
+            imageHeightPx = viewModel.frameHeightPx,
         )
         base.copy(rows = host.applyUseAnyway(geometry?.fit, base.rows))
     }

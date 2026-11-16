@@ -62,8 +62,8 @@ object CalibrationStatePresenter {
     const val EMPTY_EXPLANATION =
         "A known distance is a length you know, like a door width or a ruler, between two points in the photo."
 
-    /** A residual this many times the mean, and above [FLAG_MIN_PCT], marks a worst offender. */
-    const val FLAG_MEAN_FACTOR = 3.0
+    /** A residual (either sign) this many times the mean, and above [FLAG_MIN_PCT], marks a worst offender. */
+    const val FLAG_MEAN_FACTOR = 2.0
     const val FLAG_MIN_PCT = 3.0
     const val POSITION_CLUSTER_FRACTION = 0.25
     const val DIRECTION_CLUSTER_DEGREES = 15.0
@@ -108,9 +108,16 @@ object CalibrationStatePresenter {
         } else {
             null
         }
+        val shownRows = if (mixed) rows.map { it.copy(flagged = false, flagText = null) } else rows
+        val basePill = pill(constraints, fit, report, legacy)
         return CalibrationPresentation(
-            pill = pill(constraints, fit, report, legacy),
-            rows = if (mixed) rows.map { it.copy(flagged = false, flagText = null) } else rows,
+            // A distance that disagrees with the rest must not sit under a green check.
+            pill = if (shownRows.any { it.flagged } && basePill.icon == PillIcon.CHECK) {
+                basePill.copy(icon = PillIcon.WARNING, showConfidenceBadge = false)
+            } else {
+                basePill
+            },
+            rows = shownRows,
             hints = hints,
             emptyState = empty,
             knownDistancesEnabled = disabled == null,
@@ -162,14 +169,14 @@ object CalibrationStatePresenter {
         val mean = report?.residualMeanPct ?: 0.0
         return constraints.mapIndexed { index, c ->
             val residual = byId[c.id]?.residualPct
-            val flagged = residual != null && residual > FLAG_MIN_PCT && residual >= FLAG_MEAN_FACTOR * mean
+            val flagged = residual != null && abs(residual) > FLAG_MIN_PCT && abs(residual) >= FLAG_MEAN_FACTOR * mean
             ConstraintRow(
                 id = c.id,
                 name = c.label ?: "Distance ${index + 1}",
                 distanceMeters = c.distanceMeters,
                 residualPct = residual,
                 flagged = flagged,
-                flagText = if (flagged) "disagrees by ${pct(residual!!)}% - re-measure or remove?" else null,
+                flagText = if (flagged) "disagrees by ${pct(abs(residual!!))}% - re-measure or remove?" else null,
             )
         }
     }
