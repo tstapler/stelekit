@@ -94,7 +94,10 @@ class ScenarioRectTool : DragGestureTool() {
 /** The scenario test classes that cover each tool id; a tool with none is listed in [pendingStory] with the story that adds it. */
 object ToolScenarioCatalog {
     val covered: Map<ToolId, List<String>> = mapOf(
-        ToolId.Rectangle to listOf("ToolCancelTest"),
+        ToolId.Rectangle to listOf("ToolCancelTest", "ShapeToolsTest"),
+        ToolId.Diamond to listOf("ShapeToolsTest"),
+        ToolId.Ellipse to listOf("ShapeToolsTest"),
+        ToolId.Line to listOf("ShapeToolsTest"),
         ToolId.Text to listOf("TextToolTest"),
         ToolId.Image to listOf("ImageToolTest"),
         ToolId.Select to listOf("SelectToolTest"),
@@ -108,9 +111,6 @@ object ToolScenarioCatalog {
 
     /** May only shrink: when a tool gains a scenario test, move it to [covered] and delete its line here. */
     val pendingStory: Map<ToolId, String> = mapOf(
-        ToolId.Diamond to "3.2.1",
-        ToolId.Ellipse to "3.2.1",
-        ToolId.Line to "3.2.1",
         ToolId.Arrow to "3.3.1",
     )
 }

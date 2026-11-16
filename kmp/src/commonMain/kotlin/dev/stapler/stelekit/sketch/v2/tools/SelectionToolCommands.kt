@@ -6,6 +6,7 @@ package dev.stapler.stelekit.sketch.v2.tools
 
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.FrameElement
+import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
 
 // What the selection, eraser and frame tools ask the document to do. The bridge (ToolCommandBridge.kt) maps each to
 // one undoable command, so one gesture is one history step.
@@ -59,3 +60,6 @@ data class EraseCommand(val ids: List<ElementId>) : ToolCommand
 
 /** A new [frame] adopting [memberIds], the elements fully inside it, in one step. */
 data class AddFrameCommand(val frame: FrameElement, val memberIds: List<ElementId>) : ToolCommand
+
+/** Replaces the vertices of the line [id], the commit of a point-editing drag (Task 3.2.1b); one undo step. */
+data class SetLinePointsCommand(val id: ElementId, val points: List<ScenePoint>) : ToolCommand

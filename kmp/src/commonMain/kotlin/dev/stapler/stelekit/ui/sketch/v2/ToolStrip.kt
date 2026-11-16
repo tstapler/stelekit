@@ -5,7 +5,7 @@
 package dev.stapler.stelekit.ui.sketch.v2
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -132,11 +132,13 @@ private fun StripAxis(vertical: Boolean, modifier: Modifier = Modifier, content:
 @Composable
 private fun PinnedTrio(c: StripControls, status: ToolStripStatus, actions: ToolStripActions, vertical: Boolean) {
     val size = TouchTargetFloor.pinnedDp()
-    StripButton(c, "undo", StripTags.UNDO, "Undo", "↶", size, selected = false, enabled = status.canUndo, onClick = actions.onUndo)
-    StripButton(c, "redo", StripTags.REDO, "Redo", "↷", size, selected = false, enabled = status.canRedo, onClick = actions.onRedo)
-    Spacer(Modifier.size(if (vertical) 0.dp else TouchTargetFloor.DELETE_GAP_DP.dp, if (vertical) TouchTargetFloor.DELETE_GAP_DP.dp else 0.dp))
     val none = status.selectionCount == 0
-    StripButton(c, "delete", StripTags.DELETE, if (none) "Delete, unavailable: nothing selected" else "Delete", "🗑", size, selected = false, enabled = !none, onClick = actions.onDelete)
+    StripAxis(vertical) {
+        StripButton(c, "undo", StripTags.UNDO, "Undo", "↶", size, selected = false, enabled = status.canUndo, onClick = actions.onUndo)
+        StripButton(c, "redo", StripTags.REDO, "Redo", "↷", size, selected = false, enabled = status.canRedo, onClick = actions.onRedo)
+        Spacer(Modifier.size(if (vertical) 0.dp else TouchTargetFloor.DELETE_GAP_DP.dp, if (vertical) TouchTargetFloor.DELETE_GAP_DP.dp else 0.dp))
+        StripButton(c, "delete", StripTags.DELETE, if (none) "Delete, unavailable: nothing selected" else "Delete", "🗑", size, selected = false, enabled = !none, onClick = actions.onDelete)
+    }
 }
 
 @Composable
@@ -226,6 +228,7 @@ private fun StripButton(
     val hit = maxOf(sizeDp, TouchTargetFloor.floorDp(c.pointer))
     val requester = c.focus.getValue(key)
     val background = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+    val help = HelpEntry(key, description, description)
     Box(
         Modifier
             .size(hit.dp)
@@ -233,13 +236,14 @@ private fun StripButton(
             .background(background)
             .focusRequester(requester)
             .onFocusChanged { if (it.isFocused) c.state.focusedControl = key }
+            .helpOnFocus(c.state.help, help)
             .semantics {
                 contentDescription = description
                 role = Role.Button
                 this.selected = selected
                 if (!enabled) stateDescription = "unavailable"
             }
-            .clickable { if (enabled) onClick() },
+            .combinedClickable(onLongClickLabel = "Show help", onLongClick = { c.state.help.show(help) }) { if (enabled) onClick() },
         contentAlignment = Alignment.Center,
     ) {
         Text(glyph, color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)

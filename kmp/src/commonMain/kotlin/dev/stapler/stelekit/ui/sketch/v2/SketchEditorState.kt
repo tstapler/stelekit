@@ -34,6 +34,7 @@ class SketchEditorState(
     fingerDrawing: Boolean = false,
     largerTouchHandles: Boolean = true,
     focusedControl: String? = null,
+    sheetSize: SheetSize = SheetSize.Half,
 ) {
     var activeTool by mutableStateOf(activeTool)
     var toolLock by mutableStateOf(toolLock)
@@ -48,6 +49,15 @@ class SketchEditorState(
 
     /** Key of the strip control that last had focus; the next layout gives it focus again. */
     var focusedControl by mutableStateOf(focusedControl)
+
+    /** The bottom sheet is half or full height (UX-120); survives a fold or rotation like the open tab. */
+    var sheetSize by mutableStateOf(sheetSize)
+
+    /** The pan pad is open (opened from the Pan button or the overflow menu; never saved, a recreation closes it). */
+    var panPadOpen by mutableStateOf(false)
+
+    /** The touch and keyboard equivalent of hover tooltips (UX-90); not saved, a popup never survives a recreation. */
+    val help = HelpPopupState()
 
     /** The tool each group's main target activates: the last one chosen from that group. */
     val lastUsedInGroup = mutableStateMapOf<StripGroup, ToolId>()
@@ -69,7 +79,7 @@ class SketchEditorState(
                 listOf(
                     it.activeTool.name, it.toolLock, it.panelTab?.name ?: "", it.selection.toList().joinToString("\u0000"),
                     it.viewport.zoom, it.viewport.panX, it.viewport.panY, it.textDraft ?: NO_TEXT,
-                    it.fingerDrawing, it.largerTouchHandles, it.focusedControl ?: "",
+                    it.fingerDrawing, it.largerTouchHandles, it.focusedControl ?: "", it.sheetSize.name,
                 )
             },
             restore = {
@@ -83,6 +93,7 @@ class SketchEditorState(
                     fingerDrawing = it[8] as Boolean,
                     largerTouchHandles = it[9] as Boolean,
                     focusedControl = (it[10] as String).takeIf { key -> key.isNotEmpty() },
+                    sheetSize = (it.getOrNull(11) as? String)?.let(SheetSize::valueOf) ?: SheetSize.Half,
                 )
             },
         )

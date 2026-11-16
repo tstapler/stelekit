@@ -49,6 +49,12 @@ class SketchLog(
 
     fun saveConflict(sheetId: String) = emit("sketch.save.conflict", "sheet" to clean(sheetId))
 
+    /** A notice or banner row reached the screen; [key] is its fixed id (`AddedConstraint`), never its text. */
+    fun noticeShown(key: String) = emit("sketch.notice.shown", "key" to clean(key))
+
+    /** An onboarding item became visible; [item] is the `OnboardingItem` name. */
+    fun onboardingShown(item: String) = emit("sketch.onboarding.shown", "item" to clean(item))
+
     private fun emit(name: String, vararg fields: Pair<String, String>) {
         sink.emit(buildString {
             append(name)

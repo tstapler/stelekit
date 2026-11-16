@@ -67,6 +67,17 @@ class SketchLogTest {
     }
 
     @Test
+    fun noticeAndOnboarding_should_LogTheirFixedIdOnly_AndTurnFreeTextIntoAQuestionMark() {
+        log.noticeShown("LayerLocked")
+        log.noticeShown("Locked layer: Secret Walls.")
+        log.onboardingShown("CoachMark")
+        assertEquals(
+            listOf("sketch.notice.shown key=LayerLocked", "sketch.notice.shown key=?", "sketch.onboarding.shown item=CoachMark"),
+            lines,
+        )
+    }
+
+    @Test
     fun toolActivated_should_LogOnlyOnChange_When_SameToolIsReselected() {
         repeat(1_000) { log.toolActivated("select") }
         log.toolActivated("hand")

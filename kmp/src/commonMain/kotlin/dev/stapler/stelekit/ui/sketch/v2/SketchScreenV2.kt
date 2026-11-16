@@ -31,10 +31,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
 
@@ -51,6 +54,12 @@ data class SketchShellConfig(
     val hasMultipleLayers: Boolean = false,
     /** Space the host's own overlay (the shell mic button) takes at the bottom end, which the view cluster keeps clear of. */
     val endInset: Dp = 0.dp,
+    /** "Pan arrows: Auto / Always / Never" (UX-120). */
+    val panArrows: PanArrows = PanArrows.Auto,
+    /** An edge-pan strip is active on the bottom-end side, so the cluster and the pad stay clear of its protected span. */
+    val edgeStripAtEnd: Boolean = false,
+    /** The pan pad's centre "Fit" (the host knows the scene bounds). */
+    val onFit: () -> Unit = {},
 )
 
 object ShellTags {
@@ -63,6 +72,7 @@ object ShellTags {
     const val CHIP_ROW = "sketch.chips"
     const val TOOL_LOCK_CHIP = "sketch.chip.toollock"
     const val VIEW_CLUSTER = "sketch.viewcluster"
+    const val OVERFLOW_PAN = "sketch.overflow.pan"
     const val HINT = "sketch.hint"
     const val PANEL = "sketch.panel"
     fun tab(tab: PanelTab) = "sketch.tab.${tab.name.lowercase()}"
@@ -108,7 +118,7 @@ private fun SketchShell(
     val strip: @Composable (Modifier) -> Unit = { m ->
         ToolStrip(config.model, state, layout.placement, extent, config.pointer, config.status, config.actions, m)
     }
-    val panelContent: @Composable () -> Unit = { PanelHostContent(state, config, layout.panels, panel) }
+    val panelContent: @Composable () -> Unit = { PanelHostContent(state, config, layout.panels, window.height, panel) }
     Surface(modifier.fillMaxSize().testTag(ShellTags.layout(layout.placement)), color = MaterialTheme.colorScheme.background) {
         if (layout.placement == StripPlacement.BottomDock) {
             Column(Modifier.fillMaxSize()) {
@@ -156,6 +166,11 @@ private fun TopBar(state: SketchEditorState, config: SketchShellConfig) {
                     onClick = { menu = false; config.actions.onConstrain() },
                     modifier = Modifier.testTag(ShellTags.OVERFLOW_CONSTRAIN),
                 )
+                DropdownMenuItem(
+                    text = { Text("Pan arrows") },
+                    onClick = { menu = false; state.panPadOpen = true },
+                    modifier = Modifier.testTag(ShellTags.OVERFLOW_PAN),
+                )
                 for (tool in config.model.overflowTools) {
                     DropdownMenuItem(
                         text = { Text("More tools: ${tool.label}  ${tool.shortcut}") },
@@ -175,7 +190,9 @@ private fun TopBar(state: SketchEditorState, config: SketchShellConfig) {
  */
 @Composable
 private fun CanvasArea(state: SketchEditorState, config: SketchShellConfig, modifier: Modifier = Modifier, canvas: @Composable BoxScope.() -> Unit) {
-    Box(modifier.fillMaxWidth().testTag(ShellTags.CANVAS)) {
+    var canvasPx by remember { mutableStateOf(IntSize.Zero) }
+    val density = LocalDensity.current
+    Box(modifier.fillMaxWidth().testTag(ShellTags.CANVAS).onSizeChanged { canvasPx = it }) {
         canvas()
         Text(
             hintLine(state),
@@ -194,7 +211,26 @@ private fun CanvasArea(state: SketchEditorState, config: SketchShellConfig, modi
                 )
             }
         }
-        ViewCluster(state, config, Modifier.align(Alignment.BottomEnd).padding(end = 16.dp + config.endInset, bottom = 8.dp))
+        HelpPopupHost(state.help, Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
+        val stripInset = PanPadPolicy.stripInsetDp(config.edgeStripAtEnd).dp
+        Column(
+            Modifier.align(Alignment.BottomEnd).padding(end = 16.dp + config.endInset + stripInset, bottom = 8.dp),
+            horizontalAlignment = Alignment.End,
+        ) {
+            if (state.panPadOpen) {
+                val variant = PanPadPolicy.variant((canvasPx.width / density.density).toInt(), (canvasPx.height / density.density).toInt())
+                PanPad(
+                    variant,
+                    onPan = { direction, quarters ->
+                        val (dx, dy) = PanPadPolicy.contentShift(direction, quarters, canvasPx.width.toDouble(), canvasPx.height.toDouble())
+                        state.viewport = state.viewport.panBy(dx, dy)
+                    },
+                    onFit = config.onFit,
+                    onClose = { state.panPadOpen = false },
+                )
+            }
+            ViewCluster(state, config)
+        }
     }
 }
 
@@ -234,6 +270,9 @@ private fun ViewCluster(state: SketchEditorState, config: SketchShellConfig, mod
         ClusterButton("sketch.zoomin", "Zoom in", "+", target) { state.viewport = state.viewport.zoomBy(centre, ZOOM_STEP_IN) }
         ClusterButton("sketch.grid", if (grid) "Grid on" else "Grid off", "#", target) { grid = !grid }
         ClusterButton("sketch.snap", if (snap) "Snap on" else "Snap off", "⊙", target) { snap = !snap }
+        if (PanPadPolicy.buttonShown(config.panArrows, state.fingerDrawing, config.pointer == PointerClass.TouchOrPen)) {
+            PanButton(state.panPadOpen, { state.panPadOpen = !state.panPadOpen })
+        }
     }
 }
 
@@ -251,14 +290,15 @@ private const val ZOOM_STEP_OUT = 0.8
 private const val PERCENT = 100.0
 
 @Composable
-private fun PanelHostContent(state: SketchEditorState, config: SketchShellConfig, host: PanelHost, panel: @Composable (PanelTab) -> Unit) {
+private fun PanelHostContent(state: SketchEditorState, config: SketchShellConfig, host: PanelHost, windowHeightDp: Int, panel: @Composable (PanelTab) -> Unit) {
     val tabs = PanelTab.entries.filter { it != PanelTab.Layers || config.hasMultipleLayers }
     val open = state.panelTab ?: PanelTab.Style
     val shape = when (host) {
-        PanelHost.BottomSheet -> Modifier.fillMaxWidth().height(PANEL_SHEET_HEIGHT)
+        PanelHost.BottomSheet -> Modifier.fillMaxWidth().height(if (state.sheetSize == SheetSize.Full) (windowHeightDp * FULL_SHEET_SHARE).dp else PANEL_SHEET_HEIGHT)
         PanelHost.SideSheet, PanelHost.PersistentPane -> Modifier.fillMaxHeight().width(PANE_WIDTH)
     }
     Column(shape.testTag(ShellTags.PANEL).background(MaterialTheme.colorScheme.surfaceVariant)) {
+        if (host == PanelHost.BottomSheet) PanelSheetHeader(state.sheetSize, { state.sheetSize = it }, { state.panelTab = null })
         Row(Modifier.fillMaxWidth()) {
             for (tab in tabs) {
                 Text(
@@ -273,4 +313,5 @@ private fun PanelHostContent(state: SketchEditorState, config: SketchShellConfig
 }
 
 private val PANEL_SHEET_HEIGHT = 240.dp
+private const val FULL_SHEET_SHARE = 0.85f
 private val PANE_WIDTH = 320.dp
