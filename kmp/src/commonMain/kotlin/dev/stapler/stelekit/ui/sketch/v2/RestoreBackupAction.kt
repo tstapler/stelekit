@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.ui.sketch.v2
 
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
@@ -34,25 +35,25 @@ const val DELETE_BACKUPS_CANCEL_TAG = "sketch.backups.delete.cancel"
 
 /** The words of the restore and delete-backups dialogs and the `Restored` toast (ux.md 14.6, UX-78, UX-114). */
 object RestoreCopy {
-    const val ACTION = "Restore original (v1) sheet"
-    const val TITLE = "Restore the original sketch?"
+    const val ACTION = SketchStrings.Restore.ACTION
+    const val TITLE = SketchStrings.Restore.TITLE
     const val BODY =
-        "Everything you changed in the new editor since the upgrade will be discarded. A copy of the new-editor version is kept in backup/."
-    const val CONFIRM = "Restore original"
-    const val CANCEL = "Cancel"
+        SketchStrings.Restore.BODY
+    const val CONFIRM = SketchStrings.Restore.CONFIRM
+    const val CANCEL = SketchStrings.Restore.CANCEL
 
-    const val RESTORED_KEY = "Restored"
-    const val RESTORED_SUMMARY = "Restored. Copy kept."
-    const val RESTORED_ACTION = "Copy path"
-    const val RESTORED_DETAILS = "Restored the original sketch. The new-editor version is kept in backup/."
+    const val RESTORED_KEY = SketchStrings.Restore.RESTORED_KEY
+    const val RESTORED_SUMMARY = SketchStrings.Restore.RESTORED_SUMMARY
+    const val RESTORED_ACTION = SketchStrings.Restore.RESTORED_ACTION
+    const val RESTORED_DETAILS = SketchStrings.Restore.RESTORED_DETAILS
 
-    const val DELETE_ACTION = "Delete backups"
-    const val DELETE_TITLE = "Delete backups?"
+    const val DELETE_ACTION = SketchStrings.Restore.DELETE_ACTION
+    const val DELETE_TITLE = SketchStrings.Restore.DELETE_TITLE
     const val DELETE_BODY =
-        "The original copies of upgraded sketches in this project are deleted. Restore original is not available for them afterwards."
+        SketchStrings.Restore.DELETE_BODY
 
     /** Shown for a build that cannot restore yet; the platform reason of ux.md 14.1 comes first (UX-137). */
-    const val BUILD_CAPPED = "Not available in this build yet"
+    const val BUILD_CAPPED = SketchStrings.Restore.BUILD_CAPPED
 }
 
 /** Whether the Settings rows are usable, hidden or shown disabled with a visible reason (UX-90, UX-137). */
@@ -116,15 +117,15 @@ class RestoreBackupAction(private val restore: suspend (slug: String, sheet: She
                 outcome.keptCopy,
                 RestoreCopy.RESTORED_DETAILS,
             )
-            RestoreOutcome.NotConverted -> RestoreBackupState.Failed("This sketch is already the original version. Nothing was changed.")
-            RestoreOutcome.BackupMissing -> RestoreBackupState.Failed("The original copy of this sketch was not found. Nothing was changed.")
-            RestoreOutcome.Deferred -> RestoreBackupState.Failed("A sync is running. Nothing was changed; try again in a moment.")
-            is RestoreOutcome.Failed -> RestoreBackupState.Failed("Could not restore the original sketch. Your sketch was not lost.")
+            RestoreOutcome.NotConverted -> RestoreBackupState.Failed(SketchStrings.Restore.NOT_CONVERTED)
+            RestoreOutcome.BackupMissing -> RestoreBackupState.Failed(SketchStrings.Restore.BACKUP_MISSING)
+            RestoreOutcome.Deferred -> RestoreBackupState.Failed(SketchStrings.Restore.DEFERRED)
+            is RestoreOutcome.Failed -> RestoreBackupState.Failed(SketchStrings.Restore.FAILED)
         }
     }
 }
 
-/** Settings > Sketches "Delete backups" (Task 6.2.6c): the size row, and a confirmed delete of `backup/`. */
+/** Settings > Sketches SketchStrings.Restore.DELETE_ACTION (Task 6.2.6c): the size row, and a confirmed delete of `backup/`. */
 class BackupsSectionModel(
     private val size: suspend () -> RetentionPolicy.Size,
     private val delete: suspend () -> Either<DomainError, Int>,
@@ -136,7 +137,7 @@ class BackupsSectionModel(
 
     suspend fun row(): Row {
         val s = size()
-        return Row(s.backupFiles, s.backupBytes, "Backups: ${describe(s.backupFiles, s.backupBytes)}")
+        return Row(s.backupFiles, s.backupBytes, SketchStrings.Restore.backupsRow(describe(s.backupFiles, s.backupBytes)))
     }
 
     fun requestDelete() { confirming.value = true }
@@ -155,13 +156,13 @@ class BackupsSectionModel(
         private const val BYTES_PER_MB = BYTES_PER_KB * BYTES_PER_KB
 
         fun describe(files: Int, bytes: Long): String = when {
-            files == 0 -> "none"
-            else -> "$files ${if (files == 1) "file" else "files"}, ${bytesText(bytes)}"
+            files == 0 -> SketchStrings.Restore.NONE
+            else -> SketchStrings.Restore.fileCount(files, bytesText(bytes))
         }
 
         private fun bytesText(bytes: Long): String = when {
-            bytes >= BYTES_PER_MB -> "${tenths(bytes, BYTES_PER_MB)} MB"
-            bytes >= BYTES_PER_KB -> "${tenths(bytes, BYTES_PER_KB)} KB"
+            bytes >= BYTES_PER_MB -> SketchStrings.Restore.megabytes(tenths(bytes, BYTES_PER_MB))
+            bytes >= BYTES_PER_KB -> SketchStrings.Restore.kilobytes(tenths(bytes, BYTES_PER_KB))
             else -> "$bytes B"
         }
 

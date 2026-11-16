@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.ui.sketch.v2
 
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
 import dev.stapler.stelekit.sketch.v2.diagnostics.DiagnosticsPort
@@ -40,7 +41,7 @@ data class ShortcutsSheetModel(
 
         /** The menu letters, listed with the menu so the sheet says they work only while it is open. */
         private fun mnemonicRows() = ConstrainMenuItem.entries.map {
-            ShortcutRow("$MNEMONIC_ID_PREFIX${it.name}", "${it.label} (Constrain menu open)", listOf(it.mnemonic.toString()), sameAsExcalidraw = false)
+            ShortcutRow("$MNEMONIC_ID_PREFIX${it.name}", SketchStrings.Shortcuts.constrainMenuRow(it.label), listOf(it.mnemonic.toString()), sameAsExcalidraw = false)
         }
 
         fun of(env: KeymapEnv, singleKeyEnabled: Boolean, layout: KeyboardLayoutInfo? = null): ShortcutsSheetModel {

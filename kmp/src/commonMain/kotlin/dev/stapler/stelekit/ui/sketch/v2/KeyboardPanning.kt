@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.ui.sketch.v2
 
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 import dev.stapler.stelekit.sketch.v2.view.ScreenPx
 import dev.stapler.stelekit.sketch.v2.view.SketchViewport
 import kotlin.math.roundToInt
@@ -38,7 +39,7 @@ object KeyboardPanning {
      */
     fun settledAnnouncement(viewport: SketchViewport, canvas: CanvasSize): String {
         val centre = viewport.toScene(ScreenPx(canvas.widthPx / 2.0, canvas.heightPx / 2.0))
-        return "Zoom ${(viewport.zoom * PERCENT).roundToInt()}%, centre ${centre.x.value.roundToInt()}, ${centre.y.value.roundToInt()}"
+        return SketchStrings.Panning.settled((viewport.zoom * PERCENT).roundToInt(), centre.x.value.roundToInt(), centre.y.value.roundToInt())
     }
 
     const val STREAM_KEY = "view.settled"

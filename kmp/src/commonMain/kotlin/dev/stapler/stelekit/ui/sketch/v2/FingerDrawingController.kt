@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.ui.sketch.v2
 
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerCandidate
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerStringSource
@@ -60,11 +61,11 @@ class FingerDrawingController(
     companion object {
         private val HINTS = listOf(OnboardingItem.FingerHintOn, OnboardingItem.FingerHintOff)
 
-        const val PEN_DETECTED_DETAILS = "A pen was detected, so Finger drawing is now off. One finger moves the view; the pen draws."
-        const val ON_DETAILS = "Finger drawing is on. Drag to draw; use two fingers to move the view."
-        const val OFF_DETAILS = "Finger drags move the view. Turn on Finger drawing to draw with touch."
+        const val PEN_DETECTED_DETAILS = SketchStrings.FingerDrawing.PEN_DETECTED_DETAILS
+        const val ON_DETAILS = SketchStrings.FingerDrawing.ON_DETAILS
+        const val OFF_DETAILS = SketchStrings.FingerDrawing.OFF_DETAILS
 
         /** The tool hint while Finger drawing is OFF and a drawing tool is chosen (UX-80). */
-        const val TOOL_HINT_OFF = "Drag with a pen or mouse. With touch, turn on Finger drawing, or use Crosshair."
+        const val TOOL_HINT_OFF = SketchStrings.FingerDrawing.TOOL_HINT_OFF
     }
 }

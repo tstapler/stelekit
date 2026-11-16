@@ -4,25 +4,27 @@
 
 package dev.stapler.stelekit.ui.sketch.v2
 
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
+
 /**
  * The Constrain menu entries and their mnemonics (Story 3.6.1, UX-111, D-8): C Coincident, H Horizontal, V Vertical, L
  * Parallel, P Perpendicular, E Equal, T Tangent, S Symmetric, F Fixed, D Distance, A Angle, R Radius/Diameter and X Reference
  * toggle. The declaration order is the menu order.
  */
 enum class ConstrainMenuItem(val mnemonic: Char, val label: String) {
-    Coincident('C', "Coincident"),
-    Horizontal('H', "Horizontal"),
-    Vertical('V', "Vertical"),
-    Parallel('L', "Parallel"),
-    Perpendicular('P', "Perpendicular"),
-    Equal('E', "Equal"),
-    Tangent('T', "Tangent"),
-    Symmetric('S', "Symmetric"),
-    Fixed('F', "Fixed"),
-    Distance('D', "Distance"),
-    Angle('A', "Angle"),
-    RadiusOrDiameter('R', "Radius/Diameter"),
-    ReferenceToggle('X', "Reference"),
+    Coincident('C', SketchStrings.Constrain.COINCIDENT),
+    Horizontal('H', SketchStrings.Constrain.HORIZONTAL),
+    Vertical('V', SketchStrings.Constrain.VERTICAL),
+    Parallel('L', SketchStrings.Constrain.PARALLEL),
+    Perpendicular('P', SketchStrings.Constrain.PERPENDICULAR),
+    Equal('E', SketchStrings.Constrain.EQUAL),
+    Tangent('T', SketchStrings.Constrain.TANGENT),
+    Symmetric('S', SketchStrings.Constrain.SYMMETRIC),
+    Fixed('F', SketchStrings.Constrain.FIXED),
+    Distance('D', SketchStrings.Constrain.DISTANCE),
+    Angle('A', SketchStrings.Constrain.ANGLE),
+    RadiusOrDiameter('R', SketchStrings.Constrain.RADIUS_OR_DIAMETER),
+    ReferenceToggle('X', SketchStrings.Constrain.REFERENCE_TOGGLE),
 }
 
 /**

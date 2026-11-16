@@ -127,4 +127,72 @@ object SketchStrings {
 
         const val TOOL_LOCK_ON = "Tool lock on."
     }
+
+    /** Labels of the Constrain menu entries (`ConstrainMenuItem`). */
+    object Constrain {
+        const val COINCIDENT = "Coincident"
+        const val HORIZONTAL = "Horizontal"
+        const val VERTICAL = "Vertical"
+        const val PARALLEL = "Parallel"
+        const val PERPENDICULAR = "Perpendicular"
+        const val EQUAL = "Equal"
+        const val TANGENT = "Tangent"
+        const val SYMMETRIC = "Symmetric"
+        const val FIXED = "Fixed"
+        const val DISTANCE = "Distance"
+        const val ANGLE = "Angle"
+        const val RADIUS_OR_DIAMETER = "Radius/Diameter"
+        const val REFERENCE_TOGGLE = "Reference"
+    }
+
+    object EdgePan {
+        const val DETAILS = "Edge pan stopped working here. Use two fingers, the Hand tool or the pan arrows."
+    }
+
+    object FingerDrawing {
+        const val PEN_DETECTED_DETAILS = "A pen was detected, so Finger drawing is now off. One finger moves the view; the pen draws."
+        const val ON_DETAILS = "Finger drawing is on. Drag to draw; use two fingers to move the view."
+        const val OFF_DETAILS = "Finger drags move the view. Turn on Finger drawing to draw with touch."
+        const val TOOL_HINT_OFF = "Drag with a pen or mouse. With touch, turn on Finger drawing, or use Crosshair."
+    }
+
+    object Panning {
+        fun settled(zoomPercent: Int, centreX: Int, centreY: Int): String = "Zoom $zoomPercent%, centre $centreX, $centreY"
+    }
+
+    object Shortcuts {
+        fun constrainMenuRow(label: String): String = "$label (Constrain menu open)"
+    }
+
+    /** The restore and delete-backups dialogs, the `Restored` toast, failure messages and the backups size row. */
+    object Restore {
+        const val ACTION = "Restore original (v1) sheet"
+        const val TITLE = "Restore the original sketch?"
+        const val BODY =
+            "Everything you changed in the new editor since the upgrade will be discarded. A copy of the new-editor version is kept in backup/."
+        const val CONFIRM = "Restore original"
+        const val CANCEL = "Cancel"
+        const val RESTORED_KEY = "Restored"
+        const val RESTORED_SUMMARY = "Restored. Copy kept."
+        const val RESTORED_ACTION = "Copy path"
+        const val RESTORED_DETAILS = "Restored the original sketch. The new-editor version is kept in backup/."
+        const val DELETE_ACTION = "Delete backups"
+        const val DELETE_TITLE = "Delete backups?"
+        const val DELETE_BODY =
+            "The original copies of upgraded sketches in this project are deleted. Restore original is not available for them afterwards."
+        const val BUILD_CAPPED = "Not available in this build yet"
+        const val NOT_CONVERTED = "This sketch is already the original version. Nothing was changed."
+        const val BACKUP_MISSING = "The original copy of this sketch was not found. Nothing was changed."
+        const val DEFERRED = "A sync is running. Nothing was changed; try again in a moment."
+        const val FAILED = "Could not restore the original sketch. Your sketch was not lost."
+        const val NONE = "none"
+
+        fun backupsRow(description: String): String = "Backups: $description"
+
+        fun fileCount(files: Int, size: String): String = "$files ${if (files == 1) "file" else "files"}, $size"
+
+        fun megabytes(tenths: String): String = "$tenths MB"
+
+        fun kilobytes(tenths: String): String = "$tenths KB"
+    }
 }

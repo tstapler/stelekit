@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.ui.sketch.v2
 
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 import dev.stapler.stelekit.platform.EdgeExclusionRect
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerCandidate
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
@@ -153,6 +154,6 @@ class EdgePanBackstop(
 
     companion object {
         const val CANCELS_TO_HIDE = 2
-        const val DETAILS = "Edge pan stopped working here. Use two fingers, the Hand tool or the pan arrows."
+        const val DETAILS = SketchStrings.EdgePan.DETAILS
     }
 }
