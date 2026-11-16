@@ -161,7 +161,7 @@ object SceneStructureBench {
     }
 
     private fun usedHeap(): Long {
-        repeat(3) { System.gc(); Thread.sleep(30) }
+        repeat(5) { System.gc() }
         val rt = Runtime.getRuntime(); return rt.totalMemory() - rt.freeMemory()
     }
 
