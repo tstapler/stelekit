@@ -28,6 +28,7 @@ import dev.stapler.stelekit.merge.sweepMergeArtifactsOnDisk
 import dev.stapler.stelekit.platform.measurement.MeasurementDeviceFactory
 import dev.stapler.stelekit.platform.measurement.MeasurementDeviceRegistry
 import dev.stapler.stelekit.platform.measurement.ble.NoOpBleScanner
+import dev.stapler.stelekit.platform.sensor.NoOpCameraLensCatalog
 import dev.stapler.stelekit.platform.sensor.NoOpCameraProvider
 import dev.stapler.stelekit.platform.sensor.SensorModule
 import dev.stapler.stelekit.platform.measurement.keyboard.KeyboardEmulationDeviceFactory
@@ -77,6 +78,7 @@ fun main(args: Array<String>) {
     defaultMeasurementDeviceFactories().forEach(MeasurementDeviceRegistry::register)
     // Desktop has no live capture (import only); stated here so a future webcam provider replaces this line.
     SensorModule.cameraProvider = NoOpCameraProvider()
+    SensorModule.cameraLensCatalog = NoOpCameraLensCatalog()
 
     // Initialize file logging before anything else
     val fileLogSink = dev.stapler.stelekit.logging.FileLogSink()

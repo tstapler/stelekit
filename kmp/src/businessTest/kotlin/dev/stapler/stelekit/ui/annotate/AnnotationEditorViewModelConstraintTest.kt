@@ -94,6 +94,30 @@ class AnnotationEditorViewModelConstraintTest {
     }
 
     @Test
+    fun sidecarLensRecord_should_BecomeTheFocalSource_When_SetOnTheViewModel() {
+        val vm = vm().also { it.calibrate() }
+        vm.setLensRecord(
+            dev.stapler.stelekit.model.CaptureLensRecord(
+                "0", "2", 5.6, 26.0, 1.0, dev.stapler.stelekit.model.LensRecordSource.PREVIEW_RESULT_AT_SHUTTER, 5.6,
+            ),
+        )
+        vm.confirmConstraintCalibration(listOf(c1, c2))
+        assertEquals(dev.stapler.stelekit.calibration.FocalSource.SIDECAR_LENS_RECORD, vm.geometry?.fit?.focalSource)
+        vm.close()
+    }
+
+    @Test
+    fun captureHintsLensRecord_should_FeedTheFocalResolver_When_NoSidecarRecordIsSet() {
+        val vm = vm().also { it.calibrate() }
+        vm.setCaptureHints(
+            AnnotationEditorViewModel.CaptureHints(lensRecord = dev.stapler.stelekit.calibration.LensRecordFocal(26.0, 1.0)),
+        )
+        vm.confirmConstraintCalibration(listOf(c1, c2))
+        assertNotNull(vm.geometry?.fit)
+        vm.close()
+    }
+
+    @Test
     fun calibrationHistory_should_ReturnAllConstraintsAndThePreviousFit_When_AConstraintWasDeleted() {
         val vm = vm().also { it.calibrate() }
         vm.confirmConstraintCalibration(listOf(c1, c2, c3))

@@ -41,6 +41,7 @@ import dev.stapler.stelekit.model.FitReport
 import dev.stapler.stelekit.model.MeasurementValue
 import dev.stapler.stelekit.model.ValueSource
 import dev.stapler.stelekit.model.CalibrationTick
+import dev.stapler.stelekit.model.CaptureLensRecord
 import dev.stapler.stelekit.model.DEFAULT_MEASUREMENT_UNIT
 import dev.stapler.stelekit.model.GeometryCalibration
 import dev.stapler.stelekit.model.ImageAnnotation
@@ -1483,6 +1484,13 @@ class AnnotationEditorViewModel(
         confirmConstraintCalibration(others + constraint)
     }
 
+    private var lensRecord: CaptureLensRecord? = null
+
+    /** The sidecar's capture lens record, which the DB-rebuilt image does not carry; feeds the focal source (Task 3.9c). */
+    fun setLensRecord(record: CaptureLensRecord?) {
+        lensRecord = record
+    }
+
     private val _constraintFitResult = MutableStateFlow<ConstraintFitResult?>(null)
 
     /** The last fit's report and, when a requested tier was not used, why; null before any fit. */
@@ -1503,21 +1511,22 @@ class AnnotationEditorViewModel(
         }
         val calibrated = current?.takeIf { it.method != CalibrationMethod.NONE }
         val hints = captureHints
-        val focal = FocalSourceResolver.resolve(
-            userConfirmed35mmEq = hints.userConfirmedFocal35mmEq,
-            lensRecord = hints.lensRecord,
-            profileMatched = false,
-            exifFocal35mmEq = _state.value.imageAnnotation?.sensorData?.focalLength35mmEq,
-        )
+        val sensor = _state.value.imageAnnotation?.sensorData
+        val fromSidecar = lensRecord ?: sensor?.lensRecord
+        val focal = if (hints.lensRecord != null) {
+            FocalSourceResolver.resolve(hints.userConfirmedFocal35mmEq, hints.lensRecord, false, sensor?.focalLength35mmEq)
+        } else {
+            CalibrationService.focalResolution(fromSidecar, hints.userConfirmedFocal35mmEq, false, sensor?.focalLength35mmEq)
+        }
         val frame = CaptureFrameInfo(
             imageWidthPx, imageHeightPx, focal.focal35mmEq,
-            zoomRatio = hints.zoomRatio ?: hints.lensRecord?.zoomRatio,
+            zoomRatio = hints.zoomRatio ?: hints.lensRecord?.zoomRatio ?: fromSidecar?.zoomRatio,
             exifDigitalZoomRatio = hints.exifDigitalZoomRatio,
         )
         val options = FitOptions(
-            request = request,
             focalSource = focal.source,
             focal35mmEq = focal.focal35mmEq,
+            request = request,
             gradientEnabled = gradientTierEnabled(),
             k = current?.lens?.k ?: 0.0,
             basisVersion = calibrated?.basisVersion ?: CalibrationBasis.NATIVE_PIXELS_LENS,

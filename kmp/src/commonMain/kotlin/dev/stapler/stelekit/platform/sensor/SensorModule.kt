@@ -71,6 +71,9 @@ object SensorModule {
 
     @Volatile var depthSensorProvider: DepthSensorProvider = NoOpDepthProvider()
 
+    /** The rear-lens chips for the in-app camera dialog; empty (no chips) until the platform entry point sets one. */
+    @Volatile var cameraLensCatalog: CameraLensCatalog = NoOpCameraLensCatalog()
+
     /**
      * The active [MonocularDepthEstimator] for this process.
      *

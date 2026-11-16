@@ -16,7 +16,7 @@ object SidecarVersion {
     const val V2 = 2
 
     fun forContent(annotation: SidecarImageAnnotation, measurements: List<SidecarMeasurement>): Int =
-        if (hasV2Calibration(annotation) || measurements.any(::hasV2Value)) V2 else V1
+        if (hasV2Calibration(annotation) || annotation.lensRecord != null || measurements.any(::hasV2Value)) V2 else V1
 
     private fun hasV2Calibration(annotation: SidecarImageAnnotation): Boolean {
         val geometry = annotation.calibrationGeometry ?: return false

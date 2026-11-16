@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.platform.sensor
 
+import dev.stapler.stelekit.model.CaptureLensRecord
 import dev.stapler.stelekit.model.ImageSensorData
 
 /**
@@ -19,6 +20,8 @@ import dev.stapler.stelekit.model.ImageSensorData
  * obtained from [MotionSensorProvider.sensorDataFlow]. All fields are nullable — null means
  * the sensor was unavailable or permission was denied at capture time. This field is null
  * when the image was imported from a file (not captured live).
+ *
+ * [lensRecord] is the lens that took the photo, recorded at capture; null for file imports.
  */
 data class PlatformImageFile(
     val path: String,
@@ -29,4 +32,5 @@ data class PlatformImageFile(
     val cameraMake: String? = null,
     val cameraModel: String? = null,
     val sensorData: ImageSensorData? = null,
+    val lensRecord: CaptureLensRecord? = null,
 )

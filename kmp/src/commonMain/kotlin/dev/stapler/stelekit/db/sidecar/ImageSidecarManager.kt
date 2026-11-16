@@ -7,6 +7,7 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationMethod
+import dev.stapler.stelekit.model.CaptureLensRecord
 import dev.stapler.stelekit.model.DEFAULT_MEASUREMENT_UNIT
 import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.model.ImageAnnotation
@@ -50,7 +51,11 @@ class ImageSidecarManager(
             val path = sidecarPath(notesPath, annotation.uuid)
             ensureSidecarDir(notesPath)
 
-            val sidecarAnnotation = annotation.toSidecar()
+            val existingText = fileSystem.readFile(path)
+            // The editor rebuilds its image from DB columns, which have no lens record; keep the stored one.
+            val sidecarAnnotation = annotation.toSidecar().let { fresh ->
+                if (fresh.lensRecord != null) fresh else fresh.copy(lensRecord = storedLensRecord(existingText))
+            }
             val sidecarMeasurements = measurements.map { it.toSidecar() }
             val sidecar = SidecarFile(
                 schemaVersion = SidecarVersion.forContent(sidecarAnnotation, sidecarMeasurements),
@@ -58,7 +63,7 @@ class ImageSidecarManager(
                 measurements = sidecarMeasurements,
             )
             val jsonString = SidecarJsonMerge.overlayUnknownKeys(
-                fileSystem.readFile(path),
+                existingText,
                 json.encodeToString(SidecarFile.serializer(), sidecar),
                 json,
             )
@@ -96,6 +101,27 @@ class ImageSidecarManager(
         }
     }
 
+    /** The capture lens record stored in [uuid]'s sidecar, or null when absent or unreadable (Task 3.9c). */
+    fun readLensRecord(notesPath: EffectiveNotesPath, uuid: String): CaptureLensRecord? =
+        storedLensRecord(fileSystem.readFile(sidecarPath(notesPath, uuid)))?.toDomain()
+
+    /** [readLensRecord] for [annotation], read off the caller's thread. */
+    suspend fun lensRecordFor(annotation: ImageAnnotation): CaptureLensRecord? =
+        kotlinx.coroutines.withContext(dev.stapler.stelekit.coroutines.PlatformDispatcher.IO) {
+            readLensRecord(EffectiveNotesPath(annotation.graphPath), annotation.uuid)
+        }
+
+    private fun storedLensRecord(text: String?): SidecarLensRecord? {
+        if (text.isNullOrBlank()) return null
+        return try {
+            json.decodeFromString(SidecarFile.serializer(), text).imageAnnotation.lensRecord
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: kotlinx.serialization.SerializationException) {
+            null
+        }
+    }
+
     /** Compute the sidecar file path for the given notes folder and annotation UUID. */
     fun sidecarPath(notesPath: EffectiveNotesPath, uuid: String): String =
         notesPath.child(".stelekit/images/$uuid.measure.json")
@@ -129,6 +155,7 @@ private fun ImageAnnotation.toSidecar(): SidecarImageAnnotation {
         calibrationBasisVersion = calibration.basisVersion,
         calibrationLens = calibration.lens,
         calibrationGeometry = calibration.geometry,
+        lensRecord = sensorData.lensRecord?.toSidecar(),
         unit = unit.name,
         tags = tags,
         latLng = latLngStr,
@@ -203,6 +230,7 @@ fun SidecarFile.toDomainAnnotation(): ImageAnnotation {
             focalLength35mmEq = ann.focalLength35mmEq,
             cameraMake = ann.cameraMake,
             cameraModel = ann.cameraModel,
+            lensRecord = ann.lensRecord?.toDomain(),
         ),
     )
 }

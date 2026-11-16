@@ -13,7 +13,7 @@ package dev.stapler.stelekit.wiring
 object WiringCatalog {
     private val SEPARATOR = Regex("""\s{2,}""")
     private val FIXTURE_CALL = Regex("""\b(?:Desktop)?WiredAppFixture\s*\.\s*\w+\s*\(""")
-    private val ROOT_FACTORY_CALL = Regex("""\b(?:platformCaps|defaultMeasurementDeviceFactories|defaultAssetPlugins)\s*\(""")
+    private val ROOT_FACTORY_CALL = Regex("""\b(?:platformCaps|defaultMeasurementDeviceFactories|defaultAssetPlugins|defaultCameraLensCatalog)\s*\(""")
     private val STACK_REFERENCE = Regex("""GraphContent\w*Setup|rememberGraphContent\w+""")
     private val STATE_ASSERTION = Regex("""\bassert\w*\s*\(|\bcheck\s*\(|\brequire\s*\(|==|!=|>=|<=|[<>]""")
     private val CLASS_REFERENCE = Regex("""::class|\bjavaClass\b|Class\.forName""")

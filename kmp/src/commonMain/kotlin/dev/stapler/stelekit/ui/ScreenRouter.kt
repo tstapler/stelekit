@@ -542,6 +542,10 @@ internal fun ScreenRouter(
                                 if (!initialized && annotation != null) {
                                     initialized = true
                                     annotationEditorViewModel.initialize(annotation)
+                                    // The DB row has no lens record; the sidecar does (Task 3.9c).
+                                    annotationEditorViewModel.setLensRecord(
+                                        fileSystem?.let { dev.stapler.stelekit.db.sidecar.ImageSidecarManager(it).lensRecordFor(annotation) },
+                                    )
                                 }
                             }
                         }

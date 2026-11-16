@@ -140,6 +140,7 @@ class ImageImportService(
                 focalLength35mmEq = tempFile.focalLength35mmEq ?: capturedSensorData?.focalLength35mmEq,
                 cameraMake = tempFile.cameraMake ?: capturedSensorData?.cameraMake,
                 cameraModel = tempFile.cameraModel ?: capturedSensorData?.cameraModel,
+                lensRecord = tempFile.lensRecord ?: capturedSensorData?.lensRecord,
             ),
         )
 
