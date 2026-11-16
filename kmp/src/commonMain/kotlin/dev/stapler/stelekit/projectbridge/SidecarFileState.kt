@@ -22,12 +22,22 @@ sealed interface SidecarFileState {
     data class Corrupt(val reason: CorruptReason) : SidecarFileState
 }
 
+/** The two JSON sidecar file kinds; each has its own newest readable schema (Story 1.1.1). */
+enum class SidecarFileKind(val maxSchema: Long) {
+    Model(1L),
+    Sheet(2L),
+}
+
 object SidecarClassifier {
+    @Deprecated("Per-kind limit: use SidecarFileKind.Model.maxSchema or SidecarFileKind.Sheet.maxSchema", ReplaceWith("SidecarFileKind.Model.maxSchema"))
     const val SUPPORTED_SCHEMA = 1L
     private val parser = Json
 
-    /** Classifies raw bytes of a JSON sidecar file; [bytes] null means the file does not exist. */
-    fun classifyJson(bytes: ByteArray?): SidecarFileState {
+    /**
+     * Classifies raw bytes of a JSON sidecar file of [kind]; [bytes] null means the file does not exist. [maxSchema]
+     * overrides the kind's limit so a test can simulate an older build (the previous max).
+     */
+    fun classifyJson(bytes: ByteArray?, kind: SidecarFileKind = SidecarFileKind.Model, maxSchema: Long = kind.maxSchema): SidecarFileState {
         if (bytes == null) return SidecarFileState.Absent
         val text = decode(bytes) ?: return SidecarFileState.Corrupt(CorruptReason.InvalidUtf8)
         if (hasConflictMarkers(text)) return SidecarFileState.Corrupt(CorruptReason.ConflictMarkers)
@@ -38,7 +48,7 @@ object SidecarClassifier {
             return SidecarFileState.Corrupt(if (text.trimEnd().endsWith("}")) CorruptReason.InvalidJson else CorruptReason.Truncated)
         } ?: return SidecarFileState.Corrupt(CorruptReason.InvalidJson)
         val schema = obj["schema"]?.jsonPrimitive?.longOrNull ?: return SidecarFileState.Corrupt(CorruptReason.InvalidJson)
-        if (schema > SUPPORTED_SCHEMA) return SidecarFileState.Corrupt(CorruptReason.NewerSchema)
+        if (schema > maxSchema) return SidecarFileState.Corrupt(CorruptReason.NewerSchema)
         return SidecarFileState.Valid(bytes)
     }
 

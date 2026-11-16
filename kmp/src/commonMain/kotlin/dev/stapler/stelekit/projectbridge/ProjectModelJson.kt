@@ -52,7 +52,7 @@ object SidecarCodec {
         val sheets = bundle.sheets.sortedWith(compareBy({ it.position }, { it.uuid.value }))
         val byteSheets = sheets.associate { s ->
             val prims = bundle.primitives.filter { it.sheetUuid == s.uuid }.sortedWith(compareBy({ it.z }, { it.uuid }))
-            s to render(sheetJson(s.uuid, prims))
+            s to SheetCodecV1.encode(s.uuid, prims)
         }
         byteSheets.forEach { (s, bytes) -> files[sheetPath(s.uuid)] = bytes }
         files[MODEL_PATH] = render(modelJson(bundle, byteSheets))
@@ -134,24 +134,6 @@ object SidecarCodec {
     /** Exact, lossless text of the stored value (`379/10`); the numerator and denominator are authoritative. */
     private fun display(r: Rational) = if (r.den == 1L) "${r.num}" else "${r.num}/${r.den}"
 
-    private fun sheetJson(sheet: SheetUuid, prims: List<SketchPrimitive>) = buildJsonObject {
-        put("schema", SCHEMA)
-        put("sheetUuid", sheet.value)
-        put("primitives", JsonArray(prims.map { p ->
-            buildJsonObject {
-                put("uuid", p.uuid)
-                put("kind", p.kind)
-                put("x1", p.x1)
-                put("y1", p.y1)
-                put("x2", p.x2)
-                put("y2", p.y2)
-                put("name", p.name)
-                put("layer", p.layer)
-                put("z", p.z)
-            }
-        }))
-    }
-
     private fun decodeUnsafe(files: Map<String, ByteArray>): Either<CorruptReason, ProjectBundle> {
         val modelBytes = files[MODEL_PATH] ?: return CorruptReason.Truncated.left()
         val model = Json.parseToJsonElement(modelBytes.decodeToString()).jsonObject
@@ -180,14 +162,9 @@ object SidecarCodec {
                 layers = o["layers"]?.jsonArray.orEmpty().map { it.jsonPrimitive.content },
                 zones = o["zones"]?.jsonArray ?: JsonArray(emptyList()), position = o.num("position"),
             )
-            val sheetObj = Json.parseToJsonElement(bytes.decodeToString()).jsonObject
-            for (p in sheetObj["primitives"]?.jsonArray.orEmpty()) {
-                val po = p.jsonObject
-                primitives += SketchPrimitive(
-                    uuid = po.str("uuid"), sheetUuid = uuid, kind = po.str("kind"), x1 = po.num("x1"), y1 = po.num("y1"),
-                    x2 = po.num("x2"), y2 = po.num("y2"), name = po.str("name"), layer = po.str("layer"), z = po.num("z"),
-                )
-            }
+            // A sheet whose schema has no codec yet (v2 until Story 1.1.3 passes it through) is never read as an empty v1 sheet.
+            val codec = SheetCodecs.forBytes(bytes) ?: return CorruptReason.NewerSchema.left()
+            primitives += codec.decode(uuid, bytes)
         }
         val dimensions = model["dimensions"]?.jsonArray.orEmpty().map { d ->
             val o = d.jsonObject

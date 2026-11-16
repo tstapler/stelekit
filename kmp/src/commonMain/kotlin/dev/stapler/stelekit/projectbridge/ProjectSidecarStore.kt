@@ -108,7 +108,7 @@ class FileProjectSidecarStore(
         // A model deleted by a torn replace (crash between delete and rename) is Absent: the database restores it.
         if (model == null) return SidecarRead.Absent
         val files = linkedMapOf<String, ByteArray>()
-        when (val state = SidecarClassifier.classifyJson(model)) {
+        when (val state = SidecarClassifier.classifyJson(model, SidecarFileKind.Model)) {
             SidecarFileState.Absent -> return SidecarRead.Corrupt(CorruptReason.Truncated, modelPath)
             is SidecarFileState.Corrupt -> return SidecarRead.Corrupt(state.reason, modelPath)
             is SidecarFileState.Valid -> files[SidecarCodec.MODEL_PATH] = state.bytes
@@ -116,7 +116,7 @@ class FileProjectSidecarStore(
         val sheetPaths = referencedSheetPaths(model) ?: return SidecarRead.Corrupt(CorruptReason.InvalidJson, modelPath)
         for (rel in sheetPaths) {
             val abs = "$d/$rel"
-            when (val state = SidecarClassifier.classifyJson(fs.readFileBytes(abs))) {
+            when (val state = SidecarClassifier.classifyJson(fs.readFileBytes(abs), SidecarFileKind.Sheet)) {
                 SidecarFileState.Absent -> return SidecarRead.Corrupt(CorruptReason.Truncated, abs)
                 is SidecarFileState.Corrupt -> return SidecarRead.Corrupt(state.reason, abs)
                 is SidecarFileState.Valid -> files[rel] = state.bytes
