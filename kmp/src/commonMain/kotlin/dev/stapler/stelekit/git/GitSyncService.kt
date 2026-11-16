@@ -407,12 +407,12 @@ class GitSyncService(
                 withTimeout(commitUnitTimeoutMs) { running.await() }
             } catch (_: TimeoutCancellationException) {
                 logger.error("commit unit still running after ${commitUnitTimeoutMs}ms; keeping the lease")
-                singleFlight.holdLeaseUntil(running)
+                kotlin.coroutines.coroutineContext[LeaseHold]?.unit = running
                 if (reloads) {
                     markReload(listOf(ABANDONED_UNIT), complete = false)
                     running.invokeOnCompletion { markReload(listOf(ABANDONED_UNIT), complete = true) }
                 }
-                timedOut(DomainError.GitError.CommitFailed("The commit is still running (a hook or signing prompt may be waiting). Sync stays paused until it finishes."))
+                timedOut(DomainError.GitError.CommitFailed("The commit is still running (a hook or signing prompt may be waiting). Sync stays paused until it finishes. If it never does, close and reopen SteleKit to recover."))
             }
         }
 

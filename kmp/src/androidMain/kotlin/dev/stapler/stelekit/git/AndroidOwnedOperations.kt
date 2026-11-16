@@ -25,8 +25,8 @@ object AndroidOwnedOperations {
     fun support(context: Context): OwnedOperationSupport = OwnedOperationSupport(
         AndroidProcessLiveness(),
         identity(context),
-        // Only this app can run git on its private shadow repository, so a process scan can prove "none".
-        lockFilesFor = { JavaIoLockFiles(it, externalGitPossible = false) },
+        // Only a repository under filesDir (the SAF shadow) is out of reach of Termux/MGit; real paths keep the long rule.
+        lockFilesFor = { JavaIoLockFiles.forPrivateRoot(context.filesDir, it) },
     )
 
     private fun bootCount(context: Context): String? = try {

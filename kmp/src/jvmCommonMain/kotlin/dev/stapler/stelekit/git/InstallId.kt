@@ -34,7 +34,7 @@ object InstallId {
                 read(file) ?: run {
                     // Hard links refused: an atomic rename is the best remaining publication.
                     Files.move(temp.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE)
-                    id
+                    read(file) ?: id // a racing mover may have won; report what the file really holds
                 }
             }
         } finally {

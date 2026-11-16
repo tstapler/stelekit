@@ -20,6 +20,16 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * Per-run handoff in the coroutine context: a body that abandons an uncancellable unit records it here, and
+ * [SyncSingleFlight] then keeps that run's lease and owner record until the unit ends. Per run, never shared.
+ */
+internal class LeaseHold : kotlin.coroutines.AbstractCoroutineContextElement(Key) {
+    @kotlin.concurrent.Volatile var unit: Job? = null
+
+    companion object Key : kotlin.coroutines.CoroutineContext.Key<LeaseHold>
+}
+
 /** Outcome of the read-only key resolution that precedes every gate acquisition (ADR-001 decision 4). */
 internal sealed interface GateKeyResolution {
     data class Resolved(val key: String, val config: GitConfig) : GateKeyResolution
@@ -65,13 +75,6 @@ internal class SyncSingleFlight(
 
     /** Last key this service resolved; lets the synchronous driver ask the gate whether anything holds the repository. */
     @kotlin.concurrent.Volatile private var lastKey: String? = null
-
-    /** A unit abandoned by its caller's wait; the lease and owner record stay held until it ends (set by the body). */
-    @kotlin.concurrent.Volatile private var lingering: Job? = null
-
-    internal fun holdLeaseUntil(unit: Job) {
-        lingering = unit
-    }
 
     /** True while any operation (this service's, a worker's or a quiesce hold) holds the repository gate. */
     fun isGateHeld(): Boolean = lastKey?.let(gate::isHeld) == true
@@ -168,6 +171,7 @@ internal class SyncSingleFlight(
         var claimed = false
         var counted = false
         var heartbeat: Job? = null
+        val hold = LeaseHold()
         try {
             inFlight.value = SyncRunInfo(lease.origin, clock(), spec.graphId, gate.isRerunRequested(lease.key))
             if (resolution is GateKeyResolution.Unreadable) {
@@ -187,10 +191,9 @@ internal class SyncSingleFlight(
             busyCounter.begin()
             counted = true
             logger.info("sync origin=${lease.origin} decision=started key=${lease.key}")
-            return body()
+            return withContext(hold) { body() }
         } finally {
-            val linger = lingering?.takeIf { it.isActive }
-            lingering = null
+            val linger = hold.unit?.takeIf { it.isActive }
             if (linger == null) {
                 finish(lease, spec, config, claimed, counted, heartbeat)
             } else {

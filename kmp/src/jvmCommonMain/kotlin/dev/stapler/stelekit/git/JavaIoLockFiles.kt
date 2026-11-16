@@ -150,6 +150,13 @@ class JavaIoLockFiles(private val gitDir: File, private val externalGitPossible:
     }
 
     companion object {
+        /** Lock files for [gitDir]; only a repository inside this app's private [privateRoot] is safe from external git. */
+        fun forPrivateRoot(privateRoot: File, gitDir: File): JavaIoLockFiles {
+            val root = privateRoot.canonicalPath + File.separator
+            val isPrivate = try { (gitDir.canonicalPath + File.separator).startsWith(root) } catch (_: IOException) { false }
+            return JavaIoLockFiles(gitDir, externalGitPossible = !isPrivate)
+        }
+
         const val RECORD_NAME = "stelekit-sync.owner"
         const val RECOVER_NAME = "stelekit-sync.recover"
         private val FIXED_LOCKS = listOf("index.lock", "shallow.lock", "HEAD.lock", "packed-refs.lock", "config.lock")

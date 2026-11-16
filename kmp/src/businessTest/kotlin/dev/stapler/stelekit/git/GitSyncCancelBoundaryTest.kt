@@ -378,4 +378,66 @@ class GitSyncCancelBoundaryTest {
         scope.async { svc.applyJournalMerge("g", "/repo/a.md", "- a\n") }.join()
         assertFalse(svc.reloadIncomplete.value, "cleared once the failed path reloads completely")
     }
+
+    // PR #683 round 3: the lease handoff is per run, and record/heartbeat/busy count end exactly once.
+    private class CountingRepo(private val inner: Repo) : GitRepository by inner {
+        val begins = java.util.concurrent.atomic.AtomicInteger()
+        val ends = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
+        override suspend fun beginOwnedOperation(config: GitConfig, info: OwnedOperationInfo): Either<DomainError.GitError, LockVerdict> {
+            begins.incrementAndGet()
+            return LockVerdict.NoLock.right()
+        }
+        override suspend fun endOwnedOperation(config: GitConfig) {
+            ends.computeIfAbsent(config.repoRoot.value) { java.util.concurrent.atomic.AtomicInteger() }.incrementAndGet()
+        }
+        override fun gateKeyFor(config: GitConfig): String? = inner.gateKeyFor(config)
+        override suspend fun commit(config: GitConfig, message: String): Either<DomainError.GitError, String> =
+            if (config.repoRoot.value == hangingRoot) inner.commit(config, message) else "sha".right()
+        lateinit var hangingRoot: String
+    }
+
+    private class TwoGraphConfigs(private val byGraph: Map<String, GitConfig>) : GitConfigRepository {
+        override suspend fun getConfig(graphId: String): Either<DomainError, GitConfig?> = Either.Right(byGraph[graphId])
+        override suspend fun saveConfig(config: GitConfig): Either<DomainError, Unit> = Unit.right()
+        override suspend fun deleteConfig(graphId: String): Either<DomainError, Unit> = Unit.right()
+        override fun observeConfig(graphId: String) = kotlinx.coroutines.flow.flowOf<Either<DomainError, GitConfig?>>(Either.Right(byGraph[graphId]))
+    }
+
+    @Test
+    fun abandonedUnit_should_HoldOnlyItsOwnRunsLease_AndEndEverythingExactlyOnce() = runBlocking<Unit> {
+        val dirB = Files.createTempDirectory("cancel_boundary_b_").toFile()
+        try {
+            val configB = sampleConfig.copy(repoRoot = RepoRoot(dirB.absolutePath))
+            val late = CompletableDeferred<Unit>()
+            val inner = Repo(localChanges = true).apply { onCommit = { late.await() } }
+            val repo = CountingRepo(inner)
+            repo.hangingRoot = config.repoRoot.value
+            val svc = buildGitSyncTestService(
+                repo, TwoGraphConfigs(mapOf("a" to config, "b" to configB)), StubFileSystem(),
+                isOnline = { true }, gate = gate,
+            ).also { services += it; it.commitUnitTimeoutMs = 300 }
+
+            val a = withTimeout(20_000) { svc.sync("a") }
+            assertIs<DomainError.GitError.CommitFailed>(a.leftOrNull())
+            val keyB = checkNotNull(RepoOpGate.keyForOrNull("${dirB.absolutePath}/.git") { File(it).canonicalFile.path })
+            assertTrue(gate.isHeld(key()), "A's abandoned commit keeps A's lease")
+            assertFalse(gate.isHeld(keyB), "B is a different repository and must not be held by A's unit")
+            assertEquals(0, repo.ends[config.repoRoot.value]?.get() ?: 0, "A's record must not end while its unit runs")
+
+            val b = withTimeout(20_000) { svc.sync("b") }
+            assertTrue(b.isRight(), "B runs independently while A's unit lingers, got $b")
+            assertEquals(1, repo.ends[configB.repoRoot.value]?.get(), "B's record ends exactly once, on its own")
+            assertFalse(gate.isHeld(keyB))
+            assertTrue(gate.isHeld(key()), "A's lease is still held after B finished")
+            assertEquals(0, repo.ends[config.repoRoot.value]?.get() ?: 0)
+
+            late.complete(Unit)
+            withTimeout(20_000) { while (gate.isHeld(key())) kotlinx.coroutines.delay(20) }
+            kotlinx.coroutines.delay(100)
+            assertEquals(1, repo.ends[config.repoRoot.value]?.get(), "A's owner record ends exactly once")
+            assertEquals(2, repo.begins.get(), "one claim per run")
+        } finally {
+            dirB.deleteRecursively()
+        }
+    }
 }

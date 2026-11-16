@@ -136,20 +136,30 @@ class LockRecoveryReviewFixesTest {
     @Test
     fun forceRemove_should_RefuseOtherHostOwner_When_HeartbeatFreshOrLockYoung_AndSayHowLongToWait() {
         val freshHeartbeat = otherHostFiles(lockMtime = 2_000, recordMtime = 99_000)
-        assertEquals(299_000L, refusedWithWait(force(freshHeartbeat, 100_000)), "5 min threshold minus the 1 s heartbeat age")
+        assertEquals(1_799_000L, refusedWithWait(force(freshHeartbeat, 100_000)), "30 min threshold minus the 1 s heartbeat age")
         assertTrue(freshHeartbeat.deletions.isEmpty() && freshHeartbeat.record != null, "${freshHeartbeat.mutations}")
 
         val youngLock = otherHostFiles(lockMtime = 60_000, recordMtime = 2_000)
-        assertEquals(260_000L, refusedWithWait(force(youngLock, 100_000)))
+        assertEquals(1_760_000L, refusedWithWait(force(youngLock, 100_000)))
         assertTrue(youngLock.deletions.isEmpty())
     }
 
     @Test
-    fun forceRemove_should_RemoveOtherHostOwner_When_NoExternalGitAndRecordAndLockIdleFiveMinutes() {
-        val idle = otherHostFiles(lockMtime = 2_000, recordMtime = 3_000)
+    fun forceRemove_should_NotTrustALocalScan_ForAnotherMachinesOwner() {
+        // "No local git process" says nothing about the other laptop: 5 min idle is not enough, 30 min is.
+        val fiveMinutes = otherHostFiles(lockMtime = 2_000, recordMtime = 3_000)
+        assertIs<Either.Left<*>>(force(fiveMinutes, 400_000))
+        assertTrue(fiveMinutes.deletions.isEmpty())
 
-        assertIs<Either.Right<*>>(force(idle, 400_000))
-        assertEquals(listOf("delete:index.lock", "deleteRecord"), idle.mutations)
+        val thirtyOne = otherHostFiles(lockMtime = 2_000, recordMtime = 3_000)
+        assertIs<Either.Right<*>>(force(thirtyOne, 1_900_000))
+        assertEquals(listOf("delete:index.lock", "deleteRecord"), thirtyOne.mutations)
+    }
+
+    @Test
+    fun forceRemove_should_AcceptFiveMinutes_ForALocalOwnerWhenTheScanProvesNoGit() {
+        val torn = FakeLockFiles(locks = mutableListOf(LockFileEntry("index.lock", 2_000)), record = RecordRead("{torn", 3_000)).apply { gitRunning = false }
+        assertIs<Either.Right<*>>(force(torn, 400_000))
     }
 
     @Test

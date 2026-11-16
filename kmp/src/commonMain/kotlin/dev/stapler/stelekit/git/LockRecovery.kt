@@ -224,7 +224,9 @@ object LockRecovery {
         val scan = lockFiles.gitProcessMayBeRunning()
         if (scan == true) return 0L
         if (verdict.deletes) return if (withinForeignLockWindow(record, locks, nowMs)) null else 0L
-        val threshold = if (scan == false) UNSURE_STALE_MS else UNSURE_BLIND_STALE_MS
+        // A local scan says nothing about another machine's git, so a foreign owner always takes the long threshold.
+        val foreign = verdict == LockVerdict.OwnerUnknown(UnknownReason.DifferentHost)
+        val threshold = if (scan == false && !foreign) UNSURE_STALE_MS else UNSURE_BLIND_STALE_MS
         val youngestAge = (locks.map { nowMs - it.mtimeMs } + listOfNotNull(record?.let { nowMs - it.mtimeMs })).minOrNull() ?: return null
         return if (youngestAge >= threshold) null else threshold - youngestAge
     }
