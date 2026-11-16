@@ -231,6 +231,8 @@ kt_jvm_library(
         "dev/stapler/stelekit/vault/VaultHeaderModelTest.kt",
         "dev/stapler/stelekit/calibration/HeightOffsetPlaneCompositionTest.kt",
         "dev/stapler/stelekit/calibration/FocalSourceResolverTest.kt",
+        "dev/stapler/stelekit/platform/sensor/LensClassifierTest.kt",
+        "dev/stapler/stelekit/platform/sensor/LensClassifierFixtureMatrixTest.kt",
         "dev/stapler/stelekit/calibration/GoldenSceneBaselineTest.kt",
         "dev/stapler/stelekit/calibration/ConstraintAccuracyHarnessTest.kt",
         "dev/stapler/stelekit/calibration/ConstraintCalibratorFailureTest.kt",
