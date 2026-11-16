@@ -111,6 +111,7 @@ import org.junit.runners.Suite
     QrDecodeViewModelBackgroundingTest::class,
     MermaidWebViewBridgeTest::class,
     MermaidWebViewSettingsTest::class,
+    dev.stapler.stelekit.sketch.v2.AndroidCrashGuardTest::class,
     // MermaidWebViewHostTest and MermaidWebViewSecurityDirectiveTest are deliberately NOT
     // registered here (unlike Gradle's testDebugUnitTest, which does run them): this repo's
     // Bazel android_local_test setup has two pre-existing gaps unrelated to Mermaid — (1) the
@@ -133,6 +134,7 @@ import org.junit.runners.Suite
     // PointerAdapterTest and TextEditorTest (sketch v2) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
     // HandleLayoutTest (sketch v2 selection overlay) is excluded for the same reason (1) and composes @Composable lambdas (no Compose plugin in this target).
     // TextMetricsAndroidEntryPointTest is excluded for the same reason (1) and composes a @Composable (no Compose plugin in this target).
+    // LeaveSketchPromptTest is excluded for the same reason (1) and composes a @Composable (no Compose plugin in this target).
     //
     // BackgroundTasksSectionTest, TaskRunLogRowsTest and ModelDownloadUiTest (background-task scheduling UI)
     // are excluded for the same reason (1): they drive composables through ComposeContentTestRule.

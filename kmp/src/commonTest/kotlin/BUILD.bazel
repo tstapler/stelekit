@@ -256,6 +256,8 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/image/ReferencedAssetsTest.kt",
         "dev/stapler/stelekit/sketch/v2/ImageAssetStoreTest.kt",
         "dev/stapler/stelekit/sketch/v2/BannerCandidateTest.kt",
+        "dev/stapler/stelekit/sketch/v2/ScriptedSidecarStore.kt",
+        "dev/stapler/stelekit/sketch/v2/SheetSaverTest.kt",
         "dev/stapler/stelekit/sketch/v2/BridgePropertyTest.kt",
         "dev/stapler/stelekit/sketch/v2/ReconcileTest.kt",
         "dev/stapler/stelekit/sketch/v2/ReconcilePropertyTest.kt",

@@ -73,6 +73,8 @@ kt_android_library(
             "**/RasterTaggingPanelTest.kt",
             # Spike 0.1.3e Robolectric pixel probe: needs commonTest DeterminismSpikeSupport (Gradle-only)
             "**/AndroidPixelSpikeTest.kt",
+            # Compose host test for the leave-sketch prompt (Gradle-only, no Compose plugin in this target)
+            "**/LeaveSketchPromptTest.kt",
         ],
     ),
     custom_package = "dev.stapler.stelekit",

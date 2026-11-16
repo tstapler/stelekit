@@ -45,6 +45,8 @@ internal object MixedProjectFixtures {
     const val SHEET_B = "p1-b"
     val slug = SketchTestSupport.project().slug
 
+    fun sidecarFile(rel: String): String = dev.stapler.stelekit.projectbridge.sidecarPath(slug, rel)
+
     private fun pt(x: Long, y: Long) = SketchPoint(Inches(x), Inches(y))
 
     private fun line(id: String, ax: Long, ay: Long, bx: Long, by: Long, layer: String = "walls") =

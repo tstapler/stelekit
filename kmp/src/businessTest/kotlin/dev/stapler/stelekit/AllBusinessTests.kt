@@ -1035,5 +1035,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.wiring.SketchStorageHostSitesTest::class,
     dev.stapler.stelekit.sketch.v2.MixedProjectFusionGoldenTest::class,
     dev.stapler.stelekit.sketch.v2.SketchPreviewV2Test::class,
+    dev.stapler.stelekit.sketch.v2.SheetSaverTest::class,
+    dev.stapler.stelekit.sketch.v2.SheetSaverConflictTest::class,
+    dev.stapler.stelekit.sketch.v2.SheetSaverReconcileIntegrationTest::class,
 )
 class AllBusinessTests
