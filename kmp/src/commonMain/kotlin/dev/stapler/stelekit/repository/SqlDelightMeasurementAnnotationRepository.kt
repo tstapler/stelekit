@@ -9,8 +9,11 @@ import dev.stapler.stelekit.db.RestrictedDatabaseQueries
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.AnnotationType
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.MeasurementAnnotation
+import dev.stapler.stelekit.model.MeasurementValue
 import dev.stapler.stelekit.model.NormalizedPoint
+import dev.stapler.stelekit.model.ValueSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -54,17 +57,22 @@ class SqlDelightMeasurementAnnotationRepository(
     /** The only place this repository touches mutating queries; always called inside an actor op. */
     @OptIn(DirectSqlWrite::class)
     private suspend fun apply(op: WriteOp) {
-        suspend fun insert(m: MeasurementAnnotation) = restricted.insertMeasurementAnnotation(
-            uuid = m.uuid,
-            image_uuid = m.imageUuid,
-            annotation_type = m.annotationType.name,
-            normalized_points = m.normalizedPoints.toJson(),
-            value_meters = m.valueMeters,
-            value_display = m.valueDisplay,
-            label = m.label,
-            color_hex = m.colorHex,
-            ble_device_id = m.bleDeviceId,
-        )
+        suspend fun insert(m: MeasurementAnnotation): Long {
+            val (source, original) = m.value?.toColumns() ?: (ValueSource.COMPUTED to null)
+            return restricted.insertMeasurementAnnotation(
+                uuid = m.uuid,
+                image_uuid = m.imageUuid,
+                annotation_type = m.annotationType.name,
+                normalized_points = m.normalizedPoints.toJson(),
+                value_meters = m.valueMeters,
+                value_display = m.valueDisplay,
+                label = m.label,
+                color_hex = m.colorHex,
+                ble_device_id = m.bleDeviceId,
+                value_source = source.name,
+                value_original_meters = original,
+            )
+        }
         when (op) {
             is WriteOp.Save -> insert(op.measurement)
             is WriteOp.ReplaceForImage -> restricted.transaction {
@@ -126,8 +134,22 @@ private fun String.toNormalizedPoints(): List<NormalizedPoint> = try {
     emptyList()
 }
 
-private fun dev.stapler.stelekit.db.Measurement_annotations.toModel(): MeasurementAnnotation =
-    MeasurementAnnotation(
+private fun MeasurementValue.toColumns(): Pair<ValueSource, Double?> = when (this) {
+    is MeasurementValue.Computed -> ValueSource.COMPUTED to null
+    is MeasurementValue.Overridden -> ValueSource.USER_OVERRIDE to originalMeters
+}
+
+private val logger = Logger("MeasurementAnnotationRepo")
+
+/** Reads the value triple through [MeasurementValue.fromColumns] so an illegal pair never reaches the domain. */
+private fun dev.stapler.stelekit.db.Measurement_annotations.toModel(): MeasurementAnnotation {
+    val source = runCatching { ValueSource.valueOf(value_source) }.getOrDefault(ValueSource.COMPUTED)
+    val value = MeasurementValue.fromColumns(value_meters, source, value_original_meters)
+    val legal = (source == ValueSource.USER_OVERRIDE) == (value_original_meters != null) || value_meters == null
+    if (!legal || value_source != source.name) {
+        logger.warn("normalised measurement value columns uuid=$uuid source=$value_source original=$value_original_meters")
+    }
+    return MeasurementAnnotation(
         uuid = uuid,
         imageUuid = image_uuid,
         annotationType = runCatching { AnnotationType.valueOf(annotation_type) }.getOrDefault(AnnotationType.DISTANCE),
@@ -137,4 +159,7 @@ private fun dev.stapler.stelekit.db.Measurement_annotations.toModel(): Measureme
         label = label,
         colorHex = color_hex,
         bleDeviceId = ble_device_id,
+        valueSource = if (value is MeasurementValue.Overridden) ValueSource.USER_OVERRIDE else ValueSource.COMPUTED,
+        originalValueMeters = (value as? MeasurementValue.Overridden)?.originalMeters,
     )
+}

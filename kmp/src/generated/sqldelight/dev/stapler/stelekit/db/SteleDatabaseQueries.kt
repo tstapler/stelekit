@@ -3007,6 +3007,8 @@ public class SteleDatabaseQueries(
     label: String?,
     color_hex: String,
     ble_device_id: String?,
+    value_source: String,
+    value_original_meters: Double?,
   ) -> T): Query<T> = SelectMeasurementsForImageQuery(image_uuid) { cursor ->
     mapper(
       cursor.getString(0)!!,
@@ -3017,7 +3019,9 @@ public class SteleDatabaseQueries(
       cursor.getString(5),
       cursor.getString(6),
       cursor.getString(7)!!,
-      cursor.getString(8)
+      cursor.getString(8),
+      cursor.getString(9)!!,
+      cursor.getDouble(10)
     )
   }
 
@@ -5506,13 +5510,16 @@ public class SteleDatabaseQueries(
     label: String?,
     color_hex: String,
     ble_device_id: String?,
+    value_source: String,
+    value_original_meters: Double?,
   ): Long {
     val result = driver.execute(-368_694_991, """
         |INSERT OR REPLACE INTO measurement_annotations (
         |    uuid, image_uuid, annotation_type, normalized_points,
-        |    value_meters, value_display, label, color_hex, ble_device_id
-        |) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """.trimMargin(), 9) {
+        |    value_meters, value_display, label, color_hex, ble_device_id,
+        |    value_source, value_original_meters
+        |) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """.trimMargin(), 11) {
           var parameterIndex = 0
           bindString(parameterIndex++, uuid)
           bindString(parameterIndex++, image_uuid)
@@ -5523,6 +5530,8 @@ public class SteleDatabaseQueries(
           bindString(parameterIndex++, label)
           bindString(parameterIndex++, color_hex)
           bindString(parameterIndex++, ble_device_id)
+          bindString(parameterIndex++, value_source)
+          bindDouble(parameterIndex++, value_original_meters)
         }.await()
     notifyQueries(-368_694_991) { emit ->
       emit("measurement_annotations")
@@ -8536,7 +8545,7 @@ public class SteleDatabaseQueries(
       driver.removeListener("measurement_annotations", listener = listener)
     }
 
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(1_858_375_750, """SELECT measurement_annotations.uuid, measurement_annotations.image_uuid, measurement_annotations.annotation_type, measurement_annotations.normalized_points, measurement_annotations.value_meters, measurement_annotations.value_display, measurement_annotations.label, measurement_annotations.color_hex, measurement_annotations.ble_device_id FROM measurement_annotations WHERE image_uuid = ? ORDER BY rowid""", mapper, 1) {
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(1_858_375_750, """SELECT measurement_annotations.uuid, measurement_annotations.image_uuid, measurement_annotations.annotation_type, measurement_annotations.normalized_points, measurement_annotations.value_meters, measurement_annotations.value_display, measurement_annotations.label, measurement_annotations.color_hex, measurement_annotations.ble_device_id, measurement_annotations.value_source, measurement_annotations.value_original_meters FROM measurement_annotations WHERE image_uuid = ? ORDER BY rowid""", mapper, 1) {
       var parameterIndex = 0
       bindString(parameterIndex++, image_uuid)
     }

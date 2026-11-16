@@ -192,7 +192,7 @@ class ToolDisarmTest {
         vm.addPoint(NormalizedPoint(0.29, 0.3))
         rule.waitForIdle()
         val announced = rule.onAllNodes(hasContentDescription("added", substring = true)).fetchSemanticsNodes()
-            .map { it.config[SemanticsProperties.ContentDescription].joinToString() }
+            .map { it.config[SemanticsProperties.ContentDescription].joinToString().trimEnd('\u200B') }
         assertEquals(listOf("Distance 90.0 cm added, returned to Select"), announced)
     }
 }

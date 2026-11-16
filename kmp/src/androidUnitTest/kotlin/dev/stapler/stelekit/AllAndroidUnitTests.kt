@@ -143,5 +143,9 @@ import org.junit.runners.Suite
     // BackgroundTasksUxGapsTest, ScheduledSyncStatusActionsTest, TaskSettingsAccessibilityAndErrorsTest,
     // DepthEstimationPanelLiveRegionTest and ScheduledSyncControlsApplyTest are excluded for the same reason (1).
     // SyncStatusSheetStatesTest, SyncStatusBadgeTest and SyncStatusTextScaleTest (Task 1.7b) are excluded for the same reason (1).
+    // MeasurementValueEditorTest, MeasurementValueEditorErrorStatesTest, ValueEditorTextScaleTest, ValueEditorSheetTest,
+    // CalibrationPillTest, KnownDistancesSheetTest, ValueEditorScopeTest and AnnotationEditorValueHooksTest (E3 value editor,
+    // calibration pill, Known distances sheet) are Compose host tests, excluded from the Bazel target like the other annotate
+    // ones; they run under Gradle's testDebugUnitTest.
 )
 class AllAndroidUnitTests

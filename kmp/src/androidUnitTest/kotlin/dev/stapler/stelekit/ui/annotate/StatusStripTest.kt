@@ -254,6 +254,15 @@ class StatusStripTest {
         }
     }
 
+    @Test
+    fun liveRegionText_should_ChangeBetweenIdenticalConsecutiveAnnouncements() {
+        val first = liveRegionText("Cancelled", 1)
+        val second = liveRegionText("Cancelled", 2)
+        val third = liveRegionText("Cancelled", 3)
+        assertTrue(first != second && second != third, "TalkBack speaks only changed node text")
+        assertEquals("Cancelled", second.trimEnd('\u200B'))
+    }
+
     private companion object {
         const val ZOOM_STEPS_TO_TWICE_FIT = 2
     }

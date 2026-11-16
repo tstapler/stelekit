@@ -7,6 +7,15 @@ import dev.stapler.stelekit.error.DomainError
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ImageBitmap
 import dev.stapler.stelekit.calibration.CalibrationService
+import dev.stapler.stelekit.calibration.CaptureFrameInfo
+import dev.stapler.stelekit.calibration.ConstraintCalibrator
+import dev.stapler.stelekit.calibration.ConstraintFitApplier
+import dev.stapler.stelekit.calibration.ConstraintTuning
+import dev.stapler.stelekit.calibration.FitOptions
+import dev.stapler.stelekit.calibration.FocalSourceResolver
+import dev.stapler.stelekit.calibration.LensRecordFocal
+import dev.stapler.stelekit.calibration.TierRequest
+import dev.stapler.stelekit.calibration.describe
 import dev.stapler.stelekit.calibration.CameraProfile
 import dev.stapler.stelekit.calibration.CameraProfileStore
 import dev.stapler.stelekit.calibration.CameraProfiles
@@ -24,7 +33,13 @@ import dev.stapler.stelekit.calibration.MultiPointCalibration
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.Calibration
+import dev.stapler.stelekit.model.CalibrationBasis
+import dev.stapler.stelekit.model.CalibrationConstraint
 import dev.stapler.stelekit.model.CalibrationMethod
+import dev.stapler.stelekit.model.ConstraintSource
+import dev.stapler.stelekit.model.FitReport
+import dev.stapler.stelekit.model.MeasurementValue
+import dev.stapler.stelekit.model.ValueSource
 import dev.stapler.stelekit.model.CalibrationTick
 import dev.stapler.stelekit.model.DEFAULT_MEASUREMENT_UNIT
 import dev.stapler.stelekit.model.GeometryCalibration
@@ -57,7 +72,11 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -113,6 +132,11 @@ data class AnnotationEditorState(
     val stickiness: ToolStickiness = ToolStickiness.ONE_SHOT,
     /** Story 3.6: the next committed distance is a known-distance reference. */
     val pendingKnownDistance: Boolean = false,
+    /**
+     * Persisted rows deleted this session. Lives in the state (not beside it) so a delete changes the state's
+     * equality: a late load merge computed before the delete then fails its compare-and-set and recomputes.
+     */
+    val sessionDeleted: Set<String> = emptySet(),
     val inProgressPoints: List<NormalizedPoint> = emptyList(),
     val committedAnnotations: List<MeasurementAnnotation> = emptyList(),
     val calibration: Calibration? = null,
@@ -195,11 +219,11 @@ sealed interface DepthModelUiState {
     data class Failed(val reason: String? = null) : DepthModelUiState
 }
 
-/** Records the calibration state before a user-initiated change, enabling single-level undo. */
-data class CalibrationSnapshot(
-    val calibration: Calibration,
-    val annotations: List<MeasurementAnnotation>,
-)
+/** Open question "clear your edited value and use the measured length?" raised by dragging an override (Story 3.4). */
+data class OverrideDragConfirm(val uuid: String, val pointsBefore: List<NormalizedPoint>)
+
+/** What the last constraint fit produced for the sheet; [fallbackNote] says why a requested tier was not used. */
+data class ConstraintFitResult(val report: FitReport?, val fallbackNote: String?)
 
 /**
  * ViewModel for the image annotation editor screen.
@@ -366,6 +390,13 @@ class AnnotationEditorViewModel(
         depthCoordinator.setImageSize(imageWidthPx, imageHeightPx)
     }
 
+    /** Image-pixel length of the committed two-point line [uuid]; 0 when it is missing or too short to set a scale. */
+    fun segmentPixelLength(uuid: String): Double {
+        val points = _state.value.committedAnnotations.firstOrNull { it.uuid == uuid }?.normalizedPoints ?: return 0.0
+        if (points.size < 2) return 0.0
+        return kotlin.math.hypot((points[1].x - points[0].x) * imageWidthPx, (points[1].y - points[0].y) * imageHeightPx)
+    }
+
     /**
      * Set to true on the first call to [initialize] to prevent a second call from
      * re-issuing the one-shot repository load.
@@ -410,10 +441,10 @@ class AnnotationEditorViewModel(
     /** Committed-but-undoable states (capped at 50); read by the benchmark probe and tests. */
     internal val undoDepth: Int get() = history.undoDepth
 
-    // Single-entry calibration undo history. Written from Dispatchers.Default (updateCalibration)
-    // and read from the main thread (undoCalibration), so an Atomic reference is used for
-    // thread safety without introducing JVM-only types (CopyOnWriteArrayList is JVM-only).
-    private val calibrationHistory = Atomic<CalibrationSnapshot?>(null)
+    // Single-level calibration undo (constraints and fit ride in the snapshot's geometry). Written from
+    // Dispatchers.Default (updateCalibration) and read from the main thread (undoCalibration), so an
+    // Atomic reference is used for thread safety without introducing JVM-only types.
+    private val calibrationHistory = Atomic(CalibrationHistory.empty())
 
     private val _canUndoCalibration = MutableStateFlow(false)
     val canUndoCalibration: StateFlow<Boolean> = _canUndoCalibration.asStateFlow()
@@ -438,11 +469,20 @@ class AnnotationEditorViewModel(
         if (inputStopped()) return
         val current = _state.value
         val prev = history.undo(current) ?: return
-        _state.value = prev.restoredOver(current)
+        restoreSnapshot(prev, current)
         _canUndo.value = history.canUndo
         _canRedo.value = history.canRedo
         persistCommittedSet()
         countUndoAfterDragMeasure()
+    }
+
+    /** Calibration is undone only through [undoCalibration]; here computed values are re-derived under the live scale. */
+    private fun restoreSnapshot(snapshot: AnnotationEditorState, current: AnnotationEditorState) {
+        val restored = snapshot.restoredOver(current)
+        _state.value = restored.copy(
+            committedAnnotations = rederive(restored.committedAnnotations, restored.calibration, restored.selectedUnit)
+                .map { it.relabeled(restored.selectedUnit) },
+        )
     }
 
     private fun countUndoAfterDragMeasure() {
@@ -458,7 +498,7 @@ class AnnotationEditorViewModel(
         if (inputStopped()) return
         val current = _state.value
         val next = history.redo(current) ?: return
-        _state.value = next.restoredOver(current)
+        restoreSnapshot(next, current)
         _canUndo.value = history.canUndo
         _canRedo.value = history.canRedo
         persistCommittedSet()
@@ -472,6 +512,7 @@ class AnnotationEditorViewModel(
         _state.update {
             it.copy(
                 currentTool = tool,
+                pendingKnownDistance = false,
                 inProgressPoints = emptyList(),
                 rulerSession = if (tool == AnnotationTool.GRID_REF) it.rulerSession else null,
                 planeSession = if (tool == AnnotationTool.GRID_REF) it.planeSession else null,
@@ -481,13 +522,19 @@ class AnnotationEditorViewModel(
         }
     }
 
-    /** Places both ends of a drag-measure as one commit (ADR-007). */
-    fun placeDrag(start: NormalizedPoint, end: NormalizedPoint) {
+    /** Places both ends of a drag-measure as one commit (ADR-007); false, with no pending point left, when it did not commit. */
+    fun placeDrag(start: NormalizedPoint, end: NormalizedPoint): Boolean {
+        val before = _state.value.committedAnnotations.size
         addPoint(start)
         addPoint(end)
-        val committed = _state.value.committedAnnotations.lastOrNull() ?: return
+        val after = _state.value.committedAnnotations
+        if (after.size != before + 1) {
+            _state.update { it.copy(inProgressPoints = emptyList()) }
+            return false
+        }
         PlacementCounters.dragMeasure()
-        lastDragMeasure = committed.uuid to nowMillis()
+        lastDragMeasure = after.last().uuid to nowMillis()
+        return true
     }
 
     /** Drops a pending first point; the tool stays armed. */
@@ -500,7 +547,6 @@ class AnnotationEditorViewModel(
 
     /** A placement was cancelled (off-canvas or gesture-inset release): the strip says so; the tool stays armed (OC-9). */
     fun cancelPlacementGesture() {
-        if (disarmOnOffCanvas) disarm()
         _state.update { it.copy(placementMessage = CANCELLED_MESSAGE) }
     }
 
@@ -566,7 +612,7 @@ class AnnotationEditorViewModel(
                         committedAnnotations = mergeInitialLoad(
                             list.map { it.relabeled(currentSt.selectedUnit) },
                             currentSt.committedAnnotations,
-                            sessionTouched.value,
+                            sessionTouched.value + currentSt.sessionDeleted,
                         ),
                     )
                 }
@@ -955,10 +1001,12 @@ class AnnotationEditorViewModel(
             multiStepSessionOpen = st.rulerSession != null || st.planeSession != null,
         )
         val returned = toolAfter == AnnotationTool.SELECT && tool != AnnotationTool.SELECT
+        val knownDistance = st.pendingKnownDistance && tool == AnnotationTool.DISTANCE
 
         // Optimistic update: add to committed list immediately
         _state.update { currentSt ->
             currentSt.copy(
+                pendingKnownDistance = currentSt.pendingKnownDistance && !knownDistance,
                 inProgressPoints = emptyList(),
                 committedAnnotations = currentSt.committedAnnotations + measurement,
                 currentTool = toolAfter,
@@ -982,6 +1030,11 @@ class AnnotationEditorViewModel(
                 }
             }
         }) { saveRow(measurement) }
+
+        if (knownDistance) {
+            knownDistanceUndoDepth = history.undoDepth
+            _openValueEditor.tryEmit(measurement.uuid)
+        }
     }
 
     // ── Calibration ───────────────────────────────────────────────────────────
@@ -998,28 +1051,22 @@ class AnnotationEditorViewModel(
             logger.warn("updateCalibration rejected: invalid pixelsPerMeter=${newCalibration.pixelsPerMeter}")
             return
         }
+        commitCalibration(newCalibration)
+    }
+
+    /** Applies [newCalibration] without the scale guard, so restoring an uncalibrated photo is possible. */
+    private fun commitCalibration(newCalibration: Calibration) {
         val st = _state.value
 
-        // Push current state to calibration history for undo (single-entry — keeps most recent only)
+        // Single-level undo: the snapshot carries constraints and fit inside its geometry.
         if (st.calibration != null && st.calibration.method != CalibrationMethod.NONE) {
-            calibrationHistory.value = CalibrationSnapshot(
-                calibration = st.calibration,
-                annotations = st.committedAnnotations,
-            )
+            calibrationHistory.getAndUpdate { it.push(CalibrationHistory.Entry(st.calibration, st.committedAnnotations)) }
             _canUndoCalibration.value = true
         }
 
         val displayUnit = st.selectedUnit
 
-        val rederived = st.committedAnnotations.map { annotation ->
-            val (newValue, newDisplay) = computeMeasurement(
-                annotation.normalizedPoints,
-                annotation.annotationType.toTool(),
-                newCalibration,
-                displayUnit,
-            )
-            annotation.copy(valueMeters = newValue, valueDisplay = newDisplay)
-        }
+        val rederived = rederive(st.committedAnnotations, newCalibration, displayUnit)
 
         _state.update {
             it.copy(
@@ -1037,19 +1084,41 @@ class AnnotationEditorViewModel(
             }
         }
 
-        val count = _state.value.committedAnnotations.size
-        if (count > 0) {
-            _calibrationChangeMessage.value = "Scale updated — $count measurement${if (count == 1) "" else "s"} recalculated"
+        val kept = rederived.count { it.valueSource == ValueSource.USER_OVERRIDE }
+        val recalculated = rederived.size - kept
+        if (rederived.isNotEmpty()) {
+            _calibrationChangeMessage.value = "Scale updated — $recalculated measurement${if (recalculated == 1) "" else "s"} recalculated" +
+                if (kept > 0) ", $kept measurement${if (kept == 1) " keeps" else "s keep"} your edited value" else ""
         }
     }
 
+    /** An edited value is the user's word: only computed measurements follow [calibration]. */
+    private fun rederive(annotations: List<MeasurementAnnotation>, calibration: Calibration?, unit: MeasurementUnit): List<MeasurementAnnotation> =
+        annotations.map { annotation ->
+            if (annotation.valueSource == ValueSource.USER_OVERRIDE) {
+                annotation
+            } else {
+                val (newValue, newDisplay) = computeMeasurement(annotation.normalizedPoints, annotation.annotationType.toTool(), calibration, unit)
+                annotation.copy(valueMeters = newValue, valueDisplay = newDisplay)
+            }
+        }
+
+    /** Reverts the calibration and re-derives only computed values, so annotations edited after the change survive. */
     fun undoCalibration() {
-        val snapshot = calibrationHistory.getAndUpdate { null } ?: return
-        _canUndoCalibration.value = false
-        _state.update { it.copy(
-            calibration = snapshot.calibration,
-            committedAnnotations = snapshot.annotations.map { a -> a.relabeled(it.selectedUnit) },
-        )}
+        var popped: CalibrationHistory.Entry? = null
+        calibrationHistory.getAndUpdate { history ->
+            popped = null
+            history.pop()?.let { (entry, rest) -> popped = entry; rest } ?: history
+        }
+        val snapshot = popped ?: return
+        _canUndoCalibration.value = calibrationHistory.value.canUndo
+        _constraintFitResult.value = null
+        _state.update {
+            it.copy(
+                calibration = snapshot.calibration,
+                committedAnnotations = rederive(it.committedAnnotations, snapshot.calibration, it.selectedUnit).map { a -> a.relabeled(it.selectedUnit) },
+            )
+        }
         _state.update { it.copy(imageAnnotation = it.imageAnnotation?.copy(calibration = snapshot.calibration)) }
         persistImageCalibration()
         _calibrationChangeMessage.value = "Scale restored"
@@ -1095,11 +1164,21 @@ class AnnotationEditorViewModel(
     fun beginAnnotationEdit() {
         if (inputStopped()) return
         pushUndo(_state.value)
+        dragUndoDepth = history.undoDepth
     }
 
     /** Replaces an annotation's points and re-derives its measurement. UI-state only; see [commitAnnotationEdit]. */
     fun updateAnnotationPoints(uuid: String, points: List<NormalizedPoint>) {
         if (inputStopped()) return
+        val edited = _state.value.committedAnnotations.firstOrNull { it.uuid == uuid }
+        if (edited?.valueSource == ValueSource.USER_OVERRIDE && points.size == edited.normalizedPoints.size) {
+            // The edited value stays until the user answers the confirm; only the geometry moves.
+            if (_overrideDragConfirm.value == null) _overrideDragConfirm.value = OverrideDragConfirm(uuid, edited.normalizedPoints)
+            _state.update { st ->
+                st.copy(committedAnnotations = st.committedAnnotations.map { if (it.uuid == uuid) it.copy(normalizedPoints = points) else it })
+            }
+            return
+        }
         _state.update { st ->
             val displayUnit = st.selectedUnit
             st.copy(
@@ -1113,6 +1192,39 @@ class AnnotationEditorViewModel(
             )
         }
     }
+
+    private val _overrideDragConfirm = MutableStateFlow<OverrideDragConfirm?>(null)
+
+    /** Non-null while the user must say whether a dragged edited value should be cleared (Story 3.4). */
+    val overrideDragConfirm: StateFlow<OverrideDragConfirm?> = _overrideDragConfirm.asStateFlow()
+
+    /** Answers the drag confirm: clear the override and measure the new length, or put the points back. */
+    fun resolveOverrideDrag(clearOverride: Boolean) {
+        if (inputStopped()) return
+        val confirm = _overrideDragConfirm.value ?: return
+        _overrideDragConfirm.value = null
+        val st = _state.value
+        val tool = st.committedAnnotations.firstOrNull { it.uuid == confirm.uuid }?.annotationType?.toTool() ?: return
+        _state.update { cur ->
+            val resolved = cur.committedAnnotations.map { a ->
+                if (a.uuid != confirm.uuid) a else if (clearOverride) measuredAgain(a, tool, cur) else a.copy(normalizedPoints = confirm.pointsBefore)
+            }
+            cur.copy(committedAnnotations = resolved)
+        }
+        if (!clearOverride && history.undoDepth == dragUndoDepth) {
+            history.discardLatest()
+            _canUndo.value = history.canUndo
+        }
+        commitAnnotationEdit(confirm.uuid)
+    }
+
+    private fun measuredAgain(a: MeasurementAnnotation, tool: AnnotationTool, st: AnnotationEditorState): MeasurementAnnotation {
+        val (meters, display) = computeMeasurement(a.normalizedPoints, tool, st.calibration, st.selectedUnit)
+        return a.withValue(meters?.let { MeasurementValue.Computed(it) }).copy(valueDisplay = display)
+    }
+
+    /** Undo depth right after the drag's undo step was recorded; a declined drag drops that step if still newest. */
+    private var dragUndoDepth = -1
 
     /** Persists the annotation's current state after a move gesture ends. */
     fun commitAnnotationEdit(uuid: String) {
@@ -1150,6 +1262,7 @@ class AnnotationEditorViewModel(
         _state.update { currentSt ->
             currentSt.copy(
                 committedAnnotations = currentSt.committedAnnotations.filter { it.uuid != uuid },
+                sessionDeleted = currentSt.sessionDeleted + uuid,
                 selectedAnnotationUuid = if (currentSt.selectedAnnotationUuid == uuid) null else currentSt.selectedAnnotationUuid,
             )
         }
@@ -1263,12 +1376,7 @@ class AnnotationEditorViewModel(
     fun confirmPlaneSession() {
         if (inputStopped()) return
         val calibration = planePreview()?.calibration ?: return
-        val previous = _state.value.calibration?.geometry
-        val merged = calibration.geometry?.copy(
-            heightOffsetMeters = previous?.heightOffsetMeters ?: 0.0,
-            cameraDistanceMeters = previous?.cameraDistanceMeters,
-        )
-        updateCalibration(calibration.copy(geometry = merged))
+        updateCalibration(keepingGeometry(calibration))
         setPlaneSession(null)
         returnToolAfterConfirm()
     }
@@ -1298,22 +1406,208 @@ class AnnotationEditorViewModel(
     fun setGeometry(geometry: GeometryCalibration?) {
         if (inputStopped()) return
         val calibration = usableScale(_state.value.calibration) ?: return
-        // Only the height-offset fields are edited here; a calibrated plane stays.
-        val merged = (calibration.geometry ?: GeometryCalibration()).copy(
-            heightOffsetMeters = geometry?.heightOffsetMeters ?: 0.0,
-            cameraDistanceMeters = geometry?.cameraDistanceMeters,
+        updateCalibration(
+            ConstraintFitApplier.withHeightOffset(calibration, geometry?.heightOffsetMeters ?: 0.0, geometry?.cameraDistanceMeters),
         )
-        val cleared = merged.takeIf { it.heightOffsetMeters > 0.0 || it.cameraDistanceMeters != null || it.plane != null }
-        updateCalibration(calibration.copy(geometry = cleared))
     }
 
     private fun usableScale(calibration: Calibration?): Calibration? =
         calibration?.takeIf { it.method != CalibrationMethod.NONE && it.pixelsPerMeter > 0.0 }
 
-    /** A new line or ruler reference keeps the height offset already entered, but replaces any plane. */
-    private fun keepingGeometry(calibration: Calibration): Calibration {
-        val kept = _state.value.calibration?.geometry?.copy(plane = null)?.takeIf { it != GeometryCalibration() }
-        return calibration.copy(geometry = calibration.geometry ?: kept)
+    /** A new line or ruler reference keeps the height offset already entered, but replaces plane, constraints and fit. */
+    private fun keepingGeometry(calibration: Calibration): Calibration =
+        ConstraintFitApplier.replacingBasis(_state.value.calibration, calibration)
+
+    // ── Value edit and known distances (ADR-002, ADR-003) ─────────────────────
+
+    /**
+     * Applies a typed distance to [uuid]: [ValueEditMode.LABEL_ONLY] overrides the shown value only, while
+     * [ValueEditMode.KNOWN_DISTANCE] promotes the line to a known distance and re-fits the scale.
+     * Invalid text returns Left and changes nothing.
+     */
+    fun submitValueEdit(
+        uuid: String,
+        text: String,
+        mode: ValueEditMode,
+        entryUnit: MeasurementUnit,
+    ): Either<MeasurementValueEdit.Error, Unit> {
+        if (inputStopped()) return Unit.right()
+        val target = _state.value.committedAnnotations.firstOrNull { it.uuid == uuid && it.annotationType == AnnotationType.DISTANCE }
+        if (target == null) {
+            logger.warn("submitValueEdit ignored: no distance $uuid")
+            return Unit.right()
+        }
+        val meters = MeasurementValueEdit.parse(text, entryUnit).fold({ return it.left() }, { it })
+        when (mode) {
+            ValueEditMode.LABEL_ONLY -> overrideValue(target, meters)
+            ValueEditMode.KNOWN_DISTANCE -> promoteToKnownDistance(target, meters)
+        }
+        return Unit.right()
+    }
+
+    private fun overrideValue(target: MeasurementAnnotation, meters: Double) {
+        val st = _state.value
+        val updated = MeasurementValueEdit.apply(target, meters, st.selectedUnit)
+        pushUndo(st)
+        sessionTouched.getAndUpdate { it + target.uuid }
+        replaceAnnotation(updated)
+        persistence.submit(onResult = { result ->
+            result.onLeft { err ->
+                logger.error("Failed to save edited value: ${err.message}")
+                _state.update { cur ->
+                    cur.copy(
+                        committedAnnotations = cur.committedAnnotations.map { if (it.uuid == target.uuid) target else it },
+                        placementMessage = SAVE_FAILED_MESSAGE,
+                    )
+                }
+            }
+        }) { saveRow(updated) }
+    }
+
+    private fun replaceAnnotation(updated: MeasurementAnnotation) {
+        _state.update { cur -> cur.copy(committedAnnotations = cur.committedAnnotations.map { if (it.uuid == updated.uuid) updated else it }) }
+    }
+
+    private fun promoteToKnownDistance(target: MeasurementAnnotation, meters: Double) {
+        val points = target.normalizedPoints
+        if (points.size < 2) return
+        val constraint = CalibrationConstraint(
+            id = UuidGenerator.generateV7(),
+            p1 = points[0],
+            p2 = points[1],
+            distanceMeters = meters,
+            source = ConstraintSource.FROM_MEASUREMENT,
+            measurementUuid = target.uuid,
+        )
+        val others = _state.value.calibration?.geometry?.constraints.orEmpty().filterNot { it.measurementUuid == target.uuid }
+        confirmConstraintCalibration(others + constraint)
+    }
+
+    private val _constraintFitResult = MutableStateFlow<ConstraintFitResult?>(null)
+
+    /** The last fit's report and, when a requested tier was not used, why; null before any fit. */
+    val constraintFitResult: StateFlow<ConstraintFitResult?> = _constraintFitResult.asStateFlow()
+
+    /**
+     * Fits [constraints] (the full list after an add, rename or delete) and writes the result through
+     * [ConstraintFitApplier]. An empty list restores the basis the first fit replaced. A failed richer
+     * tier falls back to SCALE, so measuring is never blocked.
+     */
+    fun confirmConstraintCalibration(constraints: List<CalibrationConstraint>, request: TierRequest = TierRequest.Auto) {
+        if (inputStopped()) return
+        val current = _state.value.calibration
+        if (constraints.isEmpty()) {
+            _constraintFitResult.value = null
+            current?.let { commitCalibration(ConstraintFitApplier.restorePriorBasis(it)) }
+            return
+        }
+        val calibrated = current?.takeIf { it.method != CalibrationMethod.NONE }
+        val hints = captureHints
+        val focal = FocalSourceResolver.resolve(
+            userConfirmed35mmEq = hints.userConfirmedFocal35mmEq,
+            lensRecord = hints.lensRecord,
+            profileMatched = false,
+            exifFocal35mmEq = _state.value.imageAnnotation?.sensorData?.focalLength35mmEq,
+        )
+        val frame = CaptureFrameInfo(
+            imageWidthPx, imageHeightPx, focal.focal35mmEq,
+            zoomRatio = hints.zoomRatio ?: hints.lensRecord?.zoomRatio,
+            exifDigitalZoomRatio = hints.exifDigitalZoomRatio,
+        )
+        val options = FitOptions(
+            request = request,
+            focalSource = focal.source,
+            focal35mmEq = focal.focal35mmEq,
+            gradientEnabled = gradientTierEnabled(),
+            k = current?.lens?.k ?: 0.0,
+            basisVersion = calibrated?.basisVersion ?: CalibrationBasis.NATIVE_PIXELS_LENS,
+        )
+        val response = ConstraintCalibrator.fit(constraints, frame, options)
+        when (val outcome = ConstraintFitApplier.apply(current, constraints, response, frame)) {
+            is ConstraintFitApplier.Outcome.Declined -> {
+                _constraintFitResult.value = ConstraintFitResult(null, outcome.failure.describe())
+                logger.warn("calibration fit declined: ${outcome.failure}")
+            }
+            is ConstraintFitApplier.Outcome.Applied -> {
+                _constraintFitResult.value = ConstraintFitResult(response.effective?.report, outcome.fallback?.describe())
+                releaseOverridesOfKnownDistances(constraints)
+                commitCalibration(outcome.calibration)
+                logger.info("calibration fit tier=${outcome.record.tier} n=${outcome.record.n}")
+            }
+        }
+    }
+
+    /** A line promoted to a known distance must follow the fit, so a number typed earlier no longer overrides it. */
+    private fun releaseOverridesOfKnownDistances(constraints: List<CalibrationConstraint>) {
+        val sources = constraints.mapNotNull { it.measurementUuid }.toSet()
+        if (sources.isEmpty()) return
+        _state.update { cur ->
+            cur.copy(
+                committedAnnotations = cur.committedAnnotations.map { a ->
+                    val meters = a.valueMeters
+                    if (a.uuid in sources && a.valueSource == ValueSource.USER_OVERRIDE && meters != null) a.withValue(MeasurementValue.Computed(meters)) else a
+                },
+            )
+        }
+    }
+
+    /** What the host knows about how the photo was captured; unset values mean "unknown", never "uncropped". */
+    data class CaptureHints(
+        val zoomRatio: Double? = null,
+        val exifDigitalZoomRatio: Double? = null,
+        val lensRecord: LensRecordFocal? = null,
+        val userConfirmedFocal35mmEq: Double? = null,
+    )
+
+    @kotlin.concurrent.Volatile private var captureHints = CaptureHints()
+
+    /** Feeds the crop/zoom refusal and the focal source ranking of the next known-distance fit. */
+    fun setCaptureHints(hints: CaptureHints) {
+        captureHints = hints
+    }
+
+    internal val frameWidthPx: Double get() = imageWidthPx
+    internal val frameHeightPx: Double get() = imageHeightPx
+
+    internal fun gradientTierEnabled(): Boolean {
+        val key = ConstraintTuning.SETTINGS_KEY_GRADIENT_TIER
+        val stored = settings?.takeIf { it.containsKey(key) }?.getBoolean(key, ConstraintTuning.GRADIENT_DEFAULT_ON)
+        return ConstraintTuning.gradientEnabled(stored)
+    }
+
+    private val _openValueEditor = MutableSharedFlow<String>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    /** Emits the uuid of a line drawn for "Draw a known distance" so the host opens its value editor. */
+    val openValueEditor: SharedFlow<String> = _openValueEditor.asSharedFlow()
+
+    /** Undo depth right after the known-distance line was committed; cancel drops that step while it is newest. */
+    private var knownDistanceUndoDepth = -1
+
+    /** "Draw a known distance": arms the distance tool; the next committed line opens the value editor once. */
+    fun beginKnownDistance() {
+        if (inputStopped()) return
+        selectTool(AnnotationTool.DISTANCE)
+        _state.update { it.copy(pendingKnownDistance = true) }
+    }
+
+    /** Cancel in the editor: the drawn line goes away and leaves no undo entry. */
+    fun cancelKnownDistance(uuid: String) {
+        if (inputStopped()) return
+        if (history.undoDepth == knownDistanceUndoDepth) {
+            history.discardLatest()
+            _canUndo.value = history.canUndo
+        }
+        knownDistanceUndoDepth = -1
+        sessionTouched.getAndUpdate { it + uuid }
+        _state.update { cur ->
+            cur.copy(
+                committedAnnotations = cur.committedAnnotations.filter { it.uuid != uuid },
+                selectedAnnotationUuid = cur.selectedAnnotationUuid.takeIf { it != uuid },
+            )
+        }
+        persistence.submit(onResult = { it.onLeft { err -> logger.error("Failed to delete cancelled known distance $uuid: ${err.message}") } }) {
+            deleteRow(uuid)
+        }
     }
 
     // ── Tag management ────────────────────────────────────────────────────────

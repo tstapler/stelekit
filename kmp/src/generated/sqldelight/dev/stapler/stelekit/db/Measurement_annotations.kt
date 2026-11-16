@@ -13,4 +13,6 @@ public data class Measurement_annotations(
   public val label: String?,
   public val color_hex: String,
   public val ble_device_id: String?,
+  public val value_source: String,
+  public val value_original_meters: Double?,
 )

@@ -7,6 +7,7 @@ package dev.stapler.stelekit.calibration
 import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationTick
 import dev.stapler.stelekit.model.NormalizedPoint
+import dev.stapler.stelekit.model.PlaneKind
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.round
@@ -90,7 +91,21 @@ object MeasurementAdvisor {
 
         val accuracy = mutableListOf<String>()
         calibration.geometry?.let { geometry ->
-            geometry.plane?.let { plane ->
+            // A SCALE fit has no plane, so the fit record (not the plane) says the scale came from known distances.
+            if (geometry.plane?.kind != PlaneKind.PAPER_REFERENCE) {
+                geometry.fit?.let { fit ->
+                    // One distance fits itself exactly, so its residual says nothing about accuracy.
+                    val floorPct = ConstraintTuning.RELATIVE_NOISE_FLOOR * PERCENT
+                    val accuracyPct = max(fit.looPct ?: fit.residualMeanPct, floorPct)
+                    accuracy += if (fit.n < 2 && fit.looPct == null) {
+                        "Scale from 1 known distance, accuracy unverified: add a second to cross-check."
+                    } else {
+                        "Scale from ${fit.n} known distances (tier ${fit.tier.name}), +/-${decimals(accuracyPct, 1)}%."
+                    }
+                    error = max(error, accuracyPct)
+                }
+            }
+            geometry.plane?.takeIf { it.kind == PlaneKind.PAPER_REFERENCE }?.let { plane ->
                 accuracy += "Plane reference: ${plane.referenceName}; distances are measured on the plane."
                 plane.checkResidualMm?.let { mm ->
                     val percent = mm / (max(plane.widthMeters, plane.heightMeters) * MM_PER_M) * PERCENT

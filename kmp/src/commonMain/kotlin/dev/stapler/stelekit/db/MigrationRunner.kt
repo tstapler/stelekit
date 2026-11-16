@@ -953,6 +953,20 @@ object MigrationRunner {
                 SchemaOp.AddColumn("image_annotations", "calibration_geometry_json", "TEXT NOT NULL DEFAULT ''"),
             ),
         ),
+        Migration(
+            name = "measurement_annotations_value_source",
+            // 'COMPUTED' = every existing row; an edited value is 'USER_OVERRIDE' (ADR-002). Additive.
+            schemaOps = listOf(
+                SchemaOp.AddColumn("measurement_annotations", "value_source", "TEXT NOT NULL DEFAULT 'COMPUTED'"),
+            ),
+        ),
+        Migration(
+            name = "measurement_annotations_value_original_meters",
+            // The computed value an override replaced; NULL unless value_source is 'USER_OVERRIDE'.
+            schemaOps = listOf(
+                SchemaOp.AddColumn("measurement_annotations", "value_original_meters", "REAL"),
+            ),
+        ),
     )
 
     /**

@@ -14,7 +14,9 @@ import dev.stapler.stelekit.model.ImageSensorData
 import dev.stapler.stelekit.model.ImageSource
 import dev.stapler.stelekit.model.MeasurementAnnotation
 import dev.stapler.stelekit.model.MeasurementUnit
+import dev.stapler.stelekit.model.MeasurementValue
 import dev.stapler.stelekit.model.NormalizedPoint
+import dev.stapler.stelekit.model.ValueSource
 import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
@@ -32,7 +34,7 @@ import kotlinx.serialization.json.Json
 class ImageSidecarManager(
     private val fileSystem: FileSystem,
 ) {
-    private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
+    private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true; prettyPrint = false }
 
     /**
      * Serialize [annotation] + [measurements] to JSON and write to the sidecar path.
@@ -48,12 +50,18 @@ class ImageSidecarManager(
             val path = sidecarPath(notesPath, annotation.uuid)
             ensureSidecarDir(notesPath)
 
+            val sidecarAnnotation = annotation.toSidecar()
+            val sidecarMeasurements = measurements.map { it.toSidecar() }
             val sidecar = SidecarFile(
-                schemaVersion = 1,
-                imageAnnotation = annotation.toSidecar(),
-                measurements = measurements.map { it.toSidecar() },
+                schemaVersion = SidecarVersion.forContent(sidecarAnnotation, sidecarMeasurements),
+                imageAnnotation = sidecarAnnotation,
+                measurements = sidecarMeasurements,
             )
-            val jsonString = json.encodeToString(SidecarFile.serializer(), sidecar)
+            val jsonString = SidecarJsonMerge.overlayUnknownKeys(
+                fileSystem.readFile(path),
+                json.encodeToString(SidecarFile.serializer(), sidecar),
+                json,
+            )
             val written = fileSystem.writeFile(path, jsonString)
             if (written) Unit.right()
             else DomainError.FileSystemError.WriteFailed(path, "FileSystem.writeFile returned false").left()
@@ -135,8 +143,9 @@ private fun ImageAnnotation.toSidecar(): SidecarImageAnnotation {
     )
 }
 
-private fun MeasurementAnnotation.toSidecar(): SidecarMeasurement =
-    SidecarMeasurement(
+private fun MeasurementAnnotation.toSidecar(): SidecarMeasurement {
+    val overridden = value as? MeasurementValue.Overridden
+    return SidecarMeasurement(
         uuid = uuid,
         imageUuid = imageUuid,
         annotationType = annotationType.name,
@@ -146,7 +155,10 @@ private fun MeasurementAnnotation.toSidecar(): SidecarMeasurement =
         label = label,
         colorHex = colorHex,
         bleDeviceId = bleDeviceId,
+        valueSource = if (overridden != null) ValueSource.USER_OVERRIDE.name else SidecarMeasurement.SOURCE_COMPUTED,
+        originalValueMeters = overridden?.originalMeters,
     )
+}
 
 // ── Sidecar → domain conversions ──────────────────────────────────────────────
 
@@ -209,5 +221,11 @@ fun SidecarFile.toDomainMeasurements(): List<MeasurementAnnotation> =
             label = m.label,
             colorHex = m.colorHex,
             bleDeviceId = m.bleDeviceId,
+        ).withValue(
+            MeasurementValue.fromColumns(
+                m.valueMeters,
+                runCatching { ValueSource.valueOf(m.valueSource) }.getOrDefault(ValueSource.COMPUTED),
+                m.originalValueMeters,
+            ),
         )
     }

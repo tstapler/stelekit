@@ -225,3 +225,7 @@ uploads/
 # machine's own Bazel cache directory, meaningless on any other checkout.
 # Must stay after the negation above (last-match-wins).
 /vendor/bazel-external
+
+# Owner-supplied real-photo study fixtures (Task 3.8a); never committed
+/accuracy-fixtures/real/
+/kmp/accuracy-fixtures/real/

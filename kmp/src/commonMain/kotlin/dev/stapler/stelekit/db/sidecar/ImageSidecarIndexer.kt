@@ -28,7 +28,7 @@ class ImageSidecarIndexer(
     private val measurementAnnotationRepository: MeasurementAnnotationRepository,
 ) {
     private val logger = Logger("ImageSidecarIndexer")
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
 
     /**
      * Scan all `.measure.json` files under `<notesPath>/.stelekit/images/` and upsert
