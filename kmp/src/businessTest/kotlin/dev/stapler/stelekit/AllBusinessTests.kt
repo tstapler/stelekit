@@ -916,6 +916,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.SceneLimitsGrepTest::class,
     dev.stapler.stelekit.sketch.v2.SceneModelTest::class,
     dev.stapler.stelekit.sketch.v2.DrawListGoldenTest::class,
+    dev.stapler.stelekit.sketch.v2.SketchyGoldenTest::class,
     dev.stapler.stelekit.sketch.v2.tools.ToolCancelTest::class,
     dev.stapler.stelekit.sketch.v2.tools.ToolInventoryCompletenessTest::class,
     dev.stapler.stelekit.sketch.v2.BannerCandidateTest::class,

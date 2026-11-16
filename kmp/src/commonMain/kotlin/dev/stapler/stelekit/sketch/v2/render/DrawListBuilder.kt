@@ -79,18 +79,18 @@ class DrawListBuilder(private val metrics: TextMetricsProvider) {
         val opacity = element.base.opacity / ElementBase.FULL_OPACITY.toDouble() * layerOpacity
         val hit = cache[element.id]
         if (hit != null && hit.version == element.base.version && hit.opacity == opacity && hit.style == style) return hit.ops
-        val ops = convert(element, opacity)
+        val ops = convert(element, opacity, StrokeStyleProvider.forStyle(style))
         cache[element.id] = Cached(element.base.version, opacity, style, ops)
         builtElementCount++
         return ops
     }
 
-    private fun convert(element: SceneElement, opacity: Double): List<DrawOp> = when (element) {
-        is RectElement -> listOf(box(element, element.x.value, element.y.value, element.width.value, element.height.value, element.angle, opacity, diamond = false))
-        is DiamondElement -> listOf(box(element, element.x.value, element.y.value, element.width.value, element.height.value, element.angle, opacity, diamond = true))
-        is EllipseElement -> listOf(ellipse(element, opacity))
-        is LineElement -> listOf(line(element, opacity))
-        is ArrowElement -> arrow(element, opacity)
+    private fun convert(element: SceneElement, opacity: Double, strokes: StrokeStyleProvider): List<DrawOp> = when (element) {
+        is RectElement -> box(element, element.x.value, element.y.value, element.width.value, element.height.value, element.angle, opacity, diamond = false, strokes)
+        is DiamondElement -> box(element, element.x.value, element.y.value, element.width.value, element.height.value, element.angle, opacity, diamond = true, strokes)
+        is EllipseElement -> ellipse(element, opacity, strokes)
+        is LineElement -> line(element, opacity, strokes)
+        is ArrowElement -> arrow(element, opacity, strokes)
         is FreedrawElement -> listOf(freedraw(element, opacity))
         is TextElement -> listOf(text(element, opacity))
         is ImageElement -> listOf(image(element, opacity))
@@ -125,21 +125,32 @@ class DrawListBuilder(private val metrics: TextMetricsProvider) {
         return min(radius, shortSide / 2.0)
     }
 
-    private fun box(e: SceneElement, x: Double, y: Double, w: Double, h: Double, angle: Double, opacity: Double, diamond: Boolean): DrawOp {
-        val b = PathBuilder(angle, x + w / 2.0, y + h / 2.0)
-        val corners = if (diamond) {
-            listOf(Pt(x + w / 2.0, y), Pt(x + w, y + h / 2.0), Pt(x + w / 2.0, y + h), Pt(x, y + h / 2.0))
-        } else {
-            listOf(Pt(x, y), Pt(x + w, y), Pt(x + w, y + h), Pt(x, y + h))
-        }
-        PathGeometry.polygon(b, corners, cornerRadius(e.base.style.roundness, w, h))
-        return pathOp(e, b.build(), opacity, filled = true)
+    private fun box(e: SceneElement, x: Double, y: Double, w: Double, h: Double, angle: Double, opacity: Double, diamond: Boolean, strokes: StrokeStyleProvider): List<DrawOp> {
+        val radius = cornerRadius(e.base.style.roundness, w, h)
+        val corners = boxCorners(x, y, w, h, diamond)
+        val clean = boxSegments(corners, radius, angle, x + w / 2.0, y + h / 2.0)
+        val geometry = if (radius <= 0.0) StrokeGeometry.Polyline(corners.map { ScenePt(it.x, it.y) }, closed = true) else StrokeGeometry.Outline
+        val turn = if (radius <= 0.0) angle else 0.0
+        return styled(e, clean, geometry, turn, x + w / 2.0, y + h / 2.0, opacity, filled = true, strokes)
     }
 
-    private fun ellipse(e: EllipseElement, opacity: Double): DrawOp {
+    private fun boxCorners(x: Double, y: Double, w: Double, h: Double, diamond: Boolean): List<Pt> = if (diamond) {
+        listOf(Pt(x + w / 2.0, y), Pt(x + w, y + h / 2.0), Pt(x + w / 2.0, y + h), Pt(x, y + h / 2.0))
+    } else {
+        listOf(Pt(x, y), Pt(x + w, y), Pt(x + w, y + h), Pt(x, y + h))
+    }
+
+    private fun boxSegments(corners: List<Pt>, radius: Double, angle: Double, pivotX: Double, pivotY: Double): List<PathSegment> {
+        val b = PathBuilder(angle, pivotX, pivotY)
+        PathGeometry.polygon(b, corners, radius)
+        return b.build()
+    }
+
+    private fun ellipse(e: EllipseElement, opacity: Double, strokes: StrokeStyleProvider): List<DrawOp> {
         val b = PathBuilder(e.angle, e.cx.value, e.cy.value)
         PathGeometry.ellipse(b, e.cx.value, e.cy.value, e.rx.value, e.ry.value)
-        return pathOp(e, b.build(), opacity, filled = true)
+        val geometry = StrokeGeometry.Ellipse(e.cx.value, e.cy.value, e.rx.value, e.ry.value)
+        return styled(e, b.build(), geometry, e.angle, e.cx.value, e.cy.value, opacity, filled = true, strokes)
     }
 
     private fun points(list: List<ScenePoint>): List<Pt> = list.map { Pt(it.x.value, it.y.value) }
@@ -148,35 +159,68 @@ class DrawListBuilder(private val metrics: TextMetricsProvider) {
         if (smooth) PathGeometry.smoothLine(b, pts, closed) else PathGeometry.polyline(b, pts, closed)
     }
 
-    private fun line(e: LineElement, opacity: Double): DrawOp {
-        val b = PathBuilder()
-        strokeLine(b, points(e.points), e.base.style.roundness != null, e.polygon)
-        return pathOp(e, b.build(), opacity, filled = e.polygon)
+    private fun lineGeometry(pts: List<Pt>, smooth: Boolean, closed: Boolean): StrokeGeometry {
+        val scenePts = pts.map { ScenePt(it.x, it.y) }
+        return if (smooth && pts.size >= PathGeometry.MIN_CURVE_POINTS && !closed) StrokeGeometry.Curve(scenePts) else StrokeGeometry.Polyline(scenePts, closed)
     }
 
-    private fun arrow(e: ArrowElement, opacity: Double): List<DrawOp> {
+    private fun line(e: LineElement, opacity: Double, strokes: StrokeStyleProvider): List<DrawOp> {
+        val pts = points(e.points)
+        val smooth = e.base.style.roundness != null
+        val b = PathBuilder()
+        strokeLine(b, pts, smooth, e.polygon)
+        return styled(e, b.build(), lineGeometry(pts, smooth, e.polygon), 0.0, 0.0, 0.0, opacity, filled = e.polygon, strokes)
+    }
+
+    private fun arrow(e: ArrowElement, opacity: Double, strokes: StrokeStyleProvider): List<DrawOp> {
         val pts = points(e.points)
         val b = PathBuilder()
-        strokeLine(b, pts, e.base.style.roundness != null && !e.elbowed, closed = false)
+        val smooth = e.base.style.roundness != null && !e.elbowed
+        strokeLine(b, pts, smooth, closed = false)
         val ops = ArrayList<DrawOp>()
-        ops.add(pathOp(e, b.build(), opacity, filled = false))
+        ops.addAll(styled(e, b.build(), lineGeometry(pts, smooth, closed = false), 0.0, 0.0, 0.0, opacity, filled = false, strokes))
         if (pts.size >= MIN_SHAFT_POINTS) {
             val last = pts.size - 1
-            ops.addAll(head(e, e.endArrowhead, pts[last], pts[last - 1], opacity))
-            ops.addAll(head(e, e.startArrowhead, pts[0], pts[1], opacity))
+            ops.addAll(head(e, e.endArrowhead, pts[last], pts[last - 1], opacity, strokes))
+            ops.addAll(head(e, e.startArrowhead, pts[0], pts[1], opacity, strokes))
         }
         return ops
     }
 
-    private fun head(e: ArrowElement, kind: dev.stapler.stelekit.sketch.v2.scene.Arrowhead, tip: Pt, from: Pt, opacity: Double): List<DrawOp> {
+    private fun head(e: ArrowElement, kind: dev.stapler.stelekit.sketch.v2.scene.Arrowhead, tip: Pt, from: Pt, opacity: Double, strokes: StrokeStyleProvider): List<DrawOp> {
         val shaft = tip - from
         val length = shaft.length()
         if (length == 0.0) return emptyList()
         val direction = shaft * (1.0 / length)
         val stroke = strokeOf(e.base.style)
-        return ArrowheadGeometry.shapes(kind, tip, direction, length).map { shape ->
-            DrawOp.PathOp(e.id, shape.segments, stroke, if (shape.filled) e.base.style.strokeColor else null, opacity)
+        val ops = ArrayList<DrawOp>()
+        for (shape in ArrowheadGeometry.shapes(kind, tip, direction, length)) {
+            val fill = if (shape.filled) e.base.style.strokeColor else null
+            val drawn = strokes.outline(StrokeRequest(StrokeGeometry.Outline, e.base.seed, e.base.style.roughness), shape.segments)
+            if (drawn === shape.segments || stroke == null) {
+                ops.add(DrawOp.PathOp(e.id, shape.segments, stroke, fill, opacity))
+            } else {
+                if (fill != null) ops.add(DrawOp.PathOp(e.id, shape.segments, null, fill, opacity))
+                ops.add(DrawOp.PathOp(e.id, drawn, stroke, null, opacity))
+            }
         }
+        return ops
+    }
+
+    /**
+     * One element outline through the style: a restyled outline is stroked on its own and any fill stays a plain
+     * fill of the Clean outline underneath (fill styles other than solid are Story 2.2.2). Unchanged geometry stays one op.
+     */
+    private fun styled(
+        e: SceneElement, clean: List<PathSegment>, geometry: StrokeGeometry, angle: Double, pivotX: Double, pivotY: Double,
+        opacity: Double, filled: Boolean, strokes: StrokeStyleProvider,
+    ): List<DrawOp> {
+        val drawn = strokes.outline(StrokeRequest(geometry, e.base.seed, e.base.style.roughness, angle, pivotX, pivotY), clean)
+        val stroke = strokeOf(e.base.style)
+        if (drawn === clean || stroke == null) return listOf(pathOp(e, clean, opacity, filled))
+        val fill = if (filled) fillOf(e.base.style) else null
+        val stroked = DrawOp.PathOp(e.id, drawn, stroke, null, opacity)
+        return if (fill == null) listOf(stroked) else listOf(DrawOp.PathOp(e.id, clean, null, fill, opacity), stroked)
     }
 
     private fun freedraw(e: FreedrawElement, opacity: Double): DrawOp {
@@ -234,8 +278,10 @@ class DrawListBuilder(private val metrics: TextMetricsProvider) {
     )
 
     private fun frame(e: FrameElement, opacity: Double): List<DrawOp> {
-        val outline = box(e, e.x.value, e.y.value, e.width.value, e.height.value, e.angle, opacity, diamond = false)
-        val outlineOnly = (outline as DrawOp.PathOp).copy(fill = null)
+        val corners = boxCorners(e.x.value, e.y.value, e.width.value, e.height.value, diamond = false)
+        val radius = cornerRadius(e.base.style.roundness, e.width.value, e.height.value)
+        val segments = boxSegments(corners, radius, e.angle, e.x.value + e.width.value / 2.0, e.y.value + e.height.value / 2.0)
+        val outlineOnly = pathOp(e, segments, opacity, filled = false)
         val title = e.base.name ?: return listOf(outlineOnly)
         val style = ElementStyle(strokeColor = e.base.style.strokeColor)
         val run = DrawOp.TextRun(

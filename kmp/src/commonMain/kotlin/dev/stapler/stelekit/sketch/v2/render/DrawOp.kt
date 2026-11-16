@@ -67,5 +67,8 @@ sealed interface DrawOp {
     data class ClipOp(val rect: DrawRect, val ops: List<DrawOp>) : DrawOp
 }
 
-/** Geometry strategy of a draw list (ADR-004); Sketchy joins in Story 2.2.1. */
-enum class RenderStyle { Clean }
+/**
+ * Geometry strategy of a draw list (ADR-004). Sketchy restyles an element only when its `roughness` is above 0;
+ * at 0 the element is drawn Clean, byte for byte.
+ */
+enum class RenderStyle { Clean, Sketchy }
