@@ -26,6 +26,11 @@ class CaptureResultHolder {
     }
 
     fun latest(): CaptureResultSnapshot? = snapshot
+
+    /** Drops a snapshot taken from a previous lens so it cannot describe the next bind's shutter. */
+    fun clear() {
+        snapshot = null
+    }
 }
 
 /**

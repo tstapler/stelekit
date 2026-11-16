@@ -33,6 +33,9 @@ interface CameraBackend {
     fun unbind()
 }
 
+/** Thrown by a backend whose failed bind could not restore the previous lens either: nothing is bound any more. */
+class PreviousLensLostException(cause: Throwable) : IllegalStateException("previous lens could not be restored", cause)
+
 data class CameraSessionState(
     val selected: CameraLens? = null,
     val binding: Boolean = false,
@@ -127,10 +130,12 @@ class CameraSession(
             throw e
         } catch (e: Throwable) {
             log("camera bind lens=${target.id} result=fail:${e::class.simpleName}")
+            val lost = e is PreviousLensLostException
             _state.update { s ->
                 s.copy(
                     disabled = s.disabled + (target.id to UNAVAILABLE_REASON),
-                    allFailed = s.selected == null,
+                    selected = if (lost) null else s.selected,
+                    allFailed = lost || s.selected == null,
                     binding = s.requestSeq != seq,
                 )
             }

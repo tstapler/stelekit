@@ -69,16 +69,17 @@ import dev.stapler.stelekit.platform.sensor.PlatformImageFile
 import dev.stapler.stelekit.platform.sensor.SensorModule
 import dev.stapler.stelekit.platform.sensor.defaultBackLens
 import dev.stapler.stelekit.platform.sensor.snapshotSensorData
+import dev.stapler.stelekit.platform.sensor.sweepStaleCaptures
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.Executors
@@ -89,7 +90,7 @@ private val logger = Logger("CameraCapture")
 
 private const val SETTING_LAST_LENS = "camera_last_lens_id"
 private const val SETTING_HINT_DISMISSED = "camera_ultrawide_hint_dismissed"
-private const val CATALOG_TIMEOUT_MS = 4_000L
+private const val STALE_CAPTURE_MS = 3_600_000L
 private const val FIRST_FRAME_TIMEOUT_MS = 5_000L
 private const val INLINE_MESSAGE_MS = 3_000L
 private const val SIDE_RAIL_MIN_WIDTH_DP = 600
@@ -113,6 +114,7 @@ actual fun CameraViewfinderDialog(
     var inlineMessage by remember { mutableStateOf<String?>(null) }
     var hintDismissed by remember { mutableStateOf(settings.getBoolean(SETTING_HINT_DISMISSED, false)) }
     var timedOut by remember { mutableStateOf(false) }
+    var catalogReady by remember { mutableStateOf(false) }
     var highlightedId by remember { mutableStateOf<String?>(null) }
 
     val previewView = remember(context) { PreviewView(context) }
@@ -149,8 +151,9 @@ actual fun CameraViewfinderDialog(
 
     LaunchedEffect(session) {
         // A plain LaunchedEffect: an uncaught Throwable here kills the Android process.
+        // No timeout: the dialog's own bind must not overlap the probe's throwaway binds on the same camera.
         val found = try {
-            withTimeoutOrNull(CATALOG_TIMEOUT_MS) { SensorModule.cameraLensCatalog.lenses() }.orEmpty()
+            SensorModule.cameraLensCatalog.lenses()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
@@ -158,6 +161,7 @@ actual fun CameraViewfinderDialog(
             emptyList()
         }
         lenses = found
+        catalogReady = true
         session.requestLens(initialLens(found, savedLensId))
     }
 
@@ -176,7 +180,16 @@ actual fun CameraViewfinderDialog(
         inlineMessage = null
     }
 
-    LaunchedEffect(session) {
+    LaunchedEffect(Unit) {
+        withContext(PlatformDispatcher.IO) {
+            runCatchingNonCancellation {
+                sweepStaleCaptures(File(context.cacheDir, "captures"), System.currentTimeMillis(), STALE_CAPTURE_MS)
+            }
+        }
+    }
+
+    LaunchedEffect(session, catalogReady) {
+        if (!catalogReady) return@LaunchedEffect
         delay(FIRST_FRAME_TIMEOUT_MS)
         if (session.state.value.selected == null) timedOut = true
     }
@@ -272,7 +285,7 @@ actual fun CameraViewfinderDialog(
                                 }
                                 result.fold(
                                     onSuccess = { file ->
-                                        if (session.acceptCapture(token)) {
+                                        if (session.acceptCapture(token) && isActive) {
                                             onCapture(file)
                                         } else {
                                             File(file.path).delete()
@@ -404,6 +417,7 @@ private suspend fun takePhotoAndProcess(
 ): Result<PlatformImageFile> {
     val capturesDir = File(context.cacheDir, "captures").also { it.mkdirs() }
     val outputFile = File(capturesDir, "${UUID.randomUUID()}.jpg")
+    val saved = java.util.concurrent.atomic.AtomicBoolean(false)
     var delivered = false
     val capturedAt = System.currentTimeMillis()
     val outputOptions = ImageCapture.OutputFileOptions.Builder(outputFile).build()
@@ -420,9 +434,16 @@ private suspend fun takePhotoAndProcess(
                     executor,
                     object : ImageCapture.OnImageSavedCallback {
                         override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                            if (cont.isActive) cont.resume(Unit)
+                            // CameraX can finish writing after a cancel or timeout; nobody else would delete it then.
+                            if (cont.isActive) {
+                                saved.set(true)
+                                cont.resume(Unit)
+                            } else {
+                                outputFile.delete()
+                            }
                         }
                         override fun onError(exception: ImageCaptureException) {
+                            outputFile.delete()
                             if (cont.isActive) cont.resumeWithException(exception)
                         }
                     },
@@ -471,6 +492,6 @@ private suspend fun takePhotoAndProcess(
     } finally {
         executor.shutdown()
         // Unprocessed photos must not linger in cacheDir after a cancel, timeout or failure.
-        if (!delivered) outputFile.delete()
+        if (saved.get() && !delivered) outputFile.delete()
     }
 }

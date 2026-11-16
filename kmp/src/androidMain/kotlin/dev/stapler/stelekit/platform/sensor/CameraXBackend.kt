@@ -12,6 +12,8 @@ import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.Camera2Interop
@@ -45,6 +47,20 @@ internal fun safeCameraId(info: CameraInfo): String? = try {
     null
 }
 
+/** CAMERA_IN_USE and the other recoverable codes are retried by CameraX itself, so only these end a bind. */
+internal fun isFatalCameraError(code: Int): Boolean = when (code) {
+    CameraState.ERROR_STREAM_CONFIG,
+    CameraState.ERROR_CAMERA_DISABLED,
+    CameraState.ERROR_CAMERA_FATAL_ERROR,
+    CameraState.ERROR_DO_NOT_DISTURB_MODE_ENABLED,
+    -> true
+    else -> false
+}
+
+/** Deletes files in [dir] not modified for [maxAgeMs], returning how many; leftovers of cancelled or crashed captures. */
+internal fun sweepStaleCaptures(dir: java.io.File, nowMs: Long, maxAgeMs: Long): Int =
+    dir.listFiles().orEmpty().count { it.isFile && nowMs - it.lastModified() > maxAgeMs && it.delete() }
+
 internal enum class CameraOpenResult { OPEN, ERROR, TIMEOUT }
 
 /** Waits on the Main thread for the camera to reach OPEN, an error, or [timeoutMs]; bindToLifecycle alone proves nothing. */
@@ -54,7 +70,7 @@ internal suspend fun awaitCameraOpen(info: CameraInfo, timeoutMs: Long): CameraO
             val observer = object : Observer<CameraState> {
                 override fun onChanged(value: CameraState) {
                     val result = when {
-                        value.error != null -> CameraOpenResult.ERROR
+                        value.error?.code?.let(::isFatalCameraError) == true -> CameraOpenResult.ERROR
                         value.type == CameraState.Type.OPEN -> CameraOpenResult.OPEN
                         else -> return
                     }
@@ -63,7 +79,8 @@ internal suspend fun awaitCameraOpen(info: CameraInfo, timeoutMs: Long): CameraO
                 }
             }
             info.cameraState.observeForever(observer)
-            cont.invokeOnCancellation { info.cameraState.removeObserver(observer) }
+            // removeObserver asserts the main thread, and cancellation can arrive on any thread.
+            cont.invokeOnCancellation { Handler(Looper.getMainLooper()).post { info.cameraState.removeObserver(observer) } }
         }
     } ?: CameraOpenResult.TIMEOUT
 
@@ -141,17 +158,18 @@ internal class CameraXBackend(
                     "camera reported an error opening lens ${lens.id}"
                 }
                 current = lens
+                captureResults.clear()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
-                restore(cameraProvider, previous)
+                if (!restore(cameraProvider, previous) && previous != null) throw PreviousLensLostException(e)
                 throw e
             }
         }
     }
 
     override suspend fun setZoom(ratio: Double) {
-        val control = camera?.cameraControl ?: return
+        val control = checkNotNull(camera?.cameraControl) { "no camera is bound" }
         withContext(Dispatchers.Main) { control.setZoomRatio(ratio.toFloat()).await(context) }
     }
 
@@ -173,18 +191,21 @@ internal class CameraXBackend(
         current = null
     }
 
-    private fun restore(cameraProvider: ProcessCameraProvider, previous: CameraLens?) {
+    /** True when the previous lens is running again (or there was none to restore). */
+    private fun restore(cameraProvider: ProcessCameraProvider, previous: CameraLens?): Boolean {
         if (previous == null) {
             runCatching { cameraProvider.unbind(preview, imageCapture) }
             camera = null
-            return
+            return true
         }
-        try {
+        return try {
             cameraProvider.unbind(preview, imageCapture)
             camera = cameraProvider.bindToLifecycle(lifecycleOwner, selectorFor(previous), preview, imageCapture)
+            true
         } catch (e: Throwable) {
             camera = null
             current = null
+            false
         }
     }
 

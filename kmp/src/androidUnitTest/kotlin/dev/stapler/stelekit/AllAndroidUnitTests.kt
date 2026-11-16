@@ -47,6 +47,7 @@ import dev.stapler.stelekit.platform.measurement.usb.AndroidUsbSerialFactoryTest
 import dev.stapler.stelekit.platform.security.AndroidCredentialStoreCommitTest
 import dev.stapler.stelekit.platform.security.AndroidCredentialStoreFailsLoudTest
 import dev.stapler.stelekit.platform.image.PlatformImageDownscalerAndroidTest
+import dev.stapler.stelekit.platform.sensor.CameraCaptureCleanupTest
 import dev.stapler.stelekit.platform.sensor.ExifOrientationFixerLensTest
 import dev.stapler.stelekit.wiring.CameraLensCatalogEntryPointTest
 import dev.stapler.stelekit.platform.sensor.ExifOrientationFixerTest
@@ -113,6 +114,7 @@ import org.junit.runners.Suite
     AndroidCredentialStoreFailsLoudTest::class,
     ExifOrientationFixerTest::class,
     ExifOrientationFixerLensTest::class,
+    CameraCaptureCleanupTest::class,
     CameraLensCatalogEntryPointTest::class,
     ImageMemoryGlueTest::class,
     PlatformImageDownscalerAndroidTest::class,

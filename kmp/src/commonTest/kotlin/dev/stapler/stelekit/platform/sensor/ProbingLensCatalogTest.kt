@@ -65,4 +65,23 @@ class ProbingLensCatalogTest {
         val throwingClassifier = ProbingLensCatalog({ listOf(bad) }, { _, _ -> true }, { }, classify = { error("boom") })
         assertTrue(throwingClassifier.lenses().isEmpty())
     }
+
+    @Test
+    fun lenses_should_ReProbeADegradedResult_ButCacheACleanOne() = runTest {
+        var degradedProbes = 0
+        val degraded = ProbingLensCatalog({ degradedProbes++; listOf(logical) }, { _, _ -> false }, { })
+        repeat(5) { degraded.lenses() }
+        assertEquals(ProbingLensCatalog.MAX_DEGRADED_PROBES, degradedProbes)
+
+        var cleanProbes = 0
+        val clean = ProbingLensCatalog({ cleanProbes++; listOf(logical) }, { _, _ -> true }, { })
+        repeat(3) { clean.lenses() }
+        assertEquals(1, cleanProbes)
+    }
+
+    @Test
+    fun lenses_should_TreatASlowBindTestAsFailed() = runTest {
+        val slow = ProbingLensCatalog({ listOf(logical) }, { _, _ -> kotlinx.coroutines.awaitCancellation() }, { }, bindTimeoutMs = 50)
+        assertTrue(slow.lenses().all { it.kind == LensKind.ZOOM_STOP })
+    }
 }

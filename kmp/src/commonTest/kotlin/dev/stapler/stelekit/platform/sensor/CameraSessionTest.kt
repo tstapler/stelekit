@@ -116,6 +116,24 @@ class CameraSessionTest {
     }
 
     @Test
+    fun lostPreviousLens_should_ClearSelection_DisableShutter_AndReportAllFailed() = runTest {
+        val backend = FakeCameraBackend()
+        val session = session(backend)
+        session.requestLens(lens("A"))
+        advanceUntilIdle()
+        backend.failures["B"] = PreviousLensLostException(IllegalStateException("restore failed"))
+        session.requestLens(lens("B"))
+        advanceUntilIdle()
+        assertNull(session.state.value.selected)
+        assertTrue(session.state.value.allFailed)
+        assertFalse(session.state.value.shutterEnabled)
+        session.requestLens(lens("C"))
+        advanceUntilIdle()
+        assertEquals("C", session.state.value.selected?.id)
+        assertFalse(session.state.value.allFailed)
+    }
+
+    @Test
     fun failedFirstBind_should_ReportAllFailed_WhenNothingWasEverBound() = runTest {
         val backend = FakeCameraBackend()
         backend.failures["1"] = IllegalStateException("in use")
