@@ -93,9 +93,7 @@ internal class ImageAdmitter(
     private fun normalise(mime: String) = if (mime == "image/jpg") "image/jpeg" else mime
 
     companion object {
-        /** Base64 characters per decode slice; a multiple of 4 so only the last slice carries padding. */
-        const val SLICE_CHARS = 64 * 1024
-
+        private const val SLICE_CHARS = ParseBudget.BASE64_SLICE_CHARS
         private const val DATA_PREFIX = "data:"
         private const val BASE64_SUFFIX = ";base64"
         private const val HEADER_SCAN_CHARS = 256

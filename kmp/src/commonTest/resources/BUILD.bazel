@@ -1,0 +1,6 @@
+# Excalidraw v0.18.1 fixtures (Story 0.1.5) read by ExcalidrawFixtureImportTest; bundled by excalidraw_fixtures_as_resources.
+filegroup(
+    name = "excalidraw_fixtures",
+    srcs = glob(["excalidraw/*.excalidraw"]),
+    visibility = ["//kmp/src/businessTest/kotlin:__pkg__"],
+)

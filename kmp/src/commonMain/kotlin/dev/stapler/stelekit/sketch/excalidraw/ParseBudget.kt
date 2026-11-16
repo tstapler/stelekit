@@ -65,6 +65,9 @@ class ParseBudget(
         /** Input bytes between two yields (64 KB). */
         const val YIELD_BYTES = 64L * 1024
 
+        /** Base64 characters per image decode slice; a multiple of 4 so only the last slice carries padding. */
+        const val BASE64_SLICE_CHARS = 64 * 1024
+
         /** Elements between two yields. */
         const val YIELD_ELEMENTS = 256
 

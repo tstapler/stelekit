@@ -283,7 +283,7 @@ class JsonSpanScannerTest {
 
         assertTrue(result is Either.Right, "result $result")
         assertTrue(decoder.maxSize <= limits.maxImportSpanBytes, "largest decode call ${decoder.maxSize}")
-        assertTrue(slices.isNotEmpty() && slices.all { it <= ImageAdmitter.SLICE_CHARS }, "base64 slices ${slices.maxOrNull()}")
+        assertTrue(slices.isNotEmpty() && slices.all { it <= ParseBudget.BASE64_SLICE_CHARS }, "base64 slices ${slices.maxOrNull()}")
         assertTrue(slices.size > 100, "a 15 MB payload is many slices, got ${slices.size}")
         assertTrue(budget.maxBytesBetweenYields <= ParseBudget.YIELD_BYTES + limits.maxImportSpanBytes, "gap ${budget.maxBytesBetweenYields}")
         assertTrue(budget.yieldCount > 0)
