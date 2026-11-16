@@ -529,6 +529,7 @@ internal fun BlockItem(
                                 onAnnotate = if (sketchSlug != null) null else annotateImage?.let { action -> { action(url, block) } },
                                 onOpenSketch = if (sketchSlug != null && openSketch != null) ({ openSketch(sketchSlug) }) else null,
                                 sketchSlug = sketchSlug,
+                                onRemoveSketchEmbed = if (sketchSlug != null) ({ onContentChange("", ++localVersion) }) else null,
                                 isInSelectionMode = isInSelectionMode,
                                 onToggleSelect = onToggleSelect,
                                 onLongPressSelect = onLongPressSelect,

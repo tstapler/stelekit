@@ -64,10 +64,13 @@ internal fun ImageBlock(
     onOpenSketch: (() -> Unit)? = null,
     /** Set for a sketch embed: drawn natively, because the exported preview.svg has no decoder in the image loader. */
     sketchSlug: String? = null,
+    /** Set for a sketch embed: removes the embed text from its block (the missing-sketch state's Remove embed). */
+    onRemoveSketchEmbed: (() -> Unit)? = null,
 ) {
     if (sketchSlug != null) {
         dev.stapler.stelekit.ui.sketch.SketchPreviewBlock(
             slug = sketchSlug,
+            actions = dev.stapler.stelekit.ui.sketch.SketchEmbedActions(onRemoveEmbed = onRemoveSketchEmbed, onOpenPage = onOpenSketch),
             modifier = modifier.fillMaxWidth().combinedClickable(
                 onLongClick = onLongPressSelect,
                 onClick = { if (isInSelectionMode) onToggleSelect() else onOpenSketch?.invoke() },

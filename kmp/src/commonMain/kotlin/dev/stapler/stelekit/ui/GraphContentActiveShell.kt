@@ -336,11 +336,14 @@ internal fun GraphContentActiveShell(
             dev.stapler.stelekit.ui.sketch.SketchPreviewLoader(
                 repos.sketchRepositories,
                 dev.stapler.stelekit.sketch.v2.runtime.projection.SheetProjectionSource(viewModel::projectSidecarStore),
+                v2StorageAvailable = { viewModel.projectSidecarStore() != null },
             )
         }
+        val chooseSketchAction: () -> Unit = remember(viewModel) { { viewModel.navigateTo(Screen.Sketch()) } }
 
         CompositionLocalProvider(
             dev.stapler.stelekit.ui.sketch.LocalSketchPreviewLoader provides sketchPreviewLoader,
+            dev.stapler.stelekit.ui.sketch.LocalChooseSketchAction provides chooseSketchAction,
             dev.stapler.stelekit.ui.components.LocalOpenSketchAction provides openSketchAction,
             dev.stapler.stelekit.ui.components.LocalArchiveUrlAction provides archiveUrlAction,
             dev.stapler.stelekit.ui.components.LocalAnnotateImageAction provides annotateImageAction,

@@ -9,6 +9,7 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.SheetUuid
+import dev.stapler.stelekit.projectbridge.CorruptReason
 import dev.stapler.stelekit.projectbridge.ProjectSidecarStore
 import dev.stapler.stelekit.projectbridge.SheetPaths
 import dev.stapler.stelekit.projectbridge.SidecarRead
@@ -16,6 +17,8 @@ import dev.stapler.stelekit.sketch.SketchLayer
 import dev.stapler.stelekit.sketch.SketchPrimitive
 import dev.stapler.stelekit.sketch.v2.bridge.V2ToV1
 import dev.stapler.stelekit.sketch.v2.codec.SheetCodecV2
+import dev.stapler.stelekit.sketch.v2.codec.SheetError
+import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
 import dev.stapler.stelekit.util.ContentHasher
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -29,7 +32,19 @@ class SheetProjection(
     val primitives: List<SketchPrimitive>,
     val layers: List<SketchLayer>,
     val droppedCount: Int,
+    /** The decoded v2 scene the projection came from; the embed preview draws it directly (Story 6.1.1). */
+    val scene: SketchSceneV2 = SketchSceneV2.empty(),
 )
+
+/** What reading a v2 sheet gave: the projection, a file that needs a newer app, or any other failure. */
+sealed interface SheetProjectionRead {
+    class Loaded(val projection: SheetProjection) : SheetProjectionRead
+
+    /** The sheet, or the model that lists it, declares a schema this build does not know (never a crash). */
+    data object NewerSchema : SheetProjectionRead
+
+    class Failed(val error: DomainError) : SheetProjectionRead
+}
 
 /**
  * Loads a v2 sheet's scene from the sidecar file, projects it with [V2ToV1] and hands the primitives to the v1 consumers
@@ -41,27 +56,43 @@ class SheetProjectionSource(private val storeProvider: () -> ProjectSidecarStore
     private val mutex = Mutex()
     private val cache = HashMap<SheetUuid, SheetProjection>()
 
-    suspend fun project(slug: String, sheet: SheetUuid): Either<DomainError, SheetProjection> {
+    suspend fun project(slug: String, sheet: SheetUuid): Either<DomainError, SheetProjection> =
+        when (val read = read(slug, sheet)) {
+            is SheetProjectionRead.Loaded -> read.projection.right()
+            SheetProjectionRead.NewerSchema -> DomainError.FileSystemError.ReadFailed(SheetPaths.pathFor(sheet, SheetPaths.SCHEMA_V2), "sheet needs a newer version").left()
+            is SheetProjectionRead.Failed -> read.error.left()
+        }
+
+    /** Like [project] but says when the file is from a newer app, so a caller can show "Update SteleKit to view". */
+    suspend fun read(slug: String, sheet: SheetUuid): SheetProjectionRead {
         val path = SheetPaths.pathFor(sheet, SheetPaths.SCHEMA_V2)
-        val store = storeProvider() ?: return DomainError.FileSystemError.ReadFailed(path, "no sidecar store on this platform").left()
+        val store = storeProvider() ?: return failed(DomainError.FileSystemError.ReadFailed(path, "no sidecar store on this platform"))
         val bytes = when (val read = store.read(slug)) {
-            is SidecarRead.Present -> read.files[path] ?: return DomainError.FileSystemError.NotFound(path).left()
-            SidecarRead.Absent -> return DomainError.FileSystemError.NotFound(path).left()
-            SidecarRead.Unavailable -> return DomainError.FileSystemError.ReadFailed(path, "sidecar unavailable").left()
-            is SidecarRead.Corrupt -> return DomainError.FileSystemError.ReadFailed(path, "sidecar corrupt").left()
+            is SidecarRead.Present -> read.files[path] ?: return failed(DomainError.FileSystemError.NotFound(path))
+            SidecarRead.Absent -> return failed(DomainError.FileSystemError.NotFound(path))
+            SidecarRead.Unavailable -> return failed(DomainError.FileSystemError.ReadFailed(path, "sidecar unavailable"))
+            is SidecarRead.Corrupt ->
+                return if (read.reason == CorruptReason.NewerSchema) SheetProjectionRead.NewerSchema else failed(DomainError.FileSystemError.ReadFailed(path, "sidecar corrupt"))
         }
         val sha = ContentHasher.sha256(bytes)
         return mutex.withLock {
-            cache[sheet]?.takeIf { it.sha == sha }?.right() ?: decode(path, sha, bytes).onRight { cache[sheet] = it }
+            cache[sheet]?.takeIf { it.sha == sha }?.let { SheetProjectionRead.Loaded(it) } ?: decode(path, sha, bytes).also { read ->
+                if (read is SheetProjectionRead.Loaded) cache[sheet] = read.projection
+            }
         }
     }
 
-    private fun decode(path: String, sha: String, bytes: ByteArray): Either<DomainError, SheetProjection> =
+    private fun failed(error: DomainError): SheetProjectionRead = SheetProjectionRead.Failed(error)
+
+    private fun decode(path: String, sha: String, bytes: ByteArray): SheetProjectionRead =
         SheetCodecV2.decode(bytes).fold(
-            { DomainError.FileSystemError.ReadFailed(path, "sheet not readable: ${it::class.simpleName}").left() },
+            { error ->
+                val newer = (error as? SheetError.UnsupportedSchema)?.schema?.let { it > SheetPaths.SCHEMA_V2 } == true
+                if (newer) SheetProjectionRead.NewerSchema else failed(DomainError.FileSystemError.ReadFailed(path, "sheet not readable: ${error::class.simpleName}"))
+            },
             { doc ->
                 val projection = V2ToV1.projectScene(doc.scene)
-                SheetProjection(sha, projection.primitives, projection.layers, projection.droppedCount).right()
+                SheetProjectionRead.Loaded(SheetProjection(sha, projection.primitives, projection.layers, projection.droppedCount, doc.scene))
             },
         )
 }
