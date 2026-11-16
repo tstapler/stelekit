@@ -11,8 +11,12 @@ import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.ProjectUuid
 import dev.stapler.stelekit.model.SheetUuid
+import dev.stapler.stelekit.projectbridge.ImmediateSketchDurability
+import dev.stapler.stelekit.projectbridge.NoPageLifecycle
+import dev.stapler.stelekit.projectbridge.PageLifecycle
 import dev.stapler.stelekit.projectbridge.ProjectSidecarStore
 import dev.stapler.stelekit.projectbridge.SheetPaths
+import dev.stapler.stelekit.projectbridge.SketchDurability
 import dev.stapler.stelekit.projectbridge.SidecarSlugLock
 import dev.stapler.stelekit.repository.SketchRepositories
 import dev.stapler.stelekit.sketch.v2.bridge.V2ToV1
@@ -52,6 +56,9 @@ enum class SaveFailure(val token: String) {
 
     /** The sidecar on disk is ahead of this device's last reconcile; a retry waits for the reconcile to catch up. */
     Behind("behind"),
+
+    /** The browser's storage is full (`StorageQuotaExceeded`): a retry cannot succeed until space is freed, so the banner offers Save copy. */
+    Quota("quota"),
 }
 
 sealed interface SaveState {
@@ -100,6 +107,8 @@ class SheetSaverPorts(
     val externalChanges: Flow<Unit> = emptyFlow(),
     val encoder: (SketchDocumentV2, SceneLimits) -> Either<SheetError, ByteArray> = { doc, limits -> SheetCodecV2.encode(doc, limits) },
     val clockMillis: () -> Long = MonotonicClock::millis,
+    val durability: SketchDurability = ImmediateSketchDurability,
+    val lifecycle: PageLifecycle = NoPageLifecycle,
 )
 
 /** Timing knobs. The back-off steps apply after an encode slower than [encodeBudgetMs] and reset on a fast one. */
@@ -158,11 +167,15 @@ class SheetSaver(
     private var deferrals = 0
     private var closed = false
 
+    /** True after a write was accepted but never confirmed persisted: the next save rewrites even an unchanged encoding. */
+    private var needsRewrite = false
+
     val state: StateFlow<SaveState> = mutableState
 
     init {
         scope.launch { runLoop() }
         scope.launch { ports.externalChanges.collect { onExternalChange() } }
+        scope.launch { ports.lifecycle.hidden.collect { saveLatest() } }
     }
 
     /** Records [doc] as the scene to persist and restarts the debounce. The latest call wins; earlier ones are never written. */
@@ -254,11 +267,11 @@ class SheetSaver(
 
     private suspend fun saveSnapshot(snap: Submitted) {
         val encoded = encode(snap.doc) ?: return
-        if (encoded.sha == baseSha) return saved(snap)
+        if (encoded.sha == baseSha && !needsRewrite) return saved(snap)
         when (val result = persister.persist(encoded, baseSha)) {
             Persist.Written -> {
                 baseSha = encoded.sha
-                saved(snap)
+                confirmPersisted(snap)
             }
             Persist.Deferred -> deferWrite()
             is Persist.Conflict -> conflict(encoded, result.diskSha)
@@ -288,6 +301,20 @@ class SheetSaver(
         return encoded
     }
 
+    /** Reports Saved only after the platform says the files reached storage; until then the state stays Saving. */
+    private suspend fun confirmPersisted(snap: Submitted) {
+        ports.durability.awaitPersisted(target.slug, sheetPath).fold(
+            { error ->
+                needsRewrite = true
+                fail(if (error is DomainError.FileSystemError.StorageQuotaExceeded) SaveFailure.Quota else SaveFailure.Write)
+            },
+            {
+                needsRewrite = false
+                saved(snap)
+            },
+        )
+    }
+
     private fun saved(snap: Submitted) {
         savedVersion = snap.version
         deferrals = 0
@@ -308,7 +335,7 @@ class SheetSaver(
     private fun fail(reason: SaveFailure) {
         ports.log.persistFailed(reason.token)
         mutableState.value = SaveState.Failed(reason)
-        ports.diagnostics.raise(BannerRowId.SaveFailed)
+        ports.diagnostics.raise(BannerRowId.SaveFailed, if (reason == SaveFailure.Quota) QUOTA_DETAIL else "")
     }
 
     private fun uncaught(t: Throwable) {
@@ -349,5 +376,6 @@ class SheetSaver(
     private companion object {
         const val REPLAN_ATTEMPTS = 3
         const val OOM_NAME = "OutOfMemoryError"
+        const val QUOTA_DETAIL = "quota"
     }
 }

@@ -287,6 +287,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/ui/sketch/v2/KeyboardPanningTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/DiagnosticsBridgeTest.kt",
         "dev/stapler/stelekit/sketch/v2/ScriptedSidecarStore.kt",
+        "dev/stapler/stelekit/sketch/v2/SheetSaverDurabilityTest.kt",
         "dev/stapler/stelekit/sketch/v2/SheetSaverTest.kt",
         "dev/stapler/stelekit/sketch/v2/BridgePropertyTest.kt",
         "dev/stapler/stelekit/sketch/v2/ReconcileTest.kt",
