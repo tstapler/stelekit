@@ -1032,5 +1032,6 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.projectbridge.ClosetEndToEndTest::class,
     dev.stapler.stelekit.projectbridge.FusionHarnessTest::class,
     dev.stapler.stelekit.projectbridge.FusionHarnessLocalRunTest::class,
+    dev.stapler.stelekit.wiring.SketchStorageHostSitesTest::class,
 )
 class AllBusinessTests

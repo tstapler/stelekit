@@ -171,10 +171,10 @@ data class StelekitAppPlatformIntegrations(
      */
     val google: dev.stapler.stelekit.platform.google.GoogleIntegration? = null,
     val requestCameraPermission: (suspend () -> Boolean)? = null,
-    /** Single-writer lease for v2 sheet writes (D-146). Temporary default until Task 1.4.3t wires each host. */
-    val sketchWriterLease: dev.stapler.stelekit.platform.SketchWriterLease = SketchStorageDefaults.writerLease(),
-    /** Browser persistence request for v2 sheets (D-146). Temporary default until Task 1.4.3t wires each host. */
-    val browserPersistence: dev.stapler.stelekit.platform.BrowserPersistence = SketchStorageDefaults.browserPersistence(),
+    /** Single-writer lease for v2 sheet writes (D-146). No default on purpose: every host names its value. */
+    val sketchWriterLease: dev.stapler.stelekit.platform.SketchWriterLease,
+    /** Browser persistence request for v2 sheets (D-146). No default on purpose: every host names its value. */
+    val browserPersistence: dev.stapler.stelekit.platform.BrowserPersistence,
     /** Downloads, clones and other work that finishes later; shown on the Background jobs screen. */
     val backgroundJobs: dev.stapler.stelekit.jobs.BackgroundJobRegistry = dev.stapler.stelekit.jobs.NoBackgroundJobs,
     /** Reads HTML from the system clipboard (bounded). Null disables rich-text paste; set on Desktop. */
@@ -375,7 +375,7 @@ data class GraphContentDeps(
     val assets: GraphContentAssetStack? = null,
 )
 
-/** Temporary defaults of the two sketch storage ports (D-146); Task 1.4.3t deletes this object. */
+/** The commonMain implementations every host passes for the two sketch storage ports until a platform swaps in its own (D-146). */
 object SketchStorageDefaults {
     fun writerLease(): dev.stapler.stelekit.platform.SketchWriterLease =
         dev.stapler.stelekit.platform.AlwaysHeldSketchWriterLease()
