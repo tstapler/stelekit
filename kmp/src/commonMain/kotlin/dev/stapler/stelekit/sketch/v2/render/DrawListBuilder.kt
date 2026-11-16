@@ -1,0 +1,265 @@
+// Copyright (c) 2026 Tyler Stapler
+// SPDX-License-Identifier: Elastic-2.0
+// https://www.elastic.co/licensing/elastic-license
+
+package dev.stapler.stelekit.sketch.v2.render
+
+import dev.stapler.stelekit.sketch.v2.scene.ArcElement
+import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
+import dev.stapler.stelekit.sketch.v2.scene.DiamondElement
+import dev.stapler.stelekit.sketch.v2.scene.ElementBase
+import dev.stapler.stelekit.sketch.v2.scene.ElementId
+import dev.stapler.stelekit.sketch.v2.scene.ElementStyle
+import dev.stapler.stelekit.sketch.v2.scene.EllipseElement
+import dev.stapler.stelekit.sketch.v2.scene.FrameElement
+import dev.stapler.stelekit.sketch.v2.scene.FreedrawElement
+import dev.stapler.stelekit.sketch.v2.scene.ImageElement
+import dev.stapler.stelekit.sketch.v2.scene.Layer
+import dev.stapler.stelekit.sketch.v2.scene.LineElement
+import dev.stapler.stelekit.sketch.v2.scene.PointElement
+import dev.stapler.stelekit.sketch.v2.scene.RectElement
+import dev.stapler.stelekit.sketch.v2.scene.Roundness
+import dev.stapler.stelekit.sketch.v2.scene.RoundnessKind
+import dev.stapler.stelekit.sketch.v2.scene.SceneElement
+import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
+import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
+import dev.stapler.stelekit.sketch.v2.scene.StrokeStyle
+import dev.stapler.stelekit.sketch.v2.scene.TextAlign
+import dev.stapler.stelekit.sketch.v2.scene.TextElement
+import dev.stapler.stelekit.sketch.v2.scene.VerticalAlign
+import dev.stapler.stelekit.sketch.v2.text.TextMetricsProvider
+import dev.stapler.stelekit.sketch.v2.text.TextStyle
+import kotlin.math.min
+
+/**
+ * Scene to draw list (Story 2.1.1, ADR-004): `SceneElement -> DrawOp` in paint order (layer order, then z-key, then
+ * array order), hidden layers omitted, effective opacity = element x layer, frame members wrapped in a [DrawOp.ClipOp].
+ *
+ * Text is drawn from the persisted size and line breaks (`TextLayoutPolicy.forRender`): nothing is measured here;
+ * [metrics] is only asked whether a glyph is in the bundled font. Freedraw is a plain polyline until Story 2.1.4
+ * supplies the perfect-freehand outline.
+ *
+ * Not thread-safe: it keeps one cached op list per element id, valid while `(version, effective opacity, style)`
+ * match, and drops entries of elements that left the scene. Owns no scope.
+ */
+class DrawListBuilder(private val metrics: TextMetricsProvider) {
+    private class Cached(val version: Int, val opacity: Double, val style: RenderStyle, val ops: List<DrawOp>)
+
+    private val cache = HashMap<ElementId, Cached>()
+
+    /** How many elements were converted (not served from the cache) over this builder's life; tests read it. */
+    var builtElementCount: Int = 0
+        private set
+
+    fun build(scene: SketchSceneV2, style: RenderStyle): List<DrawOp> {
+        val layers = scene.layers.associateBy { it.id }
+        val indexed = scene.elementsInOrder.withIndex().toList()
+        val sorted = indexed.sortedWith(
+            compareBy<IndexedValue<SceneElement>>({ (layers[it.value.base.layerId] ?: Layer.DefaultLayer).order }, { it.value.base.zKey }, { it.index }),
+        )
+        val out = ArrayList<DrawOp>()
+        val live = HashSet<ElementId>()
+        for ((_, element) in sorted) {
+            val layer = layers[element.base.layerId] ?: Layer.DefaultLayer
+            live.add(element.id)
+            if (!layer.visible) continue
+            val ops = opsFor(element, layer.opacity, style)
+            val frame = element.base.frameId?.let { scene[it] } as? FrameElement
+            if (frame != null && element !is FrameElement) {
+                out.add(DrawOp.ClipOp(DrawRect(frame.x.value, frame.y.value, frame.width.value, frame.height.value), ops))
+            } else {
+                out.addAll(ops)
+            }
+        }
+        cache.keys.retainAll(live)
+        return out
+    }
+
+    private fun opsFor(element: SceneElement, layerOpacity: Double, style: RenderStyle): List<DrawOp> {
+        val opacity = element.base.opacity / ElementBase.FULL_OPACITY.toDouble() * layerOpacity
+        val hit = cache[element.id]
+        if (hit != null && hit.version == element.base.version && hit.opacity == opacity && hit.style == style) return hit.ops
+        val ops = convert(element, opacity)
+        cache[element.id] = Cached(element.base.version, opacity, style, ops)
+        builtElementCount++
+        return ops
+    }
+
+    private fun convert(element: SceneElement, opacity: Double): List<DrawOp> = when (element) {
+        is RectElement -> listOf(box(element, element.x.value, element.y.value, element.width.value, element.height.value, element.angle, opacity, diamond = false))
+        is DiamondElement -> listOf(box(element, element.x.value, element.y.value, element.width.value, element.height.value, element.angle, opacity, diamond = true))
+        is EllipseElement -> listOf(ellipse(element, opacity))
+        is LineElement -> listOf(line(element, opacity))
+        is ArrowElement -> arrow(element, opacity)
+        is FreedrawElement -> listOf(freedraw(element, opacity))
+        is TextElement -> listOf(text(element, opacity))
+        is ImageElement -> listOf(image(element, opacity))
+        is FrameElement -> frame(element, opacity)
+        is PointElement -> listOf(point(element, opacity))
+        is ArcElement -> listOf(arc(element, opacity))
+    }
+
+    private fun strokeOf(style: ElementStyle): StrokePaint? {
+        if (style.strokeColor == TRANSPARENT || style.strokeWidth == 0.0) return null
+        val w = style.strokeWidth
+        val dash = when (style.strokeStyle) {
+            StrokeStyle.Solid -> emptyList()
+            StrokeStyle.Dashed -> listOf(DASH_ON, DASH_GAP + w)
+            StrokeStyle.Dotted -> listOf(DOT_ON, DOT_GAP + w)
+        }
+        return StrokePaint(style.strokeColor, w, dash)
+    }
+
+    private fun fillOf(style: ElementStyle): String? = style.backgroundColor.takeIf { it != TRANSPARENT && it.isNotEmpty() }
+
+    private fun cornerRadius(roundness: Roundness?, width: Double, height: Double): Double {
+        if (roundness == null) return 0.0
+        val shortSide = min(width, height)
+        val radius = when (roundness.kind) {
+            RoundnessKind.Legacy, RoundnessKind.ProportionalRadius -> shortSide * (roundness.value ?: PROPORTIONAL_RADIUS)
+            RoundnessKind.AdaptiveRadius -> {
+                val fixed = roundness.value ?: ADAPTIVE_RADIUS
+                if (shortSide <= fixed / PROPORTIONAL_RADIUS) shortSide * PROPORTIONAL_RADIUS else fixed
+            }
+        }
+        return min(radius, shortSide / 2.0)
+    }
+
+    private fun box(e: SceneElement, x: Double, y: Double, w: Double, h: Double, angle: Double, opacity: Double, diamond: Boolean): DrawOp {
+        val b = PathBuilder(angle, x + w / 2.0, y + h / 2.0)
+        val corners = if (diamond) {
+            listOf(Pt(x + w / 2.0, y), Pt(x + w, y + h / 2.0), Pt(x + w / 2.0, y + h), Pt(x, y + h / 2.0))
+        } else {
+            listOf(Pt(x, y), Pt(x + w, y), Pt(x + w, y + h), Pt(x, y + h))
+        }
+        PathGeometry.polygon(b, corners, cornerRadius(e.base.style.roundness, w, h))
+        return pathOp(e, b.build(), opacity, filled = true)
+    }
+
+    private fun ellipse(e: EllipseElement, opacity: Double): DrawOp {
+        val b = PathBuilder(e.angle, e.cx.value, e.cy.value)
+        PathGeometry.ellipse(b, e.cx.value, e.cy.value, e.rx.value, e.ry.value)
+        return pathOp(e, b.build(), opacity, filled = true)
+    }
+
+    private fun points(list: List<ScenePoint>): List<Pt> = list.map { Pt(it.x.value, it.y.value) }
+
+    private fun strokeLine(b: PathBuilder, pts: List<Pt>, smooth: Boolean, closed: Boolean) {
+        if (smooth) PathGeometry.smoothLine(b, pts, closed) else PathGeometry.polyline(b, pts, closed)
+    }
+
+    private fun line(e: LineElement, opacity: Double): DrawOp {
+        val b = PathBuilder()
+        strokeLine(b, points(e.points), e.base.style.roundness != null, e.polygon)
+        return pathOp(e, b.build(), opacity, filled = e.polygon)
+    }
+
+    private fun arrow(e: ArrowElement, opacity: Double): List<DrawOp> {
+        val pts = points(e.points)
+        val b = PathBuilder()
+        strokeLine(b, pts, e.base.style.roundness != null && !e.elbowed, closed = false)
+        val ops = ArrayList<DrawOp>()
+        ops.add(pathOp(e, b.build(), opacity, filled = false))
+        if (pts.size >= MIN_SHAFT_POINTS) {
+            val last = pts.size - 1
+            ops.addAll(head(e, e.endArrowhead, pts[last], pts[last - 1], opacity))
+            ops.addAll(head(e, e.startArrowhead, pts[0], pts[1], opacity))
+        }
+        return ops
+    }
+
+    private fun head(e: ArrowElement, kind: dev.stapler.stelekit.sketch.v2.scene.Arrowhead, tip: Pt, from: Pt, opacity: Double): List<DrawOp> {
+        val shaft = tip - from
+        val length = shaft.length()
+        if (length == 0.0) return emptyList()
+        val direction = shaft * (1.0 / length)
+        val stroke = strokeOf(e.base.style)
+        return ArrowheadGeometry.shapes(kind, tip, direction, length).map { shape ->
+            DrawOp.PathOp(e.id, shape.segments, stroke, if (shape.filled) e.base.style.strokeColor else null, opacity)
+        }
+    }
+
+    private fun freedraw(e: FreedrawElement, opacity: Double): DrawOp {
+        val b = PathBuilder()
+        PathGeometry.polyline(b, points(e.points), closed = false)
+        return pathOp(e, b.build(), opacity, filled = false)
+    }
+
+    private fun point(e: PointElement, opacity: Double): DrawOp {
+        val x = e.x.value
+        val y = e.y.value
+        val b = PathBuilder()
+        b.moveTo(Pt(x - POINT_ARM, y)).lineTo(Pt(x + POINT_ARM, y)).moveTo(Pt(x, y - POINT_ARM)).lineTo(Pt(x, y + POINT_ARM))
+        return pathOp(e, b.build(), opacity, filled = false)
+    }
+
+    private fun arc(e: ArcElement, opacity: Double): DrawOp {
+        val b = PathBuilder()
+        PathGeometry.arc(b, e.cx.value, e.cy.value, e.radius.value, e.startAngle, e.endAngle)
+        return pathOp(e, b.build(), opacity, filled = false)
+    }
+
+    private fun pathOp(e: SceneElement, segments: List<PathSegment>, opacity: Double, filled: Boolean): DrawOp =
+        DrawOp.PathOp(e.id, segments, strokeOf(e.base.style), if (filled) fillOf(e.base.style) else null, opacity)
+
+    private fun text(e: TextElement, opacity: Double): DrawOp {
+        val lines = e.text.split('\n')
+        val lineHeight = e.fontSize * e.lineHeight
+        val blockHeight = lines.size * lineHeight
+        val top = when (e.verticalAlign) {
+            VerticalAlign.Top -> e.y.value
+            VerticalAlign.Middle -> e.y.value + (e.height.value - blockHeight) / 2.0
+            VerticalAlign.Bottom -> e.y.value + e.height.value - blockHeight
+        }
+        val anchor = when (e.textAlign) {
+            TextAlign.Left -> e.x.value
+            TextAlign.Center -> e.x.value + e.width.value / 2.0
+            TextAlign.Right -> e.x.value + e.width.value
+        }
+        val style = TextStyle(e.fontFamily, e.fontSize)
+        var fallback = false
+        for (ch in e.text) if (ch != '\n' && !fallback && !metrics.hasGlyph(ch.code, style)) fallback = true
+        return DrawOp.TextRun(
+            e.id,
+            lines.mapIndexed { i, s -> TextLine(s, anchor, top + i * lineHeight) },
+            e.fontFamily, e.fontSize, e.base.style.strokeColor, e.textAlign,
+            e.angle, e.x.value + e.width.value / 2.0, e.y.value + e.height.value / 2.0,
+            fallback, opacity,
+        )
+    }
+
+    private fun image(e: ImageElement, opacity: Double): DrawOp = DrawOp.ImageOp(
+        e.id, e.fileId, DrawRect(e.x.value, e.y.value, e.width.value, e.height.value),
+        e.angle, e.flipX, e.flipY, e.crop, opacity,
+    )
+
+    private fun frame(e: FrameElement, opacity: Double): List<DrawOp> {
+        val outline = box(e, e.x.value, e.y.value, e.width.value, e.height.value, e.angle, opacity, diamond = false)
+        val outlineOnly = (outline as DrawOp.PathOp).copy(fill = null)
+        val title = e.base.name ?: return listOf(outlineOnly)
+        val style = ElementStyle(strokeColor = e.base.style.strokeColor)
+        val run = DrawOp.TextRun(
+            e.id, listOf(TextLine(title, e.x.value, e.y.value - FRAME_TITLE_SIZE * TextElement.DEFAULT_LINE_HEIGHT - FRAME_TITLE_GAP)),
+            FRAME_TITLE_FONT, FRAME_TITLE_SIZE, style.strokeColor, TextAlign.Left,
+            0.0, e.x.value, e.y.value, !metrics.hasGlyphs(title, TextStyle(FRAME_TITLE_FONT, FRAME_TITLE_SIZE)), opacity,
+        )
+        return listOf(outlineOnly, run)
+    }
+
+    private fun TextMetricsProvider.hasGlyphs(text: String, style: TextStyle): Boolean = text.all { hasGlyph(it.code, style) }
+
+    private companion object {
+        const val TRANSPARENT = "transparent"
+        const val MIN_SHAFT_POINTS = 2
+        const val PROPORTIONAL_RADIUS = 0.25
+        const val ADAPTIVE_RADIUS = 32.0
+        const val DASH_ON = 8.0
+        const val DASH_GAP = 8.0
+        const val DOT_ON = 1.5
+        const val DOT_GAP = 6.0
+        const val POINT_ARM = 4.0
+        const val FRAME_TITLE_SIZE = 14.0
+        const val FRAME_TITLE_GAP = 4.0
+        const val FRAME_TITLE_FONT = 2
+    }
+}
