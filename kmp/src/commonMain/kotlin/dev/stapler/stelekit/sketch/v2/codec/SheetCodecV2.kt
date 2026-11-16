@@ -159,11 +159,10 @@ object SheetCodecV2 {
             scene = scene.add(element).mapLeft { SheetError.DuplicateElement(i) }.bind()
         }
         // A constraint whose operand is not in the sheet is dropped, the same repair `reconcile` makes for other dangling references.
-        SketchDocumentV2(reconcile(scene).scene, sheetUuid, typedConstraints, extras).withoutOrphans()
         val counters = (root["nameCounters"] as? JsonObject)?.let { o ->
             NameCounters.of(o.mapNotNull { (k, v) -> (v as? JsonPrimitive)?.let { CanonicalJson.doubleOf(it) }?.toInt()?.let { k to it } }.toMap())
         } ?: NameCounters.Empty
-        SketchDocumentV2(reconcile(scene).scene, sheetUuid, constraintObjects, extras, counters)
+        SketchDocumentV2(reconcile(scene).scene, sheetUuid, typedConstraints, extras, counters).withoutOrphans()
     }
 
     /** True when every non-string literal is a boolean, null or a finite number (so `extras` and constraints re-encode). */
