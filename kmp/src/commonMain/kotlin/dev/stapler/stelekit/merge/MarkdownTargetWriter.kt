@@ -36,7 +36,7 @@ class MarkdownTargetWriter(
     private val target: OffGraphTarget,
     private val capabilities: TargetWriterCapabilities,
     private val canonicalize: (String) -> String,
-) : TargetWriter {
+) : TargetWriter, SketchBundleWriter {
 
     private val ownership = PageUuidOwnership(fs, target.path.value) { readText(it) }
     private val atomicWriter = AtomicFileWriter(fs, canonicalize, TMP_SUFFIX, SAF_ATOMIC_REPLACE_VERIFIED)
@@ -111,6 +111,10 @@ class MarkdownTargetWriter(
     }
 
     private suspend fun <T> io(block: () -> T): T = withContext(PlatformDispatcher.IO) { block() }
+
+    /** Sketch projects are file-only off-graph: the next open of the graph reconciles them into its database. */
+    override suspend fun writeSketchBundle(bundle: SketchBundle): Either<DomainError, SketchBundleOutcome> =
+        io { SketchBundleFiles(fs, target.path.value).write(bundle) }
 
     // region paths
 

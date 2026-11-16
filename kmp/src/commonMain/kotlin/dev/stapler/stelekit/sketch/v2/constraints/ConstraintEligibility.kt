@@ -69,6 +69,9 @@ object SketchReasonText {
     const val TangentNeedsCurve = "Tangent needs a circle or arc and one more element"
     const val SymmetricNeedsPointsOrLine = "Symmetric needs two points and a line"
     const val SelectAnElement = "Select an element to constrain"
+
+    /** The diagnostics entry written when `CommandError.ConstraintCapExceeded` is returned (Story 4.2.1). */
+    fun constraintLimitReached(limit: Int) = "Constraint limit reached ($limit)"
 }
 
 /**

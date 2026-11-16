@@ -27,6 +27,16 @@ sealed interface CommandError {
     /** A constraint targeted an element of a kind `ConstraintEligibility` refuses; the user text is `SketchReasonText.NotConstrainable`. */
     data class NotConstrainable(val kind: ElementKind) : CommandError
 
+    /** The sheet already holds `SceneLimits.maxConstraints` constraints; the diagnostics line is `SketchReasonText.constraintLimitReached`. */
+    data class ConstraintCapExceeded(val limit: Int) : CommandError
+
+    data class DuplicateConstraint(val id: String) : CommandError
+
+    data class UnknownConstraint(val id: String) : CommandError
+
+    /** A constraint that cannot be built: wrong operand count or mix, a missing or stray value, or an unusable element (`reason` is a fixed label, never user text). */
+    data class InvalidConstraint(val id: String, val reason: String) : CommandError
+
     /** A coordinate, size or angle a command computed is not a valid scene value (non-finite or beyond `SceneLimits.maxCoord`). */
     data class ValueRejected(val error: ValueError) : CommandError
 

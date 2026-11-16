@@ -205,6 +205,8 @@ class ActiveTargetWriterContractTest : TargetWriterContractSuite() {
     class ActiveHarness(repos: RepositorySet? = null, private val awaitDirtyClear: Boolean = true) : TargetHarness {
         private val root = "/graphs/active"
         val fs = FakeRelocationFileSystem()
+        override val fileSystem get() = fs
+        override val graphRoot get() = root
         val conflicts = java.util.concurrent.atomic.AtomicInteger()
         private val pages: PageRepository = repos?.pageRepository ?: InMemoryPageRepository()
         private val blocks: BlockRepository = repos?.blockRepository ?: InMemoryBlockRepository()

@@ -9,6 +9,12 @@ import arrow.core.left
 import arrow.core.raise.Raise
 import arrow.core.raise.either
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
+import dev.stapler.stelekit.sketch.v2.constraints.Constraint
+import dev.stapler.stelekit.sketch.v2.constraints.ConstraintId
+import dev.stapler.stelekit.sketch.v2.constraints.ConstraintKind
+import dev.stapler.stelekit.sketch.v2.constraints.ConstraintTarget
+import dev.stapler.stelekit.sketch.v2.constraints.TargetPart
+import dev.stapler.stelekit.sketch.v2.constraints.withoutOrphans
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.Arrowhead
@@ -105,7 +111,7 @@ object SheetCodecV2 {
         val elementLines = scene.elementsInOrder.map { canonical(ElementWriter().element(it).bind(), limits).bind() }
         val sb = StringBuilder()
         sb.append("{\"schema\":").append(SCHEMA).append(",\"sheetUuid\":").append(canonical(JsonPrimitive(doc.sheetUuid), limits).bind())
-        sb.append(",\"constraints\":").append(canonical(JsonArray(doc.constraints), limits).bind())
+        sb.append(",\"constraints\":").append(canonical(JsonArray(doc.constraints.map { ElementWriter().constraint(it).bind() }), limits).bind())
         sb.append(",\"elements\":")
         if (elementLines.isEmpty()) sb.append("[]") else sb.append("[\n").append(elementLines.joinToString(",\n")).append("\n]")
         sb.append(",\"extras\":").append(canonical(doc.extras, limits).bind())
@@ -136,7 +142,7 @@ object SheetCodecV2 {
         val sheetUuid = (root[UUID_KEY] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: raise(SheetError.Malformed(UUID_KEY))
         val constraints = (root["constraints"] ?: JsonArray(emptyList())).let { it as? JsonArray ?: raise(SheetError.Malformed("constraints")) }
         if (constraints.size > limits.maxConstraints) raise(SheetError.TooManyConstraints(constraints.size, limits.maxConstraints))
-        val constraintObjects = constraints.map { it as? JsonObject ?: raise(SheetError.Malformed("constraints")) }
+        val typedConstraints = with(reader) { constraints(constraints) }
         val extras = (root["extras"] ?: JsonObject(emptyMap())) as? JsonObject ?: raise(SheetError.Malformed("extras"))
         val layers = with(reader) { layers(root["layers"]) }
         val elements = (root["elements"] ?: JsonArray(emptyList())) as? JsonArray ?: raise(SheetError.Malformed("elements"))
@@ -147,7 +153,8 @@ object SheetCodecV2 {
             val element = with(reader) { element(i, json) }
             scene = scene.add(element).mapLeft { SheetError.DuplicateElement(i) }.bind()
         }
-        SketchDocumentV2(reconcile(scene).scene, sheetUuid, constraintObjects, extras)
+        // A constraint whose operand is not in the sheet is dropped, the same repair `reconcile` makes for other dangling references.
+        SketchDocumentV2(reconcile(scene).scene, sheetUuid, typedConstraints, extras).withoutOrphans()
     }
 
     /** True when every non-string literal is a boolean, null or a finite number (so `extras` and constraints re-encode). */
@@ -175,6 +182,20 @@ object SheetCodecV2 {
 
         private fun Raise<SheetError>.points(points: List<ScenePoint>, where: String): JsonArray =
             JsonArray(points.map { JsonArray(listOf(u(it.x, where), u(it.y, where))) })
+
+        fun constraint(c: Constraint): Either<SheetError, JsonObject> = either {
+            buildJsonObject {
+                put("id", c.id.value)
+                put("kind", c.kind.name)
+                put("targets", JsonArray(c.targets.map { t -> buildJsonObject { put("e", t.elementId.value); put("part", partLabel(t.part)) } }))
+                c.value?.let { put("value", n(it, "constraints.value")) }
+                if (c.reference) put("ref", true)
+            }
+        }
+
+        private fun partLabel(part: TargetPart): String = when (part) {
+            TargetPart.Whole -> TargetPart.WHOLE_LABEL
+        }
 
         fun layer(l: Layer): Either<SheetError, JsonObject> = either {
             buildJsonObject {
@@ -367,6 +388,25 @@ object SheetCodecV2 {
         private inline fun <reified E : Enum<E>> Raise<SheetError>.enum(o: JsonObject, key: String, default: E, where: String): E {
             val name = strOrNull(o, key) ?: return default
             return enumValues<E>().firstOrNull { it.name == name } ?: raise(SheetError.Malformed("$where.$key"))
+        }
+
+        fun Raise<SheetError>.constraints(list: JsonArray): List<Constraint> {
+            val seen = HashSet<String>()
+            return list.mapIndexed { i, json ->
+                val where = "constraints[$i]"
+                val o = obj(json, where)
+                val id = str(o, "id", where)
+                val kind = enum(o, "kind", ConstraintKind.Coincident, where).also { if (strOrNull(o, "kind") == null) raise(SheetError.Malformed("$where.kind")) }
+                val targets = arr(o["targets"], "$where.targets").map { t ->
+                    val to = obj(t, "$where.targets")
+                    if (str(to, "part", where) != TargetPart.WHOLE_LABEL) raise(SheetError.Malformed("$where.targets"))
+                    ConstraintTarget(ElementId(str(to, "e", where)))
+                }
+                val value = if (o["value"] == null) null else dbl(o, "value", where)
+                val c = Constraint(ConstraintId(id), kind, targets, value, bool(o, "ref", false, where))
+                if (c.shapeProblem() != null || !seen.add(id)) raise(SheetError.Malformed(where))
+                c
+            }
         }
 
         fun Raise<SheetError>.layers(el: JsonElement?): List<Layer> {

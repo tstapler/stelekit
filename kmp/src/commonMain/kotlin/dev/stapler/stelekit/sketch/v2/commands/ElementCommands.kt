@@ -8,6 +8,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.raise.either
 import arrow.core.right
+import dev.stapler.stelekit.sketch.v2.constraints.withoutOrphans
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.Binding
@@ -64,7 +65,7 @@ internal fun topKey(scene: SketchSceneV2, layer: LayerId): ZKey {
 
 internal fun finish(doc: SketchDocumentV2, scene: SketchSceneV2, touched: Set<ElementId>): Applied {
     val repaired = reconcile(scene)
-    return Applied(doc.copy(scene = repaired.scene), touched + repaired.changed)
+    return Applied(doc.copy(scene = repaired.scene).withoutOrphans(), touched + repaired.changed)
 }
 
 private fun SketchSceneV2.element(id: ElementId): Either<CommandError, SceneElement> =

@@ -9,6 +9,10 @@ import dev.stapler.stelekit.sketch.v2.codec.CanonicalJson
 import dev.stapler.stelekit.sketch.v2.codec.SheetCodecV2
 import dev.stapler.stelekit.sketch.v2.codec.SheetError
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
+import dev.stapler.stelekit.sketch.v2.constraints.Constraint
+import dev.stapler.stelekit.sketch.v2.constraints.ConstraintId
+import dev.stapler.stelekit.sketch.v2.constraints.ConstraintKind
+import dev.stapler.stelekit.sketch.v2.constraints.ConstraintTarget
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.Arrowhead
@@ -80,7 +84,10 @@ internal object SheetFixtures {
         )
         var scene = SketchSceneV2.empty().withLayers(listOf(Layer.DefaultLayer, Layer(LayerId("l2"), "Layer 2", visible = false, locked = true, opacity = 0.5, order = 1)))
         for (e in elements) scene = scene.add(e).fold({ error("fixture $it") }, { it })
-        val constraints = listOf(JsonObject(mapOf("kind" to JsonPrimitive("coincident"), "targets" to JsonArray(listOf(JsonPrimitive("r1"), JsonPrimitive("p1"))), "value" to num(0.1))))
+        val constraints = listOf(
+            Constraint(ConstraintId("k1"), ConstraintKind.Coincident, listOf(ConstraintTarget(ElementId("p1")), ConstraintTarget(ElementId("l1")))),
+            Constraint(ConstraintId("k2"), ConstraintKind.Radius, listOf(ConstraintTarget(ElementId("e1"))), value = 0.1, reference = true),
+        )
         return SketchDocumentV2(scene, "00000000-0000-0000-0000-000000000001", constraints, extras)
     }
 

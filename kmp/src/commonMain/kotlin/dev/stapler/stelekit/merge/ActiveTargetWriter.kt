@@ -70,7 +70,7 @@ class ActiveTargetWriter(
     private val graphPath: EffectiveNotesPath,
     private val encrypted: Boolean = false,
     private val isPageDirty: suspend (PageUuid) -> Boolean = { graphWriter.hasPendingForPage(it) },
-) : TargetWriter, OwnedPageWriter {
+) : TargetWriter, OwnedPageWriter, SketchBundleWriter {
 
     override suspend fun readExisting(page: PageKey): Either<DomainError, MergePage?> = guarded {
         val row = findPage(page).getOrReturn { return@guarded it.left() } ?: return@guarded null.right()
@@ -216,6 +216,10 @@ class ActiveTargetWriter(
         val path = pathFor(page, row).getOrReturn { return@guarded it.left() }
         hashOf(path)
     }
+
+    /** Files only; the sidecar reconciler imports the new project into the active graph's database on its next pass. */
+    override suspend fun writeSketchBundle(bundle: SketchBundle): Either<DomainError, SketchBundleOutcome> =
+        withContext(PlatformDispatcher.IO) { SketchBundleFiles(fs, graphPath.value).write(bundle) }
 
     override suspend fun removeBlocks(
         page: PageKey,

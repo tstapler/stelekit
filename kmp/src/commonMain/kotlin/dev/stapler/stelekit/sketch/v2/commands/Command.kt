@@ -8,6 +8,8 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.raise.either
 import arrow.core.right
+import dev.stapler.stelekit.sketch.v2.constraints.Constraint
+import dev.stapler.stelekit.sketch.v2.constraints.withoutOrphans
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.Layer
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
@@ -17,13 +19,12 @@ import kotlinx.serialization.json.JsonObject
 
 /**
  * The unit a history snapshot holds: the scene plus what the sheet file carries beside it (Story 1.1.5). [constraints]
- * stay opaque JSON objects until the constraint model (Story 4.2.1) types them; [extras] carries unknown top-level
- * sheet fields for round trips. History and commands take this type and not a bare scene so those fields survive an edit.
+ * are the typed constraint list (Story 4.2.1); [extras] carries unknown top-level sheet fields for round trips. History and commands take this type and not a bare scene so those fields survive an edit.
  */
 data class SketchDocumentV2(
     val scene: SketchSceneV2 = SketchSceneV2.empty(),
     val sheetUuid: String = "",
-    val constraints: List<JsonObject> = emptyList(),
+    val constraints: List<Constraint> = emptyList(),
     val extras: JsonObject = JsonObject(emptyMap()),
 )
 
@@ -49,8 +50,11 @@ data class DocPatch(
     val orderAfter: List<ElementId>,
     val layersBefore: List<Layer>,
     val layersAfter: List<Layer>,
+    val constraintsBefore: List<Constraint> = emptyList(),
+    val constraintsAfter: List<Constraint> = emptyList(),
 ) {
-    val isEmpty: Boolean get() = elements.isEmpty() && orderBefore == orderAfter && layersBefore == layersAfter
+    val isEmpty: Boolean
+        get() = elements.isEmpty() && orderBefore == orderAfter && layersBefore == layersAfter && constraintsBefore == constraintsAfter
 
     val changedIds: Set<ElementId> get() = elements.mapTo(LinkedHashSet()) { it.id }
 
@@ -64,6 +68,7 @@ data class DocPatch(
         fun to(p: ElementPatch) = if (reversed) p.before else p.after
         val order = if (reversed) orderAfter else orderBefore
         val layers = if (reversed) layersAfter else layersBefore
+        if (doc.constraints != if (reversed) constraintsAfter else constraintsBefore) raise(CommandError.PatchConflict("constraints"))
         if (doc.scene.order != order) raise(CommandError.PatchConflict("order"))
         if (doc.scene.layers != layers) raise(CommandError.PatchConflict("layers"))
         for (p in elements) if (doc.scene[p.id] != from(p)) raise(CommandError.PatchConflict(p.id.value))
@@ -75,7 +80,7 @@ data class DocPatch(
             scene = (if (from(p) == null) scene.add(target) else scene.replace(target)).bind()
         }
         scene = scene.reorder(if (reversed) orderBefore else orderAfter).bind()
-        doc.copy(scene = scene.withLayers(if (reversed) layersBefore else layersAfter))
+        doc.copy(scene = scene.withLayers(if (reversed) layersBefore else layersAfter), constraints = if (reversed) constraintsBefore else constraintsAfter)
     }
 
     companion object {
@@ -87,7 +92,7 @@ data class DocPatch(
                 val a = after.scene[id]
                 if (a == b) null else ElementPatch(id, b, a)
             }
-            return DocPatch(patches, before.scene.order, after.scene.order, before.scene.layers, after.scene.layers)
+            return DocPatch(patches, before.scene.order, after.scene.order, before.scene.layers, after.scene.layers, before.constraints, after.constraints)
         }
     }
 }
@@ -107,7 +112,7 @@ class Transaction private constructor(val base: SketchDocumentV2, val doc: Sketc
     fun apply(command: Command): Either<CommandError, Transaction> = either {
         val applied = command.apply(doc).bind()
         val repaired = reconcile(applied.doc.scene)
-        Transaction(base, applied.doc.copy(scene = repaired.scene), changedIds + applied.changedIds + repaired.changed)
+        Transaction(base, applied.doc.copy(scene = repaired.scene).withoutOrphans(), changedIds + applied.changedIds + repaired.changed)
     }
 
     /** Finishes the transaction; [CommandError.NoChange] when the document ended up equal to where it began. */
