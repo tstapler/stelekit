@@ -59,7 +59,7 @@ import kotlin.time.Clock
  *
  * Created and owned by [GraphManager]; one instance per active graph.
  */
-@Suppress("TooManyFunctions") // one entry point per sync operation plus the extracted merge-unit steps
+@Suppress("TooManyFunctions", "LargeClass") // one entry point per sync operation plus the extracted merge-unit steps
 class GitSyncService(
     private val gitRepository: GitRepository,
     private val graphLoader: GraphLoader,
