@@ -30,6 +30,15 @@ import java.io.FileOutputStream
  */
 object ExifOrientationFixer {
 
+    private val PRESERVED_TAGS = listOf(
+        ExifInterface.TAG_FOCAL_LENGTH,
+        ExifInterface.TAG_FOCAL_LENGTH_IN_35MM_FILM,
+        ExifInterface.TAG_MAKE,
+        ExifInterface.TAG_MODEL,
+        ExifInterface.TAG_DATETIME,
+        ExifInterface.TAG_LENS_MODEL,
+    )
+
     /**
      * Result of [fixOrientation].
      *
@@ -98,6 +107,8 @@ object ExifOrientationFixer {
 
                 // Reset orientation tag to NORMAL in the output file
                 val outExif = ExifInterface(destination)
+                // The re-encode wrote a fresh JPEG without the capture tags; copy them back from the source.
+                PRESERVED_TAGS.forEach { tag -> exif.getAttribute(tag)?.let { outExif.setAttribute(tag, it) } }
                 outExif.setAttribute(
                     ExifInterface.TAG_ORIENTATION,
                     ExifInterface.ORIENTATION_NORMAL.toString()
