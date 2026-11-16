@@ -8,7 +8,6 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.raise.Raise
 import arrow.core.raise.either
-import arrow.core.right
 import dev.stapler.stelekit.sketch.constraints.ConstraintProblem
 import dev.stapler.stelekit.sketch.constraints.SolveResult
 import dev.stapler.stelekit.sketch.constraints.Solver
@@ -67,9 +66,10 @@ import kotlin.math.sqrt
  * point and end point with the end point held on the start point's circle. Only elements a constraint names enter the
  * problem. Arrows, text, freedraw, images, diamonds and frames never do (`ConstraintEligibility`).
  *
- * A [TargetPart.Whole] operand resolves by what the constraint needs: a segment is a line's first segment or a
- * rectangle's top edge; a point is a point element, a line's start, a rectangle's top-left corner or a circle's or
- * arc's centre; a curve is a circle or an arc. Task 4.2.6a adds named parts.
+ * A named [TargetPart] resolves exactly (an endpoint, a vertex, an edge, a centre). A [TargetPart.Whole] operand resolves
+ * by what the constraint needs: a segment is a line's first segment or a rectangle's top edge; a point is a point
+ * element; a curve is a circle or an arc; two Whole operands of Coincident meet at their primary points (a line's
+ * start, a rectangle's top-left corner, a curve's centre).
  */
 class SceneProblem internal constructor(
     val problem: ConstraintProblem,
@@ -161,7 +161,7 @@ internal sealed class ElementBinding(val id: ElementId) {
         }
     }
 
-    class LineB(id: ElementId, val points: IntArray) : ElementBinding(id) {
+    class LineB(id: ElementId, val points: IntArray, val closed: Boolean) : ElementBinding(id) {
         override val pointStarts = points
         override fun write(current: SceneElement, x: DoubleArray, limits: SceneLimits): Either<CommandError, SceneElement> = either {
             (current as LineElement).copy(points = points.map { ScenePoint(sceneUnit(x[it], limits).bind(), sceneUnit(x[it + 1], limits).bind()) })
@@ -240,6 +240,58 @@ private class Curve(val center: Int, val radius: RadiusRef)
 
 private class Segment(val a: Int, val b: Int)
 
+// Operand views: how an element binding offers points, segments and curves to a constraint.
+
+private fun ElementBinding.primaryPoint(): Int = when (this) {
+    is ElementBinding.PointB -> p
+    is ElementBinding.LineB -> points[0]
+    is ElementBinding.RectB -> corners[0]
+    is ElementBinding.CircleB -> center
+    is ElementBinding.ArcB -> center
+}
+
+private fun ElementBinding.wholeSegment(): Segment? = when (this) {
+    is ElementBinding.LineB -> Segment(points[0], points[1])
+    is ElementBinding.RectB -> Segment(corners[0], corners[1])
+    else -> null
+}
+
+private fun ElementBinding.wholeCurve(): Curve? = when (this) {
+    is ElementBinding.CircleB -> Curve(center, RadiusRef.scalar(r))
+    is ElementBinding.ArcB -> Curve(center, RadiusRef.arc(center, startPt))
+    else -> null
+}
+
+/** The edge [i] of this element as a segment, or null when the element has no such edge. */
+private fun ElementBinding.edge(i: Int): Segment? = when (this) {
+    is ElementBinding.LineB -> {
+        val last = if (closed) points.size else points.size - 1
+        if (i in 0 until last) Segment(points[i], points[(i + 1) % points.size]) else null
+    }
+    is ElementBinding.RectB -> if (i in 0 until FOUR_CORNERS) Segment(corners[i], corners[(i + 1) % FOUR_CORNERS]) else null
+    else -> null
+}
+
+private fun ElementBinding.vertex(i: Int): Int? = when (this) {
+    is ElementBinding.LineB -> points.getOrNull(i)
+    is ElementBinding.RectB -> corners.getOrNull(i)
+    else -> null
+}
+
+private fun ElementBinding.namedPoint(part: TargetPart): Int? = when (part) {
+    TargetPart.Start -> (this as? ElementBinding.LineB)?.points?.first()
+    TargetPart.End -> (this as? ElementBinding.LineB)?.points?.last()
+    is TargetPart.Vertex -> vertex(part.index)
+    TargetPart.Centre -> when (this) {
+        is ElementBinding.CircleB -> center
+        is ElementBinding.ArcB -> center
+        else -> null
+    }
+    TargetPart.ArcStart -> (this as? ElementBinding.ArcB)?.startPt
+    TargetPart.ArcEnd -> (this as? ElementBinding.ArcB)?.endPt
+    TargetPart.Whole, is TargetPart.Edge -> null
+}
+
 private class Builder(private val scene: SketchSceneV2) {
     val values = ArrayList<Double>()
     val bindings = LinkedHashMap<ElementId, ElementBinding>()
@@ -269,7 +321,7 @@ private class Builder(private val scene: SketchSceneV2) {
             is PointElement -> ElementBinding.PointB(element.id, point(element.x.value, element.y.value))
             is LineElement -> {
                 if (element.points.size < PAIR) raise(CommandError.InvalidConstraint(cid, "geometry"))
-                ElementBinding.LineB(element.id, element.points.map { point(it.x.value, it.y.value) }.toIntArray())
+                ElementBinding.LineB(element.id, element.points.map { point(it.x.value, it.y.value) }.toIntArray(), element.polygon)
             }
             is RectElement -> rect(element)
             is EllipseElement -> {
@@ -320,41 +372,41 @@ private class Builder(private val scene: SketchSceneV2) {
         return ElementBinding.ArcB(e.id, center, s, end)
     }
 
-    // Operand views
-
-    private fun ElementBinding.primaryPoint(): Int = when (this) {
-        is ElementBinding.PointB -> p
-        is ElementBinding.LineB -> points[0]
-        is ElementBinding.RectB -> corners[0]
-        is ElementBinding.CircleB -> center
-        is ElementBinding.ArcB -> center
+    /** One resolved operand; every constraint kind reads the view it needs and rejects the operand when it is missing. */
+    private class Operand(
+        val binding: ElementBinding,
+        val part: TargetPart,
+        val point: Int?,
+        val segment: Segment?,
+        val curve: Curve?,
+    ) {
+        val whole: Boolean get() = part == TargetPart.Whole
     }
 
-    private fun ElementBinding.segment(): Segment? = when (this) {
-        is ElementBinding.LineB -> Segment(points[0], points[1])
-        is ElementBinding.RectB -> Segment(corners[0], corners[1])
-        else -> null
+    private fun Raise<CommandError>.operand(cid: String, target: ConstraintTarget): Operand {
+        val b = bindingOf(cid, target)
+        val part = target.part
+        val resolved = when (part) {
+            TargetPart.Whole -> Operand(b, part, (b as? ElementBinding.PointB)?.p, b.wholeSegment(), b.wholeCurve())
+            is TargetPart.Edge -> Operand(b, part, null, b.edge(part.index), null)
+            else -> Operand(b, part, b.namedPoint(part), null, null)
+        }
+        if (resolved.point == null && resolved.segment == null && resolved.curve == null) raise(CommandError.InvalidConstraint(cid, OPERANDS))
+        return resolved
     }
 
-    private fun ElementBinding.curve(): Curve? = when (this) {
-        is ElementBinding.CircleB -> Curve(center, RadiusRef.scalar(r))
-        is ElementBinding.ArcB -> Curve(center, RadiusRef.arc(center, startPt))
-        else -> null
-    }
+    private fun Raise<CommandError>.segmentOf(cid: String, o: Operand): Segment = o.segment ?: raise(CommandError.InvalidConstraint(cid, OPERANDS))
 
-    private fun Raise<CommandError>.segmentOf(cid: String, b: ElementBinding): Segment = b.segment() ?: raise(CommandError.InvalidConstraint(cid, OPERANDS))
+    private fun Raise<CommandError>.curveOf(cid: String, o: Operand): Curve = o.curve ?: raise(CommandError.InvalidConstraint(cid, OPERANDS))
 
-    private fun Raise<CommandError>.curveOf(cid: String, b: ElementBinding): Curve = b.curve() ?: raise(CommandError.InvalidConstraint(cid, OPERANDS))
-
-    private fun Raise<CommandError>.pointOf(cid: String, b: ElementBinding): Int =
-        if (b is ElementBinding.PointB) b.p else raise(CommandError.InvalidConstraint(cid, OPERANDS))
+    private fun Raise<CommandError>.pointOf(cid: String, o: Operand): Int = o.point ?: raise(CommandError.InvalidConstraint(cid, OPERANDS))
 
     // Constraint kinds
 
     fun add(c: Constraint): Either<CommandError, Unit> = either {
         val cid = c.id.value
         c.shapeProblem()?.let { raise(CommandError.InvalidConstraint(cid, it)) }
-        val ops = c.targets.map { bindingOf(cid, it) }
+        val ops = c.targets.map { operand(cid, it) }
         val produced = ArrayList<ConstraintEquation>()
         fun emit(make: (String) -> ConstraintEquation) {
             val eq = make(if (produced.isEmpty()) cid else "$cid$SEP${produced.size}")
@@ -393,43 +445,53 @@ private class Builder(private val scene: SketchSceneV2) {
         equations += produced
     }
 
-    private fun Raise<CommandError>.segments(cid: String, ops: List<ElementBinding>): Pair<Segment, Segment> =
+    private fun Raise<CommandError>.segments(cid: String, ops: List<Operand>): Pair<Segment, Segment> =
         segmentOf(cid, ops[0]) to segmentOf(cid, ops[1])
 
-    private fun Raise<CommandError>.coincident(cid: String, ops: List<ElementBinding>, emit: (( String) -> ConstraintEquation) -> Unit) {
+    private fun Raise<CommandError>.coincident(cid: String, ops: List<Operand>, emit: ((String) -> ConstraintEquation) -> Unit) {
         val a = ops[0]
         val b = ops[1]
-        val onObject = (a is ElementBinding.PointB) != (b is ElementBinding.PointB)
-        if (onObject) {
-            val p = (if (a is ElementBinding.PointB) a else b as ElementBinding.PointB).p
-            val other = if (a is ElementBinding.PointB) b else a
-            val curve = other.curve()
-            val segment = other.segment()
-            when {
-                curve != null -> emit { PointOnCircle(it, p, curve.center, curve.radius) }
-                segment != null -> emit { PointOnLine(it, p, segment.a, segment.b) }
-                else -> raise(CommandError.InvalidConstraint(cid, OPERANDS))
+        val pa = a.point
+        val pb = b.point
+        when {
+            pa != null && pb != null -> emit { Coincident(it, pa, pb) }
+            pa != null || pb != null -> {
+                val p = pa ?: pb ?: raise(CommandError.InvalidConstraint(cid, OPERANDS))
+                val other = if (pa != null) b else a
+                val curve = other.curve
+                val segment = other.segment
+                when {
+                    curve != null -> emit { PointOnCircle(it, p, curve.center, curve.radius) }
+                    segment != null -> emit { PointOnLine(it, p, segment.a, segment.b) }
+                    else -> raise(CommandError.InvalidConstraint(cid, OPERANDS))
+                }
             }
-        } else {
-            emit { Coincident(it, a.primaryPoint(), b.primaryPoint()) }
+            a.whole && b.whole -> emit { Coincident(it, a.binding.primaryPoint(), b.binding.primaryPoint()) }
+            else -> raise(CommandError.InvalidConstraint(cid, OPERANDS))
         }
     }
 
-    private fun fixed(b: ElementBinding, emit: ((String) -> ConstraintEquation) -> Unit) {
-        for (v in b.pointStarts) emit { FixedPoint(it, v, values[v], values[v + 1]) }
-        if (b is ElementBinding.CircleB) emit { FixedScalar(it, b.r, values[b.r]) }
+    private fun fixed(o: Operand, emit: ((String) -> ConstraintEquation) -> Unit) {
+        val b = o.binding
+        val pinned = when {
+            o.point != null -> listOf(o.point)
+            o.segment != null && !o.whole -> listOf(o.segment.a, o.segment.b)
+            else -> b.pointStarts.toList()
+        }
+        for (v in pinned) emit { FixedPoint(it, v, values[v], values[v + 1]) }
+        if (o.whole && b is ElementBinding.CircleB) emit { FixedScalar(it, b.r, values[b.r]) }
     }
 
-    private fun Raise<CommandError>.orientation(kind: ConstraintKind, cid: String, ops: List<ElementBinding>, emit: ((String) -> ConstraintEquation) -> Unit) {
+    private fun Raise<CommandError>.orientation(kind: ConstraintKind, cid: String, ops: List<Operand>, emit: ((String) -> ConstraintEquation) -> Unit) {
         val (a, b) = if (ops.size == 1) segmentOf(cid, ops[0]).let { it.a to it.b } else pointOf(cid, ops[0]) to pointOf(cid, ops[1])
         if (kind == ConstraintKind.Horizontal) emit { Horizontal(it, a, b) } else emit { Vertical(it, a, b) }
     }
 
-    private fun Raise<CommandError>.equal(cid: String, ops: List<ElementBinding>, emit: ((String) -> ConstraintEquation) -> Unit) {
-        val s = ops[0].segment()
-        val t = ops[1].segment()
-        val k = ops[0].curve()
-        val l = ops[1].curve()
+    private fun Raise<CommandError>.equal(cid: String, ops: List<Operand>, emit: ((String) -> ConstraintEquation) -> Unit) {
+        val s = ops[0].segment
+        val t = ops[1].segment
+        val k = ops[0].curve
+        val l = ops[1].curve
         when {
             s != null && t != null -> emit { EqualLength(it, s.a, s.b, t.a, t.b) }
             k != null && l != null -> emit { EqualRadius(it, k.radius, l.radius) }
@@ -437,12 +499,12 @@ private class Builder(private val scene: SketchSceneV2) {
         }
     }
 
-    private fun Raise<CommandError>.tangent(cid: String, ops: List<ElementBinding>, emit: ((String) -> ConstraintEquation) -> Unit) {
+    private fun Raise<CommandError>.tangent(cid: String, ops: List<Operand>, emit: ((String) -> ConstraintEquation) -> Unit) {
         val snapshot = values.toDoubleArray()
-        val k0 = ops[0].curve()
-        val k1 = ops[1].curve()
-        val s0 = ops[0].segment()
-        val s1 = ops[1].segment()
+        val k0 = ops[0].curve
+        val k1 = ops[1].curve
+        val s0 = ops[0].segment
+        val s1 = ops[1].segment
         when {
             k0 != null && k1 != null -> emit { TangentCircleCircle.infer(it, snapshot, k0.center, k0.radius, k1.center, k1.radius) }
             k0 != null && s1 != null -> emit { TangentLineCircle(it, s1.a, s1.b, k0.center, k0.radius, TangentLineCircle.sideOf(snapshot, s1.a, s1.b, k0.center)) }

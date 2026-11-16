@@ -280,7 +280,7 @@ class ConstraintAdapterTest {
         assertIs<dev.stapler.stelekit.sketch.v2.codec.SheetError.Malformed>(SheetCodecV2.decode(sheet(noValue)).left())
         val dup = "{\"id\":\"k\",\"kind\":\"Fixed\",\"targets\":[{\"e\":\"x\",\"part\":\"whole\"}]}"
         assertIs<dev.stapler.stelekit.sketch.v2.codec.SheetError.Malformed>(SheetCodecV2.decode(sheet("$dup,$dup")).left())
-        val part = "{\"id\":\"k\",\"kind\":\"Fixed\",\"targets\":[{\"e\":\"x\",\"part\":\"start\"}]}"
+        val part = "{\"id\":\"k\",\"kind\":\"Fixed\",\"targets\":[{\"e\":\"x\",\"part\":\"wobble\"}]}"
         assertIs<dev.stapler.stelekit.sketch.v2.codec.SheetError.Malformed>(SheetCodecV2.decode(sheet(part)).left())
     }
 

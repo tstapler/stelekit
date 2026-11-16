@@ -171,34 +171,34 @@ class HitTester(private val scene: SketchSceneV2, private val index: SpatialInde
         return inside
     }
 
-    private fun segmentDistance(px: Double, py: Double, ax: Double, ay: Double, bx: Double, by: Double): Double {
-        val dx = bx - ax
-        val dy = by - ay
-        val lengthSquared = dx * dx + dy * dy
-        if (lengthSquared == 0.0) return hypot(px - ax, py - ay)
-        val t = (((px - ax) * dx + (py - ay) * dy) / lengthSquared).coerceIn(0.0, 1.0)
-        return hypot(px - (ax + t * dx), py - (ay + t * dy))
-    }
-
-    /** Distance to the arc itself: the radial gap inside its sweep, the nearer end point outside it. */
-    private fun arcDistance(e: ArcElement, px: Double, py: Double): Double {
-        val cx = e.cx.value
-        val cy = e.cy.value
-        val r = e.radius.value
-        val sweep = positiveTurn(e.endAngle - e.startAngle)
-        val along = positiveTurn(atan2(py - cy, px - cx) - e.startAngle)
-        if (along <= sweep) return abs(hypot(px - cx, py - cy) - r)
-        val start = hypot(px - (cx + r * cos(e.startAngle)), py - (cy + r * sin(e.startAngle)))
-        val end = hypot(px - (cx + r * cos(e.endAngle)), py - (cy + r * sin(e.endAngle)))
-        return min(start, end)
-    }
-
-    private fun positiveTurn(angle: Double): Double {
-        val turn = angle % FULL_TURN
-        return if (turn < 0.0) turn + FULL_TURN else turn
-    }
-
     companion object {
+        internal fun segmentDistance(px: Double, py: Double, ax: Double, ay: Double, bx: Double, by: Double): Double {
+            val dx = bx - ax
+            val dy = by - ay
+            val lengthSquared = dx * dx + dy * dy
+            if (lengthSquared == 0.0) return hypot(px - ax, py - ay)
+            val t = (((px - ax) * dx + (py - ay) * dy) / lengthSquared).coerceIn(0.0, 1.0)
+            return hypot(px - (ax + t * dx), py - (ay + t * dy))
+        }
+
+        /** Distance to the arc itself: the radial gap inside its sweep, the nearer end point outside it. */
+        internal fun arcDistance(e: ArcElement, px: Double, py: Double): Double {
+            val cx = e.cx.value
+            val cy = e.cy.value
+            val r = e.radius.value
+            val sweep = positiveTurn(e.endAngle - e.startAngle)
+            val along = positiveTurn(atan2(py - cy, px - cx) - e.startAngle)
+            if (along <= sweep) return abs(hypot(px - cx, py - cy) - r)
+            val start = hypot(px - (cx + r * cos(e.startAngle)), py - (cy + r * sin(e.startAngle)))
+            val end = hypot(px - (cx + r * cos(e.endAngle)), py - (cy + r * sin(e.endAngle)))
+            return min(start, end)
+        }
+
+        private fun positiveTurn(angle: Double): Double {
+            val turn = angle % FULL_TURN
+            return if (turn < 0.0) turn + FULL_TURN else turn
+        }
+
         /** Screen pixels around a pointer that count as touching (UX: 6 px). */
         const val HIT_TOLERANCE_PX = 6.0
 

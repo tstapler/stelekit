@@ -195,14 +195,10 @@ object SheetCodecV2 {
             buildJsonObject {
                 put("id", c.id.value)
                 put("kind", c.kind.name)
-                put("targets", JsonArray(c.targets.map { t -> buildJsonObject { put("e", t.elementId.value); put("part", partLabel(t.part)) } }))
+                put("targets", JsonArray(c.targets.map { t -> buildJsonObject { put("e", t.elementId.value); put("part", t.part.label) } }))
                 c.value?.let { put("value", n(it, "constraints.value")) }
                 if (c.reference) put("ref", true)
             }
-        }
-
-        private fun partLabel(part: TargetPart): String = when (part) {
-            TargetPart.Whole -> TargetPart.WHOLE_LABEL
         }
 
         fun layer(l: Layer): Either<SheetError, JsonObject> = either {
@@ -407,8 +403,8 @@ object SheetCodecV2 {
                 val kind = enum(o, "kind", ConstraintKind.Coincident, where).also { if (strOrNull(o, "kind") == null) raise(SheetError.Malformed("$where.kind")) }
                 val targets = arr(o["targets"], "$where.targets").map { t ->
                     val to = obj(t, "$where.targets")
-                    if (str(to, "part", where) != TargetPart.WHOLE_LABEL) raise(SheetError.Malformed("$where.targets"))
-                    ConstraintTarget(ElementId(str(to, "e", where)))
+                    val part = TargetPart.parse(str(to, "part", where), limits.maxPointsPerElement) ?: raise(SheetError.Malformed("$where.targets"))
+                    ConstraintTarget(ElementId(str(to, "e", where)), part)
                 }
                 val value = if (o["value"] == null) null else dbl(o, "value", where)
                 val c = Constraint(ConstraintId(id), kind, targets, value, bool(o, "ref", false, where))

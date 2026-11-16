@@ -37,6 +37,12 @@ sealed interface CommandError {
     /** A constraint that cannot be built: wrong operand count or mix, a missing or stray value, or an unusable element (`reason` is a fixed label, never user text). */
     data class InvalidConstraint(val id: String, val reason: String) : CommandError
 
+    /** Another driving dimension of the same kind already measures [existingId]'s target; the UI opens that label for editing instead (Story 4.2.7). */
+    data class DuplicateDimension(val existingId: String) : CommandError
+
+    /** The solver could not satisfy the constraints with [id]'s new value; [conflictIds] are the constraints it names, possibly none. Nothing changed. */
+    data class Unsolvable(val id: String, val conflictIds: List<String>) : CommandError
+
     /** A coordinate, size or angle a command computed is not a valid scene value (non-finite or beyond `SceneLimits.maxCoord`). */
     data class ValueRejected(val error: ValueError) : CommandError
 
