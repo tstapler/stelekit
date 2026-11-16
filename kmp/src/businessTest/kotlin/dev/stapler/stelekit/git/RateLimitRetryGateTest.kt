@@ -5,53 +5,54 @@ package dev.stapler.stelekit.git
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
-import java.util.concurrent.CopyOnWriteArrayList
-import kotlin.test.AfterTest
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /** Task 1.4b: a rate-limit retry waits for the repository gate instead of firing into a running sync (V-E1g). */
 class RateLimitRetryGateTest {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private fun TestScope.retryScope() = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
 
-    @AfterTest
-    fun tearDown() {
+    @Test
+    fun retry_should_WaitForTheGate_When_AnotherRunHoldsItAtFireTime() = runTest {
+        val scope = retryScope()
+        val gateFree = CompletableDeferred<Unit>()
+        val ran = mutableListOf<String>()
+        val retry = RateLimitRetry(scope, awaitFree = { gateFree.await() })
+
+        retry.schedule("g", retryAfterSeconds = 0) { ran += it }
+        advanceTimeBy(300)
+        runCurrent()
+        assertEquals(emptyList(), ran.toList(), "the retry must not run while the gate is held")
+
+        gateFree.complete(Unit)
+        runCurrent()
+        assertEquals(listOf("g"), ran.toList())
         scope.coroutineContext[Job]?.cancel()
     }
 
     @Test
-    fun retry_should_WaitForTheGate_When_AnotherRunHoldsItAtFireTime() = runBlocking<Unit> {
+    fun cancel_should_StopARetryThatIsStillWaitingForTheGate() = runTest {
+        val scope = retryScope()
         val gateFree = CompletableDeferred<Unit>()
-        val ran = CopyOnWriteArrayList<String>()
+        val ran = mutableListOf<String>()
         val retry = RateLimitRetry(scope, awaitFree = { gateFree.await() })
 
         retry.schedule("g", retryAfterSeconds = 0) { ran += it }
-        delay(300)
-        assertEquals(emptyList(), ran.toList(), "the retry must not run while the gate is held")
-
-        gateFree.complete(Unit)
-        withTimeout(20_000) { while (ran.isEmpty()) delay(10) }
-        assertEquals(listOf("g"), ran.toList())
-    }
-
-    @Test
-    fun cancel_should_StopARetryThatIsStillWaitingForTheGate() = runBlocking<Unit> {
-        val gateFree = CompletableDeferred<Unit>()
-        val ran = CopyOnWriteArrayList<String>()
-        val retry = RateLimitRetry(scope, awaitFree = { gateFree.await() })
-
-        retry.schedule("g", retryAfterSeconds = 0) { ran += it }
-        delay(200)
+        advanceTimeBy(200)
+        runCurrent()
         retry.cancel()
         gateFree.complete(Unit)
-        delay(300)
+        advanceTimeBy(300)
+        runCurrent()
 
         assertEquals(emptyList(), ran.toList())
+        scope.coroutineContext[Job]?.cancel()
     }
 }
