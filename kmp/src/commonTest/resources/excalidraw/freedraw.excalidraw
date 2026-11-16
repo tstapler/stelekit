@@ -1,0 +1,187 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://excalidraw.com (hand-authored from types.ts v0.18.1)",
+  "elements": [
+    {
+      "id": "fd1",
+      "type": "freedraw",
+      "x": 0,
+      "y": 0,
+      "width": 88,
+      "height": 40,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "a1",
+      "roundness": null,
+      "seed": 1022,
+      "version": 1,
+      "versionNonce": 2022,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1700000000000,
+      "link": null,
+      "locked": false,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          8,
+          9.59
+        ],
+        [
+          16,
+          16.83
+        ],
+        [
+          24,
+          19.95
+        ],
+        [
+          32,
+          18.19
+        ],
+        [
+          40,
+          11.97
+        ],
+        [
+          48,
+          2.82
+        ],
+        [
+          56,
+          -7.02
+        ],
+        [
+          64,
+          -15.14
+        ],
+        [
+          72,
+          -19.55
+        ],
+        [
+          80,
+          -19.18
+        ],
+        [
+          88,
+          -14.11
+        ]
+      ],
+      "pressures": [
+        0.3,
+        0.35,
+        0.4,
+        0.45,
+        0.5,
+        0.55,
+        0.6,
+        0.65,
+        0.7,
+        0.75,
+        0.8,
+        0.85
+      ],
+      "simulatePressure": false,
+      "lastCommittedPoint": null
+    },
+    {
+      "id": "fd2",
+      "type": "freedraw",
+      "x": 0,
+      "y": 100,
+      "width": 88,
+      "height": 40,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "a2",
+      "roundness": null,
+      "seed": 1023,
+      "version": 1,
+      "versionNonce": 2023,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1700000000000,
+      "link": null,
+      "locked": false,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          8,
+          9.59
+        ],
+        [
+          16,
+          16.83
+        ],
+        [
+          24,
+          19.95
+        ],
+        [
+          32,
+          18.19
+        ],
+        [
+          40,
+          11.97
+        ],
+        [
+          48,
+          2.82
+        ],
+        [
+          56,
+          -7.02
+        ],
+        [
+          64,
+          -15.14
+        ],
+        [
+          72,
+          -19.55
+        ],
+        [
+          80,
+          -19.18
+        ],
+        [
+          88,
+          -14.11
+        ]
+      ],
+      "pressures": [],
+      "simulatePressure": true,
+      "lastCommittedPoint": null
+    }
+  ],
+  "appState": {
+    "gridSize": null,
+    "viewBackgroundColor": "#ffffff"
+  },
+  "files": {}
+}

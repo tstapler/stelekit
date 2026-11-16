@@ -1,19 +1,23 @@
-# Input spike matrix (Spike 0.1.4): STUB
+# Input spike matrix (Spike 0.1.4): Tasks 0.1.4a to 0.1.4c measured; 0.1.4d owner-run
 
-**Status**: UNMEASURED. Task 0.1.4a to 0.1.4d fill every cell below; until a cell holds a measured value it reads UNMEASURED and the plan treats the target as NOT Supported (the edge-pan strip stays off, D-32). ADR-007 links here.
+**Status (2026-11-16)**: pointer matrix and wasm host probe MEASURED by the tests named below; iOS compile-only could NOT be run on this host; Task 0.1.4d (devices) is still UNMEASURED, so every edge-pan target stays NOT Supported (D-32). ADR-007 links here. Labels: VERIFIED = a test or command run in this session, INFERRED = read from source or reasoned, UNMEASURED = needs a device.
 
 ## Pointer capability matrix (Story 0.1.4, first criterion)
 | Target | `PointerType` from Compose core | Pressure | Hover | `compose-stylus` needed | Eraser-end tool type | Barrel button |
 |---|---|---|---|---|---|---|
-| Desktop (JVM) | UNMEASURED | UNMEASURED | UNMEASURED | UNMEASURED | UNMEASURED | UNMEASURED |
-| Android (Robolectric `MotionEvent`, then Pixel_Fold AVD) | UNMEASURED | UNMEASURED | UNMEASURED | UNMEASURED | UNMEASURED | UNMEASURED |
-| wasmJs (`pointerType=pen`) | UNMEASURED | UNMEASURED | UNMEASURED | UNMEASURED | UNMEASURED | UNMEASURED |
-| iOS (compile only) | compiles: UNMEASURED | n/a | n/a | n/a | n/a | n/a |
+| Desktop (JVM) | VERIFIED `Mouse` for mouse, `Touch` for synthetic touch (`InputSpikeTest`, 2 tests pass). AWT delivers no pen type, so no `Stylus` on desktop (INFERRED from the test harness; a real pen on a Wacom is UNMEASURED) | Constant `1.0` for mouse and touch on every event, including hover: no usable pressure (VERIFIED) | Mouse `Enter` and `Move` without a button are delivered (VERIFIED) | No | Absent (no `Eraser` source on desktop; INFERRED) | Primary, secondary and tertiary mouse bits only (VERIFIED for mouse primary) |
+| Android (Robolectric synthesised `MotionEvent`, `InputSpikeAndroidTest`, 5 tests pass; NOT a device run) | VERIFIED `TOOL_TYPE_STYLUS` gives `PointerType.Stylus`; `TOOL_TYPE_ERASER` gives `PointerType.Eraser`; `TOOL_TYPE_PALM` (5) gives `PointerType.Unknown` and the press is still delivered (Compose does not reject palms) | VERIFIED `type=Stylus pressure=0.6` for a 0.6 `MotionEvent` pressure; eraser 0.5 and stylus 0.4 also pass through unchanged | VERIFIED stylus `ACTION_HOVER_MOVE` arrives as `PointerEventType.Enter` with `type=Stylus`, pressure 0.0 | No: Compose core already exposes `Stylus`, `Eraser` and pressure (VERIFIED). Adoption would need its own ADR (ADR-007) and a reason this spike did not find | VERIFIED exposed as `PointerType.Eraser` (the eraser end is a tool type, not a button) | VERIFIED a `MotionEvent.BUTTON_STYLUS_PRIMARY` press shows as `PointerButtons.isPrimaryPressed` (not secondary), and a stylus press without the button shows no bit set. Real devices and framework versions may remap stylus buttons to secondary: UNMEASURED until Task 0.1.4d |
+| wasmJs (Chrome headless 146 for the DOM probe; Compose 1.10.3 wasm read from source) | Compose wasm builds events from DOM `touch*` and `mouse*` events only (`ComposeWindow.w3c.kt` at tag v1.10.3, INFERRED from source): every touch pointer is `PointerType.Touch`, so a pen is not distinguishable as `Stylus` or `Eraser` through Compose | `Touch.force` is passed as pressure (source, INFERRED); the DOM `PointerEvent` for `pointerType=pen` reports `pressure=0.6` (VERIFIED by `WebInputSpikeProbeTest`, as float32 `0.6000000238`, so compare with a 1e-6 tolerance) | DOM `pointerenter`/`pointermove` are available on the host element (probe listens; hover with no button is not exercised by the synthetic test: UNMEASURED) | No library; a raw DOM `PointerEvent` listener on the canvas host (`WebInputSpikeProbe.kt`) supplies `pointerType`, `pressure`, `buttons` (VERIFIED) | `buttons` bit 32 is the DOM eraser bit; the synthetic event with `buttons=33` arrived intact (VERIFIED); real pen hardware UNMEASURED | `buttons` bits 2 and 4 carry barrel buttons per the Pointer Events spec; real pen UNMEASURED |
+| iOS (compile only) | compiles: NOT RUN. `./gradlew :kmp:compileKotlinIosArm64` on this linux_x64 host reports `compileKotlinIosArm64 SKIPPED` (cross compilation disabled by the `PingShim` cinterop; BUG-001 context). No pointer adapter exists yet, so there is also nothing iOS-specific to compile | n/a | n/a | n/a | n/a | n/a |
+
+Consequence for Story 3.1.2 (VERIFIED where marked above): on Android and desktop the adapter can read `PointerInputChange.type` and `.pressure` from Compose core; on wasmJs it needs the raw DOM `PointerEvent` listener on the canvas host for pen type, pressure, eraser and barrel, and must not rely on Compose `PointerType` there; palm rejection on Android needs the raw `MotionEvent` (Compose reports `Unknown`).
 
 ## Browser gestures (Task 0.1.4b)
 | Check | Result |
 |---|---|
-| wasm canvas host stops page scroll on two-finger pinch (`touch-action: none`) and both pointers reach the handler | UNMEASURED |
+| Host element gets `touch-action: none` and `overscroll-behavior: none` | VERIFIED computed style in headless Chrome 146 (`WebInputSpikeProbeTest.hostStopsBrowserGesturesAndReceivesPenPressure`) |
+| Two pointers (ids 10 and 11, the second `isPrimary=false`) both reach the handler during a synthetic pinch | VERIFIED (`twoFingerPinchDeliversBothPointers`) |
+| The page does not scroll on a real two-finger pinch | UNMEASURED: synthetic `PointerEvent`s cannot drive a browser scroll. `touch-action: none` being set is the spec mechanism, so no scroll is INFERRED; confirm on Chrome Android in Task 0.1.4d |
 
 ## System-gesture exclusion, edge deferral and palm (Task 0.1.4d; UX-102, UX-121, D-18)
 A target class is marked Supported only when a real drag that started in the protected span reached the app on every attempt of at least 20.

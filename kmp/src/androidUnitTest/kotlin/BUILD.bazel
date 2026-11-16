@@ -38,6 +38,8 @@ kt_android_library(
             "**/RegistryEditorDialogsTest.kt",
             # Compose gesture/host tests for the flagged Sketch screen (Gradle-only, R-AU)
             "**/SketchCanvasGestureTest.kt",
+            # Compose host test for the sketch input spike (Gradle-only, no Compose plugin in this target)
+            "**/InputSpikeAndroidTest.kt",
             "**/SketchScreenEntryPointTest.kt",
             "**/HomeSketchFlowEntryPointTest.kt",
             "**/DimensionFieldTest.kt",
@@ -62,6 +64,8 @@ kt_android_library(
             "**/RulerTickPanelTest.kt",
             # Compose host test for the PNG calibration step (Gradle-only, no Compose plugin here)
             "**/RasterTaggingPanelTest.kt",
+            # Spike 0.1.3e Robolectric pixel probe: needs commonTest DeterminismSpikeSupport (Gradle-only)
+            "**/AndroidPixelSpikeTest.kt",
         ],
     ),
     custom_package = "dev.stapler.stelekit",

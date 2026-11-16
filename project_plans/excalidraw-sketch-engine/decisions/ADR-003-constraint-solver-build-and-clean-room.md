@@ -22,3 +22,12 @@ Port planegcs (LGPL derivative); link libslvs (GPL + cinterop on 4 targets); Mul
 
 ## Consequences
 First-release robustness may trail FreeCAD; non-convergence returns the last good geometry plus diagnostics, so failure is visible, not corrupting.
+
+## Spike 0.1.2 results (2026-11-16; status stays Proposed, see verdict)
+Code: `kmp/.../sketch/constraints/spike/*.kt` (clean-room dense LM + pivoted Householder QR; no planegcs/SolveSpace source opened), tests `kmp/src/commonTest/.../sketch/constraints/SolverSpikeTest.kt` (8 tests, all pass on JVM `:kmp:jvmTest` and wasmJs `:kmp:wasmJsBrowserTest` in ChromeHeadless 146). The machine had load average 20-75 from parallel agents, so wall times are upper bounds. All figures VERIFIED by those runs.
+- 100-constraint sketch (40 lines: 39 Coincident, 30 H/V, 16 Equal, 15 Distance; start perturbed +/-0.4), seed 1: JVM cold 8.0 ms, steady median 7.6 ms, max 13.2 ms (bar 50 ms: met); wasmJs cold 60 ms, steady median 38.5 ms, max 43 ms (hard bar 150 ms met; advisory 50 ms met for steady state, missed cold). Residual 4.4e-9 (bar 1e-6 met). JVM-vs-wasm max abs difference of the solution vector 3.6e-13 (bar 1e-6 met).
+- Tail risk (VERIFIED, not a clean pass): in a 30-seed corpus of the same generator all 30 solve to residual under 2e-8, but seeds 111 and 127 need 61 and 45 LM iterations (typical 4-9) because of a damped plateau; those took 52-78 ms on JVM (over the 50 ms bar) and 89-113 ms on wasmJs (under 150 ms). Under a quiet machine these would be lower, but the iteration count is machine-independent, so the JVM bar is met on typical starts and missed on the tail. Mitigations not yet tried: Dogleg, analytic-Jacobian row scaling, component decomposition and warm start (real drags warm-start, which the 200-step test shows converging in few steps).
+- Classification: `Redundant([c3])` for H, V, duplicate H with DOF 2; `Conflict([c4,c5])` for H plus Distance 10 and 12; the plan's literal sequence (H, V, dup H, D10, D12) is itself degenerate (H plus V collapse the line) and reports `Conflict` over all five ids.
+- 200-step tangent drag (0.5 unit steps): every step solved, max point motion 1.0003 x pointer delta (bar 3x), tangent side never changed; a second variant with a free line and fixed radius never flipped branch.
+- Degenerate QR fuzz (zero, 1e300, 1e-300, rank-k random matrices): no NaN, rank correct.
+- Not done: oracle fixtures from planegcs/SolveSpace (neither is installed or allowed to be read; analytic expectations were used instead), Bazel run, Android device timing.

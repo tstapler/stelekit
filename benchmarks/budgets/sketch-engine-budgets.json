@@ -1,0 +1,10 @@
+{
+  "$comment": "Sketch engine budgets. reference.* are MEASURED by Task 0.1.7b (JVM software-raster ImageBitmap 1280x800, 120 frames after 60 warmup, host Linux 24 cpus). Two runs of the same test gave the two values listed in baselines.md; the first run is recorded here.",
+  "version": 1,
+  "entries": {
+    "reference.empty_canvas_ms": { "p95": 0.239518, "p50": 0.158496, "source": "CanvasReferenceBenchmark jvm", "measured": true },
+    "reference.rect500_ms": { "p95": 14.233991, "p50": 10.392847, "source": "CanvasReferenceBenchmark jvm", "measured": true },
+    "reference.wasm_empty_canvas_ms": { "p95": null, "measured": false, "note": "wasm run blocked, see baselines.md" },
+    "reference.wasm_rect500_ms": { "p95": null, "measured": false, "note": "wasm run blocked, see baselines.md" }
+  }
+}

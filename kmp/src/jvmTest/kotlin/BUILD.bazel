@@ -48,6 +48,8 @@ kt_jvm_test(
             "dev/stapler/stelekit/ui/components/MermaidRendererFallbackTest.kt",
             "dev/stapler/stelekit/ui/components/MermaidRendererSmokeTest.kt",
             "dev/stapler/stelekit/ui/components/MermaidSecurityDirectiveTest.kt",
+            # Spike 0.1.3b/c pixel probe: needs commonTest DeterminismSpikeSupport (not on this target's classpath); Gradle-only
+            "**/DeterminismSpikeJvmTest.kt",
         ],
     ),
     associates = ["//kmp/src/jvmMain/kotlin:jvm_main_lib"],

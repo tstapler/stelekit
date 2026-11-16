@@ -21,3 +21,38 @@ Excalidraw pixels map 1:1 to scene units on import and export (1 px = 1 unit = 1
 
 ## Consequences
 Property tests: lift then project is identity for all int sixteenths; project of a rotated or non-integer element is `Dropped`.
+
+## Spike 0.1.6 decision: scene structure and spatial index (2026-11-16)
+**Evidence**: `JT/sketch/v2/SceneStructureBenchmark.kt` (harness, writes `kmp/build/reports/scene-structure-benchmark.txt`) and `SceneStructureBenchmarkGuard.kt` (budget guard). 5,000 `RectElement`-shaped records, one moved per step, 100 steps, 100 snapshots retained, JVM 21 (Gradle toolchain), one host with a load average above 50 (so times are pessimistic and noisy), one run. VERIFIED by running `./gradlew :kmp:jvmTest --tests '*SceneStructureBenchmark*'`. wasmJs and Android were NOT measured: the harness is JVM-only (`jvmTest-reason: desktop-only`), so every figure below is JVM; other targets are INFERRED to be 2-4x slower.
+
+| Snapshot after moving one element | median per step | p95 | heap retained by 100 snapshots |
+|---|---|---|---|
+| `HashMap` copy (id to element) | 180 us | 353 us | 18,664 KB |
+| `LinkedHashMap` copy (keeps order) | 90 us | 142 us | 22,530 KB |
+| `ArrayList` copy (index addressed) | 1.6 us | 3.2 us | 1,959 KB |
+| Persistent 32-way hash trie (path copying, 70 lines, no dependency) | 1.3 us | 5.0 us | 59 KB |
+
+| Query (2,000 random points, 5,000 rects) | candidates (AABB tests) per query | time per query |
+|---|---|---|
+| Flat scan, sparse and dense, hit 8 u or snap 24 u | 5,000 | 34 to 58 us |
+| Grid cell 256 u, sparse | 2.9 to 3.5 | 0.35 to 1.1 us |
+| Grid cell 256 u, dense (2,500 u square, about 12 to 18 hits per query) | 109 to 134 | 1.8 to 3.3 us |
+| Grid cell 128 u, dense | 52 to 77 | 1.2 to 2.5 us |
+| Grid cell 512 u, dense | 296 to 325 | 3.8 to 6.7 us |
+| STR R-tree (capacity 16), dense | 113 to 129 | 1.6 to 3.7 us |
+
+Index upkeep after one element moves: grid remove+insert 0.7 us median; the R-tree prototype has no incremental update, a full STR rebuild is 1,981 us median. Every grid and R-tree result was asserted equal to the flat scan's hits inside the harness (the oracle).
+
+**Decision (the plan's defaults applied; these are measured recommendations for Stories 1.2.1 and 1.3.3, not owner decisions)**:
+1. `SketchSceneV2` keeps elements in a persistent hash trie keyed by element id, plus an ordinary `List` of ids for z-order that is array-copied on reorder (1.6 us). Reason: a full `HashMap` copy per snapshot is cheap in time (under 0.4 ms) but retains about 190 KB per snapshot, 18.7 MB for a 100-deep history, and allocates that much garbage per drag frame; the trie retains about 0.6 KB per snapshot. The trie is about 70 lines, so no dependency is added (ADR-007). The simpler copy-on-write `HashMap` also passes the time bar; the trie is chosen for memory, and Story 1.2.1 may fall back to `HashMap` copy if the trie costs more than it saves in review.
+2. The spatial index is a uniform grid with 256-unit cells (16 in), incremental from `changedIds` by remove+insert. Flat scan stays as the brute-force oracle for the property test. Reason: flat scan already passes a 1 ms hit bar by 17x on JVM (34 to 58 us), so it is the correct v1 fallback if the grid is cut, but snap runs per drag frame over many candidate points per element and was not measured with real snap geometry, so the grid's 20 to 50x lower candidate count is the safer margin. A 5,000-element dense scene still needs only about 130 candidates per query. R-tree is rejected: no cheaper than the grid on dense scenes, and its update path is a rebuild or a split/merge implementation for no measured gain.
+3. Guard budgets (`SceneStructureBenchmarkGuard`): `HashMap` copy snapshot median under 2,000 us and trie snapshot median under 100 us (about 11x and 77x the measured medians, set wide because the measuring host was loaded).
+
+**Not covered by this spike (named gaps)**: wasmJs and Android timing; real snap-candidate cost; worst-case clustering (all elements in one grid cell degrades the grid to a flat scan; a 100x100 u cluster was not run); memory was measured as heap growth after `System.gc()` and is approximate (about 10%).
+
+## Spike 0.1.3a decision: canonical double formatting (2026-11-16)
+Evidence and tables: `research/determinism-spike.md` (VERIFIED by `DeterminismSpikeTest` on JVM 21 and on wasmJs in ChromeHeadless 146). The ECMAScript `Number::toString` layout (`4` for `4.0`, `0.00001`, `1e+21`, `-0.0` as `0`) built on platform digits is byte-identical on JVM and wasmJs for the plan's fixture values and for every multiple of 1/16 tested (20,000 values, same corpus hash on both), which covers every lifted v1 coordinate. It is NOT identical for full-precision doubles: on wasmJs `Double.toString` is not shortest-round-trip (72 of 20,000 random 64-bit patterns and 6 of 20,000 uniform [0,1000) values do not parse back), and JVM keeps `4.9E-324` where ECMAScript prints `5e-324`.
+Decision for Story 1.1.2 (plan default, not an owner decision): the codec carries its own shortest-digit generation (a Grisu/Ryu-class routine in `commonMain`, checked by a round-trip property test and by the JVM-recorded corpus hashes of `DeterminismSpikeTest`) instead of trusting any platform `toString`; until it exists, only multiples of 1/16 may be written as canonical doubles. The prototype `CanonicalDoubleSpike` in the test file is the layout reference, not production code.
+
+## Spike 0.1.3d decision: Float drift (2026-11-16)
+`FloatDriftSpikeTest`, identical figures on JVM and wasmJs: a Double to Float round trip drifts by up to 3.1e-5 at +/-1,000 units, 3.9e-3 at +/-100,000 and 8.0 at the 2^28 limit, against the 1e-6 solver residual bar. Decision: scene model, codec and solver stay `Double`; `Float` appears only when handing coordinates to Compose draw calls. PENDING: the same check on the actual Spike 0.1.2c solver fixtures (that spike's output was not available to this run), so Task 0.1.3d is closed for the general bound only.

@@ -1,0 +1,81 @@
+baseline-sha: db40c57e561f0c3f2d4bf079b303ef6ff0598309
+test-class-count: 67
+golden-fixture-count: 9
+# sketch test files (path)
+kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/sketch/DimensionFieldTest.kt
+kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/sketch/DrawingAttachUiTest.kt
+kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/sketch/ProjectListPhoneLayoutTest.kt
+kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/sketch/ProjectSettingsPanelTest.kt
+kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/sketch/RegistryEditorDialogsTest.kt
+kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/sketch/RegistryEditorScreenTest.kt
+kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/sketch/SketchA11yTest.kt
+kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/sketch/SketchCanvasGestureTest.kt
+kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/sketch/SketchDeleteAndPreviewTest.kt
+kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/sketch/SketchEmbedUiTest.kt
+kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/sketch/SketchScreenEntryPointTest.kt
+kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/sketch/SketchSheetPanelsTest.kt
+kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/sketch/SourcePagePickerTest.kt
+kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/sketchimport/RasterTaggingPanelTest.kt
+kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/sketchimport/TaggingScreenTest.kt
+kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/wiring/HomeSketchFlowEntryPointTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/HomeSketchFixtureVisibilityTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/db/SketchMigrationTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/db/SketchStubGatingTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/projectbridge/HomeSketchFlagTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/projectbridge/SketchNavigationGateTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/repository/SketchDeleteProjectTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/repository/SketchRepositoryContractTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/repository/SketchStaleEditorTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/repository/SketchTestSupport.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/sketch/SketchPreviewLoaderTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/sketch/SketchPreviewOnSaveTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/sketch/SketchRenderCacheTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/sketch/SketchSheetViewModelTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/sketch/SketchViewModelTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/sketch/StandaloneSketchTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/sketch/export/SketchExporterTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/sketchimport/GeometryExtractorTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/sketchimport/ImportFlowTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/sketchimport/KsoupSvgSpikeTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/sketchimport/LabelBinderTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/sketchimport/PngSheetAdapterTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/sketchimport/RasterImportFlowTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/sketchimport/SheetCalibrationTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/sketchimport/SketchImportViewModelTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/sketchimport/SvgReaderTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/ui/library/LibrarySketchFilterTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/ui/placement/SketchPlacementControllerContractTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/ui/sketch/ProjectCreationRealDbTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/ui/sketch/ProjectListSketchesTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/ui/sketch/ProjectListViewModelTest.kt
+kmp/src/businessTest/kotlin/dev/stapler/stelekit/ui/sketch/RegistryEditorViewModelTest.kt
+kmp/src/commonTest/kotlin/dev/stapler/stelekit/sketch/SketchDragTest.kt
+kmp/src/commonTest/kotlin/dev/stapler/stelekit/sketch/SketchGesturesTest.kt
+kmp/src/commonTest/kotlin/dev/stapler/stelekit/sketch/SketchHistoryTest.kt
+kmp/src/commonTest/kotlin/dev/stapler/stelekit/sketch/SketchNonDragModeTest.kt
+kmp/src/commonTest/kotlin/dev/stapler/stelekit/sketch/SketchPreviewFitTest.kt
+kmp/src/commonTest/kotlin/dev/stapler/stelekit/sketch/SketchSheetPropsTest.kt
+kmp/src/commonTest/kotlin/dev/stapler/stelekit/sketch/SnapEnginePropertyTest.kt
+kmp/src/commonTest/kotlin/dev/stapler/stelekit/sketch/ViewTransformTest.kt
+kmp/src/commonTest/kotlin/dev/stapler/stelekit/sketch/export/SketchExportRoundTripTest.kt
+kmp/src/commonTest/kotlin/dev/stapler/stelekit/sketchimport/GeometryRulesTest.kt
+kmp/src/commonTest/kotlin/dev/stapler/stelekit/sketchimport/LabelBinderPropertyTest.kt
+kmp/src/commonTest/kotlin/dev/stapler/stelekit/sketchimport/PngTagSourcesTest.kt
+kmp/src/commonTest/kotlin/dev/stapler/stelekit/sketchimport/RasterTaggingTest.kt
+kmp/src/commonTest/kotlin/dev/stapler/stelekit/sketchimport/SvgReaderInlineTest.kt
+kmp/src/commonTest/kotlin/dev/stapler/stelekit/sketchimport/SvgReaderPropertyTest.kt
+kmp/src/commonTest/kotlin/dev/stapler/stelekit/sketchimport/SvgTransformTest.kt
+kmp/src/commonTest/kotlin/dev/stapler/stelekit/sketchimport/TaggingModelTest.kt
+kmp/src/commonTest/kotlin/dev/stapler/stelekit/ui/sketchimport/RasterTaggingStateTest.kt
+kmp/src/jvmTest/kotlin/dev/stapler/stelekit/ui/sketch/SketchCanvasDrawTest.kt
+kmp/src/jvmTest/kotlin/dev/stapler/stelekit/ui/sketch/SketchPreviewRenderTest.kt
+# sketch golden fixtures (sha256  path)
+ac4bebbc68b27fafc79588413848eb44f3e81717df187834c2f28f2e4f6072ef  kmp/src/businessTest/resources/home-sketch/closet/closet-elevation.svg
+c0e481b607654d5ab204012f0999078ba5d3928f262fce89bf22bf4fd6df92d0  kmp/src/businessTest/resources/home-sketch/closet/closet-section.svg
+a14754a08a753b751d1051cc6d0f99891e5a9afcdaf38f6c3a5d47a53eb2aa17  kmp/src/businessTest/resources/home-sketch/closet/closet-tables.md
+6490d127ec7d916a75eb5de6f450fdeea1d44851898ec56dd39a7ae76a9e0527  kmp/src/businessTest/resources/home-sketch/closet/closet.yaml
+2a16566f9b50be6c4fba0a3c9b01c01b4865b408e53fe840d8c78a75059bade6  kmp/src/businessTest/resources/home-sketch/closet/dimension-map.json
+4c80baa7c96fbfe1a7240bd6d85997b26e5c8d81541d5072640515ee17acd81f  kmp/src/businessTest/resources/home-sketch/closet/expected-digest.md
+f13f2c9e080533d943243961ee7f31a76a83e1a87b8d81ee5024c55bf919eea1  kmp/src/businessTest/resources/home-sketch/closet/expected-fusion.json
+86263a7c4113a523479c61f98257346a8e7fe3bba9231fe4422a7a57efdeb47d  kmp/src/businessTest/resources/home-sketch/closet/expected-llm-payload.json
+825503e334d7238b007f27223aea0efb2f06c6a8e8560e264d5f6d8afbc8bfd6  kmp/src/businessTest/resources/home-sketch/closet/fixture-manifest.json
