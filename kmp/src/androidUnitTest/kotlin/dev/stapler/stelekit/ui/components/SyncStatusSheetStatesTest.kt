@@ -148,26 +148,30 @@ class SyncStatusSheetStatesTest {
     }
 
     @Test
-    fun removeLock_should_BeConfirmGatedWithInitialFocusOnCancel_AndOnlyForNoRecord() {
+    fun removeLock_should_BeConfirmGatedWithInitialFocusOnCancel() {
         val taps = Taps()
         show(paused(taps, noRecord), taps)
         composeTestRule.onNodeWithText("Details").performClick()
 
         composeTestRule.onNodeWithText("Remove lock file...").performScrollTo().performClick()
 
-        composeTestRule.onNodeWithText("Do this only if no other sync or git app is running", substring = true).assertExists()
+        composeTestRule.onNodeWithText("other device is running git or syncing this same folder", substring = true).assertExists()
         composeTestRule.onNodeWithText("Cancel").assertIsFocused()
         assertEquals(0, taps.removeLock, "nothing is removed until confirmed")
-        composeTestRule.onNodeWithText("Remove").performClick()
+        composeTestRule.onNodeWithText("Remove lock file").performClick()
         assertEquals(1, taps.removeLock)
     }
 
     @Test
-    fun removeLock_should_NotBeOffered_When_TheOwnerIsUnknown() {
-        show(paused(Taps()))
+    fun removeLock_should_BeOffered_And_ConfirmGated_When_TheOwnerIsUnknown() {
+        val taps = Taps()
+        show(paused(taps), taps)
         composeTestRule.onNodeWithText("Details").performClick()
 
-        composeTestRule.onNodeWithText("Remove lock file...").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Remove lock file...").performScrollTo().performClick()
+        assertEquals(0, taps.removeLock, "nothing is removed until confirmed")
+        composeTestRule.onNodeWithText("Remove lock file").performClick()
+        assertEquals(1, taps.removeLock)
     }
 
     @Test

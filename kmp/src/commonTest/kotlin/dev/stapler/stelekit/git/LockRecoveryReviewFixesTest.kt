@@ -123,4 +123,100 @@ class LockRecoveryReviewFixesTest {
         assertFalse(registry.isActive(key))
         assertNull(base.record, "our freshly published record must not be orphaned")
     }
+
+    // PR #683 review: "inside the owner's window and quiet" means a LIVE owner's lock, never a removable one.
+    private val otherHost = testRecord(instance = "x", host = "elsewhere", startedAtMs = 1_000)
+    private fun force(files: FakeLockFiles, nowMs: Long, liveness: ProcessLiveness = NEVER_ALIVE) =
+        LockRecovery.forceRemove(key, files, liveness, self, ActiveRunRegistry()) { nowMs }
+    private fun refusedWithWait(r: Either<DomainError.GitError, *>): Long? =
+        (r.leftOrNull() as DomainError.GitError.StaleLockFile).also { assertEquals(LockVerdict.OwnerUnknown(UnknownReason.ForeignLockSuspected), it.verdict) }.retryAfterMs
+    private fun otherHostFiles(lockMtime: Long, recordMtime: Long) =
+        FakeLockFiles(locks = mutableListOf(LockFileEntry("index.lock", lockMtime)), record = RecordRead(otherHost.encode(), recordMtime)).apply { gitRunning = false }
+
+    @Test
+    fun forceRemove_should_RefuseOtherHostOwner_When_HeartbeatFreshOrLockYoung_AndSayHowLongToWait() {
+        val freshHeartbeat = otherHostFiles(lockMtime = 2_000, recordMtime = 99_000)
+        assertEquals(1_799_000L, refusedWithWait(force(freshHeartbeat, 100_000)), "30 min threshold minus the 1 s heartbeat age")
+        assertTrue(freshHeartbeat.deletions.isEmpty() && freshHeartbeat.record != null, "${freshHeartbeat.mutations}")
+
+        val youngLock = otherHostFiles(lockMtime = 60_000, recordMtime = 2_000)
+        assertEquals(1_760_000L, refusedWithWait(force(youngLock, 100_000)))
+        assertTrue(youngLock.deletions.isEmpty())
+    }
+
+    @Test
+    fun forceRemove_should_NotTrustALocalScan_ForAnotherMachinesOwner() {
+        // "No local git process" says nothing about the other laptop: 5 min idle is not enough, 30 min is.
+        val fiveMinutes = otherHostFiles(lockMtime = 2_000, recordMtime = 3_000)
+        assertIs<Either.Left<*>>(force(fiveMinutes, 400_000))
+        assertTrue(fiveMinutes.deletions.isEmpty())
+
+        val thirtyOne = otherHostFiles(lockMtime = 2_000, recordMtime = 3_000)
+        assertIs<Either.Right<*>>(force(thirtyOne, 1_900_000))
+        assertEquals(listOf("delete:index.lock", "deleteRecord"), thirtyOne.mutations)
+    }
+
+    @Test
+    fun forceRemove_should_AcceptFiveMinutes_ForALocalOwnerWhenTheScanProvesNoGit() {
+        val torn = FakeLockFiles(locks = mutableListOf(LockFileEntry("index.lock", 2_000)), record = RecordRead("{torn", 3_000)).apply { gitRunning = false }
+        assertIs<Either.Right<*>>(force(torn, 400_000))
+    }
+
+    @Test
+    fun forceRemove_should_NotTreatCannotTellAsNone_AndNeedThirtyMinutesIdle() {
+        val tenMinutes = otherHostFiles(2_000, 3_000).apply { gitRunning = null }
+        assertEquals(1_800_000L - 597_000L, refusedWithWait(force(tenMinutes, 600_000)))
+        assertTrue(tenMinutes.deletions.isEmpty())
+
+        val thirtyOne = otherHostFiles(2_000, 3_000).apply { gitRunning = null }
+        assertIs<Either.Right<*>>(force(thirtyOne, 1_900_000))
+    }
+
+    @Test
+    fun forceRemove_should_RefuseWhenAGitProcessIsVisible_EvenForADeadOwnersRecord() {
+        val dead = testRecord(instance = "dead", pid = 4242, startedAtMs = 1_000)
+        val files = FakeLockFiles(locks = mutableListOf(LockFileEntry("index.lock", 2_000)), record = RecordRead(dead.encode(), 3_000)).apply { gitRunning = true }
+
+        assertIs<Either.Left<*>>(force(files, 1_000_000))
+        assertTrue(files.deletions.isEmpty(), "a terminal git commit must keep its lock: ${files.mutations}")
+    }
+
+    @Test
+    fun forceRemove_should_RefuseDeadOwnersRecord_When_TheLockIsOutsideTheOwnersWindow() {
+        val dead = testRecord(instance = "dead", pid = 4242, startedAtMs = 1_000)
+        // The lock was created a minute after the dead owner's last heartbeat: some other git run's lock.
+        val files = FakeLockFiles(locks = mutableListOf(LockFileEntry("index.lock", 120_000)), record = RecordRead(dead.encode(), 3_000))
+
+        assertIs<Either.Left<*>>(force(files, 1_000_000))
+        assertTrue(files.deletions.isEmpty())
+    }
+
+    @Test
+    fun forceRemove_should_RequireMinutesOfQuiet_When_NoRecord_AndNotDeleteAChangedLock() {
+        val young = FakeLockFiles(locks = mutableListOf(LockFileEntry("index.lock", 90_000))).apply { gitRunning = false }
+        assertIs<Either.Left<*>>(force(young, 100_000))
+        assertTrue(young.deletions.isEmpty(), "a lock held for a long commit/rebase is not stale after 10 s")
+
+        val idle = FakeLockFiles(locks = mutableListOf(LockFileEntry("index.lock", 90_000))).apply { gitRunning = false }
+        assertIs<Either.Right<*>>(force(idle, 1_000_000))
+        assertEquals(listOf("delete:index.lock"), idle.mutations)
+
+        val changed = FakeLockFiles(locks = mutableListOf(LockFileEntry("index.lock", 90_000))).apply { gitRunning = false; restatMtimeMs = 999_000 }
+        assertIs<Either.Left<*>>(force(changed, 1_000_000))
+        assertTrue(changed.deletions.isEmpty(), "a replaced lock (new git run) must survive: ${changed.mutations}")
+    }
+
+    // PR #683 review M1: hostnames collide and change, so namespace-less "pid is gone" needs a matching machine id.
+    @Test
+    fun decide_should_NotCallOwnerDead_When_HostnameMatchesButMachineIdIsMissingOrDifferent() {
+        val files = FakeLockFiles()
+        fun verdict(record: LockOwnerRecord, me: LockOwnerRecord) = LockRecovery.decide(RecordRead(record.encode(), 1), files, NEVER_ALIVE, me)
+        val noNs = testRecord(instance = "other", pidNs = null, bootId = null)
+        val me = testRecord(instance = "self", pid = 1, pidNs = null, bootId = null)
+
+        assertEquals(LockVerdict.OwnerUnknown(UnknownReason.LivenessUnknown), verdict(noNs, me), "no machine id on either side")
+        assertEquals(LockVerdict.OwnerUnknown(UnknownReason.LivenessUnknown), verdict(noNs.copy(machineId = "a"), me), "record only")
+        assertEquals(LockVerdict.OwnerUnknown(UnknownReason.DifferentHost), verdict(noNs.copy(machineId = "a"), me.copy(machineId = "b")))
+        assertEquals(LockVerdict.ClearedDeadOwner, verdict(noNs.copy(machineId = "a"), me.copy(machineId = "a")))
+    }
 }

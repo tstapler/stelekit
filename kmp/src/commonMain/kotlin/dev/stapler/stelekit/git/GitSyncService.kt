@@ -39,6 +39,10 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.ensureActive
@@ -348,16 +352,21 @@ class GitSyncService(
     ) = runGuard.publishFailure(rateLimitRetry, graphId, err, authFailureMeansExpired, retry)
 
     private val _reloadIncomplete = MutableStateFlow(false)
+    private val incompleteReloads = MutableStateFlow<Set<String>>(emptySet())
 
-    /** True when the last merged-files reload stopped early; the files are on disk and the next graph open reconciles them. */
+    /** True while some merged-file reload stopped early and has not since completed; the next graph open reconciles it. */
     val reloadIncomplete: StateFlow<Boolean> = _reloadIncomplete.asStateFlow()
+
+    private fun markReload(paths: Collection<String>, complete: Boolean) {
+        val next = incompleteReloads.updateAndGet { if (complete) it - paths.toSet() else it + paths }
+        _reloadIncomplete.value = next.isNotEmpty()
+    }
 
     /**
      * Reloads [paths] into the DB under watcher suppression, then always lifts the suppression.
      * Every working-tree change a sync makes funnels through here so no exit path can skip it.
      */
     private suspend fun reloadMergedFiles(paths: List<String>) {
-        _reloadIncomplete.value = false
         val started = TimeSource.Monotonic.markNow()
         try {
             if (paths.isNotEmpty()) {
@@ -370,16 +379,42 @@ class GitSyncService(
                     warnIfHeldTooLong(started.elapsedNow().inWholeMilliseconds)
                 }
             }
+            markReload(paths, complete = true)
         } catch (e: CancellationException) {
+            markReload(paths, complete = false)
             throw e
         } catch (e: Throwable) {
             // The merged files are already on disk, so the next graph open reconciles them; nothing may reach the platform handler.
             logger.error("reload aborted reason=${e::class.simpleName}: ${e.message}")
-            _reloadIncomplete.value = true
+            markReload(paths, complete = false)
         } finally {
             withContext(NonCancellable) { graphLoader.endGitMerge() }
         }
     }
+
+    /** Test seam: how long a commit (+ reload) may hold the gate once it can no longer be cancelled. */
+    internal var commitUnitTimeoutMs: Long = COMMIT_UNIT_TIMEOUT_MS
+
+    /**
+     * Runs [work] uncancellable, as #676 requires, but only the caller's wait is bounded: after the timeout the user
+     * is told the unit is still running ([timedOut]), while it keeps the gate lease and owner record until it really
+     * ends, so no second commit can start under it and its lock is never treated as removable.
+     */
+    private suspend fun <T> boundedUnit(reloads: Boolean, timedOut: (DomainError.GitError) -> T, work: suspend () -> T): T =
+        withContext(NonCancellable) {
+            val running = scope.async { work() }
+            try {
+                withTimeout(commitUnitTimeoutMs) { running.await() }
+            } catch (_: TimeoutCancellationException) {
+                logger.error("commit unit still running after ${commitUnitTimeoutMs}ms; keeping the lease")
+                kotlin.coroutines.coroutineContext[LeaseHold]?.unit = running
+                if (reloads) {
+                    markReload(listOf(ABANDONED_UNIT), complete = false)
+                    running.invokeOnCompletion { markReload(listOf(ABANDONED_UNIT), complete = true) }
+                }
+                timedOut(DomainError.GitError.CommitFailed("The commit is still running (a hook or signing prompt may be waiting). Sync stays paused until it finishes. If it never does, close and reopen SteleKit to recover."))
+            }
+        }
 
     private fun warnIfHeldTooLong(heldMs: Long) {
         if (heldMs > GATE_HELD_WARN_MS) logger.warn("gate heldMs=$heldMs exceeds ${GATE_HELD_WARN_MS}ms while reloading merged files")
@@ -501,7 +536,7 @@ class GitSyncService(
                     guards.changes(config, GuardScope.Staged, liftMassChange)?.let { return@withContext refuse(it) }
                     ensureActive()
                     // Non-cancellable: once the commit starts it finishes, then the pipeline stops at the next boundary.
-                    withContext(NonCancellable) { gitRepository.commit(config, buildCommitMessage(config)) }.onLeft { err ->
+                    boundedUnit(false, { it.left() }) { gitRepository.commit(config, buildCommitMessage(config)) }.onLeft { err ->
                         publishFailure(graphId, err) { g -> sync(g, SyncTrigger.Automatic) }
                         return@withContext err.left()
                     }
@@ -588,7 +623,10 @@ class GitSyncService(
      * which inside a nested `withContext(NonCancellable)` would bind to the inner lambda and fall through to push.
      */
     private suspend fun mergeUnit(graphId: String, config: GitConfig, fetchResult: FetchResult): MergeUnitOutcome =
-        withContext(NonCancellable) { runMergeUnit(graphId, config, fetchResult) }
+        boundedUnit(
+            true,
+            { err -> _syncState.value = SyncState.Error(err); MergeUnitOutcome.Exit(Either.Left(err)) },
+        ) { runMergeUnit(graphId, config, fetchResult) }
 
     private suspend fun runMergeUnit(graphId: String, config: GitConfig, fetchResult: FetchResult): MergeUnitOutcome {
         var autoMergedPaths: List<String> = emptyList()
@@ -759,6 +797,25 @@ class GitSyncService(
 
 
     /**
+     * The user-confirmed "Remove lock file": takes the gate (no owner record: the claim would refuse the very lock
+     * being removed), then lets the repository delete allow-listed locks only when no live owner holds them.
+     */
+    suspend fun removeLockFile(graphId: String): Either<DomainError.GitError, Unit> {
+        val resolved = singleFlight.resolveGateKey(graphId) as? GateKeyResolution.Resolved
+            ?: return DomainError.GitError.FetchFailed("Cannot resolve the repository for $graphId").left()
+        val result = gate.withExclusiveLease(
+            resolved.key,
+            SyncOrigin.UiPress,
+            DomainError.GitError.FetchFailed("Cannot resolve the repository for $graphId"),
+        ) { withContext(PlatformDispatcher.IO) { gitRepository.forceRemoveLock(resolved.config) } }
+        if (result.isRight()) {
+            _syncState.value = SyncState.Idle
+            pausedRetries.onSettled()
+        }
+        return result
+    }
+
+    /**
      * Stages and commits any outstanding local changes in the wiki subdirectory.
      * Returns the commit SHA on success, or null if there was nothing to commit.
      */
@@ -788,7 +845,7 @@ class GitSyncService(
                 val staged = lfsStaging.stage(config, status).getOrElse { return@withContext it.left() }
                 val sha = if (staged.commitNeeded) {
                     guards.changes(config, GuardScope.Staged, liftMassChange = false)?.let { return@withContext refuse(it) }
-                    when (val r = gitRepository.commit(config, buildCommitMessage(config))) {
+                    when (val r = boundedUnit(false, { it.left() }) { gitRepository.commit(config, buildCommitMessage(config)) }) {
                         is Either.Left -> return@withContext r.value.left()
                         is Either.Right -> r.value
                     }
@@ -870,9 +927,7 @@ class GitSyncService(
             guards.markers(config, GuardScope.Staged)?.let { return@withContext refuse(it) }
     
             val message = buildCommitMessage(config, isMerge = true)
-            gitRepository.commit(config, message).onLeft { return@withContext it.left() }
-    
-            reloadMergedFiles(resolvedPaths)
+            boundedUnit(true, { it.left() }) { gitRepository.commit(config, message).also { if (it.isRight()) reloadMergedFiles(resolvedPaths) } }.onLeft { return@withContext it.left() }
     
             _syncState.value = SyncState.Idle
             Unit.right()
@@ -919,9 +974,7 @@ class GitSyncService(
     
             guards.markers(config, GuardScope.Staged)?.let { return@withContext refuse(it) }
             val message = buildCommitMessage(config, isMerge = true)
-            gitRepository.commit(config, message).onLeft { return@withContext it.left() }
-    
-            reloadMergedFiles(listOf(filePath))
+            boundedUnit(true, { it.left() }) { gitRepository.commit(config, message).also { if (it.isRight()) reloadMergedFiles(listOf(filePath)) } }.onLeft { return@withContext it.left() }
     
             guards.changes(config, GuardScope.NetPush, liftMassChange = false)?.let { return@withContext refuse(it) }
             _syncState.value = SyncState.Pushing
@@ -994,6 +1047,8 @@ class GitSyncService(
     companion object {
         /** Paths reloaded per chunk inside the merge unit; bounds each progress step. */
         internal const val RELOAD_CHUNK_SIZE = 200
+        private const val COMMIT_UNIT_TIMEOUT_MS = 300_000L
+        private const val ABANDONED_UNIT = "*abandoned-commit-unit*"
         private const val GATE_HELD_WARN_MS = 30_000L
 
         /**

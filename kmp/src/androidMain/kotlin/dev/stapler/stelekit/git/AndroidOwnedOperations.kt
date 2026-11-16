@@ -19,9 +19,15 @@ object AndroidOwnedOperations {
         pidNs = AndroidProcessLiveness.selfPidNamespace(),
         host = AndroidProcessLiveness.HOST,
         bootId = AndroidProcessLiveness.bootId { bootCount(context) },
+        machineId = InstallId.loadOrCreate(java.io.File(context.noBackupFilesDir, "stelekit-install-id")),
     )
 
-    fun support(context: Context): OwnedOperationSupport = OwnedOperationSupport(AndroidProcessLiveness(), identity(context))
+    fun support(context: Context): OwnedOperationSupport = OwnedOperationSupport(
+        AndroidProcessLiveness(),
+        identity(context),
+        // Only a repository under filesDir (the SAF shadow) is out of reach of Termux/MGit; real paths keep the long rule.
+        lockFilesFor = { JavaIoLockFiles.forPrivateRoot(context.filesDir, it) },
+    )
 
     private fun bootCount(context: Context): String? = try {
         Settings.Global.getInt(context.contentResolver, "boot_count").toString()

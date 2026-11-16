@@ -94,6 +94,28 @@ class SyncSafetyActions(
         activeGitSyncService.value?.retryNow { emit(SyncUiEvent.AlreadySyncing) }
     }
 
+    private fun removalRefusal(error: DomainError.GitError): SyncUiEvent = when (error) {
+        is DomainError.GitError.SyncInProgress -> SyncUiEvent.AlreadySyncing
+        is DomainError.GitError.StaleLockFile -> SyncUiEvent.LockRemovalRefused(
+            "The lock file was kept: it changed recently or another git process or device may still be using it. " +
+                (error.retryAfterMs?.takeIf { it > 0 }?.let { "Close other git tools, then try again in about ${(it + 59_999) / 60_000} minutes." }
+                    ?: "Close other git tools and devices using this folder, then try again."),
+        )
+        else -> SyncUiEvent.LockRemovalRefused("The lock file could not be removed: ${error.message}")
+    }
+
+    /** Confirmed "Remove lock file" in the sheet: removes the leftover lock, then syncs so the user sees it work. */
+    fun removeLockFile() {
+        val graphId = graphId() ?: return
+        scope.launch {
+            val service = activeGitSyncService.value ?: return@launch
+            service.removeLockFile(graphId).fold(
+                { emit(removalRefusal(it)) },
+                { service.sync(graphId) },
+            )
+        }
+    }
+
     /**
      * Runs one manual sync with the mass-deletion guard lifted for this run only, after the typed-count
      * confirm. Foreground only: scheduled runs never lift the guard (see [GitSyncService.sync]).

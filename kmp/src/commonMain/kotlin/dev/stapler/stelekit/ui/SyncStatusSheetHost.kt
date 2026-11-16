@@ -66,6 +66,7 @@ internal fun SyncStatusSheetHost(
             },
             onOpenSettings = viewModel::openSyncSettingsFromStatusSheet,
             onDismiss = viewModel::dismissSyncStatusSheet,
+            onRemoveLockFile = viewModel::removeSyncLockFile,
             onOpenProblem = {
                 viewModel.dismissSyncStatusSheet()
                 viewModel.openSyncDetails()

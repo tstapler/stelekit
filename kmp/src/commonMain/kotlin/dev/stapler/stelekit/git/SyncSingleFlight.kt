@@ -10,6 +10,7 @@ import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
@@ -18,6 +19,16 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/**
+ * Per-run handoff in the coroutine context: a body that abandons an uncancellable unit records it here, and
+ * [SyncSingleFlight] then keeps that run's lease and owner record until the unit ends. Per run, never shared.
+ */
+internal class LeaseHold : kotlin.coroutines.AbstractCoroutineContextElement(Key) {
+    @kotlin.concurrent.Volatile var unit: Job? = null
+
+    companion object Key : kotlin.coroutines.CoroutineContext.Key<LeaseHold>
+}
 
 /** Outcome of the read-only key resolution that precedes every gate acquisition (ADR-001 decision 4). */
 internal sealed interface GateKeyResolution {
@@ -160,6 +171,7 @@ internal class SyncSingleFlight(
         var claimed = false
         var counted = false
         var heartbeat: Job? = null
+        val hold = LeaseHold()
         try {
             inFlight.value = SyncRunInfo(lease.origin, clock(), spec.graphId, gate.isRerunRequested(lease.key))
             if (resolution is GateKeyResolution.Unreadable) {
@@ -179,20 +191,36 @@ internal class SyncSingleFlight(
             busyCounter.begin()
             counted = true
             logger.info("sync origin=${lease.origin} decision=started key=${lease.key}")
-            return body()
+            return withContext(hold) { body() }
         } finally {
-            try {
-                withContext(NonCancellable) {
-                    // Counter ends before the join: a suspension here lets a lastSyncAt collector run while still "busy".
-                    heartbeat?.cancel()
-                    if (counted) busyCounter.end()
-                    heartbeat?.join()
-                    if (claimed && config != null) repository.endOwnedOperation(config)
+            val linger = hold.unit?.takeIf { it.isActive }
+            if (linger == null) {
+                finish(lease, spec, config, claimed, counted, heartbeat)
+            } else {
+                // An abandoned unit may still touch the repository, so the lease and record outlive this call.
+                scope.launch(start = CoroutineStart.ATOMIC) {
+                    try {
+                        linger.join()
+                    } finally {
+                        finish(lease, spec, config, claimed, counted, heartbeat)
+                    }
                 }
-            } finally {
-                inFlight.value = null
-                release(lease, spec.graphId)
             }
+        }
+    }
+
+    private suspend fun finish(lease: GateLease, spec: RunSpec, config: GitConfig?, claimed: Boolean, counted: Boolean, heartbeat: Job?) {
+        try {
+            withContext(NonCancellable) {
+                // Counter ends before the join: a suspension here lets a lastSyncAt collector run while still "busy".
+                heartbeat?.cancel()
+                if (counted) busyCounter.end()
+                heartbeat?.join()
+                if (claimed && config != null) repository.endOwnedOperation(config)
+            }
+        } finally {
+            inFlight.value = null
+            release(lease, spec.graphId)
         }
     }
 

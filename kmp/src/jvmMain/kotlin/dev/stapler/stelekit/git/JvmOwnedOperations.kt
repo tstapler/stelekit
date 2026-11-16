@@ -18,6 +18,10 @@ object JvmOwnedOperations {
         }
     }
 
+    private val installId: String? by lazy {
+        InstallId.loadOrCreate(java.io.File(System.getProperty("user.home"), ".stelekit/install-id"))
+    }
+
     fun identity(): ProcessIdentity = ProcessIdentity(
         instanceId = processInstance,
         pid = ProcessHandle.current().pid(),
@@ -25,6 +29,7 @@ object JvmOwnedOperations {
         pidNs = JvmProcessLiveness.selfPidNamespace(),
         host = host,
         bootId = JvmProcessLiveness.bootId(),
+        machineId = installId,
     )
 
     fun support(): OwnedOperationSupport = OwnedOperationSupport(JvmProcessLiveness(), identity())

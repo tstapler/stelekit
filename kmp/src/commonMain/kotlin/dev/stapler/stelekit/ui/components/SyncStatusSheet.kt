@@ -202,12 +202,18 @@ private fun RemoveLockEntry(actions: SyncStatusSheetActions) {
         AlertDialog(
             onDismissRequest = { confirming = false },
             title = { Text("Remove the git lock file?") },
-            text = { Text("Do this only if no other sync or git app is running. Removing a lock that is in use can damage the repository.") },
+            text = {
+                Text(
+                    "This deletes the leftover git lock file (and SteleKit's sync owner record) in this notes folder. " +
+                        "Do this only if no terminal, editor or other device is running git or syncing this same folder. " +
+                        "Removing a lock that is in use can corrupt the repository.",
+                )
+            },
             dismissButton = {
                 TextButton(onClick = { confirming = false }, modifier = Modifier.focusRequester(cancelFocus).heightIn(min = MIN_TARGET_DP.dp)) { Text("Cancel") }
             },
             confirmButton = {
-                TextButton(onClick = { confirming = false; remove() }, modifier = Modifier.heightIn(min = MIN_TARGET_DP.dp)) { Text("Remove") }
+                TextButton(onClick = { confirming = false; remove() }, modifier = Modifier.heightIn(min = MIN_TARGET_DP.dp)) { Text("Remove lock file") }
             },
         )
     }

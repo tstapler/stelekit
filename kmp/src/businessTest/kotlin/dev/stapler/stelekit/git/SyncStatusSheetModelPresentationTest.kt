@@ -73,7 +73,7 @@ class SyncStatusSheetModelPresentationTest {
             s.body,
         )
         assertEquals("Lock owner unknown, try 1 of 2", s.details)
-        assertFalse(s.canRemoveLock)
+        assertTrue(s.canRemoveLock, "an unknown owner is recoverable through the confirmed removal")
         val retry = assertNotNull(m.retryNow)
         retry()
         assertEquals(1, pressed)
@@ -90,7 +90,7 @@ class SyncStatusSheetModelPresentationTest {
     }
 
     @Test
-    fun paused_should_OfferLockRemovalOnlyForNoRecord() {
+    fun paused_should_OfferLockRemovalForNoRecord() {
         val noRecord = DomainError.GitError.StaleLockFile("/r/.git/index.lock", LockVerdict.NoRecord)
         val s = assertIs<SyncSheetState.Paused>(model(SyncState.Error(noRecord), paused = PausedRetryInfo(now + 30_000, 2)).state)
         assertTrue(s.canRemoveLock)

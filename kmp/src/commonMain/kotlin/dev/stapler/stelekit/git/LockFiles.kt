@@ -37,6 +37,15 @@ interface LockFiles {
     /** Deletes the record file. */
     fun deleteRecord()
 
+    /** Current state of one lock file, or null when it is gone; used to re-check just before deleting it. */
+    fun statLock(path: String): LockFileEntry? = listAllowListedLocks().firstOrNull { it.path == path }
+
+    /**
+     * True when a `git` process for this repository is visible right now; null when that cannot be told (never
+     * "false": an unreadable process table proves nothing). Only the user-confirmed removal consults it.
+     */
+    fun gitProcessMayBeRunning(): Boolean? = null
+
     /** Deletes one lock file by its git-dir-relative [path]. */
     fun delete(path: String)
 

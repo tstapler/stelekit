@@ -95,7 +95,7 @@ sealed interface DomainError {
         data class DetachedHead(val path: String) : GitError {
             override val message: String = "Repository is in detached HEAD state: $path"
         }
-        data class StaleLockFile(val lockPath: String, val verdict: LockVerdict? = null) : GitError {
+        data class StaleLockFile(val lockPath: String, val verdict: LockVerdict? = null, val retryAfterMs: Long? = null) : GitError {
             override val message: String = "Stale git lock file found: $lockPath"
         }
         /**

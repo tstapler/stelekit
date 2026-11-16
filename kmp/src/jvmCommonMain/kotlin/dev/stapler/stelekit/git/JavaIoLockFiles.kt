@@ -19,7 +19,7 @@ import java.util.UUID
  * [LockFiles] over one resolved git directory, shared by JVM and Android. Blocking I/O: call off the main thread.
  * Pass the directory returned by [resolveGitDir]; a non-directory makes the recovery lock unsupported (fail closed).
  */
-class JavaIoLockFiles(private val gitDir: File) : LockFiles {
+class JavaIoLockFiles(private val gitDir: File, private val externalGitPossible: Boolean = true) : LockFiles {
     private val recordFile = File(gitDir, RECORD_NAME)
     private val recoverFile = File(gitDir, RECOVER_NAME)
 
@@ -88,6 +88,31 @@ class JavaIoLockFiles(private val gitDir: File) : LockFiles {
         Files.deleteIfExists(recordFile.toPath())
     }
 
+    override fun statLock(path: String): LockFileEntry? {
+        if (!LockAllowList.isAllowListed(path)) return null
+        val file = File(gitDir, path)
+        return file.takeIf { it.isFile }?.let { LockFileEntry(path, it.lastModified()) }
+    }
+
+    // Linux/Android procfs only; any other platform, or an unreadable table, is "cannot tell" (null), never "none".
+    override fun gitProcessMayBeRunning(): Boolean? {
+        if (!externalGitPossible) return false
+        val proc = File("/proc")
+        val entries = proc.listFiles { f -> f.name.all(Char::isDigit) } ?: return null
+        val root = try { (gitDir.parentFile ?: return null).canonicalPath } catch (_: IOException) { return null }
+        val found = entries.any { dir ->
+            try {
+                val args = File(dir, "cmdline").readText().split('\u0000')
+                val exe = args.firstOrNull()?.substringAfterLast('/').orEmpty()
+                (exe == "git" || exe.startsWith("git-")) &&
+                    (args.any { it.startsWith(root) } || File(dir, "cwd").canonicalPath.startsWith(root))
+            } catch (_: IOException) {
+                false
+            }
+        }
+        return if (found) true else null
+    }
+
     override fun delete(path: String) {
         require(LockAllowList.isAllowListed(path)) { "not an allow-listed lock: $path" }
         Files.deleteIfExists(File(gitDir, path).toPath())
@@ -125,6 +150,13 @@ class JavaIoLockFiles(private val gitDir: File) : LockFiles {
     }
 
     companion object {
+        /** Lock files for [gitDir]; only a repository inside this app's private [privateRoot] is safe from external git. */
+        fun forPrivateRoot(privateRoot: File, gitDir: File): JavaIoLockFiles {
+            val root = privateRoot.canonicalPath + File.separator
+            val isPrivate = try { (gitDir.canonicalPath + File.separator).startsWith(root) } catch (_: IOException) { false }
+            return JavaIoLockFiles(gitDir, externalGitPossible = !isPrivate)
+        }
+
         const val RECORD_NAME = "stelekit-sync.owner"
         const val RECOVER_NAME = "stelekit-sync.recover"
         private val FIXED_LOCKS = listOf("index.lock", "shallow.lock", "HEAD.lock", "packed-refs.lock", "config.lock")
