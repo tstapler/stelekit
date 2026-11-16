@@ -28,7 +28,12 @@ data class StrokeRequest(
     val angle: Double = 0.0,
     val pivotX: Double = 0.0,
     val pivotY: Double = 0.0,
+    /** A hatch fill to generate beside the stroke, drawing from the same random sequence (rough.js order); null for none. */
+    val fill: FillRequest? = null,
 )
+
+/** A restyled stroke and, when the request asked for one and the style can draw it, the hatch [fill] (null otherwise). */
+data class StyledStroke(val outline: List<PathSegment>, val fill: List<PathSegment>?)
 
 /**
  * Geometry strategy of a draw list (ADR-004): turns the Clean outline of an element into the outline the style draws.
@@ -42,6 +47,9 @@ interface StrokeStyleProvider {
      * provider that does not change the geometry returns [clean] itself, which tells the caller nothing was restyled.
      */
     fun outline(request: StrokeRequest, clean: List<PathSegment>): List<PathSegment>
+
+    /** [outline] plus the hatch fill of [StrokeRequest.fill]; the default draws no hatch. */
+    fun stroke(request: StrokeRequest, clean: List<PathSegment>): StyledStroke = StyledStroke(outline(request, clean), null)
 
     companion object {
         fun forStyle(style: RenderStyle): StrokeStyleProvider = when (style) {

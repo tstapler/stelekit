@@ -32,7 +32,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 -------------------------------------------------------------------------------
-roughjs: rough-stuff/rough (master), npm roughjs@4.6.6
+roughjs: rough-stuff/rough (master), npm roughjs@4.6.6; hachure-fill 0.5.2 (the scan-line hatch of the pattern fills, same author, MIT, Copyright (c) 2023 Preet Shihn)
 -------------------------------------------------------------------------------
 MIT License
 

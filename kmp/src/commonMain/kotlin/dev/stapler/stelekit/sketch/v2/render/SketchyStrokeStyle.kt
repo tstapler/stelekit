@@ -5,11 +5,12 @@
 // Own Kotlin port of the stroke subset of rough.js 4.6.6 (line, rectangle/polygon, ellipse, curve, path):
 // MIT License, Copyright (c) 2019 Preet Shihn, https://github.com/rough-stuff/rough (see NOTICE). The order in
 // which random numbers are drawn is part of the algorithm and is kept exactly, so a stored seed gives the output
-// of rough.js (checked against kmp/src/commonTest/resources/excalidraw/rough-golden.json). Fills other than solid
-// (hachure, cross-hatch, zigzag) are Story 2.2.2.
+// of rough.js (checked against kmp/src/commonTest/resources/excalidraw/rough-golden.json). The pattern fills
+// (hachure, cross-hatch, zigzag) are in HachureFill.kt.
 
 package dev.stapler.stelekit.sketch.v2.render
 
+import dev.stapler.stelekit.sketch.v2.scene.FillStyle
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -22,8 +23,10 @@ import kotlin.math.sqrt
 object SketchyStrokeStyle : StrokeStyleProvider {
     override val style: RenderStyle = RenderStyle.Sketchy
 
-    override fun outline(request: StrokeRequest, clean: List<PathSegment>): List<PathSegment> {
-        if (request.roughness <= 0) return clean
+    override fun outline(request: StrokeRequest, clean: List<PathSegment>): List<PathSegment> = stroke(request, clean).outline
+
+    override fun stroke(request: StrokeRequest, clean: List<PathSegment>): StyledStroke {
+        if (request.roughness <= 0) return StyledStroke(clean, null)
         val rough = RoughStrokes(request.seed, request.roughness.toDouble())
         val drawn = when (val g = request.geometry) {
             is StrokeGeometry.Polyline -> rough.polyline(g.points, g.closed)
@@ -31,8 +34,20 @@ object SketchyStrokeStyle : StrokeStyleProvider {
             is StrokeGeometry.Ellipse -> rough.ellipse(g.cx, g.cy, g.rx * 2.0, g.ry * 2.0)
             StrokeGeometry.Outline -> rough.path(clean)
         }
-        if (drawn.isEmpty()) return clean
-        return rotate(drawn, request.angle, request.pivotX, request.pivotY)
+        if (drawn.isEmpty()) return StyledStroke(clean, null)
+        val hatch = request.fill?.let { fill -> hatchPolygons(request.geometry, clean, rough)?.let { rough.fill(fill, it) } }
+        return StyledStroke(
+            rotate(drawn, request.angle, request.pivotX, request.pivotY),
+            hatch?.let { rotate(it, request.angle, request.pivotX, request.pivotY) },
+        )
+    }
+
+    /** The polygons rough.js hatches for [geometry]; open lines and smooth curves have none. */
+    private fun hatchPolygons(geometry: StrokeGeometry, clean: List<PathSegment>, rough: RoughStrokes): List<List<ScenePt>>? = when (geometry) {
+        is StrokeGeometry.Polyline -> if (geometry.closed) listOf(geometry.points) else null
+        is StrokeGeometry.Ellipse -> listOf(rough.ellipseCorePoints)
+        StrokeGeometry.Outline -> HachureFill.polygonsOf(clean)
+        is StrokeGeometry.Curve -> null
     }
 
     private fun rotate(segments: List<PathSegment>, angle: Double, px: Double, py: Double): List<PathSegment> {
@@ -56,7 +71,11 @@ object SketchyStrokeStyle : StrokeStyleProvider {
 
 /** One element's worth of rough.js generation: owns the PRNG, so strokes of one request draw one sequence. */
 internal class RoughStrokes(private val seed: Int, private val roughness: Double) {
-    private val random = SeededRandom(seed)
+    internal val random = SeededRandom(seed)
+
+    /** The jittered first-pass ring points of the last [ellipse] call, which rough.js hatches (`estimatedPoints`). */
+    var ellipseCorePoints: List<ScenePt> = emptyList()
+        private set
 
     fun polyline(points: List<ScenePt>, closed: Boolean): List<PathSegment> {
         val n = points.size
@@ -87,9 +106,11 @@ internal class RoughStrokes(private val seed: Int, private val roughness: Double
         rx += offset(rx * fitting, random)
         ry += offset(ry * fitting, random)
         val overlap = increment * between(OVERLAP_LOW, between(OVERLAP_INNER_LOW, 1.0, random.next()), random.next())
-        val firstPass = ellipsePoints(increment, cx, cy, rx, ry, 1.0, overlap)
+        val core = ArrayList<ScenePt>()
+        val firstPass = ellipsePoints(increment, cx, cy, rx, ry, 1.0, overlap, core)
+        ellipseCorePoints = core
         val out = ArrayList<PathSegment>(through(firstPass))
-        val secondPass = ellipsePoints(increment, cx, cy, rx, ry, SECOND_PASS_SCALE, 0.0)
+        val secondPass = ellipsePoints(increment, cx, cy, rx, ry, SECOND_PASS_SCALE, 0.0, null)
         out += through(secondPass)
         return out
     }
@@ -123,9 +144,28 @@ internal class RoughStrokes(private val seed: Int, private val roughness: Double
         return out
     }
 
+    /** rough.js pattern fill of [polygons]: hatch lines drawn as double lines from the same random sequence as the stroke. */
+    fun fill(request: FillRequest, polygons: List<List<ScenePt>>): List<PathSegment> {
+        val out = ArrayList<PathSegment>()
+        fun render(lines: List<HatchLine>) {
+            for (l in lines) out += doubleLine(l.from, l.to)
+        }
+        fun pass(angle: Double): List<HatchLine> = HachureFill.lines(polygons, request.gap, angle, roughness) { random.next() }
+        when (request.style) {
+            FillStyle.Hachure -> render(pass(request.angleDegrees))
+            FillStyle.CrossHatch -> {
+                render(pass(request.angleDegrees))
+                render(pass(request.angleDegrees + QUARTER_TURN))
+            }
+            FillStyle.Zigzag -> render(HachureFill.zigzag(pass(request.angleDegrees), max(request.gap, MIN_FILL_GAP), request.angleDegrees))
+            FillStyle.Solid -> Unit
+        }
+        return out
+    }
+
     // -- rough.js `$`, `R`: two strokes per line, each a bowed cubic with a jittered start ----------------------
 
-    private fun doubleLine(a: ScenePt, b: ScenePt): List<PathSegment> =
+    internal fun doubleLine(a: ScenePt, b: ScenePt): List<PathSegment> =
         lineStroke(a, b, second = false) + lineStroke(a, b, second = true)
 
     private fun lineStroke(a: ScenePt, b: ScenePt, second: Boolean): List<PathSegment> {
@@ -231,6 +271,7 @@ internal class RoughStrokes(private val seed: Int, private val roughness: Double
 
     private fun ellipsePoints(
         increment: Double, cx: Double, cy: Double, rx: Double, ry: Double, amplitude: Double, overlap: Double,
+        core: MutableList<ScenePt>?,
     ): List<ScenePt> {
         val ring = ArrayList<ScenePt>()
         val start = offset(START_JITTER, random) - PI / 2.0
@@ -242,6 +283,7 @@ internal class RoughStrokes(private val seed: Int, private val roughness: Double
         var angle = start
         while (angle < end) {
             ring += ScenePt(offset(amplitude, random) + cx + rx * cos(angle), offset(amplitude, random) + cy + ry * sin(angle))
+            core?.add(ring.last())
             angle += increment
         }
         ring += ScenePt(
@@ -299,5 +341,7 @@ internal class RoughStrokes(private val seed: Int, private val roughness: Double
         const val END_TRIM = 0.01
         const val HALF_OVERLAP = 0.5
         const val CLOSE_SCALE = 0.98
+        const val QUARTER_TURN = 90.0
+        const val MIN_FILL_GAP = 0.1
     }
 }
