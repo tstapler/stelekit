@@ -234,6 +234,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/calibration/GoldenSceneBaselineTest.kt",
         "dev/stapler/stelekit/calibration/ConstraintAccuracyHarnessTest.kt",
         "dev/stapler/stelekit/calibration/ConstraintCalibratorFailureTest.kt",
+        "dev/stapler/stelekit/calibration/ConstraintOutlierPropertyTest.kt",
         "dev/stapler/stelekit/calibration/ConstraintCalibratorPropertyTest.kt",
         "dev/stapler/stelekit/calibration/GradientIdentifiabilityTest.kt",
         "dev/stapler/stelekit/calibration/GradientNoiseFalsePositiveRateTest.kt",

@@ -28,7 +28,8 @@ class GradientNoiseFalsePositiveRateTest {
             val auto = ConstraintCalibrator.fit(cs, scene.frame(), FitOptions(gradientEnabled = true)).requested.right()
             if (auto.tier == FitTier.GRADIENT) accepted++
             val raw = ConstraintCalibrator.fit(cs, scene.frame(), FitOptions(request = TierRequest.Only(FitTier.GRADIENT))).requested
-            if (raw.isRight() || raw.left() !is CalibrationFailure.NoMeasurableTilt && raw.left() is CalibrationFailure.NotBetterThanSimpler) gatePassed++
+            val failure = raw.fold({ it }, { null })
+            if (failure == null || (failure !is CalibrationFailure.NoMeasurableTilt && failure is CalibrationFailure.NotBetterThanSimpler)) gatePassed++
         }
         return accepted to gatePassed
     }
@@ -45,6 +46,22 @@ class GradientNoiseFalsePositiveRateTest {
         val (accepted, raw) = run(6, 61)
         println("N=6 pure noise: accepted $accepted/$scenes, t-gate alone passed $raw/$scenes")
         assertTrue(accepted <= scenes / 100, "accepted $accepted of $scenes")
+    }
+
+    @Test
+    fun gradientGate_should_PassAtMost2Percent_OnPureNoise_WithoutTheLooVeto_At_N5_N6_N10_N20() {
+        for ((n, seed) in listOf(5 to 5, 6 to 6, 10 to 10, 20 to 20)) {
+            val (_, raw) = run(n, seed)
+            println("N=$n pure noise: Wald gate alone passed $raw/$scenes")
+            assertTrue(raw <= scenes * 2 / 100, "N=$n: Wald gate alone passed $raw of $scenes")
+        }
+    }
+
+    @Test
+    fun gradientGate_should_ExceedTheOneDimensionalThreshold_AndMatchTheChiSquareLimit() {
+        for (nu in listOf(2, 3, 5, 10, 30)) assertTrue(FitStatistics.gradientGate(nu) > FitStatistics.studentT995(nu), "nu=$nu")
+        assertEquals(3.035, FitStatistics.gradientGate(100_000), 0.01)
+        assertTrue(FitStatistics.gradientGate(0).isInfinite())
     }
 
     @Test

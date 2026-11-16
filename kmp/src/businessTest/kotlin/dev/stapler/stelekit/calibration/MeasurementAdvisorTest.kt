@@ -161,6 +161,16 @@ class MeasurementAdvisorTest {
     }
 
     @Test
+    fun singleKnownDistanceIsNeverShownAsZeroPercentAccurate() {
+        val plane = PlaneCalibration(identity, "Known distances", 1.2, 0.8, kind = PlaneKind.CONSTRAINT_FIT)
+        val fit = ConstraintFitRecord(FitTier.SCALE, n = 1, residualMeanPct = 0.0, looPct = null)
+        val r = assess(withPlane(plane, fit))
+        assertTrue(r.accuracy.none { it.contains("0.0%") && it.contains("known distance") }, r.accuracy.toString())
+        assertTrue(r.accuracy.any { it.contains("unverified") }, r.accuracy.toString())
+        assertTrue(r.estimatedErrorPercent > 0.0)
+    }
+
+    @Test
     fun paperReferencePlaneIsUnchanged() {
         val plane = PlaneCalibration(identity, "A4 sheet", 0.297, 0.21, checkResidualMm = 0.5)
         val r = assess(withPlane(plane))

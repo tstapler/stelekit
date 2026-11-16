@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.calibration
 
 import kotlin.math.abs
+import kotlin.math.pow
 import kotlin.math.sqrt
 
 /** Small dense-matrix and Student-t helpers for the constraint fits. Pure; no dependencies. */
@@ -25,6 +26,16 @@ object FitStatistics {
         nu <= T995.size -> T995[nu - 1]
         else -> ASYMPTOTE + TAIL_COEFFICIENT / nu
     }
+
+    private const val GATE_TAIL = 0.01
+    private const val GATE_DIMENSIONS = 2.0
+
+    /**
+     * Wald-distance threshold for the 2-D gradient at 99 percent with [nu] residual degrees of freedom:
+     * `sqrt(2 * F(2, nu))`, where the 2-numerator-df F quantile has the closed form `(nu/2)(alpha^(-2/nu) - 1)`.
+     */
+    fun gradientGate(nu: Int): Double =
+        if (nu < 1) Double.POSITIVE_INFINITY else sqrt(GATE_DIMENSIONS * (nu / GATE_DIMENSIONS) * (GATE_TAIL.pow(-GATE_DIMENSIONS / nu) - 1.0))
 
     fun median(values: List<Double>): Double {
         val s = values.sorted()

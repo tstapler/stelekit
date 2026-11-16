@@ -114,12 +114,12 @@ class ConstraintCalibratorFailureTest {
     }
 
     @Test
-    fun fit_should_NameWorstConstraintAndImpliedRatio_When_UnitTypo() {
+    fun fit_should_RefuseAndNameTheConstraint_When_UnitTypo() {
         val cs = listOf(row("a", 0.3, 0.90), row("b", 0.5, 0.88), row("c", 0.7, 2.54))
-        val fit = ConstraintCalibrator.fit(cs, frame).requested.right()
-        val worst = assertNotNull(fit.report.worst)
-        assertEquals("c", worst.id)
-        assertEquals(2.54 / 0.90, worst.impliedScaleRatio, 0.03)
+        val failure = ConstraintCalibrator.fit(cs, frame).requested.left()
+        assertTrue(failure is CalibrationFailure.ConflictingConstraints, failure.toString())
+        assertEquals("c", failure.worstId)
+        assertEquals(2.54 / 0.89, failure.impliedScaleRatio, 0.15)
     }
 
     @Test

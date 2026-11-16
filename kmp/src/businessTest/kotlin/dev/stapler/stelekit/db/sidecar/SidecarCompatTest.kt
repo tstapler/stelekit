@@ -83,4 +83,39 @@ class SidecarCompatTest {
         manager.writeSidecar(annotation, measurements)
         assertEquals(SidecarFixtures.V2, fs.readFile(path))
     }
+
+    @Test
+    fun unknownKeysNestedInCalibrationGeometry_should_SurviveLoadAndSave() {
+        val future = SidecarFixtures.V2
+            .replaceFirst("\"calibrationGeometry\":{", "\"calibrationGeometry\":{\"futureGeom\":7,")
+            .replaceFirst("\"kind\":\"CONSTRAINT_FIT\"", "\"kind\":\"CONSTRAINT_FIT\",\"futurePlane\":true")
+            .replaceFirst("\"label\":\"door\"", "\"label\":\"door\",\"futureConstraint\":\"k\"")
+            .replaceFirst("\"worstId\":\"c1\"", "\"worstId\":\"c1\",\"futureFit\":[1]")
+        put(future)
+        val sidecar = manager.readSidecar(notes, SidecarFixtures.IMAGE_UUID).getOrNull()!!
+        manager.writeSidecar(sidecar.toDomainAnnotation(), sidecar.toDomainMeasurements())
+        val saved = fs.readFile(path)!!
+        for (needle in listOf("\"futureGeom\":7", "\"futurePlane\":true", "\"futureConstraint\":\"k\"", "\"futureFit\":[1]")) {
+            assertTrue(needle in saved, "$needle lost: $saved")
+        }
+    }
+
+    @Test
+    fun unknownEnumValueFromNewerBuild_should_DegradeToDefaults_NotDropTheGeometry() {
+        put(SidecarFixtures.V2.replaceFirst("\"kind\":\"CONSTRAINT_FIT\"", "\"kind\":\"HOLOGRAM\"").replaceFirst("\"tier\":\"GRADIENT\"", "\"tier\":\"WARP\""))
+        val sidecar = manager.readSidecar(notes, SidecarFixtures.IMAGE_UUID).getOrNull()
+        assertTrue(sidecar != null, "whole sidecar failed to decode")
+        val geometry = sidecar.toDomainAnnotation().calibration.geometry!!
+        assertEquals("c1", geometry.constraints.single().id)
+        assertEquals(6, geometry.fit!!.n)
+        assertEquals(PlaneKind.PAPER_REFERENCE, geometry.plane!!.kind)
+    }
+
+    @Test
+    fun fileAtAHigherSchemaVersion_should_KeepItsVersionWhenResavedHere() {
+        put(SidecarFixtures.V2.replaceFirst("\"schemaVersion\":2", "\"schemaVersion\":3"))
+        val sidecar = manager.readSidecar(notes, SidecarFixtures.IMAGE_UUID).getOrNull()!!
+        manager.writeSidecar(sidecar.toDomainAnnotation(), sidecar.toDomainMeasurements())
+        assertTrue("\"schemaVersion\":3" in fs.readFile(path)!!)
+    }
 }

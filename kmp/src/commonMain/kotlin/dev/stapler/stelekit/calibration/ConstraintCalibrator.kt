@@ -45,6 +45,7 @@ object ConstraintCalibrator {
     private const val MIN_SEGMENT_PX = 1.0
     private const val MIN_CONFLICT_MEMBERS = 2
     private const val CONFLICT_MIN_N = 4
+    private const val MIN_ROBUST_N = 3
     private const val ROUND = 10.0
     private const val DEG = 180.0 / kotlin.math.PI
 
@@ -100,15 +101,20 @@ object ConstraintCalibrator {
 
     // ---- SCALE ----
 
+    /** Noise-weighted log-mean of the scales that agree with the median within [ConstraintTuning.CONFLICT_RATIO]. */
     private fun scaleModel(segs: List<Seg>): Double {
+        val logs = segs.map { ln(it.meters / it.lengthPx) }
+        val centre = if (segs.size >= MIN_ROBUST_N) FitStatistics.median(logs) else null
+        val limit = ln(ConstraintTuning.CONFLICT_RATIO)
         var sw = 0.0
         var s = 0.0
-        for (g in segs) {
+        for ((i, g) in segs.withIndex()) {
+            if (centre != null && abs(logs[i] - centre) > limit) continue
             val w = 1.0 / (g.sigma * g.sigma)
             sw += w
-            s += w * ln(g.meters / g.lengthPx)
+            s += w * logs[i]
         }
-        return exp(s / sw)
+        return if (sw > 0.0) exp(s / sw) else exp(logs.average())
     }
 
     private fun scaleEval(segs: List<Seg>, options: FitOptions): TierEval {
@@ -174,7 +180,22 @@ object ConstraintCalibrator {
 
     // ---- conflicts and reporting ----
 
+    /** A single distance more than [ConstraintTuning.CONFLICT_RATIO] off while all the others agree with each other. */
+    private fun lone(segs: List<Seg>): CalibrationFailure.ConflictingConstraints? {
+        if (segs.size < MIN_ROBUST_N) return null
+        val logs = segs.map { ln(it.meters / it.lengthPx) }
+        val limit = ln(ConstraintTuning.CONFLICT_RATIO)
+        for (i in segs.indices) {
+            val rest = logs.filterIndexed { j, _ -> j != i }
+            if ((rest.max() - rest.min()) >= limit) continue
+            val off = abs(logs[i] - FitStatistics.median(rest))
+            if (off >= limit) return CalibrationFailure.ConflictingConstraints(segs[i].id, exp(off))
+        }
+        return null
+    }
+
     private fun conflict(segs: List<Seg>): CalibrationFailure.ConflictingConstraints? {
+        lone(segs)?.let { return it }
         if (segs.size < CONFLICT_MIN_N) return null
         val sorted = segs.map { it to ln(it.meters / it.lengthPx) }.sortedBy { it.second }
         var bestGap = 0.0

@@ -44,7 +44,7 @@ enum class PlaneKind { PAPER_REFERENCE, CONSTRAINT_FIT }
  */
 @Serializable
 data class PriorBasis(
-    val method: CalibrationMethod,
+    val method: CalibrationMethod = CalibrationMethod.NONE,
     val pixelsPerMeter: Double,
     val confidencePercent: Int = 0,
     val plane: PlaneCalibration? = null,
@@ -54,7 +54,7 @@ data class PriorBasis(
 /** What the last fit produced, kept beside the constraints so the pill can say how far to trust the scale. */
 @Serializable
 data class ConstraintFitRecord(
-    val tier: FitTier,
+    val tier: FitTier = FitTier.SCALE,
     val n: Int,
     val residualMeanPct: Double,
     /** Leave-one-out error in percent; null for N below 3, where it is undefined. */

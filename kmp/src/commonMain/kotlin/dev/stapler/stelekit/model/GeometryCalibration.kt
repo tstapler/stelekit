@@ -47,12 +47,12 @@ data class PlaneCalibration(
 
 /** JSON text form of [GeometryCalibration] for the `calibration_geometry_json` column; '' means none. */
 object GeometryCalibrationCodec {
-    private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+    private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; coerceInputValues = true }
 
     fun encode(geometry: GeometryCalibration?): String =
         if (geometry == null) "" else json.encodeToString(GeometryCalibration.serializer(), geometry)
 
-    /** Returns null for blank or unparseable text (an unreadable block degrades to no correction). */
+    /** Unknown enum values from a newer build fall back to their defaults. Returns null for blank or unparseable text (an unreadable block degrades to no correction). */
     fun decode(text: String): GeometryCalibration? =
         if (text.isBlank()) null else runCatching { json.decodeFromString(GeometryCalibration.serializer(), text) }.getOrNull()
 }

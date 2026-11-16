@@ -185,6 +185,42 @@ class AnnotationEditorViewModelConstraintTest {
     }
 
     @Test
+    fun undoCalibration_should_KeepAnnotationsDrawnAndEditedAfterTheFit() {
+        val vm = vm().also { it.calibrate() }
+        vm.confirmConstraintCalibration(listOf(c1, c2))
+        val before = vm.calibration
+        vm.confirmConstraintCalibration(listOf(c1, c2, c3))
+        val drawn = vm.draw(0.2, 0.3)
+        val edited = vm.draw(0.2, 0.4)
+        vm.submitValueEdit(edited.uuid, "0.90", ValueEditMode.LABEL_ONLY, MeasurementUnit.METERS)
+        val removed = vm.draw(0.2, 0.6)
+        vm.deleteAnnotation(removed.uuid)
+
+        vm.undoCalibration()
+
+        assertEquals(before, vm.calibration)
+        val after = vm.state.value.committedAnnotations.associateBy { it.uuid }
+        assertNotNull(after[drawn.uuid], "a line drawn after the fit must survive the undo")
+        assertEquals(0.90, after[edited.uuid]?.valueMeters)
+        assertNull(after[removed.uuid], "a line deleted after the fit must stay deleted")
+        assertNotNull(after[drawn.uuid]?.valueMeters)
+        vm.close()
+    }
+
+    @Test
+    fun promotingAnOverriddenLine_should_DropTheOldOverrideSoItFollowsTheFit() {
+        val vm = vm().also { it.calibrate() }
+        val target = vm.draw(0.2)
+        vm.submitValueEdit(target.uuid, "0.50", ValueEditMode.LABEL_ONLY, MeasurementUnit.METERS)
+        vm.submitValueEdit(target.uuid, "1.20", ValueEditMode.KNOWN_DISTANCE, MeasurementUnit.METERS)
+
+        val promoted = vm.state.value.committedAnnotations.single { it.uuid == target.uuid }
+        assertEquals(dev.stapler.stelekit.model.ValueSource.COMPUTED, promoted.valueSource)
+        assertEquals(1.20, promoted.valueMeters!!, 0.01)
+        vm.close()
+    }
+
+    @Test
     fun overrides_should_SurviveAddingAConstraint() {
         val vm = vm().also { it.calibrate() }
         val target = vm.draw(0.2)

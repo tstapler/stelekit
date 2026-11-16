@@ -1070,6 +1070,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.calibration.GoldenSceneBaselineTest::class,
     dev.stapler.stelekit.calibration.ConstraintAccuracyHarnessTest::class,
     dev.stapler.stelekit.calibration.ConstraintCalibratorFailureTest::class,
+    dev.stapler.stelekit.calibration.ConstraintOutlierPropertyTest::class,
     dev.stapler.stelekit.calibration.ConstraintCalibratorPropertyTest::class,
     dev.stapler.stelekit.calibration.GradientIdentifiabilityTest::class,
     dev.stapler.stelekit.calibration.GradientNoiseFalsePositiveRateTest::class,

@@ -1050,20 +1050,7 @@ class AnnotationEditorViewModel(
 
         val displayUnit = st.selectedUnit
 
-        // An edited value is the user's word: only computed measurements follow the new scale.
-        val rederived = st.committedAnnotations.map { annotation ->
-            if (annotation.valueSource == ValueSource.USER_OVERRIDE) {
-                annotation
-            } else {
-                val (newValue, newDisplay) = computeMeasurement(
-                    annotation.normalizedPoints,
-                    annotation.annotationType.toTool(),
-                    newCalibration,
-                    displayUnit,
-                )
-                annotation.copy(valueMeters = newValue, valueDisplay = newDisplay)
-            }
-        }
+        val rederived = rederive(st.committedAnnotations, newCalibration, displayUnit)
 
         _state.update {
             it.copy(
@@ -1089,6 +1076,18 @@ class AnnotationEditorViewModel(
         }
     }
 
+    /** An edited value is the user's word: only computed measurements follow [calibration]. */
+    private fun rederive(annotations: List<MeasurementAnnotation>, calibration: Calibration, unit: MeasurementUnit): List<MeasurementAnnotation> =
+        annotations.map { annotation ->
+            if (annotation.valueSource == ValueSource.USER_OVERRIDE) {
+                annotation
+            } else {
+                val (newValue, newDisplay) = computeMeasurement(annotation.normalizedPoints, annotation.annotationType.toTool(), calibration, unit)
+                annotation.copy(valueMeters = newValue, valueDisplay = newDisplay)
+            }
+        }
+
+    /** Reverts the calibration and re-derives only computed values, so annotations edited after the change survive. */
     fun undoCalibration() {
         var popped: CalibrationHistory.Entry? = null
         calibrationHistory.getAndUpdate { history ->
@@ -1098,10 +1097,12 @@ class AnnotationEditorViewModel(
         val snapshot = popped ?: return
         _canUndoCalibration.value = calibrationHistory.value.canUndo
         _constraintFitResult.value = null
-        _state.update { it.copy(
-            calibration = snapshot.calibration,
-            committedAnnotations = snapshot.annotations.map { a -> a.relabeled(it.selectedUnit) },
-        )}
+        _state.update {
+            it.copy(
+                calibration = snapshot.calibration,
+                committedAnnotations = rederive(it.committedAnnotations, snapshot.calibration, it.selectedUnit).map { a -> a.relabeled(it.selectedUnit) },
+            )
+        }
         _state.update { it.copy(imageAnnotation = it.imageAnnotation?.copy(calibration = snapshot.calibration)) }
         persistImageCalibration()
         _calibrationChangeMessage.value = "Scale restored"
@@ -1499,9 +1500,24 @@ class AnnotationEditorViewModel(
             }
             is ConstraintFitApplier.Outcome.Applied -> {
                 _constraintFitResult.value = ConstraintFitResult(response.effective?.report, outcome.fallback?.describe())
+                releaseOverridesOfKnownDistances(constraints)
                 commitCalibration(outcome.calibration)
                 logger.info("calibration fit tier=${outcome.record.tier} n=${outcome.record.n}")
             }
+        }
+    }
+
+    /** A line promoted to a known distance must follow the fit, so a number typed earlier no longer overrides it. */
+    private fun releaseOverridesOfKnownDistances(constraints: List<CalibrationConstraint>) {
+        val sources = constraints.mapNotNull { it.measurementUuid }.toSet()
+        if (sources.isEmpty()) return
+        _state.update { cur ->
+            cur.copy(
+                committedAnnotations = cur.committedAnnotations.map { a ->
+                    val meters = a.valueMeters
+                    if (a.uuid in sources && a.valueSource == ValueSource.USER_OVERRIDE && meters != null) a.withValue(MeasurementValue.Computed(meters)) else a
+                },
+            )
         }
     }
 

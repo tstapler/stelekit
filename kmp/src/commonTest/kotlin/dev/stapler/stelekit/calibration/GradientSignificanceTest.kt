@@ -49,6 +49,18 @@ class GradientSignificanceTest {
     fun noMeasurableTilt_should_CarryTheStatisticAndThreshold() {
         val s = assertNotNull(GoldenSceneGenerator.random(SceneFamily.IN_MODEL, Random(2), 6, 0.0, 1.0, spreadFraction = 0.5))
         val failure = ConstraintCalibrator.fit(s.training.map { it.toConstraint() }, s.frame(), gradient).requested.left()
-        assertTrue(failure is CalibrationFailure.NoMeasurableTilt && failure.threshold == 5.841, "got $failure")
+        assertTrue(failure is CalibrationFailure.NoMeasurableTilt && failure.threshold == FitStatistics.gradientGate(3), "got $failure")
+    }
+
+    @Test
+    fun steepGradient_should_BeDeclined_When_NoFocalLengthBoundsTheTilt() {
+        for (seed in 1..10) {
+            val s = GoldenSceneGenerator.random(SceneFamily.IN_MODEL, Random(seed), 8, 40.0, 0.1, spreadFraction = 0.5) ?: continue
+            val r = ConstraintCalibrator.fit(s.training.map { it.toConstraint() }, s.frame(null), gradient)
+            r.requested.fold({ }, { fit ->
+                val g = fit.diagnostics.first { it.tier == FitTier.GRADIENT }.gradient
+                assertTrue(g == null || g <= 0.5, "accepted gradient $g with no tilt bound")
+            })
+        }
     }
 }

@@ -34,9 +34,13 @@ class GradSol(val lnW0: Double, val gx: Double, val gy: Double, val k: Double) {
 
 class LmResult(val sol: GradSol, val converged: Boolean, val ssr: Double, val iterations: Int)
 
-/** Standard error of the gradient along its own direction, and of `k`, from the fitted covariance. */
-class GradSignificance(val gradient: Double, val gradientSe: Double, val kSe: Double?, val rankOk: Boolean) {
-    val t: Double get() = if (gradientSe > 0.0) gradient / gradientSe else 0.0
+/**
+ * Standard errors of the gradient along its own direction and of `k`, plus the Wald distance `sqrt(g' S^-1 g)` of
+ * the 2-D gradient from zero under its 2x2 covariance block. [t] is that distance, to be compared with
+ * [FitStatistics.gradientGate] (a 1-D t threshold does not control the false-positive rate of a 2-D magnitude).
+ */
+class GradSignificance(val gradient: Double, val gradientSe: Double, val kSe: Double?, val rankOk: Boolean, val wald: Double = 0.0) {
+    val t: Double get() = wald
 }
 
 /**
@@ -183,7 +187,10 @@ class GradientSolver(
         val ux = s.gx / g
         val uy = s.gy / g
         val variance = scale * (ux * ux * inv[1][1] + 2.0 * ux * uy * inv[1][2] + uy * uy * inv[2][2])
-        return GradSignificance(g, sqrt(variance.coerceAtLeast(0.0)), if (withK) sqrt(scale * inv[3][3]) else null, true)
+        val det = inv[1][1] * inv[2][2] - inv[1][2] * inv[1][2]
+        val quad = inv[2][2] * s.gx * s.gx - 2.0 * inv[1][2] * s.gx * s.gy + inv[1][1] * s.gy * s.gy
+        val wald = if (det > 0.0) sqrt((quad / (scale * det)).coerceAtLeast(0.0)) else 0.0
+        return GradSignificance(g, sqrt(variance.coerceAtLeast(0.0)), if (withK) sqrt(scale * inv[3][3]) else null, true, wald)
     }
 
     private companion object {

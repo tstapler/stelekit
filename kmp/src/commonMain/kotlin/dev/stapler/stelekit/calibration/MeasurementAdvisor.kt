@@ -94,8 +94,14 @@ object MeasurementAdvisor {
             // A SCALE fit has no plane, so the fit record (not the plane) says the scale came from known distances.
             if (geometry.plane?.kind != PlaneKind.PAPER_REFERENCE) {
                 geometry.fit?.let { fit ->
-                    val accuracyPct = fit.looPct ?: fit.residualMeanPct
-                    accuracy += "Scale from ${fit.n} known distances (tier ${fit.tier.name}), +/-${decimals(accuracyPct, 1)}%."
+                    // One distance fits itself exactly, so its residual says nothing about accuracy.
+                    val floorPct = ConstraintTuning.RELATIVE_NOISE_FLOOR * PERCENT
+                    val accuracyPct = max(fit.looPct ?: fit.residualMeanPct, floorPct)
+                    accuracy += if (fit.n < 2 && fit.looPct == null) {
+                        "Scale from 1 known distance, accuracy unverified: add a second to cross-check."
+                    } else {
+                        "Scale from ${fit.n} known distances (tier ${fit.tier.name}), +/-${decimals(accuracyPct, 1)}%."
+                    }
                     error = max(error, accuracyPct)
                 }
             }

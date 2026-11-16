@@ -34,7 +34,7 @@ import kotlinx.serialization.json.Json
 class ImageSidecarManager(
     private val fileSystem: FileSystem,
 ) {
-    private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
+    private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true; prettyPrint = false }
 
     /**
      * Serialize [annotation] + [measurements] to JSON and write to the sidecar path.

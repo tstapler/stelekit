@@ -46,7 +46,8 @@ class ConstraintCalibratorPropertyTest {
         }
         println("in-model N=6: selected MAE=${sumSel / scenes}% single MAE=${sumSingle / scenes}% GRADIENT chosen $gradient/$scenes within 1x floor $ok/$scenes within 2x floor $ok2/$scenes")
         // The floor is two independent tap errors (the held-out taps and the single reference's), hence 2x.
-        assertTrue(ok2 >= scenes * 95 / 100, "only $ok2/$scenes scenes no worse than single scale within 2x the tap floor")
+        // 93 percent: the 2-D Wald gate (higher threshold than the old 1-D t) declines weak tilt more often, trading power for the false-positive rate.
+        assertTrue(ok2 >= scenes * 93 / 100, "only $ok2/$scenes scenes no worse than single scale within 2x the tap floor")
         assertTrue(sumSel < sumSingle, "selected tier should lower the mean held-out error")
     }
 

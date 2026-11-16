@@ -62,6 +62,9 @@ object PerAxisTier {
 
 /** GRADIENT and GRADIENT_AND_K: the focal-free scale-gradient tilt model behind its identifiability and significance gates. */
 object GradientTier {
+    /** Largest gradient (per half-diagonal) accepted when no focal length bounds the tilt: at most a 3x scale change across the frame. */
+    private const val MAX_UNCHECKED_GRADIENT = 0.5
+
     @Suppress("ReturnCount", "LongMethod")
     fun evaluate(tier: FitTier, segs: List<Seg>, frame: CaptureFrameInfo, options: FitOptions, scaleMpp: Double): Either<CalibrationFailure, TierEval> {
         val n = segs.size
@@ -87,14 +90,20 @@ object GradientTier {
         val sol = fit.sol
         val sig = solver.significance(segs, sol, fit.ssr)
         if (!sig.rankOk) return CalibrationFailure.IllConditioned(IllConditionedAspect.RANK_DEFICIENT).left()
-        val threshold = FitStatistics.studentT995(n - ConstraintTuning.parameters(tier))
+        val nu = n - ConstraintTuning.parameters(tier)
+        val threshold = FitStatistics.gradientGate(nu)
         if (sig.t <= threshold) return CalibrationFailure.NoMeasurableTilt(sig.t, threshold).left()
         if (withK) {
             val kSe = sig.kSe
-            if (kSe == null || abs(sol.k) <= threshold * kSe) return CalibrationFailure.IllConditioned(IllConditionedAspect.NOISE_FLOOR, "k not significant").left()
+            if (kSe == null || abs(sol.k) <= FitStatistics.studentT995(nu) * kSe) return CalibrationFailure.IllConditioned(IllConditionedAspect.NOISE_FLOOR, "k not significant").left()
         }
         val tilt = ConstraintCalibrator.tiltDeg(sol.magnitude, frame)
         if (tilt != null && tilt > ConstraintTuning.MAX_TILT_DEG) return CalibrationFailure.TiltTooLarge(tilt).left()
+
+        // Without EXIF there is no tilt bound; keep the homography denominator away from its pole inside the frame.
+        if (tilt == null && sol.magnitude > MAX_UNCHECKED_GRADIENT) {
+            return CalibrationFailure.IllConditioned(IllConditionedAspect.NOISE_FLOOR, "gradient too steep to trust without a focal length").left()
+        }
 
         val loo = ConstraintCalibrator.looPct(segs, { sub -> solver.fit(sub, sol)?.takeIf { it.converged }?.sol }, solver::predict)
         val res = segs.map { s ->
