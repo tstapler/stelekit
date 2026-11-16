@@ -10,6 +10,14 @@
     "sketch.import_library_max_yield_gap_ms": { "p95": 7.1, "measured": true, "source": "JsonSpanScannerWasmTest ChromeHeadless 146, 9 MB library of 120 items, one run" },
     "solver.hundred_constraint_corpus_worst_ms_jvm": { "p95": 8.072, "measured": true, "bar": 50, "source": "SolverCorpusTest jvm, 30-seed corpus, worst of best-of-5 per seed, host load average about 15; one run" },
     "solver.hundred_constraint_corpus_worst_ms_wasm": { "p95": 27.8, "measured": true, "bar": 150, "source": "SolverCorpusTest wasmJs ChromeHeadless 146, 30-seed corpus, worst of best-of-5 per seed, host load average about 15; one run; advisory bar 50 also met" },
+    "sketch.frame_ms_500_elements": { "max_ratio_to_prebuilt_paths": 1.5, "ceiling_ms": 24, "measured": true, "observed": { "painter_p95_ms": 1.397, "prebuilt_paths_p95_ms": 1.374, "ratio": 1.017 }, "source": "SketchEngineBenchmark (jvm, software raster). The ratio is against 500 prebuilt paths in the same run because an empty canvas is a bare clear (baselines.md). Pixel_Fold is owner-run, unmeasured, not a CI check." },
+    "sketch.solve_ms_100_constraints": { "max": 50, "measured": true, "observed": 7.766, "source": "SketchEngineBenchmark jvm, worst seed of the 30-seed corpus, best of 5 per seed" },
+    "sketch.hit_test_candidates_5000": { "max": 32, "measured": true, "observed": 4, "source": "SketchEngineBenchmark jvm, worst SpatialIndex.query candidate count of 1,000 probes over 5,000 elements" },
+    "sketch.import_ms_5000_elements": { "max": 1000, "measured": true, "observed": 43.92, "source": "SketchEngineBenchmark jvm, ExcalidrawImporter over a 2.0 MB file of 5,000 rectangles, best of 5" },
+    "sketch.draw_list_build_ms_5000": { "max": 250, "measured": true, "observed": 4.07, "source": "SketchEngineBenchmark jvm, DrawListBuilder Clean over 5,000 rects and ellipses, best of 5" },
+    "sketch.native_decode_ms_5000": { "max": 400, "measured": true, "observed": 80.08, "source": "SketchEngineBenchmark jvm, SheetCodecV2.decode of the 5,000-element sheet, best of 5" },
+    "sketch.encode_ms_5000": { "max": 120, "measured": true, "observed": 22.42, "source": "SketchEngineBenchmark jvm, SheetCodecV2.encode of 5,000 elements, best of 5" },
+    "sketch.save_bytes_5000": { "max": 2000000, "measured": true, "observed": 1236305, "source": "SketchEngineBenchmark jvm, bytes of a 5,000-element sheet; SceneLimits.maxSheetBytes (16 MB) is the hard cap. Timing maxima are about 5x observed so a shared runner does not flake; bytes are deterministic, so 1.6x." },
     "reference.wasm_empty_canvas_ms": { "p95": null, "measured": false, "note": "wasm run blocked, see baselines.md" },
     "reference.wasm_rect500_ms": { "p95": null, "measured": false, "note": "wasm run blocked, see baselines.md" }
   }

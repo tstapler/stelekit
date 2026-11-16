@@ -52,6 +52,9 @@ kt_jvm_test(
             "**/DeterminismSpikeJvmTest.kt",
             # Story 2.2.3 pixel check: needs commonTest Architecture15Pixels/Golden (not on this target's classpath); Gradle-only
             "**/LargeSceneDegradationTest.kt",
+            # Story 6.2.2 budget gate: needs commonTest SolverCorpus/FixedAdvanceTextMetricsProvider (not on this target's classpath)
+            # and reads benchmarks/budgets/sketch-engine-budgets.json; Gradle-only, run by the `sketch-engine-budgets` CI job.
+            "**/SketchEngineBenchmark.kt",
             # Reads the bundled fonts through Compose Multiplatform's generated `Res`, which Bazel does not generate (commonMain
             # uses bazel_stubs/SketchFontResources.kt instead); Gradle-only. Also skipped by AllJvmTestsCompletenessTest.
             "dev/stapler/stelekit/ui/sketch/v2/ComposeTextMetricsProviderTest.kt",
