@@ -236,6 +236,8 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/DrawListGolden.kt",
         "dev/stapler/stelekit/sketch/v2/SketchyGoldenTest.kt",
         "dev/stapler/stelekit/sketch/v2/RoughGolden.kt",
+        "dev/stapler/stelekit/sketch/v2/FreehandGolden.kt",
+        "dev/stapler/stelekit/sketch/v2/FreehandGoldenTest.kt",
         "dev/stapler/stelekit/sketch/v2/DrawListJson.kt",
         "dev/stapler/stelekit/sketch/v2/tools/ToolScenarioHarness.kt",
         "dev/stapler/stelekit/sketch/v2/tools/ToolCancelTest.kt",

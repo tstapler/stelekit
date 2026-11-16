@@ -36,8 +36,8 @@ import kotlin.math.min
  * array order), hidden layers omitted, effective opacity = element x layer, frame members wrapped in a [DrawOp.ClipOp].
  *
  * Text is drawn from the persisted size and line breaks (`TextLayoutPolicy.forRender`): nothing is measured here;
- * [metrics] is only asked whether a glyph is in the bundled font. Freedraw is a plain polyline until Story 2.1.4
- * supplies the perfect-freehand outline.
+ * [metrics] is only asked whether a glyph is in the bundled font. Freedraw is the perfect-freehand outline of its
+ * points (Story 2.1.4), filled with the stroke colour.
  *
  * Not thread-safe: it keeps one cached op list per element id, valid while `(version, effective opacity, style)`
  * match, and drops entries of elements that left the scene. Owns no scope.
@@ -224,9 +224,13 @@ class DrawListBuilder(private val metrics: TextMetricsProvider) {
     }
 
     private fun freedraw(e: FreedrawElement, opacity: Double): DrawOp {
-        val b = PathBuilder()
-        PathGeometry.polyline(b, points(e.points), closed = false)
-        return pathOp(e, b.build(), opacity, filled = false)
+        val measured = e.points.size == e.pressures.size && !e.simulatePressure
+        val input = e.points.mapIndexed { i, p ->
+            if (measured) FreehandPoint(p.x.value, p.y.value, e.pressures[i]) else FreehandPoint(p.x.value, p.y.value)
+        }
+        val outline = FreehandOutline.buildPts(input, FreehandOptions.excalidraw(e.base.style.strokeWidth, simulatePressure = !measured))
+        val fill = e.base.style.strokeColor.takeIf { it != TRANSPARENT }
+        return DrawOp.PathOp(e.id, FreehandOutline.toPath(outline), null, fill, opacity)
     }
 
     private fun point(e: PointElement, opacity: Double): DrawOp {
