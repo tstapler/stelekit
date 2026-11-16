@@ -9,3 +9,5 @@ BackgroundSyncScheduler  GitSyncSchedulingEntryPointTest  effect:periodic-work-e
 BackgroundTaskScheduler  TaskSchedulerAndroidEntryPointTest  effect:task-work-enqueued
 BackgroundTaskScheduler  TaskSchedulerDesktopEntryPointTest  effect:in-process-task-tick
 AssetPipelinePlugin  CloudStackEntryPointTest  effect:cloud-description-persisted
+TextMetricsProvider  TextMetricsAndroidEntryPointTest  effect:text-metrics-measured-android
+TextMetricsProvider  TextMetricsDesktopEntryPointTest  effect:text-metrics-measured-desktop

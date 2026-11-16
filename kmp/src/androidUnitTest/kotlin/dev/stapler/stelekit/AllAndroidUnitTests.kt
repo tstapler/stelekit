@@ -128,6 +128,7 @@ import org.junit.runners.Suite
     // GitSyncSchedulingEntryPointTest is excluded for the same reason (1): it drives
     // rememberGraphContentScheduledSyncControls through composeRule.setContent. Runs under Gradle.
     // TaskSchedulerAndroidEntryPointTest is excluded for the same reason (1).
+    // TextMetricsAndroidEntryPointTest is excluded for the same reason (1) and composes a @Composable (no Compose plugin in this target).
     //
     // BackgroundTasksSectionTest, TaskRunLogRowsTest and ModelDownloadUiTest (background-task scheduling UI)
     // are excluded for the same reason (1): they drive composables through ComposeContentTestRule.
