@@ -367,7 +367,7 @@ fun main() {
                         backgroundTaskScheduler = dev.stapler.stelekit.jobs.schedule.NoopTaskScheduler(),
                         taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry().also { it.registerGitSync() },
                         sketchWriterLease = dev.stapler.stelekit.ui.SketchStorageDefaults.writerLease(),
-                        browserPersistence = dev.stapler.stelekit.ui.SketchStorageDefaults.browserPersistence(),
+                        browserPersistence = dev.stapler.stelekit.platform.WasmBrowserPersistence(),
                         platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
                         // Demo-fallback mode has no persistent OPFS content to write attachments
                         // into (matches graphMoveQuiesceStrategy/hostLinkStep/insufficientSpaceCheck's
@@ -520,7 +520,7 @@ private suspend fun runEphemeralSession() {
                     backgroundTaskScheduler = dev.stapler.stelekit.jobs.schedule.NoopTaskScheduler(),
                     taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry().also { it.registerGitSync() },
                     sketchWriterLease = dev.stapler.stelekit.ui.SketchStorageDefaults.writerLease(),
-                    browserPersistence = dev.stapler.stelekit.ui.SketchStorageDefaults.browserPersistence(),
+                    browserPersistence = dev.stapler.stelekit.platform.WasmBrowserPersistence(),
                     platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
                     attachmentService = WasmMediaAttachmentService(fileSystem),
                     gitRepository = wasmGitRepository,

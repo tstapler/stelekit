@@ -69,6 +69,8 @@ class ScriptedSidecarStore(var latency: suspend () -> Unit = {}, val onWrite: ()
     override suspend fun deleteV2Sheet(slug: String, sheetUuid: String): Either<DomainError, Unit> =
         DomainError.FileSystemError.DeleteFailed(sheetUuid, "not scripted").left()
 
+    override suspend fun readV2SheetFile(slug: String, sheetUuid: String): ByteArray? = files["sheets/$sheetUuid.v2.json"]
+
     override suspend fun flushPending(): Int = 0
 
     override suspend fun slugsOnDisk(): List<String> = emptyList()

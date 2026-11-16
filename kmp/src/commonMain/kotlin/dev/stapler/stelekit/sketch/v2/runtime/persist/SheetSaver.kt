@@ -10,18 +10,10 @@ import arrow.core.right
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.ProjectUuid
-import dev.stapler.stelekit.model.SheetPayload
 import dev.stapler.stelekit.model.SheetUuid
-import dev.stapler.stelekit.model.SketchProject
-import dev.stapler.stelekit.model.SketchSheet
-import dev.stapler.stelekit.projectbridge.LocalBundleLoader
 import dev.stapler.stelekit.projectbridge.ProjectSidecarStore
 import dev.stapler.stelekit.projectbridge.SheetPaths
-import dev.stapler.stelekit.projectbridge.SidecarCodec
-import dev.stapler.stelekit.projectbridge.SidecarRead
 import dev.stapler.stelekit.projectbridge.SidecarSlugLock
-import dev.stapler.stelekit.projectbridge.SidecarWriteOutcome
-import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.SketchRepositories
 import dev.stapler.stelekit.sketch.v2.bridge.V2ToV1
 import dev.stapler.stelekit.sketch.v2.codec.SheetCodecV2
@@ -43,7 +35,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -148,14 +139,13 @@ class SheetSaver(
 ) {
     private class Submitted(val version: Long, val doc: SketchDocumentV2)
 
-    private class Encoded(val bytes: ByteArray, val sha: String, val layers: List<String>)
-
     private val scope = CoroutineScope(context + SupervisorJob() + CoroutineExceptionHandler { _, t -> uncaught(t) })
     private val latest = MutableStateFlow<Submitted?>(null)
     private val wake = Channel<Boolean>(Channel.CONFLATED)
     private val saveGate = Mutex()
     private val mutableState = MutableStateFlow<SaveState>(SaveState.Saved)
     private val sheetPath = SheetPaths.pathFor(target.sheet, SheetPaths.SCHEMA_V2)
+    private val persister = SheetPersister(target, ports)
     private var baseSha: String? = target.loadedSha
     private var savedVersion = 0L
     private var backoffLevel = 0
@@ -197,7 +187,7 @@ class SheetSaver(
      * scene is discarded only after it was kept as a conflict copy, which [SaveState.Conflict] with a path guarantees.
      */
     suspend fun reload(): Either<DomainError, SketchDocumentV2> = ports.slugLock.withSlug(target.slug) {
-        val bytes = readDiskBytes() ?: return@withSlug DomainError.FileSystemError.NotFound(sheetPath).left()
+        val bytes = persister.readDiskBytes() ?: return@withSlug DomainError.FileSystemError.NotFound(sheetPath).left()
         SheetCodecV2.decode(bytes, limits).fold(
             { DomainError.FileSystemError.ReadFailed(sheetPath, "sheet not readable: ${it::class.simpleName}").left() },
             { doc ->
@@ -213,7 +203,7 @@ class SheetSaver(
 
     /** Keeps the in-memory scene: re-bases onto the file now on disk and writes over it. The other version stays in git history. */
     suspend fun keepMine() {
-        ports.slugLock.withSlug(target.slug) { baseSha = readDiskBytes()?.let(SheetSaveGuard::sha) }
+        ports.slugLock.withSlug(target.slug) { baseSha = persister.readDiskBytes()?.let(SheetSaveGuard::sha) }
         ports.diagnostics.resolve(BannerRowId.SaveConflict)
         mutableState.value = SaveState.Pending
         wake.trySend(true)
@@ -259,8 +249,11 @@ class SheetSaver(
     private suspend fun saveSnapshot(snap: Submitted) {
         val encoded = encode(snap.doc) ?: return
         if (encoded.sha == baseSha) return saved(snap)
-        when (val result = persist(encoded)) {
-            Persist.Written -> saved(snap)
+        when (val result = persister.persist(encoded, baseSha)) {
+            Persist.Written -> {
+                baseSha = encoded.sha
+                saved(snap)
+            }
             Persist.Deferred -> deferWrite()
             is Persist.Conflict -> conflict(encoded, result.diskSha)
             is Persist.Failed -> fail(result.reason)
@@ -316,74 +309,6 @@ class SheetSaver(
     private fun failureOf(t: Throwable): SaveFailure =
         if (t::class.simpleName == OOM_NAME) SaveFailure.OutOfMemory else SaveFailure.Unexpected
 
-    private sealed interface Persist {
-        data object Written : Persist
-        data object Deferred : Persist
-        data class Conflict(val diskSha: String?) : Persist
-        data class Failed(val reason: SaveFailure) : Persist
-    }
-
-    /** One locked read-check-write; a v2 sheet that changed under the write ([SidecarWriteOutcome.StaleOpaque]) is re-planned. */
-    private suspend fun persist(encoded: Encoded): Persist = ports.slugLock.withSlug(target.slug) {
-        repeat(REPLAN_ATTEMPTS) {
-            when (val attempt = persistOnce(encoded)) {
-                null -> Unit
-                else -> return@withSlug attempt
-            }
-        }
-        Persist.Failed(SaveFailure.Write)
-    }
-
-    /** Null means a v2 sheet changed under the write and the pass must be redone. */
-    private suspend fun persistOnce(encoded: Encoded): Persist? {
-        val read = ports.store.read(target.slug)
-        val files = when (read) {
-            SidecarRead.Unavailable -> return Persist.Failed(SaveFailure.Unavailable)
-            is SidecarRead.Corrupt -> return Persist.Conflict(null)
-            SidecarRead.Absent -> emptyMap()
-            is SidecarRead.Present -> read.files
-        }
-        val check = SheetSaveGuard.check(baseSha, files[sheetPath], encoded.sha)
-        if (check is BaseCheck.Changed) return Persist.Conflict(check.diskSha)
-        val loaded = ports.repos.projects.loadProject(target.projectUuid).getOrNull() ?: return Persist.Failed(SaveFailure.Write)
-        // The model on disk moved past this device's last reconcile: a push from here would overwrite what a pull brought.
-        val base = loaded.project.lastSyncedSidecarHash
-        if (base != null && files.isNotEmpty() && SidecarCodec.bundleHash(files) != base) return Persist.Deferred
-        val local = LocalBundleLoader.load(ports.repos, loaded.project, files + (sheetPath to encoded.bytes)).getOrNull()
-            ?: return Persist.Failed(SaveFailure.Write)
-        val row = local.sheets.firstOrNull { it.uuid == target.sheet } ?: return Persist.Failed(SaveFailure.Write)
-        val updatedRow = row.copy(schemaVersion = SheetPaths.SCHEMA_V2, layers = encoded.layers)
-        val bundle = local.copy(
-            sheets = local.sheets.map { if (it.uuid == target.sheet) updatedRow else it },
-            sheetPayloads = local.sheetPayloads + (target.sheet to SheetPayload.V2Opaque.of(encoded.bytes)),
-        )
-        val modelFiles = SidecarCodec.encode(bundle)
-        val others = bundle.sheetPayloads.filterKeys { it != target.sheet }
-            .mapNotNull { (uuid, payload) -> (payload as? SheetPayload.V2Opaque)?.let { SheetPaths.pathFor(uuid, SheetPaths.SCHEMA_V2) to it.sha256 } }.toMap()
-        return when (ports.store.writeNow(target.slug, modelFiles - others.keys, others)) {
-            SidecarWriteOutcome.Written -> finishWrite(loaded.project, updatedRow, SidecarCodec.bundleHash(modelFiles), encoded)
-            SidecarWriteOutcome.Deferred -> Persist.Deferred
-            SidecarWriteOutcome.StaleOpaque -> null
-            SidecarWriteOutcome.Unavailable -> Persist.Failed(SaveFailure.Unavailable)
-            is SidecarWriteOutcome.Failed -> Persist.Failed(SaveFailure.Write)
-        }
-    }
-
-    /** The files are written: mirror the sheet row and move the reconcile base so the next reconcile reads `Unchanged`. */
-    @OptIn(DirectRepositoryWrite::class)
-    private suspend fun finishWrite(project: SketchProject, row: SketchSheet, hash: String, encoded: Encoded): Persist {
-        baseSha = encoded.sha
-        val token = ports.repos.projects.loadProject(project.uuid).getOrNull()?.token ?: return Persist.Failed(SaveFailure.Write)
-        val rowResult = write { ports.repos.sheets.saveSheet(row, token) }
-        if (rowResult.isLeft()) return Persist.Failed(SaveFailure.Write)
-        val fresh = ports.repos.projects.loadProject(project.uuid).getOrNull()?.project ?: project
-        val baseResult = write { ports.repos.projects.saveProject(fresh.copy(lastSyncedSidecarHash = hash, baseRevision = fresh.modelRevision)) }
-        return if (baseResult.isLeft()) Persist.Failed(SaveFailure.Write) else Persist.Written
-    }
-
-    private suspend fun write(op: suspend () -> Either<DomainError, Unit>): Either<DomainError, Unit> =
-        ports.writeActor?.execute { op() } ?: op()
-
     private suspend fun conflict(encoded: Encoded, diskSha: String?) {
         ports.log.saveConflict(target.sheet.value)
         SheetSaveGuard.writeConflictCopy(ports.store, target.slug, target.sheet, encoded.bytes).fold(
@@ -398,7 +323,7 @@ class SheetSaver(
 
     /** The post-sync coordinator pulled this project: when the open sheet's file changed, prompt Reload without waiting for a save. */
     private suspend fun onExternalChange() {
-        val diskSha = ports.slugLock.withSlug(target.slug) { readDiskBytes()?.let(SheetSaveGuard::sha) }
+        val diskSha = ports.slugLock.withSlug(target.slug) { persister.readDiskBytes()?.let(SheetSaveGuard::sha) }
         if (diskSha == null || diskSha == baseSha) return
         val unsaved = latest.value?.version?.let { it != savedVersion } == true
         if (unsaved) {
@@ -409,8 +334,6 @@ class SheetSaver(
         mutableState.value = SaveState.Conflict(null)
         ports.diagnostics.raise(BannerRowId.SaveConflict)
     }
-
-    private suspend fun readDiskBytes(): ByteArray? = (ports.store.read(target.slug) as? SidecarRead.Present)?.files?.get(sheetPath)
 
     private companion object {
         const val REPLAN_ATTEMPTS = 3

@@ -72,6 +72,7 @@ class SketchBundleCopyTest {
         override suspend fun pruneConflictCopies(slug: String, sheetUuid: String, unresolved: Set<String>): Either<DomainError, Int> = unused()
         override suspend fun retentionSize(slug: String): RetentionPolicy.Size = unused()
         override suspend fun deleteV2Sheet(slug: String, sheetUuid: String): Either<DomainError, Unit> = unused()
+        override suspend fun readV2SheetFile(slug: String, sheetUuid: String): ByteArray? = null
         override suspend fun flushPending(): Int = unused()
         override suspend fun slugsOnDisk(): List<String> = unused()
         private fun <T> unused(): T = error("not used by SketchBundleCopy")

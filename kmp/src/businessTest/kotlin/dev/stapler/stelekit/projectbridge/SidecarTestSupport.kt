@@ -33,8 +33,19 @@ internal class SidecarFs : FakeRelocationFileSystem() {
 
     override fun getLastModifiedTime(path: String): Long? = if (fileExists(path)) mtimes[path] ?: 0L else null
 
+    /** When set, the next write to a path ending in this text stores half the bytes and then kills the process (a torn write). */
+    var tearNextWriteEndingWith: String? = null
+
     override fun writeFileBytes(path: String, data: ByteArray): Boolean {
         if (dead) error("process is gone")
+        tearNextWriteEndingWith?.let { suffix ->
+            if (path.endsWith(suffix)) {
+                tearNextWriteEndingWith = null
+                super.writeFileBytes(path, data.copyOf(data.size / 2))
+                dead = true
+                error("process died mid-write")
+            }
+        }
         mtimes[path] = ++clock
         return super.writeFileBytes(path, data)
     }

@@ -93,6 +93,12 @@ interface ProjectSidecarStore {
     /** Deletes `sheets/<sheetUuid>.v2.json`; the only way a schema-2 file is removed (converter cleanup, restore). */
     suspend fun deleteV2Sheet(slug: String, sheetUuid: String): Either<DomainError, Unit>
 
+    /**
+     * Reads `sheets/<sheetUuid>.v2.json` whether or not the model references it (the converter's staged file, which
+     * [read] never opens); null when it is absent, the uuid is unsafe or the platform cannot store it.
+     */
+    suspend fun readV2SheetFile(slug: String, sheetUuid: String): ByteArray?
+
     /** Writes queued bundles once the git sync is idle; returns how many were written. */
     suspend fun flushPending(): Int
 
@@ -262,6 +268,11 @@ class FileProjectSidecarStore(
         if (!SAFE_SEGMENT.matches(sheetUuid)) return DomainError.FileSystemError.WriteFailed(path, "unsafe sheet uuid").left()
         if (fs.fileExists(path) && !fs.deleteFile(path)) return DomainError.FileSystemError.WriteFailed(path, "delete failed").left()
         Unit.right()
+    }
+
+    override suspend fun readV2SheetFile(slug: String, sheetUuid: String): ByteArray? = mutex.withLock {
+        if (disk.unavailable() || !SAFE_SEGMENT.matches(sheetUuid)) null
+        else fs.readFileBytes("${disk.dir(slug)}/${SidecarCodec.SHEETS_DIR}/$sheetUuid.v2.json")
     }
 
     override suspend fun writeSourceSnapshot(slug: String, hash8: String, bytes: ByteArray): SidecarWriteOutcome = mutex.withLock {
