@@ -44,13 +44,12 @@ internal fun buildGitSyncTestService(
     credentialAccessProvider: (() -> CredentialAccess)? = null,
     isOnline: (() -> Boolean)? = null,
     gate: RepoOpGate = RepoOpGate(),
-): GitSyncService {
-    val stubFs = StubFileSystem()
-    val graphLoader = GraphLoader(
-        fileSystem = stubFs,
+    graphLoader: GraphLoader = GraphLoader(
+        fileSystem = StubFileSystem(),
         pageRepository = InMemoryPageRepository(),
         blockRepository = InMemoryBlockRepository(),
-    )
+    ),
+): GitSyncService {
     val graphWriter = GraphWriter(fileSystem = fileSystem)
     return GitSyncService(
         gitRepository = gitRepository,

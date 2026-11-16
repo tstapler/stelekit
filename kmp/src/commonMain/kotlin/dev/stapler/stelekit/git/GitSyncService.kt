@@ -26,6 +26,7 @@ import dev.stapler.stelekit.git.model.CloneDepthState
 import dev.stapler.stelekit.git.merge.SidecarConflictResolver
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitAuthType
+import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.git.model.logSummary
 import dev.stapler.stelekit.platform.FileSystem
@@ -39,6 +40,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -429,7 +431,9 @@ class GitSyncService(
                 lfsHeld = staged.held
                 if (staged.commitNeeded) {
                     guards.changes(config, GuardScope.Staged, liftMassChange)?.let { return@withContext refuse(it) }
-                    gitRepository.commit(config, buildCommitMessage(config)).onLeft { err ->
+                    ensureActive()
+                    // Non-cancellable: once the commit starts it finishes, then the pipeline stops at the next boundary.
+                    withContext(NonCancellable) { gitRepository.commit(config, buildCommitMessage(config)) }.onLeft { err ->
                         publishFailure(graphId, err) { g -> sync(g, SyncTrigger.Automatic) }
                         return@withContext err.left()
                     }
@@ -438,6 +442,7 @@ class GitSyncService(
             }
 
             // 6. Fetch
+            ensureActive()
             _syncState.value = SyncState.Fetching
             val fetchResult = when (val r = gitRepository.fetch(config)) {
                 is Either.Left -> {
@@ -447,96 +452,27 @@ class GitSyncService(
                 is Either.Right -> r.value
             }
 
-            // 7. Merge (if remote changes available)
+            // 7. Merge (if remote changes available). The check is outside the unit and before merge() runs, so
+            // it can only stop a run that has not touched the working tree.
             var remoteCommitsMerged = 0
             var autoMergedPaths: List<String> = emptyList()
             if (fetchResult.hasRemoteChanges) {
-                _syncState.value = SyncState.Merging
-                val mergeResult = when (val r = gitRepository.merge(config)) {
-                    is Either.Left -> {
-                        publishFailure(graphId, r.value) { g -> sync(g, SyncTrigger.Automatic) }
-                        return@withContext r.value.left()
+                ensureActive()
+                when (val outcome = mergeUnit(graphId, config, fetchResult)) {
+                    is MergeUnitOutcome.Exit -> return@withContext outcome.result
+                    is MergeUnitOutcome.Continue -> {
+                        remoteCommitsMerged = outcome.remoteCommitsMerged
+                        autoMergedPaths = outcome.autoMergedPaths
                     }
-                    is Either.Right -> r.value
                 }
-
-                // Files the block-aware merge (honoring .gitattributes) already merged cleanly need
-                // no user decision. Suppress the watcher before writing them so the writes are not
-                // read back as external edits; the finally below clears it on every exit path.
-                // Sidecars are app-owned derived data: union them here rather than asking the user.
-                val conflicts = mergeResult.conflicts.map { SidecarConflictResolver.resolve(it) ?: it }
-                val autoResolvable = conflicts.filter { it.autoResolvedBy != null }
-                if (autoResolvable.isNotEmpty()) graphLoader.beginGitMerge(autoResolvable.map { it.filePath })
-                // The working tree changed under the DB the moment merge() returned, so reloading it is
-                // not a success-path step: [reloadMergedFiles] runs from the finally below on EVERY exit
-                // (conflict, journal-merge proposal, commit failure), not just the clean one.
-                var reloadPaths: List<String> = mergeResult.changedFiles
-                try {
-                    val autoResolved = autoResolveCleanMerges(gitRepository, fileSystem, config, autoResolvable, logger)
-                    val autoResolvedPaths = autoResolved.mapTo(HashSet()) { it.filePath }
-                    autoMergedPaths = autoResolved.map { it.wikiRelativePath }
-                    val unresolvedConflicts = conflicts.filter { it.filePath !in autoResolvedPaths }
-                    val unresolvedPaths = unresolvedConflicts.mapTo(HashSet()) { it.filePath }
-                    reloadPaths = (mergeResult.changedFiles + autoResolvedPaths).distinct().filter { it !in unresolvedPaths }
-
-                    if (mergeResult.hasConflicts && unresolvedConflicts.isEmpty()) {
-                        val message = buildCommitMessage(config, isMerge = true) + autoMergeNote(autoResolved)
-                        gitRepository.commit(config, message).onLeft { err ->
-                            // Leave no MERGE_HEAD/staged files behind: the next sync would otherwise start mid-merge.
-                            gitRepository.abortMerge(config).onLeft { abortErr ->
-                                logger.error("abortMerge after failed auto-merge commit also failed: ${abortErr.message}")
-                            }
-                            _syncState.value = SyncState.Error(err)
-                            return@withContext err.left()
-                        }
-                    }
-
-                    if (unresolvedConflicts.isNotEmpty()) {
-                        // Try algorithmic journal merge for journal files
-                        val journalConflicts = unresolvedConflicts.filter {
-                            JournalMergeService.isJournalFile(
-                                it.filePath.substringAfterLast('/').substringAfterLast('\\')
-                            )
-                        }
-                        // Only attempt algorithmic merge for a single journal conflict — multiple
-                        // conflicts require sequential resolution and must go through the manual screen.
-                        if (journalConflicts.size == 1 && journalMergeService != null) {
-                            val proposal = try {
-                                journalMergeService.propose(journalConflicts.first(), config.repoRoot)
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                null
-                            }
-                            if (proposal != null) {
-                                _syncState.value = SyncState.JournalMergeReady(graphId, proposal)
-                                val conflictErr = DomainError.GitError.MergeConflict(
-                                    conflictCount = unresolvedConflicts.size,
-                                    conflictPaths = unresolvedConflicts.map { it.filePath },
-                                )
-                                return@withContext conflictErr.left()
-                            }
-                        }
-                        val conflictErr = DomainError.GitError.MergeConflict(
-                            conflictCount = unresolvedConflicts.size,
-                            conflictPaths = unresolvedConflicts.map { it.filePath },
-                        )
-                        _syncState.value = SyncState.ConflictPending(unresolvedConflicts)
-                        return@withContext conflictErr.left()
-                    }
-
-                    // 8. Reload merged files — see the finally below.
-                } finally {
-                    reloadMergedFiles(reloadPaths)
-                }
-
-                remoteCommitsMerged = mergeResult.mergedCommitCount ?: fetchResult.remoteCommitCount
+                ensureActive()
             }
 
             // 9. Push
             guards.changes(config, GuardScope.NetPush, liftMassChange)?.let { return@withContext refuse(it) }
+            ensureActive()
             _syncState.value = SyncState.Pushing
-            gitRepository.push(config).onLeft { err ->
+            withContext(NonCancellable) { gitRepository.push(config) }.onLeft { err ->
                 if (err is DomainError.GitError.MergeConflict) {
                     // Task 3.2.3b: a push-time conflict (GitHub's ref-PATCH 409/422, or GitLab's
                     // commits-POST 400) is a *conflict*, not a generic push failure — route it to
@@ -576,6 +512,103 @@ class GitSyncService(
                 runGuard.crashed("sync", e)
             }
         }
+
+    /**
+     * Merge, auto-resolve and the reload-in-`finally` form one non-cancellable unit (#676): no cancellation
+     * check separates `merge()` returning from the end of the reload. The body has no `return@withContext`,
+     * which inside a nested `withContext(NonCancellable)` would bind to the inner lambda and fall through to push.
+     */
+    private suspend fun mergeUnit(graphId: String, config: GitConfig, fetchResult: FetchResult): MergeUnitOutcome =
+        withContext(NonCancellable) { runMergeUnit(graphId, config, fetchResult) }
+
+    private suspend fun runMergeUnit(graphId: String, config: GitConfig, fetchResult: FetchResult): MergeUnitOutcome {
+        var autoMergedPaths: List<String> = emptyList()
+        _syncState.value = SyncState.Merging
+        val mergeResult = when (val r = gitRepository.merge(config)) {
+            is Either.Left -> {
+                publishFailure(graphId, r.value) { g -> sync(g, SyncTrigger.Automatic) }
+                return MergeUnitOutcome.Exit(Either.Left(r.value))
+            }
+            is Either.Right -> r.value
+        }
+
+        // Files the block-aware merge (honoring .gitattributes) already merged cleanly need
+        // no user decision. Suppress the watcher before writing them so the writes are not
+        // read back as external edits; the finally below clears it on every exit path.
+        // Sidecars are app-owned derived data: union them here rather than asking the user.
+        val conflicts = mergeResult.conflicts.map { SidecarConflictResolver.resolve(it) ?: it }
+        val autoResolvable = conflicts.filter { it.autoResolvedBy != null }
+        if (autoResolvable.isNotEmpty()) graphLoader.beginGitMerge(autoResolvable.map { it.filePath })
+        // The working tree changed under the DB the moment merge() returned, so reloading it is
+        // not a success-path step: [reloadMergedFiles] runs from the finally below on EVERY exit
+        // (conflict, journal-merge proposal, commit failure), not just the clean one.
+        var reloadPaths: List<String> = mergeResult.changedFiles
+        try {
+            val autoResolved = autoResolveCleanMerges(gitRepository, fileSystem, config, autoResolvable, logger)
+            val autoResolvedPaths = autoResolved.mapTo(HashSet()) { it.filePath }
+            autoMergedPaths = autoResolved.map { it.wikiRelativePath }
+            val unresolvedConflicts = conflicts.filter { it.filePath !in autoResolvedPaths }
+            val unresolvedPaths = unresolvedConflicts.mapTo(HashSet()) { it.filePath }
+            reloadPaths = (mergeResult.changedFiles + autoResolvedPaths).distinct().filter { it !in unresolvedPaths }
+
+            if (mergeResult.hasConflicts && unresolvedConflicts.isEmpty()) {
+                val message = buildCommitMessage(config, isMerge = true) + autoMergeNote(autoResolved)
+                gitRepository.commit(config, message).onLeft { err ->
+                    // Leave no MERGE_HEAD/staged files behind: the next sync would otherwise start mid-merge.
+                    gitRepository.abortMerge(config).onLeft { abortErr ->
+                        logger.error("abortMerge after failed auto-merge commit also failed: ${abortErr.message}")
+                    }
+                    _syncState.value = SyncState.Error(err)
+                    return MergeUnitOutcome.Exit(Either.Left(err))
+                }
+            }
+
+            if (unresolvedConflicts.isNotEmpty()) {
+                // Try algorithmic journal merge for journal files
+                val journalConflicts = unresolvedConflicts.filter {
+                    JournalMergeService.isJournalFile(
+                        it.filePath.substringAfterLast('/').substringAfterLast('\\')
+                    )
+                }
+                // Only attempt algorithmic merge for a single journal conflict — multiple
+                // conflicts require sequential resolution and must go through the manual screen.
+                if (journalConflicts.size == 1 && journalMergeService != null) {
+                    val proposal = try {
+                        journalMergeService.propose(journalConflicts.first(), config.repoRoot)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        null
+                    }
+                    if (proposal != null) {
+                        _syncState.value = SyncState.JournalMergeReady(graphId, proposal)
+                        val conflictErr = DomainError.GitError.MergeConflict(
+                            conflictCount = unresolvedConflicts.size,
+                            conflictPaths = unresolvedConflicts.map { it.filePath },
+                        )
+                        return MergeUnitOutcome.Exit(Either.Left(conflictErr))
+                    }
+                }
+                val conflictErr = DomainError.GitError.MergeConflict(
+                    conflictCount = unresolvedConflicts.size,
+                    conflictPaths = unresolvedConflicts.map { it.filePath },
+                )
+                _syncState.value = SyncState.ConflictPending(unresolvedConflicts)
+                return MergeUnitOutcome.Exit(Either.Left(conflictErr))
+            }
+
+            // 8. Reload merged files — see the finally below.
+        } finally {
+            reloadMergedFiles(reloadPaths)
+        }
+        return MergeUnitOutcome.Continue(mergeResult.mergedCommitCount ?: fetchResult.remoteCommitCount, autoMergedPaths)
+    }
+
+    /** How the merge unit hands control back: keep going with the merge facts, or return this failure. */
+    private sealed interface MergeUnitOutcome {
+        data class Continue(val remoteCommitsMerged: Int, val autoMergedPaths: List<String>) : MergeUnitOutcome
+        data class Exit(val result: Either.Left<DomainError.GitError>) : MergeUnitOutcome
+    }
 
     /** Publishes the guard's refusal on [syncState] and returns it as the failure of the calling operation. */
     private val refuse: (DomainError.GitError) -> Either<DomainError.GitError, Nothing> = { err ->

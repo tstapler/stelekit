@@ -1,0 +1,242 @@
+// Copyright (c) 2026 Tyler Stapler
+// SPDX-License-Identifier: Elastic-2.0
+
+package dev.stapler.stelekit.git
+
+import arrow.core.Either
+import arrow.core.right
+import dev.stapler.stelekit.db.GraphLoader
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.merge.MergePolicy
+import dev.stapler.stelekit.git.model.ConflictFile
+import dev.stapler.stelekit.git.model.ConflictHunk
+import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.git.model.SyncState
+import dev.stapler.stelekit.git.testsupport.StubConfigRepository
+import dev.stapler.stelekit.git.testsupport.StubFileSystem
+import dev.stapler.stelekit.git.testsupport.StubGitRepository
+import dev.stapler.stelekit.git.testsupport.sampleConfig
+import dev.stapler.stelekit.model.RepoRoot
+import dev.stapler.stelekit.repository.InMemoryBlockRepository
+import dev.stapler.stelekit.repository.InMemoryPageRepository
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import java.io.File
+import java.nio.file.Files
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.test.AfterTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
+
+/** Story 1.5: step-boundary cancellation, the non-cancellable commit, and the extracted merge unit. */
+class GitSyncCancelBoundaryTest {
+    private val gitDir: File = Files.createTempDirectory("cancel_boundary_").toFile()
+    private val config: GitConfig = sampleConfig.copy(repoRoot = RepoRoot(gitDir.absolutePath))
+    private val gate = RepoOpGate()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val services = mutableListOf<GitSyncService>()
+
+    @AfterTest
+    fun tearDown() {
+        services.forEach { it.shutdown() }
+        scope.coroutineContext[Job]?.cancel()
+        gitDir.deleteRecursively()
+    }
+
+    private fun key(): String = checkNotNull(RepoOpGate.keyForOrNull("${gitDir.absolutePath}/.git") { File(it).canonicalFile.path })
+
+    private fun service(git: GitRepository, loader: GraphLoader? = null, fs: StubFileSystem = StubFileSystem()): GitSyncService {
+        val configRepo = StubConfigRepository(Either.Right(config))
+        val built = if (loader != null) {
+            buildGitSyncTestService(git, configRepo, fs, isOnline = { true }, gate = gate, graphLoader = loader)
+        } else {
+            buildGitSyncTestService(git, configRepo, fs, isOnline = { true }, gate = gate)
+        }
+        return built.also { services += it }
+    }
+
+    /** Repository whose calls are recorded and whose steps can block, ignoring cancellation, until released. */
+    private open class Repo(var localChanges: Boolean = false, var remoteChanges: Boolean = false) : StubGitRepository() {
+        val calls = CopyOnWriteArrayList<String>()
+        @Volatile var onStatus: suspend () -> Unit = {}
+        @Volatile var onCommit: suspend () -> Unit = {}
+        @Volatile var onFetch: suspend () -> Unit = {}
+        @Volatile var onMergeDone: () -> Unit = {}
+        @Volatile var mergeResult = MergeResult(hasConflicts = false, conflicts = emptyList(), changedFiles = emptyList(), mergedCommitCount = 1)
+        @Volatile var commitResult: Either<DomainError.GitError, String> = "sha".right()
+
+        fun count(name: String) = calls.count { it == name }
+
+        override fun gateKeyFor(config: GitConfig): String? =
+            RepoOpGate.keyForOrNull("${config.repoRoot.value}/.git") { File(it).canonicalFile.path }
+        override suspend fun beginOwnedOperation(config: GitConfig, info: OwnedOperationInfo) = LockVerdict.NoLock.right()
+        override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> {
+            onStatus()
+            return GitStatus(localChanges, emptyList(), if (localChanges) listOf("pages/a.md") else emptyList()).right()
+        }
+        override suspend fun commit(config: GitConfig, message: String): Either<DomainError.GitError, String> {
+            calls += "commit.start"
+            onCommit()
+            calls += "commit"
+            return commitResult
+        }
+        override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> {
+            calls += "fetch"
+            onFetch()
+            return FetchResult(remoteChanges, if (remoteChanges) 1 else 0).right()
+        }
+        override suspend fun merge(config: GitConfig): Either<DomainError.GitError, MergeResult> {
+            calls += "merge"
+            return mergeResult.also { onMergeDone() }.right()
+        }
+        override suspend fun stageSubdir(config: GitConfig, excludePaths: Set<String>) = Unit.right()
+        override suspend fun markResolved(config: GitConfig, filePath: String) = Unit.right()
+        override suspend fun abortMerge(config: GitConfig) = Unit.right().also { calls += "abort" }
+        override suspend fun push(config: GitConfig) = Unit.right().also { calls += "push" }
+    }
+
+    /** Blocks the calling thread (a non-interruptible JGit-style call) until [latch] opens. */
+    private fun blocking(entered: CompletableDeferred<Unit>, latch: CountDownLatch): suspend () -> Unit = {
+        entered.complete(Unit)
+        latch.await()
+    }
+
+    @Test
+    fun cancelDuringFetch_should_NotMerge_AndCancelBeforeCommitShouldNotCommit() = runBlocking<Unit> {
+        val entered = CompletableDeferred<Unit>()
+        val latch = CountDownLatch(1)
+        val git = Repo(remoteChanges = true).apply { onFetch = blocking(entered, latch) }
+        val svc = service(git)
+
+        val run = scope.async { svc.sync("g") }
+        withTimeout(20_000) { entered.await() }
+        run.cancel()
+        latch.countDown()
+        run.join()
+
+        assertEquals(0, git.count("merge"), "a cancel during fetch must not start the merge")
+        assertEquals(0, git.count("push"))
+        assertEquals(SyncState.Idle, svc.syncState.value)
+        assertFalse(gate.isHeld(key()))
+
+        val statusEntered = CompletableDeferred<Unit>()
+        val statusLatch = CountDownLatch(1)
+        val git2 = Repo(localChanges = true).apply { onStatus = blocking(statusEntered, statusLatch) }
+        val svc2 = service(git2)
+        val run2 = scope.async { svc2.sync("g") }
+        withTimeout(20_000) { statusEntered.await() }
+        run2.cancel()
+        statusLatch.countDown()
+        run2.join()
+
+        assertEquals(0, git2.count("commit.start"), "a cancel before the commit step must not commit")
+        assertFalse(gate.isHeld(key()))
+    }
+
+    @Test
+    fun cancelThenImmediateRepress_should_NotOverlap_When_BlockingCallStillRunning() = runBlocking<Unit> {
+        val entered = CompletableDeferred<Unit>()
+        val latch = CountDownLatch(1)
+        val git = Repo(localChanges = true).apply { onCommit = blocking(entered, latch) }
+        val svc = service(git)
+
+        val first = scope.async { svc.sync("g") }
+        withTimeout(20_000) { entered.await() }
+        first.cancel()
+        // Scheduled origin: a UI press would queue a follow-up rerun that re-acquires the gate after the first run ends.
+        val second = withTimeout(20_000) { svc.sync("g", origin = SyncOrigin.Scheduled) }
+
+        assertIs<DomainError.GitError.SyncInProgress>(second.leftOrNull())
+        assertTrue(gate.isHeld(key()), "the gate stays held while the blocking call runs")
+        assertTrue(svc.syncState.value !is SyncState.Idle, "state must not read Idle while a call still runs: ${svc.syncState.value}")
+        assertEquals(1, git.count("commit.start"))
+
+        latch.countDown()
+        first.join()
+
+        assertFalse(gate.isHeld(key()))
+        assertEquals(0, git.count("fetch"), "the pipeline stops before fetch after the cancel")
+    }
+
+    @Test
+    fun commit_should_CompleteAndPipelineStopBeforeFetch_When_CancelRequestedDuringCommit() = runBlocking<Unit> {
+        val entered = CompletableDeferred<Unit>()
+        val proceed = CompletableDeferred<Unit>()
+        val git = Repo(localChanges = true).apply { onCommit = { entered.complete(Unit); proceed.await() } }
+        val svc = service(git)
+
+        val run = scope.async { svc.sync("g") }
+        withTimeout(20_000) { entered.await() }
+        run.cancel()
+        proceed.complete(Unit)
+        run.join()
+
+        assertEquals(1, git.count("commit"), "the commit must finish once started")
+        assertEquals(0, git.count("fetch"))
+        assertEquals(SyncState.Idle, svc.syncState.value)
+        assertFalse(gate.isHeld(key()))
+    }
+
+    private val realConflict = ConflictFile(
+        filePath = "/repo/real.md",
+        wikiRelativePath = "real.md",
+        hunks = listOf(ConflictHunk(id = "h", localLines = listOf("- a"), remoteLines = listOf("- b"))),
+        rawContent = "<<<<<<< LOCAL\n- a\n=======\n- b\n>>>>>>> REMOTE\n",
+    )
+
+    @Test
+    fun mergeUnit_should_NotFallThroughToPush_When_ConflictOrCommitFailureExitsInsideNonCancellable() = runBlocking<Unit> {
+        val conflicted = Repo(remoteChanges = true).apply {
+            mergeResult = MergeResult(true, listOf(realConflict), emptyList(), 1)
+        }
+        val r1 = service(conflicted).sync("g")
+        assertIs<DomainError.GitError.MergeConflict>(r1.leftOrNull())
+        assertEquals(0, conflicted.count("push"), "a conflict in the unit must never reach push")
+
+        val clean = ConflictFile("/repo/clean.md", "clean.md", emptyList(), rawContent = "- merged\n", autoResolvedBy = MergePolicy.LogseqUnion)
+        val failing = Repo(remoteChanges = true).apply {
+            mergeResult = MergeResult(true, listOf(clean), emptyList(), 1)
+            commitResult = Either.Left(DomainError.GitError.CommitFailed("boom"))
+        }
+        val r2 = service(failing).sync("g")
+        assertIs<DomainError.GitError.CommitFailed>(r2.leftOrNull())
+        assertEquals(0, failing.count("push"), "a commit failure in the unit must never reach push")
+        assertEquals(1, failing.count("abort"))
+    }
+
+    @Test
+    fun mergeUnit_should_ReloadEveryChangedPathBeforeStopping_When_CancelArrivesRightAfterMerge() = runBlocking<Unit> {
+        val reloaded = CopyOnWriteArrayList<String>()
+        val fs = object : StubFileSystem() {
+            override fun invalidateShadow(path: String) { reloaded += path }
+        }
+        val loader = GraphLoader(fs, InMemoryPageRepository(), InMemoryBlockRepository())
+        val jobRef = AtomicReference<Job>()
+        val git = Repo(remoteChanges = true).apply {
+            mergeResult = MergeResult(false, emptyList(), listOf("/repo/pages/a.md", "/repo/pages/b.md"), 1)
+            onMergeDone = { jobRef.get().cancel() }
+        }
+        val svc = service(git, loader, fs)
+
+        val run = scope.async(start = kotlinx.coroutines.CoroutineStart.LAZY) { svc.sync("g") }
+        jobRef.set(run)
+        run.start()
+        run.join()
+
+        assertEquals(listOf("/repo/pages/a.md", "/repo/pages/b.md"), reloaded.toList(), "#676: the reload must finish after a cancel")
+        assertEquals(0, git.count("push"), "the pipeline stops after the unit")
+        assertEquals(SyncState.Idle, svc.syncState.value)
+        assertFalse(gate.isHeld(key()))
+    }
+}

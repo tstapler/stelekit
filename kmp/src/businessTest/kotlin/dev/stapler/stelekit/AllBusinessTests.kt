@@ -179,6 +179,7 @@ import dev.stapler.stelekit.asset.pipeline.CloudStructuralAuditTest
 import dev.stapler.stelekit.asset.pipeline.EgressLedgerTest
 import dev.stapler.stelekit.asset.pipeline.GrantedConsentMintSiteAuditTest
 import dev.stapler.stelekit.audit.EgressSurfaceAuditTest
+import dev.stapler.stelekit.audit.NonCancellableReturnAuditTest
 import dev.stapler.stelekit.llm.AnthropicMessagesClientCharacterizationTest
 import dev.stapler.stelekit.asset.pipeline.AssetPluginsControllerTest
 import dev.stapler.stelekit.asset.pipeline.PluginRegistryTest
@@ -315,6 +316,7 @@ import dev.stapler.stelekit.migration.PostMigrationFlusherTest
 import dev.stapler.stelekit.git.GitSyncServiceLfsGuardTest
 import dev.stapler.stelekit.git.GitSyncServicePeriodicTest
 import dev.stapler.stelekit.git.SyncSingleFlightRegressionTest
+import dev.stapler.stelekit.git.GitSyncCancelBoundaryTest
 import dev.stapler.stelekit.git.GitSyncServiceSingleFlightTest
 import dev.stapler.stelekit.git.ResolveGateKeyFailureTest
 import dev.stapler.stelekit.git.SyncOriginTriggerMappingTest
@@ -603,6 +605,7 @@ import org.junit.runners.Suite
     EgressLedgerTest::class,
     GrantedConsentMintSiteAuditTest::class,
     EgressSurfaceAuditTest::class,
+    NonCancellableReturnAuditTest::class,
     AnthropicMessagesClientCharacterizationTest::class,
     AssetPluginsControllerTest::class,
     PluginHostRemovalAuditTest::class,
@@ -730,6 +733,7 @@ import org.junit.runners.Suite
     GitSyncServicePeriodicTest::class,
     SyncSingleFlightRegressionTest::class,
     GitSyncServiceSingleFlightTest::class,
+    GitSyncCancelBoundaryTest::class,
     ResolveGateKeyFailureTest::class,
     SyncOriginTriggerMappingTest::class,
     SyncSingleFlightModelTest::class,
