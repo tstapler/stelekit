@@ -15,4 +15,10 @@ sealed interface CommandError {
     data class DuplicateElement(val id: String) : CommandError
 
     data class UnknownElement(val id: String) : CommandError
+
+    /** A transaction was committed with no net change to the document; nothing is recorded in history. */
+    data object NoChange : CommandError
+
+    /** A patch or history entry no longer matches the document it was applied to (`id` names the element, or the part of the document). */
+    data class PatchConflict(val id: String) : CommandError
 }
