@@ -148,6 +148,7 @@ filegroup(
         "dev/stapler/stelekit/platform/PlatformFileOpener.kt",
         "dev/stapler/stelekit/platform/PlatformFileSystem.kt",
         "dev/stapler/stelekit/platform/PlatformSettings.kt",
+        "dev/stapler/stelekit/platform/PngEncoder.kt",
         "dev/stapler/stelekit/platform/ResourceLoader.kt",
         "dev/stapler/stelekit/platform/security/CredentialStore.kt",
         "dev/stapler/stelekit/sections/PlatformSectionSync.kt",
