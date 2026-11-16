@@ -8,9 +8,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.platform.Settings
 
 @Composable
-fun AdvancedSettings(onReindex: () -> Unit) {
+fun AdvancedSettings(onReindex: () -> Unit, annotatorSettings: Settings? = null) {
+    if (annotatorSettings != null) {
+        SettingsSection("Image annotator") {
+            AnnotatorStickyToolsRow(annotatorSettings)
+        }
+    }
     SettingsSection("Danger Zone") {
         Text(
             "If your graph data seems inconsistent or missing, you can force a full re-index of your files into the database.",

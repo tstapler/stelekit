@@ -218,7 +218,7 @@ class AnnotateEditorPartsTest {
         assertEquals(1, estimates)
         wired = false
         rule.waitForIdle()
-        rule.onNodeWithText("Depth model ready — estimation coming in a future update").assertExists()
+        rule.onNodeWithText("Depth model ready — estimation coming in a future update").assertDoesNotExist()
         rule.onNodeWithText("Estimation coming soon").assertDoesNotExist()
         rule.onNodeWithText("Estimate depth (AI)").assertDoesNotExist()
         rule.onNodeWithText("Low confidence — verify with reference object").assertDoesNotExist()

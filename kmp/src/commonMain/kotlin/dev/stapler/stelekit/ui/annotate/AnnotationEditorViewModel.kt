@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ImageBitmap
 import dev.stapler.stelekit.calibration.CalibrationService
 import dev.stapler.stelekit.calibration.CameraProfile
@@ -35,6 +36,8 @@ import dev.stapler.stelekit.model.angleBetweenThreePoints
 import dev.stapler.stelekit.model.metersToDisplayString
 import dev.stapler.stelekit.model.polygonAreaMeters
 import dev.stapler.stelekit.platform.Settings
+import dev.stapler.stelekit.platform.annotatorAutoReturnToSelect
+import dev.stapler.stelekit.platform.annotatorStickyTools
 import dev.stapler.stelekit.platform.setDefaultMeasurementUnit
 import dev.stapler.stelekit.platform.diagnostics.EditorDiagnosticsSnapshot
 import dev.stapler.stelekit.platform.diagnostics.EditorDiagnosticsSource
@@ -105,7 +108,11 @@ fun AnnotationTool.isOpenEnded(): Boolean = this == AnnotationTool.AREA
  * normalized [0,1] image space — never screen pixels.
  */
 data class AnnotationEditorState(
-    val currentTool: AnnotationTool = AnnotationTool.DISTANCE,
+    val currentTool: AnnotationTool = AnnotationTool.SELECT,
+    /** Whether a placement tool disarms after a commit (ONE_SHOT) or stays armed ("Keep tool"). */
+    val stickiness: ToolStickiness = ToolStickiness.ONE_SHOT,
+    /** Story 3.6: the next committed distance is a known-distance reference. */
+    val pendingKnownDistance: Boolean = false,
     val inProgressPoints: List<NormalizedPoint> = emptyList(),
     val committedAnnotations: List<MeasurementAnnotation> = emptyList(),
     val calibration: Calibration? = null,
@@ -144,6 +151,8 @@ data class AnnotationEditorState(
     val cameraProfileNotice: String? = null,
     /** Non-null while the user is tapping the corners of a known rectangle (paper or card) to calibrate a plane. */
     val planeSession: PlaneSession? = null,
+    /** One-line strip message from the last placement gesture ("Cancelled", identical points); null when none. */
+    val placementMessage: String? = null,
 )
 
 /**
@@ -254,6 +263,8 @@ class AnnotationEditorViewModel(
     private val monocularDepthEstimator: MonocularDepthEstimator = SensorModule.monocularDepthEstimator,
     /** Optional — when set, a unit change also becomes the global default for new annotations. */
     private val settings: Settings? = null,
+    /** Wall clock for the undo-after-drag-measure counter; injectable so tests need no real wait. */
+    private val nowMillis: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) {
     private val cameraProfileStore: CameraProfileStore? = settings?.let(::CameraProfileStore)
 
@@ -264,6 +275,9 @@ class AnnotationEditorViewModel(
         SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, t -> reportThrowable(t) },
     )
     private val logger = Logger("AnnotationEditorViewModel")
+
+    // Latest drag-measure commit (uuid, time) for the undo-within-5s counter.
+    private var lastDragMeasure: Pair<String, Long>? = null
 
     private fun reportThrowable(t: Throwable) {
         // Logging can itself fail under memory pressure; the state update is what the user needs.
@@ -367,7 +381,9 @@ class AnnotationEditorViewModel(
         onUnhandledThrowable = { t -> reportThrowable(t) },
     )
 
-    private val _state = MutableStateFlow(AnnotationEditorState())
+    private val initialStickiness =
+        if (settings.annotatorStickyTools()) ToolStickiness.LOCKED else ToolStickiness.ONE_SHOT
+    private val _state = MutableStateFlow(AnnotationEditorState(stickiness = initialStickiness))
     val state: StateFlow<AnnotationEditorState> = _state.asStateFlow()
 
     init {
@@ -426,6 +442,15 @@ class AnnotationEditorViewModel(
         _canUndo.value = history.canUndo
         _canRedo.value = history.canRedo
         persistCommittedSet()
+        countUndoAfterDragMeasure()
+    }
+
+    private fun countUndoAfterDragMeasure() {
+        val (uuid, atMs) = lastDragMeasure ?: return
+        if (nowMillis() - atMs > UNDO_AFTER_DRAG_MEASURE_WINDOW_MS) return
+        if (_state.value.committedAnnotations.any { it.uuid == uuid }) return
+        lastDragMeasure = null
+        PlacementCounters.undoAfterDragMeasure()
     }
 
     /** Redo the most recently undone annotation. */
@@ -451,8 +476,51 @@ class AnnotationEditorViewModel(
                 rulerSession = if (tool == AnnotationTool.GRID_REF) it.rulerSession else null,
                 planeSession = if (tool == AnnotationTool.GRID_REF) it.planeSession else null,
                 placement = if (tool == AnnotationTool.SELECT) AnnotationPlacementSession() else it.placement,
+                placementMessage = null,
             )
         }
+    }
+
+    /** Places both ends of a drag-measure as one commit (ADR-007). */
+    fun placeDrag(start: NormalizedPoint, end: NormalizedPoint) {
+        addPoint(start)
+        addPoint(end)
+        val committed = _state.value.committedAnnotations.lastOrNull() ?: return
+        PlacementCounters.dragMeasure()
+        lastDragMeasure = committed.uuid to nowMillis()
+    }
+
+    /** Drops a pending first point; the tool stays armed. */
+    fun discardFirstPoint() {
+        _state.update { it.copy(inProgressPoints = emptyList(), placementMessage = null) }
+    }
+
+    /** Back to SELECT, discarding any pending point. */
+    fun disarm() = selectTool(AnnotationTool.SELECT)
+
+    /** A placement was cancelled (off-canvas or gesture-inset release): the strip says so; the tool stays armed (OC-9). */
+    fun cancelPlacementGesture() {
+        if (disarmOnOffCanvas) disarm()
+        _state.update { it.copy(placementMessage = CANCELLED_MESSAGE) }
+    }
+
+    fun setStickiness(stickiness: ToolStickiness) = _state.update { it.copy(stickiness = stickiness) }
+
+    fun toggleKeepTool() = _state.update {
+        it.copy(stickiness = if (it.stickiness == ToolStickiness.LOCKED) ToolStickiness.ONE_SHOT else ToolStickiness.LOCKED)
+    }
+
+    /** The length from the pending first DISTANCE point to [to], formatted like a commit; null with no first point. */
+    fun liveDistanceDisplay(to: NormalizedPoint): String? {
+        val st = _state.value
+        if (st.currentTool != AnnotationTool.DISTANCE || st.inProgressPoints.size != 1) return null
+        return computeMeasurement(listOf(st.inProgressPoints[0], to), AnnotationTool.DISTANCE, st.calibration, st.selectedUnit).second
+    }
+
+    /** The tool to arm once a multi-step calibration session is confirmed (ADR-005). */
+    private fun returnToolAfterConfirm() {
+        val autoReturn = settings.annotatorAutoReturnToSelect()
+        _state.update { it.copy(currentTool = nextToolAfterCommit(it.currentTool, it.stickiness, autoReturn)) }
     }
 
     /** Applies [transform] to the non-drag placement session; see the extensions in AnnotationPlacement.kt. */
@@ -518,6 +586,7 @@ class AnnotationEditorViewModel(
      */
     fun addPoint(point: NormalizedPoint) {
         if (inputStopped()) return
+        _state.update { if (it.placementMessage != null) it.copy(placementMessage = null) else it }
         val st = _state.value
         val tool = st.currentTool
 
@@ -544,6 +613,10 @@ class AnnotationEditorViewModel(
             return
         }
 
+        if (tool == AnnotationTool.DISTANCE && st.inProgressPoints.size == 1 && isIdenticalToFirst(st.inProgressPoints[0], point)) {
+            _state.update { it.copy(placementMessage = IDENTICAL_POINTS_MESSAGE) }
+            return
+        }
         val newPoints = st.inProgressPoints + point
 
         // AREA: check if user closed the polygon by tapping near the first point.
@@ -566,6 +639,11 @@ class AnnotationEditorViewModel(
             commitAnnotation(newPoints, tool)
         }
     }
+
+    private fun isIdenticalToFirst(first: NormalizedPoint, second: NormalizedPoint): Boolean = arePointsIdentical(
+        Offset((first.x * imageWidthPx).toFloat(), (first.y * imageHeightPx).toFloat()),
+        Offset((second.x * imageWidthPx).toFloat(), (second.y * imageHeightPx).toFloat()),
+    )
 
     /** Explicitly close the in-progress AREA polygon. No-op for other tools. */
     fun closePolygon() {
@@ -646,6 +724,7 @@ class AnnotationEditorViewModel(
             )
         }
         updateCalibration(keepingGeometry(calibration))
+        returnToolAfterConfirm()
         logger.info("GRID_REF calibration applied: ${calibration.pixelsPerMeter} px/m from ${lengthMeters}m reference")
     }
 
@@ -718,6 +797,7 @@ class AnnotationEditorViewModel(
         if (session.preview(imageWidthPx, imageHeightPx).canApply.not()) return
         confirmMultiPointCalibration(session.usableTicks(), session.lensMode, session.profile)
         setRulerSession(null)
+        returnToolAfterConfirm()
         if (saveCameraProfile) saveCameraProfileFromCalibration()
     }
 
@@ -870,11 +950,20 @@ class AnnotationEditorViewModel(
         // (HapticFeedbackType.LongPress). On desktop / in tests this is a no-op.
         onHapticFeedback()
 
+        val toolAfter = nextToolAfterCommit(
+            tool, st.stickiness, settings.annotatorAutoReturnToSelect(),
+            multiStepSessionOpen = st.rulerSession != null || st.planeSession != null,
+        )
+        val returned = toolAfter == AnnotationTool.SELECT && tool != AnnotationTool.SELECT
+
         // Optimistic update: add to committed list immediately
         _state.update { currentSt ->
             currentSt.copy(
                 inProgressPoints = emptyList(),
                 committedAnnotations = currentSt.committedAnnotations + measurement,
+                currentTool = toolAfter,
+                selectedAnnotationUuid = if (returned) measurement.uuid else currentSt.selectedAnnotationUuid,
+                placement = if (returned) AnnotationPlacementSession() else currentSt.placement,
             )
         }
 
@@ -886,6 +975,9 @@ class AnnotationEditorViewModel(
                     currentSt.copy(
                         committedAnnotations = currentSt.committedAnnotations
                             .filter { it.uuid != measurement.uuid },
+                        currentTool = nextToolAfterRollback(tool, toolAfter, currentSt.currentTool),
+                        selectedAnnotationUuid = currentSt.selectedAnnotationUuid.takeIf { it != measurement.uuid },
+                        placementMessage = SAVE_FAILED_MESSAGE,
                     )
                 }
             }
@@ -1178,6 +1270,7 @@ class AnnotationEditorViewModel(
         )
         updateCalibration(calibration.copy(geometry = merged))
         setPlaneSession(null)
+        returnToolAfterConfirm()
     }
 
     /** Lens-aware and plane-mapped calibrations measure through [LensMeasurement]; the rest use the plain scale. */
@@ -1448,6 +1541,7 @@ class AnnotationEditorViewModel(
      * Call when the editor is permanently dismissed.
      */
     fun close() {
+        _state.update { it.copy(stickiness = initialStickiness) }
         depthCoordinator.close()
         persistence.close()
         scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
@@ -1508,3 +1602,6 @@ internal fun parseGridRefLengthToMeters(text: String, unit: MeasurementUnit): Do
 }
 
 private const val PROFILE_ID_CHARS = 8
+private const val CANCELLED_MESSAGE = "Cancelled"
+private const val SAVE_FAILED_MESSAGE = "Couldn't save. Try again"
+private const val IDENTICAL_POINTS_MESSAGE = "Choose a second point away from the first"

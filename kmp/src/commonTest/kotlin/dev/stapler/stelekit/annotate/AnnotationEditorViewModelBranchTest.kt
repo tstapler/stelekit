@@ -374,6 +374,7 @@ class AnnotationEditorViewModelBranchTest {
         v.confirmLabel()
         assertEquals("Door", v.state.value.committedAnnotations.single().label)
 
+        v.selectTool(AnnotationTool.LABEL) // commit returned the tool to SELECT
         v.addPoint(NormalizedPoint(0.4, 0.4))
         v.dismissLabelInput()
         assertFalse(v.state.value.isLabelInputVisible)
@@ -392,6 +393,7 @@ class AnnotationEditorViewModelBranchTest {
         val v = vm()
         v.drawDistance()
         val uuid = v.state.value.committedAnnotations.single().uuid
+        v.clearSelection() // the commit's return to SELECT selects the new annotation
         v.deleteSelectedAnnotation() // nothing selected → no-op
         assertEquals(1, v.state.value.committedAnnotations.size)
         v.selectAnnotation(uuid)
@@ -565,7 +567,7 @@ class AnnotationEditorViewModelBranchTest {
     @Test
     fun distanceTooShort_isDiscarded() {
         val v = vm()
-        v.drawDistance(0.001)
+        v.drawDistance(0.003)
         assertTrue(v.state.value.committedAnnotations.isEmpty())
         assertTrue(v.state.value.inProgressPoints.isEmpty())
     }

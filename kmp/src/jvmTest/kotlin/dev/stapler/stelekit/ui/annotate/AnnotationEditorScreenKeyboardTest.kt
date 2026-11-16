@@ -85,8 +85,9 @@ class AnnotationEditorScreenKeyboardTest {
         }
         composeTestRule.waitForIdle()
 
-        // Commit one DISTANCE annotation directly through the ViewModel (default currentTool is
-        // DISTANCE, which auto-commits once 2 points are collected).
+        // Commit one DISTANCE annotation directly through the ViewModel (the default tool is SELECT,
+        // so DISTANCE is armed explicitly; it auto-commits once 2 points are collected).
+        viewModel.selectTool(AnnotationTool.DISTANCE)
         viewModel.addPoint(NormalizedPoint(0.1, 0.1))
         viewModel.addPoint(NormalizedPoint(0.5, 0.5))
         composeTestRule.waitForIdle()
@@ -114,6 +115,30 @@ class AnnotationEditorScreenKeyboardTest {
     }
 
     @Test
+    fun `plain tool key dispatched through the screen arms that tool and a Ctrl chord does not`() {
+        val viewModel = AnnotationEditorViewModel(
+            measurementRepository = InMemoryMeasurementAnnotationRepository(),
+            imageWidthPx = 1000.0,
+            imageHeightPx = 1000.0,
+        )
+        val imageAnnotation = makeImageAnnotation()
+        viewModel.initialize(imageAnnotation)
+        composeTestRule.setContent { AnnotationEditorScreen(viewModel = viewModel, imageAnnotation = imageAnnotation) }
+        composeTestRule.waitForIdle()
+        focusScreen()
+
+        composeTestRule.onNodeWithContentDescription("Select").performKeyInput {
+            withKeyDown(Key.CtrlLeft) { keyDown(Key.D); keyUp(Key.D) }
+        }
+        composeTestRule.waitForIdle()
+        assertEquals(AnnotationTool.SELECT, viewModel.state.value.currentTool, "Ctrl+D is not the Distance shortcut")
+
+        composeTestRule.onNodeWithContentDescription("Select").performKeyInput { keyDown(Key.D); keyUp(Key.D) }
+        composeTestRule.waitForIdle()
+        assertEquals(AnnotationTool.DISTANCE, viewModel.state.value.currentTool)
+    }
+
+    @Test
     fun `Ctrl+Shift+Z dispatched through the screen redoes the most recently undone annotation`() {
         val repo = InMemoryMeasurementAnnotationRepository()
         val viewModel = AnnotationEditorViewModel(
@@ -132,6 +157,7 @@ class AnnotationEditorScreenKeyboardTest {
         }
         composeTestRule.waitForIdle()
 
+        viewModel.selectTool(AnnotationTool.DISTANCE)
         viewModel.addPoint(NormalizedPoint(0.1, 0.1))
         viewModel.addPoint(NormalizedPoint(0.5, 0.5))
         composeTestRule.waitForIdle()

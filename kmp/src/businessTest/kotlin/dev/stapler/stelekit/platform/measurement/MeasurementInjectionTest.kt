@@ -11,6 +11,7 @@ import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.platform.measurement.keyboard.KeyboardEmulationDevice
 import dev.stapler.stelekit.repository.InMemoryMeasurementAnnotationRepository
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModel
+import dev.stapler.stelekit.ui.annotate.AnnotationTool
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -83,7 +84,10 @@ class MeasurementInjectionTest {
             measurementRepository = repo,
             imageWidthPx = 1000.0,
             imageHeightPx = 1000.0,
-        ).also { it.initialize(makeImageAnnotation()) }
+        ).also {
+            it.initialize(makeImageAnnotation())
+            it.selectTool(AnnotationTool.DISTANCE)
+        }
     }
 
     // ── Tests ─────────────────────────────────────────────────────────────────

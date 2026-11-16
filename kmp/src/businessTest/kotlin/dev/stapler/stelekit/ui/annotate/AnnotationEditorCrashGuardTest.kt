@@ -99,6 +99,7 @@ class AnnotationEditorCrashGuardTest {
         ).also { it.initialize(image) }
 
     private fun commitDistance(vm: AnnotationEditorViewModel) {
+        vm.setStickiness(ToolStickiness.LOCKED)
         vm.selectTool(AnnotationTool.DISTANCE)
         vm.addPoint(NormalizedPoint(0.0, 0.5))
         vm.addPoint(NormalizedPoint(0.1, 0.5))

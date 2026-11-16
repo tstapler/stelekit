@@ -43,7 +43,11 @@ class UndoHistoryTest {
         imageWidthPx = 1000.0,
         imageHeightPx = 1000.0,
         monocularDepthEstimator = UnusedDepthEstimator,
-    ).also { it.initialize(image) }
+    ).also {
+        it.initialize(image)
+        it.setStickiness(ToolStickiness.LOCKED)
+        it.selectTool(AnnotationTool.DISTANCE)
+    }
 
     private fun commitDistance(vm: AnnotationEditorViewModel) {
         vm.selectTool(AnnotationTool.DISTANCE)

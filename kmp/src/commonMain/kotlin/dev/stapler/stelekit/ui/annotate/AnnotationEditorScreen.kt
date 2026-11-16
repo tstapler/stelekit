@@ -10,9 +10,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.systemGestures
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -77,6 +82,9 @@ import dev.stapler.stelekit.ui.placement.crosshairPoint
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -108,6 +116,8 @@ import dev.stapler.stelekit.platform.measurement.DeviceConnectionState
 import dev.stapler.stelekit.platform.measurement.ExternalMeasurementDevice
 import kotlin.math.abs
 import dev.stapler.stelekit.util.roundTo
+import androidx.compose.ui.focus.onFocusChanged
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -201,6 +211,13 @@ fun AnnotationEditorScreen(
     }
     val density = LocalDensity.current
     val panSlackPx = with(density) { PAN_SLACK.toPx() }
+    // Lay the viewport out inside the system-gesture zones so the outermost pixel is pressable (ADR-006 d6); zero off Android.
+    val gestureInsets = WindowInsets.systemGestures
+    val layoutDirection = LocalLayoutDirection.current
+    val gestureInsetStart = with(density) { gestureInsets.getLeft(density, layoutDirection).toDp() }
+    val gestureInsetEnd = with(density) { gestureInsets.getRight(density, layoutDirection).toDp() }
+    val pasteboardColor = MaterialTheme.colorScheme.surfaceVariant
+    val imageFrameColor = MaterialTheme.colorScheme.onSurfaceVariant
     val viewHandle = remember(panSlackPx) {
         AnnotationViewHandle(
             canvasSize = { canvasSize },
@@ -214,7 +231,6 @@ fun AnnotationEditorScreen(
                     canvasTop = canvasOrigin.y,
                     viewportWidth = viewportSize.width.toFloat(),
                     viewportHeight = viewportSize.height.toFloat(),
-                    slack = panSlackPx,
                 )
             },
             setView = { viewTransform = it },
@@ -232,6 +248,41 @@ fun AnnotationEditorScreen(
             viewTransform = viewTransform.revealing(crosshair.toScreen(canvasSize), panSlackPx * 2, viewHandle.geometry())
         }
     }
+    // TalkBack live region: commits, crosshair moves and the first point. The strip hint explains a disabled chip.
+    var announcement by remember { mutableStateOf("") }
+    var toolHint by remember { mutableStateOf<String?>(null) }
+    var tagFieldFocused by remember { mutableStateOf(false) }
+    val windowInfo = LocalWindowInfo.current
+    val chromeDensity = LocalDensity.current
+    val collapseDetails = EditorChromePolicy.collapseDetails(
+        windowHeightDp = windowInfo.containerSize.height / chromeDensity.density,
+        fontScale = chromeDensity.fontScale,
+    )
+    var detailsExpanded by remember { mutableStateOf(false) }
+    val showDetails = !collapseDetails || detailsExpanded
+    val lastCommit = remember { CommitMemory(state.currentTool, state.committedAnnotations.size) }
+    LaunchedEffect(state.committedAnnotations.size, state.currentTool) {
+        commitAnnouncement(lastCommit.tool, lastCommit.count, state.currentTool, state.committedAnnotations)?.let { announcement = it }
+        lastCommit.tool = state.currentTool
+        lastCommit.count = state.committedAnnotations.size
+    }
+    LaunchedEffect(crosshair) {
+        if (crosshair != null) announcement = crosshairAnnouncement(crosshair, viewModel.liveDistanceDisplay(crosshair))
+    }
+    LaunchedEffect(state.inProgressPoints.size) {
+        if (state.placement.active && state.currentTool == AnnotationTool.DISTANCE && state.inProgressPoints.size == 1) {
+            announcement = POINT_A_PLACED_ANNOUNCEMENT
+        }
+    }
+    LaunchedEffect(toolHint) {
+        if (toolHint != null) {
+            delay(TOOL_HINT_MILLIS)
+            toolHint = null
+        }
+    }
+    fun selectOrDisarm(tool: AnnotationTool) {
+        if (tool == state.currentTool && tool != AnnotationTool.SELECT) viewModel.disarm() else viewModel.selectTool(tool)
+    }
     val haptic = LocalHapticFeedback.current
     var showCalibrationSheet by remember { mutableStateOf(false) }
     var showHeightOffset by remember { mutableStateOf(false) }
@@ -248,6 +299,10 @@ fun AnnotationEditorScreen(
 
     // Back handling: placed measurements are saved as they are made, so only unfinished points or a failed save need a dialog.
     var leaveDialog by remember { mutableStateOf<BackOutcome?>(null) }
+    // Back with an armed tool and 2+ unfinished points: discard disarms, it does not leave the editor.
+    var disarmConfirmCount by remember { mutableStateOf<Int?>(null) }
+    var fineTuneHint by remember { mutableStateOf(false) }
+    LaunchedEffect(state.currentTool) { if (state.currentTool != AnnotationTool.SELECT) fineTuneHint = false }
     val pendingWrites by viewModel.pendingWrites.collectAsState()
     val backScope = rememberCoroutineScope()
 
@@ -269,6 +324,31 @@ fun AnnotationEditorScreen(
 
     // Adaptive labels: show for first 3 sessions (tracked in state per session)
     val showToolLabels by remember { mutableStateOf(true) }
+
+    // The mic FAB is gone while the editor is open (OC-12): hint where voice went on the first three opens. Saved so a rotation is not a second open.
+    val voiceHintVisible = rememberSaveable { platformSettings != null && shouldShowVoiceHint(recordEditorOpen(platformSettings)) }
+
+    // Non-drag pan (WCAG 2.5.7): arrows move the view by a quarter of the viewport; at >= 600 dp the zoom group is a rail beside the photo.
+    var panOn by rememberSaveable(imageAnnotation.uuid) { mutableStateOf(false) }
+    val windowWidthDp = with(density) { LocalWindowInfo.current.containerSize.width.toDp() }
+    val zoomRail = windowWidthDp >= ZOOM_RAIL_MIN_WIDTH
+    fun panDeltaFor(direction: PanDirection) = panDelta(direction, viewportSize.width.toFloat(), viewportSize.height.toFloat())
+    fun panBy(direction: PanDirection) {
+        viewTransform = viewTransform.panned(panDeltaFor(direction), viewHandle.geometry())
+    }
+    fun panAtEdge(direction: PanDirection): Boolean =
+        viewTransform.panned(panDeltaFor(direction), viewHandle.geometry()).approximatelyEquals(viewTransform)
+    val toolbarZoom = ToolbarZoom(
+        view = { viewTransform },
+        onZoomIn = { viewTransform = viewTransform.stepped(ZOOM_STEP_FACTOR, viewHandle.geometry()) },
+        onZoomOut = { viewTransform = viewTransform.stepped(1f / ZOOM_STEP_FACTOR, viewHandle.geometry()) },
+        onFit = { viewTransform = AnnotationViewTransform.Fit },
+        panOn = panOn,
+        onPanToggle = { panOn = it },
+        onPan = ::panBy,
+        panAtEdge = ::panAtEdge,
+        showZoomGroup = !zoomRail,
+    )
 
     // Story 5.7: wire the active device into the ViewModel so injectMeasurementFromDevice()
     // can find it. Effect re-runs when activeDevice reference changes.
@@ -321,12 +401,39 @@ fun AnnotationEditorScreen(
         }
     }
 
+    // Stays enabled = true so predictive back always has a handler; the policy picks the step.
     PlatformBackHandler(enabled = true) {
-        backScope.launch {
-            if (pendingWrites > 0) launch { snackbarHostState.showSnackbar("Saving...", duration = SnackbarDuration.Short) }
-            when (val outcome = viewModel.resolveBack()) {
-                BackOutcome.Close -> onNavigateBack()
-                else -> leaveDialog = outcome
+        val modalOpen = leaveDialog != null || disarmConfirmCount != null || showCalibrationSheet || showHeightOffset ||
+            showCalibrationChangeWarning || showBleDevicePanel || pendingDeleteUuid != null ||
+            state.isGridRefDialogVisible || state.isLabelInputVisible
+        when (
+            EditorBackPolicy.resolve(
+                modalOpen = modalOpen,
+                nudgeOpen = state.placement.active,
+                toolArmed = state.currentTool != AnnotationTool.SELECT,
+                unfinishedPoints = state.inProgressPoints.size,
+            )
+        ) {
+            BackAction.DismissModal -> when {
+                leaveDialog != null -> leaveDialog = null
+                disarmConfirmCount != null -> disarmConfirmCount = null
+                pendingDeleteUuid != null -> pendingDeleteUuid = null
+                showCalibrationChangeWarning -> showCalibrationChangeWarning = false
+                showBleDevicePanel -> showBleDevicePanel = false
+                showHeightOffset -> showHeightOffset = false
+                showCalibrationSheet -> showCalibrationSheet = false
+                state.isGridRefDialogVisible -> viewModel.dismissGridRefDialog()
+                else -> viewModel.dismissLabelInput()
+            }
+            BackAction.CancelNudge -> viewModel.cancelPlacement()
+            BackAction.DisarmSilently -> viewModel.disarm()
+            BackAction.ConfirmDiscardThenDisarm -> disarmConfirmCount = state.inProgressPoints.size
+            BackAction.ResolveLeave -> backScope.launch {
+                if (pendingWrites > 0) launch { snackbarHostState.showSnackbar("Saving...", duration = SnackbarDuration.Short) }
+                when (val outcome = viewModel.resolveBack()) {
+                    BackOutcome.Close -> onNavigateBack()
+                    else -> leaveDialog = outcome
+                }
             }
         }
     }
@@ -345,6 +452,13 @@ fun AnnotationEditorScreen(
                 canRedo = canRedo,
                 onUndo = { viewModel.undo() },
                 onRedo = { viewModel.redo() },
+            ) || onAnnotationToolKeyEvent(
+                keyEvent = event,
+                enabled = !state.isLabelInputVisible && !state.isGridRefDialogVisible && !tagFieldFocused,
+                currentTool = state.currentTool,
+                isCalibrated = viewModel.isCalibrated(),
+                onSelectTool = ::selectOrDisarm,
+                onToggleKeep = { viewModel.toggleKeepTool() },
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -357,19 +471,26 @@ fun AnnotationEditorScreen(
             EditorErrorBanner(onRetry = viewModel::retryAfterError, onClose = onNavigateBack)
         }
         // Calibration status indicator bar
-        CalibrationConfidenceBadge(
-            calibration = state.calibration,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-            actionLabel = if (viewModel.isCalibrated()) heightOffsetActionLabel(state.calibration?.geometry) else null,
-            onAction = {
-                heightDraft = draftFor(state.calibration?.geometry)
-                showHeightOffset = true
-            },
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CalibrationConfidenceBadge(
+                calibration = state.calibration,
+                modifier = Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 4.dp),
+                actionLabel = if (viewModel.isCalibrated()) heightOffsetActionLabel(state.calibration?.geometry) else null,
+                onAction = {
+                    heightDraft = draftFor(state.calibration?.geometry)
+                    showHeightOffset = true
+                },
+            )
+            if (collapseDetails) {
+                TextButton(onClick = { detailsExpanded = !detailsExpanded }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text(if (detailsExpanded) "Hide details" else "Details")
+                }
+            }
+        }
 
         // ARCore accuracy warning — shown only when ARCore/LiDAR depth calibration is active
         val cal = state.calibration
-        if (cal != null && cal.method == CalibrationMethod.ARCORE_DEPTH) {
+        if (showDetails && cal != null && cal.method == CalibrationMethod.ARCORE_DEPTH) {
             Surface(
                 color = Color(0xFFFFF3E0),
                 modifier = Modifier.fillMaxWidth(),
@@ -424,7 +545,7 @@ fun AnnotationEditorScreen(
         val sensorData: ImageSensorData? = state.imageAnnotation?.sensorData
         val isTiltExcessive = TiltAssessment.tierOf(sensorData?.pitchDeg, sensorData?.rollDeg) == TiltTier.EXCESSIVE
         var showTiltWarning by remember { mutableStateOf(true) }
-        if (isTiltExcessive && showTiltWarning) {
+        if (showDetails && isTiltExcessive && showTiltWarning) {
             Surface(
                 color = Color(0xFFFFF9C4),
                 modifier = Modifier.fillMaxWidth(),
@@ -455,7 +576,7 @@ fun AnnotationEditorScreen(
         }
 
         // Measurement confidence for the selected (else latest) measurement; recomputed with the editor state.
-        MeasurementAdviceStrip(
+        if (showDetails) MeasurementAdviceStrip(
             reliability = remember(state.calibration, state.committedAnnotations, state.selectedAnnotationUuid, state.imageAnnotation) {
                 viewModel.statusReliability()
             },
@@ -463,7 +584,7 @@ fun AnnotationEditorScreen(
 
         // Story 8.2: GPS metadata row — formatted as "49.2827° N, 123.1207° W".
         val latLng = sensorData?.latLng
-        if (latLng != null) {
+        if (showDetails && latLng != null) {
             GpsMetadataRow(
                 latLng = latLng,
                 altitudeM = sensorData.altitudeM,
@@ -479,14 +600,33 @@ fun AnnotationEditorScreen(
         // reading/filtering on ImageAnnotation.tags. Wired here as a persistent info strip,
         // matching CalibrationConfidenceBadge/GpsMetadataRow's always-visible placement so the
         // affordance is discoverable without an extra toggle tap (social-JTBD discoverability).
-        state.imageAnnotation?.let { annotation ->
+        state.imageAnnotation?.takeIf { showDetails }?.let { annotation ->
             TagEditorPanel(
                 tags = annotation.tags,
                 onAddTag = { viewModel.addTag(it) },
                 onRemoveTag = { viewModel.removeTag(it) },
                 modifier = Modifier
+                    .onFocusChanged { tagFieldFocused = it.hasFocus }
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 4.dp),
+            )
+        }
+
+        // Status strip: a layout slot above the canvas, so it never covers the photo (top 56 dp stays pressable).
+        val toolPrompt = state.placementMessage ?: toolPromptFor(state.currentTool, state.inProgressPoints.size, viewTransform.scale)
+        val (_, stripText) = stripMessage(
+            errorText = state.error?.message,
+            toolPrompt = toolPrompt,
+            fineTuneHint = fineTuneHint,
+            statusText = toolHint,
+            voiceHint = voiceHintVisible,
+        )
+        if (stripText != null) {
+            val showCancel = state.error == null && state.currentTool == AnnotationTool.DISTANCE && state.inProgressPoints.size == 1
+            EditorStatusStrip(
+                text = stripText,
+                onCancel = if (showCancel) ({ viewModel.discardFirstPoint() }) else null,
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 4.dp),
             )
         }
 
@@ -497,6 +637,8 @@ fun AnnotationEditorScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(bottom = with(density) { toolbarHeightPx.toDp() } + TOOLBAR_CLEARANCE)
+                .padding(start = gestureInsetStart, end = gestureInsetEnd + if (zoomRail) ZOOM_RAIL_WIDTH else 0.dp)
+                .background(pasteboardColor)
                 .clipToBounds()
                 .onSizeChanged { viewportSize = it },
         ) {
@@ -506,7 +648,17 @@ fun AnnotationEditorScreen(
             modifier = Modifier
                 .align(Alignment.Center)
                 .then(imageAspect?.let { Modifier.aspectRatio(it) } ?: Modifier.fillMaxSize())
-                .onGloballyPositioned { coords -> canvasOrigin = coords.positionInParent() },
+                .onGloballyPositioned { coords -> canvasOrigin = coords.positionInParent() }
+                // Thin frame just outside the image bounds, through the same transform as the image (view-only, never exported).
+                .drawBehind {
+                    val v = viewTransform
+                    val edge = IMAGE_FRAME_WIDTH.toPx()
+                    drawRect(
+                        color = imageFrameColor,
+                        topLeft = Offset(v.offsetX - edge, v.offsetY - edge),
+                        size = androidx.compose.ui.geometry.Size(size.width * v.scale + 2 * edge, size.height * v.scale + 2 * edge),
+                    )
+                },
         ) {
             // Layer 1: Zoomed/pannable image
             // We use Coil AsyncImage which handles subsampling for large images.
@@ -561,7 +713,25 @@ fun AnnotationEditorScreen(
 
             // Semantics-only node exactly the size of the image box: tests and TalkBack address the image
             // through it, while the viewport-sized gesture layer above receives the touches.
-            Box(Modifier.fillMaxSize().semantics { contentDescription = ANNOTATION_CANVAS_DESCRIPTION })
+            Box(
+                Modifier.fillMaxSize().semantics {
+                    contentDescription = ANNOTATION_CANVAS_DESCRIPTION
+                    customActions = PanDirection.entries.map { d -> CustomAccessibilityAction(d.label) { panBy(d); true } } +
+                        listOfNotNull(
+                            CustomAccessibilityAction(PLACE_POINT_WITH_CROSSHAIR_ACTION) {
+                                if (!viewModel.state.value.placement.active) viewModel.togglePlacementMode(placementSpace())
+                                true
+                            }.takeIf { state.currentTool != AnnotationTool.SELECT },
+                        )
+                },
+            )
+            // Polite live region (1 dp, no drawing): TalkBack reads each new announcement without moving focus.
+            Box(
+                Modifier.align(Alignment.TopStart).size(1.dp).semantics {
+                    liveRegion = LiveRegionMode.Polite
+                    if (announcement.isNotEmpty()) contentDescription = announcement
+                },
+            )
 
             // Layer 3: In-progress preview (drawing only; the gesture layer above owns the touches)
             InProgressPreviewCanvas(
@@ -623,7 +793,8 @@ fun AnnotationEditorScreen(
                 currentTool = state.currentTool,
                 annotations = state.committedAnnotations,
                 handle = viewHandle,
-                callbacks = remember(viewModel) {
+                pendingPoints = state.inProgressPoints.size,
+                callbacks = remember(viewModel, platformSettings) {
                     AnnotationGestureCallbacks(
                         onTap = { canvasPoint ->
                             val normalized = canvasPoint.toNormalized(canvasSize)
@@ -638,6 +809,19 @@ fun AnnotationEditorScreen(
                         onEditStart = { viewModel.beginAnnotationEdit() },
                         onEditPoints = { uuid, pts -> viewModel.updateAnnotationPoints(uuid, pts) },
                         onEditEnd = { uuid -> viewModel.commitAnnotationEdit(uuid) },
+                        onDragMeasure = { start, end ->
+                            val a = start.toNormalized(canvasSize)
+                            val b = end.toNormalized(canvasSize)
+                            if (a != null && b != null) {
+                                viewModel.placeDrag(a, b)
+                                if (shouldShowDragHint(platformSettings)) {
+                                    recordDragHint(platformSettings)
+                                    fineTuneHint = true
+                                }
+                            }
+                        },
+                        onPlacementCancelled = { viewModel.cancelPlacementGesture() },
+                        onHandleTap = { uuid, index -> viewModel.beginVertexMove(placementSpace(), uuid, index) },
                     )
                 },
             )
@@ -669,41 +853,16 @@ fun AnnotationEditorScreen(
 
             } // end viewport Box
 
-            AnnotationZoomControls(
-                view = { viewTransform },
-                onZoomIn = { viewTransform = viewTransform.stepped(ZOOM_STEP_FACTOR, viewHandle.geometry()) },
-                onZoomOut = { viewTransform = viewTransform.stepped(1f / ZOOM_STEP_FACTOR, viewHandle.geometry()) },
-                onFit = { viewTransform = AnnotationViewTransform.Fit },
-                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp),
-            )
-
-            val contextHint: String? = when {
-                state.currentTool == AnnotationTool.SELECT -> null
-                state.currentTool == AnnotationTool.AREA && state.inProgressPoints.size >= 3 ->
-                    "Tap near start to close, or tap to add vertex"
-                state.currentTool == AnnotationTool.AREA && state.inProgressPoints.size == 1 ->
-                    "Tap to add more vertices"
-                state.currentTool == AnnotationTool.AREA ->
-                    "Tap to place first vertex"
-                state.currentTool == AnnotationTool.ANGLE && state.inProgressPoints.size == 1 ->
-                    "Tap to place vertex"
-                state.currentTool == AnnotationTool.ANGLE && state.inProgressPoints.size == 2 ->
-                    "Tap to complete angle"
-                state.inProgressPoints.isEmpty() -> "Tap to place start point"
-                state.inProgressPoints.size == 1 -> "Tap to place end point"
-                else -> null
-            }
-            if (contextHint != null) {
-                Box(modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp)) {
-                    Surface(color = Color(0xCC000000), shape = MaterialTheme.shapes.small) {
-                        Text(
-                            text = contextHint,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        )
-                    }
-                }
+            // Wide windows: the zoom group is a rail in the strip reserved beside the viewport, never over the photo.
+            if (zoomRail) {
+                AnnotationZoomControls(
+                    view = { viewTransform },
+                    onZoomIn = toolbarZoom.onZoomIn,
+                    onZoomOut = toolbarZoom.onZoomOut,
+                    onFit = toolbarZoom.onFit,
+                    vertical = true,
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp),
+                )
             }
 
             if (state.currentTool != AnnotationTool.SELECT) {
@@ -786,7 +945,9 @@ fun AnnotationEditorScreen(
                 canRedo = canRedo,
                 // Null until an image is loaded keeps the dropdown hidden, as before.
                 displayUnit = state.selectedUnit.takeIf { state.imageAnnotation != null },
-                onToolSelect = { viewModel.selectTool(it) },
+                onToolSelect = ::selectOrDisarm,
+                keep = ToolbarKeep(locked = state.stickiness == ToolStickiness.LOCKED, onToggle = { viewModel.toggleKeepTool() }),
+                onDisabledToolTap = { toolHint = calibrateFirstHint(toolLabel(it)) },
                 onUndo = { viewModel.undo() },
                 onRedo = { viewModel.redo() },
                 onDeleteSelect = {
@@ -806,6 +967,7 @@ fun AnnotationEditorScreen(
                 },
                 onUnitSelect = { viewModel.setDisplayUnit(it) },
                 showLabels = showToolLabels,
+                zoom = toolbarZoom,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(8.dp)
@@ -961,6 +1123,14 @@ fun AnnotationEditorScreen(
                     // so the caller can do: viewModel.setActiveDevice(device); viewModel.injectMeasurementFromDevice()
                     // For now the reading (valueMeters=$valueMeters) is discarded — a known limitation.
                 },
+            )
+        }
+
+        disarmConfirmCount?.let { count ->
+            UnsavedChangesDialog(
+                unfinishedPoints = count,
+                onDiscard = { disarmConfirmCount = null; viewModel.disarm() },
+                onKeepEditing = { disarmConfirmCount = null },
             )
         }
 
@@ -1254,7 +1424,8 @@ private fun InProgressPreviewCanvas(
  *
  * Returns null if [canvasSize] has zero dimensions.
  */
-internal fun Offset.toNormalized(canvasSize: IntSize): NormalizedPoint? {
+// Public: Bazel compiles commonMain and commonTest as separate modules, so tests cannot see `internal`.
+fun Offset.toNormalized(canvasSize: IntSize): NormalizedPoint? {
     if (canvasSize.width == 0 || canvasSize.height == 0) return null
     val nx = (x / canvasSize.width).coerceIn(0.0f, 1.0f).toDouble()
     val ny = (y / canvasSize.height).coerceIn(0.0f, 1.0f).toDouble()
@@ -1266,7 +1437,8 @@ internal fun Offset.toNormalized(canvasSize: IntSize): NormalizedPoint? {
  *
  * Applied only at draw time, never stored.
  */
-internal fun NormalizedPoint.toScreen(canvasSize: IntSize): Offset =
+// Public: Bazel compiles commonMain and commonTest as separate modules, so tests cannot see `internal`.
+fun NormalizedPoint.toScreen(canvasSize: IntSize): Offset =
     Offset(
         x = (this.x * canvasSize.width).toFloat(),
         y = (this.y * canvasSize.height).toFloat(),
@@ -1447,6 +1619,42 @@ private fun onAnnotationEditorKeyEvent(
         isShift && canRedo -> { onRedo(); true }
         else -> false
     }
+}
+
+internal const val PLACE_POINT_WITH_CROSSHAIR_ACTION = "Place point with crosshair"
+private const val TOOL_HINT_MILLIS = 4_000L
+
+/** The tool and annotation count of the previous composition, so a commit is recognised as one added annotation under an armed tool. */
+private class CommitMemory(var tool: AnnotationTool, var count: Int)
+
+/**
+ * Tool shortcuts: a tool key arms that tool (or disarms it when already armed, like tapping the chip), Esc disarms, and
+ * [KEEP_TOOL_KEY] toggles Keep tool while a tool is armed. Plain keys only, and only while no text field has focus.
+ */
+internal fun onAnnotationToolKeyEvent(
+    keyEvent: KeyEvent,
+    enabled: Boolean,
+    currentTool: AnnotationTool,
+    isCalibrated: Boolean,
+    onSelectTool: (AnnotationTool) -> Unit,
+    onToggleKeep: () -> Unit,
+): Boolean {
+    val plain = !keyEvent.isCtrlPressed && !keyEvent.isMetaPressed && !keyEvent.isAltPressed && !keyEvent.isShiftPressed
+    if (!enabled || !plain || keyEvent.type != KeyEventType.KeyDown) return false
+    if (keyEvent.key == Key.Escape) {
+        if (currentTool == AnnotationTool.SELECT) return false
+        onSelectTool(AnnotationTool.SELECT)
+        return true
+    }
+    if (keyEvent.key == KEEP_TOOL_KEY) {
+        if (currentTool == AnnotationTool.SELECT) return false
+        onToggleKeep()
+        return true
+    }
+    val tool = toolForShortcutKey(keyEvent.key) ?: return false
+    if (tool != AnnotationTool.SELECT && !isCalibrated) return false
+    onSelectTool(tool)
+    return true
 }
 
 // ── GRID_REF calibration dialog ───────────────────────────────────────────────
@@ -1631,6 +1839,8 @@ internal fun DepthEstimationPanel(
     onEstimate: (() -> Unit)? = null,
     onDownloadAnyway: (() -> Unit)? = null,
 ) {
+    // Nothing can use a ready model yet: show nothing rather than a "coming in a future update" notice over the photo.
+    if (depthPanelIsEmpty(modelState, isInferenceRunning || depthEstimationError != null, onEstimate)) return
     Surface(
         color = Color(0xDD1A1A1A),
         shape = MaterialTheme.shapes.small,
@@ -1662,29 +1872,12 @@ internal fun DepthEstimationPanel(
                     }
                 }
 
-                // Model ready. With real estimation wired (onEstimate != null) show the estimate button.
-                // Otherwise the model IS downloaded but nothing can use it yet: say so, as a status line
-                // rather than a greyed-out button, so it reads as success and not as a failed download.
+                // Model ready: with estimation wired (onEstimate != null) show the estimate button.
                 modelState is DepthModelUiState.Ready -> {
                     if (onEstimate != null) {
                         OutlinedButton(onClick = onEstimate) {
                             Text(
                                 text = "Estimate depth (AI)",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White,
-                            )
-                        }
-                    } else {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = Color(0xFF81C784),
-                                modifier = Modifier.size(14.dp),
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = "Depth model ready — estimation coming in a future update",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color.White,
                             )
@@ -1828,8 +2021,17 @@ internal fun DepthEstimationPanel(
 
 internal const val LOUPE_OVERLAY_TAG = "loupe-overlay"
 
+/** A ready model with no estimator wired and nothing else to report has no panel content. */
+private fun depthPanelIsEmpty(modelState: DepthModelUiState, busyOrFailed: Boolean, onEstimate: (() -> Unit)?): Boolean =
+    modelState is DepthModelUiState.Ready && !busyOrFailed && onEstimate == null
+
 private val PAN_SLACK = 24.dp
+private val IMAGE_FRAME_WIDTH = 1.dp
 private val TOOLBAR_CLEARANCE = 16.dp
+
+/** Window width from which the zoom group is a vertical rail beside the photo instead of a toolbar row. */
+internal val ZOOM_RAIL_MIN_WIDTH = 600.dp
+private val ZOOM_RAIL_WIDTH = 64.dp
 private const val ZOOM_DECODE_FACTOR = 2.5f
 
 /** Survives rotation and process recreation; the view is cheap state, so a plain list of floats. */
