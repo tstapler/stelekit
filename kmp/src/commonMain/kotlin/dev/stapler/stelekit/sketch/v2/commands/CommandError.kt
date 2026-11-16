@@ -4,6 +4,8 @@
 
 package dev.stapler.stelekit.sketch.v2.commands
 
+import dev.stapler.stelekit.sketch.v2.constraints.ElementKind
+
 /**
  * Why a scene or command operation was refused. Story 1.2.1 introduces the scene-level cases; Story 1.3.1a
  * adds the command-level ones to this same interface.
@@ -21,4 +23,6 @@ sealed interface CommandError {
 
     /** A patch or history entry no longer matches the document it was applied to (`id` names the element, or the part of the document). */
     data class PatchConflict(val id: String) : CommandError
+    /** A constraint targeted an element of a kind `ConstraintEligibility` refuses; the user text is `SketchReasonText.NotConstrainable`. */
+    data class NotConstrainable(val kind: ElementKind) : CommandError
 }

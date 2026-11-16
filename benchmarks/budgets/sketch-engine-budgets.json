@@ -7,6 +7,8 @@
     "sketch.import_max_yield_gap_ms": { "p95": 352.1, "measured": true, "source": "JsonSpanScannerWasmTest ChromeHeadless 146, 19 MB scene with a 15 MB dataURL, one run; advisory, not asserted (the gap is the single-step 15 MB string replace and tree build, not a decode)" },
     "sketch.import_span_decode_ms_per_mb": { "p95": 5.57, "measured": true, "source": "JsonSpanScannerWasmTest ChromeHeadless 146, worst span of at least 10,000 chars (library items), one run; far below the 100 ms review line" },
     "sketch.import_library_max_yield_gap_ms": { "p95": 7.1, "measured": true, "source": "JsonSpanScannerWasmTest ChromeHeadless 146, 9 MB library of 120 items, one run" },
+    "solver.hundred_constraint_corpus_worst_ms_jvm": { "p95": 8.072, "measured": true, "bar": 50, "source": "SolverCorpusTest jvm, 30-seed corpus, worst of best-of-5 per seed, host load average about 15; one run" },
+    "solver.hundred_constraint_corpus_worst_ms_wasm": { "p95": 27.8, "measured": true, "bar": 150, "source": "SolverCorpusTest wasmJs ChromeHeadless 146, 30-seed corpus, worst of best-of-5 per seed, host load average about 15; one run; advisory bar 50 also met" },
     "reference.wasm_empty_canvas_ms": { "p95": null, "measured": false, "note": "wasm run blocked, see baselines.md" },
     "reference.wasm_rect500_ms": { "p95": null, "measured": false, "note": "wasm run blocked, see baselines.md" }
   }
