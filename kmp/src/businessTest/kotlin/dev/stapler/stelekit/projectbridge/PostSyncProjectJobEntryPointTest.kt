@@ -34,6 +34,7 @@ import dev.stapler.stelekit.ui.StelekitViewModel
 import dev.stapler.stelekit.ui.StelekitViewModelDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
@@ -42,6 +43,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -110,7 +112,7 @@ class PostSyncProjectJobEntryPointTest {
         val stub = StubFileSystem()
         val jobs = InProcessJobs()
         val router = if (withRouter) newBridgeTestRouter() else null
-        val bridge = bridgeDeps(settings, jobs, router = { router }, isGitSyncBusy = { runBlocking { busyCounter.awaitIdle() }; false }, readyGraphIds = MutableStateFlow(graphId))
+        val bridge = bridgeDeps(settings, jobs, router = { router }, isGitSyncBusy = { runBlocking(Dispatchers.Default) { withTimeoutOrNull(2_000) { busyCounter.awaitIdle() } }; false }, readyGraphIds = MutableStateFlow(graphId))
         val vm = StelekitViewModel(
             StelekitViewModelDependencies(
                 fileSystem = stub,
