@@ -56,3 +56,6 @@ Decision for Story 1.1.2 (plan default, not an owner decision): the codec carrie
 
 ## Spike 0.1.3d decision: Float drift (2026-11-16)
 `FloatDriftSpikeTest`, identical figures on JVM and wasmJs: a Double to Float round trip drifts by up to 3.1e-5 at +/-1,000 units, 3.9e-3 at +/-100,000 and 8.0 at the 2^28 limit, against the 1e-6 solver residual bar. Decision: scene model, codec and solver stay `Double`; `Float` appears only when handing coordinates to Compose draw calls. PENDING: the same check on the actual Spike 0.1.2c solver fixtures (that spike's output was not available to this run), so Task 0.1.3d is closed for the general bound only.
+
+## Story 1.2.4 implementation note (2026-11-16)
+`SceneLimits` (`kmp/src/commonMain/.../sketch/v2/scene/SceneLimits.kt`) holds the 32 canonical fields; "MB" caps are binary megabytes (1,048,576 bytes). `SceneLimitsTest` pins the field list and defaults; `SceneLimitsGrepTest` (businessTest) fails on a cap-like literal in the engine, importer, solver, `ui/sketch/v2` and `projectbridge` sources that is not in `scene-limits-allowlist.txt` (shrink-only; today 8 entries: 2 hash-prefix lengths, 6 Spike 0.1.2 solver numerics).

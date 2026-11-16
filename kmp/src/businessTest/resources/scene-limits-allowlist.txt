@@ -1,0 +1,11 @@
+# Non-cap numeric literals under sketch/v2, sketch/excalidraw, sketch/constraints, ui/sketch/v2 and projectbridge
+# that SceneLimitsGrepTest would otherwise flag. Format: <path under dev/stapler/stelekit/> :: <trimmed source line> => <reason>
+# May only shrink: a line that no longer matches a source fails the test (delete it); do not add caps here, add them to SceneLimits.
+projectbridge/LlmPayloadBuilder.kt :: private fun opaqueId(key: String) = "d-" + ContentHasher.sha256("dimension:$key").take(8) => hash-prefix length of an opaque id, not a cap
+projectbridge/LlmPayloadBuilder.kt :: val safe = if (refShape.matches(id)) id else ContentHasher.sha256("$prefix:$id").take(12) => hash-prefix length of an opaque id, not a cap
+sketch/constraints/spike/LmSolver.kt :: private val maxIterations: Int = 100, => Spike 0.1.2 solver parameter; the production solver (Story 4.1.2) takes its budget from its own options
+sketch/constraints/spike/LmSolver.kt :: while (!accepted && tries < 30) { => Spike 0.1.2 damping-retry count, not a scene cap
+sketch/constraints/spike/LmSolver.kt :: if (lambda > 1e12) break => Spike 0.1.2 numeric damping bound, not a scene cap
+sketch/constraints/spike/LmSolver.kt :: val inv = if (s > 1e-24) 1.0 / sqrt(s) else 0.0 => Spike 0.1.2 numeric guard against division by zero
+sketch/constraints/spike/LmSolver.kt :: return (0 until k).filter { abs(y[it]) > 1e-6 }.map { qr.perm[it] } => Spike 0.1.2 rank tolerance (ADR-003 residual bar), not a scene cap
+sketch/constraints/spike/Qr.kt :: if (abs(a[k, k]) > relTol * firstDiag && abs(a[k, k]) > 1e-300) rank++ else break => Spike 0.1.2 numeric rank guard, not a scene cap
