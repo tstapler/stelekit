@@ -130,19 +130,21 @@ class FileProjectSidecarStore(
      * uuid (`sheets/<uuid>.json` or `sheets/<uuid>.v2.json`), or a uuid that is not one path segment, yields null:
      * no arbitrary path is read from git-synced input.
      */
-    private fun referencedSheetPaths(modelBytes: ByteArray): List<String>? = try {
-        val refs = Json.parseToJsonElement(modelBytes.decodeToString()).jsonObject["sheets"]?.jsonArray.orEmpty()
-        refs.map { ref ->
-            val o = ref.jsonObject
-            val uuid = o.getValue("uuid").jsonPrimitive.content
-            if (!SAFE_SEGMENT.matches(uuid)) return null
-            val default = "${SidecarCodec.SHEETS_DIR}/$uuid.json"
-            val file = o["file"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.content ?: default
-            if (file != default && file != "${SidecarCodec.SHEETS_DIR}/$uuid.v2.json") return null
-            file
-        }.distinct().sorted()
-    } catch (_: Exception) {
-        null
+    private fun referencedSheetPaths(modelBytes: ByteArray): List<String>? {
+        return try {
+            val refs = Json.parseToJsonElement(modelBytes.decodeToString()).jsonObject["sheets"]?.jsonArray.orEmpty()
+            refs.map { ref ->
+                val o = ref.jsonObject
+                val uuid = o.getValue("uuid").jsonPrimitive.content
+                if (!SAFE_SEGMENT.matches(uuid)) return null
+                val default = "${SidecarCodec.SHEETS_DIR}/$uuid.json"
+                val file = o["file"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.content ?: default
+                if (file != default && file != "${SidecarCodec.SHEETS_DIR}/$uuid.v2.json") return null
+                file
+            }.distinct().sorted()
+        } catch (_: Exception) {
+            null
+        }
     }
 
     override suspend fun write(slug: String, files: Map<String, ByteArray>): SidecarWriteOutcome = mutex.withLock {

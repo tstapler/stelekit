@@ -53,11 +53,14 @@ object SidecarClassifier {
     }
 
     /** The `schema` number of a parseable JSON object, or null when [bytes] is absent, unparseable or has none. */
-    fun schemaOf(bytes: ByteArray?): Long? = try {
-        (parser.parseToJsonElement(bytes?.decodeToString(throwOnInvalidSequence = true) ?: return null) as? JsonObject)
-            ?.get("schema")?.jsonPrimitive?.longOrNull
-    } catch (_: Exception) {
-        null
+    fun schemaOf(bytes: ByteArray?): Long? {
+        if (bytes == null) return null
+        return try {
+            (parser.parseToJsonElement(bytes.decodeToString(throwOnInvalidSequence = true)) as? JsonObject)
+                ?.get("schema")?.jsonPrimitive?.longOrNull
+        } catch (_: Exception) {
+            null
+        }
     }
 
     /** Classifies a text snapshot (`sources/yaml-*.yaml`): UTF-8 and conflict markers only. */
