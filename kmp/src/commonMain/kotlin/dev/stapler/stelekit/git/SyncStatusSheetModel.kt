@@ -81,7 +81,7 @@ fun syncStatusSheetModel(
 ): SyncStatusSheetModel {
     val chip = stalenessChipState(staleness, nowMs, intervalMinutes)
     val behind = staleness.behindCount
-    val state = sheetState(syncState, inFlight, lastVerdict, pausedRetry, nowMs)
+    val state = syncSheetState(syncState, inFlight, lastVerdict, pausedRetry, nowMs)
     val running = state is SyncSheetState.Running
     return SyncStatusSheetModel(
         headline = chip.text,
@@ -117,7 +117,8 @@ fun syncStatusSheetModel(
 
 private const val MS_PER_MINUTE = 60_000L
 
-private fun sheetState(
+/** What the sync row and sheet say about the run itself; shared by the sidebar row and the status sheet. */
+fun syncSheetState(
     syncState: SyncState,
     inFlight: SyncRunInfo?,
     lastVerdict: LockVerdict?,

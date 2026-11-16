@@ -89,6 +89,11 @@ class SyncSafetyActions(
         }
     }
 
+    /** "Retry now" in the paused sheet: an extra attempt through the gate; a press that coalesces announces it. */
+    fun retryNow() {
+        activeGitSyncService.value?.retryNow { emit(SyncUiEvent.AlreadySyncing) }
+    }
+
     /**
      * Runs one manual sync with the mass-deletion guard lifted for this run only, after the typed-count
      * confirm. Foreground only: scheduled runs never lift the guard (see [GitSyncService.sync]).

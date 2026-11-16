@@ -91,7 +91,7 @@ class SyncStatusSheetUiTest {
     fun sheet_disablesSyncNowWhileASyncRunsAndHidesReviewWhenNotOwed() {
         show(SyncStaleness(), syncState = SyncState.Merging)
 
-        composeTestRule.onNodeWithText("Sync now").assertIsNotEnabled()
+        composeTestRule.onNodeWithText("Syncing...").assertIsNotEnabled()
         composeTestRule.onNodeWithText("Review first sync").assertDoesNotExist()
     }
 

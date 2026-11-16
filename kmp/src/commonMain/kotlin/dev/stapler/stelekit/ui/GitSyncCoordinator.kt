@@ -153,7 +153,7 @@ class GitSyncCoordinator(
             val service = activeGitSyncService.value ?: return@launch
             val run = coroutineContext.job
             jobTracker.track(JobKind.GitSync, "Syncing with remote", onCancel = { run.cancel() }) { handle ->
-                service.sync(graphId).onLeft { handle.failUnlessCoalesced(it); announceIfCoalesced(it) }
+                service.sync(graphId).onLeft { handle.failUnlessCoalesced(it); _syncEvents.announceIfCoalesced(it) }
             }
         }
     }
@@ -165,18 +165,9 @@ class GitSyncCoordinator(
             val service = activeGitSyncService.value ?: return@launch
             val run = coroutineContext.job
             jobTracker.track(JobKind.GitSync, "Checking for remote changes", onCancel = { run.cancel() }) { handle ->
-                service.fetchOnly(graphId).onLeft { handle.failUnlessCoalesced(it); announceIfCoalesced(it) }
+                service.fetchOnly(graphId).onLeft { handle.failUnlessCoalesced(it); _syncEvents.announceIfCoalesced(it) }
             }
         }
-    }
-
-    /** "Retry now" in the paused sheet: an extra attempt through the gate; a press that coalesces announces it. */
-    fun retryNow() {
-        activeGitSyncService.value?.retryNow { _syncEvents.tryEmit(SyncUiEvent.AlreadySyncing) }
-    }
-
-    private fun announceIfCoalesced(error: DomainError.GitError) {
-        if (error is DomainError.GitError.SyncInProgress) _syncEvents.tryEmit(SyncUiEvent.AlreadySyncing)
     }
 
     /** Reflects the active graph's real [dev.stapler.stelekit.git.GitConfigRepository] state (or `null`) into [AppState.gitConfig] — this field previously had no writer at all. */
@@ -312,4 +303,8 @@ sealed interface SyncUiEvent {
     data object MassChangeConfirmRefused : SyncUiEvent {
         override val announcement = "Wait for the running sync to finish, then confirm again"
     }
+}
+
+private fun MutableSharedFlow<SyncUiEvent>.announceIfCoalesced(error: DomainError.GitError) {
+    if (error is DomainError.GitError.SyncInProgress) tryEmit(SyncUiEvent.AlreadySyncing)
 }

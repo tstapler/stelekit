@@ -142,5 +142,6 @@ import org.junit.runners.Suite
     // They run under Gradle's testDebugUnitTest.
     // BackgroundTasksUxGapsTest, ScheduledSyncStatusActionsTest, TaskSettingsAccessibilityAndErrorsTest,
     // DepthEstimationPanelLiveRegionTest and ScheduledSyncControlsApplyTest are excluded for the same reason (1).
+    // SyncStatusSheetStatesTest, SyncStatusBadgeTest and SyncStatusTextScaleTest (Task 1.7b) are excluded for the same reason (1).
 )
 class AllAndroidUnitTests

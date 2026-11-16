@@ -221,6 +221,8 @@ internal fun GraphContentActiveShell(
         } ?: DEFAULT_CHIP_INTERVAL_MINUTES,
     )
 
+    val syncSheetState = rememberSyncSheetState(gitSyncService, syncState)
+
     val focusManager = LocalFocusManager.current
     BoxWithConstraints(
         modifier = Modifier
@@ -454,6 +456,7 @@ internal fun GraphContentActiveShell(
                         firstSyncReviewPending = firstSyncReviewPending,
                         scheduledSyncPaused = scheduledSyncSettings?.status?.paused == true,
                         stalenessChip = stalenessChip,
+                        syncSheetState = syncSheetState,
                         storageLocationResolver = storageLocationResolver,
                         gitRepository = gitRepository,
                         onStorageLocationChoose = onStorageLocationChoose,
