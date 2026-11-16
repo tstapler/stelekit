@@ -18,6 +18,7 @@ import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.platform.AtomicFileWriter
+import dev.stapler.stelekit.projectbridge.ClassicGatedSidecarStore
 import dev.stapler.stelekit.projectbridge.FileProjectSidecarStore
 import dev.stapler.stelekit.sketch.v2.runtime.session.SheetLeaseRegistry
 import dev.stapler.stelekit.projectbridge.LoaderPageSettleProbe
@@ -219,11 +220,16 @@ internal fun buildProjectBridgeDeps(
     }
     // One store (and so one mutex) per graph path; symlink resolution is off here (no common canonicalize).
     var cachedStore: Pair<String, ProjectSidecarStore>? = null
+    val bridgeSettings = ProjectBridgeSettings(deps.platformSettings)
     val sidecarStore = {
         graphManager.getActiveGraphInfo()?.takeIf { !it.isDemo }?.effectiveNotesPath?.value?.let { root ->
-            cachedStore?.takeIf { it.first == root }?.second ?: FileProjectSidecarStore(
-                effectiveFileSystem, root, AtomicFileWriter(effectiveFileSystem, { it }, ".tmp"),
-                deps.platformIntegrations.sketchWriterLease, isGitSyncBusy,
+            cachedStore?.takeIf { it.first == root }?.second ?: ClassicGatedSidecarStore(
+                FileProjectSidecarStore(
+                    effectiveFileSystem, root, AtomicFileWriter(effectiveFileSystem, { it }, ".tmp"),
+                    deps.platformIntegrations.sketchWriterLease, isGitSyncBusy,
+                ),
+                effectiveFileSystem.classicFileSideNeedsOptIn,
+                bridgeSettings::webClassicFileSide,
             ).also { cachedStore = root to it }
         }
     }
@@ -235,7 +241,7 @@ internal fun buildProjectBridgeDeps(
         fileSystem = effectiveFileSystem,
         // GitSyncService keeps its busy counter private, so also read the published in-progress states.
         isGitSyncBusy = isGitSyncBusy,
-        settings = ProjectBridgeSettings(deps.platformSettings),
+        settings = bridgeSettings,
         jobTracker = deps.jobTracker,
         readyGraphIds = graphManager.readyGraph.map { it?.id?.value },
         hasConfiguredProject = { hasConfiguredProject(deps.repos.sketchRepositories) },

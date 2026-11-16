@@ -71,6 +71,9 @@ class ProjectBridgeSettings(private val settings: Settings) {
 
     fun setV2Mode(graphId: String, mode: V2Mode) = settings.putString(v2ModeKey(graphId), mode.name)
 
+    /** The web-only `sketch.web.classicFileSide` setting (default Off; independent of [V2Mode]; D-147). */
+    fun webClassicFileSide(): ClassicFileSideSetting = ClassicFileSideSetting.parse(settings.getString(WEB_CLASSIC_FILE_SIDE_KEY, ""))
+
     /** True only when both the master flag and this graph's digest opt-in are on. */
     fun isDigestActive(graphId: String): Boolean = homeSketchEnabled && digestEnabled(graphId)
 
@@ -80,6 +83,7 @@ class ProjectBridgeSettings(private val settings: Settings) {
         fun defaultDigestTitle(displayName: String): String = "$displayName Digest"
 
         const val V2_MODE_KEY = "sketch.engine.v2"
+        const val WEB_CLASSIC_FILE_SIDE_KEY = "sketch.web.classicFileSide"
 
         private fun v2ModeKey(graphId: String) = "$V2_MODE_KEY.$graphId"
         private fun digestEnabledKey(graphId: String) = "home_sketch_digest_enabled_$graphId"

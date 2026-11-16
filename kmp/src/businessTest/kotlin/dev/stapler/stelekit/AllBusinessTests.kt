@@ -494,6 +494,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.platform.OpfsProbeDirectoryTest::class,
     dev.stapler.stelekit.platform.OpfsStorageVerdictTest::class,
     dev.stapler.stelekit.platform.V2StorageStatusTest::class,
+    dev.stapler.stelekit.projectbridge.ClassicWebFileSidePolicyTest::class,
     dev.stapler.stelekit.platform.FileSystemStoragePortsTest::class,
     dev.stapler.stelekit.platform.StaleTempSweeperTest::class,
     dev.stapler.stelekit.platform.diagnostics.ExitRecordFormatterTest::class,

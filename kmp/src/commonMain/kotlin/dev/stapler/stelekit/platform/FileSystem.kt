@@ -224,6 +224,12 @@ interface FileSystem {
      */
     val storageStatus: V2StorageStatus get() = V2StorageStatus.Ready(sessionOnly = false, privateSuspected = false)
 
+    /**
+     * True where the classic sketch file side (sidecar write-through, pull, exports) must wait for the owner's
+     * `sketch.web.classicFileSide` setting: only the web build (D-147, D-154). Desktop and Android always run it.
+     */
+    val classicFileSideNeedsOptIn: Boolean get() = false
+
     /** Completes when every write queued for [path] has reached durable storage; default Right (writes are synchronous). */
     suspend fun awaitDurable(path: String): Either<DomainError, Unit> = Unit.right()
 

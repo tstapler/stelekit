@@ -644,6 +644,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     actual override fun pickDirectory(): String? = null
     override val supportsNativeDirectoryPicker: Boolean get() = showDirectoryPickerSupported()
     override val supportsTempRenameWrites: Boolean get() = false
+    override val classicFileSideNeedsOptIn: Boolean get() = true
 
     // Story 1.4.7 (Task 1.4.7f): the durability and temp-write surface over [writeQueue]. [supportsTempRenameWrites] stays
     // false until Task 1.4.7j, so no production caller reaches these yet; the dirty-set and host semantics are Task 1.4.7g.
