@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.ui.sketch.v2
 
+import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
 import dev.stapler.stelekit.sketch.v2.diagnostics.DiagnosticsPort
 
@@ -35,6 +36,13 @@ data class ShortcutsSheetModel(
         const val SETTING_LABEL = "Single-key shortcuts"
         const val TITLE = "Keyboard shortcuts"
 
+        const val MNEMONIC_ID_PREFIX = "constrain.mnemonic."
+
+        /** The menu letters, listed with the menu so the sheet says they work only while it is open. */
+        private fun mnemonicRows() = ConstrainMenuItem.entries.map {
+            ShortcutRow("$MNEMONIC_ID_PREFIX${it.name}", "${it.label} (Constrain menu open)", listOf(it.mnemonic.toString()), sameAsExcalidraw = false)
+        }
+
         fun of(env: KeymapEnv, singleKeyEnabled: Boolean, layout: KeyboardLayoutInfo? = null): ShortcutsSheetModel {
             fun row(e: KeymapEntry) = ShortcutRow(
                 e.id,
@@ -48,7 +56,7 @@ data class ShortcutsSheetModel(
                 ShortcutSection(EDIT, group(KeymapGroup.Edit)),
                 ShortcutSection(ARRANGE, group(KeymapGroup.Arrange)),
                 ShortcutSection(VIEW, group(KeymapGroup.View, KeymapGroup.Pan), notes = listOf(REGION_NOTE)),
-                ShortcutSection(CONSTRAINTS, group(KeymapGroup.Constrain), notes = listOf(COLLISION_NOTE)),
+                ShortcutSection(CONSTRAINTS, group(KeymapGroup.Constrain) + mnemonicRows(), notes = listOf(COLLISION_NOTE)),
             )
             return ShortcutsSheetModel(sections, KeymapSpec.gate.footnote, singleKeyEnabled)
         }
@@ -66,8 +74,14 @@ class SingleKeyHintProducer(private val diagnostics: DiagnosticsPort, private va
         diagnostics.raise(BannerRowId.SingleKeyChip, DETAILS)
     }
 
-    /** "Got it" or "Turn on" resolves the chip; it is not raised again in this session. */
+    /** "Got it" resolves the chip; it is not raised again in this session. */
     fun resolve() = diagnostics.resolve(BannerRowId.SingleKeyChip)
+
+    /** "Turn on": stores the `SingleKeyShortcuts` setting and settles the chip. */
+    fun turnOn(settings: Settings) {
+        SingleKeyShortcuts.write(settings, true)
+        resolve()
+    }
 
     companion object {
         const val DETAILS = "Single-key tool shortcuts are off."

@@ -227,6 +227,9 @@ class SketchNoticeQueue(
         sequencer?.takeAnnouncement()?.let { liveRegion.say(BannerTier.Onboarding, seq++, it, null) }
         return liveRegion.next(now)
     }
+
+    /** True while something waits for the live region (a polite one may be held back by the rate limit); the host polls again then. */
+    fun hasPendingAnnouncement(): Boolean = liveRegion.hasPending()
 }
 
 /** The live region's backlog: priority order, last-wins streams and the one-per-second polite rate. */
@@ -240,6 +243,8 @@ private class LiveRegion {
         if (replaceKey != null) pending.removeAll { it.replaceKey == replaceKey }
         pending += Pending(tier, seq, text, replaceKey)
     }
+
+    fun hasPending(): Boolean = pending.isNotEmpty()
 
     fun next(now: Long): Announcement? {
         val best = pending.minWithOrNull(compareBy({ it.tier.ordinal }, { it.seq })) ?: return null

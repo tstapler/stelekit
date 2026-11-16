@@ -45,6 +45,9 @@ kt_android_library(
             "**/TextEditorTest.kt",
             # Compose host test for the selection overlay and handle tiers (Gradle-only, no Compose plugin in this target)
             "**/HandleLayoutTest.kt",
+            # Compose host tests for the v2 edge-pan strip and the diagnostics host (Gradle-only, no Compose plugin in this target)
+            "**/EdgePanStripTest.kt",
+            "**/DiagnosticsTest.kt",
             # Compose host tests for the v2 touch help popup, non-drag transform panel, pan pad and sheet handle (Gradle-only, no Compose plugin in this target)
             "**/TouchHelpTest.kt",
             "**/NonDragTransformTest.kt",

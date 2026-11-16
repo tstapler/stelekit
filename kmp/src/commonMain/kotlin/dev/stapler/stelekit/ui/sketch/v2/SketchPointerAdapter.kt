@@ -33,6 +33,23 @@ data class RawPointer(
     val clickCount: Int = 1,
 )
 
+/** A rectangle of the canvas in screen pixels; the edge-pan strip's hit area (Task 3.1.2g). */
+data class ScreenRect(val left: Double, val top: Double, val right: Double, val bottom: Double) {
+    operator fun contains(p: ScreenPx): Boolean = p.x >= left && p.x < right && p.y >= top && p.y < bottom
+}
+
+/** What the host learns from the adapter besides the actions: the first stylus pen-up, finger drags and cancelled strip drags. */
+interface PointerGestureListener {
+    /** A stylus stroke ended with pen-up (never mid-gesture): the moment `StylusSeen` may flip Finger drawing (UX-102). */
+    fun onStylusStrokeEnd() = Unit
+
+    /** A one-finger drag with a drawing tool started, whether it pans (Finger drawing OFF) or draws (ON); fires once per drag (UX-80). */
+    fun onOneFingerDrag() = Unit
+
+    /** The system cancelled a one-finger drag that started in the edge strip (the backstop of Task 3.1.2g). */
+    fun onStripDragCancelled() = Unit
+}
+
 enum class WheelUnit { Pixel, Line, Page }
 
 /** A wheel or trackpad scroll. [zoomModifier] is Ctrl (Cmd on macOS), which makes the wheel zoom instead of pan. */
@@ -59,8 +76,9 @@ sealed interface PointerAction {
  * Touch navigates and stylus or mouse acts; Finger drawing ON makes a one-finger drag draw. Two fingers always
  * pinch and pan, and a second finger during a one-finger draw first cancels the tool preview (the tool sees the
  * second pointer's Down), then navigates. A touch that arrives while a stylus or mouse stroke is active is ignored
- * (palm). Pure state machine: no Compose, no clock, no coroutines. Platform palm classification and edge-pan strips
- * belong to Tasks 3.1.2g and 3.1.2h.
+ * (palm). Pure state machine: no Compose, no clock, no coroutines. With the Select tool, a touch that starts on empty
+ * canvas pans (UX-102); with Finger drawing ON a touch that starts in an [edgeStrips] rectangle pans (UX-121). Platform
+ * palm classification is Task 3.1.2h.
  */
 class SketchPointerAdapter(
     viewport: SketchViewport = SketchViewport.of(),
@@ -72,13 +90,34 @@ class SketchPointerAdapter(
     /** True while the active tool acts on a tap (Eraser, Select): a touch tap with Finger drawing OFF then reaches the tool as Down and Up (UX-101). */
     var touchTapsReachTool: Boolean = false,
 ) {
+    /** True while the Select tool is active: a one-finger drag that starts on empty canvas pans instead of drawing a marquee (UX-102). */
+    var selectTool: Boolean = false
+
+    /** Whether a screen position is empty canvas (no element, no handle); the host answers from its hit tester. */
+    var isEmptyCanvas: (ScreenPx) -> Boolean = { false }
+
+    /** True while a drawing tool is active, which is when a one-finger drag raises the Finger drawing hint. */
+    var drawingTool: Boolean = false
+
+    /** The edge-pan strips' hit rectangles; with Finger drawing ON a one-finger drag that starts inside one pans (UX-121). */
+    var edgeStrips: List<ScreenRect> = emptyList()
+
+    var listener: PointerGestureListener? = null
+
     var viewport: SketchViewport = viewport
         private set
 
     private sealed interface Mode {
         data object Idle : Mode
-        data class Tool(val id: Int, val kind: PointerKind, val override: ToolId?) : Mode
-        data class Pan(val id: Int, val start: ScreenPx, val travelled: Double = 0.0, val kind: PointerKind = PointerKind.Touch) : Mode
+        data class Tool(val id: Int, val kind: PointerKind, val override: ToolId?, val announced: Boolean = false) : Mode
+        data class Pan(
+            val id: Int,
+            val start: ScreenPx,
+            val travelled: Double = 0.0,
+            val kind: PointerKind = PointerKind.Touch,
+            val fromStrip: Boolean = false,
+            val announced: Boolean = false,
+        ) : Mode
         data class Pinch(val a: Int, val b: Int) : Mode
 
         /** Waiting for every pointer to lift before a new gesture may start; actions are dropped meanwhile. */
@@ -161,7 +200,11 @@ class SketchPointerAdapter(
                 mode = Mode.Tool(p.id, p.kind, ToolId.Eraser)
                 listOf(toolInput(p, InputType.Down, ToolId.Eraser))
             }
-            (p.kind == PointerKind.Touch && !fingerDrawing) || handTool -> {
+            p.kind == PointerKind.Touch && fingerDrawing && edgeStrips.any { p.position in it } -> {
+                mode = Mode.Pan(p.id, p.position, kind = p.kind, fromStrip = true)
+                emptyList()
+            }
+            (p.kind == PointerKind.Touch && (!fingerDrawing || (selectTool && isEmptyCanvas(p.position)))) || handTool -> {
                 mode = Mode.Pan(p.id, p.position, kind = p.kind)
                 emptyList()
             }
@@ -176,9 +219,17 @@ class SketchPointerAdapter(
         val previous = down[p.id] ?: return emptyList()
         down[p.id] = p.position
         return when (val m = mode) {
-            is Mode.Tool -> if (p.id == m.id) listOf(toolInput(p, InputType.Move, m.override)) else emptyList()
+            is Mode.Tool -> if (p.id == m.id) {
+                if (!m.announced && announceFingerDrag(m.kind)) mode = m.copy(announced = true)
+                listOf(toolInput(p, InputType.Move, m.override))
+            } else {
+                emptyList()
+            }
             is Mode.Pan -> if (p.id == m.id) {
-                mode = m.copy(travelled = hypot(p.position.x - m.start.x, p.position.y - m.start.y).coerceAtLeast(m.travelled))
+                val travelled = hypot(p.position.x - m.start.x, p.position.y - m.start.y).coerceAtLeast(m.travelled)
+                val dragging = travelled > TAP_SLOP_PX && !m.fromStrip && !handTool
+                val announced = m.announced || (dragging && announceFingerDrag(m.kind))
+                mode = m.copy(travelled = travelled, announced = announced)
                 navigate(p.position.x - previous.x, p.position.y - previous.y)
             } else {
                 emptyList()
@@ -186,6 +237,13 @@ class SketchPointerAdapter(
             is Mode.Pinch -> pinch(m, p.id, previous)
             else -> emptyList()
         }
+    }
+
+    /** Tells the listener, once per drag, that a one-finger drag began with a drawing tool; true when it was told. */
+    private fun announceFingerDrag(kind: PointerKind): Boolean {
+        if (kind != PointerKind.Touch || !drawingTool) return false
+        listener?.onOneFingerDrag()
+        return true
     }
 
     private fun navigate(dx: Double, dy: Double): List<PointerAction> {
@@ -215,12 +273,14 @@ class SketchPointerAdapter(
         val out = when (val m = mode) {
             is Mode.Tool -> if (p.id == m.id) {
                 mode = Mode.Idle
+                if (m.kind == PointerKind.Stylus && type == InputType.Up) listener?.onStylusStrokeEnd()
                 listOf(toolInput(p, type, m.override))
             } else {
                 emptyList()
             }
             is Mode.Pan -> {
                 if (p.id == m.id) mode = Mode.Idle
+                if (p.id == m.id && m.fromStrip && type == InputType.Cancel) listener?.onStripDragCancelled()
                 if (p.id == m.id && type == InputType.Up && isTap(m)) tapActions(p) else emptyList()
             }
             is Mode.Pinch -> {

@@ -18,6 +18,7 @@ import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.isTertiaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import dev.stapler.stelekit.platform.PalmClassifier
+import dev.stapler.stelekit.platform.PointerCancelDetector
 import dev.stapler.stelekit.sketch.v2.tools.Modifiers
 import dev.stapler.stelekit.sketch.v2.tools.PointerKind
 import dev.stapler.stelekit.sketch.v2.view.ScreenPx
@@ -34,16 +35,18 @@ import dev.stapler.stelekit.sketch.v2.view.ScreenPx
 fun Modifier.sketchPointerInput(
     adapter: SketchPointerAdapter,
     palm: PalmClassifier = PalmClassifier.None,
+    cancel: PointerCancelDetector = PointerCancelDetector.None,
     onActions: (List<PointerAction>) -> Unit,
 ): Modifier =
-    pointerInput(adapter, palm) {
+    pointerInput(adapter, palm, cancel) {
         awaitPointerEventScope {
             while (true) {
                 val event = awaitPointerEvent()
                 val actions = event.changes.mapIndexed { index, change ->
                     val raw = change.toRaw(event)
                     val maybePalm = change.type == PointerType.Unknown || raw.phase == RawPhase.Cancel
-                    raw.copy(palm = maybePalm && palm.isPalm(event, index))
+                    val cancelled = raw.phase == RawPhase.Up && cancel.isCancelled(event, index)
+                    raw.copy(palm = maybePalm && palm.isPalm(event, index), phase = if (cancelled) RawPhase.Cancel else raw.phase)
                 }.flatMap { adapter.onPointer(it) }
                 if (actions.isNotEmpty()) onActions(actions)
                 event.changes.forEach { it.consume() }

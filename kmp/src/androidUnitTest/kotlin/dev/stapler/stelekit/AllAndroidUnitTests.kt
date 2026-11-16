@@ -135,6 +135,7 @@ import org.junit.runners.Suite
     // LayersPanelTest, StylePanelTest and ShortcutsSheetTest (sketch v2) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
     // ElementsPanelTest (sketch v2, Story 3.5.7b) is excluded for the same reason (1) and composes @Composable lambdas (no Compose plugin in this target).
     // PointerAdapterTest and TextEditorTest (sketch v2) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
+    // EdgePanStripTest and DiagnosticsTest (sketch v2, Tasks 3.1.2g and 3.6.4b) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
     // HandleLayoutTest (sketch v2 selection overlay) is excluded for the same reason (1) and composes @Composable lambdas (no Compose plugin in this target).
     // TouchHelpTest and NonDragTransformTest (sketch v2, Stories 3.6.7 and 3.6.3) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
     // ToolStripTest, AdaptiveStateSurvivalTest, SketchCanvasRecompositionTest and ScenePainterAndroidTest (sketch v2, Stories 3.1.3 and 2.1.3)

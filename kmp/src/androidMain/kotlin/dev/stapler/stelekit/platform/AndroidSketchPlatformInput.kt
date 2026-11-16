@@ -33,6 +33,14 @@ object AndroidPalmClassifier : PalmClassifier {
     }
 }
 
+/** Android system cancel from the raw `MotionEvent` (`ACTION_CANCEL`; Task 3.1.2g). A palm-flagged cancel is the palm classifier's, not this one's. */
+object AndroidPointerCancelDetector : PointerCancelDetector {
+    override fun isCancelled(nativeEvent: Any?, pointerIndex: Int): Boolean {
+        val e = (nativeEvent as? PointerEvent)?.motionEvent ?: nativeEvent as? MotionEvent ?: return false
+        return e.actionMasked == MotionEvent.ACTION_CANCEL && (e.flags and AndroidPalmClassifier.FLAG_CANCELED) == 0
+    }
+}
+
 /**
  * Claims the protected span of an edge from the system back gesture with `View.setSystemGestureExclusionRects`
  * (API 29). The platform keeps only what a layout pass last registered, so the rectangles are re-applied on every

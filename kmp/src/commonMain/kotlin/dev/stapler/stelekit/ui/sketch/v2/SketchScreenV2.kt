@@ -60,6 +60,8 @@ data class SketchShellConfig(
     val edgeStripAtEnd: Boolean = false,
     /** The pan pad's centre "Fit" (the host knows the scene bounds). */
     val onFit: () -> Unit = {},
+    /** The user toggled Finger drawing from the top-bar chip: the host stores it as an explicit choice (UX-80). */
+    val onFingerDrawingChosen: (Boolean) -> Unit = {},
 )
 
 object ShellTags {
@@ -151,7 +153,10 @@ private fun TopBar(state: SketchEditorState, config: SketchShellConfig) {
         Text(config.title, Modifier.weight(1f))
         Text(
             if (state.fingerDrawing) "Finger: On" else "Finger: Off",
-            Modifier.testTag(ShellTags.FINGER_CHIP).clickable { state.fingerDrawing = !state.fingerDrawing }
+            Modifier.testTag(ShellTags.FINGER_CHIP).clickable {
+                state.fingerDrawing = !state.fingerDrawing
+                config.onFingerDrawingChosen(state.fingerDrawing)
+            }
                 .size(width = 88.dp, height = TouchTargetFloor.floorDp(config.pointer).dp.coerceAtLeast(48.dp)),
         )
         Box {
@@ -195,7 +200,7 @@ private fun CanvasArea(state: SketchEditorState, config: SketchShellConfig, modi
     Box(modifier.fillMaxWidth().testTag(ShellTags.CANVAS).onSizeChanged { canvasPx = it }) {
         canvas()
         Text(
-            hintLine(state),
+            hintLine(state, config.pointer),
             Modifier.align(Alignment.TopStart).padding(8.dp).testTag(ShellTags.HINT),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -234,8 +239,12 @@ private fun CanvasArea(state: SketchEditorState, config: SketchShellConfig, modi
     }
 }
 
-private fun hintLine(state: SketchEditorState): String {
-    val base = HINTS[state.activeTool].orEmpty()
+/** The tools that draw by dragging: with Finger drawing OFF and a touch pointer present they say how to draw with touch (UX-80). */
+private val DRAG_TOOLS = setOf(ToolId.Rectangle, ToolId.Diamond, ToolId.Ellipse, ToolId.Arrow, ToolId.Freedraw, ToolId.Frame)
+
+private fun hintLine(state: SketchEditorState, pointer: PointerClass): String {
+    val touchHint = !state.fingerDrawing && pointer == PointerClass.TouchOrPen && state.activeTool in DRAG_TOOLS
+    val base = if (touchHint) FingerDrawingController.TOOL_HINT_OFF else HINTS[state.activeTool].orEmpty()
     return if (state.toolLock) "Tool lock on. $base" else base
 }
 

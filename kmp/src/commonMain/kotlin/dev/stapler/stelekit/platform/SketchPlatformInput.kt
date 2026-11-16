@@ -34,6 +34,20 @@ interface EdgeGestureExclusion {
 }
 
 /**
+ * Says whether one contact of a pointer event ended because the system cancelled it (Android `ACTION_CANCEL`). Compose
+ * reports a system cancel as an ordinary release, so only the host's native event can tell; the edge-pan backstop of Task
+ * 3.1.2g counts these. Arguments as for [PalmClassifier.isPalm]. Device behaviour is UNVERIFIED (Task 0.1.4d).
+ */
+fun interface PointerCancelDetector {
+    fun isCancelled(nativeEvent: Any?, pointerIndex: Int): Boolean
+
+    companion object {
+        /** No platform detection: a cancel looks like a release and the backstop never fires. */
+        val None = PointerCancelDetector { _, _ -> false }
+    }
+}
+
+/**
  * Says whether one contact of a pointer event is a palm. [nativeEvent] is the event as the host received it (the
  * Compose `PointerEvent`, whose Android `MotionEvent` the classifier unwraps; common Compose has no native-event
  * accessor), [pointerIndex] the contact within it. The app implements no palm detection of its own (no size

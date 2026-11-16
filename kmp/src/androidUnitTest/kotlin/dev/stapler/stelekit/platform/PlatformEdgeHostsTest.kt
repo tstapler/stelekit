@@ -58,6 +58,15 @@ class PlatformEdgeHostsTest {
     }
 
     @Test
+    fun cancelDetector_should_SeeASystemCancel_ButNotARelease_ANullEvent_OrAPalmFlaggedCancel() {
+        assertTrue(AndroidPointerCancelDetector.isCancelled(motion(MotionEvent.ACTION_CANCEL, MotionEvent.TOOL_TYPE_FINGER), 0))
+        assertFalse(AndroidPointerCancelDetector.isCancelled(motion(MotionEvent.ACTION_UP, MotionEvent.TOOL_TYPE_FINGER), 0))
+        assertFalse(AndroidPointerCancelDetector.isCancelled(motion(MotionEvent.ACTION_CANCEL, MotionEvent.TOOL_TYPE_FINGER, AndroidPalmClassifier.FLAG_CANCELED), 0), "that is the palm classifier's")
+        assertFalse(AndroidPointerCancelDetector.isCancelled(null, 0))
+        assertFalse(PointerCancelDetector.None.isCancelled(motion(MotionEvent.ACTION_CANCEL, MotionEvent.TOOL_TYPE_FINGER), 0))
+    }
+
+    @Test
     fun exclusion_should_RegisterOnlyTheRequestedSpan_ClampedToTheGrantedHeight_AndClearOnRelease() {
         val view = View(ApplicationProvider.getApplicationContext())
         val host = AndroidEdgeGestureExclusion(view, maxSpanPx = SPAN)
