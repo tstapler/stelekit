@@ -41,8 +41,10 @@ filegroup(
             "dev/stapler/stelekit/ui/components/Mermaid*.kt",
             "dev/stapler/stelekit/cache/LruCache.kt",
             "dev/stapler/stelekit/cache/PlatformLock.kt",
+            # Uses Gradle-generated Compose resources (Res); //kmp/src/commonMain/bazel_stubs replaces it.
+            "dev/stapler/stelekit/ui/sketch/v2/SketchFontResources.kt",
         ],
-    ),
+    ) + ["//kmp/src/commonMain/bazel_stubs:srcs"],
     visibility = ["//kmp:__subpackages__"],
 )
 

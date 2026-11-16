@@ -1,0 +1,8 @@
+# Bazel-only replacements for commonMain files that depend on Gradle-generated code (Compose Multiplatform
+# resources `Res`). //kmp/src/commonMain/kotlin:kt_srcs excludes the real file and includes this one instead;
+# Gradle never sees this directory (it is not a Kotlin source root).
+filegroup(
+    name = "srcs",
+    srcs = glob(["*.kt"]),
+    visibility = ["//kmp/src/commonMain/kotlin:__pkg__"],
+)

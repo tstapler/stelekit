@@ -227,6 +227,8 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/ChromeTableFixtureTest.kt",
         "dev/stapler/stelekit/sketch/v2/KeymapSpecTest.kt",
         "dev/stapler/stelekit/sketch/v2/TextWrapTest.kt",
+        "dev/stapler/stelekit/sketch/v2/SketchLogTest.kt",
+        "dev/stapler/stelekit/sketch/v2/FixedAdvanceTextMetricsProvider.kt",
         "dev/stapler/stelekit/sketch/v2/SceneLimitsTest.kt",
         "dev/stapler/stelekit/sketch/v2/CanonicalJsonTest.kt",
         "dev/stapler/stelekit/sketch/constraints/SolverSpikeTest.kt",

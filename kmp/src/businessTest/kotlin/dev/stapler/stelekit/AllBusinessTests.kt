@@ -909,6 +909,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.ChromeTableFixtureTest::class,
     dev.stapler.stelekit.sketch.v2.KeymapSpecTest::class,
     dev.stapler.stelekit.sketch.v2.TextWrapTest::class,
+    dev.stapler.stelekit.sketch.v2.SketchLogTest::class,
     dev.stapler.stelekit.sketch.v2.SceneLimitsTest::class,
     dev.stapler.stelekit.sketch.v2.CanonicalJsonTest::class,
     dev.stapler.stelekit.sketch.v2.CanonicalJsonOracleTest::class,

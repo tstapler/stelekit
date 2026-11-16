@@ -81,3 +81,18 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+
+-------------------------------------------------------------------------------
+Bundled fonts (sketch engine text; SIL Open Font License 1.1, unmodified files)
+-------------------------------------------------------------------------------
+Hand-drawn: Kalam Regular, Copyright (c) 2014 Indian Type Foundry
+  kmp/src/commonMain/composeResources/font/sketch_hand_drawn.ttf
+  licence: kmp/src/commonMain/composeResources/files/font-licenses/OFL-Kalam.txt
+Normal: Source Sans 3 Regular, Copyright 2010-2024 Adobe (Reserved Font Name 'Source')
+  kmp/src/commonMain/composeResources/font/sketch_normal.otf
+  licence: kmp/src/commonMain/composeResources/files/font-licenses/OFL-SourceSans3.txt
+Code: Source Code Pro Regular, Copyright 2023 Adobe (Reserved Font Name 'Source')
+  kmp/src/commonMain/composeResources/font/sketch_code.otf
+  licence: kmp/src/commonMain/composeResources/files/font-licenses/OFL-SourceCodePro.txt
+The font files are bundled byte for byte (no subsetting or renaming, so the Reserved Font Names stay valid) and the
+full OFL texts ship in the app's resources next to them.
