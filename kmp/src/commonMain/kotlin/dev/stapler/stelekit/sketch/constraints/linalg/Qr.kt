@@ -11,6 +11,8 @@ import kotlin.math.sqrt
  * remaining column norm, and on a tie the earliest column, so a duplicated column is the one reported
  * as dependent. All working storage is owned by the instance and reused across calls.
  */
+private const val DENORMAL_FLOOR = 1e-300
+
 class PivotedQr(val m: Int, val n: Int) {
     val r = DenseMatrix(m, n)
     val perm = IntArray(n)
@@ -60,7 +62,7 @@ class PivotedQr(val m: Int, val n: Int) {
                 }
             }
             if (k == 0) firstDiag = abs(r[0, 0])
-            if (abs(r[k, k]) > relTol * firstDiag && abs(r[k, k]) > 1e-300) rank++ else break
+            if (abs(r[k, k]) > relTol * firstDiag && abs(r[k, k]) > DENORMAL_FLOOR) rank++ else break
         }
         return rank
     }
