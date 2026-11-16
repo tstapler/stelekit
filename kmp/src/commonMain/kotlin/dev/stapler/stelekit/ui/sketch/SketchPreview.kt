@@ -2,6 +2,7 @@ package dev.stapler.stelekit.ui.sketch
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -34,6 +35,7 @@ import dev.stapler.stelekit.sketch.sceneBounds
 val LocalSketchPreviewLoader = staticCompositionLocalOf<SketchPreviewLoader?> { null }
 
 const val SKETCH_PREVIEW_TAG = "sketch-preview"
+const val SKETCH_PREVIEW_NOT_SHOWN_TAG = "sketch-preview-not-shown"
 
 private const val PREVIEW_PADDING_DP = 12f
 private const val PREVIEW_STROKE_DP = 2f
@@ -60,9 +62,21 @@ internal fun SketchPreviewContent(preview: SketchPreview?, modifier: Modifier = 
         null -> Box(modifier.fillMaxWidth().heightIn(min = PLACEHOLDER_MIN_HEIGHT))
         SketchPreview.Missing -> PreviewNote(MISSING_SKETCH_TEXT, modifier)
         SketchPreview.Empty -> PreviewNote(EMPTY_SKETCH_TEXT, modifier)
-        is SketchPreview.Drawing -> DrawingPreview(preview, modifier)
+        is SketchPreview.Drawing -> Column(modifier) {
+            DrawingPreview(preview)
+            if (preview.notShownCount > 0) {
+                Text(
+                    notShownText(preview.notShownCount),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp).testTag(SKETCH_PREVIEW_NOT_SHOWN_TAG),
+                )
+            }
+        }
     }
 }
+
+internal fun notShownText(count: Int): String = if (count == 1) "1 element not shown in this preview" else "$count elements not shown in this preview"
 
 private val PLACEHOLDER_MIN_HEIGHT = 64.dp
 

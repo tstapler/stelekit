@@ -330,7 +330,7 @@ private fun ZoneSet.toJson(): JsonArray = JsonArray(
     },
 )
 
-private fun ZoneSet.Companion.fromJson(array: JsonArray): ZoneSet = ZoneSet(
+internal fun ZoneSet.Companion.fromJson(array: JsonArray): ZoneSet = ZoneSet(
     array.mapNotNull { e ->
         val o = (e as? JsonObject) ?: return@mapNotNull null
         val key = o["key"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null

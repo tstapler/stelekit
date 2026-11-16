@@ -1033,5 +1033,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.projectbridge.FusionHarnessTest::class,
     dev.stapler.stelekit.projectbridge.FusionHarnessLocalRunTest::class,
     dev.stapler.stelekit.wiring.SketchStorageHostSitesTest::class,
+    dev.stapler.stelekit.sketch.v2.MixedProjectFusionGoldenTest::class,
+    dev.stapler.stelekit.sketch.v2.SketchPreviewV2Test::class,
 )
 class AllBusinessTests

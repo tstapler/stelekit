@@ -332,7 +332,12 @@ internal fun GraphContentActiveShell(
             action
         }
 
-        val sketchPreviewLoader = remember(repos) { dev.stapler.stelekit.ui.sketch.SketchPreviewLoader(repos.sketchRepositories) }
+        val sketchPreviewLoader = remember(repos, viewModel) {
+            dev.stapler.stelekit.ui.sketch.SketchPreviewLoader(
+                repos.sketchRepositories,
+                dev.stapler.stelekit.sketch.v2.runtime.projection.SheetProjectionSource(viewModel::projectSidecarStore),
+            )
+        }
 
         CompositionLocalProvider(
             dev.stapler.stelekit.ui.sketch.LocalSketchPreviewLoader provides sketchPreviewLoader,
