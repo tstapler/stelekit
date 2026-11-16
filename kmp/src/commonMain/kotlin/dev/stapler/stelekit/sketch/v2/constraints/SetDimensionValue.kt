@@ -94,7 +94,7 @@ object DimensionAdd {
     /** What a dimension measures, spelled the same for every way of naming it; null when an operand no longer exists. */
     private fun measureKey(scene: SketchSceneV2, c: Constraint): String? {
         val perTarget = c.targets.map { keysOf(scene, it) ?: return null }
-        return if (c.kind == ConstraintKind.Distance) perTarget.flatten().toSortedSet().joinToString(",") else perTarget.map { it.sorted().joinToString("-") }.sorted().joinToString(",")
+        return if (c.kind == ConstraintKind.Distance) perTarget.flatten().distinct().sorted().joinToString(",") else perTarget.map { it.sorted().joinToString("-") }.sorted().joinToString(",")
     }
 
     private fun keysOf(scene: SketchSceneV2, t: ConstraintTarget): List<String>? {
