@@ -50,6 +50,9 @@ kt_jvm_test(
             "dev/stapler/stelekit/ui/components/MermaidSecurityDirectiveTest.kt",
             # Spike 0.1.3b/c pixel probe: needs commonTest DeterminismSpikeSupport (not on this target's classpath); Gradle-only
             "**/DeterminismSpikeJvmTest.kt",
+            # Reads the bundled fonts through Compose Multiplatform's generated `Res`, which Bazel does not generate (commonMain
+            # uses bazel_stubs/SketchFontResources.kt instead); Gradle-only. Also skipped by AllJvmTestsCompletenessTest.
+            "dev/stapler/stelekit/ui/sketch/v2/ComposeTextMetricsProviderTest.kt",
         ],
     ),
     associates = ["//kmp/src/jvmMain/kotlin:jvm_main_lib"],

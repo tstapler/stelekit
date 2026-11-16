@@ -1,6 +1,6 @@
 package dev.stapler.stelekit.platform
 
-import dev.stapler.stelekit.db.FakeRelocationFileSystem
+import dev.stapler.stelekit.db.sidecar.FakeFileSystem
 import java.io.RandomAccessFile
 import java.nio.file.Files
 import kotlin.test.Test
@@ -52,7 +52,7 @@ class FilePrefixReadTest {
 
     @Test
     fun fileSystemWithoutReadFileBytes_should_ReturnNull() {
-        val bare = object : FakeRelocationFileSystem() {
+        val bare = object : FakeFileSystem() {
             override fun readFileBytes(path: String): ByteArray? = throw UnsupportedOperationException("no byte reads")
         }
         assertNull(bare.readFilePrefix("/x", 4))
@@ -60,7 +60,7 @@ class FilePrefixReadTest {
 
     @Test
     fun fileSystemWithReadFileBytes_should_TruncateIt() {
-        val withBytes = object : FakeRelocationFileSystem() {
+        val withBytes = object : FakeFileSystem() {
             override fun readFileBytes(path: String): ByteArray? = byteArrayOf(1, 2, 3, 4, 5)
         }
         assertEquals(listOf<Byte>(1, 2), withBytes.readFilePrefix("/x", 2)!!.toList())

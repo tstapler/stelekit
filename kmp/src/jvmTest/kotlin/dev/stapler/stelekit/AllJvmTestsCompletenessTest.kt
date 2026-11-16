@@ -14,7 +14,7 @@ import org.junit.runners.Suite
  */
 class AllJvmTestsCompletenessTest {
 
-    private val excludedFromBazel = Regex("""(Screenshot|Roborazzi)|Mermaid(EngineActor|JvmEngine|RendererFallback|RendererSmoke|SecurityDirective)Test""")
+    private val excludedFromBazel = Regex("""(Screenshot|Roborazzi)|Mermaid(EngineActor|JvmEngine|RendererFallback|RendererSmoke|SecurityDirective)Test|ComposeTextMetricsProviderTest""")
 
     private val location = File(AllJvmTests::class.java.protectionDomain.codeSource.location.toURI())
 
