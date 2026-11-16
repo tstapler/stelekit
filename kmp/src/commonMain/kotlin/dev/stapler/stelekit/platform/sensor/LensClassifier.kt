@@ -61,10 +61,12 @@ object LensClassifier {
     private fun lensChips(candidates: List<Candidate>): List<CameraLens> {
         val useEq = candidates.all { it.eq != null }
         fun measure(c: Candidate): Double = if (useEq) c.eq!! else c.focalMm
-        val main = if (useEq) {
-            candidates.minWith(compareBy({ abs(it.eq!! - REFERENCE_EQ_MM) }, { it.focalMm }))
-        } else {
-            candidates[(candidates.size - 1) / 2]
+        // A logical camera's own focal is its main sensor; bound physical lenses are the ultra-wide or tele beside it.
+        val logicalMain = candidates.firstOrNull { it.physicalId == null && it.info.physicalIds.isNotEmpty() }
+        val main = when {
+            logicalMain != null -> logicalMain
+            useEq -> candidates.minWith(compareBy({ abs(it.eq!! - REFERENCE_EQ_MM) }, { it.focalMm }))
+            else -> candidates[(candidates.size - 1) / 2]
         }
         val mainMeasure = measure(main)
         return candidates.map { c ->
