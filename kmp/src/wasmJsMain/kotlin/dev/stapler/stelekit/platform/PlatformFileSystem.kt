@@ -1,5 +1,7 @@
 package dev.stapler.stelekit.platform
 
+import arrow.core.Either
+import arrow.core.right
 import dev.stapler.stelekit.coroutines.GraphScopedSession
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.DirtyEntry
@@ -9,11 +11,11 @@ import dev.stapler.stelekit.git.model.PendingCommit
 import dev.stapler.stelekit.git.model.gitApiJson
 import dev.stapler.stelekit.sync.WasmSectionSyncService
 import dev.stapler.stelekit.util.UuidGenerator
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
 import kotlinx.coroutines.await
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -59,14 +61,52 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     // completion (success or failure). HostDirectorySync.scheduleHostWriteThrough (Phase 4) will
     // await a path's entry here before enqueueing it for host write-through, closing the crash
     // window where a host push could otherwise race ahead of the edit actually landing in OPFS.
-    private val opfsWriteInFlight = mutableMapOf<String, Deferred<Unit>>()
+    //
+    // Story 1.4.7 (Task 1.4.7f, D-120): every OPFS operation goes through ONE ordered queue per path set; a path's tail
+    // is what [opfsWriteDeferredFor] returns, so the host write-through also waits for every earlier operation.
+    private val writeQueue = OpfsWriteQueue(scope) { pending -> jsSetUnpersistedWrites(pending) }
 
     /**
      * Task 1.7.1a: accessor for [path]'s currently in-flight OPFS-persisting write, if any.
      * Tested directly (Story 1.7.3) as well as exposed to [hostDirectorySync] via
      * [HostDirectorySync.CacheAccess.opfsWriteDeferredFor].
      */
-    fun opfsWriteDeferredFor(path: String): Deferred<Unit>? = opfsWriteInFlight[path]
+    fun opfsWriteDeferredFor(path: String): Deferred<Unit>? = writeQueue.tailOf(path)
+
+    private fun queueTextWrite(path: String, content: String) {
+        writeQueue.enqueue(listOf(path)) {
+            opfsWriteFile(path, content)
+            Unit.right()
+        }
+    }
+
+    private fun queueBytesWrite(path: String, data: ByteArray) {
+        writeQueue.enqueue(listOf(path)) { persistBytes(path, data) }
+    }
+
+    private fun queueDelete(path: String) {
+        writeQueue.enqueue(listOf(path)) {
+            opfsDeleteFile(path)
+            Unit.right()
+        }
+    }
+
+    /** `opfsWriteFileBytes` throws on failure; a quota rejection becomes the typed `StorageQuotaExceeded`. */
+    private suspend fun persistBytes(path: String, data: ByteArray): Either<DomainError, Unit> = try {
+        opfsWriteFileBytes(path, data.toJsArrayBuffer())
+        Unit.right()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        val message = e.message.orEmpty()
+        OpfsErrors.write(path, if (message.contains(OpfsErrors.QUOTA_EXCEEDED_NAME)) OpfsErrors.QUOTA_EXCEEDED_NAME else message.ifEmpty { "write failed" })
+    }
+
+    /** `move()` first; the verified copy only when the move failed for a reason other than quota (a missing `move()`). */
+    private suspend fun moveOrCopyVerify(from: String, to: String): Either<DomainError, Unit> {
+        val moved = opfsMoveFile(from, to)
+        return if (moved.isRight() || moved.leftOrNull() is DomainError.FileSystemError.StorageQuotaExceeded) moved else opfsCopyVerify(from, to)
+    }
 
     // ── Epic 1.6: HostDirectorySync composition (architecture-review.md Blocker 1 remediation) ─
     // Every Phase 2-7 host-directory-sync field/method lives on hostDirectorySync, never here.
@@ -99,12 +139,12 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         override fun keysUnder(opfsPath: String) =
             (cache.keys + bytesCache.keys).filter { it.startsWith("$opfsPath/") }.toSet()
         override fun writeOpfsMirror(path: String, content: String) {
-            scope.launch { opfsWriteFile(path, content) }
+            queueTextWrite(path, content)
         }
         override fun writeOpfsMirrorBytes(path: String, data: ByteArray) {
-            scope.launch { opfsWriteFileBytes(path, data.toJsArrayBuffer()) }
+            queueBytesWrite(path, data)
         }
-        override fun opfsWriteDeferredFor(path: String): Deferred<Unit>? = opfsWriteInFlight[path]
+        override fun opfsWriteDeferredFor(path: String): Deferred<Unit>? = writeQueue.tailOf(path)
     }
 
     // ── Epic 2.1 (web-host-sync-session-lifecycle): per-graph session, swapped wholesale ──────
@@ -189,7 +229,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 } catch (e: Throwable) {
                     break
                 }
-                val inFlightCount = opfsWriteInFlight.size
+                val inFlightCount = writeQueue.pendingPaths
                 if (inFlightCount > 0) {
                     println("[SteleKit] pagehide: $inFlightCount OPFS writes still in flight")
                 }
@@ -485,7 +525,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val rawUrl = "https://raw.githubusercontent.com/$owner/$repo/$branch/$repoRelative"
         val content = WasmSectionSyncService.githubFetch(rawUrl, token) ?: return null
         cache[path] = content
-        if (!ephemeral) scope.launch { opfsWriteFile(path, content) }
+        if (!ephemeral) queueTextWrite(path, content)
         return content
     }
     actual override fun fileExists(path: String): Boolean = cache.containsKey(path) || blobUrlCache.containsKey(path)
@@ -510,15 +550,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         }
         cache[path] = content
         recordDirty(path, DirtyOp.WRITE)
-        if (!ephemeral) {
-            opfsWriteInFlight[path] = scope.async {
-                try {
-                    opfsWriteFile(path, content)
-                } finally {
-                    opfsWriteInFlight.remove(path)
-                }
-            }
-        }
+        if (!ephemeral) queueTextWrite(path, content)
         // Epic 4.3 (Task 4.3.1a): the fourth independent effect (web-local-folder-livesync) —
         // one-line delegation; all coalescing/freshness-check/actual-write logic lives on
         // HostDirectorySync. No-op when no host directory is connected for this graph.
@@ -546,7 +578,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     fun applyRemoteContent(path: String, content: String): Boolean {
         if (path.startsWith(DOWNLOAD_PREFIX)) return false
         cache[path] = content
-        if (!ephemeral) scope.launch { opfsWriteFile(path, content) }
+        if (!ephemeral) queueTextWrite(path, content)
         return true
     }
 
@@ -560,15 +592,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         if (path.startsWith(DOWNLOAD_PREFIX)) return false
         bytesCache[path] = data
         recordDirty(path, DirtyOp.WRITE)
-        if (!ephemeral) {
-            opfsWriteInFlight[path] = scope.async {
-                try {
-                    opfsWriteFileBytes(path, data.toJsArrayBuffer())
-                } finally {
-                    opfsWriteInFlight.remove(path)
-                }
-            }
-        }
+        if (!ephemeral) queueBytesWrite(path, data)
         // Epic 4.3 (Task 4.3.1b): same one-line delegation as writeFile, for paranoid-mode bytes.
         if (hostDirectorySync.hostDirHandle != null) {
             hostDirectorySync.scheduleHostWriteThrough(path, HostWritePayload.Bytes(data))
@@ -588,7 +612,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         cache.remove(path)
         bytesCache.remove(path)
         recordDirty(path, DirtyOp.DELETE)
-        if (!ephemeral) scope.launch { opfsDeleteFile(path) }
+        if (!ephemeral) queueDelete(path)
         // Epic 4.3 (Task 4.3.1c): same one-line delegation, dispatches to flushHostWrite's
         // HostWritePayload.Delete branch (dirRemoveEntry against hostDirHandle).
         if (hostDirectorySync.hostDirHandle != null) {
@@ -620,6 +644,36 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     actual override fun pickDirectory(): String? = null
     override val supportsNativeDirectoryPicker: Boolean get() = showDirectoryPickerSupported()
     override val supportsTempRenameWrites: Boolean get() = false
+
+    // Story 1.4.7 (Task 1.4.7f): the durability and temp-write surface over [writeQueue]. [supportsTempRenameWrites] stays
+    // false until Task 1.4.7j, so no production caller reaches these yet; the dirty-set and host semantics are Task 1.4.7g.
+
+    override suspend fun awaitDurable(path: String): Either<DomainError, Unit> = writeQueue.awaitDurable(path)
+
+    /** A temp file lives in the byte cache and OPFS only: not dirty, no host write-through. */
+    override fun writeTempBytes(path: String, data: ByteArray): Boolean {
+        bytesCache[path] = data
+        if (!ephemeral) queueBytesWrite(path, data)
+        return true
+    }
+
+    override fun deleteTempBytes(path: String): Boolean {
+        cache.remove(path)
+        bytesCache.remove(path)
+        if (!ephemeral) queueDelete(path)
+        return true
+    }
+
+    /** Moves [from]'s bytes over [to] in the caches at once and queues the OPFS move behind both paths' tails. */
+    override fun replaceFileAtomically(from: String, to: String): Boolean {
+        val bytes = bytesCache[from] ?: cache[from]?.encodeToByteArray() ?: return false
+        bytesCache[to] = bytes
+        cache.remove(to)
+        bytesCache.remove(from)
+        cache.remove(from)
+        if (!ephemeral) writeQueue.enqueue(listOf(from, to)) { moveOrCopyVerify(from, to) }
+        return true
+    }
 
     // Interim until Task 1.4.7j wires the OPFS verdict and preload state: the web build stays classic-only.
     override val storageStatus: V2StorageStatus get() = V2StorageStatus.Unavailable(StorageReason.NoOpfs)
@@ -721,11 +775,11 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 // Copilot review: await any write already in flight for this path before
                 // deleting — otherwise a late write (queued before this relink started) can
                 // land after opfsDeleteFile() and silently recreate the "pruned" file.
-                opfsWriteInFlight[stalePath]?.await()
+                writeQueue.tailOf(stalePath)?.await()
                 cache.remove(stalePath)
                 bytesCache.remove(stalePath)
                 blobUrlCache.remove(stalePath)
-                scope.launch { opfsDeleteFile(stalePath) }
+                queueDelete(stalePath)
                 // Copilot review: also clear this path out of the git dirty set — its cache
                 // content is gone, so a stale dirty entry (e.g. a pending WRITE from before the
                 // relink) would otherwise make a later git-write flow try to read content that
@@ -784,7 +838,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                     val content = readOpfsFile(entry)
                     if (content != null) {
                         cache[path] = content
-                        scope.launch { opfsWriteFile(path, content) }
+                        queueTextWrite(path, content)
                         imported.add(path)
                     } else {
                         println("[SteleKit] importUserDirToCache: failed to read '$path'")

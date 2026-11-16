@@ -316,3 +316,27 @@ internal fun jsPageHidePromise(): kotlin.js.Promise<JsAny?> = js(
     })()
     """
 )
+
+private fun jsStoreUnpersistedWrites(count: Int): Unit = js("globalThis.__stelekit_unpersisted_writes = count")
+
+private fun jsInstallUnloadGuardOnce(): Unit = js(
+    """
+    (function() {
+        if (globalThis.__stelekit_unload_guard || typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
+        globalThis.__stelekit_unload_guard = true;
+        window.addEventListener('beforeunload', function(e) {
+            if ((globalThis.__stelekit_unpersisted_writes | 0) > 0) { e.preventDefault(); e.returnValue = ''; }
+        });
+    })()
+    """
+)
+
+/**
+ * Task 1.4.7f: tells the page how many paths still have an unsettled OPFS operation. The first call installs ONE
+ * `beforeunload` listener that asks the browser to confirm leaving while that count is above zero, so a tab is not
+ * closed silently over a write that has not reached browser storage (D-119).
+ */
+internal fun jsSetUnpersistedWrites(count: Int) {
+    jsStoreUnpersistedWrites(count)
+    jsInstallUnloadGuardOnce()
+}
