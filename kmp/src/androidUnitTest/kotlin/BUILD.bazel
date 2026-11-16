@@ -90,6 +90,9 @@ kt_android_library(
             "**/KnownDistancesSheetTest.kt",
             "**/ValueEditorScopeTest.kt",
             "**/AnnotationEditorValueHooksTest.kt",
+            # Compose host tests for the camera lens chips and dialog states (Gradle-only, no Compose plugin here)
+            "**/CameraLensChipsTest.kt",
+            "**/CameraDialogStatesTest.kt",
         ],
     ),
     custom_package = "dev.stapler.stelekit",
