@@ -6,15 +6,18 @@ package dev.stapler.stelekit.ui.sketch.v2
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
@@ -37,12 +40,18 @@ import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.sketch.v2.commands.Command
 import dev.stapler.stelekit.sketch.v2.commands.StyleElements
 import dev.stapler.stelekit.sketch.v2.commands.StylePatch
+import dev.stapler.stelekit.sketch.v2.scene.ArrowType
+import dev.stapler.stelekit.sketch.v2.scene.Arrowhead
+import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.ElementStyle
 import dev.stapler.stelekit.sketch.v2.scene.FillStyle
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
 import dev.stapler.stelekit.sketch.v2.scene.StrokeStyle
+import dev.stapler.stelekit.sketch.v2.scene.TextAlign
+import dev.stapler.stelekit.sketch.v2.scene.VerticalAlign
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 
 object StylePanelTags {
     const val HEADING = "sketch.style.heading"
@@ -54,6 +63,7 @@ object StylePanelTags {
     const val OPACITY_PLUS = "sketch.style.opacity.plus"
     const val OPACITY_NOTE = "sketch.style.opacity.note"
     const val WIDTH_REASON = "sketch.style.width.reason"
+    const val ELBOW_NOTE = "sketch.style.elbow.note"
     const val STATS_PREFIX = "sketch.stats."
 }
 
@@ -96,10 +106,38 @@ fun StylePanel(
             ChoiceRow("Font", FontChoice.entries.map { it to it.label }, family.asChoice { FontChoice.of(it) }) { onCommand(StyleActions.font(ids, it)) }
             model.fontSize?.let { size -> ChoiceRow("Font size", FontSizeChoice.entries.map { it to it.label }, size.asChoice { FontSizeChoice.of(it) }) { onCommand(StyleActions.fontSize(ids, it)) } }
         }
+        TextAlignRows(model, ids, onCommand)
+        ArrowRows(model, ids, onCommand)
         model.opacity?.let { opacity ->
             OpacityRow(opacity) { send(StyleActions.opacity(it)) }
             model.effectiveOpacityNote()?.let { Text(it, style = MaterialTheme.typography.labelSmall, modifier = Modifier.testTag(StylePanelTags.OPACITY_NOTE)) }
         }
+    }
+}
+
+@Composable
+private fun TextAlignRows(model: StylePanelModel, ids: List<ElementId>, onCommand: (Command) -> Unit) {
+    model.textAlign?.let { align ->
+        ChoiceRow(SketchStrings.Style.TEXT_ALIGN, TextAlign.entries.map { it to it.name }, align) { onCommand(StyleActions.textAlign(ids, it)) }
+    }
+    model.verticalAlign?.let { align ->
+        ChoiceRow(SketchStrings.Style.VERTICAL_ALIGN, VerticalAlign.entries.map { it to it.name }, align) { onCommand(StyleActions.verticalAlign(ids, it)) }
+    }
+}
+
+/** Arrow type and the two arrowheads of a selection that holds arrows; the elbow type says it is drawn as a polyline (OD-7). */
+@Composable
+private fun ArrowRows(model: StylePanelModel, ids: List<ElementId>, onCommand: (Command) -> Unit) {
+    val type = model.arrowType ?: return
+    ChoiceRow(SketchStrings.Style.ARROW_TYPE, ArrowType.entries.map { it to it.name }, type) { onCommand(StyleActions.arrowType(ids, it)) }
+    if ((type as? StyleValue.Same)?.value == ArrowType.Elbow) {
+        Text(SketchStrings.Style.ELBOW_NOTE, style = MaterialTheme.typography.labelSmall, modifier = Modifier.testTag(StylePanelTags.ELBOW_NOTE))
+    }
+    model.startArrowhead?.let { head ->
+        ChoiceRow(SketchStrings.Style.START_ARROWHEAD, Arrowhead.entries.map { it to it.name }, head) { onCommand(StyleActions.arrowheads(ids, it, null)) }
+    }
+    model.endArrowhead?.let { head ->
+        ChoiceRow(SketchStrings.Style.END_ARROWHEAD, Arrowhead.entries.map { it to it.name }, head) { onCommand(StyleActions.arrowheads(ids, null, it)) }
     }
 }
 
@@ -111,15 +149,19 @@ private inline fun <T, R> StyleValue<T>.asChoice(map: (T) -> R?): StyleValue<R> 
 @Composable
 private fun SwatchRow(label: String, colors: List<NamedColor>, current: StyleValue<NamedColor>, onPick: (NamedColor) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label, Modifier.widthIn(min = 72.dp))
+        Text(label, Modifier.widthIn(min = 72.dp), color = MaterialTheme.colorScheme.onSurface)
         for (color in colors) {
             val selected = (current as? StyleValue.Same)?.value?.css == color.css
             Box(
                 Modifier.size(TARGET).testTag(StylePanelTags.swatch(color.name))
                     .selectable(selected = selected, role = Role.RadioButton, onClick = { onPick(color) })
-                    .semantics { contentDescription = "$label ${color.name}" }
-                    .padding(8.dp).background(parseCss(color.css), CircleShape).border(if (selected) 3.dp else 1.dp, MaterialTheme.colorScheme.onSurface, CircleShape),
-            )
+                    .semantics { contentDescription = "$label ${color.name}" },
+            ) {
+                Box(
+                    Modifier.fillMaxSize().padding(8.dp).background(parseCss(color.css), CircleShape)
+                        .border(if (selected) 3.dp else 1.dp, MaterialTheme.colorScheme.onSurface, CircleShape),
+                )
+            }
         }
         if (current is StyleValue.Mixed) MixedChip(label)
     }
@@ -132,7 +174,7 @@ private fun MixedChip(label: String) {
 
 @Composable
 private fun <T> ChoiceRow(label: String, choices: List<Pair<T, String>>, current: StyleValue<T>, enabled: Boolean = true, onPick: (T) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+    Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(label, Modifier.widthIn(min = 72.dp))
         for ((value, text) in choices) {
             val selected = (current as? StyleValue.Same)?.value == value

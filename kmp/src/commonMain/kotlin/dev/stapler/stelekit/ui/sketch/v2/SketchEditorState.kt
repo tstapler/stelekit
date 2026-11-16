@@ -15,6 +15,12 @@ import androidx.compose.runtime.setValue
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
 import dev.stapler.stelekit.sketch.v2.view.SketchViewport
 
+/**
+ * The input the user last used: hint and walkthrough texts follow it (UX-124, ux.md section 22). Touch covers touch and pen
+ * with no hardware keyboard; a key press switches to [Keyboard], a pointer move away from it to [Mouse] or [TouchOrPen].
+ */
+enum class InputKind { Mouse, TouchOrPen, Keyboard }
+
 /** The panel tabs, ONE list (ux.md section 1): Layers is hidden until a second layer exists. */
 enum class PanelTab { Style, Layers, Constraints, Elements, Library }
 
@@ -55,6 +61,12 @@ class SketchEditorState(
 
     /** The pan pad is open (opened from the Pan button or the overflow menu; never saved, a recreation closes it). */
     var panPadOpen by mutableStateOf(false)
+
+    /** The input last used; not saved. */
+    var lastInput by mutableStateOf(InputKind.Mouse)
+
+    /** The first-run walkthrough (Task 3.6.8e); not saved, a recreation ends it. */
+    val walkthrough = WalkthroughState()
 
     /** The touch and keyboard equivalent of hover tooltips (UX-90); not saved, a popup never survives a recreation. */
     val help = HelpPopupState()

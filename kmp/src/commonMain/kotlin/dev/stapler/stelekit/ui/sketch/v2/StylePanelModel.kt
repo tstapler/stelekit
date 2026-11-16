@@ -5,11 +5,12 @@
 package dev.stapler.stelekit.ui.sketch.v2
 
 import dev.stapler.stelekit.sketch.v2.commands.Command
+import dev.stapler.stelekit.sketch.v2.commands.StyleArrowType
 import dev.stapler.stelekit.sketch.v2.commands.StyleArrowheads
-import dev.stapler.stelekit.sketch.v2.commands.StyleElements
 import dev.stapler.stelekit.sketch.v2.commands.StylePatch
 import dev.stapler.stelekit.sketch.v2.commands.StyleText
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
+import dev.stapler.stelekit.sketch.v2.scene.ArrowType
 import dev.stapler.stelekit.sketch.v2.scene.Arrowhead
 import dev.stapler.stelekit.sketch.v2.scene.ElementBase
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
@@ -24,6 +25,8 @@ import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
 import dev.stapler.stelekit.sketch.v2.scene.StrokeStyle
 import dev.stapler.stelekit.sketch.v2.scene.TextAlign
 import dev.stapler.stelekit.sketch.v2.scene.TextElement
+import dev.stapler.stelekit.sketch.v2.scene.VerticalAlign
+import dev.stapler.stelekit.sketch.v2.scene.arrowType
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
 
 /** A property value that is the same across the selection, or the "Mixed" chip (ux.md section 7). */
@@ -100,7 +103,7 @@ enum class FontSizeChoice(val label: String, val size: Double) {
 /** The properties of the panel (`link` and cardinality arrowheads stay out, D-22); Task 3.5.4c resolves its ids against these. */
 enum class StyleProperty {
     StrokeColor, BackgroundColor, FillStyle, StrokeWidth, StrokeStyle, Sloppiness, Edges, FontFamily, FontSize,
-    TextAlign, ArrowheadStart, ArrowheadEnd, Opacity, Layer,
+    TextAlign, VerticalAlign, ArrowheadStart, ArrowheadEnd, ArrowType, Opacity, Layer,
 }
 
 /** What the panel shows for [elements], or for the tool defaults when nothing is selected. */
@@ -126,8 +129,35 @@ class StylePanelModel private constructor(
     val fontFamily: StyleValue<Int>? get() = StyleValue.of(elements.filterIsInstance<TextElement>().map { it.fontFamily })
     val fontSize: StyleValue<Double>? get() = StyleValue.of(elements.filterIsInstance<TextElement>().map { it.fontSize })
     val textAlign: StyleValue<TextAlign>? get() = StyleValue.of(elements.filterIsInstance<TextElement>().map { it.textAlign })
+    val verticalAlign: StyleValue<VerticalAlign>? get() = StyleValue.of(elements.filterIsInstance<TextElement>().map { it.verticalAlign })
+    val arrowType: StyleValue<ArrowType>? get() = StyleValue.of(elements.filterIsInstance<ArrowElement>().map { it.arrowType })
     val startArrowhead: StyleValue<Arrowhead>? get() = StyleValue.of(elements.filterIsInstance<ArrowElement>().map { it.startArrowhead })
     val endArrowhead: StyleValue<Arrowhead>? get() = StyleValue.of(elements.filterIsInstance<ArrowElement>().map { it.endArrowhead })
+
+    /**
+     * What the panel shows for [property] over this selection: a value, "Mixed", or null when no selected element has it
+     * (a font row with no text). Task 3.5.4c resolves each style id of the Excalidraw baseline through this one entry.
+     */
+    fun valueOf(property: StyleProperty): StyleValue<Any>? = when (property) {
+        StyleProperty.StrokeColor -> strokeColor
+        StyleProperty.BackgroundColor -> backgroundColor
+        StyleProperty.FillStyle -> fillStyle
+        StyleProperty.StrokeWidth -> strokeWidth
+        StyleProperty.StrokeStyle -> strokeStyle
+        StyleProperty.Sloppiness -> sloppiness
+        StyleProperty.Edges -> edges
+        StyleProperty.FontFamily -> fontFamily
+        StyleProperty.FontSize -> fontSize
+        StyleProperty.TextAlign -> textAlign
+        StyleProperty.VerticalAlign -> verticalAlign
+        StyleProperty.ArrowheadStart -> startArrowhead
+        StyleProperty.ArrowheadEnd -> endArrowhead
+        StyleProperty.ArrowType -> arrowType
+        StyleProperty.Opacity -> opacity
+        StyleProperty.Layer -> layerValue()
+    }
+
+    private fun layerValue(): StyleValue<Any>? = if (editsSelection) StyleValue.of(elements.map { it.base.layerId }) else null
 
     /** The stroke-width row is disabled for an image-only selection, with the reason shown beside it. */
     val strokeWidthDisabledReason: String? get() =
@@ -166,8 +196,6 @@ class StylePanelModel private constructor(
 
 /** Panel actions as commands (selection) or as a new default style (nothing selected): one undo step each. */
 object StyleActions {
-    fun patch(property: StyleProperty, selection: List<SceneElement>, patch: StylePatch): Command = StyleElements(selection.map { it.id }, patch)
-
     fun fillStyle(v: FillStyle) = StylePatch(fillStyle = v)
 
     fun strokeWidth(v: StrokeWidthChoice) = StylePatch(strokeWidth = v.width)
@@ -189,6 +217,10 @@ object StyleActions {
     fun fontSize(ids: List<ElementId>, v: FontSizeChoice): Command = StyleText(ids, fontSize = v.size)
 
     fun textAlign(ids: List<ElementId>, v: TextAlign): Command = StyleText(ids, textAlign = v)
+
+    fun verticalAlign(ids: List<ElementId>, v: VerticalAlign): Command = StyleText(ids, verticalAlign = v)
+
+    fun arrowType(ids: List<ElementId>, v: ArrowType): Command = StyleArrowType(ids, v)
 
     fun arrowheads(ids: List<ElementId>, start: Arrowhead?, end: Arrowhead?): Command = StyleArrowheads(ids, start, end)
 

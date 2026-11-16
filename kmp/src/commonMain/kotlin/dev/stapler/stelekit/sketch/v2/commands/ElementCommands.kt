@@ -8,6 +8,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.raise.either
 import arrow.core.right
+import dev.stapler.stelekit.sketch.v2.binding.followBoundArrows
 import dev.stapler.stelekit.sketch.v2.constraints.withoutOrphans
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
@@ -149,18 +150,19 @@ private fun moveSet(scene: SketchSceneV2, ids: Collection<ElementId>): Either<Co
     out
 }
 
-/** Translates [ids] by ([dx], [dy]) scene units; a frame takes its members and a container its bound labels along. */
+/** Translates [ids] by ([dx], [dy]) scene units; a frame takes its members and a container its bound labels along, and arrow ends bound to a moved shape follow it. */
 data class MoveElements(val ids: List<ElementId>, val dx: Double, val dy: Double) : Command {
     override fun apply(doc: SketchDocumentV2): Either<CommandError, Applied> = either {
         val scene = doc.scene
         var out = scene
         val moved = moveSet(scene, ids).bind()
         for (id in moved) out = out.replace(scene.element(id).bind().shifted(dx, dy, scene.limits).bind().touched()).bind()
-        finish(doc, out, moved)
+        val followed = out.followBoundArrows(moved).bind()
+        finish(doc, followed.scene, moved + followed.arrows)
     }
 }
 
-/** Sets the bounding box of one element; lines and freedraw strokes are scaled into it, an ellipse is fitted to it. */
+/** Sets the bounding box of one element; lines and freedraw strokes are scaled into it, an ellipse is fitted to it, arrow ends bound to it follow. */
 data class ResizeElement(val id: ElementId, val x: Double, val y: Double, val width: Double, val height: Double) : Command {
     override fun apply(doc: SketchDocumentV2): Either<CommandError, Applied> = either {
         val scene = doc.scene
@@ -185,7 +187,9 @@ data class ResizeElement(val id: ElementId, val x: Double, val y: Double, val wi
             is LineElement, is ArrowElement, is FreedrawElement -> withPoints(e, fitPoints(pointsOf(e).orEmpty(), x, y, width, height, limits).bind())
             is PointElement, is ArcElement -> raise(CommandError.Unsupported(id.value, "resize"))
         }
-        finish(doc, if (next == e) scene else scene.replace(next.touched()).bind(), setOf(id))
+        val resized = if (next == e) scene else scene.replace(next.touched()).bind()
+        val followed = resized.followBoundArrows(setOf(id)).bind()
+        finish(doc, followed.scene, setOf(id) + followed.arrows)
     }
 
     private fun fitPoints(points: List<ScenePoint>, x: Double, y: Double, w: Double, h: Double, limits: SceneLimits): Either<CommandError, List<ScenePoint>> = either {
@@ -217,7 +221,9 @@ data class RotateElement(val id: ElementId, val angle: Double) : Command {
             is EllipseElement -> e.copy(angle = angle)
             is LineElement, is ArrowElement, is FreedrawElement, is PointElement, is ArcElement -> raise(CommandError.Unsupported(id.value, "rotate"))
         }
-        finish(doc, if (next == e) doc.scene else doc.scene.replace(next.touched()).bind(), setOf(id))
+        val rotated = if (next == e) doc.scene else doc.scene.replace(next.touched()).bind()
+        val followed = rotated.followBoundArrows(setOf(id)).bind()
+        finish(doc, followed.scene, setOf(id) + followed.arrows)
     }
 }
 

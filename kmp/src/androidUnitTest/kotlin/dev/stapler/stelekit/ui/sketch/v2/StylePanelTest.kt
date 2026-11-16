@@ -23,12 +23,20 @@ import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.commands.StyleElements
 import dev.stapler.stelekit.sketch.v2.commands.StylePatch
 import dev.stapler.stelekit.sketch.v2.commands.Transaction
+import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
+import dev.stapler.stelekit.sketch.v2.scene.ArrowType
+import dev.stapler.stelekit.sketch.v2.scene.Arrowhead
 import dev.stapler.stelekit.sketch.v2.scene.ElementBase
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.ElementStyle
 import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneUnit
+import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
+import dev.stapler.stelekit.sketch.v2.scene.TextAlign
+import dev.stapler.stelekit.sketch.v2.scene.TextElement
+import dev.stapler.stelekit.sketch.v2.scene.VerticalAlign
+import dev.stapler.stelekit.sketch.v2.scene.arrowType
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
 import org.junit.Rule
 import org.junit.Test
@@ -147,5 +155,64 @@ class StylePanelTest {
         rule.onNodeWithTag(StylePanelTags.STATS_PREFIX + "x").performImeAction()
         rule.waitForIdle()
         assertEquals(40.0, (h.doc.scene[ElementId("r1")] as RectElement).x.value)
+    }
+
+    private fun arrowAndText(): Host {
+        val u = SceneUnit::ofInt
+        val elements = listOf(
+            ArrowElement(ElementBase(ElementId("a1")), listOf(ScenePoint(u(0), u(0)), ScenePoint(u(10), u(0)))),
+            TextElement(ElementBase(ElementId("t1")), u(0), u(20), u(40), u(20), text = "hi"),
+        )
+        val doc = Transaction.begin(SketchDocumentV2()).apply(AddElements(elements)).fold({ error("$it") }, { it.doc })
+        return Host(doc)
+    }
+
+    @Test
+    fun arrowRows_should_SetTheTypeAndTheArrowheads_OfASelectedArrow() {
+        val h = arrowAndText()
+        show(h, listOf("a1"))
+        rule.onNodeWithTag(StylePanelTags.choice("Arrow type.Sharp")).assertIsSelected()
+        rule.onNodeWithTag(StylePanelTags.choice("Arrow type.Round")).performClick()
+        rule.waitForIdle()
+        val round = h.doc.scene[ElementId("a1")] as ArrowElement
+        assertEquals(ArrowType.Round, round.arrowType)
+        rule.onNodeWithTag(StylePanelTags.choice("End arrowhead.Triangle")).performClick()
+        rule.onNodeWithTag(StylePanelTags.choice("Start arrowhead.Circle")).performClick()
+        rule.waitForIdle()
+        val heads = h.doc.scene[ElementId("a1")] as ArrowElement
+        assertEquals(Arrowhead.Triangle, heads.endArrowhead)
+        assertEquals(Arrowhead.Circle, heads.startArrowhead)
+    }
+
+    @Test
+    fun elbowType_should_SayItIsDrawnAsAPolyline() {
+        val h = arrowAndText()
+        show(h, listOf("a1"))
+        rule.onNodeWithTag(StylePanelTags.ELBOW_NOTE).assertDoesNotExist()
+        rule.onNodeWithTag(StylePanelTags.choice("Arrow type.Elbow")).performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag(StylePanelTags.ELBOW_NOTE).assertTextEquals("Elbow routing isn't supported; drawn as a polyline")
+        assertEquals(true, (h.doc.scene[ElementId("a1")] as ArrowElement).elbowed)
+    }
+
+    @Test
+    fun textRows_should_SetBothAlignments_OfASelectedText() {
+        val h = arrowAndText()
+        show(h, listOf("t1"))
+        rule.onNodeWithTag(StylePanelTags.choice("Text align.Center")).performClick()
+        rule.onNodeWithTag(StylePanelTags.choice("Vertical align.Middle")).performClick()
+        rule.waitForIdle()
+        val text = h.doc.scene[ElementId("t1")] as TextElement
+        assertEquals(TextAlign.Center, text.textAlign)
+        assertEquals(VerticalAlign.Middle, text.verticalAlign)
+        rule.onNodeWithTag(StylePanelTags.choice("Arrow type.Sharp")).assertDoesNotExist()
+    }
+
+    @Test
+    fun aRectangleOnlySelection_should_ShowNeitherArrowNorTextRows() {
+        val h = host("r1")
+        show(h, listOf("r1"))
+        rule.onNodeWithTag(StylePanelTags.choice("Arrow type.Round")).assertDoesNotExist()
+        rule.onNodeWithTag(StylePanelTags.choice("Vertical align.Middle")).assertDoesNotExist()
     }
 }

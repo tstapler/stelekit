@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.sketch.v2.tools
 
+import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 
 /** The frozen tool inventory (requirements.md metric 1, 12 tools plus Point and Arc under OD-8); adding one is a requirements change. */
@@ -17,8 +18,11 @@ interface ToolCommand
 
 data class AddElementCommand(val element: SceneElement) : ToolCommand
 
-/** The in-progress shape drawn over the canvas while a gesture runs; rendered through `DrawListBuilder`, never persisted. */
-data class ToolPreview(val elements: List<SceneElement>)
+/**
+ * The in-progress shape drawn over the canvas while a gesture runs; rendered through `DrawListBuilder`, never persisted.
+ * [highlight] is the shape an arrow end would bind to if released now (ux.md section 5): the host outlines it.
+ */
+data class ToolPreview(val elements: List<SceneElement>, val highlight: ElementId? = null)
 
 /** A short message a tool raises for the host's notice queue (UX-12, UX-101); the host owns the wording and the queue. */
 sealed interface ToolNotice {

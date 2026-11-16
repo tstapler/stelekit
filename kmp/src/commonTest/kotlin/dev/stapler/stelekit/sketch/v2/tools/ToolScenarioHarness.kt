@@ -107,10 +107,9 @@ object ToolScenarioCatalog {
         ToolId.Point to listOf("PointArcToolsTest"),
         ToolId.Arc to listOf("PointArcToolsTest"),
         ToolId.Freedraw to listOf("FreedrawToolTest"),
+        ToolId.Arrow to listOf("ArrowToolTest"),
     )
 
     /** May only shrink: when a tool gains a scenario test, move it to [covered] and delete its line here. */
-    val pendingStory: Map<ToolId, String> = mapOf(
-        ToolId.Arrow to "3.3.1",
-    )
+    val pendingStory: Map<ToolId, String> = emptyMap()
 }

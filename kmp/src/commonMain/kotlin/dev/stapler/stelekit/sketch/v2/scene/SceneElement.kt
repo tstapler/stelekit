@@ -125,6 +125,22 @@ data class ArrowElement(
     override fun withBase(base: ElementBase) = copy(base = base)
 }
 
+/** The three arrow types of the style panel (FB-SP-14). Elbow is stored only: it draws as a polyline, no router (OD-7). */
+enum class ArrowType { Sharp, Round, Elbow }
+
+val ArrowElement.arrowType: ArrowType
+    get() = when {
+        elbowed -> ArrowType.Elbow
+        base.style.roundness != null -> ArrowType.Round
+        else -> ArrowType.Sharp
+    }
+
+/** The arrow as [type]: Round carries a roundness (a kept one wins), Sharp and Elbow clear it, Elbow sets the stored flag. */
+fun ArrowElement.withArrowType(type: ArrowType): ArrowElement {
+    val roundness = if (type == ArrowType.Round) base.style.roundness ?: Roundness(RoundnessKind.ProportionalRadius) else null
+    return copy(base = base.copy(style = base.style.copy(roundness = roundness)), elbowed = type == ArrowType.Elbow)
+}
+
 data class FreedrawElement(
     override val base: ElementBase,
     val points: List<ScenePoint>,

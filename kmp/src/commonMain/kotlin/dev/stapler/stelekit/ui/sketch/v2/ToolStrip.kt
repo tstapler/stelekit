@@ -25,12 +25,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -40,6 +49,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 
 /** What the strip shows besides the tools: undo and redo availability, selection size and why tools may be blocked. */
 data class ToolStripStatus(
@@ -165,21 +175,33 @@ private fun ToolButton(model: ToolStripModel, tool: StripTool, c: StripControls,
     )
 }
 
-/** A split button: the main target activates the group's last-used tool, a separate flyout target opens the group's list. */
+/**
+ * A split button: the main target activates the group's last-used tool, a separate flyout target opens the group's list.
+ * The flyout also opens from the main target by long press (touch), right-click or the stylus barrel button (pointer), and
+ * Down or the context-menu key (keyboard), so no tool is reachable only by an undiscoverable gesture (UX-97, UX-109; D-11).
+ * Closing the flyout returns focus to the main target.
+ */
 @Composable
 private fun SplitGroup(model: ToolStripModel, group: StripGroup, c: StripControls, status: ToolStripStatus, vertical: Boolean) {
     val last = c.state.lastUsedInGroup[group] ?: group.tools.first()
     val tool = model.tool(last)
     var open by remember { mutableStateOf(false) }
+    val mainKey = "group.${group.name}"
+    var wasOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(open) {
+        if (wasOpen && !open) c.focus[mainKey]?.let { runCatching { it.requestFocus() } }
+        wasOpen = open
+    }
     val body = @Composable {
         StripButton(
-            c, "group.${group.name}", StripTags.groupMain(group), model.description(tool, status.block), GLYPHS.getValue(last), TouchTargetFloor.TOUCH_DP,
+            c, mainKey, StripTags.groupMain(group), model.description(tool, status.block), GLYPHS.getValue(last), TouchTargetFloor.TOUCH_DP,
             selected = c.state.activeTool in group.tools, enabled = true,
             onClick = { if (status.block == null) c.state.chooseTool(last) },
+            opensFlyout = { open = true },
         )
         Box {
             StripButton(
-                c, "group.${group.name}.flyout", StripTags.groupFlyoutTarget(group), "${group.label}, more tools", "▾", TouchTargetFloor.TOUCH_DP,
+                c, "group.${group.name}.flyout", StripTags.groupFlyoutTarget(group), SketchStrings.Strip.flyoutDescription(group.label), "▾", TouchTargetFloor.TOUCH_DP,
                 selected = open, enabled = true, onClick = { open = true },
             )
             DropdownMenu(expanded = open, onDismissRequest = { open = false }, modifier = Modifier.testTag(StripTags.groupFlyoutTarget(group) + ".menu")) {
@@ -218,17 +240,20 @@ private fun ToolLockButton(c: StripControls) {
 
 /**
  * One strip button. A disabled button stays focusable and announces why (ux.md section 2, error states); its visible
- * size is [sizeDp] in every pointer class and its hit area is never below the pointer class's floor.
+ * size is [sizeDp] in every pointer class and its hit area is never below the pointer class's floor. [opensFlyout] marks
+ * the main target of a split group: long press, a secondary press and the Down or context-menu key open the flyout through
+ * it, and the hold-for-help of the other buttons gives way to it (their help stays on focus and in the semantics).
  */
 @Composable
 private fun StripButton(
     c: StripControls, key: String, tag: String, description: String, glyph: String, sizeDp: Int,
-    selected: Boolean, enabled: Boolean, onClick: () -> Unit,
+    selected: Boolean, enabled: Boolean, onClick: () -> Unit, opensFlyout: (() -> Unit)? = null,
 ) {
     val hit = maxOf(sizeDp, TouchTargetFloor.floorDp(c.pointer))
     val requester = c.focus.getValue(key)
     val background = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
     val help = HelpEntry(key, description, description)
+    val longPress = opensFlyout ?: { c.state.help.show(help) }
     Box(
         Modifier
             .size(hit.dp)
@@ -237,15 +262,46 @@ private fun StripButton(
             .focusRequester(requester)
             .onFocusChanged { if (it.isFocused) c.state.focusedControl = key }
             .helpOnFocus(c.state.help, help)
+            .flyoutKeys(opensFlyout)
+            .onSecondaryPress(opensFlyout)
             .semantics {
                 contentDescription = description
                 role = Role.Button
                 this.selected = selected
                 if (!enabled) stateDescription = "unavailable"
             }
-            .combinedClickable(onLongClickLabel = "Show help", onLongClick = { c.state.help.show(help) }) { if (enabled) onClick() },
+            .combinedClickable(onLongClickLabel = if (opensFlyout != null) SketchStrings.Strip.FLYOUT_OPEN_LABEL else SketchStrings.Strip.SHOW_HELP_LABEL, onLongClick = longPress) {
+                if (enabled) {
+                    // The strip is the anchor of walkthrough step 1: using any of its controls ends the tour (ux.md section 22).
+                    c.state.walkthrough.anchorActivated(WalkthroughStep.Tools)
+                    onClick()
+                }
+            },
         contentAlignment = Alignment.Center,
     ) {
         Text(glyph, color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** Down arrow or the context-menu key on a split group's main target opens its flyout; every other key is left alone. */
+private fun Modifier.flyoutKeys(opensFlyout: (() -> Unit)?): Modifier =
+    if (opensFlyout == null) this else onKeyEvent { e ->
+        val opens = e.type == KeyEventType.KeyDown && (e.key == Key.DirectionDown || e.key == Key.Menu)
+        if (opens) opensFlyout()
+        opens
+    }
+
+/** A right-click or the stylus barrel button (both arrive as a secondary press) on a split group's main target opens its flyout. */
+@Composable
+private fun Modifier.onSecondaryPress(action: (() -> Unit)?): Modifier {
+    if (action == null) return this
+    val current by rememberUpdatedState(action)
+    return pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent()
+                if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) current()
+            }
+        }
     }
 }

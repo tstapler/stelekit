@@ -18,6 +18,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.sketch.v2.tools.ToolId
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -48,9 +49,10 @@ class TouchHelpTest {
     @Test
     fun longPressOnAStripButton_should_ShowItsNameAsAPopupThatStaysUntilDismissed() {
         val state = showShell()
-        rule.onNodeWithTag(StripTags.groupMain(StripGroup.Shapes)).performTouchInput { longClick() }
+        // A group's main target opens its flyout on a long press (Story 3.6.8, D-11); a button with no flyout shows its help.
+        rule.onNodeWithTag(StripTags.tool(ToolId.Select)).performTouchInput { longClick() }
         rule.onNodeWithTag(HelpTags.POPUP).assertIsDisplayed()
-        assertEquals(StripGroup.Shapes.tools.first().name.lowercase(), state.help.shown?.name?.substringBefore(' ')?.lowercase())
+        assertEquals(ToolId.Select.name.lowercase(), state.help.shown?.name?.substringBefore(' ')?.lowercase())
         rule.mainClock.advanceTimeBy(HELP_WAIT_MS)
         rule.onNodeWithTag(HelpTags.POPUP).assertIsDisplayed()
         rule.onNodeWithTag(HelpTags.CLOSE).performClick()
