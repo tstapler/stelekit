@@ -218,6 +218,8 @@ class GitSyncCoordinatorTest {
         assertFalse(h.uiState.value.massChangeConfirmVisible)
         eventually("push ran with the guard lifted") { "push" in h.spy.calls }
         eventually("sync succeeded") { h.service.syncState.value is SyncState.Success }
+        // Success is published before the gate is released; a sync pressed in that window coalesces instead of being guarded.
+        eventually("gate released") { h.service.inFlight.value == null }
         // The override is one run only: the next plain sync is blocked again.
         assertTrue((h.service.sync(graphId) as Either.Left).value is DomainError.GitError.MassChangeBlocked)
         h.close()

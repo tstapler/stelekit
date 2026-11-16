@@ -153,7 +153,11 @@ class GitSyncServiceSingleFlightTest {
         withTimeout(20_000) { git.awaitBlocked() }
         assertTrue(gate.isHeld(key()))
 
-        first.cancelAndJoin()
+        // The commit is non-cancellable (1.5a): cancellation lands once the blocked call returns, and the gate stays held until then.
+        first.cancel()
+        assertTrue(gate.isHeld(key()), "the gate is held while the blocking call runs")
+        git.releaseBlocked()
+        withTimeout(20_000) { first.join() }
 
         assertFalse(gate.isHeld(key()), "cancellation must release the lease")
         assertNull(svc.inFlight.value)
@@ -178,7 +182,55 @@ class GitSyncServiceSingleFlightTest {
         assertEquals(SyncState.Committing, svc.syncState.value)
         git.releaseBlocked()
         withTimeout(20_000) { first.await() }
-        assertNull(svc.inFlight.value)
+        // The queued press runs once after the first run, so the gate is free only after that follow-up.
+        withTimeout(20_000) { while (svc.inFlight.value != null) kotlinx.coroutines.yield() }
+    }
+
+    private class MapSettings : dev.stapler.stelekit.platform.Settings {
+        private val store = mutableMapOf<String, String>()
+        override fun getBoolean(key: String, defaultValue: Boolean) = store[key]?.toBoolean() ?: defaultValue
+        override fun putBoolean(key: String, value: Boolean) { store[key] = value.toString() }
+        override fun getString(key: String, defaultValue: String) = store[key] ?: defaultValue
+        override fun putString(key: String, value: String) { store[key] = value }
+        override fun containsKey(key: String) = store.containsKey(key)
+    }
+
+    private fun coldRunner(git: GitRepository) = ColdSyncRunner(
+        git, StubConfigRepository(Either.Right(config)), SyncStalenessStore(MapSettings()), gate, { key() }, { 1L },
+    )
+
+    @Test
+    fun servicePress_should_CoalesceAndNotInterruptTheFetch_When_AColdRunHoldsTheGate() = runBlocking<Unit> {
+        val cold = OkRepository().apply { fetchGate = kotlinx.coroutines.CompletableDeferred() }
+        val running = scope.async { coldRunner(cold).run("g") }
+        withTimeout(20_000) { while (cold.calls.isEmpty()) kotlinx.coroutines.yield() }
+        val live = OkRepository()
+        val svc = service(live)
+
+        val pressed = withTimeout(20_000) { svc.sync("g") }
+
+        assertEquals(DomainError.GitError.SyncInProgress(SyncOrigin.Cold), pressed.leftOrNull())
+        assertEquals(emptyList(), live.calls, "the coalesced press must not touch the repository")
+        assertFalse(running.isCompleted, "the cold fetch keeps running")
+        cold.fetchGate!!.complete(Unit)
+        assertIs<ColdSyncOutcome.Fetched>(withTimeout(20_000) { running.await() })
+        assertEquals(listOf("fetch"), cold.calls)
+    }
+
+    @Test
+    fun coldRun_should_ReturnBusyWithoutWaiting_When_ALiveSyncHoldsTheGate() = runBlocking<Unit> {
+        val live = OkRepository().apply { fetchGate = kotlinx.coroutines.CompletableDeferred() }
+        val svc = service(live)
+        val first = scope.async { svc.sync("g") }
+        withTimeout(20_000) { while (live.calls.isEmpty()) kotlinx.coroutines.yield() }
+        val cold = OkRepository()
+
+        val outcome = withTimeout(20_000) { coldRunner(cold).run("g") }
+
+        assertEquals(ColdSyncOutcome.Error(DomainError.GitError.SyncInProgress(SyncOrigin.UiPress)), outcome)
+        assertEquals(emptyList(), cold.calls, "no second fetch is issued")
+        live.fetchGate!!.complete(Unit)
+        withTimeout(20_000) { first.await() }
     }
 
     @Test

@@ -31,6 +31,7 @@ class SyncSafetyActions(
     private val scope: CoroutineScope,
     private val uiState: MutableStateFlow<AppState>,
     private val jobTracker: JobTracker,
+    private val emit: (SyncUiEvent) -> Unit = {},
     private val currentSyncState: () -> SyncState,
 ) {
     private fun graphId(): String? = activeGraphIdProvider() ?: uiState.value.currentGraphId
@@ -94,11 +95,19 @@ class SyncSafetyActions(
      */
     fun confirmMassChangeSync() {
         val graphId = graphId() ?: return
+        // The lift is for one run and is never queued behind another, so refuse and keep the dialog open.
+        if (activeGitSyncService.value?.inFlight?.value != null) {
+            emit(SyncUiEvent.MassChangeConfirmRefused)
+            return
+        }
         dismissMassChangeConfirm()
         scope.launch {
             val service = activeGitSyncService.value ?: return@launch
             jobTracker.track(JobKind.GitSync, "Syncing with remote") { handle ->
-                service.sync(graphId, liftMassChangeGuard = true).onLeft { handle.failUnlessCoalesced(it) }
+                service.sync(graphId, liftMassChangeGuard = true).onLeft {
+                    handle.failUnlessCoalesced(it)
+                    if (it is DomainError.GitError.SyncInProgress) emit(SyncUiEvent.MassChangeConfirmRefused)
+                }
             }
         }
     }

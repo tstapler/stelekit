@@ -262,6 +262,7 @@ import dev.stapler.stelekit.export.ExportServiceLinkedPagesTest
 import dev.stapler.stelekit.git.GitCloneRetryCleanupTest
 import dev.stapler.stelekit.jobs.TrackedCopyRunHostTest
 import dev.stapler.stelekit.ui.GitSyncCoordinatorJobsTest
+import dev.stapler.stelekit.ui.GitSyncCoordinatorCoalesceTest
 import dev.stapler.stelekit.git.GitConfigCloneDepthMappingTest
 import dev.stapler.stelekit.git.GitOperationSupportClassifierTest
 import dev.stapler.stelekit.git.GitRepositoryUnshallowTest
@@ -347,6 +348,7 @@ import dev.stapler.stelekit.git.ClockStepStartTimeTest
 import dev.stapler.stelekit.git.GateAssertingGitRepositoryTest
 import dev.stapler.stelekit.git.SyncInProgressConsumersTest
 import dev.stapler.stelekit.git.SyncInProgressUiConsumersTest
+import dev.stapler.stelekit.git.GitSyncOneShotConflictAuditTest
 import dev.stapler.stelekit.git.GateBeforeWorktreeOrderTest
 import dev.stapler.stelekit.wiring.NoGateFallbackAuditTest
 import dev.stapler.stelekit.git.GateKeyAliasTest
@@ -768,6 +770,7 @@ import org.junit.runners.Suite
     GateAssertingGitRepositoryTest::class,
     SyncInProgressConsumersTest::class,
     SyncInProgressUiConsumersTest::class,
+    GitSyncOneShotConflictAuditTest::class,
     NoGateFallbackAuditTest::class,
     LockRecoveryDecisionTest::class,
     PidNamespaceAbsentPidTest::class,
@@ -896,6 +899,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.ui.annotate.AnnotationEditorUnitTest::class,
     GoldenFileGuardTest::class,
     GitSyncCoordinatorJobsTest::class,
+    GitSyncCoordinatorCoalesceTest::class,
     dev.stapler.stelekit.ui.library.LibraryFilterRulesTest::class,
     dev.stapler.stelekit.ui.library.LibraryFilterRulesPropertyTest::class,
     dev.stapler.stelekit.ui.library.LibrarySearchTest::class,
