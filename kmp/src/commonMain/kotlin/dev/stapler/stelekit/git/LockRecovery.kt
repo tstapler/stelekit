@@ -206,6 +206,12 @@ object LockRecovery {
         }
     }
 
+    // Unsure owner: a readable record must still bracket the locks; otherwise (none, torn) only recent activity refuses.
+    private fun unsureLocksQuiet(record: RecordRead?, locks: List<LockFileEntry>, nowMs: Long): Boolean {
+        val readable = record?.let { LockOwnerRecord.decode(it.content) } is RecordDecode.Valid
+        return if (readable) withinForeignLockWindow(record, locks, nowMs) else locks.all { it.mtimeMs <= nowMs - LOCK_QUIET_MS }
+    }
+
     private const val LOCK_START_SLACK_MS = 2_000L
     private const val HEARTBEAT_SLACK_MS = 10_000L
     private const val LOCK_QUIET_MS = 5_000L
@@ -221,6 +227,7 @@ object LockRecovery {
         liveness: ProcessLiveness,
         self: LockOwnerRecord,
         registry: ActiveRunRegistry,
+        nowMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
     ): Either<DomainError.GitError, List<String>> {
         if (registry.isActive(key)) return DomainError.GitError.SyncInProgress(registry.originOf(key)).left()
         if (!registry.tryEnterRecovery(key)) return DomainError.GitError.SyncInProgress(null).left()
@@ -235,6 +242,9 @@ object LockRecovery {
                 if (verdict == LockVerdict.OwnerAlive) return DomainError.GitError.SyncInProgress(null).left()
                 if (registry.isActive(key)) return DomainError.GitError.SyncInProgress(registry.originOf(key)).left()
                 val locks = lockFiles.listAllowListedLocks().filter { LockAllowList.isAllowListed(it.path) }
+                if (!verdict.deletes && !unsureLocksQuiet(lockFiles.readRecord(), locks, nowMs())) {
+                    return refusal(key, LockVerdict.OwnerUnknown(UnknownReason.ForeignLockSuspected)).left()
+                }
                 locks.forEach { lockFiles.delete(it.path) }
                 // The user confirmed: an unreadable or unattributable record would otherwise wedge the repo forever.
                 if (verdict.deletes || verdict is LockVerdict.OwnerUnknown) lockFiles.deleteRecord()

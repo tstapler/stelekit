@@ -26,6 +26,16 @@ class PidNamespaceAbsentPidTest {
     }
 
     @Test
+    fun judge_should_ReturnDead_When_PidAbsentOnAPlatformWithoutPidNamespaces() {
+        // macOS/Windows: neither side has a namespace, and decide() has already required the same host.
+        assertEquals(Liveness.Dead, LivenessPolicy.judge(StartStampBasis.InstantMs, 5L, null, null, ProbeResult.Absent))
+        assertEquals(Liveness.Dead, LivenessPolicy.judge(StartStampBasis.InstantMs, 5L, null, null, ProbeResult.Present(999_999L)))
+        assertEquals(Liveness.Alive, LivenessPolicy.judge(StartStampBasis.InstantMs, 5_000L, null, null, ProbeResult.Present(5_500L)))
+        // Linux with unreadable namespaces still proves nothing.
+        assertEquals(Liveness.Unknown, LivenessPolicy.judge(StartStampBasis.ProcTicks, 5L, null, null, ProbeResult.Absent))
+    }
+
+    @Test
     fun decide_should_ReturnClearedDeadOwner_When_PidAbsentInSameNonNullNamespace() {
         assertEquals(LockVerdict.ClearedDeadOwner, absentPidVerdict(recordNs = ns, selfNs = ns))
     }

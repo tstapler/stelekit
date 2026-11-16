@@ -123,4 +123,29 @@ class LockRecoveryReviewFixesTest {
         assertFalse(registry.isActive(key))
         assertNull(base.record, "our freshly published record must not be orphaned")
     }
+
+    // Review round 2 (M2): a confirmed removal over an unsure owner still respects the foreign-lock window.
+    @Test
+    fun forceRemove_should_RefuseUnsureOwner_When_LockIsFreshOrOutsideTheRecordsWindow() {
+        val other = testRecord(instance = "x", host = "elsewhere", startedAtMs = 1_000)
+        val fresh = FakeLockFiles(locks = mutableListOf(LockFileEntry("index.lock", 99_000)), record = RecordRead(other.encode(), 1_000))
+        val refused = LockRecovery.forceRemove(key, fresh, NEVER_ALIVE, self, ActiveRunRegistry()) { 100_000L }
+        assertEquals(DomainError.GitError.StaleLockFile(key, LockVerdict.OwnerUnknown(UnknownReason.ForeignLockSuspected)), refused.leftOrNull())
+        assertTrue(fresh.deletions.isEmpty(), "${fresh.mutations}")
+
+        val outside = FakeLockFiles(locks = mutableListOf(LockFileEntry("index.lock", 60_000)), record = RecordRead(other.encode(), 1_000))
+        assertIs<Either.Left<*>>(LockRecovery.forceRemove(key, outside, NEVER_ALIVE, self, ActiveRunRegistry()) { 100_000L })
+        assertTrue(outside.deletions.isEmpty())
+    }
+
+    @Test
+    fun forceRemove_should_RefuseRecentLockWithNoRecord_ButRemoveAQuietOne() {
+        val recent = FakeLockFiles(locks = mutableListOf(LockFileEntry("index.lock", 98_000)))
+        assertIs<Either.Left<*>>(LockRecovery.forceRemove(key, recent, NEVER_ALIVE, self, ActiveRunRegistry()) { 100_000L })
+        assertTrue(recent.deletions.isEmpty())
+
+        val quiet = FakeLockFiles(locks = mutableListOf(LockFileEntry("index.lock", 90_000)))
+        assertIs<Either.Right<*>>(LockRecovery.forceRemove(key, quiet, NEVER_ALIVE, self, ActiveRunRegistry()) { 100_000L })
+        assertEquals(listOf("delete:index.lock"), quiet.deletions)
+    }
 }

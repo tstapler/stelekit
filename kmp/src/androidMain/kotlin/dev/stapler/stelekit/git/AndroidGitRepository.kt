@@ -669,9 +669,7 @@ class AndroidGitRepository(
 
     override suspend fun beginOwnedOperation(config: GitConfig, info: OwnedOperationInfo): Either<DomainError.GitError, LockVerdict> =
         withContext(PlatformDispatcher.IO) {
-            ownedOperations.begin(gitDirOf(config), info).flatMap { verdict ->
-                if (verdict.deletes) healthyAfterLockDeletion(config).map { verdict } else verdict.right()
-            }
+            ownedOperations.beginChecked(gitDirOf(config), info) { healthyAfterLockDeletion(config) }
         }
 
     override suspend fun endOwnedOperation(config: GitConfig) {

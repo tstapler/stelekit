@@ -37,7 +37,9 @@ object LivenessPolicy {
         probe: ProbeResult,
     ): Liveness {
         // A pid number only identifies a process inside one pid namespace (sandboxed app vs host CLI).
-        val sameNamespace = recordedPidNs != null && recordedPidNs == selfPidNs
+        // macOS/Windows have no pid namespaces (both sides null), so a same-host pid there is globally unique.
+        val sameNamespace = (recordedPidNs != null && recordedPidNs == selfPidNs) ||
+            (basis == StartStampBasis.InstantMs && recordedPidNs == null && selfPidNs == null)
         return when (probe) {
             ProbeResult.Unreadable -> Liveness.Unknown
             ProbeResult.Absent -> if (sameNamespace) Liveness.Dead else Liveness.Unknown

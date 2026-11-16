@@ -371,6 +371,7 @@ class GitSyncService(
                 }
             }
         } catch (e: CancellationException) {
+            _reloadIncomplete.value = true
             throw e
         } catch (e: Throwable) {
             // The merged files are already on disk, so the next graph open reconciles them; nothing may reach the platform handler.
@@ -759,6 +760,25 @@ class GitSyncService(
 
 
     /**
+     * The user-confirmed "Remove lock file": takes the gate (no owner record: the claim would refuse the very lock
+     * being removed), then lets the repository delete allow-listed locks only when no live owner holds them.
+     */
+    suspend fun removeLockFile(graphId: String): Either<DomainError.GitError, Unit> {
+        val resolved = singleFlight.resolveGateKey(graphId) as? GateKeyResolution.Resolved
+            ?: return DomainError.GitError.FetchFailed("Cannot resolve the repository for $graphId").left()
+        val result = gate.withExclusiveLease(
+            resolved.key,
+            SyncOrigin.UiPress,
+            DomainError.GitError.FetchFailed("Cannot resolve the repository for $graphId"),
+        ) { withContext(PlatformDispatcher.IO) { gitRepository.forceRemoveLock(resolved.config) } }
+        if (result.isRight()) {
+            _syncState.value = SyncState.Idle
+            pausedRetries.onSettled()
+        }
+        return result
+    }
+
+    /**
      * Stages and commits any outstanding local changes in the wiki subdirectory.
      * Returns the commit SHA on success, or null if there was nothing to commit.
      */
@@ -788,7 +808,7 @@ class GitSyncService(
                 val staged = lfsStaging.stage(config, status).getOrElse { return@withContext it.left() }
                 val sha = if (staged.commitNeeded) {
                     guards.changes(config, GuardScope.Staged, liftMassChange = false)?.let { return@withContext refuse(it) }
-                    when (val r = gitRepository.commit(config, buildCommitMessage(config))) {
+                    when (val r = withContext(NonCancellable) { gitRepository.commit(config, buildCommitMessage(config)) }) {
                         is Either.Left -> return@withContext r.value.left()
                         is Either.Right -> r.value
                     }
@@ -870,9 +890,10 @@ class GitSyncService(
             guards.markers(config, GuardScope.Staged)?.let { return@withContext refuse(it) }
     
             val message = buildCommitMessage(config, isMerge = true)
-            gitRepository.commit(config, message).onLeft { return@withContext it.left() }
-    
-            reloadMergedFiles(resolvedPaths)
+            // Commit and reload are one non-cancellable unit (#676): a cancel may stop the run after it, never between the two.
+            withContext(NonCancellable) {
+                gitRepository.commit(config, message).also { if (it.isRight()) reloadMergedFiles(resolvedPaths) }
+            }.onLeft { return@withContext it.left() }
     
             _syncState.value = SyncState.Idle
             Unit.right()
@@ -919,9 +940,10 @@ class GitSyncService(
     
             guards.markers(config, GuardScope.Staged)?.let { return@withContext refuse(it) }
             val message = buildCommitMessage(config, isMerge = true)
-            gitRepository.commit(config, message).onLeft { return@withContext it.left() }
-    
-            reloadMergedFiles(listOf(filePath))
+            // Same non-cancellable commit-then-reload unit as resolveConflicts.
+            withContext(NonCancellable) {
+                gitRepository.commit(config, message).also { if (it.isRight()) reloadMergedFiles(listOf(filePath)) }
+            }.onLeft { return@withContext it.left() }
     
             guards.changes(config, GuardScope.NetPush, liftMassChange = false)?.let { return@withContext refuse(it) }
             _syncState.value = SyncState.Pushing

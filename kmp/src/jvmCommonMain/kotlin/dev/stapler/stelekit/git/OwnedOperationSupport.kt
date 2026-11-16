@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.git
 
 import arrow.core.Either
+import arrow.core.getOrElse
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
@@ -56,6 +57,29 @@ class OwnedOperationSupport(
         }
     }
 
+    /**
+     * [begin] plus the post-claim health check, atomic: a claim that is refused by [healthy] (or throws) is ended
+     * before returning, so no registry entry or owner record outlives a run the caller never started.
+     */
+    suspend fun beginChecked(
+        gitDir: File,
+        info: OwnedOperationInfo,
+        healthy: suspend () -> Either<DomainError.GitError, Unit>,
+    ): Either<DomainError.GitError, LockVerdict> {
+        val verdict = begin(gitDir, info).getOrElse { return it.left() }
+        if (!verdict.deletes) return verdict.right()
+        try {
+            healthy().onLeft {
+                end(gitDir)
+                return it.left()
+            }
+        } catch (e: Throwable) {
+            end(gitDir)
+            throw e
+        }
+        return verdict.right()
+    }
+
     fun end(gitDir: File) {
         val key = keyFor(gitDir)
         val run = runs.remove(key) ?: return
@@ -82,7 +106,7 @@ class OwnedOperationSupport(
     fun forceRemove(gitDir: File): Either<DomainError.GitError, Unit> {
         val key = keyFor(gitDir)
         return try {
-            LockRecovery.forceRemove(key, lockFilesFor(gitDir), liveness, selfRecord("force-remove", SyncOrigin.UiPress.name), registry)
+            LockRecovery.forceRemove(key, lockFilesFor(gitDir), liveness, selfRecord("force-remove", SyncOrigin.UiPress.name), registry, nowMs)
                 .map { }
         } catch (e: IOException) {
             logger.warn("force remove failed on I/O", e)

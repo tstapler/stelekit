@@ -94,6 +94,18 @@ class SyncSafetyActions(
         activeGitSyncService.value?.retryNow { emit(SyncUiEvent.AlreadySyncing) }
     }
 
+    /** Confirmed "Remove lock file" in the sheet: removes the leftover lock, then syncs so the user sees it work. */
+    fun removeLockFile() {
+        val graphId = graphId() ?: return
+        scope.launch {
+            val service = activeGitSyncService.value ?: return@launch
+            service.removeLockFile(graphId).fold(
+                { if (it is DomainError.GitError.SyncInProgress) emit(SyncUiEvent.AlreadySyncing) },
+                { service.sync(graphId) },
+            )
+        }
+    }
+
     /**
      * Runs one manual sync with the mass-deletion guard lifted for this run only, after the typed-count
      * confirm. Foreground only: scheduled runs never lift the guard (see [GitSyncService.sync]).

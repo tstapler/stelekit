@@ -19,6 +19,7 @@ import dev.stapler.stelekit.git.testsupport.sampleConfig
 import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -102,6 +103,7 @@ class GitSyncCancelBoundaryTest {
         }
         override suspend fun stageSubdir(config: GitConfig, excludePaths: Set<String>) = Unit.right()
         override suspend fun markResolved(config: GitConfig, filePath: String) = Unit.right()
+        override suspend fun checkoutFile(config: GitConfig, filePath: String, side: MergeSide) = Unit.right()
         override suspend fun abortMerge(config: GitConfig) = Unit.right().also { calls += "abort" }
         override suspend fun push(config: GitConfig) = Unit.right().also { calls += "push" }
     }
@@ -238,5 +240,81 @@ class GitSyncCancelBoundaryTest {
         assertEquals(0, git.count("push"), "the pipeline stops after the unit")
         assertEquals(SyncState.Idle, svc.syncState.value)
         assertFalse(gate.isHeld(key()))
+    }
+
+    // Review round 2 (M3): the #676 commit-then-reload guarantee holds for every merge-completing entry point.
+    private fun reloadingFixture(): Pair<CopyOnWriteArrayList<String>, Pair<GraphLoader, StubFileSystem>> {
+        val reloaded = CopyOnWriteArrayList<String>()
+        val fs = object : StubFileSystem() {
+            override fun invalidateShadow(path: String) { reloaded += path }
+        }
+        return reloaded to (GraphLoader(fs, InMemoryPageRepository(), InMemoryBlockRepository()) to fs)
+    }
+
+    @Test
+    fun resolveConflicts_should_ReloadResolvedFiles_When_CancelArrivesRightAfterCommit() = runBlocking<Unit> {
+        val (reloaded, loaderAndFs) = reloadingFixture()
+        val jobRef = AtomicReference<Job>()
+        val git = Repo().apply { onCommit = { jobRef.get().cancel() } }
+        val svc = service(git, loaderAndFs.first, loaderAndFs.second)
+
+        val run = scope.async(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+            svc.resolveConflicts("g", listOf(realConflict), sideResolutions = mapOf("/repo/real.md" to MergeSide.LOCAL))
+        }
+        jobRef.set(run)
+        run.start()
+        run.join()
+
+        assertEquals(1, git.count("commit"))
+        assertEquals(listOf("/repo/real.md"), reloaded.toList(), "the reload must finish after a cancel")
+        assertFalse(svc.reloadIncomplete.value)
+        assertFalse(gate.isHeld(key()))
+    }
+
+    @Test
+    fun applyJournalMerge_should_ReloadTheFile_When_CancelArrivesRightAfterCommit() = runBlocking<Unit> {
+        val (reloaded, loaderAndFs) = reloadingFixture()
+        val jobRef = AtomicReference<Job>()
+        val git = Repo().apply { onCommit = { jobRef.get().cancel() } }
+        val svc = service(git, loaderAndFs.first, loaderAndFs.second)
+
+        val run = scope.async(start = kotlinx.coroutines.CoroutineStart.LAZY) { svc.applyJournalMerge("g", "/repo/journals/j.md", "- merged\n") }
+        jobRef.set(run)
+        run.start()
+        run.join()
+
+        assertEquals(listOf("/repo/journals/j.md"), reloaded.toList(), "the reload must finish after a cancel")
+        assertFalse(gate.isHeld(key()))
+    }
+
+    @Test
+    fun commitLocalChanges_should_FinishTheCommit_When_CancelRequestedDuringIt() = runBlocking<Unit> {
+        val entered = CompletableDeferred<Unit>()
+        val proceed = CompletableDeferred<Unit>()
+        val git = Repo(localChanges = true).apply { onCommit = { entered.complete(Unit); proceed.await() } }
+        val svc = service(git)
+
+        val run = scope.async { svc.commitLocalChanges("g") }
+        withTimeout(20_000) { entered.await() }
+        run.cancel()
+        proceed.complete(Unit)
+        run.join()
+
+        assertEquals(1, git.count("commit"), "a started commit must finish")
+        assertFalse(gate.isHeld(key()))
+    }
+
+    @Test
+    fun reloadMergedFiles_should_FlagReloadIncomplete_When_CancelledMidReload() = runBlocking<Unit> {
+        val fs = object : StubFileSystem() {
+            override fun invalidateShadow(path: String) { throw CancellationException("cancelled mid reload") }
+        }
+        val loader = GraphLoader(fs, InMemoryPageRepository(), InMemoryBlockRepository())
+        val git = Repo(remoteChanges = true).apply { mergeResult = MergeResult(false, emptyList(), listOf("/repo/pages/a.md"), 1) }
+        val svc = service(git, loader, fs)
+
+        scope.async { svc.sync("g") }.join()
+
+        assertTrue(svc.reloadIncomplete.value, "a reload stopped by cancellation must be flagged for the next open")
     }
 }
