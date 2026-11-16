@@ -189,6 +189,61 @@ class SketchPointerAdapterTest {
     }
 
     @Test
+    fun palmContact_should_NeverStartOrMoveAGesture_WithFingerDrawingOn() {
+        val adapter = SketchPointerAdapter(fingerDrawing = true)
+        val palm = RawPointer(1, PointerKind.Touch, RawPhase.Down, at(10.0, 10.0), palm = true)
+        assertTrue(adapter.onPointer(palm).isEmpty())
+        assertTrue(adapter.onPointer(palm.copy(phase = RawPhase.Move, position = at(40.0, 40.0))).isEmpty())
+        assertTrue(adapter.onPointer(palm.copy(phase = RawPhase.Up)).isEmpty())
+        val finger = adapter.onPointer(raw(2, PointerKind.Touch, RawPhase.Down, 50.0, 50.0))
+        assertEquals(InputType.Down, (finger.single() as PointerAction.ToolInput).event.type)
+    }
+
+    @Test
+    fun fingerTurnedPalm_should_CancelTheToolGesture_AndLeaveTheAdapterUsable() {
+        val adapter = SketchPointerAdapter(fingerDrawing = true)
+        adapter.onPointer(raw(1, PointerKind.Touch, RawPhase.Down, 10.0, 10.0))
+        val cancel = adapter.onPointer(RawPointer(1, PointerKind.Touch, RawPhase.Cancel, at(10.0, 10.0), palm = true))
+        assertEquals(InputType.Cancel, (cancel.single() as PointerAction.ToolInput).event.type)
+        assertEquals(1, adapter.onPointer(raw(3, PointerKind.Touch, RawPhase.Down, 20.0, 20.0)).size)
+    }
+
+    @Test
+    fun handTool_should_PanWithAnyPointer_AndNeverReachTheTool() {
+        val adapter = SketchPointerAdapter(handTool = true)
+        val actions = listOf(
+            raw(1, PointerKind.Mouse, RawPhase.Down, 100.0, 100.0),
+            raw(1, PointerKind.Mouse, RawPhase.Move, 120.0, 110.0),
+            raw(1, PointerKind.Mouse, RawPhase.Up, 120.0, 110.0),
+        ).flatMap { adapter.onPointer(it) }
+        assertTrue(actions.none { it is PointerAction.ToolInput })
+        assertEquals(20.0, adapter.viewport.panX)
+        assertEquals(10.0, adapter.viewport.panY)
+    }
+
+    @Test
+    fun touchTap_should_ReachTheTool_Only_When_TheToolTakesTaps_And_TheFingerStaysPut() {
+        val taps = SketchPointerAdapter(touchTapsReachTool = true)
+        val tapped = listOf(
+            raw(1, PointerKind.Touch, RawPhase.Down, 100.0, 100.0),
+            raw(1, PointerKind.Touch, RawPhase.Up, 102.0, 101.0),
+        ).flatMap { taps.onPointer(it) }
+        assertEquals(listOf(InputType.Down, InputType.Up), tapped.map { (it as PointerAction.ToolInput).event.type })
+        val dragged = listOf(
+            raw(1, PointerKind.Touch, RawPhase.Down, 100.0, 100.0),
+            raw(1, PointerKind.Touch, RawPhase.Move, 160.0, 100.0),
+            raw(1, PointerKind.Touch, RawPhase.Up, 160.0, 100.0),
+        ).flatMap { taps.onPointer(it) }
+        assertTrue(dragged.none { it is PointerAction.ToolInput })
+        val off = SketchPointerAdapter()
+        val ignored = listOf(
+            raw(1, PointerKind.Touch, RawPhase.Down, 100.0, 100.0),
+            raw(1, PointerKind.Touch, RawPhase.Up, 100.0, 100.0),
+        ).flatMap { off.onPointer(it) }
+        assertTrue(ignored.isEmpty())
+    }
+
+    @Test
     fun hover_should_ReachTheTool_OnlyForMouseAndStylus() {
         val adapter = SketchPointerAdapter()
         assertEquals(1, adapter.onPointer(raw(1, PointerKind.Mouse, RawPhase.Hover, 5.0, 5.0)).size)

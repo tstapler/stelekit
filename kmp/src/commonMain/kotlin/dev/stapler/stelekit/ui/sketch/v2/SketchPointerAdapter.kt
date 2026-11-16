@@ -25,6 +25,8 @@ data class RawPointer(
     val position: ScreenPx,
     val pressure: Double? = null,
     val secondaryButton: Boolean = false,
+    /** The platform classified this contact as a palm (Android `TOOL_TYPE_PALM`, palm `ACTION_CANCEL`; Task 3.1.2h). */
+    val palm: Boolean = false,
     val modifiers: Modifiers = Modifiers.None,
     val timestamp: Long = 0L,
 )
@@ -63,6 +65,10 @@ class SketchPointerAdapter(
     var fingerDrawing: Boolean = false,
     /** Height in pixels of one page of wheel scrolling. */
     var pageSizePx: Double = DEFAULT_PAGE_PX,
+    /** True while the Hand tool is active: a primary drag by any pointer pans instead of reaching a tool (Task 3.2.3). */
+    var handTool: Boolean = false,
+    /** True while the active tool acts on a tap (Eraser, Select): a touch tap with Finger drawing OFF then reaches the tool as Down and Up (UX-101). */
+    var touchTapsReachTool: Boolean = false,
 ) {
     var viewport: SketchViewport = viewport
         private set
@@ -70,7 +76,7 @@ class SketchPointerAdapter(
     private sealed interface Mode {
         data object Idle : Mode
         data class Tool(val id: Int, val kind: PointerKind, val override: ToolId?) : Mode
-        data class Pan(val id: Int) : Mode
+        data class Pan(val id: Int, val start: ScreenPx, val travelled: Double = 0.0, val kind: PointerKind = PointerKind.Touch) : Mode
         data class Pinch(val a: Int, val b: Int) : Mode
 
         /** Waiting for every pointer to lift before a new gesture may start; actions are dropped meanwhile. */
@@ -85,7 +91,13 @@ class SketchPointerAdapter(
         viewport = value
     }
 
-    fun onPointer(p: RawPointer): List<PointerAction> = when (p.phase) {
+    fun onPointer(p: RawPointer): List<PointerAction> = when {
+        // A palm never starts or moves a gesture; its Up and Cancel still run so a contact that turned into a palm cannot wedge the state.
+        p.palm && p.phase != RawPhase.Up && p.phase != RawPhase.Cancel -> emptyList()
+        else -> onClassified(p)
+    }
+
+    private fun onClassified(p: RawPointer): List<PointerAction> = when (p.phase) {
         RawPhase.Hover -> if (mode == Mode.Idle && p.kind != PointerKind.Touch) listOf(toolInput(p, InputType.Move, null)) else emptyList()
         RawPhase.Down -> onDown(p)
         RawPhase.Move -> onMove(p)
@@ -147,8 +159,8 @@ class SketchPointerAdapter(
                 mode = Mode.Tool(p.id, p.kind, ToolId.Eraser)
                 listOf(toolInput(p, InputType.Down, ToolId.Eraser))
             }
-            p.kind == PointerKind.Touch && !fingerDrawing -> {
-                mode = Mode.Pan(p.id)
+            (p.kind == PointerKind.Touch && !fingerDrawing) || handTool -> {
+                mode = Mode.Pan(p.id, p.position, kind = p.kind)
                 emptyList()
             }
             else -> {
@@ -163,7 +175,12 @@ class SketchPointerAdapter(
         down[p.id] = p.position
         return when (val m = mode) {
             is Mode.Tool -> if (p.id == m.id) listOf(toolInput(p, InputType.Move, m.override)) else emptyList()
-            is Mode.Pan -> if (p.id == m.id) navigate(p.position.x - previous.x, p.position.y - previous.y) else emptyList()
+            is Mode.Pan -> if (p.id == m.id) {
+                mode = m.copy(travelled = hypot(p.position.x - m.start.x, p.position.y - m.start.y).coerceAtLeast(m.travelled))
+                navigate(p.position.x - previous.x, p.position.y - previous.y)
+            } else {
+                emptyList()
+            }
             is Mode.Pinch -> pinch(m, p.id, previous)
             else -> emptyList()
         }
@@ -202,7 +219,7 @@ class SketchPointerAdapter(
             }
             is Mode.Pan -> {
                 if (p.id == m.id) mode = Mode.Idle
-                emptyList()
+                if (p.id == m.id && type == InputType.Up && isTap(m)) tapActions(p) else emptyList()
             }
             is Mode.Pinch -> {
                 if (p.id == m.a || p.id == m.b) mode = Mode.Drain
@@ -214,6 +231,12 @@ class SketchPointerAdapter(
         return out
     }
 
+    /** A touch that never left the tap slop while the active tool takes taps (and the Hand tool is not the one panning). */
+    private fun isTap(m: Mode.Pan): Boolean = touchTapsReachTool && !handTool && m.kind == PointerKind.Touch && m.travelled <= TAP_SLOP_PX
+
+    private fun tapActions(p: RawPointer): List<PointerAction> =
+        listOf(toolInput(p, InputType.Down, null), toolInput(p, InputType.Up, null))
+
     private fun toolInput(p: RawPointer, type: InputType, override: ToolId?): PointerAction.ToolInput {
         val pressure = if (p.kind == PointerKind.Stylus || p.kind == PointerKind.Eraser) p.pressure else null
         return PointerAction.ToolInput(
@@ -224,6 +247,9 @@ class SketchPointerAdapter(
 
     private companion object {
         const val DEFAULT_PAGE_PX = 800.0
+
+        /** A touch that moves no further than this many screen pixels is a tap, not a pan. */
+        const val TAP_SLOP_PX = 10.0
         const val WHEEL_LINE_PX = 16.0
         const val WHEEL_ZOOM_PER_PX = 0.002
         const val PAIR = 2.0

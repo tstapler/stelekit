@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import dev.stapler.stelekit.platform.AndroidPalmClassifier
+import dev.stapler.stelekit.platform.PalmClassifier
 import dev.stapler.stelekit.sketch.v2.tools.InputType
 import dev.stapler.stelekit.sketch.v2.tools.PointerKind
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
@@ -33,9 +35,9 @@ class PointerAdapterTest {
     private val adapter = SketchPointerAdapter()
     private val actions = mutableListOf<PointerAction>()
 
-    private fun start() {
+    private fun start(palm: PalmClassifier = PalmClassifier.None) {
         rule.setContent {
-            Box(Modifier.fillMaxSize().sketchPointerInput(adapter) { actions += it })
+            Box(Modifier.fillMaxSize().sketchPointerInput(adapter, palm) { actions += it })
         }
         rule.waitForIdle()
     }
@@ -91,6 +93,24 @@ class PointerAdapterTest {
         actions.clear()
         stroke(MotionEvent.TOOL_TYPE_STYLUS)
         assertTrue(tool().all { it.toolOverride == null })
+    }
+
+    @Test
+    fun palmToolType_should_BeIgnored_WithTheAndroidClassifier_AndStillTouchWithout() {
+        start(AndroidPalmClassifier)
+        adapter.fingerDrawing = true
+        stroke(AndroidPalmClassifier.TOOL_TYPE_PALM)
+        assertTrue(actions.isEmpty(), "a palm contact reached the adapter's output: $actions")
+        stroke(MotionEvent.TOOL_TYPE_FINGER)
+        assertEquals(listOf(InputType.Down, InputType.Move, InputType.Up), tool().map { it.event.type })
+    }
+
+    @Test
+    fun unknownToolType_should_StayTouch_When_NoClassifierIsInstalled() {
+        start()
+        adapter.fingerDrawing = true
+        stroke(AndroidPalmClassifier.TOOL_TYPE_PALM)
+        assertTrue(tool().all { it.event.pointerKind == PointerKind.Touch } && tool().isNotEmpty())
     }
 
     @Test

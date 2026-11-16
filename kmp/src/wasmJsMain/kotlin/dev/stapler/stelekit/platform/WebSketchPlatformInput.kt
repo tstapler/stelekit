@@ -15,7 +15,8 @@ import dev.stapler.stelekit.ui.sketch.v2.RawPointer
  * The canvas host of the v2 sketch editor on the web (Task 3.1.2c). Compose wasm reports every touch as
  * `PointerType.Touch` and has no pen type, pressure source, eraser or barrel button (research/input-spike.md), so the
  * adapter is fed from the raw DOM `PointerEvent` of the host element instead. Setting `touch-action: none` stops the
- * browser scrolling or zooming the page under a drag (Task 3.1.2h adds `overscroll-behavior` here, not in a second host).
+ * browser scrolling or zooming the page under a drag, and `overscroll-behavior: none` stops the browser's own edge
+ * navigation swipe from taking a drag that starts at the edge (Task 3.1.2h; a Safari iOS edge swipe cannot be blocked).
  */
 object WebSketchPlatformInput {
     /** DOM `buttons` bits (Pointer Events level 3): 2 secondary or barrel, 4 auxiliary, 32 eraser. */
@@ -89,13 +90,28 @@ object WebSketchPlatformInput {
     }
 
     internal fun computedStyle(host: JsAny, property: String): String = computedStyleOf(host, property)
+
+    /**
+     * The web [EdgeGestureExclusion] for [host]: the browser has no rectangle API, so a request sets the host's
+     * `overscroll-behavior` and a release restores the browser default (`auto`).
+     */
+    fun edgeExclusion(host: JsAny): EdgeGestureExclusion = object : EdgeGestureExclusion {
+        override val canRequest: Boolean get() = true
+
+        override fun request(rects: List<EdgeExclusionRect>) = setOverscroll(host, if (rects.isEmpty()) "auto" else "none")
+
+        override fun release() = setOverscroll(host, "auto")
+    }
 }
 
 private fun computedStyleOf(host: JsAny, property: String): String =
     js("window.getComputedStyle(host).getPropertyValue(property)")
 
+private fun setOverscroll(host: JsAny, value: String): Unit =
+    js("(function() { host.style.overscrollBehavior = value; })()")
+
 private fun applyTouchAction(host: JsAny): Unit =
-    js("(function() { host.style.touchAction = 'none'; })()")
+    js("(function() { host.style.touchAction = 'none'; host.style.overscrollBehavior = 'none'; })()")
 
 private fun addListeners(host: JsAny, cb: (String, String, Double, Int, Int, Double, Double, Int, Double) -> Unit): JsAny = js(
     """

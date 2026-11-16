@@ -20,11 +20,31 @@ data class AddElementCommand(val element: SceneElement) : ToolCommand
 /** The in-progress shape drawn over the canvas while a gesture runs; rendered through `DrawListBuilder`, never persisted. */
 data class ToolPreview(val elements: List<SceneElement>)
 
+/** A short message a tool raises for the host's notice queue (UX-12, UX-101); the host owns the wording and the queue. */
+sealed interface ToolNotice {
+    /** A selection mixed locked and unlocked elements; [skipped] were left alone (`LockedSkipped` toast). */
+    data class LockedSkipped(val skipped: Int) : ToolNotice
+
+    /** The eraser path crossed [skipped] locked elements and left them (UX-101). */
+    data class LockedNotErased(val skipped: Int) : ToolNotice
+
+    /** The selection is too small on screen for handles; "Zoom in to use handles" (UX-127). */
+    data object ZoomInForHandles : ToolNotice
+
+    /** A gesture finished with nothing to commit (collinear arc points): "Nothing drawn". */
+    data object NothingDrawn : ToolNotice
+}
+
 /**
  * Outcome of one event. [command] is emitted at most once per gesture, on commit. [preview] is what to show now
  * (null clears it). [next] is the tool's next state; null keeps the current state object.
  */
-data class ToolResult(val command: ToolCommand? = null, val preview: ToolPreview? = null, val next: Tool? = null) {
+data class ToolResult(
+    val command: ToolCommand? = null,
+    val preview: ToolPreview? = null,
+    val next: Tool? = null,
+    val notice: ToolNotice? = null,
+) {
     companion object {
         /** No command, no preview, same state. */
         val Nothing = ToolResult()

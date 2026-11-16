@@ -17,6 +17,8 @@ import kotlin.math.min
 /** Events in, commands and previews out (Task 3.1.1b); every tool test folds its events through [runScenario]. */
 class ScenarioResult(
     val commands: List<ToolCommand>,
+    /** The notice each event raised, in order (null = none). */
+    val notices: List<ToolNotice?> = emptyList(),
     /** The preview after each event, in order (null = cleared). */
     val previews: List<ToolPreview?>,
     val finalTool: Tool,
@@ -28,20 +30,23 @@ class ScenarioBuilder internal constructor() {
 
     private fun at(x: Int, y: Int) = ScenePoint(SceneUnit.ofInt(x), SceneUnit.ofInt(y))
 
-    private fun add(type: InputType, x: Int, y: Int, pointer: Int, kind: PointerKind) {
-        events += InputEvent(type, at(x, y), pointerKind = kind, pointerId = pointer, timestamp = clock++)
+    private fun add(type: InputType, x: Int, y: Int, pointer: Int, kind: PointerKind, mods: Modifiers = Modifiers.None, pressure: Double? = null) {
+        events += InputEvent(type, at(x, y), pressure, kind, pointer, clock++, mods)
     }
 
-    fun down(x: Int, y: Int, pointer: Int = InputEvent.PRIMARY_POINTER, kind: PointerKind = PointerKind.Mouse) = add(InputType.Down, x, y, pointer, kind)
-    fun move(x: Int, y: Int, pointer: Int = InputEvent.PRIMARY_POINTER, kind: PointerKind = PointerKind.Mouse) = add(InputType.Move, x, y, pointer, kind)
-    fun up(x: Int, y: Int, pointer: Int = InputEvent.PRIMARY_POINTER, kind: PointerKind = PointerKind.Mouse) = add(InputType.Up, x, y, pointer, kind)
+    fun down(x: Int, y: Int, pointer: Int = InputEvent.PRIMARY_POINTER, kind: PointerKind = PointerKind.Mouse, mods: Modifiers = Modifiers.None, pressure: Double? = null) =
+        add(InputType.Down, x, y, pointer, kind, mods, pressure)
+    fun move(x: Int, y: Int, pointer: Int = InputEvent.PRIMARY_POINTER, kind: PointerKind = PointerKind.Mouse, mods: Modifiers = Modifiers.None, pressure: Double? = null) =
+        add(InputType.Move, x, y, pointer, kind, mods, pressure)
+    fun up(x: Int, y: Int, pointer: Int = InputEvent.PRIMARY_POINTER, kind: PointerKind = PointerKind.Mouse, mods: Modifiers = Modifiers.None, pressure: Double? = null) =
+        add(InputType.Up, x, y, pointer, kind, mods, pressure)
     fun cancel(pointer: Int = InputEvent.PRIMARY_POINTER) = add(InputType.Cancel, 0, 0, pointer, PointerKind.Mouse)
     fun escape() { events += InputEvent.escape(clock++) }
 }
 
-fun testToolContext(scene: SketchSceneV2 = SketchSceneV2.empty()): ToolContext {
+fun testToolContext(scene: SketchSceneV2 = SketchSceneV2.empty(), zoom: Double = 1.0): ToolContext {
     var n = 0
-    return ToolContext(scene, zoom = 1.0, style = ElementStyle(), ids = ElementIdSource { ElementId("e${n++}") })
+    return ToolContext(scene, zoom = zoom, style = ElementStyle(), ids = ElementIdSource { ElementId("e${n++}") })
 }
 
 fun runScenario(start: Tool, ctx: ToolContext = testToolContext(), build: ScenarioBuilder.() -> Unit): ScenarioResult {
@@ -49,13 +54,15 @@ fun runScenario(start: Tool, ctx: ToolContext = testToolContext(), build: Scenar
     var tool = start
     val commands = mutableListOf<ToolCommand>()
     val previews = mutableListOf<ToolPreview?>()
+    val notices = mutableListOf<ToolNotice?>()
     for (event in events) {
         val result = tool.onEvent(event, ctx)
         result.command?.let { commands += it }
         previews += result.preview
+        notices += result.notice
         result.next?.let { tool = it }
     }
-    return ScenarioResult(commands, previews, tool)
+    return ScenarioResult(commands, notices, previews, tool)
 }
 
 /**
@@ -90,20 +97,20 @@ object ToolScenarioCatalog {
         ToolId.Rectangle to listOf("ToolCancelTest"),
         ToolId.Text to listOf("TextToolTest"),
         ToolId.Image to listOf("ImageToolTest"),
+        ToolId.Select to listOf("SelectToolTest"),
+        ToolId.Eraser to listOf("EraserFrameToolTest"),
+        ToolId.Frame to listOf("EraserFrameToolTest"),
+        ToolId.Hand to listOf("EraserFrameToolTest"),
+        ToolId.Point to listOf("PointArcToolsTest"),
+        ToolId.Arc to listOf("PointArcToolsTest"),
+        ToolId.Freedraw to listOf("FreedrawToolTest"),
     )
 
     /** May only shrink: when a tool gains a scenario test, move it to [covered] and delete its line here. */
     val pendingStory: Map<ToolId, String> = mapOf(
-        ToolId.Select to "3.2.2",
         ToolId.Diamond to "3.2.1",
         ToolId.Ellipse to "3.2.1",
         ToolId.Line to "3.2.1",
-        ToolId.Eraser to "3.2.3",
-        ToolId.Hand to "3.2.3",
-        ToolId.Frame to "3.2.3",
-        ToolId.Point to "3.2.4",
-        ToolId.Arc to "3.2.4",
         ToolId.Arrow to "3.3.1",
-        ToolId.Freedraw to "3.4.2",
     )
 }

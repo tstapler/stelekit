@@ -49,7 +49,12 @@ class HitTester(private val scene: SketchSceneV2, private val index: SpatialInde
     fun hit(point: ScenePoint, zoom: Double): ElementId? = hitAll(point, zoom).firstOrNull()
 
     /** Every element hit at [point], topmost first; an unusable zoom hits nothing. */
-    fun hitAll(point: ScenePoint, zoom: Double): List<ElementId> {
+    fun hitAll(point: ScenePoint, zoom: Double): List<ElementId> = hitWhere(point, zoom, locked = false)
+
+    /** The visible elements under [point] that [hitAll] skips because they, or their layer, are locked; topmost first (UX-101 counts them). */
+    fun hitLocked(point: ScenePoint, zoom: Double): List<ElementId> = hitWhere(point, zoom, locked = true)
+
+    private fun hitWhere(point: ScenePoint, zoom: Double, locked: Boolean): List<ElementId> {
         if (!zoom.isFinite() || zoom <= 0.0) return emptyList()
         val tolerance = HIT_TOLERANCE_PX / zoom
         val px = point.x.value
@@ -57,17 +62,17 @@ class HitTester(private val scene: SketchSceneV2, private val index: SpatialInde
         val layers = scene.layers.associateBy { it.id }
         return index.query(Bounds.around(px, py, tolerance))
             .mapNotNull { scene[it] }
-            .filter { e -> isInteractive(e, layers) && hits(e, px, py, tolerance) }
+            .filter { e -> isVisible(e, layers) && isLocked(e, layers) == locked && hits(e, px, py, tolerance) }
             .sortedWith(compareByDescending<SceneElement> { (layers[it.base.layerId] ?: Layer.DefaultLayer).order }
                 .thenByDescending { it.base.zKey }
                 .thenByDescending { arrayIndex.getValue(it.id) })
             .map { it.id }
     }
 
-    private fun isInteractive(e: SceneElement, layers: Map<LayerId, Layer>): Boolean {
-        val layer = layers[e.base.layerId] ?: Layer.DefaultLayer
-        return layer.visible && !layer.locked && !e.base.locked
-    }
+    private fun isVisible(e: SceneElement, layers: Map<LayerId, Layer>): Boolean = (layers[e.base.layerId] ?: Layer.DefaultLayer).visible
+
+    private fun isLocked(e: SceneElement, layers: Map<LayerId, Layer>): Boolean =
+        (layers[e.base.layerId] ?: Layer.DefaultLayer).locked || e.base.locked
 
     private fun hits(e: SceneElement, px: Double, py: Double, tol: Double): Boolean = when (e) {
         is RectElement -> boxHit(e.x.value, e.y.value, e.width.value, e.height.value, e.angle, px, py, tol, filled(e))

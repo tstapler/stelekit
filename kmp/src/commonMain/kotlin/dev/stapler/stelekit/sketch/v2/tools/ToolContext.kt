@@ -4,6 +4,8 @@
 
 package dev.stapler.stelekit.sketch.v2.tools
 
+import dev.stapler.stelekit.sketch.v2.hit.HitTester
+import dev.stapler.stelekit.sketch.v2.index.SpatialIndex
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.ElementStyle
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
@@ -24,7 +26,12 @@ data class ToolContext(
     val zoom: Double,
     val style: ElementStyle,
     val ids: ElementIdSource,
+    /** The host's live index of [scene]; when null the first hit test builds one (O(elements): fine for a test or one-off). */
+    val spatialIndex: SpatialIndex? = null,
 ) {
+    /** Narrow-phase hit testing over [scene], shared by every tool handling this event. */
+    val hitTester: HitTester by lazy { HitTester(scene, spatialIndex ?: SpatialIndex().also { it.rebuild(scene) }) }
+
     init {
         require(zoom.isFinite() && zoom > 0.0) { "zoom must be positive and finite" }
     }

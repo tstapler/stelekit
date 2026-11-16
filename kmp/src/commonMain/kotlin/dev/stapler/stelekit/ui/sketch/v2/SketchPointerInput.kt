@@ -17,6 +17,7 @@ import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.isTertiaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
+import dev.stapler.stelekit.platform.PalmClassifier
 import dev.stapler.stelekit.sketch.v2.tools.Modifiers
 import dev.stapler.stelekit.sketch.v2.tools.PointerKind
 import dev.stapler.stelekit.sketch.v2.view.ScreenPx
@@ -26,15 +27,24 @@ import dev.stapler.stelekit.sketch.v2.view.ScreenPx
  *
  * Mapping per target (research/input-spike.md): Android and desktop give `PointerType` and pressure from Compose
  * core; wasmJs reports every touch as `Touch` (a raw DOM listener supplies pen data, Task 3.1.2c). A `Unknown`
- * type, which Android uses for a palm, is treated as touch until the palm classifier of Task 3.1.2h lands.
- * The barrel button and the right mouse button map to a secondary click (see [isSecondaryClick]).
+ * type, which Android uses for a palm, is treated as touch unless [palm] says the contact is a palm (Task 3.1.2h);
+ * a palm contact never starts or moves a gesture. The barrel button and the right mouse button map to a secondary
+ * click (see [isSecondaryClick]).
  */
-fun Modifier.sketchPointerInput(adapter: SketchPointerAdapter, onActions: (List<PointerAction>) -> Unit): Modifier =
-    pointerInput(adapter) {
+fun Modifier.sketchPointerInput(
+    adapter: SketchPointerAdapter,
+    palm: PalmClassifier = PalmClassifier.None,
+    onActions: (List<PointerAction>) -> Unit,
+): Modifier =
+    pointerInput(adapter, palm) {
         awaitPointerEventScope {
             while (true) {
                 val event = awaitPointerEvent()
-                val actions = event.changes.flatMap { change -> adapter.onPointer(change.toRaw(event)) }
+                val actions = event.changes.mapIndexed { index, change ->
+                    val raw = change.toRaw(event)
+                    val maybePalm = change.type == PointerType.Unknown || raw.phase == RawPhase.Cancel
+                    raw.copy(palm = maybePalm && palm.isPalm(event, index))
+                }.flatMap { adapter.onPointer(it) }
                 if (actions.isNotEmpty()) onActions(actions)
                 event.changes.forEach { it.consume() }
             }

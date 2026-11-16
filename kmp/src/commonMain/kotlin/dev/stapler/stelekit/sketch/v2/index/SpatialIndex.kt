@@ -42,7 +42,8 @@ object ElementBounds {
 
     private const val HALF = 2.0
 
-    private fun geometry(e: SceneElement): Bounds = when (e) {
+    /** The element's box with rotation applied and no stroke allowance: what transforms scale and align. */
+    fun geometry(e: SceneElement): Bounds = when (e) {
         is BoxElement -> rotatedBox(e.x.value, e.y.value, e.width.value, e.height.value, e.angle)
         is EllipseElement -> {
             val c = cos(e.angle)

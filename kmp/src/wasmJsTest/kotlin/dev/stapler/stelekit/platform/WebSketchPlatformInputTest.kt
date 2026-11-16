@@ -60,6 +60,25 @@ class WebSketchPlatformInputTest {
     }
 
     @Test
+    fun host_should_SetOverscrollBehaviorNone_ExtendingTheTouchActionHost() {
+        val host = createHost()
+        val dispose = WebSketchPlatformInput.install(host) { }
+        assertEquals("none", WebSketchPlatformInput.computedStyle(host, "overscroll-behavior"))
+        dispose()
+    }
+
+    @Test
+    fun edgeExclusion_should_SetAndRestoreOverscrollBehavior() {
+        val host = createHost()
+        val exclusion = WebSketchPlatformInput.edgeExclusion(host)
+        assertEquals(true, exclusion.canRequest)
+        exclusion.request(listOf(EdgeExclusionRect(0, 0, 44, 200)))
+        assertEquals("none", WebSketchPlatformInput.computedStyle(host, "overscroll-behavior"))
+        exclusion.release()
+        assertEquals("auto", WebSketchPlatformInput.computedStyle(host, "overscroll-behavior"))
+    }
+
+    @Test
     fun toRaw_should_TreatButtonlessMoveAsHover_And_IgnoreOtherEvents() {
         val kinds = HashMap<Int, PointerKind>()
         assertEquals(RawPhase.Hover, WebSketchPlatformInput.toRaw("pointermove", "mouse", 0.0, 0, 1, origin, 0, 0L, kinds)!!.phase)
