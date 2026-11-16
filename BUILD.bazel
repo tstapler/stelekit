@@ -100,6 +100,13 @@ filegroup(
     visibility = ["//kmp:__subpackages__"],
 )
 
+# AccuracyStudyVerdictTest reads this as the classpath resource "accuracy-study.md" under Bazel.
+filegroup(
+    name = "accuracy_study_doc",
+    srcs = ["project_plans/sync-lock-and-image-annotator/implementation/accuracy-study.md"],
+    visibility = ["//kmp:__subpackages__"],
+)
+
 filegroup(
     name = "journey_docs_source",
     srcs = glob(["docs/journeys/*.md"]),

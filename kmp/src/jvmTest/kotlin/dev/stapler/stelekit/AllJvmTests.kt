@@ -723,5 +723,6 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.jobs.schedule.InProcessTaskSchedulerContractTest::class,
     dev.stapler.stelekit.jobs.schedule.InProcessTaskSchedulerTest::class,
     dev.stapler.stelekit.ui.settings.ScheduledSyncRadioKeyboardTest::class,
+    dev.stapler.stelekit.calibration.RealPhotoHoldOutStudyTest::class,
 )
 class AllJvmTests
