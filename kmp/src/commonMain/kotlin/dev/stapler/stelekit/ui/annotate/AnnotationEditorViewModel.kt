@@ -41,6 +41,7 @@ import dev.stapler.stelekit.model.FitReport
 import dev.stapler.stelekit.model.MeasurementValue
 import dev.stapler.stelekit.model.ValueSource
 import dev.stapler.stelekit.model.CalibrationTick
+import dev.stapler.stelekit.model.CaptureLensRecord
 import dev.stapler.stelekit.model.DEFAULT_MEASUREMENT_UNIT
 import dev.stapler.stelekit.model.GeometryCalibration
 import dev.stapler.stelekit.model.ImageAnnotation
@@ -1483,6 +1484,13 @@ class AnnotationEditorViewModel(
         confirmConstraintCalibration(others + constraint)
     }
 
+    private var lensRecord: CaptureLensRecord? = null
+
+    /** The sidecar's capture lens record, which the DB-rebuilt image does not carry; feeds the focal source (Task 3.9c). */
+    fun setLensRecord(record: CaptureLensRecord?) {
+        lensRecord = record
+    }
+
     private val _constraintFitResult = MutableStateFlow<ConstraintFitResult?>(null)
 
     /** The last fit's report and, when a requested tier was not used, why; null before any fit. */
@@ -1505,7 +1513,7 @@ class AnnotationEditorViewModel(
         val hints = captureHints
         val focal = FocalSourceResolver.resolve(
             userConfirmed35mmEq = hints.userConfirmedFocal35mmEq,
-            lensRecord = hints.lensRecord,
+            lensRecord = hints.lensRecord ?: lensRecord ?: _state.value.imageAnnotation?.sensorData?.lensRecord,
             profileMatched = false,
             exifFocal35mmEq = _state.value.imageAnnotation?.sensorData?.focalLength35mmEq,
         )
@@ -1515,6 +1523,8 @@ class AnnotationEditorViewModel(
             exifDigitalZoomRatio = hints.exifDigitalZoomRatio,
         )
         val options = FitOptions(
+            focalSource = focal.source,
+            focal35mmEq = focal.focal35mmEq,
             request = request,
             focalSource = focal.source,
             focal35mmEq = focal.focal35mmEq,

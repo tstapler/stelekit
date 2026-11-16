@@ -3,7 +3,9 @@ package dev.stapler.stelekit.calibration
 import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationBasis
 import dev.stapler.stelekit.model.CalibrationMethod
+import dev.stapler.stelekit.model.CaptureLensRecord
 import dev.stapler.stelekit.model.ImageSensorData
+import dev.stapler.stelekit.model.LensRecordSource
 import dev.stapler.stelekit.model.NormalizedPoint
 import kotlin.math.atan
 import kotlin.math.sqrt
@@ -79,6 +81,31 @@ object CalibrationService {
         if (!isUsableWidth(nativeWidthPx) || !isUsableWidth(renderedWidthPx)) return stored
         return stored * renderedWidthPx / nativeWidthPx
     }
+
+    /**
+     * Ranks the focal evidence for a photo, feeding the sidecar lens record into [FocalSourceResolver] (Task 3.9c).
+     * Only a record taken from the shutter-time capture result counts, and not when it disagrees with the EXIF focal
+     * by more than 15 percent; a record naming just the selected chip is no independent evidence.
+     */
+    fun focalResolution(
+        lensRecord: CaptureLensRecord?,
+        userConfirmed35mmEq: Double?,
+        profileMatched: Boolean,
+        exifFocal35mmEq: Double?,
+    ): FocalResolution {
+        val trusted = lensRecord?.takeIf { it.isIndependentEvidence() }
+        val focal = trusted?.let { LensRecordFocal(it.focal35mmEq, it.zoomRatio) }
+        return FocalSourceResolver.resolve(userConfirmed35mmEq, focal, profileMatched, exifFocal35mmEq)
+    }
+
+    private fun CaptureLensRecord.isIndependentEvidence(): Boolean {
+        if (source != LensRecordSource.PREVIEW_RESULT_AT_SHUTTER) return false
+        val lens = focalLengthMm?.takeIf { it > 0.0 }
+        val exif = exifFocalMm?.takeIf { it > 0.0 }
+        return lens == null || exif == null || kotlin.math.abs(lens - exif) / exif <= EXIF_DISAGREEMENT
+    }
+
+    private const val EXIF_DISAGREEMENT = 0.15
 
     private fun isUsableWidth(widthPx: Double): Boolean = widthPx.isFinite() && widthPx > 0.0
 

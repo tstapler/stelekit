@@ -99,6 +99,24 @@ data class ImageSensorData(
     val focalLength35mmEq: Double? = null,
     val cameraMake: String? = null,
     val cameraModel: String? = null,
+    /** Which lens took the photo; null for imports and for photos captured before lens recording. No DB column (ADR-004). */
+    val lensRecord: CaptureLensRecord? = null,
+)
+
+/** Where a [CaptureLensRecord]'s lens facts came from; only [PREVIEW_RESULT_AT_SHUTTER] names the lens that really took the photo. */
+@Serializable
+enum class LensRecordSource { PREVIEW_RESULT_AT_SHUTTER, SELECTED_LENS }
+
+/** The lens that took a photo, recorded at capture (ADR-004 decision 5). [exifFocalMm] is the EXIF value read before the fixer. */
+@Serializable
+data class CaptureLensRecord(
+    val cameraId: String,
+    val physicalId: String?,
+    val focalLengthMm: Double?,
+    val focal35mmEq: Double?,
+    val zoomRatio: Double,
+    val source: LensRecordSource,
+    val exifFocalMm: Double?,
 )
 
 /**

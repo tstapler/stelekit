@@ -43,6 +43,8 @@ data class SidecarImageAnnotation(
     @SerialName("calibrationLens") val calibrationLens: dev.stapler.stelekit.model.LensCalibration? = null,
     /** Height offset and camera distance. Additive: absent in older sidecars, which read as null. */
     @SerialName("calibrationGeometry") val calibrationGeometry: dev.stapler.stelekit.model.GeometryCalibration? = null,
+    /** Which lens took the photo. Additive, v2: absent in older sidecars, which read as null. */
+    @SerialName("lensRecord") val lensRecord: SidecarLensRecord? = null,
     @SerialName("unit") val unit: String = "METERS",
     @SerialName("tags") val tags: List<String> = emptyList(),
     @SerialName("latLng") val latLng: String? = null,
