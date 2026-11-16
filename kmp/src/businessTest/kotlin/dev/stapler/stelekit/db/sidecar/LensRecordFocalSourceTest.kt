@@ -59,6 +59,8 @@ class LensRecordFocalSourceTest {
         assertEquals(FocalSource.EXIF_ONLY, resolve().source)
         save(record(LensRecordSource.PREVIEW_RESULT_AT_SHUTTER, exif = 9.0))
         assertEquals(FocalSource.EXIF_ONLY, resolve().source)
+        save(record(LensRecordSource.PREVIEW_RESULT_AT_SHUTTER, exif = null))
+        assertEquals(FocalSource.EXIF_ONLY, resolve().source)
         save(record(LensRecordSource.PREVIEW_RESULT_AT_SHUTTER, zoom = 2.0))
         assertEquals(FocalSource.EXIF_ONLY, resolve().source)
     }

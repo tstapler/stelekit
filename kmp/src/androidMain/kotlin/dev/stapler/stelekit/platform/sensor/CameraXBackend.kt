@@ -17,29 +17,62 @@ import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
+import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.CameraState
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.Observer
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /** The one place the default-back-camera literal lives (ADR-004); every other binder calls this. */
 internal fun defaultBackSelector(): CameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
+/** Camera2 id of a CameraX info, or null for an info with no Camera2 backing (extension or virtual cameras). */
+internal fun safeCameraId(info: CameraInfo): String? = try {
+    Camera2CameraInfo.from(info).cameraId
+} catch (e: IllegalArgumentException) {
+    null
+}
+
+internal enum class CameraOpenResult { OPEN, ERROR, TIMEOUT }
+
+/** Waits on the Main thread for the camera to reach OPEN, an error, or [timeoutMs]; bindToLifecycle alone proves nothing. */
+internal suspend fun awaitCameraOpen(info: CameraInfo, timeoutMs: Long): CameraOpenResult =
+    withTimeoutOrNull(timeoutMs) {
+        suspendCancellableCoroutine<CameraOpenResult> { cont ->
+            val observer = object : Observer<CameraState> {
+                override fun onChanged(value: CameraState) {
+                    val result = when {
+                        value.error != null -> CameraOpenResult.ERROR
+                        value.type == CameraState.Type.OPEN -> CameraOpenResult.OPEN
+                        else -> return
+                    }
+                    info.cameraState.removeObserver(this)
+                    if (cont.isActive) cont.resume(result)
+                }
+            }
+            info.cameraState.observeForever(observer)
+            cont.invokeOnCancellation { info.cameraState.removeObserver(observer) }
+        }
+    } ?: CameraOpenResult.TIMEOUT
+
 /** Selector for one lens: a specific back camera by id, optionally pinned to one physical id behind it. */
 internal fun selectorFor(lens: CameraLens): CameraSelector {
     if (lens.cameraId.isEmpty()) return defaultBackSelector()
     val builder = CameraSelector.Builder()
         .requireLensFacing(CameraSelector.LENS_FACING_BACK)
-        .addCameraFilter { infos -> infos.filter { Camera2CameraInfo.from(it).cameraId == lens.cameraId } }
+        .addCameraFilter { infos -> infos.filter { safeCameraId(it) == lens.cameraId } }
     lens.physicalId?.let { builder.setPhysicalCameraId(it) }
     return builder.build()
 }
@@ -77,6 +110,10 @@ internal class CameraXBackend(
         Camera2Interop.Extender(it).setSessionCaptureCallback(captureCallback)
     }
 
+    private companion object {
+        const val OPEN_TIMEOUT_MS = 3_000L
+    }
+
     private var provider: ProcessCameraProvider? = null
     private var camera: Camera? = null
     private var current: CameraLens? = null
@@ -97,7 +134,12 @@ internal class CameraXBackend(
             val previous = current
             try {
                 cameraProvider.unbind(preview, imageCapture)
-                camera = cameraProvider.bindToLifecycle(lifecycleOwner, selectorFor(lens), preview, imageCapture)
+                val bound = cameraProvider.bindToLifecycle(lifecycleOwner, selectorFor(lens), preview, imageCapture)
+                camera = bound
+                // A bad physical id surfaces as a camera-state error after bind returns, not as a throw.
+                check(awaitCameraOpen(bound.cameraInfo, OPEN_TIMEOUT_MS) != CameraOpenResult.ERROR) {
+                    "camera reported an error opening lens ${lens.id}"
+                }
                 current = lens
             } catch (e: CancellationException) {
                 throw e
@@ -132,7 +174,11 @@ internal class CameraXBackend(
     }
 
     private fun restore(cameraProvider: ProcessCameraProvider, previous: CameraLens?) {
-        if (previous == null) return
+        if (previous == null) {
+            runCatching { cameraProvider.unbind(preview, imageCapture) }
+            camera = null
+            return
+        }
         try {
             cameraProvider.unbind(preview, imageCapture)
             camera = cameraProvider.bindToLifecycle(lifecycleOwner, selectorFor(previous), preview, imageCapture)

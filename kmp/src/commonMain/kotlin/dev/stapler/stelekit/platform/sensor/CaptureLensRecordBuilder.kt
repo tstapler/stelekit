@@ -59,15 +59,20 @@ object CaptureLensRecordBuilder {
                 exifFocalMm = exifFocalMm,
             )
         }
-        val sameFocal = usable.focalLengthMm == null || selected.focalLengthMm == null ||
+        // Trust needs the result's own physical id to name the selected lens and its focal to match; a missing or
+        // different id means the device may have switched lenses, so the selected lens's focal must not be claimed.
+        val sameLens = usable.activePhysicalId != null &&
+            (selected.physicalId == null || usable.activePhysicalId == selected.physicalId)
+        val sameFocal = usable.focalLengthMm != null && selected.focalLengthMm != null &&
             abs(usable.focalLengthMm - selected.focalLengthMm) / selected.focalLengthMm <= FOCAL_MATCH
+        val trusted = sameLens && sameFocal
         return CaptureLensRecord(
             cameraId = selected.cameraId,
             physicalId = usable.activePhysicalId ?: selected.physicalId,
             focalLengthMm = usable.focalLengthMm ?: selected.focalLengthMm,
-            focal35mmEq = selected.focal35mmEq.takeIf { sameFocal },
+            focal35mmEq = selected.focal35mmEq.takeIf { trusted },
             zoomRatio = usable.zoomRatio ?: zoomAtShutter,
-            source = LensRecordSource.PREVIEW_RESULT_AT_SHUTTER,
+            source = if (trusted) LensRecordSource.PREVIEW_RESULT_AT_SHUTTER else LensRecordSource.SELECTED_LENS,
             exifFocalMm = exifFocalMm,
         )
     }

@@ -10,7 +10,6 @@ import android.content.Context
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.os.Build
-import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -87,7 +86,7 @@ class Camera2LensInfoSource(private val context: Context) : LensInfoSource {
 
     private suspend fun cameraXIds(): Set<String>? = try {
         val provider = ProcessCameraProvider.getInstance(context).await(context)
-        withContext(Dispatchers.Main) { provider.availableCameraInfos.map { Camera2CameraInfo.from(it).cameraId }.toSet() }
+        withContext(Dispatchers.Main) { provider.availableCameraInfos.mapNotNull { safeCameraId(it) }.toSet() }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Throwable) {
@@ -107,14 +106,19 @@ class CameraXPhysicalBindTester(private val context: Context) : PhysicalBindTest
             try {
                 val selector = CameraSelector.Builder()
                     .requireLensFacing(CameraSelector.LENS_FACING_BACK)
-                    .addCameraFilter { infos -> infos.filter { Camera2CameraInfo.from(it).cameraId == cameraId } }
+                    .addCameraFilter { infos -> infos.filter { safeCameraId(it) == cameraId } }
                     .setPhysicalCameraId(physicalId)
                     .build()
-                provider.bindToLifecycle(ProcessLifecycleOwner.get(), selector, probe)
-                true
+                val camera = provider.bindToLifecycle(ProcessLifecycleOwner.get(), selector, probe)
+                // Binding is asynchronous: a bad physical id only shows up as a camera-state error after bind returns.
+                awaitCameraOpen(camera.cameraInfo, BIND_OPEN_TIMEOUT_MS) == CameraOpenResult.OPEN
             } finally {
                 provider.unbind(probe)
             }
         }
+    }
+
+    private companion object {
+        const val BIND_OPEN_TIMEOUT_MS = 1_500L
     }
 }

@@ -102,7 +102,7 @@ object CalibrationService {
         if (source != LensRecordSource.PREVIEW_RESULT_AT_SHUTTER) return false
         val lens = focalLengthMm?.takeIf { it > 0.0 }
         val exif = exifFocalMm?.takeIf { it > 0.0 }
-        return lens == null || exif == null || kotlin.math.abs(lens - exif) / exif <= EXIF_DISAGREEMENT
+        return lens != null && exif != null && kotlin.math.abs(lens - exif) / exif <= EXIF_DISAGREEMENT
     }
 
     private const val EXIF_DISAGREEMENT = 0.15

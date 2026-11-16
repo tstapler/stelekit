@@ -148,7 +148,15 @@ actual fun CameraViewfinderDialog(
     }
 
     LaunchedEffect(session) {
-        val found = withTimeoutOrNull(CATALOG_TIMEOUT_MS) { SensorModule.cameraLensCatalog.lenses() }.orEmpty()
+        // A plain LaunchedEffect: an uncaught Throwable here kills the Android process.
+        val found = try {
+            withTimeoutOrNull(CATALOG_TIMEOUT_MS) { SensorModule.cameraLensCatalog.lenses() }.orEmpty()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            logger.warn("Lens catalog failed: ${e::class.simpleName}")
+            emptyList()
+        }
         lenses = found
         session.requestLens(initialLens(found, savedLensId))
     }
@@ -396,6 +404,7 @@ private suspend fun takePhotoAndProcess(
 ): Result<PlatformImageFile> {
     val capturesDir = File(context.cacheDir, "captures").also { it.mkdirs() }
     val outputFile = File(capturesDir, "${UUID.randomUUID()}.jpg")
+    var delivered = false
     val capturedAt = System.currentTimeMillis()
     val outputOptions = ImageCapture.OutputFileOptions.Builder(outputFile).build()
     val executor = Executors.newSingleThreadExecutor()
@@ -439,6 +448,7 @@ private suspend fun takePhotoAndProcess(
                 cameraMake = fixResult.cameraMake ?: sensorSnapshot.cameraMake,
                 cameraModel = fixResult.cameraModel ?: sensorSnapshot.cameraModel,
             )
+            delivered = true
             Result.success(PlatformImageFile(
                 path = fixResult.outputPath,
                 mimeType = "image/jpeg",
@@ -460,5 +470,7 @@ private suspend fun takePhotoAndProcess(
         Result.failure(e)
     } finally {
         executor.shutdown()
+        // Unprocessed photos must not linger in cacheDir after a cancel, timeout or failure.
+        if (!delivered) outputFile.delete()
     }
 }

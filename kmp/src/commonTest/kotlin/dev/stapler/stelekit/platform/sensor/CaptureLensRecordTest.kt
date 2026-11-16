@@ -52,6 +52,23 @@ class CaptureLensRecordTest {
         assertEquals(26.0, zoomed.focal35mmEq)
         val otherLens = CaptureLensRecordBuilder.build(selected, 1.0, snapshot(focal = 2.2), shutterNs, null)
         assertNull(otherLens.focal35mmEq)
+        assertEquals(LensRecordSource.SELECTED_LENS, otherLens.source)
+    }
+
+    @Test
+    fun record_should_BeUntrusted_When_ActivePhysicalIdDiffersFromSelectedOrIsUnknown() {
+        val ultraSelected = selected.copy(physicalId = "3")
+        val switched = CaptureLensRecordBuilder.build(ultraSelected, 1.0, snapshot(focal = null, physical = "2"), shutterNs, null)
+        assertEquals(LensRecordSource.SELECTED_LENS, switched.source)
+        assertNull(switched.focal35mmEq)
+        val unknown = CaptureLensRecordBuilder.build(ultraSelected, 1.0, snapshot(physical = null), shutterNs, null)
+        assertEquals(LensRecordSource.SELECTED_LENS, unknown.source)
+        assertNull(unknown.focal35mmEq)
+        val noFocal = CaptureLensRecordBuilder.build(selected, 1.0, snapshot(focal = null, physical = "2"), shutterNs, null)
+        assertEquals(LensRecordSource.SELECTED_LENS, noFocal.source)
+        val match = CaptureLensRecordBuilder.build(ultraSelected, 1.0, snapshot(physical = "3"), shutterNs, 5.6)
+        assertEquals(LensRecordSource.PREVIEW_RESULT_AT_SHUTTER, match.source)
+        assertEquals(26.0, match.focal35mmEq)
     }
 
     @Test

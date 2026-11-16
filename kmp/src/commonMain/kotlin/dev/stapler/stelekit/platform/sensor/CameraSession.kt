@@ -108,7 +108,16 @@ class CameraSession(
                 backend.setZoom(target.zoomRatio)
             } else {
                 backend.bind(target)
-                if (target.kind == LensKind.ZOOM_STOP && target.zoomRatio != 1.0) backend.setZoom(target.zoomRatio)
+                if (target.kind == LensKind.ZOOM_STOP && target.zoomRatio != 1.0) {
+                    // The lens is already bound; a zoom failure must not leave `selected` naming the previous lens.
+                    try {
+                        backend.setZoom(target.zoomRatio)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        log("camera zoom lens=${target.id} result=fail:${e::class.simpleName}")
+                    }
+                }
             }
             log("camera bind lens=${target.id} result=ok ms=${clockMs() - started}")
             _state.update { s ->

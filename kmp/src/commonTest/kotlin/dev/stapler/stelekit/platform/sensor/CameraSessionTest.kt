@@ -31,6 +31,7 @@ private class FakeCameraBackend : CameraBackend {
     var unbinds = 0
     var bindDelayMs = 300L
     val failures = mutableMapOf<String, Throwable>()
+    var zoomFailure: Throwable? = null
 
     override suspend fun bind(lens: CameraLens) {
         binds += lens.id
@@ -40,6 +41,7 @@ private class FakeCameraBackend : CameraBackend {
 
     override suspend fun setZoom(ratio: Double) {
         zooms += ratio
+        zoomFailure?.let { throw it }
     }
 
     override fun unbind() {
@@ -97,6 +99,20 @@ class CameraSessionTest {
         }
         assertTrue(log.any { it.startsWith("camera bind lens=1 result=ok ms=") })
         assertFalse(session.state.value.allFailed)
+    }
+
+    @Test
+    fun setZoomFailingAfterBind_should_StillSelectTheBoundLens() = runTest {
+        val backend = FakeCameraBackend()
+        val session = session(backend)
+        session.requestLens(lens("A"))
+        advanceUntilIdle()
+        backend.zoomFailure = IllegalStateException("zoom rejected")
+        session.requestLens(lens("0@2", LensKind.ZOOM_STOP, 2.0, camera = "B"))
+        advanceUntilIdle()
+        assertEquals("0@2", session.state.value.selected?.id)
+        assertTrue(session.state.value.disabled.isEmpty())
+        assertTrue(session.state.value.shutterEnabled)
     }
 
     @Test

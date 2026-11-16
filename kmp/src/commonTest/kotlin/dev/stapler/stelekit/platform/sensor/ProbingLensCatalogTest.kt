@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.platform.sensor
 
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -38,5 +39,30 @@ class ProbingLensCatalogTest {
 
         val throwingTester = ProbingLensCatalog({ listOf(logical) }, { _, _ -> throw SecurityException("denied") }, { log += it })
         assertTrue(throwingTester.lenses().all { it.kind == LensKind.ZOOM_STOP })
+    }
+
+    @Test
+    fun lenses_should_ProbeOnce_AndReuseTheResult_EvenWhenAFirstCallerTimedOut() = runTest {
+        var probes = 0
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val cached = ProbingLensCatalog(
+            { probes++; listOf(logical) },
+            { _, physical -> gate.await(); physical in setOf("2", "3") },
+            { },
+        )
+        assertEquals(null, withTimeoutOrNull(50) { cached.lenses() })
+        gate.complete(Unit)
+        val first = cached.lenses()
+        val second = cached.lenses()
+        assertEquals(1, probes)
+        assertEquals(first, second)
+        assertEquals(3, first.size)
+    }
+
+    @Test
+    fun lenses_should_ReturnEmpty_When_TheClassifierThrows() = runTest {
+        val bad = logical.copy(minZoomRatio = Double.NaN, maxZoomRatio = Double.NaN, focalLengthMm = null)
+        val throwingClassifier = ProbingLensCatalog({ listOf(bad) }, { _, _ -> true }, { }, classify = { error("boom") })
+        assertTrue(throwingClassifier.lenses().isEmpty())
     }
 }
