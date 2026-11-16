@@ -13,6 +13,12 @@ import dev.stapler.stelekit.platform.AtomicWriteMode
 import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import dev.stapler.stelekit.util.ContentHasher
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /** What reading one project's sidecar directory found. */
 sealed interface SidecarRead {
@@ -49,6 +55,21 @@ interface ProjectSidecarStore {
     /** The stored YAML snapshot named by [hash8], or null when absent or unavailable on this platform. */
     suspend fun readSourceSnapshot(slug: String, hash8: String): ByteArray?
 
+    /**
+     * Keeps the pre-conversion sheet [bytes] as `<slug>/backup/<sheetUuid>.v1.json` (temp+rename, then a read-back
+     * sha check). An existing backup is the original and is never overwritten. `backup/` is invisible to [read].
+     */
+    suspend fun writeBackup(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String>
+
+    /**
+     * Keeps a v2 sheet scene the saver could not write as `<slug>/conflicts/<sheetUuid>.v2.conflict-<hash8>.json`.
+     * Unrelated to [writeConflict] (the reconciler's model copy at the slug root). Invisible to [read] and the hash.
+     */
+    suspend fun writeSheetConflictCopy(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String>
+
+    /** Deletes `sheets/<sheetUuid>.v2.json`; the only way a schema-2 file is removed (converter cleanup, restore). */
+    suspend fun deleteV2Sheet(slug: String, sheetUuid: String): Either<DomainError, Unit>
+
     /** Writes queued bundles once the git sync is idle; returns how many were written. */
     suspend fun flushPending(): Int
 
@@ -75,17 +96,26 @@ class FileProjectSidecarStore(
         readLocked(slug)
     }
 
+    /**
+     * Reads the model first and then ONLY the sheet files it references. A file under `sheets/` that no `sheetRef`
+     * names (a staged `.v2.json`, a leftover) is never opened or classified, so it cannot make the project Corrupt
+     * or enter `files` and `bundleHash`; `backup/` and `conflicts/` are never listed.
+     */
     private fun readLocked(slug: String): SidecarRead {
         val d = dir(slug)
         val modelPath = "$d/${SidecarCodec.MODEL_PATH}"
-        val sheetNames = fs.listFiles("$d/${SidecarCodec.SHEETS_DIR}").filter { it.endsWith(".json") }.sorted()
         val model = fs.readFileBytes(modelPath)
         // A model deleted by a torn replace (crash between delete and rename) is Absent: the database restores it.
         if (model == null) return SidecarRead.Absent
         val files = linkedMapOf<String, ByteArray>()
-        val toRead = listOf(SidecarCodec.MODEL_PATH to modelPath) +
-            sheetNames.map { "${SidecarCodec.SHEETS_DIR}/$it" to "$d/${SidecarCodec.SHEETS_DIR}/$it" }
-        for ((rel, abs) in toRead) {
+        when (val state = SidecarClassifier.classifyJson(model)) {
+            SidecarFileState.Absent -> return SidecarRead.Corrupt(CorruptReason.Truncated, modelPath)
+            is SidecarFileState.Corrupt -> return SidecarRead.Corrupt(state.reason, modelPath)
+            is SidecarFileState.Valid -> files[SidecarCodec.MODEL_PATH] = state.bytes
+        }
+        val sheetPaths = referencedSheetPaths(model) ?: return SidecarRead.Corrupt(CorruptReason.InvalidJson, modelPath)
+        for (rel in sheetPaths) {
+            val abs = "$d/$rel"
             when (val state = SidecarClassifier.classifyJson(fs.readFileBytes(abs))) {
                 SidecarFileState.Absent -> return SidecarRead.Corrupt(CorruptReason.Truncated, abs)
                 is SidecarFileState.Corrupt -> return SidecarRead.Corrupt(state.reason, abs)
@@ -93,6 +123,26 @@ class FileProjectSidecarStore(
             }
         }
         return SidecarRead.Present(files)
+    }
+
+    /**
+     * Sorted relative paths of the sheet files [modelBytes] references. A `file` that is not the rule path of its
+     * uuid (`sheets/<uuid>.json` or `sheets/<uuid>.v2.json`), or a uuid that is not one path segment, yields null:
+     * no arbitrary path is read from git-synced input.
+     */
+    private fun referencedSheetPaths(modelBytes: ByteArray): List<String>? = try {
+        val refs = Json.parseToJsonElement(modelBytes.decodeToString()).jsonObject["sheets"]?.jsonArray.orEmpty()
+        refs.map { ref ->
+            val o = ref.jsonObject
+            val uuid = o.getValue("uuid").jsonPrimitive.content
+            if (!SAFE_SEGMENT.matches(uuid)) return null
+            val default = "${SidecarCodec.SHEETS_DIR}/$uuid.json"
+            val file = o["file"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.content ?: default
+            if (file != default && file != "${SidecarCodec.SHEETS_DIR}/$uuid.v2.json") return null
+            file
+        }.distinct().sorted()
+    } catch (_: Exception) {
+        null
     }
 
     override suspend fun write(slug: String, files: Map<String, ByteArray>): SidecarWriteOutcome = mutex.withLock {
@@ -116,8 +166,12 @@ class FileProjectSidecarStore(
             val err = replace("$d/$rel", bytes)
             if (err != null) return SidecarWriteOutcome.Failed(err)
         }
+        // Only unreferenced schema-1 files are swept. A schema-2 file (incl. a staged `<uuid>.v2.json`), a newer or an
+        // unparseable one is left alone: deleteV2Sheet is the only remover. `backup/` and `conflicts/` are never touched.
         for (name in fs.listFiles("$d/${SidecarCodec.SHEETS_DIR}").filter { it.endsWith(".json") }) {
-            if ("${SidecarCodec.SHEETS_DIR}/$name" !in files) fs.deleteFile("$d/${SidecarCodec.SHEETS_DIR}/$name")
+            if ("${SidecarCodec.SHEETS_DIR}/$name" in files) continue
+            val path = "$d/${SidecarCodec.SHEETS_DIR}/$name"
+            if (SidecarClassifier.schemaOf(fs.readFileBytes(path)) == 1L) fs.deleteFile(path)
         }
         return SidecarWriteOutcome.Written
     }
@@ -137,6 +191,45 @@ class FileProjectSidecarStore(
         fs.createDirectory(dir(slug))
         replace(path, model)?.let { return it.left() }
         path.right()
+    }
+
+    override suspend fun writeBackup(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String> = mutex.withLock {
+        val path = "${dir(slug)}/$BACKUP_DIR/$sheetUuid.v1.json"
+        if (unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
+        if (!SAFE_SEGMENT.matches(sheetUuid)) return DomainError.FileSystemError.WriteFailed(path, "unsafe sheet uuid").left()
+        if (fs.fileExists(path)) return path.right()
+        writeVerified(path, bytes)?.let { return it.left() }
+        path.right()
+    }
+
+    override suspend fun writeSheetConflictCopy(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String> = mutex.withLock {
+        val path = "${dir(slug)}/$CONFLICTS_DIR/$sheetUuid.v2.conflict-${ContentHasher.sha256(bytes).take(HASH8)}.json"
+        if (unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
+        if (!SAFE_SEGMENT.matches(sheetUuid)) return DomainError.FileSystemError.WriteFailed(path, "unsafe sheet uuid").left()
+        writeVerified(path, bytes)?.let { return it.left() }
+        path.right()
+    }
+
+    override suspend fun deleteV2Sheet(slug: String, sheetUuid: String): Either<DomainError, Unit> = mutex.withLock {
+        val path = "${dir(slug)}/${SidecarCodec.SHEETS_DIR}/$sheetUuid.v2.json"
+        if (unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
+        if (!SAFE_SEGMENT.matches(sheetUuid)) return DomainError.FileSystemError.WriteFailed(path, "unsafe sheet uuid").left()
+        if (fs.fileExists(path) && !fs.deleteFile(path)) return DomainError.FileSystemError.WriteFailed(path, "delete failed").left()
+        Unit.right()
+    }
+
+    /** Creates the parent directories, writes through temp+rename, then re-reads and compares the sha. */
+    private fun writeVerified(path: String, bytes: ByteArray): DomainError? {
+        val dir = path.substringBeforeLast('/')
+        fs.createDirectory(root())
+        fs.createDirectory(dir.substringBeforeLast('/'))
+        fs.createDirectory(dir)
+        replace(path, bytes)?.let { return it }
+        val back = fs.readFileBytes(path)
+        if (back == null || ContentHasher.sha256(back) != ContentHasher.sha256(bytes)) {
+            return DomainError.FileSystemError.WriteFailed(path, "read-back sha mismatch")
+        }
+        return null
     }
 
     override suspend fun writeSourceSnapshot(slug: String, hash8: String, bytes: ByteArray): SidecarWriteOutcome = mutex.withLock {
@@ -183,5 +276,8 @@ class FileProjectSidecarStore(
         const val ROOT_DIR = "assets/stelekit-sketch"
         const val IGNORE_RULE = "assets/stelekit-sketch/**/*.tmp"
         const val HASH8 = 8
+        const val BACKUP_DIR = "backup"
+        const val CONFLICTS_DIR = "conflicts"
+        private val SAFE_SEGMENT = Regex("[A-Za-z0-9][A-Za-z0-9_-]*")
     }
 }

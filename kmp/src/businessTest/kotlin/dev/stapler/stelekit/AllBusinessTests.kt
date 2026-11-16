@@ -934,6 +934,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.projectbridge.SidecarBundleTest::class,
     dev.stapler.stelekit.projectbridge.SidecarReconcileTest::class,
     dev.stapler.stelekit.projectbridge.ProjectSidecarStoreTest::class,
+    dev.stapler.stelekit.projectbridge.SidecarOldReaderSchemaGateTest::class,
+    dev.stapler.stelekit.projectbridge.SidecarBackupAndStagingTest::class,
     dev.stapler.stelekit.projectbridge.PostSyncProjectJobSidecarTest::class,
     dev.stapler.stelekit.projectbridge.TableParserCharacterizationTest::class,
     dev.stapler.stelekit.db.GraphRegistryKnownScopesTest::class,

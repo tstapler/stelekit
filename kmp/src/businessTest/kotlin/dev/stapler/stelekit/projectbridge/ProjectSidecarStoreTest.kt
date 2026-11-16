@@ -17,7 +17,7 @@ import kotlin.test.assertTrue
 class ProjectSidecarStoreTest {
     private val slug = "proj-0a1b2c"
     private val files = mapOf(
-        "project-model.json" to "{\"schema\":1}".encodeToByteArray(),
+        "project-model.json" to "{\"schema\":1,\"sheets\":[{\"uuid\":\"s1\"}]}".encodeToByteArray(),
         "sheets/s1.json" to "{\"schema\":1}".encodeToByteArray(),
     )
 

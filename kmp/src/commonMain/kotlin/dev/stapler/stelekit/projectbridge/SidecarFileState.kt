@@ -42,6 +42,14 @@ object SidecarClassifier {
         return SidecarFileState.Valid(bytes)
     }
 
+    /** The `schema` number of a parseable JSON object, or null when [bytes] is absent, unparseable or has none. */
+    fun schemaOf(bytes: ByteArray?): Long? = try {
+        (parser.parseToJsonElement(bytes?.decodeToString(throwOnInvalidSequence = true) ?: return null) as? JsonObject)
+            ?.get("schema")?.jsonPrimitive?.longOrNull
+    } catch (_: Exception) {
+        null
+    }
+
     /** Classifies a text snapshot (`sources/yaml-*.yaml`): UTF-8 and conflict markers only. */
     fun classifyText(bytes: ByteArray?): SidecarFileState {
         if (bytes == null) return SidecarFileState.Absent
