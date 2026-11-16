@@ -99,6 +99,39 @@ kt_android_library(
     visibility = ["//kmp/src:__subpackages__"],
 )
 
+# sketch_chrome_fixture — the generated ChromeTableFixture.kt and its parser, in their OWN target with no @Test
+# class: bundling *Test.kt files here would pollute the classpath-scanning guard (AllBusinessTestsCompletenessTest).
+# Consumers: business_common_tests (ChromeTableFixtureTest, and later BannerCandidateTest/ChromeBudgetPolicyTest)
+# and, from Task 3.6.4e, jvm_tests and android_unit_tests.
+kt_jvm_library(
+    name = "sketch_chrome_fixture",
+    srcs = [
+        "dev/stapler/stelekit/sketch/v2/ChromeTableFixture.kt",
+        "dev/stapler/stelekit/sketch/v2/ChromeTableParser.kt",
+    ],
+    testonly = True,
+    kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
+    deps = ["@maven//:org_jetbrains_kotlin_kotlin_stdlib"],
+    visibility = ["//kmp/src:__subpackages__"],
+)
+
+# Same sources for android_unit_tests, compiled against android_main like fake_file_system_android.
+kt_android_library(
+    name = "sketch_chrome_fixture_android",
+    srcs = [
+        "dev/stapler/stelekit/sketch/v2/ChromeTableFixture.kt",
+        "dev/stapler/stelekit/sketch/v2/ChromeTableParser.kt",
+    ],
+    custom_package = "dev.stapler.stelekit.sketch.v2",
+    testonly = True,
+    kotlinc_opts = "//:kmp_android_kotlinc_opts",
+    visibility = ["//kmp/src/androidUnitTest/kotlin:__pkg__"],
+    deps = [
+        "//kmp/src/androidMain/kotlin:android_main",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+    ],
+)
+
 # business_common_tests — commonTest sources that businessTest compiles against (MergeFixtures)
 # or registers in AllBusinessTests (CaptureTargetResolverTest, PageSelectionTest). Only business_tests
 # should depend on this: jvm_tests has no completeness guard but would also pick up these classes.
@@ -191,6 +224,9 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/SketchSheetPropsTest.kt",
         "dev/stapler/stelekit/sketch/v2/DeterminismSpikeTest.kt",
         "dev/stapler/stelekit/sketch/v2/FloatDriftSpikeTest.kt",
+        "dev/stapler/stelekit/sketch/v2/ChromeTableFixtureTest.kt",
+        "dev/stapler/stelekit/sketch/v2/KeymapSpecTest.kt",
+        "dev/stapler/stelekit/sketch/v2/TextWrapTest.kt",
         "dev/stapler/stelekit/sketch/constraints/SolverSpikeTest.kt",
         "dev/stapler/stelekit/sketch/constraints/LinalgPropertyTest.kt",
         "dev/stapler/stelekit/ui/library/LibraryFilterRulesPropertyTest.kt",
@@ -217,6 +253,7 @@ kt_jvm_library(
     testonly = True,
     kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
     deps = [
+        ":sketch_chrome_fixture",
         "//kmp/src/jvmMain/kotlin:jvm_main_lib",
         "@maven//:io_kotest_kotest_property_jvm",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",

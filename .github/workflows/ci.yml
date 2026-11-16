@@ -199,6 +199,18 @@ jobs:
           if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then BASE_SHA=HEAD~1; fi
           python3 scripts/ci/private-string-guard.py --diff-base "$BASE_SHA"
 
+  sketch-chrome-fixture:
+    name: Sketch chrome fixture (ux.md sync)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generator self-test
+        run: python3 scripts/sketch-chrome/gen-chrome-fixture.py --selftest
+
+      - name: Committed fixture matches ux.md
+        run: python3 scripts/sketch-chrome/gen-chrome-fixture.py --check
+
   reachability:
     name: Reachability (baseline ratchet)
     runs-on: ubuntu-latest
