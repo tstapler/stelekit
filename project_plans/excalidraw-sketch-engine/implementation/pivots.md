@@ -44,3 +44,19 @@ Notes:
   comparison the rule asks for, but a real browser on a device may differ. The owner can reverse the entry once a faster Sketchy build measures at or under 2x.
 - `StrokeStyleProvider.forTarget` has no production caller yet, so this switch changes no runtime behaviour until the renderer is wired to a target.
 
+
+## Task 6.2.9d - .excalidraw fidelity (Story 5.1.3)
+
+Trigger (requirements.md "Abort and pivot criteria"): fewer than all six hand-authored fixtures round-trip with exact geometry for the supported subset.
+Switch when it fires: the failing fixtures' element kinds leave the stated supported subset (importer placeholders per OD-6 apply); with four or fewer of six
+passing, import ships labelled "beta" and export stays off by default until fixed; the owner, not the implementer, then amends metric 7.
+The rule is `FidelityCheckpoint` (`sketch/v2/diagnostics/FidelityCheckpoint.kt`, `FidelityCheckpointTest`); rerun it with each new set of results.
+
+| Fixture set | Result | Source | Outcome |
+|---|---|---|---|
+| Six hand-authored fixtures (shapes-text, bound-arrows, frame-group, image, freedraw, legacy-binding), JVM | 6 of 6 import, export and re-import with the second scene equal to the first (kinds, geometry, text, bindings, z-order, `extras`) | `FixtureRoundTripTest`, 3 tests PASSED, 2026-11-16 | PROCEED on hand-authored fixtures |
+| Real Excalidraw exports (Task 0.1.5d) | not supplied | owner-run | UNMEASURED: no outcome is claimed against real exports |
+
+Notes:
+- The fixtures were authored from Excalidraw v0.18.1 `types.ts`, so passing shows the exporter and importer agree with each other and with that reading of the format, not with files real Excalidraw writes. The pivot is re-evaluated when real exports exist.
+- The six fixtures are asserted inside three tests, not one test per fixture, so a failure names the fixture in the assertion message rather than in the test name.
