@@ -88,6 +88,8 @@ class ScenarioRectTool : DragGestureTool() {
 object ToolScenarioCatalog {
     val covered: Map<ToolId, List<String>> = mapOf(
         ToolId.Rectangle to listOf("ToolCancelTest"),
+        ToolId.Text to listOf("TextToolTest"),
+        ToolId.Image to listOf("ImageToolTest"),
     )
 
     /** May only shrink: when a tool gains a scenario test, move it to [covered] and delete its line here. */
@@ -102,8 +104,6 @@ object ToolScenarioCatalog {
         ToolId.Point to "3.2.4",
         ToolId.Arc to "3.2.4",
         ToolId.Arrow to "3.3.1",
-        ToolId.Text to "3.4.1",
         ToolId.Freedraw to "3.4.2",
-        ToolId.Image to "3.4.3",
     )
 }
