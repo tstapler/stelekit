@@ -62,18 +62,21 @@ class CameraSession(
     private val scope = CoroutineScope(
         SupervisorJob() + dispatcher + CoroutineExceptionHandler { _, t -> log("camera session crashed: ${t::class.simpleName}") },
     )
-    private val requests = Channel<Pair<Long, CameraLens>>(Channel.CONFLATED)
+    private val requests = Channel<LensRequest>(Channel.CONFLATED)
     private val _state = MutableStateFlow(CameraSessionState())
     val state: StateFlow<CameraSessionState> = _state.asStateFlow()
 
     init {
-        scope.launch { for ((seq, target) in requests) process(seq, target) }
+        scope.launch { for (request in requests) process(request) }
     }
 
-    /** Selects [lens]; the shutter is disabled immediately and until the latest request has been handled. */
-    fun requestLens(lens: CameraLens) {
+    /**
+     * Selects [lens]; the shutter is disabled immediately and until the latest request has been handled.
+     * [forceRebind] rebinds even a zoom-only change, for when something outside the session released the camera.
+     */
+    fun requestLens(lens: CameraLens, forceRebind: Boolean = false) {
         val seq = _state.updateAndGetSeq()
-        requests.trySend(seq to lens)
+        requests.trySend(LensRequest(seq, lens, forceRebind))
     }
 
     /** A token while the shutter is enabled, else null. */
@@ -93,11 +96,15 @@ class CameraSession(
         return seq
     }
 
-    private suspend fun process(seq: Long, target: CameraLens) {
+    private class LensRequest(val seq: Long, val lens: CameraLens, val force: Boolean)
+
+    private suspend fun process(request: LensRequest) {
+        val seq = request.seq
+        val target = request.lens
         val previous = _state.value.selected
         val started = clockMs()
         try {
-            if (previous != null && previous.isZoomOnlyChange(target)) {
+            if (previous != null && !request.force && previous.isZoomOnlyChange(target)) {
                 backend.setZoom(target.zoomRatio)
             } else {
                 backend.bind(target)

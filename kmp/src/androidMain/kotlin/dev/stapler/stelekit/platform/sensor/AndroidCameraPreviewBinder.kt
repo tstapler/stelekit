@@ -1,7 +1,6 @@
 package dev.stapler.stelekit.platform.sensor
 
 import android.content.Context
-import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
@@ -51,7 +50,7 @@ internal class AndroidCameraPreviewBinder(private val context: Context) {
         val preview = Preview.Builder().build().apply { setSurfaceProvider(surfaceProvider) }
         // No unbindAll() here — see class KDoc: this must compose with the concurrently-bound
         // ImageAnalysis from AndroidCameraFrameSource's scan pipeline, not tear it down.
-        provider.bindToLifecycle(ProcessLifecycleOwner.get(), CameraSelector.DEFAULT_BACK_CAMERA, preview)
+        provider.bindToLifecycle(ProcessLifecycleOwner.get(), defaultBackSelector(), preview)
         return preview
     }
 

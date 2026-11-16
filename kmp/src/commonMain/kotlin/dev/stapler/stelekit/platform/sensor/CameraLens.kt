@@ -49,3 +49,10 @@ data class CameraLens(
     val secondaryLabel: String?,
     val hint: String?,
 )
+
+/** Stands in before the catalog has answered, or when it finds no lens: the platform's default back camera at 1x. */
+fun defaultBackLens(): CameraLens = CameraLens(
+    id = "default", cameraId = "", physicalId = null, facing = LensFacing.BACK, focalLengthMm = null, focal35mmEq = null,
+    zoomRatio = 1.0, labelRatio = 1.0, isLogicalMulti = false, kind = LensKind.WIDE, optical = true,
+    label = "1x", secondaryLabel = null, hint = null,
+)
