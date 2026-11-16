@@ -338,6 +338,10 @@ class AnnotationEditorViewModel(
     // Rows this session added or deleted; a late initial load must not re-add them (e.g. after undo).
     private val sessionTouched = Atomic<Set<String>>(emptySet())
 
+    // Rows deleted this session. StateFlow CAS compares by equality, so a delete that changes nothing can't
+    // invalidate an in-flight load merge computed from a stale [sessionTouched]; the load re-applies this after merging.
+    private val sessionDeleted = Atomic<Set<String>>(emptySet())
+
     // True when the initial load failed: a bulk replace would wipe rows that were never shown.
     private val loadFailed = AtomicBoolean(false)
 
@@ -599,6 +603,11 @@ class AnnotationEditorViewModel(
                             sessionTouched.value,
                         ),
                     )
+                }
+                val persistedUuids = list.mapTo(HashSet()) { it.uuid }
+                _state.update { cur ->
+                    val deleted = sessionDeleted.value
+                    cur.copy(committedAnnotations = cur.committedAnnotations.filterNot { it.uuid in deleted && it.uuid in persistedUuids })
                 }
             }
         }
@@ -1243,6 +1252,7 @@ class AnnotationEditorViewModel(
 
         // Before the state change, so a load landing in between can't re-add the row.
         sessionTouched.getAndUpdate { it + uuid }
+        sessionDeleted.getAndUpdate { it + uuid }
         _state.update { currentSt ->
             currentSt.copy(
                 committedAnnotations = currentSt.committedAnnotations.filter { it.uuid != uuid },

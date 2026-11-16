@@ -172,4 +172,21 @@ class AnnotationEditorPersistenceTest {
         assertTrue(vm.state.value.committedAnnotations.none { it.uuid == "old-1" })
         vm.close()
     }
+
+    /** The delete lands between the late load's read of the touched set and its state update; many rounds to hit that window. */
+    @Test
+    fun deleteAnnotation_should_NotResurrectRow_When_LoadRacesTheDelete() = await {
+        repeat(STRESS_ROUNDS) { round ->
+            val vm = newViewModel(RecordingRepository(loadResult = listOf(persisted("old-1")).right()))
+            vm.deleteAnnotation("old-1")
+            vm.resolveBack()
+            kotlinx.coroutines.delay(2)
+            assertTrue(vm.state.value.committedAnnotations.none { it.uuid == "old-1" }, "row resurrected in round $round")
+            vm.close()
+        }
+    }
+
+    private companion object {
+        const val STRESS_ROUNDS = 1500
+    }
 }
