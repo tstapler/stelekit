@@ -29,6 +29,8 @@ data class RawPointer(
     val palm: Boolean = false,
     val modifiers: Modifiers = Modifiers.None,
     val timestamp: Long = 0L,
+    /** 2 for the second press of a double click (the platform's own count), else 1. */
+    val clickCount: Int = 1,
 )
 
 enum class WheelUnit { Pixel, Line, Page }
@@ -240,7 +242,7 @@ class SketchPointerAdapter(
     private fun toolInput(p: RawPointer, type: InputType, override: ToolId?): PointerAction.ToolInput {
         val pressure = if (p.kind == PointerKind.Stylus || p.kind == PointerKind.Eraser) p.pressure else null
         return PointerAction.ToolInput(
-            InputEvent(type, viewport.toScene(p.position), pressure, p.kind, p.id, p.timestamp, p.modifiers),
+            InputEvent(type, viewport.toScene(p.position), pressure, p.kind, p.id, p.timestamp, p.modifiers, p.clickCount),
             override,
         )
     }

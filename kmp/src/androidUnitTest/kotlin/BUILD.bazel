@@ -49,6 +49,7 @@ kt_android_library(
             "**/LayersPanelTest.kt",
             "**/StylePanelTest.kt",
             "**/ShortcutsSheetTest.kt",
+            "**/ElementsPanelTest.kt",
             # Compose host tests and commonTest-fixture pixel test for the v2 strip, shell and painter (Gradle-only)
             "**/ToolStripTest.kt",
             "**/AdaptiveStateSurvivalTest.kt",

@@ -56,6 +56,10 @@ interface StrokeStyleProvider {
             RenderStyle.Clean -> CleanStrokeStyle
             RenderStyle.Sketchy -> SketchyStrokeStyle
         }
+
+        /** [forStyle] after the target's Sketchy availability: a target that cannot draw Sketchy gets Clean (Story 2.2.3). */
+        fun forTarget(style: RenderStyle, availability: SketchyAvailability, target: SketchTarget): StrokeStyleProvider =
+            forStyle(availability.effective(style, target))
     }
 }
 

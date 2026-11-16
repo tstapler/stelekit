@@ -8,11 +8,9 @@ import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.index.Bounds
 import dev.stapler.stelekit.sketch.v2.index.ElementBounds
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
-import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.BoxElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.EllipseElement
-import dev.stapler.stelekit.sketch.v2.scene.FrameElement
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
@@ -125,6 +123,7 @@ class SelectTool(
         val group = groupOf(hit, ctx)
         val next = when {
             event.modifiers.shift -> if (hit in selection) selection - group.toSet() else selection + group.filter { it !in selection }
+            event.clickCount >= DOUBLE_CLICK -> descend(hit, ctx) ?: if (hit in selection) selection else group
             hit in selection -> selection
             else -> group
         }
@@ -135,6 +134,21 @@ class SelectTool(
     private fun groupOf(hit: ElementId, ctx: ToolContext): List<ElementId> {
         val outer = ctx.scene[hit]?.base?.groupIds?.lastOrNull() ?: return listOf(hit)
         return ctx.scene.elementsInOrder.filter { outer in it.base.groupIds && Selectability.isSelectable(ctx.scene, it) }.map { it.id }
+    }
+
+    /**
+     * Double-click on a grouped element (UX-11): when the selection is exactly one group level of [hit], the next level
+     * in (or [hit] alone below the innermost group); null when the selection is not a group level of [hit].
+     */
+    private fun descend(hit: ElementId, ctx: ToolContext): List<ElementId>? {
+        val outermostFirst = ctx.scene[hit]?.base?.groupIds?.asReversed().orEmpty()
+        val levels = outermostFirst.map { g -> ctx.scene.elementsInOrder.filter { g in it.base.groupIds && Selectability.isSelectable(ctx.scene, it) }.map { it.id } }
+        val at = levels.indexOfFirst { it.toSet() == selection.toSet() }
+        return when {
+            at < 0 -> null
+            at + 1 < levels.size -> levels[at + 1]
+            else -> listOf(hit)
+        }
     }
 
     // ---- states ----------------------------------------------------------------------------------------------------
@@ -311,6 +325,9 @@ class SelectTool(
     companion object {
         /** Pointer travel, in screen pixels, below which a press and release is a click rather than a drag. */
         const val DRAG_THRESHOLD_PX = 4.0
+
+        /** The platform click count that means "descend one group level". */
+        const val DOUBLE_CLICK = 2
 
         /** Ctrl+D copies land this many scene units (one inch) down and to the right of the originals. */
         const val DUPLICATE_OFFSET = 16.0

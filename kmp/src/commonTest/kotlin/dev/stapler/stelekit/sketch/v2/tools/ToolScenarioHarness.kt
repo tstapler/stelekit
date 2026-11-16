@@ -30,12 +30,12 @@ class ScenarioBuilder internal constructor() {
 
     private fun at(x: Int, y: Int) = ScenePoint(SceneUnit.ofInt(x), SceneUnit.ofInt(y))
 
-    private fun add(type: InputType, x: Int, y: Int, pointer: Int, kind: PointerKind, mods: Modifiers = Modifiers.None, pressure: Double? = null) {
-        events += InputEvent(type, at(x, y), pressure, kind, pointer, clock++, mods)
+    private fun add(type: InputType, x: Int, y: Int, pointer: Int, kind: PointerKind, mods: Modifiers = Modifiers.None, pressure: Double? = null, clicks: Int = 1) {
+        events += InputEvent(type, at(x, y), pressure, kind, pointer, clock++, mods, clicks)
     }
 
-    fun down(x: Int, y: Int, pointer: Int = InputEvent.PRIMARY_POINTER, kind: PointerKind = PointerKind.Mouse, mods: Modifiers = Modifiers.None, pressure: Double? = null) =
-        add(InputType.Down, x, y, pointer, kind, mods, pressure)
+    fun down(x: Int, y: Int, pointer: Int = InputEvent.PRIMARY_POINTER, kind: PointerKind = PointerKind.Mouse, mods: Modifiers = Modifiers.None, pressure: Double? = null, clicks: Int = 1) =
+        add(InputType.Down, x, y, pointer, kind, mods, pressure, clicks)
     fun move(x: Int, y: Int, pointer: Int = InputEvent.PRIMARY_POINTER, kind: PointerKind = PointerKind.Mouse, mods: Modifiers = Modifiers.None, pressure: Double? = null) =
         add(InputType.Move, x, y, pointer, kind, mods, pressure)
     fun up(x: Int, y: Int, pointer: Int = InputEvent.PRIMARY_POINTER, kind: PointerKind = PointerKind.Mouse, mods: Modifiers = Modifiers.None, pressure: Double? = null) =

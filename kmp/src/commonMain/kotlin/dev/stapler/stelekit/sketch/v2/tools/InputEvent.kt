@@ -41,6 +41,8 @@ data class InputEvent(
     val pointerId: Int = PRIMARY_POINTER,
     val timestamp: Long = 0L,
     val modifiers: Modifiers = Modifiers.None,
+    /** 2 on the second press of a double click or double tap; the platform counts, the tools only read it (UX-11). */
+    val clickCount: Int = 1,
 ) {
     init {
         require(pressure?.isFinite() ?: true) { "pressure must be finite" }
