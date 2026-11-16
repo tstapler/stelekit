@@ -31,13 +31,16 @@ fun defaultCameraLensCatalog(
 ): CameraLensCatalog = ProbingLensCatalog(source, bindTester)
 
 /** Reads rear-camera facts from Camera2, keeping only ids CameraX can also bind. Every characteristic may be absent. */
-class Camera2LensInfoSource(private val context: Context) : LensInfoSource {
+class Camera2LensInfoSource(
+    private val context: Context,
+    private val bindableIds: suspend () -> Set<String>? = { cameraXIds(context) },
+) : LensInfoSource {
     override suspend fun readInfos(): List<CameraLensInfo> {
         val infos = withContext(PlatformDispatcher.IO) {
             val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
             manager.cameraIdList.mapNotNull { id -> infoOf(manager, id) }
         }
-        val bindable = cameraXIds() ?: return infos
+        val bindable = bindableIds() ?: return infos
         return infos.filter { it.cameraId in bindable }
     }
 
@@ -83,15 +86,15 @@ class Camera2LensInfoSource(private val context: Context) : LensInfoSource {
         val digital = c.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM) ?: return null
         return 1.0 to digital.toDouble()
     }
+}
 
-    private suspend fun cameraXIds(): Set<String>? = try {
-        val provider = ProcessCameraProvider.getInstance(context).await(context)
-        withContext(Dispatchers.Main) { provider.availableCameraInfos.mapNotNull { safeCameraId(it) }.toSet() }
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Throwable) {
-        null
-    }
+private suspend fun cameraXIds(context: Context): Set<String>? = try {
+    val provider = ProcessCameraProvider.getInstance(context).await(context)
+    withContext(Dispatchers.Main) { provider.availableCameraInfos.mapNotNull { safeCameraId(it) }.toSet() }
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Throwable) {
+    null
 }
 
 /**

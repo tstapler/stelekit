@@ -105,6 +105,12 @@ class ImageSidecarManager(
     fun readLensRecord(notesPath: EffectiveNotesPath, uuid: String): CaptureLensRecord? =
         storedLensRecord(fileSystem.readFile(sidecarPath(notesPath, uuid)))?.toDomain()
 
+    /** [readLensRecord] for [annotation], read off the caller's thread. */
+    suspend fun lensRecordFor(annotation: ImageAnnotation): CaptureLensRecord? =
+        kotlinx.coroutines.withContext(dev.stapler.stelekit.coroutines.PlatformDispatcher.IO) {
+            readLensRecord(EffectiveNotesPath(annotation.graphPath), annotation.uuid)
+        }
+
     private fun storedLensRecord(text: String?): SidecarLensRecord? {
         if (text.isNullOrBlank()) return null
         return try {

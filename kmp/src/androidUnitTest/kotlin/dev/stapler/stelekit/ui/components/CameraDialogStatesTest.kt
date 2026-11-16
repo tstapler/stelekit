@@ -53,6 +53,28 @@ class CameraDialogStatesTest {
     }
 
     @Test
+    fun statusLine_should_ShowItsText() {
+        rule.setContent { CameraStatusLine("Lens unavailable") }
+        rule.onNodeWithText("Lens unavailable").assertIsDisplayed()
+    }
+
+    @Test
+    fun chips_should_ShowProgressOnTheBindingChip_AndDisableOthers() {
+        val lenses = LensClassifier.classify(
+            listOf(
+                CameraLensInfo("0", LensFacing.BACK, 5.6, 6.4, 4.8, minZoomRatio = 1.0, maxZoomRatio = 8.0),
+            ),
+        )
+        var picked: String? = null
+        rule.setContent {
+            CameraLensChips(lenses, selectedId = lenses.first().id, disabledReasons = emptyMap(), bindingId = lenses.last().id,
+                enabled = false, onSelect = { picked = it.id })
+        }
+        rule.onNodeWithText(lenses.first().label, substring = true).assertIsDisplayed()
+        assertEquals(null, picked)
+    }
+
+    @Test
     fun hint_should_BeDismissible() {
         var dismissed = false
         rule.setContent { WideAngleHint(onDismiss = { dismissed = true }) }

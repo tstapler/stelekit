@@ -65,4 +65,21 @@ class CaptureLensSidecarTest {
         assertEquals(2, manager.readSidecar(notes, "lensimg1").getOrNull()!!.schemaVersion)
         assertTrue(fs.readFile(manager.sidecarPath(notes, "lensimg1"))!!.contains("\"lensRecord\""))
     }
+
+    @Test
+    fun readLensRecord_should_ReturnNull_When_TheSidecarIsMalformed_AndDefaultSourceWhenAbsent() {
+        fs.writeFile(manager.sidecarPath(notes, "badimg01"), "{ this is not json")
+        assertNull(manager.readLensRecord(notes, "badimg01"))
+
+        manager.writeSidecar(image(record), emptyList())
+        val path = manager.sidecarPath(notes, "lensimg1")
+        fs.writeFile(path, fs.readFile(path)!!.replace(Regex("\\s*\"source\"\\s*:\\s*\"[A-Z_]+\",?"), ""))
+        assertEquals(LensRecordSource.SELECTED_LENS, manager.readLensRecord(notes, "lensimg1")?.source)
+    }
+
+    @Test
+    fun lensRecordFor_should_ReadTheRecordOffTheCallingThread() = kotlinx.coroutines.runBlocking {
+        manager.writeSidecar(image(record), emptyList())
+        assertEquals(record, manager.lensRecordFor(image(null)))
+    }
 }

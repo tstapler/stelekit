@@ -78,5 +78,7 @@ class CaptureLensRecordTest {
         holder.update(snapshot(atNs = 1))
         holder.update(snapshot(atNs = 2))
         assertEquals(2L, holder.latest()?.timestampNs)
+        holder.clear()
+        assertNull(holder.latest())
     }
 }

@@ -4,7 +4,9 @@
 
 package dev.stapler.stelekit.platform.sensor
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
+import kotlin.test.assertFailsWith
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -37,8 +39,17 @@ class ProbingLensCatalogTest {
         assertTrue(broken.lenses().isEmpty())
         assertTrue(log.any { it.contains("IllegalStateException") })
 
-        val throwingTester = ProbingLensCatalog({ listOf(logical) }, { _, _ -> throw SecurityException("denied") }, { log += it })
+        val throwingTester = ProbingLensCatalog({ listOf(logical) }, { _, _ -> throw UnsupportedOperationException("denied") }, { log += it })
         assertTrue(throwingTester.lenses().all { it.kind == LensKind.ZOOM_STOP })
+    }
+
+    @Test
+    fun noOpCatalog_should_ListNoLenses_AndDefaultLensIsTheMainBackCamera() = runTest {
+        assertTrue(NoOpCameraLensCatalog().lenses().isEmpty())
+        val default = defaultBackLens()
+        assertEquals(LensKind.WIDE, default.kind)
+        assertEquals(LensFacing.BACK, default.facing)
+        assertEquals(1.0, default.zoomRatio)
     }
 
     @Test
@@ -83,5 +94,11 @@ class ProbingLensCatalogTest {
     fun lenses_should_TreatASlowBindTestAsFailed() = runTest {
         val slow = ProbingLensCatalog({ listOf(logical) }, { _, _ -> kotlinx.coroutines.awaitCancellation() }, { }, bindTimeoutMs = 50)
         assertTrue(slow.lenses().all { it.kind == LensKind.ZOOM_STOP })
+    }
+
+    @Test
+    fun lenses_should_NotSwallowACancellationFromTheSource() = runTest {
+        val cancelled = ProbingLensCatalog({ throw CancellationException("stop") }, { _, _ -> true }, { })
+        assertFailsWith<CancellationException> { cancelled.lenses() }
     }
 }

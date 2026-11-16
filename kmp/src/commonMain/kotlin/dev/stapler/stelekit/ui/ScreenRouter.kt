@@ -544,13 +544,7 @@ internal fun ScreenRouter(
                                     annotationEditorViewModel.initialize(annotation)
                                     // The DB row has no lens record; the sidecar does (Task 3.9c).
                                     annotationEditorViewModel.setLensRecord(
-                                        kotlinx.coroutines.withContext(dev.stapler.stelekit.coroutines.PlatformDispatcher.IO) {
-                                            fileSystem?.let { fs ->
-                                                dev.stapler.stelekit.db.sidecar.ImageSidecarManager(fs).readLensRecord(
-                                                    dev.stapler.stelekit.model.EffectiveNotesPath(annotation.graphPath), annotation.uuid,
-                                                )
-                                            }
-                                        },
+                                        fileSystem?.let { dev.stapler.stelekit.db.sidecar.ImageSidecarManager(it).lensRecordFor(annotation) },
                                     )
                                 }
                             }

@@ -6,6 +6,7 @@ package dev.stapler.stelekit.platform.sensor
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -84,7 +85,7 @@ class CameraSessionTest {
         val session = session(backend, log)
         val failures = listOf(
             "3" to IllegalArgumentException("no such lens"),
-            "4" to SecurityException("denied"),
+            "4" to UnsupportedOperationException("denied"),
             "5" to IllegalStateException("camera in use"),
         )
         failures.forEach { backend.failures[it.first] = it.second }
@@ -113,6 +114,28 @@ class CameraSessionTest {
         assertEquals("0@2", session.state.value.selected?.id)
         assertTrue(session.state.value.disabled.isEmpty())
         assertTrue(session.state.value.shutterEnabled)
+    }
+
+    @Test
+    fun session_should_WorkWithItsDefaultDispatcherClockAndLogger() = runTest {
+        val session = CameraSession(FakeCameraBackend().also { it.bindDelayMs = 0 })
+        session.requestLens(lens("A"))
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            kotlinx.coroutines.withTimeout(5_000) { session.state.first { it.selected != null } }
+        }
+        assertEquals("A", session.state.value.selected?.id)
+        session.close()
+    }
+
+    @Test
+    fun cancellationFromSetZoom_should_NotBeLoggedAsAZoomFailure() = runTest {
+        val backend = FakeCameraBackend()
+        val log = mutableListOf<String>()
+        val session = session(backend, log)
+        backend.zoomFailure = CancellationException("stop")
+        session.requestLens(lens("0@2", LensKind.ZOOM_STOP, 2.0, camera = "B"))
+        advanceUntilIdle()
+        assertTrue(log.none { it.startsWith("camera zoom") })
     }
 
     @Test
