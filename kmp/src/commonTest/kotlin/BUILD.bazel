@@ -301,6 +301,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/SpatialIndexPropertyTest.kt",
         "dev/stapler/stelekit/sketch/v2/HitTesterTest.kt",
         "dev/stapler/stelekit/sketch/v2/CanvasPerfCheckpointTest.kt",
+        "dev/stapler/stelekit/sketch/v2/RestoreBackupActionTest.kt",
         "dev/stapler/stelekit/sketch/v2/ConstraintTargetTest.kt",
         "dev/stapler/stelekit/sketch/v2/PartHitTesterTest.kt",
         "dev/stapler/stelekit/sketch/v2/SetDimensionValueTest.kt",

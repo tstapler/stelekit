@@ -57,6 +57,12 @@ class ScriptedSidecarStore(var latency: suspend () -> Unit = {}, val onWrite: ()
 
     override suspend fun writeBackup(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String> = "backup".right()
 
+    override suspend fun readBackup(slug: String, sheetUuid: String): ByteArray? = null
+
+    override suspend fun writeV2BeforeRestore(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String> = "backup".right()
+
+    override suspend fun deleteBackups(slug: String): Either<DomainError, Int> = 0.right()
+
     override suspend fun writeSheetConflictCopy(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String> {
         conflictCopies += bytes
         return "conflicts/$sheetUuid.v2.conflict-${ContentHasher.sha256(bytes).take(HASH8)}.json".right()

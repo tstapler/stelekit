@@ -75,6 +75,18 @@ interface ProjectSidecarStore {
      */
     suspend fun writeBackup(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String>
 
+    /** The original v1 sheet kept by [writeBackup]; null when absent, the uuid is unsafe or the platform cannot store it. */
+    suspend fun readBackup(slug: String, sheetUuid: String): ByteArray?
+
+    /**
+     * Keeps the v2 sheet [bytes] a restore is about to replace as `<slug>/backup/<sheetUuid>.v2-before-restore.json`
+     * (temp+rename, read-back checked). Unlike [writeBackup] a later restore replaces it: one copy per sheet.
+     */
+    suspend fun writeV2BeforeRestore(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String>
+
+    /** Deletes every file in this project's `backup/` (the "Delete backups" action); returns how many were deleted. */
+    suspend fun deleteBackups(slug: String): Either<DomainError, Int>
+
     /**
      * Keeps a v2 sheet scene the saver could not write as `<slug>/conflicts/<sheetUuid>.v2.conflict-<hash8>.json`.
      * Unrelated to [writeConflict] (the reconciler's model copy at the slug root). Invisible to [read] and the hash.
@@ -126,36 +138,7 @@ class FileProjectSidecarStore(
 
     override suspend fun read(slug: String): SidecarRead = mutex.withLock {
         if (disk.unavailable()) return SidecarRead.Unavailable
-        readLocked(slug)
-    }
-
-    /**
-     * Reads the model first and then ONLY the sheet files it references. A file under `sheets/` that no `sheetRef`
-     * names (a staged `.v2.json`, a leftover) is never opened or classified, so it cannot make the project Corrupt
-     * or enter `files` and `bundleHash`; `backup/` and `conflicts/` are never listed.
-     */
-    private fun readLocked(slug: String): SidecarRead {
-        val d = disk.dir(slug)
-        val modelPath = "$d/${SidecarCodec.MODEL_PATH}"
-        val model = fs.readFileBytes(modelPath)
-        // A model deleted by a torn replace (crash between delete and rename) is Absent: the database restores it.
-        if (model == null) return SidecarRead.Absent
-        val files = linkedMapOf<String, ByteArray>()
-        when (val state = SidecarClassifier.classifyJson(model, SidecarFileKind.Model)) {
-            SidecarFileState.Absent -> return SidecarRead.Corrupt(CorruptReason.Truncated, modelPath)
-            is SidecarFileState.Corrupt -> return SidecarRead.Corrupt(state.reason, modelPath)
-            is SidecarFileState.Valid -> files[SidecarCodec.MODEL_PATH] = state.bytes
-        }
-        val sheetPaths = ModelSheetRefs.referencedSheetPaths(model) ?: return SidecarRead.Corrupt(CorruptReason.InvalidJson, modelPath)
-        for (rel in sheetPaths) {
-            val abs = "$d/$rel"
-            when (val state = SidecarClassifier.classifyJson(fs.readFileBytes(abs), SidecarFileKind.Sheet)) {
-                SidecarFileState.Absent -> return SidecarRead.Corrupt(CorruptReason.Truncated, abs)
-                is SidecarFileState.Corrupt -> return SidecarRead.Corrupt(state.reason, abs)
-                is SidecarFileState.Valid -> files[rel] = state.bytes
-            }
-        }
-        return SidecarRead.Present(files)
+        disk.readBundle(slug)
     }
 
     override suspend fun write(slug: String, files: Map<String, ByteArray>, opaque: Map<String, String>): SidecarWriteOutcome = mutex.withLock {
@@ -226,6 +209,29 @@ class FileProjectSidecarStore(
         if (fs.fileExists(path)) return path.right()
         disk.writeVerified(path, bytes)?.let { return it.left() }
         path.right()
+    }
+
+    override suspend fun readBackup(slug: String, sheetUuid: String): ByteArray? = mutex.withLock {
+        if (disk.unavailable() || !SAFE_SEGMENT.matches(sheetUuid)) null else fs.readFileBytes("${disk.dir(slug)}/$BACKUP_DIR/$sheetUuid.v1.json")
+    }
+
+    override suspend fun writeV2BeforeRestore(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String> = mutex.withLock {
+        val path = "${disk.dir(slug)}/$BACKUP_DIR/$sheetUuid.v2-before-restore.json"
+        if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
+        if (!SAFE_SEGMENT.matches(sheetUuid)) return DomainError.FileSystemError.WriteFailed(path, "unsafe sheet uuid").left()
+        disk.writeVerified(path, bytes)?.let { return it.left() }
+        path.right()
+    }
+
+    override suspend fun deleteBackups(slug: String): Either<DomainError, Int> = mutex.withLock {
+        val dir = "${disk.dir(slug)}/$BACKUP_DIR"
+        if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(dir).left()
+        var deleted = 0
+        for (name in fs.listFiles(dir)) {
+            if (!fs.deleteFile("$dir/$name")) return DomainError.FileSystemError.WriteFailed("$dir/$name", "delete failed").left()
+            deleted++
+        }
+        deleted.right()
     }
 
     override suspend fun writeSheetConflictCopy(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String> = mutex.withLock {
@@ -363,6 +369,35 @@ private class SidecarDisk(private val fs: FileSystem, private val graphRoot: Str
     fun root() = "${graphRoot.trimEnd('/')}/${FileProjectSidecarStore.ROOT_DIR}"
     fun dir(slug: String) = "${root()}/$slug"
     fun unavailable() = writer.mode(root()) == AtomicWriteMode.UNSUPPORTED
+
+    /**
+     * Reads the model first and then ONLY the sheet files it references. A file under `sheets/` that no `sheetRef`
+     * names (a staged `.v2.json`, a leftover) is never opened or classified, so it cannot make the project Corrupt
+     * or enter `files` and `bundleHash`; `backup/` and `conflicts/` are never listed.
+     */
+    fun readBundle(slug: String): SidecarRead {
+        val d = dir(slug)
+        val modelPath = "$d/${SidecarCodec.MODEL_PATH}"
+        val model = fs.readFileBytes(modelPath)
+        // A model deleted by a torn replace (crash between delete and rename) is Absent: the database restores it.
+        if (model == null) return SidecarRead.Absent
+        val files = linkedMapOf<String, ByteArray>()
+        when (val state = SidecarClassifier.classifyJson(model, SidecarFileKind.Model)) {
+            SidecarFileState.Absent -> return SidecarRead.Corrupt(CorruptReason.Truncated, modelPath)
+            is SidecarFileState.Corrupt -> return SidecarRead.Corrupt(state.reason, modelPath)
+            is SidecarFileState.Valid -> files[SidecarCodec.MODEL_PATH] = state.bytes
+        }
+        val sheetPaths = ModelSheetRefs.referencedSheetPaths(model) ?: return SidecarRead.Corrupt(CorruptReason.InvalidJson, modelPath)
+        for (rel in sheetPaths) {
+            val abs = "$d/$rel"
+            when (val state = SidecarClassifier.classifyJson(fs.readFileBytes(abs), SidecarFileKind.Sheet)) {
+                SidecarFileState.Absent -> return SidecarRead.Corrupt(CorruptReason.Truncated, abs)
+                is SidecarFileState.Corrupt -> return SidecarRead.Corrupt(state.reason, abs)
+                is SidecarFileState.Valid -> files[rel] = state.bytes
+            }
+        }
+        return SidecarRead.Present(files)
+    }
 
     /** True when any opaque path's bytes on disk no longer hash to the sha the writer planned against. */
     fun opaqueChanged(slug: String, opaque: Map<String, String>): Boolean = opaque.any { (rel, sha) ->
