@@ -183,8 +183,10 @@ internal class SyncSingleFlight(
         } finally {
             try {
                 withContext(NonCancellable) {
-                    heartbeat?.cancelAndJoin()
+                    // Counter ends before the join: a suspension here lets a lastSyncAt collector run while still "busy".
+                    heartbeat?.cancel()
                     if (counted) busyCounter.end()
+                    heartbeat?.join()
                     if (claimed && config != null) repository.endOwnedOperation(config)
                 }
             } finally {
