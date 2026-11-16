@@ -4,7 +4,11 @@
 package dev.stapler.stelekit.platform.sensor
 
 import android.content.Context
+import android.hardware.camera2.CaptureResult
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraInfo
+import androidx.camera.core.UseCase
+import androidx.camera.core.impl.CameraInfoInternal
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.CameraState
 import androidx.camera.core.ImageCapture
@@ -15,7 +19,11 @@ import androidx.lifecycle.MutableLiveData
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -92,5 +100,94 @@ class CameraXBackendTest {
 
         val never = MutableLiveData(CameraState.create(CameraState.Type.PENDING_OPEN))
         assertEquals(CameraOpenResult.TIMEOUT, awaitCameraOpen(infoWith(never), 500))
+    }
+
+    private class FakeBinder(private val camera: () -> Camera) : UseCaseBinder {
+        var calls = 0
+        val outcomes = ArrayDeque<Boolean>()
+
+        override fun unbind(vararg useCases: UseCase) = Unit
+
+        override fun bind(owner: LifecycleOwner, selector: CameraSelector, vararg useCases: UseCase): Camera {
+            calls++
+            if (!(outcomes.removeFirstOrNull() ?: true)) error("bind refused")
+            return camera()
+        }
+    }
+
+    private fun fakeCamera(state: CameraState): Camera {
+        val info = infoWith(MutableLiveData(state))
+        return Proxy.newProxyInstance(javaClass.classLoader, arrayOf(Camera::class.java)) { _, method, _ ->
+            if (method.name == "getCameraInfo") info else error("unexpected ${method.name}")
+        } as Camera
+    }
+
+    private fun lens(id: String) = defaultBackLens().copy(id = id, cameraId = "")
+
+    private fun bindWith(binder: FakeBinder): CameraXBackend {
+        val owner = object : LifecycleOwner {
+            override val lifecycle = LifecycleRegistry.createUnsafe(this)
+        }
+        return CameraXBackend(context, owner, Preview.SurfaceProvider { }, binderSource = { binder })
+    }
+
+    @Test
+    fun bind_should_RestoreThePreviousLensOnFailure_AndReportALostPreviousLens() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        try {
+            val binder = FakeBinder { fakeCamera(CameraState.create(CameraState.Type.OPEN)) }
+            val backend = bindWith(binder)
+            backend.bind(lens("a"))
+
+            binder.outcomes.addAll(listOf(false, true))
+            val restored = assertFailsWith<IllegalStateException> { backend.bind(lens("b")) }
+            assertFalse(restored is PreviousLensLostException)
+
+            binder.outcomes.addAll(listOf(false, false))
+            assertFailsWith<PreviousLensLostException> { backend.bind(lens("c")) }
+            assertFailsWith<IllegalStateException> { backend.setZoom(2.0) }
+            backend.unbind()
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun bind_should_FailAndRestore_When_TheCameraReportsAFatalError() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        try {
+            val fatal = CameraState.create(CameraState.Type.CLOSED, CameraState.StateError.create(CameraState.ERROR_CAMERA_FATAL_ERROR))
+            val binder = FakeBinder { fakeCamera(fatal) }
+            val backend = bindWith(binder)
+            assertFailsWith<IllegalStateException> { backend.bind(lens("a")) }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun snapshotFrom_should_MapTheResultKeys() {
+        val reader = object : CaptureResultReader {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T> get(key: CaptureResult.Key<T>): T? = when (key) {
+                CaptureResult.LENS_FOCAL_LENGTH -> 5.6f
+                CaptureResult.LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID -> "2"
+                CaptureResult.CONTROL_ZOOM_RATIO -> 2f
+                else -> null
+            } as T?
+        }
+        val snapshot = snapshotFrom(reader)
+        assertEquals(5.6, snapshot.focalLengthMm!!, 1e-4)
+        assertEquals("2", snapshot.activePhysicalId)
+        assertEquals(2.0, snapshot.zoomRatio!!, 1e-4)
+    }
+
+    @Test
+    fun safeCameraId_should_ReturnNull_ForAnInfoWithoutCamera2Backing() {
+        val info = Proxy.newProxyInstance(javaClass.classLoader, arrayOf(CameraInfoInternal::class.java)) { proxy, method, _ ->
+            if (method.name == "getImplementation") proxy else error("unexpected ${method.name}")
+        } as CameraInfo
+        assertNull(safeCameraId(info))
     }
 }

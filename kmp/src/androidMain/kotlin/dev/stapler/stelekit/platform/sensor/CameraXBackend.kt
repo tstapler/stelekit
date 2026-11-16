@@ -24,6 +24,7 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.CameraState
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
+import androidx.camera.core.UseCase
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
@@ -104,6 +105,9 @@ internal class CameraXBackend(
     private val lifecycleOwner: LifecycleOwner,
     surfaceProvider: Preview.SurfaceProvider,
     val captureResults: CaptureResultHolder = CaptureResultHolder(),
+    private val binderSource: suspend () -> UseCaseBinder = {
+        ProviderBinder(ProcessCameraProvider.getInstance(context).await(context))
+    },
 ) : CameraBackend {
     private val captureCallback = object : CameraCaptureSession.CaptureCallback() {
         override fun onCaptureCompleted(
@@ -131,7 +135,7 @@ internal class CameraXBackend(
         const val OPEN_TIMEOUT_MS = 3_000L
     }
 
-    private var provider: ProcessCameraProvider? = null
+    private var provider: UseCaseBinder? = null
     private var camera: Camera? = null
     private var current: CameraLens? = null
 
@@ -146,12 +150,12 @@ internal class CameraXBackend(
     fun currentZoomRatio(): Double = camera?.cameraInfo?.zoomState?.value?.zoomRatio?.toDouble() ?: 1.0
 
     override suspend fun bind(lens: CameraLens) {
-        val cameraProvider = obtainProvider()
+        val cameraProvider = obtainBinder()
         withContext(Dispatchers.Main) {
             val previous = current
             try {
                 cameraProvider.unbind(preview, imageCapture)
-                val bound = cameraProvider.bindToLifecycle(lifecycleOwner, selectorFor(lens), preview, imageCapture)
+                val bound = cameraProvider.bind(lifecycleOwner, selectorFor(lens), preview, imageCapture)
                 camera = bound
                 // A bad physical id surfaces as a camera-state error after bind returns, not as a throw.
                 check(awaitCameraOpen(bound.cameraInfo, OPEN_TIMEOUT_MS) != CameraOpenResult.ERROR) {
@@ -192,7 +196,7 @@ internal class CameraXBackend(
     }
 
     /** True when the previous lens is running again (or there was none to restore). */
-    private fun restore(cameraProvider: ProcessCameraProvider, previous: CameraLens?): Boolean {
+    private fun restore(cameraProvider: UseCaseBinder, previous: CameraLens?): Boolean {
         if (previous == null) {
             runCatching { cameraProvider.unbind(preview, imageCapture) }
             camera = null
@@ -200,7 +204,7 @@ internal class CameraXBackend(
         }
         return try {
             cameraProvider.unbind(preview, imageCapture)
-            camera = cameraProvider.bindToLifecycle(lifecycleOwner, selectorFor(previous), preview, imageCapture)
+            camera = cameraProvider.bind(lifecycleOwner, selectorFor(previous), preview, imageCapture)
             true
         } catch (e: Throwable) {
             camera = null
@@ -209,22 +213,43 @@ internal class CameraXBackend(
         }
     }
 
-    private suspend fun obtainProvider(): ProcessCameraProvider {
-        provider?.let { return it }
-        val future = ProcessCameraProvider.getInstance(context)
-        return future.await(context).also { provider = it }
-    }
+    private suspend fun obtainBinder(): UseCaseBinder = provider ?: binderSource().also { provider = it }
 
-    private fun snapshotOf(result: TotalCaptureResult) = CaptureResultSnapshot(
-        timestampNs = SystemClock.elapsedRealtimeNanos(),
-        focalLengthMm = result.get(CaptureResult.LENS_FOCAL_LENGTH)?.toDouble(),
-        activePhysicalId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            result.get(CaptureResult.LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID)
-        } else {
-            null
+    private fun snapshotOf(result: TotalCaptureResult) = snapshotFrom(
+        object : CaptureResultReader {
+            override fun <T> get(key: CaptureResult.Key<T>): T? = result.get(key)
         },
-        zoomRatio = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) result.get(CaptureResult.CONTROL_ZOOM_RATIO)?.toDouble() else null,
     )
+}
+
+/** Reads one key of a capture result; a seam so the snapshot mapping needs no real [TotalCaptureResult]. */
+internal interface CaptureResultReader {
+    operator fun <T> get(key: CaptureResult.Key<T>): T?
+}
+
+internal fun snapshotFrom(result: CaptureResultReader) = CaptureResultSnapshot(
+    timestampNs = SystemClock.elapsedRealtimeNanos(),
+    focalLengthMm = result[CaptureResult.LENS_FOCAL_LENGTH]?.toDouble(),
+    activePhysicalId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        result[CaptureResult.LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID]
+    } else {
+        null
+    },
+    zoomRatio = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) result[CaptureResult.CONTROL_ZOOM_RATIO]?.toDouble() else null,
+)
+
+/** The two [ProcessCameraProvider] calls the backend needs, so bind and restore can run against a fake. */
+internal interface UseCaseBinder {
+    fun unbind(vararg useCases: UseCase)
+
+    fun bind(owner: LifecycleOwner, selector: CameraSelector, vararg useCases: UseCase): Camera
+}
+
+private class ProviderBinder(private val provider: ProcessCameraProvider) : UseCaseBinder {
+    override fun unbind(vararg useCases: UseCase) = provider.unbind(*useCases)
+
+    override fun bind(owner: LifecycleOwner, selector: CameraSelector, vararg useCases: UseCase): Camera =
+        provider.bindToLifecycle(owner, selector, *useCases)
 }
 
 internal suspend fun <T> ListenableFuture<T>.await(context: Context): T = suspendCancellableCoroutine { cont ->
