@@ -4,7 +4,8 @@ import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.Insets
@@ -63,7 +64,8 @@ class AnnotationEditorInsetsLayoutTest {
         rule.waitForIdle()
         rule.onRoot().captureRoboImage()
 
-        val badgeTop = rule.onNodeWithText("Scale set").getUnclippedBoundsInRoot().top
+        // The calibration pill repeats "Scale set" below the badge; the badge is the first match.
+        val badgeTop = rule.onAllNodesWithText("Scale set").onFirst().getUnclippedBoundsInRoot().top
         assertTrue(badgeTop < 24.dp, "calibration badge starts ${badgeTop} below the top; expected no inset band")
     }
 }

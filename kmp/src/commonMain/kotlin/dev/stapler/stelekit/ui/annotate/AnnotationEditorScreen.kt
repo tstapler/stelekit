@@ -541,7 +541,8 @@ fun AnnotationEditorScreen(
                 onOpenKnownDistances = { valueHost.showKnownDistances = true },
             )
         }
-        if (isCalibrated || hasStartedAnnotating) {
+        // Part of the collapsible details so small windows keep their photo viewport (AnnotatorViewportTest).
+        if (showDetails && (isCalibrated || hasStartedAnnotating)) {
             CalibrationPill(
                 state = calibrationPresentation.pill,
                 onClick = { valueHost.showKnownDistances = true },
