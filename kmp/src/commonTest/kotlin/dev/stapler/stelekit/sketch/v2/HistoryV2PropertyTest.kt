@@ -6,7 +6,15 @@ package dev.stapler.stelekit.sketch.v2
 
 import arrow.core.Either
 import arrow.core.flatMap
+import dev.stapler.stelekit.sketch.v2.commands.AddElement
 import dev.stapler.stelekit.sketch.v2.commands.Applied
+import dev.stapler.stelekit.sketch.v2.commands.DeleteElements
+import dev.stapler.stelekit.sketch.v2.commands.LockElements
+import dev.stapler.stelekit.sketch.v2.commands.MoveElements
+import dev.stapler.stelekit.sketch.v2.commands.ReorderElements
+import dev.stapler.stelekit.sketch.v2.commands.StyleElements
+import dev.stapler.stelekit.sketch.v2.commands.StylePatch
+import dev.stapler.stelekit.sketch.v2.commands.ZOrderMove
 import dev.stapler.stelekit.sketch.v2.commands.Command
 import dev.stapler.stelekit.sketch.v2.commands.CommandError
 import dev.stapler.stelekit.sketch.v2.commands.Committed
@@ -201,5 +209,41 @@ class HistoryV2PropertyTest {
         assertEquals(setOf(ElementId("r"), ElementId("a")), step.changedIds)
         val undone = HistoryV2.of(base).commit(step).right().undo().present
         assertEquals(base, undone)
+    }
+    /** Story 1.3.2: the same undo-all / redo-all property, driven by the real command set. */
+    private fun realCommand(doc: SketchDocumentV2, r: Random, serial: Int): Command {
+        val ids = doc.scene.order
+        if (ids.isEmpty() || r.nextInt(4) == 0) return AddElement(rect("n$serial", r.nextInt(100)))
+        val pick = ids[r.nextInt(ids.size)]
+        return when (r.nextInt(5)) {
+            0 -> DeleteElements(listOf(pick))
+            1 -> ReorderElements(listOf(pick), ZOrderMove.entries[r.nextInt(ZOrderMove.entries.size)])
+            2 -> StyleElements(listOf(pick), StylePatch(strokeColor = "#" + r.nextInt(1000), opacity = r.nextInt(101)))
+            3 -> LockElements(listOf(pick), r.nextBoolean())
+            else -> MoveElements(listOf(pick), r.nextInt(50).toDouble() + 1.0, r.nextInt(50).toDouble())
+        }
+    }
+
+    @Test
+    fun undoAll_should_RestoreInitialScene_And_RedoAllRestoreFinal_When_50RandomRealCommands() = runTest {
+        checkAll(Arb.long()) { seed ->
+            val r = Random(seed)
+            val initial = SketchDocumentV2(SketchDocumentV2().scene.add(rect("seed0")).right())
+            var history = HistoryV2.of(initial)
+            var serial = 0
+            var committed = 0
+            var attempts = 0
+            while (committed < 50 && attempts++ < 500) {
+                val next = commitOne(history, realCommand(history.present, r, serial++))
+                if (next != null) { history = next; committed++ }
+            }
+            assertEquals(50, committed, "seed $seed")
+            val final = history.present
+            assertTrue(reconcile(final.scene).isClean)
+            while (history.canUndo) history = history.undo()
+            assertEquals(initial, history.present, "undo all, seed $seed")
+            while (history.canRedo) history = history.redo()
+            assertEquals(final, history.present, "redo all, seed $seed")
+        }
     }
 }

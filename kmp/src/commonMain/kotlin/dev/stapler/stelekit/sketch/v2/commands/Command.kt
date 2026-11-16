@@ -13,12 +13,19 @@ import dev.stapler.stelekit.sketch.v2.scene.Layer
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
 import dev.stapler.stelekit.sketch.v2.scene.reconcile
+import kotlinx.serialization.json.JsonObject
 
 /**
- * The unit a history snapshot holds. Today it is the scene; sheet settings, constraints and the view join it in the
- * stories that introduce them, which is why history and commands take this type and not a bare scene.
+ * The unit a history snapshot holds: the scene plus what the sheet file carries beside it (Story 1.1.5). [constraints]
+ * stay opaque JSON objects until the constraint model (Story 4.2.1) types them; [extras] carries unknown top-level
+ * sheet fields for round trips. History and commands take this type and not a bare scene so those fields survive an edit.
  */
-data class SketchDocumentV2(val scene: SketchSceneV2 = SketchSceneV2.empty())
+data class SketchDocumentV2(
+    val scene: SketchSceneV2 = SketchSceneV2.empty(),
+    val sheetUuid: String = "",
+    val constraints: List<JsonObject> = emptyList(),
+    val extras: JsonObject = JsonObject(emptyMap()),
+)
 
 /** A command's result: the new document and the ids of the elements it touched (drives caches and the spatial index). */
 data class Applied(val doc: SketchDocumentV2, val changedIds: Set<ElementId>)
@@ -68,7 +75,7 @@ data class DocPatch(
             scene = (if (from(p) == null) scene.add(target) else scene.replace(target)).bind()
         }
         scene = scene.reorder(if (reversed) orderBefore else orderAfter).bind()
-        SketchDocumentV2(scene.withLayers(if (reversed) layersBefore else layersAfter))
+        doc.copy(scene = scene.withLayers(if (reversed) layersBefore else layersAfter))
     }
 
     companion object {
@@ -100,7 +107,7 @@ class Transaction private constructor(val base: SketchDocumentV2, val doc: Sketc
     fun apply(command: Command): Either<CommandError, Transaction> = either {
         val applied = command.apply(doc).bind()
         val repaired = reconcile(applied.doc.scene)
-        Transaction(base, SketchDocumentV2(repaired.scene), changedIds + applied.changedIds + repaired.changed)
+        Transaction(base, applied.doc.copy(scene = repaired.scene), changedIds + applied.changedIds + repaired.changed)
     }
 
     /** Finishes the transaction; [CommandError.NoChange] when the document ended up equal to where it began. */
