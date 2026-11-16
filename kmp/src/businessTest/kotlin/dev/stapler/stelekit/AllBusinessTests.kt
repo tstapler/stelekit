@@ -909,6 +909,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.constraints.SolverSpikeTest::class,
     dev.stapler.stelekit.db.SketchV2MigrationTest::class,
     dev.stapler.stelekit.db.SketchSheetWritePathsPreserveSchemaTest::class,
+    dev.stapler.stelekit.sketch.constraints.LinalgPropertyTest::class,
     dev.stapler.stelekit.sketch.SketchSheetViewModelTest::class,
     dev.stapler.stelekit.sketch.SketchViewModelTest::class,
     dev.stapler.stelekit.sketch.StandaloneSketchTest::class,
