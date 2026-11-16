@@ -24,7 +24,7 @@ const val DOUBLE_TAP_SCALE: Float = 4f
 /** Factor of one zoom-in or zoom-out button press. */
 const val ZOOM_STEP_FACTOR: Float = 1.5f
 
-private const val FIT_EPSILON = 1e-3f
+internal const val FIT_EPSILON = 1e-3f
 private const val DEFAULT_SLACK_FRACTION = 0.25f
 private const val WHEEL_BASE = 1.1f
 private const val MAX_LOUPE_ZOOM = 16f

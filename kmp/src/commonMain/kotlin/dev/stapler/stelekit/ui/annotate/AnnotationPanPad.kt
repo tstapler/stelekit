@@ -42,7 +42,7 @@ internal fun panDelta(direction: PanDirection, viewportWidth: Float, viewportHei
 }
 
 /** ADR-006 decision 2: the Pan toggle and pad exist exactly when the view is at or above Fit. */
-internal val AnnotationViewTransform.canPan: Boolean get() = isFit || scale >= FIT_SCALE
+internal val AnnotationViewTransform.canPan: Boolean get() = isFitOrGreater(scale)
 
 /**
  * Four 48 dp arrows for users who cannot drag. [atEdge] is read inside each button so a pan recomposes

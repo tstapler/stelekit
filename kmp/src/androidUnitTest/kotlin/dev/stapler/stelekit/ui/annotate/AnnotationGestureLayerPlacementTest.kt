@@ -66,7 +66,6 @@ class AnnotationGestureLayerPlacementTest {
 
     private fun host(
         tool: AnnotationTool = AnnotationTool.DISTANCE,
-        insetPx: Float = 0f,
         layerModifier: Modifier = Modifier.fillMaxSize(),
     ) {
         vm = AnnotationEditorViewModel(
@@ -110,7 +109,6 @@ class AnnotationGestureLayerPlacementTest {
                     ),
                     modifier = layerModifier.testTag(LAYER_TAG),
                     pendingPoints = state.inProgressPoints.size,
-                    systemGestureInsetPx = { insetPx },
                 )
             }
         }
@@ -237,22 +235,9 @@ class AnnotationGestureLayerPlacementTest {
     }
 
     @Test
-    fun offCanvasRelease_should_CancelKeepingToolArmedAndFirstPoint_WithNonZeroInset() {
-        host(insetPx = 90f)
-        drag(listOf(Offset(300f, 600f)))
-        drag(listOf(Offset(500f, 1000f), Offset(200f, 1000f), Offset(30f, 1000f))) // release inside the 90 px gesture inset
-        assertCancelledKeepingFirstPoint()
-
-        rec.cancels = 0
-        drag(listOf(Offset(30f, 1000f), Offset(400f, 1000f), Offset(600f, 1000f))) // press inside the inset is not a placement
-        assertCancelledKeepingFirstPoint()
-        assertEquals(1, rec.taps.size)
-    }
-
-    @Test
-    fun systemGestureInsetZeroOnDesktop_should_NotChangeCancelPath() {
+    fun releaseOutsideLayerBounds_should_CancelKeepingToolArmedAndFirstPoint() {
         // A 900x2100 px layer inside the 1080x2400 window so a release can land genuinely off-canvas.
-        host(insetPx = 0f, layerModifier = Modifier.size(300.dp, 700.dp))
+        host(layerModifier = Modifier.size(300.dp, 700.dp))
         drag(listOf(Offset(300f, 600f)))
         drag(listOf(Offset(500f, 1000f), Offset(800f, 1000f), Offset(960f, 1000f)))
         assertCancelledKeepingFirstPoint()
@@ -306,7 +291,9 @@ class AnnotationGestureLayerPlacementTest {
         val uuid = state().committedAnnotations.single().uuid
         assertEquals(AnnotationTool.SELECT, state().currentTool)
 
-        drag(listOf(Offset(700f, 1500f))) // tap on the end handle
+        drag(listOf(Offset(700f, 1500f))) // first tap after the commit only (re)selects
+        assertTrue(rec.handleTaps.isEmpty(), "a tap right after a commit must not open the nudge pad")
+        drag(listOf(Offset(700f, 1500f))) // deliberate second tap on the selected handle
         assertEquals(listOf(uuid to 1), rec.handleTaps)
 
         drag(listOf(Offset(200f, 600f), Offset(260f, 700f), Offset(320f, 800f))) // dragging a handle moves it instead

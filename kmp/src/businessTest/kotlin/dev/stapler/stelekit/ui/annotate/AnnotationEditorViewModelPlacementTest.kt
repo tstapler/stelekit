@@ -55,6 +55,24 @@ class AnnotationEditorViewModelPlacementTest {
     }
 
     @Test
+    fun placeDrag_should_NotCountOrLeakPendingPoint_When_EndPointIsRejectedAfterAPriorCommit() = recording { sink ->
+        val vm = vm()
+        vm.selectTool(AnnotationTool.DISTANCE)
+        vm.placeDrag(NormalizedPoint(0.2, 0.3), NormalizedPoint(0.7, 0.8))
+        sink.lines.clear()
+        vm.selectTool(AnnotationTool.DISTANCE)
+        val committedBefore = vm.state.value.committedAnnotations.size
+
+        val committed = vm.placeDrag(NormalizedPoint(0.5, 0.5), NormalizedPoint(0.5001, 0.5001)) // under 2 image px apart
+
+        assertEquals(false, committed)
+        assertEquals(committedBefore, vm.state.value.committedAnnotations.size)
+        assertTrue(vm.state.value.inProgressPoints.isEmpty(), "no stray first point")
+        assertTrue(sink.lines.isEmpty(), "no drag-measure counted: ${sink.lines}")
+        vm.close()
+    }
+
+    @Test
     fun discardFirstPoint_should_DropPendingPoint_And_KeepToolArmed() {
         val vm = vm()
         vm.selectTool(AnnotationTool.DISTANCE)

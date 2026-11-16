@@ -250,6 +250,11 @@ fun AnnotationEditorScreen(
     }
     // TalkBack live region: commits, crosshair moves and the first point. The strip hint explains a disabled chip.
     var announcement by remember { mutableStateOf("") }
+    var announceSequence by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    fun announce(text: String) {
+        announceSequence++
+        announcement = liveRegionText(text, announceSequence)
+    }
     var toolHint by remember { mutableStateOf<String?>(null) }
     var tagFieldFocused by remember { mutableStateOf(false) }
     val windowInfo = LocalWindowInfo.current
@@ -262,16 +267,16 @@ fun AnnotationEditorScreen(
     val showDetails = !collapseDetails || detailsExpanded
     val lastCommit = remember { CommitMemory(state.currentTool, state.committedAnnotations.size) }
     LaunchedEffect(state.committedAnnotations.size, state.currentTool) {
-        commitAnnouncement(lastCommit.tool, lastCommit.count, state.currentTool, state.committedAnnotations)?.let { announcement = it }
+        commitAnnouncement(lastCommit.tool, lastCommit.count, state.currentTool, state.committedAnnotations)?.let(::announce)
         lastCommit.tool = state.currentTool
         lastCommit.count = state.committedAnnotations.size
     }
     LaunchedEffect(crosshair) {
-        if (crosshair != null) announcement = crosshairAnnouncement(crosshair, viewModel.liveDistanceDisplay(crosshair))
+        if (crosshair != null) announce(crosshairAnnouncement(crosshair, viewModel.liveDistanceDisplay(crosshair)))
     }
     LaunchedEffect(state.inProgressPoints.size) {
         if (state.placement.active && state.currentTool == AnnotationTool.DISTANCE && state.inProgressPoints.size == 1) {
-            announcement = POINT_A_PLACED_ANNOUNCEMENT
+            announce(POINT_A_PLACED_ANNOUNCEMENT)
         }
     }
     LaunchedEffect(toolHint) {
@@ -813,8 +818,7 @@ fun AnnotationEditorScreen(
                             val a = start.toNormalized(canvasSize)
                             val b = end.toNormalized(canvasSize)
                             if (a != null && b != null) {
-                                viewModel.placeDrag(a, b)
-                                if (shouldShowDragHint(platformSettings)) {
+                                if (viewModel.placeDrag(a, b) && shouldShowDragHint(platformSettings)) {
                                     recordDragHint(platformSettings)
                                     fineTuneHint = true
                                 }

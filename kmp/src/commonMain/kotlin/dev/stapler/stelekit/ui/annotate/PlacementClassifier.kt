@@ -11,20 +11,14 @@ const val DRAG_COMMIT_DP: Int = 48
 /** Distance (image px) below which two points count as identical. */
 const val IDENTICAL_POINT_IMAGE_PX: Float = 2f
 
-/** One rule: an off-canvas or system-gesture-inset release cancels but keeps the tool armed (OC-9). */
-@Suppress("TopLevelPropertyNaming") // lowerCamelCase name is the ADR-007 / OC-9 flag the plan and tests cite
-const val disarmOnOffCanvas: Boolean = false
-
-private const val SCALE_EPSILON: Float = 1e-4f
-
 sealed interface PlacementGesture {
     data class AimPlace(val point: Offset) : PlacementGesture
     data class DragMeasure(val start: Offset, val end: Offset) : PlacementGesture
 }
 
-/** True when [viewScale] is at or above Fit; tolerant of float rounding so Fit itself counts. */
+/** True when [viewScale] is at or above Fit; shares [FIT_EPSILON] with [AnnotationViewTransform.isFit] so the two never disagree. */
 fun isFitOrGreater(viewScale: Float, fitScale: Float = FIT_SCALE): Boolean =
-    viewScale >= fitScale - SCALE_EPSILON
+    viewScale >= fitScale - FIT_EPSILON
 
 /**
  * Classifies a press/release pair. DragMeasure only for DISTANCE with no pending point, at or above

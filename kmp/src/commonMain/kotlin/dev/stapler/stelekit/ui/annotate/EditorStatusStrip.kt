@@ -107,6 +107,12 @@ internal fun commitAnnouncement(
     return "${added.annotationType.spokenName()}$value added$returned"
 }
 
+/**
+ * Live-region node text for the [sequence]-th announcement. TalkBack only speaks a change, so an identical
+ * repeat ("Cancelled" twice) gets an invisible zero-width suffix on alternate calls.
+ */
+internal fun liveRegionText(text: String, sequence: Int): String = if (sequence % 2 == 0) text else text + "\u200B"
+
 /** Live-region text for a crosshair move; [liveLength] is appended once a first point exists. */
 internal fun crosshairAnnouncement(point: NormalizedPoint, liveLength: String?): String =
     crosshairDescription(point) + liveLength?.let { ", length $it" }.orEmpty()

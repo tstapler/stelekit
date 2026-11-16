@@ -481,13 +481,19 @@ class AnnotationEditorViewModel(
         }
     }
 
-    /** Places both ends of a drag-measure as one commit (ADR-007). */
-    fun placeDrag(start: NormalizedPoint, end: NormalizedPoint) {
+    /** Places both ends of a drag-measure as one commit (ADR-007); false, with no pending point left, when it did not commit. */
+    fun placeDrag(start: NormalizedPoint, end: NormalizedPoint): Boolean {
+        val before = _state.value.committedAnnotations.size
         addPoint(start)
         addPoint(end)
-        val committed = _state.value.committedAnnotations.lastOrNull() ?: return
+        val after = _state.value.committedAnnotations
+        if (after.size != before + 1) {
+            _state.update { it.copy(inProgressPoints = emptyList()) }
+            return false
+        }
         PlacementCounters.dragMeasure()
-        lastDragMeasure = committed.uuid to nowMillis()
+        lastDragMeasure = after.last().uuid to nowMillis()
+        return true
     }
 
     /** Drops a pending first point; the tool stays armed. */
@@ -500,7 +506,6 @@ class AnnotationEditorViewModel(
 
     /** A placement was cancelled (off-canvas or gesture-inset release): the strip says so; the tool stays armed (OC-9). */
     fun cancelPlacementGesture() {
-        if (disarmOnOffCanvas) disarm()
         _state.update { it.copy(placementMessage = CANCELLED_MESSAGE) }
     }
 

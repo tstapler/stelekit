@@ -65,6 +65,18 @@ class PlacementClassifierTest {
     }
 
     @Test
+    fun isFitOrGreater_should_AgreeWithViewTransformIsFit_AtUnsnappedScales() {
+        listOf(0.9995f, 1.0005f, 0.9991f, 0.999f, 1f).forEach { s ->
+            val view = AnnotationViewTransform(scale = s)
+            assertTrue(!view.isFit || isFitOrGreater(s), "isFit at $s must imply fit-or-greater")
+        }
+        assertTrue(isFitOrGreater(0.9995f))
+        assertIs<PlacementGesture.DragMeasure>(
+            classifyPlacement(Offset.Zero, Offset(500f, 0f), 100f, 0, AnnotationTool.DISTANCE, 0.9995f),
+        )
+    }
+
+    @Test
     fun identicalPoints_should_BeBelowTwoImagePixels() {
         assertTrue(arePointsIdentical(Offset(10f, 10f), Offset(11f, 10f)))
         assertFalse(arePointsIdentical(Offset(10f, 10f), Offset(12f, 10f)))
@@ -84,6 +96,5 @@ class PlacementClassifierTest {
     @Test
     fun constants_should_MatchAdr007() {
         assertEquals(48, DRAG_COMMIT_DP)
-        assertFalse(disarmOnOffCanvas)
     }
 }

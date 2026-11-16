@@ -86,13 +86,14 @@ private class GestureEnv(
     val annotations: () -> List<MeasurementAnnotation>,
     val tool: () -> AnnotationTool,
     val pendingPoints: () -> Int,
-    val insetPx: () -> Float,
     val tapThresholdPx: Float,
     val vertexRadiusPx: Float,
     val edgeRadiusPx: Float,
     val dragCommitPx: Float,
     val onPreview: (DragPreview?) -> Unit,
     val onEmptyTap: (TapRecord) -> Unit,
+    /** The annotation a previous Select tap in this layer chose; only a repeat tap on its handle opens the nudge pad. */
+    var handleTapArmed: String? = null,
 ) {
     val callbacks: AnnotationGestureCallbacks get() = callbacksProvider()
 }
@@ -117,8 +118,6 @@ internal fun AnnotationGestureLayer(
     modifier: Modifier = Modifier,
     /** Points already placed for the active tool; gates drag-measure to "no pending point". */
     pendingPoints: Int = 0,
-    /** System-gesture inset in pixels, read at event time; 0 on desktop and three-button navigation. */
-    systemGestureInsetPx: () -> Float = { 0f },
 ) {
     DisposableEffect(currentTool) {
         onDispose { callbacks.onLoupe(null) }
@@ -128,7 +127,6 @@ internal fun AnnotationGestureLayer(
     val latestTool by rememberUpdatedState(currentTool)
     val latestPending by rememberUpdatedState(pendingPoints)
     val latestCallbacks by rememberUpdatedState(callbacks)
-    val latestInset by rememberUpdatedState(systemGestureInsetPx)
     var preview by remember { mutableStateOf<DragPreview?>(null) }
     val previewColor = MaterialTheme.colorScheme.primary
     Box(
@@ -144,7 +142,6 @@ internal fun AnnotationGestureLayer(
                     annotations = { currentAnnotations },
                     tool = { latestTool },
                     pendingPoints = { latestPending },
-                    insetPx = { latestInset() },
                     onPreview = { preview = it },
                     density = density,
                 )
@@ -165,7 +162,6 @@ private fun newGestureEnv(
     annotations: () -> List<MeasurementAnnotation>,
     tool: () -> AnnotationTool,
     pendingPoints: () -> Int,
-    insetPx: () -> Float,
     onPreview: (DragPreview?) -> Unit,
     density: Density,
 ): GestureEnv {
@@ -177,7 +173,6 @@ private fun newGestureEnv(
         annotations = annotations,
         tool = tool,
         pendingPoints = pendingPoints,
-        insetPx = insetPx,
         onPreview = onPreview,
         dragCommitPx = with(density) { DRAG_COMMIT_DP.dp.toPx() },
         tapThresholdPx = with(density) { 16.dp.toPx() },
@@ -196,6 +191,7 @@ private fun newGestureEnv(
 
 private suspend fun AwaitPointerEventScope.runGesture(env: GestureEnv) {
     val down = awaitFirstDown(requireUnconsumed = false)
+    if (env.tool() != AnnotationTool.SELECT) env.handleTapArmed = null
     if (currentEvent.buttons.isTertiaryPressed) return mousePan(env, down)
     val end = if (env.tool() == AnnotationTool.SELECT) selectGesture(env, down) else placeGesture(env, down)
     if (end == GestureEnd.HANDOFF_TO_VIEW) viewGesture(env)
@@ -254,10 +250,11 @@ private fun classify(env: GestureEnv, press: Offset, release: Offset): Placement
         fitScale = FIT_SCALE,
     )
 
-private fun AwaitPointerEventScope.isOffCanvas(env: GestureEnv, position: Offset): Boolean =
-    isOffCanvasRelease(position, Size(size.width.toFloat(), size.height.toFloat()), env.insetPx())
+private fun AwaitPointerEventScope.isOffCanvas(position: Offset): Boolean =
+    isOffCanvasRelease(position, Size(size.width.toFloat(), size.height.toFloat()))
 
-/** A press that began outside the canvas or inside the gesture inset is never a placement; it is left unconsumed. */
+// The screen lays the layer out inside the system-gesture zones, so a release in a zone is already outside its bounds.
+/** A press that began outside the canvas is never a placement; it is left unconsumed. */
 private suspend fun AwaitPointerEventScope.outsidePressGesture(env: GestureEnv, down: PointerInputChange): GestureEnd {
     while (true) {
         val event = awaitPointerEvent()
@@ -271,7 +268,7 @@ private suspend fun AwaitPointerEventScope.outsidePressGesture(env: GestureEnv, 
 
 private suspend fun AwaitPointerEventScope.placeGesture(env: GestureEnv, down: PointerInputChange): GestureEnd {
     val handle = env.handle
-    if (isOffCanvas(env, down.position)) return outsidePressGesture(env, down)
+    if (isOffCanvas(down.position)) return outsidePressGesture(env, down)
     down.consume()
     env.callbacks.onLoupe(handle.touch(down.position))
     var lastPosition = down.position
@@ -308,7 +305,7 @@ private fun dragPreview(env: GestureEnv, press: Offset, current: Offset): DragPr
 
 private fun AwaitPointerEventScope.commitPlacement(env: GestureEnv, press: Offset, release: Offset) {
     val handle = env.handle
-    if (isOffCanvas(env, release)) {
+    if (isOffCanvas(release)) {
         env.callbacks.onPlacementCancelled()
         return
     }
@@ -333,13 +330,20 @@ private suspend fun AwaitPointerEventScope.selectGesture(env: GestureEnv, down: 
         vertexRadiusPx = env.vertexRadiusPx,
         edgeRadiusPx = env.edgeRadiusPx,
         view = handle.view(),
-    ) ?: return emptySpaceGesture(env, down)
+    )
+    if (hit == null) {
+        env.handleTapArmed = null
+        return emptySpaceGesture(env, down)
+    }
     down.consume()
+    // A measurement the commit just selected was never tapped by the user, so its first tap must not open the nudge pad.
+    val repeatTap = env.handleTapArmed == hit.uuid
+    env.handleTapArmed = hit.uuid
     env.callbacks.onSelect(hit.uuid)
-    return dragAnnotation(env, hit, down)
+    return dragAnnotation(env, hit, down, repeatTap)
 }
 
-private suspend fun AwaitPointerEventScope.dragAnnotation(env: GestureEnv, hit: AnnotationHit, down: PointerInputChange): GestureEnd {
+private suspend fun AwaitPointerEventScope.dragAnnotation(env: GestureEnv, hit: AnnotationHit, down: PointerInputChange, repeatTap: Boolean): GestureEnd {
     val original = env.annotations().first { it.uuid == hit.uuid }.normalizedPoints
     var editing = false
     var end = GestureEnd.DONE
@@ -367,7 +371,8 @@ private suspend fun AwaitPointerEventScope.dragAnnotation(env: GestureEnv, hit: 
         if (editing && end == GestureEnd.HANDOFF_TO_VIEW) env.callbacks.onEditPoints(hit.uuid, original)
         if (editing) env.callbacks.onEditEnd(hit.uuid)
     }
-    if (!editing && end == GestureEnd.DONE && hit is AnnotationHit.Vertex) env.callbacks.onHandleTap?.invoke(hit.uuid, hit.index)
+    val tapped = repeatTap && !editing && end == GestureEnd.DONE
+    if (tapped && hit is AnnotationHit.Vertex) env.callbacks.onHandleTap?.invoke(hit.uuid, hit.index)
     return end
 }
 
