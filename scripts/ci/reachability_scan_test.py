@@ -18,6 +18,8 @@ spec.loader.exec_module(scan_mod)
 # Types the scan finds at baseline time that the plan's Disposition Register does not name
 # (plan assumption "the register accounts for every line" does not hold). May only shrink.
 UNREGISTERED_AT_BASELINE = {
+    # 2026-11-16: wired only by PR #680 (E4 task 3.9c), which removes these three and their baseline lines.
+    "FocalResolution", "FocalSourceResolver", "LensRecordFocal",
     "AppStateOptics", "AssetPendingMove", "BenchmarkRegistry", "BlockOptics", "ChunkChecksum", "CursorState",
     "DesktopFileSystem", "ExplanationContent", "ExplanationDoc", "GitObjectContentVerifier", "GraphPreset",
     "IOSKableBleScanner", "IosMediaAttachmentService", "LfsPointerSniffer", "LidarHardwareCheck", "LruWeigher",
