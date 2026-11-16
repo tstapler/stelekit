@@ -13,6 +13,9 @@ import dev.stapler.stelekit.git.CloneProgress
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitTransportRetryState
+import dev.stapler.stelekit.git.RepoOpGate
+import dev.stapler.stelekit.git.SyncOrigin
+import dev.stapler.stelekit.git.withExclusiveLease
 import dev.stapler.stelekit.llm.LlmCredentialStore
 import dev.stapler.stelekit.llm.LlmProviderRegistry
 import dev.stapler.stelekit.llm.LlmSettings
@@ -514,6 +517,7 @@ class GraphManager(
      */
     suspend fun cloneAndAdd(
         gitRepository: GitRepository,
+        gate: RepoOpGate,
         url: String,
         localPath: String,
         auth: GitAuth,
@@ -527,7 +531,11 @@ class GraphManager(
         description: String = "",
         onStateChange: (GitTransportRetryState) -> Unit = {},
     ): Either<DomainError.GitError, GraphId> {
-        val cloneResult = gitRepository.clone(url, RepoRoot(localPath), auth, onProgress, onStateChange)
+        val cloneResult = gate.withExclusiveLease(
+            key = gitRepository.gateKeyForRoot(localPath),
+            origin = SyncOrigin.Clone,
+            unresolved = DomainError.GitError.CloneFailed("Cannot resolve the git directory of $localPath"),
+        ) { gitRepository.clone(url, RepoRoot(localPath), auth, onProgress, onStateChange) }
         return cloneResult.map { addGraph(localPath, location, displayName, description) }
     }
 

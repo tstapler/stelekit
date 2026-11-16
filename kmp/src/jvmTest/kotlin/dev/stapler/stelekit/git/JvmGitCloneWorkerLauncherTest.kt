@@ -39,7 +39,7 @@ class JvmGitCloneWorkerLauncherTest {
             onProgress(CloneProgress("Receiving objects", 0, 0))
             Unit.right()
         }
-        val launcher = JvmGitCloneWorkerLauncher(fakeRepo)
+        val launcher = JvmGitCloneWorkerLauncher(fakeRepo, RepoOpGate())
 
         val result = launcher.launchClone(
             graphId = "unused-on-desktop",
@@ -62,7 +62,7 @@ class JvmGitCloneWorkerLauncherTest {
     fun `launchClone() returns the Left GitRepository clone() produces unchanged, not translated`() = runTest {
         val expectedError = DomainError.GitError.CloneFailed("boom")
         val fakeRepo = cloningStub { _, _, _, _ -> expectedError.left() }
-        val launcher = JvmGitCloneWorkerLauncher(fakeRepo)
+        val launcher = JvmGitCloneWorkerLauncher(fakeRepo, RepoOpGate())
 
         val result = launcher.launchClone(
             graphId = "graph-id",
@@ -90,7 +90,7 @@ class JvmGitCloneWorkerLauncherTest {
                 cloneCancelled.complete(Unit)
             }
         }
-        val launcher = JvmGitCloneWorkerLauncher(fakeRepo)
+        val launcher = JvmGitCloneWorkerLauncher(fakeRepo, RepoOpGate())
 
         val caller = launch {
             launcher.launchClone("g", "https://example.invalid/g.git", "/tmp/g", GitAuth.None, {}, {}, null)

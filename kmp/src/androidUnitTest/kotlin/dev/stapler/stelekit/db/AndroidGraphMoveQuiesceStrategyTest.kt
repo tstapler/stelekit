@@ -8,6 +8,15 @@ import arrow.core.left
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.GitSyncBusyCounter
 import dev.stapler.stelekit.git.GitWriteBackQueue
+import dev.stapler.stelekit.git.RepoOpGate
+import dev.stapler.stelekit.git.SyncOrigin
+import dev.stapler.stelekit.platform.GitWorktreeLocks
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.model.StorageMoveOperation
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -48,7 +57,7 @@ class AndroidGraphMoveQuiesceStrategyTest {
     ): ShadowWorktreeQuiesceTarget = ShadowWorktreeQuiesceTarget(
         shadowKey = "shadow-key-${System.nanoTime()}",
         queue = queue,
-        flush = flush,
+        flushWhileLocked = flush,
     )
 
     private fun newStrategy(
@@ -56,6 +65,8 @@ class AndroidGraphMoveQuiesceStrategyTest {
         target: ShadowWorktreeQuiesceTarget?,
     ): AndroidGraphMoveQuiesceStrategy = AndroidGraphMoveQuiesceStrategy(
         gitSyncBusyCounter = busyCounter,
+        gate = RepoOpGate(),
+        gateKeyFor = { null },
         shadowWorktreeTarget = { target },
     )
 
@@ -116,6 +127,8 @@ class AndroidGraphMoveQuiesceStrategyTest {
         val busyCounter = GitSyncBusyCounter()
         val strategy = AndroidGraphMoveQuiesceStrategy(
             gitSyncBusyCounter = busyCounter,
+            gate = RepoOpGate(),
+            gateKeyFor = { null },
             shadowWorktreeTarget = { null },
         )
 
@@ -229,6 +242,119 @@ class AndroidGraphMoveQuiesceStrategyTest {
         assertTrue(queue.isEmpty(), "a successful flush must drain the queue")
         assertIs<Either.Right<Unit>>(result)
 
+        strategy.release(op)
+    }
+
+    // ── Task 1.3c: gate first, then the worktree lock ───────────────────────────────────────────
+
+    private val gateKey = "repo-key-1"
+
+    private fun gatedStrategy(
+        gate: RepoOpGate,
+        target: ShadowWorktreeQuiesceTarget?,
+        busyCounter: GitSyncBusyCounter = GitSyncBusyCounter(),
+    ) = AndroidGraphMoveQuiesceStrategy(
+        gitSyncBusyCounter = busyCounter,
+        gate = gate,
+        gateKeyFor = { gateKey },
+        shadowWorktreeTarget = { target },
+    )
+
+    private suspend fun awaitCondition(what: String, condition: () -> Boolean) {
+        withTimeout(5_000) { while (!condition()) yield() }
+    }
+
+    @Test
+    fun quiesce_should_WaitForGateWithoutHoldingWorktreeLock_AndCompleteAfterSync() = runBlocking {
+        val gate = RepoOpGate()
+        val queue = newQueue()
+        val target = newTarget(queue) { emptyList() }
+        val worktreeLock = GitWorktreeLocks.lockFor(target.shadowKey)
+        val syncLease = checkNotNull(gate.tryAcquire(gateKey, SyncOrigin.UiPress))
+        val strategy = gatedStrategy(gate, target)
+
+        var done = false
+        val job = launch(Dispatchers.Default) { strategy.quiesce(op); done = true }
+
+        // The fake sync needs the worktree lock inside fetch; it must be takeable while quiesce waits.
+        repeat(50) { yield() }
+        assertFalse(done, "quiesce must wait for the running sync")
+        assertTrue(worktreeLock.tryLock(), "quiesce must not hold the worktree lock while waiting for the gate")
+        worktreeLock.unlock()
+
+        gate.releaseOrHandOff(syncLease)
+        withTimeout(5_000) { job.join() }
+        assertTrue(done)
+        assertEquals(SyncOrigin.Quiesce, gate.heldBy(gateKey))
+        assertTrue(worktreeLock.isLocked)
+
+        strategy.release(op)
+        assertFalse(gate.isHeld(gateKey), "release must free the gate lease")
+        assertFalse(worktreeLock.isLocked, "release must free the worktree lock")
+    }
+
+    @Test
+    fun quiesce_should_CoalesceTriggers_AndNeverSetRerun_While_QuiesceLeaseHeld() = runBlocking {
+        val gate = RepoOpGate()
+        val strategy = gatedStrategy(gate, newTarget(newQueue()) { emptyList() })
+
+        strategy.quiesce(op)
+
+        assertEquals(null, gate.tryAcquire(gateKey, SyncOrigin.UiPress), "a trigger must coalesce")
+        assertFalse(gate.requestRerun(gateKey), "a press must not set the rerun bit against a Quiesce hold")
+        assertEquals(SyncOrigin.Quiesce, gate.heldBy(gateKey))
+
+        strategy.release(op)
+        assertEquals(null, gate.releaseOrHandOff(checkNotNull(gate.tryAcquire(gateKey, SyncOrigin.UiPress))), "no follow-up fires after release")
+    }
+
+    @Test
+    fun quiesce_should_ReleaseLease_When_CancelledWhileWaitingForWorktreeMutex() = runBlocking {
+        val gate = RepoOpGate()
+        val target = newTarget(newQueue()) { emptyList() }
+        val worktreeLock = GitWorktreeLocks.lockFor(target.shadowKey)
+        worktreeLock.lock()
+        val strategy = gatedStrategy(gate, target)
+
+        val job = launch(Dispatchers.Default) { strategy.quiesce(op) }
+        withTimeout(5_000) { awaitCondition("lease taken") { gate.isHeld(gateKey) } }
+
+        job.cancel(CancellationException("timeout"))
+        withTimeout(5_000) { job.join() }
+        assertFalse(gate.isHeld(gateKey), "the lease must be released when the mutex wait is cancelled")
+        worktreeLock.unlock()
+
+        val fresh = gate.tryAcquire(gateKey, SyncOrigin.UiPress)
+        assertTrue(fresh != null, "a fresh sync must acquire after the cancelled quiesce")
+    }
+
+    @Test
+    fun quiesce_should_ReleaseBothOnRelease_When_DrainReturnsError() = runBlocking {
+        val gate = RepoOpGate()
+        val queue = newQueue().also { it.enqueue("pages/foo.md") }
+        val flush = FailingFlush(queue) { DomainError.GitError.WorkingTreeConcurrentEditDetected(it) }
+        val target = newTarget(queue) { flush.invoke() }
+        val strategy = gatedStrategy(gate, target)
+
+        val result = strategy.quiesce(op)
+        assertIs<Either.Left<DomainError.StorageError>>(result)
+        strategy.release(op)
+
+        assertFalse(gate.isHeld(gateKey))
+        assertFalse(GitWorktreeLocks.lockFor(target.shadowKey).isLocked)
+    }
+
+    @Test
+    fun quiesce_should_UseNoGate_When_GateKeyUnresolvable() = runBlocking {
+        val gate = RepoOpGate()
+        val strategy = AndroidGraphMoveQuiesceStrategy(
+            gitSyncBusyCounter = GitSyncBusyCounter(),
+            gate = gate,
+            gateKeyFor = { null },
+            shadowWorktreeTarget = { null },
+        )
+        strategy.quiesce(op)
+        assertFalse(gate.isHeld(gateKey))
         strategy.release(op)
     }
 }

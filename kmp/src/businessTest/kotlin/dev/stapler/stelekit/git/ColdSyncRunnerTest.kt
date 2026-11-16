@@ -49,8 +49,14 @@ class ColdSyncRunnerTest {
     private val staleness = SyncStalenessStore(settings)
     private var now = 1_000_000L
 
-    private fun runner(spy: Spy, config: GitConfig? = sampleConfig, locks: NamedLocks = NamedLocks()) =
-        ColdSyncRunner(spy, StubConfigRepository(config.right()), staleness, locks) { now }
+    private val gate = RepoOpGate()
+
+    private fun runner(
+        spy: Spy,
+        config: GitConfig? = sampleConfig,
+        gate: RepoOpGate = this.gate,
+        keyFor: (GitConfig) -> String? = { "repo-key" },
+    ) = ColdSyncRunner(spy, StubConfigRepository(config.right()), staleness, gate, keyFor) { now }
 
     @Test
     fun `exactly one fetch runs and no tree-touching call is made, whatever state the tree is in`() = runBlocking {
@@ -101,7 +107,7 @@ class ColdSyncRunnerTest {
     }
 
     @Test
-    fun `concurrent runs for the same repository never overlap their fetches`() = runBlocking {
+    fun `concurrent runs for the same repository never overlap and the losers are SyncInProgress`() = runBlocking {
         var inFlight = 0
         var maxInFlight = 0
         val spy = object : StubGitRepository() {
@@ -113,13 +119,46 @@ class ColdSyncRunnerTest {
                 return FetchResult(false, 0).right()
             }
         }
-        val locks = NamedLocks()
-
-        val cold = ColdSyncRunner(spy, StubConfigRepository(sampleConfig.right()), staleness, locks) { now }
-        (1..5).map { async { cold.run(sampleConfig.graphId) } }.awaitAll()
+        val cold = runner(Spy())
+        val racing = ColdSyncRunner(spy, StubConfigRepository(sampleConfig.right()), staleness, gate, { "repo-key" }) { now }
+        val outcomes = (1..5).map { async { racing.run(sampleConfig.graphId) } }.awaitAll()
 
         assertEquals(1, maxInFlight)
-        assertIs<ColdSyncOutcome.Fetched>(runner(Spy(), locks = locks).run(sampleConfig.graphId))
+        assertEquals(1, outcomes.count { it is ColdSyncOutcome.Fetched })
+        assertEquals(4, outcomes.count { it == ColdSyncOutcome.Error(DomainError.GitError.SyncInProgress(SyncOrigin.Cold)) })
+        assertIs<ColdSyncOutcome.Fetched>(cold.run(sampleConfig.graphId), "the lease is released after the run")
         Unit
+    }
+
+    @Test
+    fun `a held gate makes the run a busy outcome with no fetch and no staleness write`() = runBlocking {
+        val spy = Spy()
+        val lease = gate.tryAcquire("repo-key", SyncOrigin.UiPress)!!
+
+        val outcome = runner(spy).run(sampleConfig.graphId)
+
+        assertEquals(ColdSyncOutcome.Error(DomainError.GitError.SyncInProgress(SyncOrigin.UiPress)), outcome)
+        assertEquals(emptyList(), spy.calls)
+        gate.releaseOrHandOff(lease)
+        assertIs<ColdSyncOutcome.Fetched>(runner(Spy()).run(sampleConfig.graphId))
+        Unit
+    }
+
+    @Test
+    fun `an unresolvable git dir fails closed without fetching`() = runBlocking {
+        val spy = Spy()
+        val outcome = runner(spy, keyFor = { null }).run(sampleConfig.graphId)
+        assertEquals(ColdSyncOutcome.Error(DomainError.GitError.SyncInProgress(null)), outcome)
+        assertEquals(emptyList(), spy.calls)
+    }
+
+    @Test
+    fun `a throwing fetch still releases the gate`() = runBlocking {
+        val boom = object : StubGitRepository() {
+            override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> = error("boom")
+        }
+        val racing = ColdSyncRunner(boom, StubConfigRepository(sampleConfig.right()), staleness, gate, { "repo-key" }) { now }
+        runCatching { racing.run(sampleConfig.graphId) }
+        assertEquals(false, gate.isHeld("repo-key"))
     }
 }

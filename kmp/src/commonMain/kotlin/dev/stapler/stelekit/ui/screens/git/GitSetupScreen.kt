@@ -377,7 +377,7 @@ fun GitSetupScreen(
         testConnectionJob?.cancel()
         testConnectionJob = scope.launch {
             testState = GitConnectionTestState.InProgress
-            val result = testGitConnection(currentFormSnapshot(), gitRepository, credentialStore)
+            val result = testGitConnection(currentFormSnapshot(), gitRepository, credentialStore, gitSyncService.gate)
             testState = if (result.isRight()) {
                 GitConnectionTestState.Success("Connection successful.")
             } else {

@@ -14,6 +14,7 @@ import dev.stapler.stelekit.git.FetchResult
 import dev.stapler.stelekit.git.GitStatus
 import dev.stapler.stelekit.git.GitSyncBusyCounter
 import dev.stapler.stelekit.git.GitSyncService
+import dev.stapler.stelekit.git.RepoOpGate
 import dev.stapler.stelekit.git.lfs.MemoryFileSystem
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
@@ -32,15 +33,16 @@ import dev.stapler.stelekit.repository.InMemorySearchRepository
 import dev.stapler.stelekit.ui.StelekitViewModel
 import dev.stapler.stelekit.ui.StelekitViewModelDependencies
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -95,7 +97,20 @@ class PostSyncProjectJobEntryPointTest {
             settings = settings,
             gitSyncBusyCounter = busyCounter,
             isOnline = { true },
+            gate = RepoOpGate(),
         ).also { services += it }
+    }
+
+    // runTest burns the barrier's virtual-time attempts while the sync still runs, so wait in real time. Safe only
+    // because runSync keeps the sync off the test thread (blocking it here would starve the sync's own cleanup).
+    private fun awaitSyncIdle(): Boolean {
+        val deadline = System.nanoTime() + 5_000_000_000L
+        while (busyCounter.isBusy.value && System.nanoTime() < deadline) java.util.concurrent.locks.LockSupport.parkNanos(2_000_000L)
+        return busyCounter.isBusy.value
+    }
+
+    private suspend fun runSync(service: GitSyncService) {
+        withContext(Dispatchers.Default) { service.sync(graphId) }
     }
 
     private class Harness(val viewModel: StelekitViewModel, val jobs: InProcessJobs, val router: () -> Any?) {
@@ -108,7 +123,7 @@ class PostSyncProjectJobEntryPointTest {
         val stub = StubFileSystem()
         val jobs = InProcessJobs()
         val router = if (withRouter) newBridgeTestRouter() else null
-        val bridge = bridgeDeps(settings, jobs, router = { router }, isGitSyncBusy = { runBlocking { busyCounter.awaitIdle() }; false }, readyGraphIds = MutableStateFlow(graphId))
+        val bridge = bridgeDeps(settings, jobs, router = { router }, isGitSyncBusy = ::awaitSyncIdle, readyGraphIds = MutableStateFlow(graphId))
         val vm = StelekitViewModel(
             StelekitViewModelDependencies(
                 fileSystem = stub,
@@ -137,7 +152,7 @@ class PostSyncProjectJobEntryPointTest {
         advanceUntilIdle()
         val atOpen = h.entries().size
 
-        service.sync(graphId)
+        runSync(service)
         advanceUntilIdle()
 
         assertIs<SyncState.Success>(service.syncState.value)
@@ -155,7 +170,7 @@ class PostSyncProjectJobEntryPointTest {
         advanceUntilIdle()
         val atOpen = h.entries().size
 
-        service.sync(graphId)
+        runSync(service)
         advanceUntilIdle()
 
         assertIs<SyncState.LfsActionRequired>(service.syncState.value)
@@ -171,7 +186,7 @@ class PostSyncProjectJobEntryPointTest {
         val service = gitService("pages/a.md", mapOf("pages/a.md" to "# a".encodeToByteArray()), settings)
         val h = harness(service, settings, withRouter = true)
 
-        service.sync(graphId)
+        runSync(service)
         advanceUntilIdle()
 
         assertEquals(emptyList(), h.entries())
@@ -183,7 +198,7 @@ class PostSyncProjectJobEntryPointTest {
         val service = gitService("pages/a.md", mapOf("pages/a.md" to "# a".encodeToByteArray()), settings)
         val h = harness(service, settings, withRouter = false)
 
-        service.sync(graphId)
+        runSync(service)
         advanceUntilIdle()
 
         val failed = h.entries().map { it.state }.filterIsInstance<JobState.Failed>()

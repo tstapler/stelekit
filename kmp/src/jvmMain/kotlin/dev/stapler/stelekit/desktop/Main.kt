@@ -215,10 +215,12 @@ fun main(args: Array<String>) {
 
             val attachmentService = remember { JvmMediaAttachmentService() }
             val gitRepository = remember { JvmGitRepository() }
+            // The one gate for this process; every git entry point must share it (WiringRoots).
+            val repoOpGate = remember { dev.stapler.stelekit.git.RepoOpGate() }
             // Story 4.1.4: wires Cancel up on Desktop — without this, gitCloneWorkerLauncher stays
             // null and App.kt's onCancelClone silently no-ops. Owns its own CoroutineScope
             // internally (see JvmGitCloneWorkerLauncher's kdoc), so remember-ing it here is safe.
-            val gitCloneWorkerLauncher = remember(gitRepository) { JvmGitCloneWorkerLauncher(gitRepository) }
+            val gitCloneWorkerLauncher = remember(gitRepository, repoOpGate) { JvmGitCloneWorkerLauncher(gitRepository, repoOpGate) }
             // One registry and one in-process scheduler per window; the scheduler owns its scope, stopped on dispose.
             val settings = remember { dev.stapler.stelekit.platform.PlatformSettings() }
             val taskRegistry = remember { createDesktopTaskRegistry() }
@@ -250,6 +252,7 @@ fun main(args: Array<String>) {
                         attachmentService = attachmentService,
                         readClipboardHtml = { dev.stapler.stelekit.domain.HtmlClipboardReader.read() },
                         gitRepository = gitRepository,
+                        repoOpGate = repoOpGate,
                         gitCloneWorkerLauncher = gitCloneWorkerLauncher,
                     ),
                     lifecycleHooks = StelekitAppLifecycleHooks(

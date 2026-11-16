@@ -1,0 +1,21 @@
+# path|function|method|reason. Mutating GitRepository calls whose own function does not take the gate; each is reached only through one that does.
+# May only shrink: delete a line when its call is gated or removed, and lower GitGateAuditTest.ALLOWLIST_CAP.
+
+commonMain/dev/stapler/stelekit/git/AutoCommitHold.kt|fetchAndReport|fetch|called only from GitSyncService.syncLocked (L485), under singleFlight.run
+commonMain/dev/stapler/stelekit/git/AutoMergeResolver.kt|autoResolveCleanMerges|markResolved|called only from runMergeUnit, which runs under GitSyncService.singleFlight.run
+commonMain/dev/stapler/stelekit/git/BranchRepairService.kt|changeBackProposal|fetch|reached only through GitSyncService.changeBackBranch, which wraps it in singleFlight.run (Task 1.4d1)
+commonMain/dev/stapler/stelekit/git/AbortRecovery.kt|execute|abortMerge|reached via GuardedMergeAbort from GitSyncService.abortActiveMerge, inside singleFlight.run (Task 1.4c)
+commonMain/dev/stapler/stelekit/git/GitSyncService.kt|syncLocked|commit|syncLocked is invoked only from singleFlight.run
+commonMain/dev/stapler/stelekit/git/GitSyncService.kt|syncLocked|fetch|syncLocked is invoked only from singleFlight.run
+commonMain/dev/stapler/stelekit/git/GitSyncService.kt|syncLocked|push|syncLocked is invoked only from singleFlight.run
+commonMain/dev/stapler/stelekit/git/GitSyncService.kt|runMergeUnit|merge|runMergeUnit is called only from syncLocked, under singleFlight.run
+commonMain/dev/stapler/stelekit/git/GitSyncService.kt|runMergeUnit|commit|runMergeUnit is called only from syncLocked, under singleFlight.run
+commonMain/dev/stapler/stelekit/git/GitSyncService.kt|runMergeUnit|abortMerge|runMergeUnit is called only from syncLocked, under singleFlight.run
+commonMain/dev/stapler/stelekit/git/lfs/LfsGuardedStaging.kt|stage|stageSubdir|called only by sync pipelines that already hold the gate (GitSyncService.syncLocked, SyncMain after tryAcquire)
+jvmMain/dev/stapler/stelekit/cli/SyncMain.kt|stageHoldingBackLfs|stageSubdir|SyncMain.main holds the lease from gate.tryAcquire (Task 1.2e/1.3b) for the whole run; these helpers are called only inside it
+jvmMain/dev/stapler/stelekit/cli/SyncMain.kt|runCommitOnly|commit|SyncMain.main holds the lease from gate.tryAcquire (Task 1.2e/1.3b) for the whole run; these helpers are called only inside it
+jvmMain/dev/stapler/stelekit/cli/SyncMain.kt|runFetchOnly|fetch|SyncMain.main holds the lease from gate.tryAcquire (Task 1.2e/1.3b) for the whole run; these helpers are called only inside it
+jvmMain/dev/stapler/stelekit/cli/SyncMain.kt|commitLocalChanges|commit|SyncMain.main holds the lease from gate.tryAcquire (Task 1.2e/1.3b) for the whole run; these helpers are called only inside it
+jvmMain/dev/stapler/stelekit/cli/SyncMain.kt|fetchAndMerge|fetch|SyncMain.main holds the lease from gate.tryAcquire (Task 1.2e/1.3b) for the whole run; these helpers are called only inside it
+jvmMain/dev/stapler/stelekit/cli/SyncMain.kt|mergeRemoteChanges|merge|SyncMain.main holds the lease from gate.tryAcquire (Task 1.2e/1.3b) for the whole run; these helpers are called only inside it
+jvmMain/dev/stapler/stelekit/cli/SyncMain.kt|pushChanges|push|SyncMain.main holds the lease from gate.tryAcquire (Task 1.2e/1.3b) for the whole run; these helpers are called only inside it

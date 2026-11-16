@@ -18,7 +18,11 @@ data class StelekitExtendedColors(
     val bullet: Color,
     val indentGuide: Color,
     val sidebarBackground: Color,
-    val blockRefBackground: Color
+    val blockRefBackground: Color,
+    /** Amber for text and icons on the surface; at least 4.5:1 against it in each theme (checked by `ThemeWarningContrastTest`). */
+    val warning: Color = WarningLight,
+    /** Content color on a [warning] fill; at least 4.5:1 against it. */
+    val onWarning: Color = Color.White,
 )
 
 val LocalStelekitColors = staticCompositionLocalOf {
@@ -26,7 +30,7 @@ val LocalStelekitColors = staticCompositionLocalOf {
         bullet = Color.Unspecified,
         indentGuide = Color.Unspecified,
         sidebarBackground = Color.Unspecified,
-        blockRefBackground = Color.Unspecified
+        blockRefBackground = Color.Unspecified,
     )
 }
 
@@ -49,7 +53,9 @@ private val LightExtendedColors = StelekitExtendedColors(
     bullet = PaleStone,
     indentGuide = PaleStone.copy(alpha = INDENT_GUIDE_ALPHA),
     sidebarBackground = LimestoneSurface,
-    blockRefBackground = DeepPatina.copy(alpha = BLOCK_REF_ALPHA)
+    blockRefBackground = DeepPatina.copy(alpha = BLOCK_REF_ALPHA),
+    warning = WarningLight,
+    onWarning = Color.White,
 )
 
 private val DarkColorScheme = darkColorScheme(
@@ -68,7 +74,9 @@ private val DarkExtendedColors = StelekitExtendedColors(
     bullet = WornStone.copy(alpha = 0.6f),
     indentGuide = WornStone.copy(alpha = INDENT_GUIDE_ALPHA),
     sidebarBackground = GraniteSurface,
-    blockRefBackground = PatinaAccent.copy(alpha = BLOCK_REF_ALPHA)
+    blockRefBackground = PatinaAccent.copy(alpha = BLOCK_REF_ALPHA),
+    warning = WarningDark,
+    onWarning = OnWarningDark,
 )
 
 // Stone theme: same warm stone palette as dark, richer contrast
@@ -91,7 +99,9 @@ private val StoneExtendedColors = StelekitExtendedColors(
     bullet = WornStone.copy(alpha = 0.8f),
     indentGuide = WornStone.copy(alpha = 0.2f),
     sidebarBackground = GraniteSurface,
-    blockRefBackground = PatinaAccent.copy(alpha = 0.1f)
+    blockRefBackground = PatinaAccent.copy(alpha = 0.1f),
+    warning = WarningDark,
+    onWarning = OnWarningDark,
 )
 
 enum class StelekitThemeMode {

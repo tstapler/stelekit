@@ -66,11 +66,13 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
         // Robolectric reports no validated network unless a test fakes one, and the worker now evaluates
         // NetworkGate (Story 3.1.2). Setup only; every assertion below is unchanged.
         GitSyncWorker.snapshotProviderOverride = { NetworkSnapshotProvider { NetworkSnapshot(online = true, isMetered = false) } }
+        GitSyncWorker.processColdPathRunner = AndroidColdPathRunner(context, RepoOpGate())
     }
 
     @After
     fun tearDown() {
         GitSyncWorker.snapshotProviderOverride = null
+        GitSyncWorker.processColdPathRunner = null
         GitSyncServiceRegistry.unregister(FAST_PATH_GRAPH_ID)
         GitSyncServiceRegistry.unregister(WORK_MANAGER_GRAPH_ID)
     }
@@ -117,6 +119,7 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
             configRepository = StubConfigRepository(sampleConfig.right()),
             networkMonitor = NetworkMonitor(),
             fileSystem = stubFs,
+            gate = RepoOpGate(),
         )
         GitSyncServiceRegistry.register(graphId, service)
     }
@@ -169,6 +172,7 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
             isOnline = { true },
             // A SAF-style graph: only the policy path records this reason; fetchOnly alone never does.
             isAppOwnedPath = { false },
+            gate = RepoOpGate(),
         )
         GitSyncServiceRegistry.register(FAST_PATH_GRAPH_ID, service)
 
@@ -185,7 +189,7 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
         val settings = MapSettings()
         val staleness = SyncStalenessStore(settings)
         val result = runBlocking {
-            runSlowPathFetch({ sampleConfig }, repoReturning(FetchResult(true, 4).right()), staleness, clock = { 9L })
+            runSlowPathFetch({ sampleConfig }, repoReturning(FetchResult(true, 4).right()), RepoOpGate(), { "k" }, staleness, clock = { 9L })
         }
         assertIs<ListenableWorker.Result.Success>(result)
         val stored = staleness.read(sampleConfig.graphId)
@@ -197,7 +201,7 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
     fun `slow path records a typed fetch error as the outcome and fails`() {
         val staleness = SyncStalenessStore(MapSettings())
         val error = DomainError.GitError.RemoteBranchNotFound("origin", "main", emptyList())
-        val result = runBlocking { runSlowPathFetch({ sampleConfig }, repoReturning(error.left()), staleness, clock = { 9L }) }
+        val result = runBlocking { runSlowPathFetch({ sampleConfig }, repoReturning(error.left()), RepoOpGate(), { "k" }, staleness, clock = { 9L }) }
         assertIs<ListenableWorker.Result.Failure>(result)
         assertEquals("RemoteBranchNotFound", staleness.read(sampleConfig.graphId).history.last().detail)
     }
@@ -217,6 +221,8 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
                 gitRepository = repoReturning(
                     DomainError.GitError.RetryExhausted(5, DomainError.GitError.FetchFailed("boom")).left(),
                 ),
+                gate = RepoOpGate(),
+                gateKeyFor = { "k" },
             )
         }
         assertIs<ListenableWorker.Result.Failure>(result)
@@ -224,10 +230,30 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
 
     @Test
     fun `slow path returns success when fetch() succeeds, and success when no config row exists`() {
-        val ok = runBlocking { runSlowPathFetch({ sampleConfig }, repoReturning(FetchResult(false, 0).right())) }
+        val ok = runBlocking { runSlowPathFetch({ sampleConfig }, repoReturning(FetchResult(false, 0).right()), RepoOpGate(), { "k" }) }
         assertIs<ListenableWorker.Result.Success>(ok)
-        val noRow = runBlocking { runSlowPathFetch({ null }, repoReturning(FetchResult(false, 0).right())) }
+        val noRow = runBlocking { runSlowPathFetch({ null }, repoReturning(FetchResult(false, 0).right()), RepoOpGate(), { "k" }) }
         assertIs<ListenableWorker.Result.Success>(noRow)
+    }
+
+    @Test
+    fun `slow path skips without fetching when the shared gate is held`() {
+        val gate = RepoOpGate()
+        gate.tryAcquire("k", SyncOrigin.UiPress)!!
+        var fetched = false
+        val repo = object : StubGitRepository() {
+            override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> {
+                fetched = true
+                return FetchResult(false, 0).right()
+            }
+        }
+        val result = runBlocking { runSlowPathFetch({ sampleConfig }, repo, gate, { "k" }) }
+        assertIs<ListenableWorker.Result.Success>(result)
+        assertEquals(false, fetched)
+        assertEquals(
+            TickOutcome.Skip(SkipReason.Busy),
+            ColdSyncOutcome.Error(DomainError.GitError.SyncInProgress(SyncOrigin.UiPress)).toTickOutcome(),
+        )
     }
 
     /**

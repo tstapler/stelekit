@@ -7,6 +7,7 @@ import dev.stapler.stelekit.security.Redactor
 
 import dev.stapler.stelekit.model.RepoRoot
 import arrow.core.Either
+import arrow.core.flatMap
 import arrow.core.getOrElse
 import arrow.core.left
 import arrow.core.right
@@ -46,6 +47,7 @@ import java.io.File
  */
 class JvmGitRepository(
     credentialAccess: CredentialAccess = CredentialStore(),
+    private val ownedOperations: OwnedOperationSupport = JvmOwnedOperations.support(),
 ) : GitRepository {
 
     private val logger = Logger("JvmGitRepository")
@@ -181,10 +183,9 @@ class JvmGitRepository(
                 ).left()
             }
 
-            val retryLoopStartMs = System.currentTimeMillis()
             runGitTransportOpWithRetry(
                 schedule = RetryPolicies.gitTransportTransient,
-                beforeRetry = { deleteLockFileIfStaleForRetry(indexLockFile(config), retryLoopStartMs) },
+                beforeRetry = { recoverLocksBeforeRetry(config) },
                 onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
                 onFailed = { e -> DomainError.GitError.FetchFailed(e.message ?: "Unshallow failed") },
                 onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
@@ -205,10 +206,9 @@ class JvmGitRepository(
 
     override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> =
         withContext(PlatformDispatcher.IO) {
-            val retryLoopStartMs = System.currentTimeMillis()
             runGitTransportOpWithRetry(
                 schedule = RetryPolicies.gitTransportTransient,
-                beforeRetry = { deleteLockFileIfStaleForRetry(indexLockFile(config), retryLoopStartMs) },
+                beforeRetry = { recoverLocksBeforeRetry(config) },
                 onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Authentication failed") },
                 onFailed = { e -> DomainError.GitError.FetchFailed(e.message ?: "Fetch failed") },
                 onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
@@ -380,10 +380,9 @@ class JvmGitRepository(
         withContext(PlatformDispatcher.IO) {
             pushAudit = emptyList()
             val previousRemoteTip = remoteTrackingTip(config)
-            val retryLoopStartMs = System.currentTimeMillis()
             runGitTransportOpWithRetry(
                 schedule = RetryPolicies.gitTransportTransient,
-                beforeRetry = { deleteLockFileIfStaleForRetry(indexLockFile(config), retryLoopStartMs) },
+                beforeRetry = { recoverLocksBeforeRetry(config) },
                 onAuthFailed = { e -> DomainError.GitError.AuthFailed(e.message ?: "Push authentication failed") },
                 onFailed = { e -> DomainError.GitError.PushFailed(e.message ?: "Push failed") },
                 onExhausted = { attempts, last -> DomainError.GitError.RetryExhausted(attempts, last) },
@@ -567,27 +566,40 @@ class JvmGitRepository(
 
     override suspend fun removeStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
-            runGitOp({ _ -> DomainError.GitError.StaleLockFile("${config.repoRoot.value}/.git/index.lock") }) {
-                deleteStaleLockFile(config)
+            val gitDir = gitDirOf(config)
+            val files = JavaIoLockFiles(gitDir)
+            if (files.listAllowListedLocks().isEmpty()) return@withContext Unit.right()
+            // Never deletes: removal is the claim's job (beginOwnedOperation) or the confirm-gated forceRemoveLock.
+            DomainError.GitError.StaleLockFile(File(gitDir, "index.lock").absolutePath, ownedOperations.peekVerdict(gitDir)).left()
+        }
+
+    override suspend fun beginOwnedOperation(config: GitConfig, info: OwnedOperationInfo): Either<DomainError.GitError, LockVerdict> =
+        withContext(PlatformDispatcher.IO) {
+            ownedOperations.begin(gitDirOf(config), info).flatMap { verdict ->
+                if (verdict.deletes) healthyAfterLockDeletion(config).map { verdict } else verdict.right()
             }
         }
 
-    /** `.git/index.lock` path for [config]'s repo — shared by [deleteStaleLockFile] (user-initiated,
-     * fixed 60s age) and [runGitTransportOpWithRetry]'s `beforeRetry` cleanup (retry-loop-relative
-     * age, Task 1.2.2c). */
-    private fun indexLockFile(config: GitConfig): File = File(config.repoRoot.value, ".git/index.lock")
-
-    private fun deleteStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit> {
-        val lockFile = indexLockFile(config)
-        if (!lockFile.exists()) return Unit.right()
-
-        val ageMs = System.currentTimeMillis() - lockFile.lastModified()
-        return if (ageMs > 60_000L) {
-            if (lockFile.delete()) Unit.right() else DomainError.GitError.StaleLockFile(lockFile.absolutePath).left()
-        } else {
-            DomainError.GitError.StaleLockFile(lockFile.absolutePath).left()
-        }
+    override suspend fun endOwnedOperation(config: GitConfig) {
+        withContext(PlatformDispatcher.IO) { ownedOperations.end(gitDirOf(config)) }
     }
+
+    override suspend fun touchOwnedOperation(config: GitConfig) {
+        withContext(PlatformDispatcher.IO) { ownedOperations.touch(gitDirOf(config)) }
+    }
+
+    override suspend fun forceRemoveLock(config: GitConfig): Either<DomainError.GitError, Unit> =
+        withContext(PlatformDispatcher.IO) {
+            ownedOperations.forceRemove(gitDirOf(config)).flatMap { healthyAfterLockDeletion(config) }
+        }
+
+    override fun gateKeyForRoot(repoRoot: String): String? =
+        RepoOpGate.keyForOrNull(JavaIoLockFiles.resolveGitDir(File(repoRoot)))
+
+    private fun gitDirOf(config: GitConfig): File = JavaIoLockFiles.resolveGitDir(File(config.repoRoot.value))
+
+    /** Retry hook for the transport loops: clears only a provably dead owner's locks, via the claim. */
+    private fun recoverLocksBeforeRetry(config: GitConfig) = ownedOperations.recoverBeforeRetry(gitDirOf(config))
 
     // ── Private helpers ───────────────────────────────────────────────────────
 

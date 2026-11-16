@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.jobs.schedule.TaskRunResult
 import dev.stapler.stelekit.security.Redactor
 
@@ -14,7 +15,10 @@ import dev.stapler.stelekit.security.Redactor
 fun TickOutcome.toTaskRunResult(): TaskRunResult = when (this) {
     TickOutcome.Success -> TaskRunResult.Success
     TickOutcome.Fetched -> TaskRunResult.Partial("fetched")
-    is TickOutcome.Failure -> TaskRunResult.Failed(Redactor.redactGitMessage(message), retryable = false)
+    // A coalesced trigger reaching here as a failure is still a busy skip: it must not count toward backoff or lateness.
+    is TickOutcome.Failure ->
+        if (error is DomainError.GitError.SyncInProgress) TaskRunResult.Skipped(SkipReason.Busy.code())
+        else TaskRunResult.Failed(Redactor.redactGitMessage(message), retryable = false)
     is TickOutcome.Skip -> TaskRunResult.Skipped(reason.code())
 }
 

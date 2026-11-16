@@ -9,5 +9,5 @@ data class SyncResult(
     val localCommits: Int,
     val remoteCommits: Int,
     val conflicts: List<String> = emptyList(),
-    val status: String, // "success" | "conflicts" | "auth_error" | "network_error" | "no_config" | "error"
+    val status: String, // "success" | "conflicts" | "auth_error" | "network_error" | "no_config" | "busy" | "error"
 )

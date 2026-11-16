@@ -77,6 +77,10 @@ kt_android_library(
             "**/RulerTickPanelTest.kt",
             # Compose host test for the PNG calibration step (Gradle-only, no Compose plugin here)
             "**/RasterTaggingPanelTest.kt",
+            # Compose host tests for the sync status sheet/badge (Gradle-only; Density inline fails the Bazel backend)
+            "**/SyncStatusSheetStatesTest.kt",
+            "**/SyncStatusBadgeTest.kt",
+            "**/SyncStatusTextScaleTest.kt",
         ],
     ),
     custom_package = "dev.stapler.stelekit",

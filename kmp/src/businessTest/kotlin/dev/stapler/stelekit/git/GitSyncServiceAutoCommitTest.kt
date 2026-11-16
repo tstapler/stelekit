@@ -70,6 +70,7 @@ class GitSyncServiceAutoCommitTest {
             fileSystem = fs,
             graphId = "test-graph",
             isOnline = { true },
+            gate = RepoOpGate(),
         )
     }
 

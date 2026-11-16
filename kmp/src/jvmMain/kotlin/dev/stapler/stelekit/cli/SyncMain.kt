@@ -6,6 +6,11 @@ import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.lastNotesPath
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.LockVerdict
+import dev.stapler.stelekit.git.OwnedOperationInfo
+import dev.stapler.stelekit.git.OwnerHeartbeat
+import dev.stapler.stelekit.git.RepoOpGate
+import dev.stapler.stelekit.git.SyncOrigin
 import dev.stapler.stelekit.git.buildCommitMessage
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.JvmGitRepository
@@ -14,14 +19,25 @@ import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.security.CredentialStore
+import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.system.exitProcess
 
 // Thrown instead of exitProcess so that try/finally in runSync always calls graphManager.shutdown().
 internal class SyncExitException(val code: Int) : Exception()
+
+/** Another sync (the app or a second CLI) holds the repository; nothing was changed. */
+internal const val EXIT_BUSY = 6
 
 fun main(args: Array<String>) {
     val rootJob = Job()
@@ -61,7 +77,7 @@ suspend fun runSync(args: Array<String>) {
 
     var exitCode = 0
     try {
-        runSyncWithManager(syncArgs, graphManager, gitRepository, output, graphPath)
+        runSyncWithManager(syncArgs, graphManager, gitRepository, output, graphPath, RepoOpGate())
     } catch (e: SyncExitException) {
         exitCode = e.code
     } finally {
@@ -76,6 +92,8 @@ internal suspend fun runSyncWithManager(
     gitRepository: GitRepository,
     output: SyncOutput,
     graphPath: EffectiveNotesPath,
+    gate: RepoOpGate,
+    heartbeatIntervalMs: Long = OwnerHeartbeat.DEFAULT_INTERVAL_MS,
 ) {
     val graphId = graphManager.addGraph(graphPath)
     graphManager.switchGraph(graphId)
@@ -110,11 +128,87 @@ internal suspend fun runSyncWithManager(
         return
     }
 
-    when {
-        syncArgs.commitOnly -> runCommitOnly(gitRepository, config, output, graphPath)
-        syncArgs.fetchOnly -> runFetchOnly(gitRepository, config, output, graphPath)
-        else -> runFullSync(gitRepository, config, output, graphPath)
+    runOwned(gate, gitRepository, config, output, graphPath, heartbeatIntervalMs) {
+        when {
+            syncArgs.commitOnly -> runCommitOnly(gitRepository, config, output, graphPath)
+            syncArgs.fetchOnly -> runFetchOnly(gitRepository, config, output, graphPath)
+            else -> runFullSync(gitRepository, config, output, graphPath)
+        }
     }
+}
+
+/**
+ * Runs [body] only while this process owns the repository: the process gate, then the cross-process owner record
+ * (the same claim protocol the app uses), with the heartbeat running. Anything but a clean claim exits without
+ * touching the repository; an unknown owner never deletes a lock.
+ */
+internal suspend fun runOwned(
+    gate: RepoOpGate,
+    gitRepository: GitRepository,
+    config: GitConfig,
+    output: SyncOutput,
+    graphPath: EffectiveNotesPath,
+    heartbeatIntervalMs: Long = OwnerHeartbeat.DEFAULT_INTERVAL_MS,
+    body: suspend () -> Unit,
+) {
+    val key = gitRepository.gateKeyFor(config)
+    if (key == null) {
+        output.error("Cannot resolve the git directory for this graph")
+        output.result(SyncResult(graph = graphPath.directory(), branch = config.remoteBranch, localCommits = 0, remoteCommits = 0, status = "error"))
+        throw SyncExitException(5)
+    }
+    val lease = gate.tryAcquire(key, SyncOrigin.Cli) ?: busy(output, graphPath, config)
+    try {
+        // Uncancellable: a claim that completed must reach the try/finally that ends it.
+        val verdict = withContext(NonCancellable) { gitRepository.beginOwnedOperation(config, OwnedOperationInfo("sync", SyncOrigin.Cli)) }
+        verdict.onLeft { err ->
+            if (err is DomainError.GitError.SyncInProgress) busy(output, graphPath, config)
+            handleGitError(err, output, graphPath, config.remoteBranch)
+        }
+        when (val v = verdict.getOrElse { LockVerdict.NoRecord }) {
+            LockVerdict.NoLock, LockVerdict.ClearedOwn, LockVerdict.ClearedDeadOwner -> Unit
+            LockVerdict.OwnerAlive -> busy(output, graphPath, config)
+            else -> {
+                output.error("A git lock exists and its owner could not be confirmed dead ($v); nothing was deleted")
+                output.result(SyncResult(graph = graphPath.directory(), branch = config.remoteBranch, localCommits = 0, remoteCommits = 0, status = "error"))
+                throw SyncExitException(5)
+            }
+        }
+        try {
+            coroutineScope {
+                val heartbeat = launch {
+                    while (isActive) {
+                        delay(heartbeatIntervalMs)
+                        try {
+                            gitRepository.touchOwnedOperation(config)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            // A failed touch only makes a later claimer fail closed; it must not abort the sync body.
+                            heartbeatLogger.warn("owner heartbeat failed", e)
+                        }
+                    }
+                }
+                try {
+                    body()
+                } finally {
+                    heartbeat.cancelAndJoin()
+                }
+            }
+        } finally {
+            withContext(NonCancellable) { gitRepository.endOwnedOperation(config) }
+        }
+    } finally {
+        gate.releaseOrHandOff(lease)
+    }
+}
+
+private val heartbeatLogger = Logger("SyncMain")
+
+private fun busy(output: SyncOutput, graphPath: EffectiveNotesPath, config: GitConfig): Nothing {
+    output.error("Another sync is already running for this graph; try again when it finishes")
+    output.result(SyncResult(graph = graphPath.directory(), branch = config.remoteBranch, localCommits = 0, remoteCommits = 0, status = "busy"))
+    throw SyncExitException(EXIT_BUSY)
 }
 
 internal suspend fun runDryRun(

@@ -417,10 +417,15 @@ class MainActivity : ComponentActivity() {
             // (shadowKey/queue/flush) once AndroidGitRepository exposes a public accessor for its
             // internal shadowWorktreeFor()/GitShadowFlushActor — currently always null, not wired.
             val androidGraphMoveQuiesceStrategy = remember(app.graphManager, sharedGitSyncBusyCounter) {
-                app.graphManager?.let {
+                app.graphManager?.let { gm ->
                     createAndroidGraphMoveQuiesceStrategy(
                         context = applicationContext,
                         gitSyncBusyCounter = sharedGitSyncBusyCounter,
+                        gate = app.repoOpGate,
+                        // The same canonical key the sync service and cold runner derive; null (no config, unreadable) means no gate.
+                        gateKeyFor = { op ->
+                            gm.createGitConfigRepository()?.getConfig(op.graphId)?.getOrNull()?.let(gitRepository::gateKeyFor)
+                        },
                         shadowWorktreeTarget = { null },
                     )
                 }
@@ -553,6 +558,7 @@ class MainActivity : ComponentActivity() {
                         // The Application's registry is shared, never rebuilt here: kinds register only in onCreate.
                         backgroundTaskScheduler = backgroundTaskScheduler,
                         taskRegistry = app.taskRegistry,
+                        repoOpGate = app.repoOpGate,
                         backgroundSyncSchedulerFactory = BackgroundSyncSchedulerFactory(
                             minimumIntervalMinutes = WorkManagerSyncScheduler.MIN_PERIODIC_INTERVAL_MINUTES.toInt(),
                         ) { graphId -> WorkManagerSyncScheduler(applicationContext, graphId) },

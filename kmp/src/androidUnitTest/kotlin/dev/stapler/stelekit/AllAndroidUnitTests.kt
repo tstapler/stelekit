@@ -1,7 +1,10 @@
 package dev.stapler.stelekit
 
+import dev.stapler.stelekit.db.AndroidGraphMoveQuiesceStrategyTest
+import dev.stapler.stelekit.db.QuiesceRealFlushTest
 import dev.stapler.stelekit.db.WalConfiguredCallbackTest
 import dev.stapler.stelekit.git.AndroidGitLegacyConfigSourceTest
+import dev.stapler.stelekit.git.AndroidGitRepositoryClaimTest
 import dev.stapler.stelekit.git.AndroidGitRepositoryLfsGuardTest
 import dev.stapler.stelekit.google.AndroidGoogleSupportTest
 import dev.stapler.stelekit.git.AndroidBatterySettingsLauncherTest
@@ -52,12 +55,15 @@ import dev.stapler.stelekit.ui.components.MermaidWebViewSettingsTest
 import dev.stapler.stelekit.ui.transfer.QrDecodeViewModelBackgroundingTest
 import dev.stapler.stelekit.voice.AndroidSpeechRecognizerPermissionTest
 import dev.stapler.stelekit.wiring.PlatformCapsRootTest
+import dev.stapler.stelekit.wiring.RepoGateSharedEntryPointTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
 
 @RunWith(Suite::class)
 @Suite.SuiteClasses(
     WalConfiguredCallbackTest::class,
+    AndroidGraphMoveQuiesceStrategyTest::class,
+    QuiesceRealFlushTest::class,
     WorkManagerJitterSpikeTest::class,
     WorkManagerTaskSchedulerContractTest::class,
     WorkManagerTaskSchedulerConstraintsTest::class,
@@ -84,9 +90,11 @@ import org.junit.runners.Suite
     AndroidGitLegacyConfigSourceTest::class,
     PlatformSettingsColdPathTest::class,
     PlatformCapsRootTest::class,
+    RepoGateSharedEntryPointTest::class,
     AndroidGoogleSupportTest::class,
     GitSyncBusyCounterSharedWiringTest::class,
     AndroidGitRepositoryTestRemoteTest::class,
+    AndroidGitRepositoryClaimTest::class,
     AndroidGitRepositoryLfsGuardTest::class,
     LegacyPathValidationTest::class,
     PlatformFileSystemPickerTest::class,
@@ -134,5 +142,6 @@ import org.junit.runners.Suite
     // They run under Gradle's testDebugUnitTest.
     // BackgroundTasksUxGapsTest, ScheduledSyncStatusActionsTest, TaskSettingsAccessibilityAndErrorsTest,
     // DepthEstimationPanelLiveRegionTest and ScheduledSyncControlsApplyTest are excluded for the same reason (1).
+    // SyncStatusSheetStatesTest, SyncStatusBadgeTest and SyncStatusTextScaleTest (Task 1.7b) are excluded for the same reason (1).
 )
 class AllAndroidUnitTests

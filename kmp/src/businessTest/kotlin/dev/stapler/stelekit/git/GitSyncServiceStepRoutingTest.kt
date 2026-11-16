@@ -37,10 +37,11 @@ class GitSyncServiceStepRoutingTest {
         var pushResult: Either<DomainError.GitError, Unit> = Unit.right()
         var commitResult: Either<DomainError.GitError, String> = "sha".right()
         var detached = false
-        var lockResult: Either<DomainError.GitError, Unit> = Unit.right()
+        var claimVerdict: LockVerdict = LockVerdict.NoLock
 
         override suspend fun hasDetachedHead(config: GitConfig) = detached
-        override suspend fun removeStaleLockFile(config: GitConfig) = lockResult
+        override suspend fun beginOwnedOperation(config: GitConfig, info: OwnedOperationInfo): Either<DomainError.GitError, LockVerdict> =
+            claimVerdict.right()
         override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> = status.right()
         override suspend fun stageSubdir(config: GitConfig, excludePaths: Set<String>): Either<DomainError.GitError, Unit> =
             Unit.right().also { calls += "stage" }
@@ -87,8 +88,9 @@ class GitSyncServiceStepRoutingTest {
 
     @Test
     fun aStaleLockThatCannotBeRemovedStopsTheSync() = runTest {
-        val lockError = DomainError.GitError.StaleLockFile("/repo/.git/index.lock")
-        val git = Scripted().apply { lockResult = lockError.left() }
+        val verdict = LockVerdict.OwnerUnknown(UnknownReason.RecoveryLockUnsupported)
+        val lockError = DomainError.GitError.StaleLockFile("/repo/.git/index.lock", verdict)
+        val git = Scripted().apply { claimVerdict = verdict }
         val svc = service(git)
 
         assertEquals(lockError, svc.sync("g").leftOrNull())

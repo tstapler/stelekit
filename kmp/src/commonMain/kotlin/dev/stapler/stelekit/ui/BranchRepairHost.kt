@@ -116,6 +116,7 @@ internal fun BranchRepairHost(appState: AppState, viewModel: StelekitViewModel, 
                         is BranchRepairResult.TargetNotOnRemote ->
                             changeBackNote = "'${result.to}' is still not on the remote, so it can't be switched back to."
                         is BranchRepairResult.SaveFailed -> changeBackNote = "Couldn't switch back: ${Redactor.redactGitMessage(result.message)}"
+                        is BranchRepairResult.Busy -> changeBackNote = "A sync is running. Try again when it finishes."
                         else -> changeBackNote = "Couldn't switch back."
                     }
                 }

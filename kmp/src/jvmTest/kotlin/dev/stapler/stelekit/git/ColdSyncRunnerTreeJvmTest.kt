@@ -59,7 +59,7 @@ class ColdSyncRunnerTreeJvmTest {
     private fun head(dir: File) = Git.open(dir).use { it.repository.resolve("HEAD").name }
 
     private suspend fun runCold(s: Setup, staleness: SyncStalenessStore): ColdSyncOutcome =
-        ColdSyncRunner(repository, StubConfigRepository(s.config.right()), staleness, NamedLocks()) { 5L }.run("g")
+        ColdSyncRunner(repository, StubConfigRepository(s.config.right()), staleness, RepoOpGate(), { "tree-key" }) { 5L }.run("g")
 
     @Test
     fun `for any generated dirty set the working tree and HEAD are byte-identical after the run`() = runTest {

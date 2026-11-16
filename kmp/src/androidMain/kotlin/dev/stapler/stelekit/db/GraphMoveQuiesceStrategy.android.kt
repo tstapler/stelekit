@@ -12,7 +12,10 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.GitSyncBusyCounter
+import dev.stapler.stelekit.git.GateLease
 import dev.stapler.stelekit.git.GitWriteBackQueue
+import dev.stapler.stelekit.git.RepoOpGate
+import dev.stapler.stelekit.git.SyncOrigin
 import dev.stapler.stelekit.git.WorkManagerSyncScheduler
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.model.StorageMoveOperation
@@ -32,12 +35,27 @@ private const val SAF_TREE_URI_FLAGS = Intent.FLAG_GRANT_READ_URI_PERMISSION or 
  * drain, and a way to drain it (a caller-supplied `GitShadowFlushActor.flush()` reference, kept
  * as a lambda here so this file never needs a `Context` or a real `GitShadowWorktree`/`FileSystem`
  * to be unit-tested — see `AndroidGraphMoveQuiesceStrategyTest`).
+ *
+ * [flushWhileLocked] runs while quiesce already holds the worktree mutex, so it must be
+ * `GitShadowFlushActor::flushLocked`, never `flush` (the mutex is not reentrant).
  */
 class ShadowWorktreeQuiesceTarget(
     val shadowKey: String,
     val queue: GitWriteBackQueue,
-    val flush: suspend () -> List<Either<DomainError.GitError, Unit>>,
+    val flushWhileLocked: suspend () -> List<Either<DomainError.GitError, Unit>>,
 )
+
+/** What one [AndroidGraphMoveQuiesceStrategy.quiesce] holds: the gate lease and the worktree mutex, released together. */
+private class QuiesceHold(private val gate: RepoOpGate, private val lease: GateLease?) {
+    /** Set only once the mutex is actually held, so a cancelled `lock()` is never unlocked. */
+    var lock: Mutex? = null
+
+    fun release() {
+        lock?.let { if (it.isLocked) it.unlock() }
+        // Mutex first, so a trigger that wins the freed gate never meets a still-held worktree lock.
+        lease?.let { gate.releaseOrHandOff(it) }
+    }
+}
 
 /**
  * Wraps [GitWorktreeLocks], [GitSyncBusyCounter], and a graph's [GitWriteBackQueue] behind
@@ -50,6 +68,10 @@ class ShadowWorktreeQuiesceTarget(
  * when [op] doesn't touch one (no git remote configured for this graph) — injected rather than
  * this class resolving `AndroidGitRepository.shadowWorktreeFor()` itself, so it stays
  * unit-testable with fakes; Story 3.2.1 wires the real resolution.
+ *
+ * [gateKeyFor] resolves [op] to the same canonical `RepoOpGate.keyFor(resolvedGitDir)` the sync service
+ * uses (null: no git config or unresolvable `.git`, so no gate). [quiesce] takes [gate] before the worktree
+ * mutex, so it never holds the mutex while waiting for a sync that needs it (ADR-001 decision 7).
  *
  * [pauseBackgroundSync]/[resumeBackgroundSync] (Story 3.2.1) pause/resume [op]'s graph's
  * `WorkManager` periodic fetch job so it never races the foreground copy of `.git` — injected as
@@ -65,6 +87,8 @@ class ShadowWorktreeQuiesceTarget(
  */
 class AndroidGraphMoveQuiesceStrategy(
     private val gitSyncBusyCounter: GitSyncBusyCounter,
+    private val gate: RepoOpGate,
+    private val gateKeyFor: suspend (StorageMoveOperation) -> String?,
     private val shadowWorktreeTarget: (StorageMoveOperation) -> ShadowWorktreeQuiesceTarget?,
     private val pauseBackgroundSync: (graphId: String) -> Unit = {},
     private val resumeBackgroundSync: (graphId: String) -> Unit = {},
@@ -84,25 +108,36 @@ class AndroidGraphMoveQuiesceStrategy(
         private const val WRITE_BACK_RETRY_DELAY_MS = 200L
     }
 
-    /** Locks acquired by an in-flight [quiesce], keyed by shadow key, so [release] can find them. */
-    private val heldLocks = ConcurrentHashMap<String, Mutex>()
+    /** Holds taken by an in-flight [quiesce], keyed by graph id, so [release] can find them. */
+    private val holds = ConcurrentHashMap<String, QuiesceHold>()
 
     override suspend fun quiesce(op: StorageMoveOperation): Either<DomainError.StorageError, Unit> {
         // The lambda reads WorkInfo with a blocking get(); keep it off the caller's (possibly main) dispatcher.
         withContext(Dispatchers.IO) { pauseBackgroundSync(op.graphId) }
 
         val target = shadowWorktreeTarget(op)
-        if (target != null) {
-            val lock = GitWorktreeLocks.lockFor(target.shadowKey)
-            lock.lock()
-            heldLocks[target.shadowKey] = lock
-        }
+        // Gate first: a running sync may need the worktree mutex, so it is never taken while waiting here.
+        val lease = gateKeyFor(op)?.let { gate.acquire(it, SyncOrigin.Quiesce) }
+        val hold = QuiesceHold(gate, lease)
+        holds.put(op.graphId, hold)?.release()
+        try {
+            if (target != null) {
+                val worktreeLock = GitWorktreeLocks.lockFor(target.shadowKey)
+                worktreeLock.lock()
+                hold.lock = worktreeLock
+            }
 
-        gitSyncBusyCounter.awaitIdle()
+            gitSyncBusyCounter.awaitIdle()
 
-        if (target != null) {
-            val drainError = drainWriteBack(target)
-            if (drainError != null) return drainError.left()
+            if (target != null) {
+                val drainError = drainWriteBack(target)
+                if (drainError != null) return drainError.left()
+            }
+        } catch (e: Throwable) {
+            // Includes the caller's timeout cancellation: neither the lease nor the mutex may leak.
+            holds.remove(op.graphId)
+            hold.release()
+            throw e
         }
 
         return Unit.right()
@@ -121,7 +156,7 @@ class AndroidGraphMoveQuiesceStrategy(
         var attempts = 0
         while (!target.queue.isEmpty() && attempts < MAX_WRITE_BACK_FLUSH_ATTEMPTS) {
             attempts++
-            val flushErrors = target.flush().flushErrors()
+            val flushErrors = target.flushWhileLocked().flushErrors()
 
             flushErrors.filterIsInstance<DomainError.GitError.WorkingTreeConcurrentEditDetected>()
                 .firstOrNull()
@@ -157,12 +192,7 @@ class AndroidGraphMoveQuiesceStrategy(
         mapNotNull { (it as? Either.Left)?.value }
 
     override suspend fun release(op: StorageMoveOperation) {
-        val shadowKey = shadowWorktreeTarget(op)?.shadowKey
-        if (shadowKey != null) {
-            heldLocks.remove(shadowKey)?.let { lock ->
-                if (lock.isLocked) lock.unlock()
-            }
-        }
+        holds.remove(op.graphId)?.release()
         withContext(Dispatchers.IO) { resumeBackgroundSync(op.graphId) }
     }
 
@@ -182,9 +212,13 @@ class AndroidGraphMoveQuiesceStrategy(
 fun createAndroidGraphMoveQuiesceStrategy(
     context: Context,
     gitSyncBusyCounter: GitSyncBusyCounter,
+    gate: RepoOpGate,
+    gateKeyFor: suspend (StorageMoveOperation) -> String?,
     shadowWorktreeTarget: (StorageMoveOperation) -> ShadowWorktreeQuiesceTarget?,
 ): AndroidGraphMoveQuiesceStrategy = AndroidGraphMoveQuiesceStrategy(
     gitSyncBusyCounter = gitSyncBusyCounter,
+    gate = gate,
+    gateKeyFor = gateKeyFor,
     shadowWorktreeTarget = shadowWorktreeTarget,
     pauseBackgroundSync = { graphId -> WorkManagerSyncScheduler.pauseFor(context, graphId) },
     resumeBackgroundSync = { graphId -> WorkManagerSyncScheduler.resumeFor(context, graphId) },

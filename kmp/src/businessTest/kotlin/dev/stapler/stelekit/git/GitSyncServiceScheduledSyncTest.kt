@@ -130,6 +130,7 @@ class GitSyncServiceScheduledSyncTest {
                 isOnline = { isOnline() },
                 wallClockMs = { now },
                 isAppOwnedPath = { appOwned(it) },
+                gate = RepoOpGate(),
             )
         }
     }
@@ -297,6 +298,7 @@ class GitSyncServiceScheduledSyncTest {
                 graphId = "test-graph",
                 settings = h.settings,
                 isOnline = { true },
+                gate = RepoOpGate(),
             )
             svc.scheduled.run("test-graph")
             assertEquals(emptyList(), h.spy.mutatingCalls(), "root $root")
@@ -451,6 +453,7 @@ class GitSyncServiceScheduledSyncTest {
             fileSystem = fs,
             graphId = "test-graph",
             isOnline = { true },
+            gate = RepoOpGate(),
         )
 
         assertEquals(TickOutcome.Fetched, svc.scheduled.run("test-graph"))

@@ -62,6 +62,7 @@ class GitSyncServiceRateLimitRetryTest {
             configRepository = StubConfigRepository(Either.Right(sampleConfig)),
             networkMonitor = NetworkMonitor(),
             fileSystem = stubFs,
+            gate = RepoOpGate(),
         )
     }
 

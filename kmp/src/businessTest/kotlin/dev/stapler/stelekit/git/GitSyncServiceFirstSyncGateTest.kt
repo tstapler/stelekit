@@ -66,6 +66,7 @@ class GitSyncServiceFirstSyncGateTest {
             fileSystem = fs,
             graphId = graphId,
             settings = settings,
+            gate = RepoOpGate(),
         )
         return Fixture(service, firstSync, fetchCalls)
     }

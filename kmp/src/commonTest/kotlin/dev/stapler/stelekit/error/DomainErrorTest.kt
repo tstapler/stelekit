@@ -39,6 +39,7 @@ class DomainErrorTest {
             DomainError.GitError.NotAGitRepo("/path"),
             DomainError.GitError.DetachedHead("/path"),
             DomainError.GitError.StaleLockFile("/path/.git/index.lock"),
+            DomainError.GitError.SyncInProgress(null),
             DomainError.GitError.NotSupported("iOS"),
             DomainError.GitError.Offline,
             DomainError.GitError.EditingInProgress,
@@ -131,6 +132,7 @@ class DomainErrorTest {
                 is DomainError.GitError.NotAGitRepo -> err.message
                 is DomainError.GitError.DetachedHead -> err.message
                 is DomainError.GitError.StaleLockFile -> err.message
+                is DomainError.GitError.SyncInProgress -> err.message
                 is DomainError.GitError.NotSupported -> err.message
                 DomainError.GitError.Offline -> err.message
                 DomainError.GitError.EditingInProgress -> err.message
@@ -259,6 +261,7 @@ class DomainErrorTest {
             DomainError.GitError.NotAGitRepo("/path"),
             DomainError.GitError.DetachedHead("/path"),
             DomainError.GitError.StaleLockFile("/path/.git/index.lock"),
+            DomainError.GitError.SyncInProgress(null),
             DomainError.GitError.NotSupported("iOS"),
             DomainError.GitError.Offline,
             DomainError.GitError.EditingInProgress,
@@ -300,6 +303,20 @@ class DomainErrorTest {
         for (err in errors) {
             assertTrue(err.toUiMessage().isNotEmpty(), "Expected non-empty UI message for $err")
         }
+    }
+
+    @Test
+    fun syncInProgressAndStaleLockCopy_should_NeverReadAsAFailure() {
+        val busy = DomainError.GitError.SyncInProgress(heldBy = null)
+        val moving = DomainError.GitError.SyncInProgress(heldBy = dev.stapler.stelekit.git.SyncOrigin.Quiesce)
+        val unsure = DomainError.GitError.StaleLockFile("/path/.git/index.lock")
+
+        assertEquals("Already syncing", busy.toSyncErrorMessage())
+        assertEquals("Already syncing", busy.toUiMessage())
+        assertEquals("Moving your graph storage. Sync resumes afterwards.", moving.toSyncErrorMessage())
+        assertEquals("Sync paused - retrying automatically", unsure.toSyncErrorMessage())
+        assertEquals("Sync paused - retrying automatically", unsure.toUiMessage())
+        assertEquals(null, unsure.verdict)
     }
 
     @Test

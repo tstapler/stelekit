@@ -4,16 +4,21 @@
 
 package dev.stapler.stelekit.ui
 
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
+import dev.stapler.stelekit.jobs.JobHandle
 import dev.stapler.stelekit.jobs.JobKind
 import dev.stapler.stelekit.jobs.JobTracker
 import dev.stapler.stelekit.jobs.NoJobTracker
 import dev.stapler.stelekit.jobs.track
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -115,8 +120,16 @@ class GitSyncCoordinator(
         .flatMapLatest { service -> service?.staleness ?: flowOf(null) }
         .stateIn(scope, SharingStarted.Eagerly, null)
 
+    private val _syncEvents = MutableSharedFlow<SyncUiEvent>(extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    /** One-shot sync feedback for a polite live region only (no snackbar, no toast, no [syncState] change). */
+    val syncEvents: SharedFlow<SyncUiEvent> = _syncEvents
+
     /** Detail sheets for sync problems (interrupted merge, mass deletion); see [SyncSafetyActions]. */
-    val safety = SyncSafetyActions(activeGitSyncService, activeGraphIdProvider, scope, uiState, jobTracker) { syncState.value }
+    val safety = SyncSafetyActions(
+        activeGitSyncService, activeGraphIdProvider, scope, uiState, jobTracker,
+        emit = { _syncEvents.tryEmit(it) },
+    ) { syncState.value }
 
     internal fun observeSyncState() {
         scope.launch {
@@ -140,7 +153,7 @@ class GitSyncCoordinator(
             val service = activeGitSyncService.value ?: return@launch
             val run = coroutineContext.job
             jobTracker.track(JobKind.GitSync, "Syncing with remote", onCancel = { run.cancel() }) { handle ->
-                service.sync(graphId).onLeft { handle.fail(it.message) }
+                service.sync(graphId).onLeft { handle.failUnlessCoalesced(it); _syncEvents.announceIfCoalesced(it) }
             }
         }
     }
@@ -152,7 +165,7 @@ class GitSyncCoordinator(
             val service = activeGitSyncService.value ?: return@launch
             val run = coroutineContext.job
             jobTracker.track(JobKind.GitSync, "Checking for remote changes", onCancel = { run.cancel() }) { handle ->
-                service.fetchOnly(graphId).onLeft { handle.fail(it.message) }
+                service.fetchOnly(graphId).onLeft { handle.failUnlessCoalesced(it); _syncEvents.announceIfCoalesced(it) }
             }
         }
     }
@@ -267,4 +280,31 @@ class GitSyncCoordinator(
     fun dismissWikiSubdirFixDialog() {
         uiState.update { it.copy(wikiSubdirFixDialogVisible = false) }
     }
+}
+
+/**
+ * Marks the job failed unless the trigger only lost the single-flight race: the running sync owns the outcome,
+ * so a coalesced press is not a failure and must not paint the job red.
+ */
+internal fun JobHandle.failUnlessCoalesced(error: DomainError.GitError) {
+    if (error !is DomainError.GitError.SyncInProgress) fail(error.message)
+}
+
+/** A one-shot message for a polite live region; each carries its own [announcement] text (ux.md S8). */
+sealed interface SyncUiEvent {
+    val announcement: String
+
+    /** A press that coalesced into the run already holding the gate. */
+    data object AlreadySyncing : SyncUiEvent {
+        override val announcement = "Already syncing"
+    }
+
+    /** The typed-count confirm was pressed while a run was in flight; the lift is never queued. */
+    data object MassChangeConfirmRefused : SyncUiEvent {
+        override val announcement = "Wait for the running sync to finish, then confirm again"
+    }
+}
+
+private fun MutableSharedFlow<SyncUiEvent>.announceIfCoalesced(error: DomainError.GitError) {
+    if (error is DomainError.GitError.SyncInProgress) tryEmit(SyncUiEvent.AlreadySyncing)
 }

@@ -29,6 +29,9 @@ sealed interface BranchRepairResult {
 
     data class SaveFailed(val message: String) : BranchRepairResult
 
+    /** A sync is running, so the probe was not made; not a failure, try again when it finishes. */
+    data object Busy : BranchRepairResult
+
     /** The write returned success but the stored row did not change (mutation read-back failed). */
     data class ReadBackMismatch(val expected: String, val actual: String?) : BranchRepairResult
 }
@@ -58,6 +61,7 @@ class BranchRepairService(
         when (val probe = gitRepository.fetch(config.copy(remoteBranch = previous))) {
             is Either.Left -> return when (probe.value) {
                 is DomainError.GitError.RemoteBranchNotFound -> BranchRepairResult.TargetNotOnRemote(previous)
+                is DomainError.GitError.SyncInProgress -> BranchRepairResult.Busy
                 else -> BranchRepairResult.SaveFailed(probe.value.message)
             }.left()
             is Either.Right -> Unit

@@ -73,23 +73,46 @@ class GuardedMergeAbort(
     /** Drops the kept copies once a sync has succeeded. */
     fun clearRecovery(graphId: String) = recovery.clear(graphId)
 
+    /** Everything [prepare] gathered; [preservation] is null when the reset would discard nothing. */
+    class Prepared internal constructor(
+        val preservation: AbortPreservation?,
+        internal val atRisk: List<String>,
+        internal val bytes: Map<String, ByteArray>,
+    )
+
+    /** Read-only: lists and copies aside the edits the reset would discard. Needs no gate, so a dialog can follow it. */
+    suspend fun prepare(graphId: String, config: GitConfig): Either<DomainError.GitError, Prepared> {
+        val atRisk = gitRepository.editsAtRiskOfReset(config).getOrElse { return it.left() }
+        if (atRisk.isEmpty()) return Prepared(null, atRisk, emptyMap()).right()
+        val bytes = atRisk.associateWith { path ->
+            gitRepository.readWorkingBytes(config, path)
+                ?: return DomainError.GitError.CommitFailed("Could not read $path to keep a copy; merge not aborted").left()
+        }
+        val dir = recovery.snapshot(graphId, bytes)
+            ?: return DomainError.GitError.CommitFailed("Could not save copies of your edits; merge not aborted").left()
+        return Prepared(AbortPreservation(atRisk, dir), atRisk, bytes).right()
+    }
+
+    /**
+     * Run under the repository gate after the user confirmed. The tree may have changed while the dialog was open,
+     * so a different at-risk set or different bytes refuses instead of resetting edits nobody confirmed.
+     */
+    suspend fun execute(config: GitConfig, prepared: Prepared): Either<DomainError.GitError, Unit> {
+        val now = gitRepository.editsAtRiskOfReset(config).getOrElse { return it.left() }
+        val unchanged = now == prepared.atRisk &&
+            prepared.bytes.all { (path, bytes) -> gitRepository.readWorkingBytes(config, path)?.contentEquals(bytes) == true }
+        if (!unchanged) return DomainError.GitError.CommitFailed("Your files changed while you were confirming; merge not aborted. Try again.").left()
+        return gitRepository.abortMerge(config).flatMap { restore(config, prepared.bytes) }
+    }
+
     suspend fun abort(
         graphId: String,
         config: GitConfig,
         confirm: suspend (AbortPreservation) -> Boolean,
     ): Either<DomainError.GitError, Unit> {
-        val atRisk = gitRepository.editsAtRiskOfReset(config).getOrElse { return it.left() }
-        val preserved = if (atRisk.isEmpty()) emptyMap() else {
-            val bytes = atRisk.associateWith { path ->
-                gitRepository.readWorkingBytes(config, path)
-                    ?: return DomainError.GitError.CommitFailed("Could not read $path to keep a copy; merge not aborted").left()
-            }
-            val dir = recovery.snapshot(graphId, bytes)
-                ?: return DomainError.GitError.CommitFailed("Could not save copies of your edits; merge not aborted").left()
-            if (!confirm(AbortPreservation(atRisk, dir))) return DomainError.GitError.CommitFailed("Abort cancelled").left()
-            bytes
-        }
-        return gitRepository.abortMerge(config).flatMap { restore(config, preserved) }
+        val prepared = prepare(graphId, config).getOrElse { return it.left() }
+        prepared.preservation?.let { if (!confirm(it)) return DomainError.GitError.CommitFailed("Abort cancelled").left() }
+        return execute(config, prepared)
     }
 
     /** Puts the pre-abort bytes back over the reset tree and re-reads them; the recovery copy is kept on any mismatch. */

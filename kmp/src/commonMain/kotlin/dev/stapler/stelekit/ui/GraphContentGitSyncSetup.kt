@@ -443,6 +443,7 @@ private fun buildGitSyncService(
 ): GitSyncService? {
     val gitRepository = deps.platformIntegrations.gitRepository
     if (gitRepository == null || gitConfigRepository == null) return null
+    val repoOpGate = deps.platformIntegrations.repoOpGate ?: return null
     val seams = deps.gitSyncSeams
     val networkMonitor = dev.stapler.stelekit.platform.NetworkMonitor()
     return GitSyncService(
@@ -453,6 +454,7 @@ private fun buildGitSyncService(
         configRepository = gitConfigRepository,
         networkMonitor = networkMonitor,
         fileSystem = deps.fileSystem,
+        gate = repoOpGate,
         credentialAccessProvider = { vaultCredentialStore ?: dev.stapler.stelekit.platform.security.CredentialStore() },
         graphId = gitSyncGraphId,
         settings = deps.platformSettings,

@@ -112,6 +112,7 @@ class ScheduledSyncStackE2ETest {
             settings = settings,
             isOnline = { true },
             periodicSyncContext = dispatcher,
+            gate = RepoOpGate(),
         ).also { service = it }
     }
 

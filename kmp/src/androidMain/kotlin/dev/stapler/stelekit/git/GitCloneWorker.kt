@@ -18,6 +18,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import arrow.core.Either
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.security.CredentialAccess
@@ -53,6 +54,7 @@ class GitCloneWorker @JvmOverloads constructor(
     params: WorkerParameters,
     private val gitRepositoryOverride: GitRepository? = null,
     private val credentialAccessOverride: CredentialAccess? = null,
+    private val gateOverride: RepoOpGate? = null,
 ) : CoroutineWorker(context, params) {
 
     private val logger = Logger("GitCloneWorker")
@@ -129,20 +131,28 @@ class GitCloneWorker @JvmOverloads constructor(
         )
         val throttle = ProgressThrottle()
         var terminalReasonTag: String? = null
-        val result = gitRepository.clone(
-            url,
-            RepoRoot(localPath),
-            auth,
-            onProgress = { progress ->
-                if (throttle.shouldEmit(progress)) {
-                    onCloneProgress(progress, graphId, graphDisplayName, foregroundPromoted)
-                }
-            },
-            onStateChange = { state ->
-                if (state is GitTransportRetryState.NonRetryableFailure) terminalReasonTag = state.reason
-                onRetryStateChange(state, graphId, graphDisplayName, foregroundPromoted)
-            },
-        )
+        // A worker started before Application.onCreate set the shared gate has no peer to exclude; a private one is harmless.
+        val gate = gateOverride ?: processGate ?: RepoOpGate().also { logger.warn("doWork: no process gate set, using a private one") }
+        val result = gate.withExclusiveLease(
+            key = gitRepository.gateKeyForRoot(localPath),
+            origin = SyncOrigin.Clone,
+            unresolved = DomainError.GitError.CloneFailed("Cannot resolve the git directory of $localPath"),
+        ) {
+            gitRepository.clone(
+                url,
+                RepoRoot(localPath),
+                auth,
+                onProgress = { progress ->
+                    if (throttle.shouldEmit(progress)) {
+                        onCloneProgress(progress, graphId, graphDisplayName, foregroundPromoted)
+                    }
+                },
+                onStateChange = { state ->
+                    if (state is GitTransportRetryState.NonRetryableFailure) terminalReasonTag = state.reason
+                    onRetryStateChange(state, graphId, graphDisplayName, foregroundPromoted)
+                },
+            )
+        }
 
         return when (result) {
             is Either.Right -> {
@@ -287,6 +297,9 @@ class GitCloneWorker @JvmOverloads constructor(
     }
 
     companion object {
+        /** The process gate, set once by `SteleKitApplication.onCreate`; a worker cold-started before it sees null. */
+        @Volatile var processGate: RepoOpGate? = null
+
         const val KEY_URL = "url"
         const val KEY_LOCAL_PATH = "local_path"
         const val KEY_GRAPH_ID = "graph_id"
