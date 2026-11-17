@@ -59,9 +59,9 @@ class SignalsReadoutModel(
 }
 
 private fun readingText(reading: ThresholdReading): String = when (reading) {
-    ThresholdReading.Met -> "within the flip threshold"
-    ThresholdReading.NotMet -> "above the flip threshold"
-    ThresholdReading.InsufficientData -> "not enough data yet"
+    ThresholdReading.Met -> SketchStrings.Signals.READING_MET
+    ThresholdReading.NotMet -> SketchStrings.Signals.READING_NOT_MET
+    ThresholdReading.InsufficientData -> SketchStrings.Signals.READING_INSUFFICIENT
 }
 
 object SignalsReadoutTags {

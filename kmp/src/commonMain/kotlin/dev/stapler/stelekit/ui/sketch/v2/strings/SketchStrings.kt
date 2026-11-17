@@ -396,6 +396,10 @@ object SketchStrings {
         fun crashReading(reading: String) = "Crash rate: $reading"
 
         fun noConvergenceReading(reading: String) = "Solves that did not converge: $reading"
+
+        const val READING_MET = "within the flip threshold"
+        const val READING_NOT_MET = "above the flip threshold"
+        const val READING_INSUFFICIENT = "not enough data yet"
     }
 
     /** The scene hard cap and the constraint cap (Story 2.2.4, UX-73) and the low-memory toast. */
