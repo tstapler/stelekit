@@ -16,8 +16,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.await
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,9 +36,71 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     /** Non-live files of the sidecar root (D-143): listed by name, never read into memory by the preload. */
     private val sidecarNamesOnly = mutableSetOf<String>()
 
-    /** How the last sidecar-root byte preload ended; Task 1.4.7j turns it into `preloadState`. */
+    /** How the last sidecar-root byte preload ended; [preloadState] is derived from it (Task 1.4.7j, D-124). */
     internal var sidecarPreloadOutcome: SidecarPreloadOutcome = SidecarPreloadOutcome.Loaded(0L)
         private set
+
+    // Task 1.4.7j (D-124, D-128, D-131): the availability facts the storage status is reduced from.
+    /** Time source of the status clock; a test replaces it. */
+    internal var nowMs: () -> Long = { Clock.System.now().toEpochMilliseconds() }
+
+    /** The cap on the summed size of the live sidecar files (D-131); a test lowers it instead of writing 128 MB. */
+    internal var maxPreloadBytes: Long = SceneLimits.Default.maxPreloadBytes
+    private var checkStartedMs: Long = nowMs()
+    private var probe: OpfsProbeResult? = null
+    private val _preloadState = MutableStateFlow<PreloadState>(PreloadState.NotStarted)
+    private val _storageStatus = MutableStateFlow<V2StorageStatus>(V2StorageStatus.Checking)
+    private var sweepJob: Job? = null
+
+    /** The state of the sidecar-root byte preload; the text preload of the other pages never holds it. */
+    val preloadState: StateFlow<PreloadState> = _preloadState.asStateFlow()
+
+    /** [storageStatus] as a flow, refreshed on every fact and at the 10 s and 60 s marks of the reducer. */
+    val storageStatusFlow: StateFlow<V2StorageStatus> = _storageStatus.asStateFlow()
+
+    /** Records the startup OPFS probe (Task 1.4.7m starts it once per page load); until then the verdict is `NotProbed`. */
+    fun recordProbe(result: OpfsProbeResult) {
+        probe = result
+        refreshStorageStatus()
+    }
+
+    private fun elapsedMs(): Long = nowMs() - checkStartedMs
+
+    private fun computeStorageStatus(): V2StorageStatus = V2StorageStatusReducer.reduce(
+        verdict = probe?.verdict ?: OpfsStorageVerdict.NotProbed,
+        preload = _preloadState.value,
+        elapsedMs = elapsedMs(),
+        sessionOnly = ephemeral,
+        privateSuspected = probe?.privateSuspected == true && !ephemeral,
+    )
+
+    private fun refreshStorageStatus() {
+        _storageStatus.value = computeStorageStatus()
+    }
+
+    private fun startCheck() {
+        checkStartedMs = nowMs()
+        _preloadState.value = PreloadState.Loading
+        refreshStorageStatus()
+        scope.launch {
+            delay(V2StorageStatusReducer.CHECK_TIMEOUT_MS)
+            refreshStorageStatus()
+            delay(V2StorageStatusReducer.LATE_OK_RECOVERY_MS)
+            refreshStorageStatus()
+        }
+    }
+
+    /** Ends the sidecar-root preload with [outcome]: it is kept, and [preloadState] and the status follow it. */
+    private fun finishSidecarPreload(outcome: SidecarPreloadOutcome) {
+        sidecarPreloadOutcome = outcome
+        val at = elapsedMs()
+        _preloadState.value = when (outcome) {
+            is SidecarPreloadOutcome.Loaded -> PreloadState.Ok(at)
+            is SidecarPreloadOutcome.TooLarge -> PreloadState.Failed(StorageReason.PreloadTooLarge, at)
+            is SidecarPreloadOutcome.Failed -> PreloadState.Failed(StorageReason.PreloadFailed, at)
+        }
+        refreshStorageStatus()
+    }
     private val blobUrlCache = mutableMapOf<String, String>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -275,13 +339,88 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         // Ephemeral graphs start empty by definition — there is nothing in OPFS to load (they're
         // never written there) and no dirty-set checkpoint to restore.
         sidecarPreloadOutcome = SidecarPreloadOutcome.Loaded(0L)
-        if (ephemeral) return
+        startCheck()
+        if (ephemeral) {
+            finishSidecarPreload(SidecarPreloadOutcome.Loaded(0L))
+            return
+        }
+        // The sidecar root first and on its own: `Loading` covers only its byte preload (D-131), never the text preload.
+        preloadSidecarRoot(graphPath)
         try {
             loadOpfsDirectory(graphPath)
         } catch (e: Throwable) {
             println("[SteleKit] OPFS preload failed, starting with empty graph: ${e.message}")
         }
         restoreDirtySetMarker()
+    }
+
+    /** A missing sidecar root (`NotFoundError`) is `Loaded(0)`; any other failure to open it is `Failed`. */
+    private suspend fun preloadSidecarRoot(graphPath: String) {
+        val root = SidecarLiveSet.rootOf(graphPath)
+        val dir = try {
+            openDirectoryStrict(root)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            finishSidecarPreload(SidecarPreloadOutcome.Failed(e.message ?: "sidecar root unreadable"))
+            return
+        }
+        if (dir == null) {
+            finishSidecarPreload(SidecarPreloadOutcome.Loaded(0L))
+            return
+        }
+        loadSidecarRoot(dir, root, graphPath, ::finishSidecarPreload)
+        if (sidecarPreloadOutcome is SidecarPreloadOutcome.Loaded) sweepStaleTemps(graphPath, root)
+    }
+
+    /**
+     * Once per preload: removes stale temp files under [root] through [StaleTempSweeper.sweepTree], under the short-lived
+     * lock `stelekit-sketch-sweep:<graphId>` taken with `ifAvailable` (a tab that does not get it skips the sweep). The
+     * writer lease is never taken here (D-130); a temp younger than `MAX_AGE` may be another tab's live one.
+     */
+    private fun sweepStaleTemps(graphPath: String, root: String) {
+        val graphId = graphPath.removePrefix("$homeDir/").substringBefore("/")
+        sweepJob = scope.launch {
+            try {
+                WebLock.tryWithLock(sweepLockName(graphId)) { StaleTempSweeper(tempSweepView, TEMP_SUFFIX).sweepTree(root) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                println("[SteleKit] stale temp sweep failed: ${e.message}")
+            }
+        }
+    }
+
+    /** Waits for the sweep started by the last preload; for tests. */
+    internal suspend fun awaitSweep() {
+        sweepJob?.join()
+    }
+
+    /** The file system as the sweeper sees it: a stale temp is deleted as a temp (no dirty entry, no host delete). */
+    private val tempSweepView: FileSystem by lazy {
+        object : FileSystem by this@PlatformFileSystem {
+            override fun deleteFile(path: String): Boolean = deleteTempBytes(path)
+        }
+    }
+
+    private suspend fun openDirectoryStrict(path: String): JsAny? {
+        var dir: JsAny = getOpfsRoot()
+        for (part in path.removePrefix("/").split("/")) {
+            dir = try {
+                getDirectoryHandle(dir, part, false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                if (isNotFoundError(e)) return null
+                throw e
+            }
+        }
+        return dir
+    }
+
+    private fun isNotFoundError(e: Throwable): Boolean {
+        val message = e.message.orEmpty()
+        return message.contains("NotFoundError", ignoreCase = true) || message.contains("could not be found", ignoreCase = true)
     }
 
     /**
@@ -485,10 +624,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     }
 
     private suspend fun loadFilesRecursive(dirHandle: JsAny, currentPath: String, graphPath: String) {
-        if (currentPath == SidecarLiveSet.rootOf(graphPath)) {
-            loadSidecarRoot(dirHandle, currentPath, graphPath)
-            return
-        }
+        if (currentPath == SidecarLiveSet.rootOf(graphPath)) return // preloaded on its own by [preloadSidecarRoot]
         val entries = listOpfsEntries(dirHandle)
         for (entry in entries) {
             val name = getEntryName(entry)
@@ -511,16 +647,22 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     /**
      * The byte preload of the sidecar root (Task 1.4.7b, D-143): the live files are read into [cache] (lossless for the
      * UTF-8 JSON) only when their summed size is within `SceneLimits.maxPreloadBytes`, read from `File.size` before any
-     * byte; every other file is listed by name. The result is [sidecarPreloadOutcome].
+     * byte; every other file is listed by name. The result goes to [finish]: [finishSidecarPreload] for the first preload
+     * (it also moves [preloadState] and the status), [recordReloadOutcome] for a lease takeover's reload.
      */
-    private suspend fun loadSidecarRoot(rootHandle: JsAny, rootPath: String, graphPath: String) {
+    private suspend fun loadSidecarRoot(
+        rootHandle: JsAny,
+        rootPath: String,
+        graphPath: String,
+        finish: (SidecarPreloadOutcome) -> Unit,
+    ) {
         val live = mutableListOf<Pair<String, JsAny>>()
         try {
             collectSidecarEntries(rootHandle, rootPath, graphPath, live)
             var total = 0L
             for ((_, entry) in live) total += fileSize(getOpfsFile(entry))
-            if (total > SceneLimits.Default.maxPreloadBytes) {
-                sidecarPreloadOutcome = SidecarPreloadOutcome.TooLarge(total)
+            if (total > maxPreloadBytes) {
+                finish(SidecarPreloadOutcome.TooLarge(total))
                 return
             }
             var failure: String? = null
@@ -528,11 +670,11 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 val content = readOpfsFile(entry)
                 if (content == null) failure = "unreadable: $path" else cache[path] = content
             }
-            sidecarPreloadOutcome = failure?.let(SidecarPreloadOutcome::Failed) ?: SidecarPreloadOutcome.Loaded(total)
+            finish(failure?.let(SidecarPreloadOutcome::Failed) ?: SidecarPreloadOutcome.Loaded(total))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            sidecarPreloadOutcome = SidecarPreloadOutcome.Failed(e.message ?: "preload failed")
+            finish(SidecarPreloadOutcome.Failed(e.message ?: "preload failed"))
         }
     }
 
@@ -575,7 +717,12 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             sidecarPreloadOutcome = SidecarPreloadOutcome.Failed(e.message ?: "reload failed")
             return
         } ?: return
-        loadSidecarRoot(dir, root, graphPath)
+        loadSidecarRoot(dir, root, graphPath, ::recordReloadOutcome)
+    }
+
+    /** A reload keeps [preloadState] as it was: a takeover is not a new availability check. */
+    private fun recordReloadOutcome(outcome: SidecarPreloadOutcome) {
+        sidecarPreloadOutcome = outcome
     }
 
     private fun isImageFile(name: String): Boolean {
@@ -787,11 +934,17 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     actual override fun pickDirectory(): String? = null
     override val supportsNativeDirectoryPicker: Boolean get() = showDirectoryPickerSupported()
-    override val supportsTempRenameWrites: Boolean get() = false
+    // Task 1.4.7j: true only while the storage status is `Ready`, so a failed preload or an unavailable browser can never
+    // let the `NewSketchProject` predicate see "no sheets" and create a v2 sheet over unread data. The classic file side
+    // stays behind its own gate (Task 1.4.7o). Atomic replace is offered under the sidecar root only: a page write of
+    // the graph (`MarkdownTargetWriter`) keeps its plain write on the web.
+    override val supportsTempRenameWrites: Boolean get() = storageStatus.isReady
+    override fun supportsAtomicReplace(path: String): Boolean =
+        storageStatus.isReady && SidecarLiveSet.isUnderRoot(graphRootPath(), path)
     override val classicFileSideNeedsOptIn: Boolean get() = true
 
-    // Story 1.4.7 (Task 1.4.7f): the durability and temp-write surface over [writeQueue]. [supportsTempRenameWrites] stays
-    // false until Task 1.4.7j, so no production caller reaches these yet; the dirty-set and host semantics are Task 1.4.7g.
+    // Story 1.4.7 (Task 1.4.7f): the durability and temp-write surface over [writeQueue]; the dirty-set and host
+    // semantics are Task 1.4.7g.
 
     override suspend fun awaitDurable(path: String): Either<DomainError, Unit> = writeQueue.awaitDurable(path)
 
@@ -838,8 +991,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return true
     }
 
-    // Interim until Task 1.4.7j wires the OPFS verdict and preload state: the web build stays classic-only.
-    override val storageStatus: V2StorageStatus get() = V2StorageStatus.Unavailable(StorageReason.NoOpfs)
+    override val storageStatus: V2StorageStatus get() = computeStorageStatus()
     override val supportsHostDirectoryLink: Boolean get() = showDirectoryPickerSupported()
 
     // Epic 2.3 (Story 2.3.1/2.3.2): OPFS is available in every browser (Chromium, Firefox,
@@ -1098,6 +1250,10 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     companion object {
         private const val DOWNLOAD_PREFIX = "/_wasm_dl_/"
+        private const val TEMP_SUFFIX = ".tmp"
+
+        /** The short-lived Web Lock of the once-per-preload temp sweep of [graphId] (D-130); never the writer lease. */
+        fun sweepLockName(graphId: String): String = "stelekit-sketch-sweep:$graphId"
         var githubOwner: String = ""
         var githubRepo: String = ""
         var githubBranch: String = "main"
