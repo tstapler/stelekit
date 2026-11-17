@@ -30,6 +30,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.utf16CodePoint
@@ -87,6 +88,8 @@ class ConstraintPanelActions(
     val onDelete: (ConstraintId) -> Unit = {},
     val onSetReference: (ConstraintId, Boolean) -> Unit = { _, _ -> },
     val onConflictAction: (ConflictAction) -> Unit = {},
+    /** Enter or F2 on a focused dimension row opens its label editor (UX-99). */
+    val onEditDimension: (ConstraintId) -> Unit = {},
 )
 
 /**
@@ -210,6 +213,7 @@ private fun ConstraintList(rows: List<ConstraintRow>, selectedId: ConstraintId?,
             val selected = row.id == selectedId
             Row(
                 Modifier.fillMaxWidth().defaultMinSize(minHeight = ChromeBudget.TOOL_TARGET_DP.dp).testTag(ConstraintPanelTags.row(row.id))
+                    .onKeyEvent { e -> editKey(e, row).also { if (it) actions.onEditDimension(row.id) } }
                     .clickable { onSelect(if (selected) null else row) }
                     .semantics {
                         contentDescription = SketchConstraintStrings.Panel.rowSemantics(row.text, row.state.stateText)
@@ -226,6 +230,9 @@ private fun ConstraintList(rows: List<ConstraintRow>, selectedId: ConstraintId?,
         }
     }
 }
+
+/** Enter or F2 on a dimension row edits its value; other rows leave the key alone. */
+private fun editKey(e: KeyEvent, row: ConstraintRow): Boolean = row.dimensional && e.type == KeyEventType.KeyDown && (e.key == Key.Enter || e.key == Key.F2)
 
 @Composable
 private fun RowActions(row: ConstraintRow, actions: ConstraintPanelActions) {

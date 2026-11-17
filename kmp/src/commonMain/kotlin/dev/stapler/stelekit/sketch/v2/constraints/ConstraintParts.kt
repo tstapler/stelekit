@@ -118,7 +118,7 @@ object ConstraintParts {
 
     /** A point and an edge, in either order (the centre-to-edge distance); a whole line or rectangle measures from its first segment. */
     private fun pointToEdge(ops: List<Op>): Boolean {
-        if (ops.size != 2) return false
+        if (ops.size != PAIR) return false
         val (a, b) = ops
         val pointFirst = a.role == OperandRole.Point && b.role == OperandRole.Segment
         val edgeFirst = b.role == OperandRole.Point && a.role == OperandRole.Segment
@@ -134,6 +134,7 @@ object ConstraintParts {
         return bothPoints || onObject || legacyWhole
     }
 
+    private const val PAIR = 2
     private const val RECT_CORNERS = 4
     private const val MIN_LINE_POINTS = 2
     private val ARC_ENDS: Set<TargetPart> = setOf(TargetPart.ArcStart, TargetPart.ArcEnd)

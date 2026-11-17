@@ -166,6 +166,20 @@ class JacobianFiniteDifferenceTest {
     }
 
     @Test
+    fun pointLineDistance_should_KeepTheCoordinateAlongAnAxisAlignedLineStill_EvenWithSolverNoiseInTheLine() {
+        // A line that is vertical up to solver noise (7.6e-11 over 64): the point's y has no real coupling to the distance.
+        val start = doubleArrayOf(0.0, 0.0, 7.6e-11, 64.0, 30.0, 30.0)
+        val problem = ConstraintProblem(
+            listOf(FixedPoint("a", 0, 0.0, 0.0), FixedPoint("b", 2, 7.6e-11, 64.0), PointLineDistance("d", 4, 0, 2, 16.0)),
+            variableCount = 6,
+        )
+        val solved = Solver().solve(problem, start)
+        assertTrue(solved is SolveResult.Solved, "got ${solved::class.simpleName}")
+        assertTrue(abs(solved.x[4] - 16.0) < 1e-6, "distance reached: x = ${solved.x[4]}")
+        assertTrue(abs(solved.x[5] - 30.0) < 0.5, "the free coordinate stayed: y = ${solved.x[5]}")
+    }
+
+    @Test
     fun zeroLengthLine_should_AddNoGradientAndNoNaN_WhenParallel() {
         val x = DoubleArray(variableCount) { 0.0 }
         x[4] = 1.0; x[5] = 2.0; x[6] = 3.0; x[7] = 5.0

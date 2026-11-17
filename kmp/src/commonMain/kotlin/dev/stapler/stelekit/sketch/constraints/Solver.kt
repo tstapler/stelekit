@@ -96,6 +96,9 @@ private const val LAMBDA_SHRINK = 5.0
 private const val LAMBDA_GROW = 4.0
 private const val LAMBDA_RETRY_GROW = 10.0
 private const val DIAGONAL_FLOOR = 1e-9
+
+/** Unit scale for the Gauss-Newton ridge: a barely coupled coordinate (gradient near 1e-5) is damped like a coupled one, so it does not take up to residual / (2 * gradient) of a fix. */
+private const val GAUSS_NEWTON_DIAGONAL_FLOOR = 1.0
 private const val MAX_DAMPING_RETRIES = 30
 private const val INITIAL_TRUST_RADIUS_FACTOR = 1.0
 private const val TRUST_GROW = 2.0
@@ -353,7 +356,7 @@ class Solver(private val options: SolverOptions = SolverOptions()) {
             var ridge = options.gaussNewtonRidge
             repeat(MAX_DAMPING_RETRIES) {
                 work.copyFrom(gram)
-                for (i in 0 until n) work[i, i] = gram[i, i] + ridge * max(gram[i, i], DIAGONAL_FLOOR)
+                for (i in 0 until n) work[i, i] = gram[i, i] + ridge * max(gram[i, i], GAUSS_NEWTON_DIAGONAL_FLOOR)
                 for (i in 0 until n) rhs[i] = -g[i]
                 if (chol.factor(work)) {
                     chol.solve(rhs, gn)

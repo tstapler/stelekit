@@ -136,6 +136,76 @@ object SketchConstraintStrings {
         }
     }
 
+    /** The armed target picker (Task 4.2.6b, UX-98): status words, marker chips, the "Pick target" list names and the two-pick toast details. */
+    object Picker {
+        const val FIRST_POINT = "Pick the first point"
+        const val SECOND_POINT = "Pick the second point"
+        const val THIRD_TARGET = "Pick the third target"
+        const val AN_EDGE = "Pick an edge"
+        const val CANCEL = "Cancel"
+        const val CANCEL_NAME = "Cancel picking a target"
+        const val DIFFERENT_TARGET = "Pick a different target"
+        const val PICK_TARGET = "Pick target"
+        const val LIST_REGION = "Targets"
+        const val MARKERS_REGION = "Constraint targets"
+        const val NO_TARGETS = "No targets here. Select a line, circle or point."
+
+        fun also(name: String): String = "also: $name"
+
+        fun chip(name: String, also: List<String>): String = (listOf(name) + also.map(::also)).joinToString(", ")
+
+        fun added(kind: String, targets: List<String>): String = "Added $kind: ${targets.joinToString(", ")}"
+
+        fun endpointOf(element: String): String = "Endpoint of $element"
+
+        fun vertexOf(element: String): String = "Vertex of $element"
+
+        fun centreOf(element: String): String = "Centre of $element"
+
+        fun edgeOf(element: String): String = "Edge of $element"
+
+        fun start(element: String): String = "$element start"
+
+        fun end(element: String): String = "$element end"
+
+        fun vertex(element: String, number: Int): String = "$element vertex $number"
+
+        fun edge(element: String, number: Int?): String = if (number == null) "$element edge" else "$element edge $number"
+
+        fun centre(element: String): String = "$element centre"
+
+        fun markerSemantics(chip: String, picked: Boolean): String = if (picked) "$chip, picked" else chip
+    }
+
+    /** The dimension label editor, its failure card and the smart-dimension chip (Tasks 4.2.7b and 4.2.7d, UX-99, UX-115). */
+    object Dimension {
+        const val CHIP_ACTION = "Dimension"
+        const val SET = "Set"
+        const val CANCEL = "Cancel"
+        const val FIELD_LENGTH = "Length"
+        const val FIELD_RADIUS = "Radius"
+        const val FIELD_DIAMETER = "Diameter"
+        const val FIELD_ANGLE = "Angle"
+        const val EDITOR_REGION = "Edit dimension"
+        const val REFERENCE_READ_ONLY = "Reference: driven by other constraints"
+        const val KEEP_EDITING = "Keep editing"
+        const val REVERT = "Revert"
+        const val MAKE_REFERENCE = "Make reference"
+        const val MAKE_DRIVING = "Make driving"
+        const val NOT_AN_ANGLE = "Not an angle. Try 45"
+        const val CANNOT_ADD = "Couldn't add the dimension. Nothing changed."
+        const val LENGTH_EXAMPLE = "12 3/16\""
+
+        fun notALength(): String = "Not a length. Try $LENGTH_EXAMPLE"
+
+        fun cannotSolve(old: String, new: String): String = "Changing $old to $new can't be solved."
+
+        fun cannotSolveConflict(old: String, new: String, kind: String, element: String): String =
+            "Changing $old to $new can't be solved: it conflicts with $kind on $element"
+
+        fun chipName(label: String): String = "$label $CHIP_ACTION"
+    }
+
     /** What a technical sheet says when its v1 projection no longer matches the named dimensions (Story 4.2.4). */
     object Projection {
         const val SHOW_ELEMENTS = "Show elements"

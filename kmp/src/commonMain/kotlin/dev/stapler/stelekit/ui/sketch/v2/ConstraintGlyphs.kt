@@ -21,6 +21,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -54,32 +59,41 @@ fun ConstraintGlyphOverlay(
     technical: Boolean,
     onSelect: (ConstraintId) -> Unit,
     modifier: Modifier = Modifier,
+    onEdit: ((ConstraintId) -> Unit)? = null,
 ) {
     Box(modifier.testTag(ConstraintGlyphTags.OVERLAY).semantics { contentDescription = SketchConstraintStrings.Panel.GLYPHS_REGION }) {
         layout.marks.forEachIndexed { index, mark ->
             val hit = layout.hitDp
             Box(Modifier.offset((mark.x - hit / 2).dp, (mark.y - hit / 2).dp).size(hit.dp)) {
-                MarkTarget(doc, mark, index, technical, onSelect)
+                MarkTarget(doc, mark, index, technical, onSelect, onEdit)
             }
         }
     }
 }
 
 @Composable
-private fun MarkTarget(doc: SketchDocumentV2, mark: GlyphMark, index: Int, technical: Boolean, onSelect: (ConstraintId) -> Unit) {
+private fun MarkTarget(doc: SketchDocumentV2, mark: GlyphMark, index: Int, technical: Boolean, onSelect: (ConstraintId) -> Unit, onEdit: ((ConstraintId) -> Unit)?) {
     var open by remember { mutableStateOf(false) }
     val face = faceOf(doc, mark, index, technical) ?: return
     Box {
-        MarkFaceBox(face, mark, onSelect) { open = true }
+        MarkFaceBox(face, mark, onSelect, editOf(doc, mark, onEdit)) { open = true }
         if (mark !is GlyphMark.Glyph) BadgeList(doc, mark, open, onSelect) { open = false }
     }
 }
 
+/** The edit action of a dimension's glyph (tap its label, or Enter or F2 while it has focus), or null for any other mark (UX-99). */
+private fun editOf(doc: SketchDocumentV2, mark: GlyphMark, onEdit: ((ConstraintId) -> Unit)?): (() -> Unit)? {
+    val id = (mark as? GlyphMark.Glyph)?.id ?: return null
+    val dimension = doc.constraints.firstOrNull { it.id == id }?.isDimensional == true
+    return if (dimension && onEdit != null) ({ onEdit(id) }) else null
+}
+
 @Composable
-private fun MarkFaceBox(face: MarkFace, mark: GlyphMark, onSelect: (ConstraintId) -> Unit, onOpen: () -> Unit) {
+private fun MarkFaceBox(face: MarkFace, mark: GlyphMark, onSelect: (ConstraintId) -> Unit, onEdit: (() -> Unit)?, onOpen: () -> Unit) {
     Box(
         Modifier.fillMaxSize().testTag(face.tag)
-            .clickable { if (mark is GlyphMark.Glyph) onSelect(mark.id) else onOpen() }
+            .onKeyEvent { e -> (e.type == KeyEventType.KeyDown && (e.key == Key.Enter || e.key == Key.F2) && onEdit != null).also { if (it) onEdit?.invoke() } }
+            .clickable { if (onEdit != null) onEdit() else if (mark is GlyphMark.Glyph) onSelect(mark.id) else onOpen() }
             .semantics { contentDescription = face.description; role = Role.Button },
         contentAlignment = Alignment.Center,
     ) {
