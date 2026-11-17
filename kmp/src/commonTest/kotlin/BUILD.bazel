@@ -266,6 +266,8 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/image/ReferencedAssetsTest.kt",
         "dev/stapler/stelekit/sketch/v2/ImageAssetStoreTest.kt",
         "dev/stapler/stelekit/sketch/v2/W6Kit.kt",
+        "dev/stapler/stelekit/sketch/v2/ArchitectureScenario.kt",
+        "dev/stapler/stelekit/sketch/v2/ArchitectureScenarioGolden.kt",
         "dev/stapler/stelekit/sketch/v2/ElementNameTest.kt",
         "dev/stapler/stelekit/sketch/v2/LayersModelTest.kt",
         "dev/stapler/stelekit/sketch/v2/AlignCommandsTest.kt",

@@ -151,6 +151,7 @@ import org.junit.runners.Suite
     // MigrationUiTest (sketch v2 migration and enablement composables, Story 1.4.6) is excluded for the same reason (1) and composes @Composable lambdas (no Compose plugin in this target).
     // SketchCopyDialogTest (sketch copy result dialog, Task 6.1.2c) is excluded for the same reason (1) and composes a @Composable (no Compose plugin in this target).
     // SketchRenderDispatcherTest (sketch embed states, Story 6.1.1) is excluded for the same reason (1), composes @Composable lambdas and needs commonTest fixtures (no Compose plugin or commonTest in this target).
+    // ArchitectureScenarioAndroidTest and UxAuthoringAcceptanceTest (sketch v2 scenario and UX acceptance, Task 6.2.4a) are excluded for the same reason (1); they need the commonTest scenario fixtures and the latter composes @Composable lambdas (no Compose plugin or commonTest in this target).
     //
     // BackgroundTasksSectionTest, TaskRunLogRowsTest and ModelDownloadUiTest (background-task scheduling UI)
     // are excluded for the same reason (1): they drive composables through ComposeContentTestRule.
