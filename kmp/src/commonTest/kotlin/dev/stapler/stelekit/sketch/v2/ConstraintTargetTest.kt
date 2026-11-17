@@ -205,6 +205,17 @@ class ConstraintTargetTest {
     }
 
     @Test
+    fun distance_should_MeasureACircleCentreToTheLineOfAnEdge_InEitherOrder() {
+        val base = docOf(line("l", 0.0, 0.0, 40.0, 0.0), circle("c", 10.0, 7.0, 3.0))
+            .add(Constraint(ConstraintId("pin"), ConstraintKind.Fixed, listOf(on("l", TargetPart.Whole))))
+        for ((n, targets) in listOf(listOf(on("c", TargetPart.Centre), on("l", TargetPart.Edge(0))), listOf(on("l", TargetPart.Edge(0)), on("c", TargetPart.Centre))).withIndex()) {
+            val out = solve(base.add(Constraint(ConstraintId("d$n"), ConstraintKind.Distance, targets, 12.0))).scene
+            val c = out[id("c")] as EllipseElement
+            near(12.0, kotlin.math.abs(c.cy.value))
+        }
+    }
+
+    @Test
     fun fixed_should_PinOnlyTheNamedPoint() {
         val doc = docOf(line("l", 0.0, 0.0, 4.0, 0.0), point("p", 3.0, 3.0))
             .add(Constraint(ConstraintId("pin"), ConstraintKind.Fixed, listOf(on("l", TargetPart.Start))))

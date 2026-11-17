@@ -106,14 +106,23 @@ object ConstraintParts {
         return when (kind) {
             ConstraintKind.Coincident -> coincident(ops)
             ConstraintKind.Fixed -> true
-            ConstraintKind.Horizontal, ConstraintKind.Vertical, ConstraintKind.Distance ->
-                roles == listOf(segment) || roles == listOf(point, point)
+            ConstraintKind.Horizontal, ConstraintKind.Vertical -> roles == listOf(segment) || roles == listOf(point, point)
+            ConstraintKind.Distance -> roles == listOf(segment) || roles == listOf(point, point) || pointToEdge(ops)
             ConstraintKind.Parallel, ConstraintKind.Perpendicular, ConstraintKind.Angle -> roles == listOf(segment, segment)
             ConstraintKind.Equal -> roles == listOf(segment, segment) || roles == listOf(curve, curve)
             ConstraintKind.Tangent -> roles.count { it == curve } >= 1 && roles.all { it != point }
             ConstraintKind.Symmetric -> roles == listOf(point, point, segment)
             ConstraintKind.Radius, ConstraintKind.Diameter -> roles == listOf(curve)
         }
+    }
+
+    /** A point and an edge, in either order (the centre-to-edge distance); a whole line or rectangle measures from its first segment. */
+    private fun pointToEdge(ops: List<Op>): Boolean {
+        if (ops.size != 2) return false
+        val (a, b) = ops
+        val pointFirst = a.role == OperandRole.Point && b.role == OperandRole.Segment
+        val edgeFirst = b.role == OperandRole.Point && a.role == OperandRole.Segment
+        return pointFirst || edgeFirst
     }
 
     /** Two points; a point on a segment or curve; or two whole non-point elements, which meet at their primary points. */

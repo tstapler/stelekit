@@ -31,7 +31,6 @@ import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.TextElement
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -98,9 +97,9 @@ class DimensionSuggestionTest {
     }
 
     @Test
-    fun suggestion_should_ReportCentreToEdgeNotAddableWhileTheModelHasNoPointToLineDistance() {
+    fun suggestion_should_ReportCentreToEdgeAddable_NowThatTheModelHasAPointToLineDistance() {
         val doc = docOf(line("l1", 0, 0, 32, 0), circle("c1", 10, 10, 4))
-        assertFalse(assertNotNull(suggest(doc, "c1", "l1")).addable)
+        assertTrue(assertNotNull(suggest(doc, "c1", "l1")).addable)
     }
 
     @Test

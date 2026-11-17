@@ -25,6 +25,7 @@ import dev.stapler.stelekit.sketch.constraints.constraints.FixedScalar
 import dev.stapler.stelekit.sketch.constraints.constraints.Horizontal
 import dev.stapler.stelekit.sketch.constraints.constraints.Parallel
 import dev.stapler.stelekit.sketch.constraints.constraints.Perpendicular
+import dev.stapler.stelekit.sketch.constraints.constraints.PointLineDistance
 import dev.stapler.stelekit.sketch.constraints.constraints.PointOnCircle
 import dev.stapler.stelekit.sketch.constraints.constraints.PointOnLine
 import dev.stapler.stelekit.sketch.constraints.constraints.RadiusDimension
@@ -433,9 +434,7 @@ private class Builder(private val scene: SketchSceneV2) {
                     val s = segmentOf(cid, ops[0])
                     emit { DistanceDimension(it, s.a, s.b, value, c.reference) }
                 } else {
-                    val p = pointOf(cid, ops[0])
-                    val q = pointOf(cid, ops[1])
-                    emit { DistanceDimension(it, p, q, value, c.reference) }
+                    distanceBetween(cid, ops, value, c.reference, ::emit)
                 }
             }
             ConstraintKind.Angle -> segments(cid, ops).let { (s, t) -> emit { AngleDimension(it, s.a, s.b, t.a, t.b, value, AnglePolicy.Lines, c.reference) } }
@@ -443,6 +442,21 @@ private class Builder(private val scene: SketchSceneV2) {
             ConstraintKind.Diameter -> curveOf(cid, ops[0]).let { k -> emit { DiameterDimension(it, k.radius, value, c.reference) } }
         }
         equations += produced
+    }
+
+    /** Two operands: point to point, or a point to the infinite line of an edge (either order). */
+    private fun Raise<CommandError>.distanceBetween(cid: String, ops: List<Operand>, value: Double, reference: Boolean, emit: ((String) -> ConstraintEquation) -> Unit) {
+        val point = ops.firstOrNull { it.point != null }
+        val edge = ops.firstOrNull { it.point == null && it.segment != null }
+        if (point?.point != null && edge?.segment != null) {
+            val p = point.point
+            val s = edge.segment
+            emit { PointLineDistance(it, p, s.a, s.b, value, reference) }
+            return
+        }
+        val p = pointOf(cid, ops[0])
+        val q = pointOf(cid, ops[1])
+        emit { DistanceDimension(it, p, q, value, reference) }
     }
 
     private fun Raise<CommandError>.segments(cid: String, ops: List<Operand>): Pair<Segment, Segment> =

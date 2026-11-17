@@ -16,6 +16,7 @@ import dev.stapler.stelekit.sketch.constraints.constraints.FixedScalar
 import dev.stapler.stelekit.sketch.constraints.constraints.Horizontal
 import dev.stapler.stelekit.sketch.constraints.constraints.Parallel
 import dev.stapler.stelekit.sketch.constraints.constraints.Perpendicular
+import dev.stapler.stelekit.sketch.constraints.constraints.PointLineDistance
 import dev.stapler.stelekit.sketch.constraints.constraints.PointOnCircle
 import dev.stapler.stelekit.sketch.constraints.constraints.PointOnLine
 import dev.stapler.stelekit.sketch.constraints.constraints.RadiusDimension
@@ -77,6 +78,7 @@ class JacobianFiniteDifferenceTest {
         Case("TangentLineArcEndpoint") { TangentLineArcEndpoint("c", p[0], p[1], p[2], p[3]) },
         Case("TangentArcArcEndpoint") { TangentArcArcEndpoint("c", p[0], p[1], p[2]) },
         Case("Distance") { x -> DistanceDimension("c", p[0], p[1], x[0] + 3.0) },
+        Case("PointLineDistance") { x -> PointLineDistance("c", p[2], p[0], p[1], PointLineDistance("probe", p[2], p[0], p[1], 0.0, reference = true).measure(x) + 0.5) },
         Case("DistanceX") { DistanceX("c", p[0], p[1], 2.5) },
         Case("DistanceY") { DistanceY("c", p[0], p[1], -1.5) },
         Case("Radius") { RadiusDimension("c", RadiusRef.scalar(r1), 2.0) },

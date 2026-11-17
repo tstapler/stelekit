@@ -2,6 +2,7 @@ package dev.stapler.stelekit.sketch.constraints.constraints
 
 import dev.stapler.stelekit.sketch.constraints.linalg.DenseMatrix
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.atan2
 
 /**
@@ -34,6 +35,40 @@ class DistanceDimension(id: String, private val p: Int, private val q: Int, valu
     DimensionalEquation(id, reference, value) {
     override fun measure(x: DoubleArray): Double = dist(x, p, q)
     override fun addMeasureGradient(x: DoubleArray, j: DenseMatrix, row: Int) = addLengthGradient(x, p, q, 1.0, j, row)
+}
+
+/**
+ * Perpendicular distance from point [p] to the infinite line through [a] and [b] equals [value] (UX-115 centre-to-edge).
+ * The measure is `|cross| / |b - a|`; it is not differentiable at zero, where the gradient is dropped, and a line shorter
+ * than [LENGTH_FLOOR] measures zero with no gradient, so the rows stay finite.
+ */
+class PointLineDistance(id: String, private val p: Int, private val a: Int, private val b: Int, value: Double, reference: Boolean = false) :
+    DimensionalEquation(id, reference, value) {
+    private fun cross(x: DoubleArray): Double = (x[b] - x[a]) * (x[p + 1] - x[a + 1]) - (x[b + 1] - x[a + 1]) * (x[p] - x[a])
+
+    override fun measure(x: DoubleArray): Double {
+        val l = dist(x, a, b)
+        return if (l < LENGTH_FLOOR) 0.0 else abs(cross(x)) / l
+    }
+
+    override fun addMeasureGradient(x: DoubleArray, j: DenseMatrix, row: Int) {
+        val dx = x[b] - x[a]
+        val dy = x[b + 1] - x[a + 1]
+        val wx = x[p] - x[a]
+        val wy = x[p + 1] - x[a + 1]
+        val l = dist(x, a, b)
+        val cr = cross(x)
+        if (l < LENGTH_FLOOR || cr == 0.0) return
+        val s = if (cr > 0.0) 1.0 else -1.0
+        val m = abs(cr) / l
+        // d(cross) per variable, then d(m) = s * d(cross) / l - m * d(l) / l, with d(l) = (+-dx, +-dy) / l.
+        j.addAt(row, p, s * -dy / l)
+        j.addAt(row, p + 1, s * dx / l)
+        j.addAt(row, a, s * (dy - wy) / l + m * dx / (l * l))
+        j.addAt(row, a + 1, s * (wx - dx) / l + m * dy / (l * l))
+        j.addAt(row, b, s * wy / l - m * dx / (l * l))
+        j.addAt(row, b + 1, s * -wx / l - m * dy / (l * l))
+    }
 }
 
 /** `q.x - p.x = value` (signed, so the direction of the dimension is part of the constraint). */
