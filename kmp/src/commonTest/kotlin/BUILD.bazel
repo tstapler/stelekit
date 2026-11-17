@@ -321,6 +321,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/SetDimensionValueTest.kt",
         "dev/stapler/stelekit/sketch/v2/ContainerTextTest.kt",
         "dev/stapler/stelekit/sketch/v2/SolveRunnerTest.kt",
+        "dev/stapler/stelekit/sketch/v2/SketchEditorControllerTest.kt",
         "dev/stapler/stelekit/sketch/v2/SceneSemanticsModelTest.kt",
         "dev/stapler/stelekit/sketch/v2/AutoConstrainTest.kt",
         "dev/stapler/stelekit/sketch/v2/ProjectionFusionTest.kt",
