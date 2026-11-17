@@ -985,6 +985,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.ConstraintTargetTest::class,
     dev.stapler.stelekit.sketch.v2.PartHitTesterTest::class,
     dev.stapler.stelekit.sketch.v2.SetDimensionValueTest::class,
+    dev.stapler.stelekit.sketch.v2.ContainerTextTest::class,
     dev.stapler.stelekit.sketch.v2.tools.ArrowToolTest::class,
     dev.stapler.stelekit.sketch.v2.BindingFollowTest::class,
     dev.stapler.stelekit.sketch.v2.BindingEngineTest::class,

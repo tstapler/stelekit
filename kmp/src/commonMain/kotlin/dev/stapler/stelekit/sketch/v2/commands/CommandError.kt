@@ -80,6 +80,12 @@ sealed interface CommandError {
     /** Another element already has this name; the list shows "An element with this name exists" and keeps editing. */
     data class NameTaken(val name: String) : CommandError
 
+    /** A label is longer than `SceneLimits.maxTextChars`; it is refused, never truncated (UX-23). */
+    data class TextTooLong(val limit: Int) : CommandError
+
+    /** The bundled font has not loaded, so nothing can be measured and nothing is persisted. */
+    data object FontNotLoaded : CommandError
+
     /** The default layer cannot be deleted (ADR-006: it exists on every sheet). */
     data object DefaultLayerProtected : CommandError
 }

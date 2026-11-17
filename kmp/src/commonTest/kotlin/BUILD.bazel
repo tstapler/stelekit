@@ -315,6 +315,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/ConstraintTargetTest.kt",
         "dev/stapler/stelekit/sketch/v2/PartHitTesterTest.kt",
         "dev/stapler/stelekit/sketch/v2/SetDimensionValueTest.kt",
+        "dev/stapler/stelekit/sketch/v2/ContainerTextTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/ArrowToolTest.kt",
         "dev/stapler/stelekit/sketch/v2/BindingFollowTest.kt",
         "dev/stapler/stelekit/sketch/v2/BindingEngineTest.kt",
