@@ -63,7 +63,7 @@ fun ActionChipRow(chips: List<ActionChip>, modifier: Modifier = Modifier) {
         if (scroll.canScrollForward) {
             Box(
                 Modifier.size(ChromeBudget.TOOL_TARGET_DP.dp).testTag(ActionChipTags.CHEVRON)
-                    .clickable { scope.launch { scroll.animateScrollTo(scroll.maxValue) } }
+                    .clickable { scope.launch { scroll.scrollTo(scroll.maxValue) } }
                     .semantics { contentDescription = SketchStrings.Chrome.SCROLL_CHIPS; role = Role.Button },
                 contentAlignment = Alignment.Center,
             ) { Text(CHEVRON_GLYPH) }

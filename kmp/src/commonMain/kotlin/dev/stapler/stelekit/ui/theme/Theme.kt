@@ -94,6 +94,9 @@ private val StoneExtendedColors = StelekitExtendedColors(
     blockRefBackground = PatinaAccent.copy(alpha = 0.1f)
 )
 
+/** The static colour schemes by name, for the accessibility audit (`UxA11yAcceptanceTest`): what the editor renders in. */
+internal fun stelekitStaticSchemes(): Map<String, ColorScheme> = mapOf("light" to LightColorScheme, "dark" to DarkColorScheme, "stone" to StoneColorScheme)
+
 enum class StelekitThemeMode {
     LIGHT, DARK, SYSTEM, STONE, DYNAMIC
 }

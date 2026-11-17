@@ -6,7 +6,6 @@ package dev.stapler.stelekit.ui.sketch
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -34,6 +33,7 @@ import dev.stapler.stelekit.sketch.v2.view.SketchViewport
 import dev.stapler.stelekit.ui.rememberSketchTextMetricsProvider
 import dev.stapler.stelekit.ui.sketch.v2.PainterResources
 import dev.stapler.stelekit.ui.sketch.v2.ScenePainter
+import dev.stapler.stelekit.ui.sketch.v2.ThumbnailPlaceholder
 import dev.stapler.stelekit.ui.sketch.v2.SketchFontState
 import dev.stapler.stelekit.ui.sketch.v2.rememberSketchFontState
 
@@ -124,7 +124,7 @@ internal fun SketchRenderDispatcher(
     modifier: Modifier = Modifier,
 ) {
     when (preview) {
-        null -> Box(modifier.fillMaxWidth().heightIn(min = PLACEHOLDER_MIN_HEIGHT))
+        null -> ThumbnailPlaceholder(modifier)
         SketchPreview.Missing -> NoteWithActions(
             MISSING_SKETCH_TEXT,
             listOf(NoteButton(REMOVE_EMBED_LABEL, SKETCH_REMOVE_EMBED_TAG, actions.onRemoveEmbed), NoteButton(CHOOSE_ANOTHER_LABEL, SKETCH_CHOOSE_ANOTHER_TAG, actions.onChooseAnother)),

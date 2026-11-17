@@ -155,6 +155,7 @@ import org.junit.runners.Suite
     // SketchRenderDispatcherTest (sketch embed states, Story 6.1.1) is excluded for the same reason (1), composes @Composable lambdas and needs commonTest fixtures (no Compose plugin or commonTest in this target).
     // ArchitectureScenarioAndroidTest and UxAuthoringAcceptanceTest (sketch v2 scenario and UX acceptance, Task 6.2.4a) are excluded for the same reason (1); they need the commonTest scenario fixtures and the latter composes @Composable lambdas (no Compose plugin or commonTest in this target).
     // ImportFlowTest, ExportDialogTest and SuccessFeedbackTest (sketch import and export dialogs, Stories 5.1.5 and 5.2.3) are excluded for the same reason (1), compose @Composable lambdas and need commonTest fixtures (no Compose plugin or commonTest in this target).
+    // GoToElementTest, UxA11yAcceptanceTest, WalkthroughKeyboardTest and LoadingStatesTest (sketch v2, Stories 3.6.5, 3.6.6 and 3.6.8) are excluded for the same reason (1), compose @Composable lambdas (no Compose plugin in this target) and the first two sample native-graphics renders.
     //
     // BackgroundTasksSectionTest, TaskRunLogRowsTest and ModelDownloadUiTest (background-task scheduling UI)
     // are excluded for the same reason (1): they drive composables through ComposeContentTestRule.

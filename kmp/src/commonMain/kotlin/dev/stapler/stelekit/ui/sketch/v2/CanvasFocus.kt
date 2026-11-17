@@ -24,6 +24,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.key.Key
@@ -152,12 +153,17 @@ object FocusRingPlacement {
 /** Draws the two-tone ring just outside this node while it has focus. */
 fun Modifier.focusRing(style: FocusRingStyle, focused: Boolean): Modifier = if (!focused) this else drawWithContent {
     drawContent()
+    drawFocusRing(style, size)
+}
+
+/** The ring itself, drawn just outside a box of [boxSize] at the scope's origin; the audit renders it offscreen and samples the pixels. */
+fun DrawScope.drawFocusRing(style: FocusRingStyle, boxSize: Size) {
     val inner = style.innerDp.toPx()
     val outer = style.outerDp.toPx()
     val innerInset = -inner / 2f
     val outerInset = -inner - outer / 2f
-    drawRect(style.inner, topLeft = Offset(innerInset, innerInset), size = Size(size.width - 2 * innerInset, size.height - 2 * innerInset), style = Stroke(inner))
-    drawRect(style.outer, topLeft = Offset(outerInset, outerInset), size = Size(size.width - 2 * outerInset, size.height - 2 * outerInset), style = Stroke(outer))
+    drawRect(style.inner, topLeft = Offset(innerInset, innerInset), size = Size(boxSize.width - 2 * innerInset, boxSize.height - 2 * innerInset), style = Stroke(inner))
+    drawRect(style.outer, topLeft = Offset(outerInset, outerInset), size = Size(boxSize.width - 2 * outerInset, boxSize.height - 2 * outerInset), style = Stroke(outer))
 }
 
 /** The ring colours of the current Material theme. */

@@ -20,6 +20,17 @@ object KeyboardRegions {
      */
     fun tabOrder(present: Set<TabStop>): List<TabStop> = TabStop.entries.filter { it in present || it == TabStop.Canvas }
 
+    /**
+     * The tab order while the walkthrough shows its popover for [anchor] (ux.md section 22): the popover is a labelled region
+     * placed directly after its anchor, so Tab moves from the anchor into it and on to the next region without wrapping.
+     * When the anchor is not in the order the popover goes last, so it is never unreachable.
+     */
+    fun tabOrderWithPopover(present: Set<TabStop>, anchor: TabStop): List<TabItem> {
+        val regions = tabOrder(present).map { TabItem.Region(it) }
+        val at = regions.indexOfFirst { it.stop == anchor }
+        return if (at < 0) regions + TabItem.Popover else regions.take(at + 1) + TabItem.Popover + regions.drop(at + 1)
+    }
+
     /** The stops F6 visits, in order. */
     val f6: List<TabStop> = TabStop.entries.filter { it.inF6 }
 

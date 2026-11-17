@@ -58,6 +58,14 @@ class KeyDispatcherTest {
     private fun handled(press: KeyPress, ctx: KeyContext) = assertIs<KeyOutcome.Handled>(KeyDispatcher.dispatch(press, ctx)).action
 
     @Test
+    fun goToElement_should_OpenOnPrimaryShiftF_OnEveryPlatform_AndNeverOnABareF() {
+        assertEquals(KeyAction.OpenGoToElement, handled(key("f", ctrl = true, shift = true), ctx()))
+        assertEquals(KeyAction.OpenGoToElement, handled(key("f", meta = true, shift = true), ctx(mac)))
+        assertEquals(KeyAction.OpenGoToElement, handled(key("f", ctrl = true, shift = true), ctx(web)))
+        assertEquals(KeyAction.SelectTool(SketchToolId.Frame), handled(key("f"), ctx()), "a bare F is still the Frame tool")
+    }
+
+    @Test
     fun ctrlZ_should_Undo_And_CmdZOnMacNotCtrlZ() {
         assertEquals(KeyAction.Undo, handled(key("z", ctrl = true), ctx()))
         assertEquals(KeyAction.Undo, handled(key("z", meta = true), ctx(mac)))

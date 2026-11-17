@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.ui.sketch.v2
 
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,8 +32,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -59,10 +65,10 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /** The three steps of the first-run walkthrough, in order (ux.md section 22). */
-enum class WalkthroughStep(val number: Int, val title: String) {
-    Tools(1, SketchStrings.Walkthrough.TITLE_TOOLS),
-    Zoom(2, SketchStrings.Walkthrough.TITLE_ZOOM),
-    Shortcuts(3, SketchStrings.Walkthrough.TITLE_SHORTCUTS),
+enum class WalkthroughStep(val number: Int, val title: String, val anchorStop: TabStop) {
+    Tools(1, SketchStrings.Walkthrough.TITLE_TOOLS, TabStop.ToolStrip),
+    Zoom(2, SketchStrings.Walkthrough.TITLE_ZOOM, TabStop.ViewCluster),
+    Shortcuts(3, SketchStrings.Walkthrough.TITLE_SHORTCUTS, TabStop.TopBar),
 }
 
 /** A rectangle in the overlay's own coordinate space (root pixels). */
@@ -157,6 +163,9 @@ class WalkthroughState {
     var returnFocus: String = CANVAS_FOCUS
         private set
 
+    /** The popover's container; the anchor's Tab exit and the F6 and Shift+F6 handling point at it (D-52). */
+    val popoverFocus = FocusRequester()
+
     /** Where each anchor sits in root pixels; reported by the shell's layout. */
     val anchors = mutableStateMapOf<WalkthroughStep, PlaceRect>()
 
@@ -212,8 +221,18 @@ object WalkthroughTags {
     const val RING = "sketch.walkthrough.ring"
 }
 
-/** What the host supplies the overlay with: the input and strip state to read when a step is shown, and where focus goes on end. */
-class WalkthroughDriver(val input: () -> InputKind, val grouped: () -> Boolean, val onEnded: (String) -> Unit)
+/**
+ * What the host supplies the overlay with: the input and strip state to read when a step is shown, and where focus goes on end.
+ * [regions] lets F6 and Tab leave the popover for a named region with the tour still shown; [escapeActs] is false while a row
+ * above the walkthrough in the one Esc order (ux.md section 17) applies, so that row takes the press first.
+ */
+class WalkthroughDriver(
+    val input: () -> InputKind,
+    val grouped: () -> Boolean,
+    val onEnded: (String) -> Unit,
+    val regions: RegionFocus? = null,
+    val escapeActs: () -> Boolean = { true },
+)
 
 private const val RING_DP = 2
 private const val HALO_DP = 1
@@ -268,20 +287,24 @@ private fun HighlightRing(anchor: PlaceRect) {
     )
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun Popover(state: WalkthroughState, step: WalkthroughStep, driver: WalkthroughDriver, modifier: Modifier = Modifier) {
-    val container = remember { FocusRequester() }
+    val container = state.popoverFocus
     val primary = remember { FocusRequester() }
     val first = step == WalkthroughStep.Tools
     val announcement = WalkthroughCopy.announcement(step, state.variant, state.grouped)
     LaunchedEffect(step) { runCatching { if (first) container.requestFocus() else primary.requestFocus() } }
+    val regions = driver.regions
     Surface(
         modifier
             .widthIn(max = POPOVER_WIDTH)
             .testTag(WalkthroughTags.POPOVER)
+            .focusProperties { exit = { direction -> popoverExit(regions, step, direction) } }
+            .focusGroup()
             .focusRequester(container)
             .focusable()
-            .onPreviewKeyEvent { e -> (e.type == KeyEventType.KeyDown && e.key == Key.Escape).also { if (it) driver.onEnded(state.end()) } }
+            .onPreviewKeyEvent { e -> popoverKey(e, state, step, driver) }
             .semantics {
                 isTraversalGroup = true
                 paneTitle = SketchStrings.Walkthrough.REGION
@@ -297,6 +320,30 @@ private fun Popover(state: WalkthroughState, step: WalkthroughStep, driver: Walk
             StepButtons(state, step, driver, primary)
         }
     }
+}
+
+/** Where Tab and Shift+Tab leave the popover: the region after the anchor, or the anchor itself; default when none is on screen. */
+@OptIn(ExperimentalComposeUiApi::class)
+private fun popoverExit(regions: RegionFocus?, step: WalkthroughStep, direction: FocusDirection): FocusRequester = when (direction) {
+    FocusDirection.Next -> regions?.neighbour(step.anchorStop, backward = false) ?: FocusRequester.Default
+    FocusDirection.Previous -> regions?.takeIf { step.anchorStop in it.present }?.requester(step.anchorStop) ?: FocusRequester.Default
+    else -> FocusRequester.Default
+}
+
+/** Esc ends the tour unless a higher row of the Esc order applies; F6 and Shift+F6 leave for a region with the tour still shown. */
+private fun popoverKey(e: KeyEvent, state: WalkthroughState, step: WalkthroughStep, driver: WalkthroughDriver): Boolean {
+    if (e.type != KeyEventType.KeyDown) return false
+    return when (e.key) {
+        Key.Escape -> driver.escapeActs().also { if (it) driver.onEnded(state.end()) }
+        Key.F6 -> leaveForRegion(driver.regions, step, backward = e.isShiftPressed)
+        else -> false
+    }
+}
+
+/** F6 goes to the region after the anchor, Shift+F6 to the anchor ([KeyboardRegions.fromPopover]). */
+private fun leaveForRegion(regions: RegionFocus?, step: WalkthroughStep, backward: Boolean): Boolean {
+    val target = regions?.let { KeyboardRegions.fromPopover(step.anchorStop, it.present, backward) } ?: return false
+    return regions.focus(target)
 }
 
 @Composable

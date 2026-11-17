@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -88,7 +87,7 @@ private fun ProgressDialog(state: ImportUiState.Reading, onCancel: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(Strings.reading(sizeText(state.sizeBytes)))
-                LinearProgressIndicator(Modifier.fillMaxWidth())
+                MotionPolicy.Bar(null, Modifier.fillMaxWidth())
             }
         },
         confirmButton = { DialogButton(Strings.CANCEL, ImportTags.PROGRESS_CANCEL, onCancel) },

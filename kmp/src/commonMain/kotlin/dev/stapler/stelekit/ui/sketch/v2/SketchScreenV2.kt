@@ -8,7 +8,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -55,6 +58,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchGoToStrings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchImportExportStrings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 
@@ -105,6 +109,10 @@ data class SketchShellConfig(
     /** Why Import cannot run here (no file storage, UX-135): the entry is then shown disabled with this text. */
     val importDisabledReason: String? = null,
     val onExport: (() -> Unit)? = null,
+    /** The overflow entry "Go to element..." (Story 3.6.5); null hides it, the host opens [GoToElementDialog]. */
+    val onGoToElement: (() -> Unit)? = null,
+    /** The rows of the one Esc order the host owns right now (a dialog, "Solving...", a picker, a mid-draw preview, Crosshair mode). */
+    val escRows: () -> Set<EscRow> = { emptySet() },
 )
 
 object ShellTags {
@@ -122,6 +130,7 @@ object ShellTags {
     const val OVERFLOW_TIPS = "sketch.overflow.tips"
     const val OVERFLOW_IMPORT = "sketch.overflow.import"
     const val OVERFLOW_EXPORT = "sketch.overflow.export"
+    const val OVERFLOW_GO_TO = "sketch.overflow.goto"
     const val BANNER = "sketch.banner"
     const val HINT = "sketch.hint"
     const val PANEL = "sketch.panel"
@@ -180,20 +189,24 @@ private fun SketchShell(
     val hintShown = ChromeRow.HintStatus in ChromeBudget.presentRows(layout) && ChromeRow.HintStatus !in plan.collapsed
     val focus = remember { ShellFocus(FocusRequester(), FocusRequester()) }
     val grouped = !config.model.isFlat(extent)
-    val driver = remember(extent, config.model) { WalkthroughDriver({ state.lastInput }, { grouped }, focus::restore) }
+    val regions = remember { RegionFocus(mapOf(TabStop.Canvas to focus.canvas, TabStop.TopBar to focus.overflow)) }
+    val driver = remember(extent, config.model, config.escRows) {
+        WalkthroughDriver({ state.lastInput }, { grouped }, focus::restore, regions) { ShellEscape.walkthroughActs(state, config.escRows()) }
+    }
     val strip: @Composable (Modifier) -> Unit = { m ->
-        ToolStrip(config.model, state, layout.placement, extent, config.pointer, config.status, config.actions, m.anchorFor(state, WalkthroughStep.Tools))
+        val anchored = m.anchorFor(state, WalkthroughStep.Tools).region(regions, TabStop.ToolStrip, exitToPopover(state, WalkthroughStep.Tools))
+        ToolStrip(config.model, state, layout.placement, extent, config.pointer, config.status, config.actions, anchored)
     }
     val panelContent: @Composable () -> Unit = { PanelHostContent(state, config, layout.panels, window.height, panel) }
     LaunchedEffect(config.banner) { config.banner?.offerCoachMark() }
     LaunchedEffect(config.banner, config.sheetEmpty) { config.banner?.refresh(config.sheetEmpty) }
     Box(modifier.fillMaxSize()) {
-        Surface(Modifier.fillMaxSize().testTag(ShellTags.layout(layout.placement)).trackInput(state), color = MaterialTheme.colorScheme.background) {
+        Surface(Modifier.fillMaxSize().testTag(ShellTags.layout(layout.placement)).trackInput(state, driver, config.escRows), color = MaterialTheme.colorScheme.background) {
             if (layout.placement == StripPlacement.BottomDock) {
                 Column(Modifier.fillMaxSize()) {
-                    ShellTopBar(state, config, focus, grouped, window)
+                    ShellTopBar(state, config, focus, grouped, window, regions)
                     BannerSlot(state, config, focus, grouped)
-                    CanvasArea(state, config, focus, Modifier.weight(1f), hintShown, canvas)
+                    CanvasArea(state, config, focus, regions, Modifier.weight(1f), hintShown, canvas)
                     if (state.panelTab != null) panelContent()
                     strip(Modifier.fillMaxWidth())
                 }
@@ -201,9 +214,9 @@ private fun SketchShell(
                 Row(Modifier.fillMaxSize()) {
                     strip(Modifier.fillMaxHeight())
                     Column(Modifier.weight(1f)) {
-                        ShellTopBar(state, config, focus, grouped, window)
+                        ShellTopBar(state, config, focus, grouped, window, regions)
                         BannerSlot(state, config, focus, grouped)
-                        CanvasArea(state, config, focus, Modifier.weight(1f), hintShown, canvas)
+                        CanvasArea(state, config, focus, regions, Modifier.weight(1f), hintShown, canvas)
                     }
                     if (layout.panels == PanelHost.PersistentPane || state.panelTab != null) panelContent()
                 }
@@ -211,6 +224,12 @@ private fun SketchShell(
         }
         CoachWalkthroughOverlay(state.walkthrough, driver)
     }
+}
+
+/** Tab out of an anchor region goes to the walkthrough popover while that anchor's step is showing (ux.md section 22). */
+@OptIn(ExperimentalComposeUiApi::class)
+private fun exitToPopover(state: SketchEditorState, step: WalkthroughStep): (FocusDirection) -> FocusRequester = { direction ->
+    if (direction == FocusDirection.Next && state.walkthrough.step == step) state.walkthrough.popoverFocus else FocusRequester.Default
 }
 
 /** Reports where the strip, the view cluster or the overflow button sit, so the walkthrough can point at them. */
@@ -224,15 +243,13 @@ private fun Modifier.anchorFor(state: SketchEditorState, step: WalkthroughStep):
  * anywhere once nothing nearer has used it: a menu, flyout or text overlay takes its own Esc first (ux.md section 17).
  */
 @Composable
-private fun Modifier.trackInput(state: SketchEditorState): Modifier = this
+private fun Modifier.trackInput(state: SketchEditorState, driver: WalkthroughDriver, hostRows: () -> Set<EscRow>): Modifier = this
     .onPreviewKeyEvent { e ->
         if (e.type == KeyEventType.KeyDown) state.lastInput = InputKind.Keyboard
         false
     }
     .onKeyEvent { e ->
-        val escape = e.type == KeyEventType.KeyDown && e.key == Key.Escape && state.walkthrough.active
-        if (escape) state.walkthrough.end()
-        escape
+        e.type == KeyEventType.KeyDown && e.key == Key.Escape && ShellEscape.press(state, hostRows()) { driver.onEnded(state.walkthrough.end()) }
     }
     .pointerInput(state) {
         awaitPointerEventScope {
@@ -267,7 +284,7 @@ private fun BannerSlot(state: SketchEditorState, config: SketchShellConfig, focu
 }
 
 @Composable
-private fun ShellTopBar(state: SketchEditorState, config: SketchShellConfig, focus: ShellFocus, grouped: Boolean, window: WindowDp) {
+private fun ShellTopBar(state: SketchEditorState, config: SketchShellConfig, focus: ShellFocus, grouped: Boolean, window: WindowDp, regions: RegionFocus) {
     val fontScale = LocalDensity.current.fontScale.toDouble()
     val plan = ChromeBudget.topBar(ShellLayout.choose(window.width, window.height), window.width, fontScale)
     TopBar(
@@ -281,7 +298,10 @@ private fun ShellTopBar(state: SketchEditorState, config: SketchShellConfig, foc
             onSelectionAction = config.onSelectionAction,
         ),
         Modifier.padding(horizontal = 16.dp),
-        Modifier.anchorFor(state, WalkthroughStep.Shortcuts).focusRequester(focus.overflow),
+        Modifier.anchorFor(state, WalkthroughStep.Shortcuts)
+            .focusProperties { next = if (state.walkthrough.step == WalkthroughStep.Shortcuts) state.walkthrough.popoverFocus else FocusRequester.Default }
+            .focusRequester(focus.overflow)
+            .mark(regions, TabStop.TopBar),
         onOverflowOpened = { state.walkthrough.anchorActivated(WalkthroughStep.Shortcuts) },
     ) { close -> OverflowItems(state, config, grouped, close) }
 }
@@ -307,6 +327,13 @@ private fun OverflowItems(state: SketchEditorState, config: SketchShellConfig, g
             onClick = { close(); config.onShortcuts() },
             modifier = Modifier.testTag(ShellTags.OVERFLOW_SHORTCUTS),
         )
+        config.onGoToElement?.let { onGoTo ->
+            DropdownMenuItem(
+                text = { Text(SketchGoToStrings.MENU_ITEM) },
+                onClick = { close(); onGoTo() },
+                modifier = Modifier.testTag(ShellTags.OVERFLOW_GO_TO),
+            )
+        }
         DropdownMenuItem(
             text = { Text(SketchStrings.Walkthrough.SHOW_TIPS) },
             onClick = {
@@ -356,10 +383,18 @@ private fun ImportMenuLabel(disabledReason: String?) {
  * The strip is outside this box, so it can never cover them.
  */
 @Composable
-private fun CanvasArea(state: SketchEditorState, config: SketchShellConfig, focus: ShellFocus, modifier: Modifier = Modifier, hintShown: Boolean = true, canvas: @Composable BoxScope.() -> Unit) {
+private fun CanvasArea(
+    state: SketchEditorState,
+    config: SketchShellConfig,
+    focus: ShellFocus,
+    regions: RegionFocus,
+    modifier: Modifier = Modifier,
+    hintShown: Boolean = true,
+    canvas: @Composable BoxScope.() -> Unit,
+) {
     var canvasPx by remember { mutableStateOf(IntSize.Zero) }
     val density = LocalDensity.current
-    Box(modifier.fillMaxWidth().testTag(ShellTags.CANVAS).onSizeChanged { canvasPx = it }.focusRequester(focus.canvas).focusable()) {
+    Box(modifier.fillMaxWidth().testTag(ShellTags.CANVAS).onSizeChanged { canvasPx = it }.focusRequester(focus.canvas).mark(regions, TabStop.Canvas).focusable()) {
         canvas()
         if (config.banner?.emptyStateVisible == true) EmptyState(config.emptyActions, Modifier.align(Alignment.Center))
         Column(Modifier.align(Alignment.TopStart).padding(8.dp)) {
@@ -391,7 +426,7 @@ private fun CanvasArea(state: SketchEditorState, config: SketchShellConfig, focu
                     onClose = { state.panPadOpen = false },
                 )
             }
-            ViewCluster(state, config, Modifier.anchorFor(state, WalkthroughStep.Zoom))
+            ViewCluster(state, config, Modifier.anchorFor(state, WalkthroughStep.Zoom).region(regions, TabStop.ViewCluster, exitToPopover(state, WalkthroughStep.Zoom)))
         }
     }
 }

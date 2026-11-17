@@ -37,6 +37,7 @@ import dev.stapler.stelekit.sketch.v2.runtime.export.ExportRequest
 import dev.stapler.stelekit.sketch.v2.runtime.export.ExportScope
 import dev.stapler.stelekit.sketch.v2.runtime.export.ExportStyle
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchImportExportStrings.Export as Strings
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchLoadingStrings
 
 object ExportTags {
     const val DIALOG = "sketch.export"
@@ -83,6 +84,7 @@ fun ExportDialog(controller: ExportDialogController) {
                 if (model.usesStyle(request.format)) StyleOptions(request, controller::update)
                 if (model.showsFlattenedNotice(request)) Text(Strings.LAYERS_FLATTENED, Modifier.testTag(ExportTags.FLATTEN), style = MaterialTheme.typography.bodySmall)
                 PreviewLine(open.preview)
+                LoadingGate(open.working, SketchLoadingStrings.EXPORT, progress = null, onCancel = controller::cancel)
             }
         },
         dismissButton = { DialogButton(Strings.CANCEL, ExportTags.CANCEL, controller::cancel) },

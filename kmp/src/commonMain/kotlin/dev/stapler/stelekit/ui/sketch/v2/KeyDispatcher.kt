@@ -38,6 +38,7 @@ sealed interface KeyAction {
     data object ToggleGrid : KeyAction
     data object ToggleSnap : KeyAction
     data object OpenShortcuts : KeyAction
+    data object OpenGoToElement : KeyAction
     data object OpenConstrainMenu : KeyAction
     data object NextRegion : KeyAction
     data object PreviousRegion : KeyAction
@@ -145,6 +146,7 @@ object KeyDispatcher {
             "grid" -> KeyAction.ToggleGrid
             "snap" -> KeyAction.ToggleSnap
             "shortcutsSheet" -> KeyAction.OpenShortcuts
+            KeymapSpec.GO_TO_ELEMENT_ID -> KeyAction.OpenGoToElement
             "nextRegion" -> KeyAction.NextRegion
             "previousRegion" -> KeyAction.PreviousRegion
             "escape" -> KeyAction.Escape
