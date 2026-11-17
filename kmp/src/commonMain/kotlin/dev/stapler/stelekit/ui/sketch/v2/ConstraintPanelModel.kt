@@ -161,7 +161,7 @@ object ConstrainFlyoutModel {
         return ConstrainFlyout.Open(items)
     }
 
-    private fun kindsOf(item: ConstrainMenuItem): List<ConstraintKind> = when (item) {
+    fun kindsOf(item: ConstrainMenuItem): List<ConstraintKind> = when (item) {
         ConstrainMenuItem.Coincident -> listOf(ConstraintKind.Coincident)
         ConstrainMenuItem.Horizontal -> listOf(ConstraintKind.Horizontal)
         ConstrainMenuItem.Vertical -> listOf(ConstraintKind.Vertical)

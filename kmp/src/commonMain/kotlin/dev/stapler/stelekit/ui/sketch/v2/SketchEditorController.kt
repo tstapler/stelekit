@@ -14,7 +14,12 @@ import dev.stapler.stelekit.sketch.v2.commands.CommandError
 import dev.stapler.stelekit.sketch.v2.commands.Committed
 import dev.stapler.stelekit.sketch.v2.commands.HistoryV2
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
+import dev.stapler.stelekit.sketch.v2.commands.StylePatch
 import dev.stapler.stelekit.sketch.v2.commands.Transaction
+import dev.stapler.stelekit.sketch.v2.constraints.AddConstraint
+import dev.stapler.stelekit.sketch.v2.constraints.ConstraintId
+import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
+import dev.stapler.stelekit.sketch.v2.diagnostics.DiagnosticsPort
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerTier
 import dev.stapler.stelekit.sketch.v2.index.SpatialIndex
 import dev.stapler.stelekit.sketch.v2.runtime.constraints.SolveOutcome
@@ -46,7 +51,9 @@ import dev.stapler.stelekit.sketch.v2.tools.ToolNotice
 import dev.stapler.stelekit.sketch.v2.tools.ToolPreview
 import dev.stapler.stelekit.sketch.v2.tools.ToolRegistry
 import dev.stapler.stelekit.sketch.v2.tools.toCommand
+import dev.stapler.stelekit.sketch.v2.view.SceneBounds
 import dev.stapler.stelekit.sketch.v2.view.ScreenPx
+import dev.stapler.stelekit.sketch.v2.view.SelectionReveal
 import dev.stapler.stelekit.sketch.v2.view.SketchViewport
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchEditorStrings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchErrorStrings
@@ -77,8 +84,12 @@ class EditorPorts(
     val limits: SceneLimits = SceneLimits.Default,
     val log: SketchLog = SketchLog(),
     val clockMillis: () -> Long = { 0L },
+    /** Where the controller raises a banner row of its own (the constraint warning); null raises none. */
+    val diagnostics: DiagnosticsPort? = null,
     val keymap: KeymapEnv = KeymapEnv(isMac = false, isWeb = false),
     val touchPresent: Boolean = false,
+    /** The onboarding sequencer the notice queue and the banner slot share; null shows no coach mark. */
+    val sequencer: OnboardingSequencer? = null,
 )
 
 /**
@@ -128,12 +139,29 @@ class SketchEditorController(
 
     var overlay: EditorOverlay? by mutableStateOf(null)
 
+    /** Bumped when a toast is posted, so the toast lane re-reads the queue. */
+    var noticeRevision: Int by mutableStateOf(0)
+        private set
+
     /** The text edit open on the canvas (the Text tool's editing state), or null. */
     var textSession: dev.stapler.stelekit.sketch.v2.tools.TextEditSession? by mutableStateOf(null)
         private set
 
     /** Where a secondary click or a long press asked for a context menu, in scene space; the host shows and clears it. */
     var contextMenuAt: ScenePoint? by mutableStateOf(null)
+
+    /** The inline card of a refused constraint or a sheet loaded with conflicts, shown in the Constraints tab. */
+    var conflictCard: ConflictCard? by mutableStateOf(null)
+        private set
+
+    /** The Constrain flow: the armed picker and the highlighted rows. */
+    val constraints = ConstraintCreation(
+        doc = { history.present },
+        selection = { ui.selection.map(::ElementId) },
+        newId = { ConstraintId(ports.ids.next().value) },
+        commit = { command -> submit(command, solve = true) },
+        announce = { text -> notices.announceStatus(text, ANNOUNCE_KEY) },
+    )
 
     /** The canvas size in pixels; the host reports it so fit and page-pan know the view. */
     var canvasSize: ScreenPx = ScreenPx(0.0, 0.0)
@@ -144,7 +172,7 @@ class SketchEditorController(
     val saveState: StateFlow<SaveState> = ports.saver?.state ?: MutableStateFlow(SaveState.Saved)
     val solveState: StateFlow<SolveState> = runner.state
     val adapter = SketchPointerAdapter(ui.viewport, ui.fingerDrawing)
-    val notices = SketchNoticeQueue(ports.limits, log = ports.log)
+    val notices = SketchNoticeQueue(ports.limits, ports.sequencer, ports.log)
 
     /** The spatial index of the current scene, shared with the canvas for culling and with the tools for hit tests. */
     val spatialIndex: SpatialIndex get() = index
@@ -163,6 +191,7 @@ class SketchEditorController(
 
     /** Feeds what [SketchPointerAdapter] decided to the active tool, the view and the context menu. */
     fun onPointerActions(actions: List<PointerAction>) {
+        syncTool()
         for (action in actions) {
             when (action) {
                 is PointerAction.ToolInput -> if (!readOnly) feed(action)
@@ -174,12 +203,12 @@ class SketchEditorController(
 
     /** One raw pointer sample from the canvas (the host's `sketchPointerInput` calls this); the shell's view and tool state apply first. */
     fun onPointer(sample: RawPointer) {
-        syncAdapter()
+        syncInput()
         onPointerActions(adapter.onPointer(sample))
     }
 
     fun onWheel(wheel: WheelInput) {
-        syncAdapter()
+        syncInput()
         onPointerActions(adapter.onWheel(wheel))
     }
 
@@ -189,7 +218,8 @@ class SketchEditorController(
         syncTool()
     }
 
-    private fun syncAdapter() {
+    /** Makes the adapter and the active tool follow the shell's state (view, tool, Finger drawing); the host calls it after each recomposition. */
+    fun syncInput() {
         if (adapter.viewport != ui.viewport) adapter.setViewport(ui.viewport)
         adapter.fingerDrawing = ui.fingerDrawing
         syncTool()
@@ -282,7 +312,10 @@ class SketchEditorController(
         toast(key, text)
     }
 
-    private fun toast(key: String, text: String) = notices.post(SketchNotice(key, BannerTier.Info, text), ports.clockMillis())
+    private fun toast(key: String, text: String) {
+        notices.post(SketchNotice(key, BannerTier.Info, text), ports.clockMillis())
+        noticeRevision += 1
+    }
 
     // ---- edits ---------------------------------------------------------------------------------------------------
 
@@ -324,14 +357,33 @@ class SketchEditorController(
             is SolveOutcome.Done -> {
                 commitStep(outcome.step)
                 analysis = ConstraintAnalysis.from(outcome)
+                conflictCard = null
+                ports.diagnostics?.let(ConstraintWarnings::resolve)
+                (command as? AddConstraint)?.let { posted(ConstraintToasts.added(listOf(it.constraint))) }
             }
-            is SolveOutcome.Rejected -> rejected(outcome.reason)
+            is SolveOutcome.Rejected -> {
+                rejected(outcome.reason)
+                refusedConstraint(command, outcome)
+            }
             is SolveOutcome.Unchanged, is SolveOutcome.Posed, is SolveOutcome.Cancelled -> Unit
         }
     }
 
     private fun commitStep(step: Committed) {
         history.commit(step).fold({ toast(SketchEditorStrings.Toasts.KEY_CONFLICT, SketchEditorStrings.Toasts.EDIT_CONFLICT) }, { adopt(it, step.changedIds) })
+    }
+
+    private fun refusedConstraint(command: Command, outcome: SolveOutcome.Rejected) {
+        val added = (command as? AddConstraint)?.constraint ?: return
+        val reason = outcome.reason as? SolveRejection.Unsatisfiable ?: return
+        val card = ConflictCards.forRejected(outcome.lastGood, added, reason)
+        conflictCard = card
+        ports.diagnostics?.let { ConstraintWarnings.raise(it, card) }
+    }
+
+    private fun posted(notice: SketchNotice) {
+        notices.post(notice, ports.clockMillis())
+        noticeRevision += 1
     }
 
     private fun rejected(reason: SolveRejection) {
@@ -392,7 +444,10 @@ class SketchEditorController(
     /** Re-reads the degrees of freedom and conflicts for the status line; nothing is recorded in history. */
     fun analyze() {
         scope.launch {
-            gate.withLock { analysis = ConstraintAnalysis.from(runner.analyze(history.present)) }
+            gate.withLock {
+                analysis = ConstraintAnalysis.from(runner.analyze(history.present))
+                conflictCard = ConflictCards.forLoaded(history.present, analysis)
+            }
         }
     }
 
@@ -487,6 +542,94 @@ class SketchEditorController(
 
     // ---- life ----------------------------------------------------------------------------------------------------
 
+    // ---- what the host reads --------------------------------------------------------------------------------------
+
+    val keymap: KeymapEnv get() = ports.keymap
+    val ids: ElementIdSource get() = ports.ids
+    val touchPresent: Boolean get() = ports.touchPresent
+
+    fun nowMillis(): Long = ports.clockMillis()
+
+    /** True while a toast with a deadline is up, so the lane keeps re-reading the queue until it expires. */
+    fun hasTimedToast(): Boolean = notices.visible(nowMillis()).any { NoticeTiming.durationOf(it.notice) != null }
+
+    /** The primary button of a toast: the Undo of an undoable confirmation is the ordinary Undo command. */
+    fun onToastAction(notice: SketchNotice) {
+        if (notice.confirmsUndoableEdit) undo()
+        notices.act(notice.key, nowMillis())
+        noticeRevision += 1
+    }
+
+    /** The primary button of a banner row (Retry, Keep mine); other rows only go away. */
+    fun onBannerPrimary(row: BannerRowId) {
+        when (row) {
+            BannerRowId.SaveFailed -> retrySave()
+            BannerRowId.SaveConflict -> keepMine()
+            else -> notices.resolveBanner(row)
+        }
+        noticeRevision += 1
+    }
+
+    /** A More item of a banner row: "Use theirs" adopts the file on disk. */
+    fun onBannerMore(row: BannerRowId, label: String) {
+        if (row == BannerRowId.SaveConflict && label == SketchEditorStrings.Banners.USE_THEIRS) useDisk() else notices.resolveBanner(row)
+        noticeRevision += 1
+    }
+
+    /** The Esc rows this editor owns right now (ux.md section 17); the shell adds its own. */
+    fun escRows(): Set<EscRow> = buildSet {
+        if (overlay != null) add(EscRow.DialogOrSheet)
+        if (textSession != null) add(EscRow.TextOverlayOrDimensionField)
+        if (solveState.value.solving) add(EscRow.Solving)
+        if (preview != null) add(EscRow.MidDraw)
+        if (ui.activeTool != ToolId.Select) add(EscRow.ActiveTool)
+        if (ui.selection.isNotEmpty()) add(EscRow.Selection)
+    }
+
+    /** Selects [id], brings it into view and leaves the Select tool holding it (Go to element). */
+    fun reveal(id: ElementId) {
+        val element = doc.scene[id] ?: return
+        select(listOf(id))
+        val bounds = SceneBounds.of(element) ?: return
+        ui.viewport = SelectionReveal.reveal(ui.viewport, bounds, dev.stapler.stelekit.sketch.v2.view.ScreenRect(0.0, 0.0, canvasSize.x, canvasSize.y)).viewport
+    }
+
+    /** [layer] was hidden: its elements leave the selection and a toast says so (UX-13). */
+    fun afterHide(layer: LayerId) {
+        val outcome = LayerSelectionRules.afterHide(doc.scene, ui.selection.mapTo(LinkedHashSet(), ::ElementId), layer)
+        ui.selection = outcome.selection.mapTo(LinkedHashSet()) { it.value }
+        outcome.announcement?.let { toast(SketchEditorStrings.Toasts.KEY_REFUSED, it) }
+    }
+
+    /** The Retry action of the save-failed banner. */
+    fun retrySave() {
+        ports.saver?.retry()
+    }
+
+    /** "Keep mine": re-bases onto the file now on disk and writes over it. */
+    fun keepMine() {
+        ports.saver?.let { saver -> scope.launch { saver.keepMine() } }
+    }
+
+    /** "Use theirs": adopts the file on disk after the saver kept this scene as a conflict copy. */
+    fun useDisk() {
+        ports.saver?.let { saver -> scope.launch { saver.reload().onRight { reloaded(it) } } }
+    }
+
+    /** Applies the style [patch] to the defaults new shapes take. */
+    fun setDefaults(patch: StylePatch) {
+        val base = defaultStyle
+        defaultStyle = base.copy(
+            strokeColor = patch.strokeColor ?: base.strokeColor,
+            backgroundColor = patch.backgroundColor ?: base.backgroundColor,
+            fillStyle = patch.fillStyle ?: base.fillStyle,
+            strokeWidth = patch.strokeWidth ?: base.strokeWidth,
+            strokeStyle = patch.strokeStyle ?: base.strokeStyle,
+            roughness = patch.roughness ?: base.roughness,
+            roundness = if (patch.sharpCorners) null else patch.roundness ?: base.roundness,
+        )
+    }
+
     /** Saves what the editor holds now (leaving the sheet, a hidden page) and returns where that left the file. */
     suspend fun flush(): SaveState = ports.saver?.flush() ?: SaveState.Saved
 
@@ -505,7 +648,15 @@ class SketchEditorController(
     /** An edit that adds [element] on top, for a host that creates one directly (a drop, an import); the tool path never uses it. */
     fun add(element: dev.stapler.stelekit.sketch.v2.scene.SceneElement): CommandError? = submit(AddElement(element))
 
+    /** The action of a card button: a command goes through the solve runner, the rest only changes the view. */
+    fun onConflictAction(action: ConflictAction) {
+        action.command?.let { submit(it, solve = true) }
+        if (action.kind == ConflictActionKind.RemoveNew || action.command != null) conflictCard = null
+        if (action.kind == ConflictActionKind.ShowConflicts) constraints.highlighted = conflictCard?.conflictIds?.toSet().orEmpty()
+    }
+
     private companion object {
+        const val ANNOUNCE_KEY = "editor.status"
         const val HALF = 2.0
         const val ZOOM_IN = 1.25
         const val ZOOM_OUT = 0.8

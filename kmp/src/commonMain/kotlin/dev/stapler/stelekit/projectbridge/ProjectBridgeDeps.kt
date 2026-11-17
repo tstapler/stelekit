@@ -49,4 +49,8 @@ class ProjectBridgeDeps(
     val sheetLeases: SheetLeaseRegistry,
     /** The synced-v2 discovery scan (Task 1.4.7n); non-null only where the verdict is Available and the classic file side is Off. */
     val syncedV2Discovery: () -> SyncedV2ProjectDiscovery? = { null },
+    /** Waits until a saved sheet reaches storage; only the web root replaces the immediate default. */
+    val sketchDurability: SketchDurability = ImmediateSketchDurability,
+    /** The hidden-page flush request open savers collect; only the web root replaces the silent default. */
+    val pageLifecycle: PageLifecycle = NoPageLifecycle,
 )

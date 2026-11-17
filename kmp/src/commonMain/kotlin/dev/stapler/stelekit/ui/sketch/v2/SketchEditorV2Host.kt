@@ -1,0 +1,252 @@
+// Copyright (c) 2026 Tyler Stapler
+// SPDX-License-Identifier: Elastic-2.0
+// https://www.elastic.co/licensing/elastic-license
+
+package dev.stapler.stelekit.ui.sketch.v2
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isCtrlPressed
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
+import dev.stapler.stelekit.sketch.v2.render.DrawListBuilder
+import dev.stapler.stelekit.sketch.v2.render.RenderStyle
+import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
+import dev.stapler.stelekit.sketch.v2.scene.ElementId
+import dev.stapler.stelekit.sketch.v2.scene.SceneElement
+import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
+import dev.stapler.stelekit.sketch.v2.tools.SelectTool
+import dev.stapler.stelekit.sketch.v2.tools.ToolContext
+import dev.stapler.stelekit.sketch.v2.tools.ToolId
+import dev.stapler.stelekit.sketch.v2.view.SceneBounds
+import dev.stapler.stelekit.sketch.v2.view.ScreenPx
+import dev.stapler.stelekit.ui.sketch.ModernPreviewEnvironment
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchEditorStrings
+import kotlinx.coroutines.delay
+
+/** Test tags of the host's own surfaces; the shell's tags are in [ShellTags]. */
+object HostTags {
+    const val ROOT = "sketch.host"
+    const val CANVAS_INPUT = "sketch.host.canvas"
+    const val LOADING = "sketch.host.loading"
+}
+
+/** How long the toast lane waits between re-reads while a toast with a deadline is up. */
+private const val TOAST_TICK_MS = 500L
+
+/**
+ * The editor of one open v2 sheet (Story 6.2.0b): mounts [SketchScreenV2] with the [SketchEditorController] of [session], the
+ * canvas, every panel and dialog, the banner slot and the toast lane. Nothing here decides an edit: the controller applies
+ * every tool command, key and panel command as one undoable step and hands the document to the saver.
+ */
+@Composable
+fun SketchEditorV2Host(
+    session: SketchEditorSession,
+    environment: ModernPreviewEnvironment,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    pointer: PointerClass = PointerClass.MouseOnly,
+    window: WindowDp? = null,
+) {
+    val controller = session.controller
+    val state = controller.ui
+    DisposableEffect(session) { onDispose { session.close() } }
+    val saveState by controller.saveState.collectAsState()
+    val toasts = remember(controller) { ToastLaneHost(controller.notices, { controller.nowMillis() }, ToastActions(onPrimary = { controller.onToastAction(it) })) }
+    val banner = remember(controller) { BannerSlotState(controller.notices) }
+    val entries by session.diagnostics.port.diagnostics.collectAsState()
+    val empty = controller.doc.scene.order.isEmpty()
+    LaunchedEffect(entries, controller.noticeRevision) {
+        banner.refresh(empty)
+        toasts.refresh()
+        while (controller.hasTimedToast()) {
+            delay(TOAST_TICK_MS)
+            toasts.refresh()
+        }
+    }
+    var singleKey by remember { mutableStateOf(true) }
+    SideEffect { controller.syncInput() }
+    val config = SketchShellConfig(
+        model = remember(controller) { ToolStripModel(technicalSheet = false, keymapEnv = controller.keymap) },
+        pointer = pointer,
+        status = ToolStripStatus(controller.canUndo, controller.canRedo, state.selection.size),
+        actions = ToolStripActions(onUndo = controller::undo, onRedo = controller::redo, onDelete = { controller.run(KeyAction.Delete) }, onConstrain = { state.panelTab = PanelTab.Constraints }),
+        title = session.title,
+        hasMultipleLayers = controller.doc.scene.layers.size > 1,
+        onFit = { state.viewport = controller.fit() },
+        banner = banner,
+        sheetEmpty = empty,
+        emptyActions = EmptyStateActions(onShortcuts = { controller.overlay = EditorOverlay.Shortcuts }),
+        onShortcuts = { controller.overlay = EditorOverlay.Shortcuts },
+        onBack = onBack,
+        saveStatus = saveState.toStatus(),
+        bannerActions = BannerActions(
+            onPrimary = { controller.onBannerPrimary(it.row) },
+            onMoreItem = { candidate, label -> controller.onBannerMore(candidate.row, label) },
+        ),
+        toasts = toasts,
+        onGoToElement = { controller.overlay = EditorOverlay.GoToElement },
+        escRows = { controller.escRows() },
+        onCanvasKey = { event -> canvasKey(controller, event, singleKey) },
+    )
+    DiagnosticsHost(session.diagnostics, modifier.testTag(HostTags.ROOT)) {
+        SketchScreenV2(
+            state = state,
+            config = config,
+            window = window,
+            panel = { tab -> SketchPanels(controller, tab) },
+            canvas = { SketchCanvasContent(controller, environment, pointer) },
+        )
+        HostOverlays(controller, singleKey) { singleKey = it }
+    }
+}
+
+private fun canvasKey(controller: SketchEditorController, event: KeyEvent, singleKey: Boolean): Boolean {
+    val press = event.toKeyPress() ?: return false
+    val state = controller.ui
+    val shellOwnsEscape = state.walkthrough.active || state.panPadOpen || state.help.shown != null
+    if (press.produced == ESCAPE && shellOwnsEscape) return false
+    return controller.onKey(press, KeyFocus(singleKeyEnabled = singleKey))
+}
+
+private const val ESCAPE = "Escape"
+
+private fun SaveState.toStatus(): SaveStatus = when (this) {
+    SaveState.Saved, SaveState.LeaseConflict -> SaveStatus.Saved
+    SaveState.Pending -> SaveStatus.Unsaved
+    SaveState.Saving -> SaveStatus.Saving
+    is SaveState.Failed, is SaveState.Conflict -> SaveStatus.Failed
+}
+
+/** The canvas: the static scene, the live gesture preview, the selection frame, name tags and the text editor, with pointer and wheel input on top. */
+@Composable
+private fun BoxScope.SketchCanvasContent(controller: SketchEditorController, environment: ModernPreviewEnvironment, pointer: PointerClass) {
+    val state = controller.ui
+    val fontStatus = environment.metrics.fontStatus
+    val builder = remember(environment) { DrawListBuilder(environment.metrics) }
+    val previewBuilder = remember(environment) { DrawListBuilder(environment.metrics) }
+    val painter = remember(environment) { ScenePainter(resources = environment.resources) }
+    val layer = remember { StaticLayerHandle() }
+    val ops = remember(controller.revision, fontStatus) { builder.build(controller.doc.scene, RenderStyle.Sketchy) }
+    SideEffect { layer.set(ops, controller.spatialIndex) }
+    val liveOps = remember(controller.preview, fontStatus) {
+        controller.preview?.let { preview -> previewBuilder.build(sceneOf(preview.elements), RenderStyle.Sketchy) }.orEmpty()
+    }
+    val viewport = remember(state) { derivedStateOf { state.viewport } }
+    Box(
+        Modifier.fillMaxSize()
+            .testTag(HostTags.CANVAS_INPUT)
+            .onSizeChanged { controller.canvasSize = ScreenPx(it.width.toDouble(), it.height.toDouble()) }
+            .sketchPointerInput(controller.adapter) { controller.onPointerActions(it) }
+            .wheelInput(controller),
+    ) {
+        SketchCanvasV2(layer, liveOps, viewport, painter)
+        SelectionVisuals(controller)
+        ConstraintPickerOverlay(controller, pointer)
+    }
+    NameTagsOverlay(controller)
+    controller.textSession?.let { session ->
+        TextEditorOverlay(session, state.viewport, hasHardwareKeyboard = pointer != PointerClass.TouchOrPen, onCommit = controller::commitText)
+    }
+}
+
+private fun sceneOf(elements: List<SceneElement>): SketchSceneV2 = elements.fold(SketchSceneV2.empty()) { scene, e -> scene.add(e).getOrNull() ?: scene }
+
+@Composable
+private fun SelectionVisuals(controller: SketchEditorController) {
+    val state = controller.ui
+    val ids = state.selection
+    if (ids.isEmpty() || state.activeTool != ToolId.Select) return
+    val ctx = remember(controller.revision, state.viewport.zoom, ids) {
+        ToolContext(controller.doc.scene, state.viewport.zoom, controller.defaultStyle, controller.ids, controller.spatialIndex)
+    }
+    val select = remember(ids, controller.revision) { SelectTool(ids.map(::ElementId), controller.touchPresent) }
+    SelectionOverlay(select.selectionFrame(ctx), select.handleLayout(ctx), state.viewport)
+}
+
+@Composable
+private fun BoxScope.NameTagsOverlay(controller: SketchEditorController) {
+    val state = controller.ui
+    if (state.selection.isEmpty()) return
+    val size = controller.canvasSize
+    val layout = remember(controller.revision, state.viewport, state.selection, size) {
+        NameTagsModel.layout(controller.doc.scene, state.viewport, size.x, size.y, NameTagSubjects(selected = state.selection.mapTo(LinkedHashSet(), ::ElementId)))
+    }
+    NameTags(layout, Modifier.align(Alignment.TopStart))
+}
+
+/** The wheel and trackpad scroll: it pans, and with Ctrl it zooms; the adapter holds the rule. */
+private fun Modifier.wheelInput(controller: SketchEditorController): Modifier = pointerInput(controller) {
+    awaitPointerEventScope {
+        while (true) {
+            val event = awaitPointerEvent()
+            val change = event.changes.firstOrNull() ?: continue
+            if (event.type != PointerEventType.Scroll) continue
+            controller.onWheel(
+                WheelInput(
+                    ScreenPx(change.position.x.toDouble(), change.position.y.toDouble()),
+                    change.scrollDelta.x.toDouble(),
+                    change.scrollDelta.y.toDouble(),
+                    WheelUnit.Line,
+                    zoomModifier = event.keyboardModifiers.isCtrlPressed,
+                ),
+            )
+            change.consume()
+        }
+    }
+}
+
+@Composable
+private fun HostOverlays(controller: SketchEditorController, singleKey: Boolean, onSingleKey: (Boolean) -> Unit) {
+    when (controller.overlay) {
+        EditorOverlay.Shortcuts -> ShortcutsSheet(
+            ShortcutsSheetModel.of(controller.keymap, singleKey),
+            onSingleKeyChanged = onSingleKey,
+            onClose = { controller.overlay = null },
+        )
+        EditorOverlay.GoToElement -> GoToElementDialog(
+            controller.doc.scene,
+            onActivate = { entry ->
+                controller.reveal(entry.id)
+                controller.overlay = null
+            },
+            onDismiss = { controller.overlay = null },
+        )
+        EditorOverlay.ConstrainMenu -> LaunchedEffect(Unit) {
+            controller.ui.panelTab = PanelTab.Constraints
+            controller.overlay = null
+        }
+        null -> Unit
+    }
+}
+
+/** Shown while the sheet loads or when the host cannot open it. */
+@Composable
+fun SketchEditorLoading(modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxSize().testTag(HostTags.LOADING), contentAlignment = Alignment.Center) {
+        Text(SketchEditorStrings.Screens.LOADING, Modifier.padding(16.dp))
+    }
+}
+
+internal fun SketchEditorController.boundsOfSelection(): SceneBounds? =
+    SceneBounds.of(ui.selection.mapNotNull { doc.scene[ElementId(it)] })

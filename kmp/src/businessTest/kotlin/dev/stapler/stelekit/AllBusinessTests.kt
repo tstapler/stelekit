@@ -989,6 +989,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.ContainerTextTest::class,
     dev.stapler.stelekit.sketch.v2.SolveRunnerTest::class,
     dev.stapler.stelekit.sketch.v2.SketchEditorControllerTest::class,
+    dev.stapler.stelekit.sketch.v2.SketchEditorOpenerTest::class,
     dev.stapler.stelekit.sketch.v2.SceneSemanticsModelTest::class,
     dev.stapler.stelekit.sketch.v2.TechnicalDataEditsTest::class,
     dev.stapler.stelekit.sketch.v2.AutoConstrainTest::class,

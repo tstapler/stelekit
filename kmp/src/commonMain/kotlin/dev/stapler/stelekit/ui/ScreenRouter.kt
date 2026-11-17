@@ -456,16 +456,23 @@ internal fun ScreenRouter(
                         dev.stapler.stelekit.ui.sketch.sketchExporterFor(fileSystem, graphPath)
                     }
                     val previewLoader = dev.stapler.stelekit.ui.sketch.LocalSketchPreviewLoader.current
-                    val sketchViewModel = remember(currentScreen.projectUuid, sketchExporter, previewLoader) {
-                        dev.stapler.stelekit.ui.sketch.sketchViewModelFor(
-                            repos.sketchRepositories, repos.writeActor, currentScreen.projectUuid,
-                            onSaved = sketchExporter?.let { exporter -> { doc, slug -> exporter.exportPreview(doc, slug) } },
-                            onPersisted = previewLoader?.let { loader -> { slug -> loader.notifySaved(slug) } },
-                            leases = viewModel.sheetLeaseRegistry(),
-                            v2Probe = viewModel.projectSidecarStore()?.let { dev.stapler.stelekit.projectbridge.SheetFileSchemaProbe(it) },
-                        )
+                    val v2Deps = remember(repos, viewModel) { viewModel.v2EditorDeps(repos.sketchRepositories, repos.writeActor) }
+                    dev.stapler.stelekit.ui.sketch.v2.SketchEditorV2Route(
+                        deps = v2Deps,
+                        projectUuid = currentScreen.projectUuid?.let { dev.stapler.stelekit.model.ProjectUuid(it) },
+                        onBack = { viewModel.goBack() },
+                    ) {
+                        val sketchViewModel = remember(currentScreen.projectUuid, sketchExporter, previewLoader) {
+                            dev.stapler.stelekit.ui.sketch.sketchViewModelFor(
+                                repos.sketchRepositories, repos.writeActor, currentScreen.projectUuid,
+                                onSaved = sketchExporter?.let { exporter -> { doc, slug -> exporter.exportPreview(doc, slug) } },
+                                onPersisted = previewLoader?.let { loader -> { slug -> loader.notifySaved(slug) } },
+                                leases = viewModel.sheetLeaseRegistry(),
+                                v2Probe = viewModel.projectSidecarStore()?.let { dev.stapler.stelekit.projectbridge.SheetFileSchemaProbe(it) },
+                            )
+                        }
+                        dev.stapler.stelekit.ui.sketch.SketchScreen(viewModel = sketchViewModel, onNavigateBack = { viewModel.goBack() }, exporter = sketchExporter)
                     }
-                    dev.stapler.stelekit.ui.sketch.SketchScreen(viewModel = sketchViewModel, onNavigateBack = { viewModel.goBack() }, exporter = sketchExporter)
                 }
             }
 

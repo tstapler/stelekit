@@ -14,6 +14,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
@@ -113,6 +114,8 @@ data class SketchShellConfig(
     val onGoToElement: (() -> Unit)? = null,
     /** The rows of the one Esc order the host owns right now (a dialog, "Solving...", a picker, a mid-draw preview, Crosshair mode). */
     val escRows: () -> Set<EscRow> = { emptySet() },
+    /** A key pressed while the canvas has focus; true when the host used it. */
+    val onCanvasKey: (KeyEvent) -> Boolean = { false },
 )
 
 object ShellTags {
@@ -394,7 +397,7 @@ private fun CanvasArea(
 ) {
     var canvasPx by remember { mutableStateOf(IntSize.Zero) }
     val density = LocalDensity.current
-    Box(modifier.fillMaxWidth().testTag(ShellTags.CANVAS).onSizeChanged { canvasPx = it }.focusRequester(focus.canvas).mark(regions, TabStop.Canvas).focusable()) {
+    Box(modifier.fillMaxWidth().testTag(ShellTags.CANVAS).onSizeChanged { canvasPx = it }.focusRequester(focus.canvas).mark(regions, TabStop.Canvas).focusable().onKeyEvent(config.onCanvasKey)) {
         canvas()
         if (config.banner?.emptyStateVisible == true) EmptyState(config.emptyActions, Modifier.align(Alignment.Center))
         Column(Modifier.align(Alignment.TopStart).padding(8.dp)) {

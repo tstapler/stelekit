@@ -271,6 +271,8 @@ internal fun buildProjectBridgeDeps(
                 store != null && WebFileSideVerdict.of(store.storageStatus()) == WebFileSideVerdict.Available
             if (gated && store != null) SyncedV2ProjectDiscovery(store) else null
         },
+        sketchDurability = deps.platformIntegrations.sketchDurability,
+        pageLifecycle = deps.platformIntegrations.pageLifecycle,
         pageSettleProbe = LoaderPageSettleProbe(
             isIndexOnlyStub = { page ->
                 deps.repos.pageRepository.getPageByName(page.pageName).first().getOrNull()?.isContentLoaded == false

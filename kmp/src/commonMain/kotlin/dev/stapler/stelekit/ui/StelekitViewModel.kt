@@ -501,6 +501,35 @@ class StelekitViewModel(
     /** The graph's sidecar store (null where unsupported); the Sketch screen's YAML picker writes through it. */
     fun projectSidecarStore(): dev.stapler.stelekit.projectbridge.ProjectSidecarStore? = projectBridgeDeps?.sidecarStore?.invoke()
 
+    /**
+     * What the v2 sketch editor needs to open the project's sheet (Story 6.2.0b); null where the project bridge is not wired, so
+     * the classic editor opens as before. [touchPresent] selects the 44 dp touch floors.
+     */
+    fun v2EditorDeps(
+        repos: dev.stapler.stelekit.repository.SketchRepositories,
+        writeActor: dev.stapler.stelekit.db.DatabaseWriteActor?,
+        touchPresent: Boolean = false,
+    ): dev.stapler.stelekit.ui.sketch.v2.V2EditorDeps? {
+        val bridge = projectBridgeDeps ?: return null
+        val device = dev.stapler.stelekit.performance.getDeviceInfo()
+        return dev.stapler.stelekit.ui.sketch.v2.V2EditorDeps(
+            repos = repos,
+            store = bridge.sidecarStore,
+            leases = bridge.sheetLeases,
+            settings = bridge.settings,
+            graphId = activeGraphIdProvider,
+            writeActor = writeActor,
+            clockMillis = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+            keymap = dev.stapler.stelekit.ui.sketch.v2.KeymapEnv(
+                isMac = device.osVersion.contains(MAC_OS_NAME, ignoreCase = true),
+                isWeb = device.platform.contains(WEB_PLATFORM_NAME, ignoreCase = true),
+            ),
+            touchPresent = touchPresent,
+            durability = bridge.sketchDurability,
+            lifecycle = bridge.pageLifecycle,
+        )
+    }
+
     /** The graph's one sheet edit-lease registry; null where the project bridge is not wired. */
     fun sheetLeaseRegistry(): dev.stapler.stelekit.sketch.v2.runtime.session.SheetLeaseRegistry? = projectBridgeDeps?.sheetLeases
 
@@ -2592,6 +2621,9 @@ class StelekitViewModel(
         sectionManagementCoordinator.setSectionQuickToggleVisible(visible)
 
     companion object {
+        private const val MAC_OS_NAME = "mac"
+        private const val WEB_PLATFORM_NAME = "browser"
+
         private const val CACHED_GRAPH_PATH_KEY = "cached_graph_path"
         private const val WIPE_WATCHDOG_INTERVAL_MS = 10_000L
         private const val MIN_MIDNIGHT_DELAY_MS = 1_000L
