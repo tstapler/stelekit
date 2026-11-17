@@ -54,7 +54,7 @@ private fun LayersTab(controller: SketchEditorController) {
         onActiveLayer = { controller.activeLayer = it },
         onCommand = { controller.submit(it) },
         onNewLayer = { controller.submit(LayersPanelModel.newLayer(controller.doc.scene, LayerId("layer-${UuidGenerator.generateV7()}"))) },
-        onVisibilityChanged = { layer, visible -> if (!visible) controller.afterHide(layer) },
+        onVisibilityChanged = { layer, visible -> if (!visible) controller.view.afterHide(layer) },
         modifier = Modifier.fillMaxWidth(),
     )
 }
@@ -64,7 +64,7 @@ private fun ElementsTab(controller: SketchEditorController) {
     ElementsPanel(
         scene = controller.doc.scene,
         selection = controller.ui.selection.mapTo(LinkedHashSet(), ::ElementId),
-        onSelect = { controller.select(listOf(it)) },
+        onSelect = { controller.tools.select(listOf(it)) },
         onCommand = { controller.submit(it) },
         modifier = Modifier.fillMaxWidth(),
     )
@@ -76,15 +76,15 @@ private fun ConstraintsTab(controller: SketchEditorController) {
     ConstraintPanel(
         input = ConstraintPanelInput(
             doc = controller.doc,
-            analysis = controller.analysis,
+            analysis = controller.constraintState.analysis,
             technical = false,
             selection = controller.selectedElements(),
             tier = SolverTier.Full,
-            card = controller.conflictCard,
+            card = controller.constraintState.card,
         ),
         actions = ConstraintPanelActions(
             onConstrain = { item ->
-                controller.chooseTool(ToolId.Select)
+                controller.tools.chooseTool(ToolId.Select)
                 creation.arm(item)
             },
             onRowSelected = { row -> creation.highlighted = row?.let { setOf(it.id) }.orEmpty() },

@@ -102,7 +102,7 @@ class SketchEditorControllerTest {
 
     private fun SketchEditorController.drag(x0: Double, y0: Double, x1: Double, y1: Double) {
         var t = 0L
-        fun p(phase: RawPhase, x: Double, y: Double) = onPointer(RawPointer(1, PointerKind.Mouse, phase, ScreenPx(x, y), timestamp = t++))
+        fun p(phase: RawPhase, x: Double, y: Double) = tools.onPointer(RawPointer(1, PointerKind.Mouse, phase, ScreenPx(x, y), timestamp = t++))
         p(RawPhase.Down, x0, y0)
         p(RawPhase.Move, (x0 + x1) / 2, (y0 + y1) / 2)
         p(RawPhase.Move, x1, y1)
@@ -114,7 +114,7 @@ class SketchEditorControllerTest {
     @Test
     fun drag_should_DrawOneRectangleAndSelectIt_When_TheRectangleToolIsActive() = runTest {
         val c = controller(docOf())
-        c.chooseTool(ToolId.Rectangle)
+        c.tools.chooseTool(ToolId.Rectangle)
 
         c.drag(10.0, 10.0, 110.0, 60.0)
 
@@ -130,13 +130,13 @@ class SketchEditorControllerTest {
     @Test
     fun undoRedo_should_RemoveAndRestoreTheShape() = runTest {
         val c = controller(docOf())
-        c.chooseTool(ToolId.Rectangle)
+        c.tools.chooseTool(ToolId.Rectangle)
         c.drag(10.0, 10.0, 60.0, 60.0)
 
         c.undo()
         assertTrue(c.rects().isEmpty())
         assertTrue(c.ui.selection.isEmpty(), "a selection of a vanished element is dropped")
-        c.run(KeyAction.Redo)
+        c.keys.run(KeyAction.Redo)
         assertEquals(1, c.rects().size)
         c.close()
     }
@@ -162,12 +162,12 @@ class SketchEditorControllerTest {
             encodeContext = dispatcher,
         )
         val c = controller(initial, saver)
-        c.chooseTool(ToolId.Rectangle)
+        c.tools.chooseTool(ToolId.Rectangle)
         c.drag(10.0, 10.0, 90.0, 40.0)
 
         advanceUntilIdle()
 
-        assertEquals(SaveState.Saved, c.saveState.value)
+        assertEquals(SaveState.Saved, c.saves.state.value)
         val reloaded = assertIs<SheetLoad.Loaded>(SheetLoader.load(store, slug, sheet))
         assertEquals(c.doc.scene, reloaded.doc.scene)
         assertContentEquals(SheetCodecV2.encode(c.doc).getOrNull(), store.files.getValue(path))
@@ -180,7 +180,7 @@ class SketchEditorControllerTest {
             AddConstraint(Constraint(ConstraintId("h"), ConstraintKind.Horizontal, listOf(ConstraintTarget(ElementId("L1"))))).apply(it).fold({ e -> error("$e") }, { a -> a.doc })
         }
         val c = controller(constrained)
-        c.select(listOf(ElementId("L1")))
+        c.tools.select(listOf(ElementId("L1")))
 
         c.submit(dev.stapler.stelekit.sketch.v2.commands.SetLinePoints(ElementId("L1"), listOf(SheetFixtures.pt(0.0, 0.0), SheetFixtures.pt(50.0, 30.0))))
         advanceUntilIdle()
@@ -200,9 +200,9 @@ class SketchEditorControllerTest {
 
         c.drag(5.0, 5.0, 5.0, 5.0)
         assertTrue(c.ui.selection.isEmpty(), "a click on a locked element selects nothing")
-        c.select(listOf(ElementId("r1")))
-        c.run(KeyAction.Delete)
-        c.run(KeyAction.Nudge(1, 0, far = false))
+        c.tools.select(listOf(ElementId("r1")))
+        c.keys.run(KeyAction.Delete)
+        c.keys.run(KeyAction.Nudge(1, 0, far = false))
 
         assertEquals(locked.scene, c.doc.scene, "a locked element is left as it was")
         assertEquals(0, c.history.undoDepth)
@@ -232,7 +232,7 @@ class SketchEditorControllerTest {
             dispatcher,
             readOnly = true,
         )
-        c.chooseTool(ToolId.Rectangle)
+        c.tools.chooseTool(ToolId.Rectangle)
 
         c.drag(10.0, 10.0, 60.0, 60.0)
 

@@ -21,14 +21,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
 import dev.stapler.stelekit.sketch.v2.render.DrawListBuilder
 import dev.stapler.stelekit.sketch.v2.render.RenderStyle
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
@@ -71,29 +72,29 @@ fun SketchEditorV2Host(
     val controller = session.controller
     val state = controller.ui
     DisposableEffect(session) { onDispose { session.close() } }
-    val saveState by controller.saveState.collectAsState()
-    val toasts = remember(controller) { ToastLaneHost(controller.notices, { controller.nowMillis() }, ToastActions(onPrimary = { controller.onToastAction(it) })) }
+    val saveState by controller.saves.state.collectAsState()
+    val toasts = remember(controller) { ToastLaneHost(controller.notices, { controller.notifier.now() }, ToastActions(onPrimary = { controller.notifier.act(it, controller::undo) })) }
     val banner = remember(controller) { BannerSlotState(controller.notices) }
     val entries by session.diagnostics.port.diagnostics.collectAsState()
     val empty = controller.doc.scene.order.isEmpty()
-    LaunchedEffect(entries, controller.noticeRevision) {
+    LaunchedEffect(entries, controller.notifier.revision) {
         banner.refresh(empty)
         toasts.refresh()
-        while (controller.hasTimedToast()) {
+        while (controller.notifier.hasTimedToast()) {
             delay(TOAST_TICK_MS)
             toasts.refresh()
         }
     }
     var singleKey by remember { mutableStateOf(true) }
-    SideEffect { controller.syncInput() }
+    SideEffect { controller.tools.syncInput() }
     val config = SketchShellConfig(
         model = remember(controller) { ToolStripModel(technicalSheet = false, keymapEnv = controller.keymap) },
         pointer = pointer,
         status = ToolStripStatus(controller.canUndo, controller.canRedo, state.selection.size),
-        actions = ToolStripActions(onUndo = controller::undo, onRedo = controller::redo, onDelete = { controller.run(KeyAction.Delete) }, onConstrain = { state.panelTab = PanelTab.Constraints }),
+        actions = ToolStripActions(onUndo = controller::undo, onRedo = controller::redo, onDelete = { controller.keys.run(KeyAction.Delete) }, onConstrain = { state.panelTab = PanelTab.Constraints }),
         title = session.title,
         hasMultipleLayers = controller.doc.scene.layers.size > 1,
-        onFit = { state.viewport = controller.fit() },
+        onFit = { state.viewport = controller.view.fit() },
         banner = banner,
         sheetEmpty = empty,
         emptyActions = EmptyStateActions(onShortcuts = { controller.overlay = EditorOverlay.Shortcuts }),
@@ -101,12 +102,12 @@ fun SketchEditorV2Host(
         onBack = onBack,
         saveStatus = saveState.toStatus(),
         bannerActions = BannerActions(
-            onPrimary = { controller.onBannerPrimary(it.row) },
-            onMoreItem = { candidate, label -> controller.onBannerMore(candidate.row, label) },
+            onPrimary = { controller.saves.bannerPrimary(it.row) },
+            onMoreItem = { candidate, label -> controller.saves.bannerMore(candidate.row, label) },
         ),
         toasts = toasts,
         onGoToElement = { controller.overlay = EditorOverlay.GoToElement },
-        escRows = { controller.escRows() },
+        escRows = controller.escRows,
         onCanvasKey = { event -> canvasKey(controller, event, singleKey) },
     )
     DiagnosticsHost(session.diagnostics, modifier.testTag(HostTags.ROOT)) {
@@ -125,11 +126,9 @@ private fun canvasKey(controller: SketchEditorController, event: KeyEvent, singl
     val press = event.toKeyPress() ?: return false
     val state = controller.ui
     val shellOwnsEscape = state.walkthrough.active || state.panPadOpen || state.help.shown != null
-    if (press.produced == ESCAPE && shellOwnsEscape) return false
-    return controller.onKey(press, KeyFocus(singleKeyEnabled = singleKey))
+    if (event.key == Key.Escape && shellOwnsEscape) return false
+    return controller.keys.onKey(press, KeyFocus(singleKeyEnabled = singleKey))
 }
-
-private const val ESCAPE = "Escape"
 
 private fun SaveState.toStatus(): SaveStatus = when (this) {
     SaveState.Saved, SaveState.LeaseConflict -> SaveStatus.Saved
@@ -149,15 +148,15 @@ private fun BoxScope.SketchCanvasContent(controller: SketchEditorController, env
     val layer = remember { StaticLayerHandle() }
     val ops = remember(controller.revision, fontStatus) { builder.build(controller.doc.scene, RenderStyle.Sketchy) }
     SideEffect { layer.set(ops, controller.spatialIndex) }
-    val liveOps = remember(controller.preview, fontStatus) {
-        controller.preview?.let { preview -> previewBuilder.build(sceneOf(preview.elements), RenderStyle.Sketchy) }.orEmpty()
+    val liveOps = remember(controller.tools.preview, fontStatus) {
+        controller.tools.preview?.let { preview -> previewBuilder.build(sceneOf(preview.elements), RenderStyle.Sketchy) }.orEmpty()
     }
     val viewport = remember(state) { derivedStateOf { state.viewport } }
     Box(
         Modifier.fillMaxSize()
             .testTag(HostTags.CANVAS_INPUT)
-            .onSizeChanged { controller.canvasSize = ScreenPx(it.width.toDouble(), it.height.toDouble()) }
-            .sketchPointerInput(controller.adapter) { controller.onPointerActions(it) }
+            .onSizeChanged { controller.view.canvasSize = ScreenPx(it.width.toDouble(), it.height.toDouble()) }
+            .sketchPointerInput(controller.tools.adapter) { controller.tools.onPointerActions(it) }
             .wheelInput(controller),
     ) {
         SketchCanvasV2(layer, liveOps, viewport, painter)
@@ -165,8 +164,8 @@ private fun BoxScope.SketchCanvasContent(controller: SketchEditorController, env
         ConstraintPickerOverlay(controller, pointer)
     }
     NameTagsOverlay(controller)
-    controller.textSession?.let { session ->
-        TextEditorOverlay(session, state.viewport, hasHardwareKeyboard = pointer != PointerClass.TouchOrPen, onCommit = controller::commitText)
+    controller.tools.textSession?.let { session ->
+        TextEditorOverlay(session, state.viewport, hasHardwareKeyboard = pointer != PointerClass.TouchOrPen, onCommit = controller.tools::commitText)
     }
 }
 
@@ -188,7 +187,7 @@ private fun SelectionVisuals(controller: SketchEditorController) {
 private fun BoxScope.NameTagsOverlay(controller: SketchEditorController) {
     val state = controller.ui
     if (state.selection.isEmpty()) return
-    val size = controller.canvasSize
+    val size = controller.view.canvasSize
     val layout = remember(controller.revision, state.viewport, state.selection, size) {
         NameTagsModel.layout(controller.doc.scene, state.viewport, size.x, size.y, NameTagSubjects(selected = state.selection.mapTo(LinkedHashSet(), ::ElementId)))
     }
@@ -202,7 +201,7 @@ private fun Modifier.wheelInput(controller: SketchEditorController): Modifier = 
             val event = awaitPointerEvent()
             val change = event.changes.firstOrNull() ?: continue
             if (event.type != PointerEventType.Scroll) continue
-            controller.onWheel(
+            controller.tools.onWheel(
                 WheelInput(
                     ScreenPx(change.position.x.toDouble(), change.position.y.toDouble()),
                     change.scrollDelta.x.toDouble(),
@@ -227,7 +226,7 @@ private fun HostOverlays(controller: SketchEditorController, singleKey: Boolean,
         EditorOverlay.GoToElement -> GoToElementDialog(
             controller.doc.scene,
             onActivate = { entry ->
-                controller.reveal(entry.id)
+                controller.view.reveal(entry.id)
                 controller.overlay = null
             },
             onDismiss = { controller.overlay = null },

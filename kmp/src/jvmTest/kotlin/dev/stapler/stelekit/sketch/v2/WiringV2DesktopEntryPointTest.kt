@@ -107,10 +107,10 @@ class WiringV2DesktopEntryPointTest {
 
         val session = assertIs<EditorOpening.Editor>(runBlocking { V2EditorOpener(deps, Dispatchers.Default).open(rig.project.uuid, FixedAdvanceTextMetricsProvider()) }).session
         val controller = session.controller
-        controller.chooseTool(ToolId.Rectangle)
+        controller.tools.chooseTool(ToolId.Rectangle)
         var t = 0L
         for ((phase, at) in listOf(RawPhase.Down to ScreenPx(30.0, 30.0), RawPhase.Move to ScreenPx(80.0, 60.0), RawPhase.Move to ScreenPx(130.0, 90.0), RawPhase.Up to ScreenPx(130.0, 90.0))) {
-            controller.onPointer(RawPointer(1, PointerKind.Mouse, phase, at, timestamp = t++))
+            controller.tools.onPointer(RawPointer(1, PointerKind.Mouse, phase, at, timestamp = t++))
         }
         runBlocking { controller.flush() }
 

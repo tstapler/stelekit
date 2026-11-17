@@ -45,7 +45,7 @@ class SketchEditorHostTest {
         val controller = session.controller
         rule.setContent { SketchEditorV2Host(session, ModernPreviewEnvironment(metrics, PainterResources()), onBack = {}) }
         rule.onNodeWithTag(ShellTags.CANVAS).assertExists()
-        rule.runOnUiThread { controller.chooseTool(ToolId.Rectangle) }
+        rule.runOnUiThread { controller.tools.chooseTool(ToolId.Rectangle) }
 
         rule.onNodeWithTag(HostTags.CANVAS_INPUT).performMouseInput {
             moveTo(Offset(40f, 40f))

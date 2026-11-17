@@ -120,7 +120,7 @@ class WiringV2AndroidEntryPointTest {
         val session = assertIs<EditorOpening.Editor>(runBlocking { V2EditorOpener(deps, Dispatchers.Default).open(rig.project.uuid, metrics) }).session
         composeRule.runOnUiThread {
             opened = session
-            session.controller.chooseTool(ToolId.Rectangle)
+            session.controller.tools.chooseTool(ToolId.Rectangle)
         }
         composeRule.waitForIdle()
 

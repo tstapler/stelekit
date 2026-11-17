@@ -39,15 +39,11 @@ fun SketchEditorV2Route(
     pointer: PointerClass = PointerClass.MouseOnly,
     legacy: @Composable () -> Unit,
 ) {
-    if (deps == null) {
-        legacy()
-        return
-    }
     val environment = rememberModernPreviewEnvironment()
-    val opener = remember(deps) { V2EditorOpener(deps, Dispatchers.Default) }
+    val opener = remember(deps) { deps?.let { V2EditorOpener(it, Dispatchers.Default) } }
     var attempt by remember(projectUuid) { mutableIntStateOf(0) }
-    var opening by remember(projectUuid, deps) { mutableStateOf<EditorOpening?>(null) }
-    LaunchedEffect(projectUuid, deps, attempt) { opening = opener.open(projectUuid, environment.metrics) }
+    var opening by remember(projectUuid, deps) { mutableStateOf<EditorOpening?>(if (deps == null) EditorOpening.Legacy else null) }
+    LaunchedEffect(projectUuid, deps, attempt) { opener?.let { opening = it.open(projectUuid, environment.metrics) } }
     when (val current = opening) {
         null -> SketchEditorLoading(modifier)
         EditorOpening.Legacy -> legacy()
@@ -58,7 +54,7 @@ fun SketchEditorV2Route(
 }
 
 @Composable
-private fun NoEditor(opening: EditorOpening.NoEditor, onBack: () -> Unit, onReload: () -> Unit, modifier: Modifier) {
+private fun NoEditor(opening: EditorOpening.NoEditor, onBack: () -> Unit, onReload: () -> Unit, modifier: Modifier = Modifier) {
     val model = NoEditorModel.of(opening.reason, hasBackup = false)
     val clipboard = LocalClipboardManager.current
     NoEditorScreen(
