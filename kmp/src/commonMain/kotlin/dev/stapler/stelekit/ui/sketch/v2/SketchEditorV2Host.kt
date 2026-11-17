@@ -126,7 +126,7 @@ fun SketchEditorV2Host(
         ),
         toasts = toasts,
         onGoToElement = { controller.overlay = EditorOverlay.GoToElement },
-        selectionItems = selectionItems(controller),
+        selectionItems = selectionItems(controller) + extras.engine.menuItems(),
         onSelectionAction = { controller.onSelectionAction(it, extras) },
         escRows = { controller.escRows() + extras.escRows() },
         onCanvasKey = { event -> extras.dimension.state == DimensionEditState.Closed && canvasKey(controller, event, singleKey) },
@@ -178,6 +178,7 @@ private fun SketchEditorController.onSelectionAction(action: SelectionAction, ex
         SelectionAction.Lock -> submit(LockElements(ids, true))
         SelectionAction.Unlock -> submit(LockElements(ids, false))
         SelectionAction.Align, SelectionAction.Order, SelectionAction.Transform, SelectionAction.BindEnd -> extras.open(action)
+        SelectionAction.EditLabel, SelectionAction.EditPoints, SelectionAction.UnbindStart, SelectionAction.UnbindEnd -> extras.engine.run(action)
     }
 }
 

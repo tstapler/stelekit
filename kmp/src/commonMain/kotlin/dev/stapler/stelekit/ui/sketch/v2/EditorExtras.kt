@@ -64,6 +64,9 @@ class EditorExtras(
     /** True when constraint UI exists on this target; `Hidden` removes the tab, the entries and every aid. */
     val constraintsAvailable: Boolean get() = tier != SolverTier.Hidden
 
+    /** Labels, freeing an arrow end and point editing of a line (the engine's own commands). */
+    val engine = EngineSurfaces(controller, environment.metrics)
+
     val dimension = DimensionEditor(technical = false)
     val autoConstrain = AutoConstrainState(SheetKind.Diagram)
 

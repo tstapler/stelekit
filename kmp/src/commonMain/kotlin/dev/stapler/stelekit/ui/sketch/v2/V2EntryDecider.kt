@@ -9,6 +9,7 @@ import dev.stapler.stelekit.model.ProjectUuid
 import dev.stapler.stelekit.model.SheetUuid
 import dev.stapler.stelekit.model.SketchProject
 import dev.stapler.stelekit.model.SketchSheet
+import dev.stapler.stelekit.projectbridge.NewSketchProjectPredicate
 import dev.stapler.stelekit.projectbridge.ProjectSidecarStore
 import dev.stapler.stelekit.projectbridge.V2Capabilities
 import dev.stapler.stelekit.projectbridge.V2Mode
@@ -18,6 +19,7 @@ import dev.stapler.stelekit.sketch.v2.runtime.persist.CreateFailure
 import dev.stapler.stelekit.sketch.v2.runtime.persist.NewSheetCreator
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetSaverPorts
 import dev.stapler.stelekit.sketch.v2.runtime.telemetry.SheetOrigin
+import dev.stapler.stelekit.ui.sketch.ClassicReason
 import dev.stapler.stelekit.ui.sketch.ConversionState
 import dev.stapler.stelekit.ui.sketch.NewSheetKind
 import dev.stapler.stelekit.ui.sketch.RouteInput
@@ -63,6 +65,16 @@ class V2EntryDecider(private val deps: V2EditorDeps) {
                 EntryDecision.Show(EditorOpening.NewSheetNeedsConfirm(project.uuid, project.slug, project.name, deps.warningForm()))
             }
         }
+    }
+
+    /**
+     * The kind the next sheet of an EXISTING project gets. Under New-projects-only the project counts as new only when every
+     * sheet's file is already v2 (the `NewSketchProject` predicate: it reads files, so ask once per create action).
+     */
+    suspend fun newSheetKind(project: SketchProject, store: ProjectSidecarStore): NewSheetKind {
+        val graph = deps.graphId() ?: return NewSheetKind.Classic(ClassicReason.ModeOff)
+        val isNew = NewSketchProjectPredicate(store, deps.repos.sheets).qualifies(project.uuid, project.slug)
+        return SketchEditorRouter.newSheetKind(RouteInput(storedMode(graph), V2Capabilities.of(store.v2Storage()), SheetSchema.V2), projectIsNew = isNew)
     }
 
     private fun classicCreated(project: SketchProject, stored: V2Mode, capabilities: V2Capabilities, graph: String, kind: NewSheetKind.Classic): EditorOpening {

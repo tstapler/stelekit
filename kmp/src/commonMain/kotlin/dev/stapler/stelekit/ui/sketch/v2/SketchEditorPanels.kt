@@ -35,6 +35,14 @@ private fun SketchEditorController.selectedElements() = ui.selection.mapNotNull 
 
 @Composable
 private fun StyleTab(controller: SketchEditorController) {
+    Column(Modifier.fillMaxWidth()) {
+        SheetStyleRow(controller)
+        StylePanelContent(controller)
+    }
+}
+
+@Composable
+private fun StylePanelContent(controller: SketchEditorController) {
     StylePanel(
         scene = controller.doc.scene,
         selection = controller.selectedElements(),

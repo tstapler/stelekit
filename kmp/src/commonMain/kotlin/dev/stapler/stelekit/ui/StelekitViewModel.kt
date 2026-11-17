@@ -503,6 +503,9 @@ class StelekitViewModel(
     /** The graph's sidecar store (null where unsupported); the Sketch screen's YAML picker writes through it. */
     fun projectSidecarStore(): dev.stapler.stelekit.projectbridge.ProjectSidecarStore? = projectBridgeDeps?.sidecarStore?.invoke()
 
+    /** Copies a sketch project to another graph; null where the project bridge is not wired. */
+    fun sketchCopyHost(): dev.stapler.stelekit.projectbridge.SketchCopyHost? = projectBridgeDeps?.sketchCopy
+
     /**
      * What the v2 sketch editor needs to open the project's sheet (Story 6.2.0b); null where the project bridge is not wired, so
      * the classic editor opens as before. [touchPresent] selects the 44 dp touch floors.

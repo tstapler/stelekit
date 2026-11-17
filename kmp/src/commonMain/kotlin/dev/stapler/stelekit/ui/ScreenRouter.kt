@@ -442,6 +442,7 @@ internal fun ScreenRouter(
                     dev.stapler.stelekit.ui.sketch.ProjectListScreen(
                         projectListViewModel,
                         onOpenProject = { viewModel.navigateTo(Screen.Sketch(it)) },
+                        sketchCopy = viewModel.sketchCopyHost(),
                         registryEditor = {
                             dev.stapler.stelekit.ui.sketch.RegistryEditorViewModel(
                                 repos.sketchRepositories.projects,

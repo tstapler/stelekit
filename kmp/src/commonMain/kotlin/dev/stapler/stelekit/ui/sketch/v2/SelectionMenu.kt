@@ -24,6 +24,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchEngineStrings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 
 /** The actions of the compact-height Selection menu (UX-127); the host wires each to the command it already has. */
@@ -37,6 +38,10 @@ enum class SelectionAction(val label: String, val keymapId: String?) {
     Lock(SketchStrings.SelectionMenu.LOCK, null),
     Unlock(SketchStrings.SelectionMenu.UNLOCK, null),
     BindEnd(SketchStrings.SelectionMenu.BIND_END, null),
+    EditLabel(SketchEngineStrings.SelectionMenu.EDIT_LABEL, null),
+    EditPoints(SketchEngineStrings.SelectionMenu.EDIT_POINTS, null),
+    UnbindStart(SketchEngineStrings.SelectionMenu.UNBIND_START, null),
+    UnbindEnd(SketchEngineStrings.SelectionMenu.UNBIND_END, null),
 }
 
 object SelectionMenuTags {

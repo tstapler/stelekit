@@ -13,6 +13,7 @@ import dev.stapler.stelekit.sketch.v2.tools.AddElementCommand
 import dev.stapler.stelekit.sketch.v2.tools.AddFrameCommand
 import dev.stapler.stelekit.sketch.v2.tools.InputEvent
 import dev.stapler.stelekit.sketch.v2.tools.InputType
+import dev.stapler.stelekit.sketch.v2.tools.LinePointEditTool
 import dev.stapler.stelekit.sketch.v2.tools.SelectTool
 import dev.stapler.stelekit.sketch.v2.tools.SelectionAware
 import dev.stapler.stelekit.sketch.v2.tools.TextEditSession
@@ -49,6 +50,13 @@ class ToolSession(
     /** Where a secondary click or a long press asked for a context menu, in scene space; the host shows and clears it. */
     var contextMenuAt: ScenePoint? by mutableStateOf(null)
 
+    /** Asked for the second quick press of the Select tool over an element; true means the host took the press (it opens that element's label). */
+    var onDoubleClick: ((ElementId) -> Boolean)? = null
+
+    /** The shape whose interior holds a point, for a press that hits no outline (a transparent shape is hit on its edge only); null by default. */
+    var interiorAt: (ScenePoint) -> ElementId? = { null }
+
+    private val doubleClicks = DoubleClickDetector()
     private var tool: Tool = ports.tools.create(ToolId.Select) ?: error("the tool registry has no Select tool")
     private var overrideTool: Tool? = null
 
@@ -107,15 +115,26 @@ class ToolSession(
         if (tool is SelectionAware && tool.id == ToolId.Select) tool = SelectTool(ui.selection.map(::ElementId), ports.touchPresent)
     }
 
+    /** Hands the pointer to point editing of the line [id] (move a vertex, insert one on a segment); Esc returns to Select. */
+    fun editLinePoints(id: ElementId) {
+        tool = LinePointEditTool(id)
+        preview = null
+        textSession = null
+        configureAdapter()
+    }
+
     /** Commits the open text edit (the overlay's Done, a tap outside, blur). */
     fun commitText() {
         val editing = tool as? TextTool.Editing ?: return
         take(editing.commit(context()))
     }
 
+    /** True while the tool is the idle Select tool the strip chose, which has no gesture to abandon. */
+    private val selecting: Boolean get() = tool.id == ui.activeTool && tool is SelectionAware
+
     /** Esc: the tool abandons its gesture, else a drawing tool returns to Select, else the selection is dropped (ux.md section 17). */
     fun escape() {
-        if (preview != null || textSession != null || !selecting()) {
+        if (preview != null || textSession != null || !selecting) {
             val idleDrawingTool = preview == null && textSession == null && ui.activeTool != ToolId.Select
             val result = tool.onEvent(InputEvent.escape(notifier.now()), context())
             take(result)
@@ -127,9 +146,6 @@ class ToolSession(
         }
         readSelection()
     }
-
-    /** True while the tool is the idle Select tool the strip chose, which has no gesture to abandon. */
-    private fun selecting(): Boolean = tool.id == ui.activeTool && tool is SelectionAware
 
     /** Makes [tool] follow `ui.activeTool` (the strip writes it directly) and the adapter follow the tool. */
     private fun syncTool() {
@@ -155,9 +171,10 @@ class ToolSession(
 
     private fun feed(input: PointerAction.ToolInput) {
         val override = input.toolOverride
+        val event = if (override == null) counted(input.event) ?: return else input.event
         val running = if (override != null) overrideTool ?: ports.tools.create(override) else tool
         running ?: return
-        val result = running.onEvent(input.event, context())
+        val result = running.onEvent(event, context())
         if (override == null) {
             take(result)
             return
@@ -175,6 +192,14 @@ class ToolSession(
         textSession = (tool as? TextTool.Editing)?.session
         result.notice?.let(notifier::toolNotice)
         result.command?.let { commit(it) }
+    }
+
+    /** Marks the second quick press of the Select tool as a double click (the platform events carry no count); null when the host took the press. */
+    private fun counted(event: InputEvent): InputEvent? {
+        if (event.type != InputType.Down || tool !is SelectionAware) return event
+        val hit = context().hitTester.hit(event.point, ui.viewport.zoom) ?: interiorAt(event.point)
+        if (!doubleClicks.press(event, hit)) return event
+        return if (hit != null && onDoubleClick?.invoke(hit) == true) null else event.copy(clickCount = 2)
     }
 
     private fun readSelection() {

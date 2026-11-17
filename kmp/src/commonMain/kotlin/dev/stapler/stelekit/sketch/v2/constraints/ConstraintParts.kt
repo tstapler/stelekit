@@ -84,10 +84,11 @@ object ConstraintParts {
         }
     }
 
-    private class Op(val role: OperandRole, val whole: Boolean)
+    /** [arcEnd]: the operand is the start or end point of an arc, which the endpoint tangent kinds need to tell from any other point. */
+    private class Op(val role: OperandRole, val whole: Boolean, val arcEnd: Boolean = false)
 
     private fun resolve(operands: List<PartRef>): List<Op>? =
-        operands.map { ref -> Op(roleOf(ref.element, ref.part) ?: return null, ref.part == TargetPart.Whole) }
+        operands.map { ref -> Op(roleOf(ref.element, ref.part) ?: return null, ref.part == TargetPart.Whole, ref.element is ArcElement && ref.part in ARC_ENDS) }
 
     private fun reachable(kind: ConstraintKind, prefix: List<Op>): Boolean {
         if (prefix.size in Constraint.arityOf(kind) && complete(kind, prefix)) return true
@@ -95,7 +96,7 @@ object ConstraintParts {
         return EXTENSIONS.any { reachable(kind, prefix + it) }
     }
 
-    private val EXTENSIONS = OperandRole.entries.flatMap { role -> listOf(Op(role, false), Op(role, true)) }
+    private val EXTENSIONS = OperandRole.entries.flatMap { role -> listOf(Op(role, false), Op(role, true)) } + Op(OperandRole.Point, false, arcEnd = true)
 
     private fun complete(kind: ConstraintKind, ops: List<Op>): Boolean {
         if (ops.size !in Constraint.arityOf(kind)) return false
@@ -110,10 +111,19 @@ object ConstraintParts {
             ConstraintKind.Distance -> roles == listOf(segment) || roles == listOf(point, point) || pointToEdge(ops)
             ConstraintKind.Parallel, ConstraintKind.Perpendicular, ConstraintKind.Angle -> roles == listOf(segment, segment)
             ConstraintKind.Equal -> roles == listOf(segment, segment) || roles == listOf(curve, curve)
-            ConstraintKind.Tangent -> roles.count { it == curve } >= 1 && roles.all { it != point }
+            ConstraintKind.Tangent -> (roles.count { it == curve } >= 1 && roles.all { it != point }) || endpointTangent(ops)
+            ConstraintKind.DistanceX, ConstraintKind.DistanceY -> roles == listOf(point, point)
             ConstraintKind.Symmetric -> roles == listOf(point, point, segment)
             ConstraintKind.Radius, ConstraintKind.Diameter -> roles == listOf(curve)
         }
+    }
+
+    /** Tangent at a shared arc end: a segment and an arc's start or end, or two arcs' ends (the ends are joined by a Coincident of their own). */
+    private fun endpointTangent(ops: List<Op>): Boolean {
+        if (ops.size != PAIR) return false
+        val (a, b) = ops
+        val lineAndEnd = (a.role == OperandRole.Segment && b.arcEnd) || (a.arcEnd && b.role == OperandRole.Segment)
+        return lineAndEnd || (a.arcEnd && b.arcEnd)
     }
 
     /** A point and an edge, in either order (the centre-to-edge distance); a whole line or rectangle measures from its first segment. */

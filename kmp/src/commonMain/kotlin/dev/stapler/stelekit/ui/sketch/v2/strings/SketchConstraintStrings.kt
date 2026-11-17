@@ -119,6 +119,8 @@ object SketchConstraintStrings {
             ConstraintKind.Angle -> SketchStrings.Constrain.ANGLE
             ConstraintKind.Radius -> RADIUS
             ConstraintKind.Diameter -> DIAMETER
+            ConstraintKind.DistanceX -> SketchEngineStrings.Constrain.HORIZONTAL_DISTANCE
+            ConstraintKind.DistanceY -> SketchEngineStrings.Constrain.VERTICAL_DISTANCE
         }
 
         /** The short mark drawn next to the geometry; a dimension shows its value instead (see the glyph overlay). */
@@ -132,7 +134,7 @@ object SketchConstraintStrings {
             ConstraintKind.Tangent -> "◯"
             ConstraintKind.Symmetric -> "⇋"
             ConstraintKind.Fixed -> "▣"
-            ConstraintKind.Distance, ConstraintKind.Angle, ConstraintKind.Radius, ConstraintKind.Diameter -> "↔"
+            ConstraintKind.Distance, ConstraintKind.Angle, ConstraintKind.Radius, ConstraintKind.Diameter, ConstraintKind.DistanceX, ConstraintKind.DistanceY -> "↔"
         }
     }
 

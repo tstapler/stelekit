@@ -28,6 +28,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.utf16CodePoint
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.sketch.v2.commands.AlignBaseline
 import dev.stapler.stelekit.sketch.v2.commands.AlignEdge
 import dev.stapler.stelekit.sketch.v2.commands.AlignElements
 import dev.stapler.stelekit.sketch.v2.commands.DistributeAxis
@@ -47,8 +48,8 @@ object ExtraPanelTags {
     const val LIBRARY_SAVE = "sketch.host.library.save"
     const val LIBRARY_EMPTY = "sketch.host.library.empty"
     const val CONSTRAIN_MENU = "sketch.host.constrainmenu"
-    fun align(edge: AlignEdge) = "sketch.host.align.${edge.name.lowercase()}"
-    fun distribute(axis: DistributeAxis) = "sketch.host.distribute.${axis.name.lowercase()}"
+    fun align(edge: AlignEdge) = "sketch.host.align.${AlignBaseline.alignIds.getValue(edge)}"
+    fun distribute(axis: DistributeAxis) = "sketch.host.distribute.${AlignBaseline.distributeIds.getValue(axis)}"
     fun libraryInsert(id: String) = "sketch.host.library.insert.$id"
     fun libraryDelete(id: String) = "sketch.host.library.delete.$id"
     fun constrain(item: ConstrainMenuItem) = "sketch.host.constrainmenu.${item.name.lowercase()}"

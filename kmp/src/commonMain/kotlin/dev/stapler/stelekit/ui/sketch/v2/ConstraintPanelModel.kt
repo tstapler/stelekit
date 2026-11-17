@@ -174,7 +174,9 @@ object ConstrainFlyoutModel {
         ConstrainMenuItem.Distance -> listOf(ConstraintKind.Distance)
         ConstrainMenuItem.Angle -> listOf(ConstraintKind.Angle)
         ConstrainMenuItem.RadiusOrDiameter -> listOf(ConstraintKind.Radius, ConstraintKind.Diameter)
-        ConstrainMenuItem.ReferenceToggle -> listOf(ConstraintKind.Distance, ConstraintKind.Angle, ConstraintKind.Radius, ConstraintKind.Diameter)
+        ConstrainMenuItem.ReferenceToggle -> listOf(ConstraintKind.Distance, ConstraintKind.Angle, ConstraintKind.Radius, ConstraintKind.Diameter, ConstraintKind.DistanceX, ConstraintKind.DistanceY)
+        ConstrainMenuItem.HorizontalDistance -> listOf(ConstraintKind.DistanceX)
+        ConstrainMenuItem.VerticalDistance -> listOf(ConstraintKind.DistanceY)
     }
 
     private fun exposed(item: ConstrainMenuItem, tier: SolverTier): Boolean = kindsOf(item).any { SolverTierGate.exposes(tier, it) }

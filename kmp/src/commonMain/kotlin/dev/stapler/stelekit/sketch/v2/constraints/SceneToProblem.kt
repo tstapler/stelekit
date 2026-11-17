@@ -18,6 +18,8 @@ import dev.stapler.stelekit.sketch.constraints.constraints.ConstraintEquation
 import dev.stapler.stelekit.sketch.constraints.constraints.DiameterDimension
 import dev.stapler.stelekit.sketch.constraints.constraints.DimensionalEquation
 import dev.stapler.stelekit.sketch.constraints.constraints.DistanceDimension
+import dev.stapler.stelekit.sketch.constraints.constraints.DistanceX
+import dev.stapler.stelekit.sketch.constraints.constraints.DistanceY
 import dev.stapler.stelekit.sketch.constraints.constraints.EqualLength
 import dev.stapler.stelekit.sketch.constraints.constraints.EqualRadius
 import dev.stapler.stelekit.sketch.constraints.constraints.FixedPoint
@@ -31,7 +33,9 @@ import dev.stapler.stelekit.sketch.constraints.constraints.PointOnLine
 import dev.stapler.stelekit.sketch.constraints.constraints.RadiusDimension
 import dev.stapler.stelekit.sketch.constraints.constraints.RadiusRef
 import dev.stapler.stelekit.sketch.constraints.constraints.Symmetric
+import dev.stapler.stelekit.sketch.constraints.constraints.TangentArcArcEndpoint
 import dev.stapler.stelekit.sketch.constraints.constraints.TangentCircleCircle
+import dev.stapler.stelekit.sketch.constraints.constraints.TangentLineArcEndpoint
 import dev.stapler.stelekit.sketch.constraints.constraints.TangentLineCircle
 import dev.stapler.stelekit.sketch.constraints.constraints.Vertical
 import dev.stapler.stelekit.sketch.v2.commands.CommandError
@@ -382,7 +386,16 @@ private class Builder(private val scene: SketchSceneV2) {
         val curve: Curve?,
     ) {
         val whole: Boolean get() = part == TargetPart.Whole
+
+        /** The arc's centre and this operand's point when the operand is an arc's start or end; null for any other operand. */
+        fun arcEnd(): ArcEnd? {
+            val arc = binding as? ElementBinding.ArcB ?: return null
+            return if (part == TargetPart.ArcStart || part == TargetPart.ArcEnd) point?.let { ArcEnd(arc.center, it) } else null
+        }
     }
+
+    /** An arc's centre variable and the variable of one of its end points. */
+    private class ArcEnd(val center: Int, val point: Int)
 
     private fun Raise<CommandError>.operand(cid: String, target: ConstraintTarget): Operand {
         val b = bindingOf(cid, target)
@@ -437,6 +450,7 @@ private class Builder(private val scene: SketchSceneV2) {
                     distanceBetween(cid, ops, value, c.reference, ::emit)
                 }
             }
+            ConstraintKind.DistanceX, ConstraintKind.DistanceY -> axisDistance(c.kind, cid, ops, value, c.reference, ::emit)
             ConstraintKind.Angle -> segments(cid, ops).let { (s, t) -> emit { AngleDimension(it, s.a, s.b, t.a, t.b, value, AnglePolicy.Lines, c.reference) } }
             ConstraintKind.Radius -> curveOf(cid, ops[0]).let { k -> emit { RadiusDimension(it, k.radius, value, c.reference) } }
             ConstraintKind.Diameter -> curveOf(cid, ops[0]).let { k -> emit { DiameterDimension(it, k.radius, value, c.reference) } }
@@ -457,6 +471,20 @@ private class Builder(private val scene: SketchSceneV2) {
         val p = pointOf(cid, ops[0])
         val q = pointOf(cid, ops[1])
         emit { DistanceDimension(it, p, q, value, reference) }
+    }
+
+    /**
+     * Signed distance along one axis between two points. The equation measures `q - p`, so the pair is ordered to make the start
+     * pose positive: the dimension is the unsigned length the user typed and the solver never flips the sheet to the other side.
+     */
+    private fun Raise<CommandError>.axisDistance(kind: ConstraintKind, cid: String, ops: List<Operand>, value: Double, reference: Boolean, emit: ((String) -> ConstraintEquation) -> Unit) {
+        val p = pointOf(cid, ops[0])
+        val q = pointOf(cid, ops[1])
+        val offset = if (kind == ConstraintKind.DistanceX) 0 else 1
+        val flipped = values[q + offset] < values[p + offset]
+        val from = if (flipped) q else p
+        val to = if (flipped) p else q
+        if (kind == ConstraintKind.DistanceX) emit { DistanceX(it, from, to, value, reference) } else emit { DistanceY(it, from, to, value, reference) }
     }
 
     private fun Raise<CommandError>.segments(cid: String, ops: List<Operand>): Pair<Segment, Segment> =
@@ -519,7 +547,12 @@ private class Builder(private val scene: SketchSceneV2) {
         val k1 = ops[1].curve
         val s0 = ops[0].segment
         val s1 = ops[1].segment
+        val e0 = ops[0].arcEnd()
+        val e1 = ops[1].arcEnd()
         when {
+            e0 != null && s1 != null -> emit { TangentLineArcEndpoint(it, s1.a, s1.b, e0.center, e0.point) }
+            s0 != null && e1 != null -> emit { TangentLineArcEndpoint(it, s0.a, s0.b, e1.center, e1.point) }
+            e0 != null && e1 != null -> emit { TangentArcArcEndpoint(it, e0.center, e1.center, e0.point) }
             k0 != null && k1 != null -> emit { TangentCircleCircle.infer(it, snapshot, k0.center, k0.radius, k1.center, k1.radius) }
             k0 != null && s1 != null -> emit { TangentLineCircle(it, s1.a, s1.b, k0.center, k0.radius, TangentLineCircle.sideOf(snapshot, s1.a, s1.b, k0.center)) }
             s0 != null && k1 != null -> emit { TangentLineCircle(it, s0.a, s0.b, k1.center, k1.radius, TangentLineCircle.sideOf(snapshot, s0.a, s0.b, k1.center)) }

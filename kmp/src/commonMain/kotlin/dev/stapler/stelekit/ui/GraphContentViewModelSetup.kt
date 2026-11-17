@@ -29,6 +29,7 @@ import dev.stapler.stelekit.sketch.v2.runtime.session.SheetLeaseRegistry
 import dev.stapler.stelekit.sketch.v2.runtime.telemetry.QualitySignals
 import dev.stapler.stelekit.projectbridge.LoaderPageSettleProbe
 import dev.stapler.stelekit.projectbridge.ProjectSidecarStore
+import dev.stapler.stelekit.projectbridge.SketchCopyHost
 import dev.stapler.stelekit.projectbridge.ProjectBridgeDeps
 import dev.stapler.stelekit.projectbridge.ProjectBridgeSettings
 import kotlinx.coroutines.flow.first
@@ -281,6 +282,14 @@ internal fun buildProjectBridgeDeps(
         quality = QualitySignals(deps.platformSettings),
         browserPersistence = deps.platformIntegrations.browserPersistence,
         sketchInput = deps.platformIntegrations.sketchInput,
+        sketchCopy = SketchCopyHost(
+            router = deps.routerHolder::get,
+            store = sidecarStore,
+            fileSystem = effectiveFileSystem,
+            graphRoot = { graphManager.getActiveGraphInfo()?.takeIf { !it.isDemo }?.effectiveNotesPath?.value },
+            registry = { graphManager.graphRegistry.value },
+            switchTo = { graphManager.switchGraph(it) },
+        ),
         pageSettleProbe = LoaderPageSettleProbe(
             isIndexOnlyStub = { page ->
                 deps.repos.pageRepository.getPageByName(page.pageName).first().getOrNull()?.isContentLoaded == false

@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.ui.sketch.v2
 
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchEngineStrings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 
 /**
@@ -25,6 +26,8 @@ enum class ConstrainMenuItem(val mnemonic: Char, val label: String) {
     Angle('A', SketchStrings.Constrain.ANGLE),
     RadiusOrDiameter('R', SketchStrings.Constrain.RADIUS_OR_DIAMETER),
     ReferenceToggle('X', SketchStrings.Constrain.REFERENCE_TOGGLE),
+    HorizontalDistance('W', SketchEngineStrings.Constrain.HORIZONTAL_DISTANCE),
+    VerticalDistance('G', SketchEngineStrings.Constrain.VERTICAL_DISTANCE),
 }
 
 /**

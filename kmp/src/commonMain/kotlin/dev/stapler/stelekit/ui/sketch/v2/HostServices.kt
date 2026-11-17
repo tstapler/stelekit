@@ -12,7 +12,9 @@ import dev.stapler.stelekit.platform.SketchPlatformInput
 import dev.stapler.stelekit.platform.V2StorageStatus
 import dev.stapler.stelekit.platform.SketchFilePort
 import dev.stapler.stelekit.projectbridge.V2Storage
+import dev.stapler.stelekit.sketch.constraints.SolverTarget
 import dev.stapler.stelekit.sketch.constraints.SolverTier
+import dev.stapler.stelekit.sketch.constraints.SolverTierFacts
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.export.SvgImage
 import dev.stapler.stelekit.sketch.v2.export.SvgImageSource
@@ -53,8 +55,8 @@ class HostServices(
     val images: ImageAssetStore? = null,
     val storage: () -> V2Storage = { V2Storage.Available },
     val library: LibraryStorage = InMemoryLibraryStorage(),
-    /** The solver tier of this target (ADR-003); the committed default is the benchmark-free `Full` until the tier decision is measured. */
-    val tier: () -> SolverTier = { SolverTier.Full },
+    /** The solver tier of this target, from the recorded measurements (ADR-003 item 7, [SolverTierFacts]). */
+    val tier: () -> SolverTier = { SolverTierFacts.Recorded.tierOf(SolverTarget.Jvm) },
     val png: PngEncoder = PngEncoder(),
     /** Adds a sheet to the project beside the open one (the over-cap "new sketch" path); null where the host cannot. */
     val createSheet: (suspend (SketchDocumentV2) -> Either<String, Unit>)? = null,
@@ -79,7 +81,7 @@ class HostServices(
         private const val LIBRARY_FILE = "sketch-library.excalidrawlib"
         private const val UNAVAILABLE = "unavailable"
 
-        fun of(platform: HostPlatform, storage: () -> V2Storage, limits: SceneLimits, tier: () -> SolverTier = { SolverTier.Full }): HostServices {
+        fun of(platform: HostPlatform, storage: () -> V2Storage, limits: SceneLimits, tier: () -> SolverTier = { SolverTierFacts.Recorded.tierOf(SolverTarget.Jvm) }): HostServices {
             val notes = platform.notesDirectory()
             val fs = platform.fileSystem
             val images = if (notes != null && fs != null) ImageAssetStore(fs, assetsDirectory(notes), limits) else null

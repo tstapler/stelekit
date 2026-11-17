@@ -110,4 +110,5 @@ internal fun ExtrasDialogs(extras: EditorExtras) {
     val clipboard = LocalClipboardManager.current
     ExcalidrawImportDialogs(extras.importer, onCopyDetails = { clipboard.setText(AnnotatedString(it)) }, canCreateSheet = extras.canCreateSheet)
     ExportDialog(extras.exporter)
+    LabelDialog(extras.engine)
 }

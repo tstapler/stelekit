@@ -26,6 +26,8 @@ import dev.stapler.stelekit.projectbridge.V2Capabilities
 import dev.stapler.stelekit.projectbridge.V2Mode
 import dev.stapler.stelekit.projectbridge.v2Storage
 import dev.stapler.stelekit.repository.SketchRepositories
+import dev.stapler.stelekit.sketch.constraints.SolverTarget
+import dev.stapler.stelekit.sketch.constraints.SolverTierFacts
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
 import dev.stapler.stelekit.sketch.v2.diagnostics.InMemoryDiagnosticsPort
@@ -48,6 +50,7 @@ import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
 import dev.stapler.stelekit.sketch.v2.text.TextMetricsProvider
 import dev.stapler.stelekit.sketch.v2.tools.ElementIdSource
 import dev.stapler.stelekit.sketch.v2.tools.StandardToolRegistry
+import dev.stapler.stelekit.ui.sketch.NewSheetKind
 import dev.stapler.stelekit.ui.sketch.NoEditorReason
 import dev.stapler.stelekit.ui.sketch.RouteInput
 import dev.stapler.stelekit.ui.sketch.RouteOutcome
@@ -159,6 +162,13 @@ class V2EditorOpener(private val deps: V2EditorDeps, private val context: Corout
 
     suspend fun open(projectUuid: ProjectUuid?, metrics: TextMetricsProvider): EditorOpening = open(projectUuid, metrics, allowCreate = true)
 
+    /** The kind of sheet [projectUuid]'s next sheet would be (the `NewSketchProject` predicate decides for a project that already has sheets). */
+    suspend fun nextSheetKind(projectUuid: ProjectUuid): NewSheetKind? {
+        val project = deps.repos.projects.loadProject(projectUuid).getOrNull()?.project ?: return null
+        val store = deps.store() ?: return null
+        return entry.newSheetKind(project, store)
+    }
+
     /** Creates the project's first sheet as v2 after the first-write flow confirmed, then opens it. */
     suspend fun createAndOpen(projectUuid: ProjectUuid, metrics: TextMetricsProvider): EditorOpening =
         entry.createSheet(projectUuid).fold({ EditorOpening.Legacy }, { open(projectUuid, metrics, allowCreate = false) })
@@ -251,7 +261,8 @@ class V2EditorOpener(private val deps: V2EditorDeps, private val context: Corout
         )
         val diagnostics = DiagnosticsHostState(port, controller.notices, deps.clockMillis)
         readOnlyReason?.let { port.raise(BannerRowId.ReadOnly, it) }
-        val services = HostServices.of(deps.platform, { target.store.v2Storage() }, deps.limits)
+        val solverTarget = if (deps.keymap.isWeb) SolverTarget.WasmJs else SolverTarget.Jvm
+        val services = HostServices.of(deps.platform, { target.store.v2Storage() }, deps.limits) { SolverTierFacts.Recorded.tierOf(solverTarget) }
         return EditorOpening.Editor(SketchEditorSession(controller, diagnostics, target.projectName, lease, target.slug, target.sheet, services))
     }
 }

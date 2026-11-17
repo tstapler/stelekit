@@ -26,6 +26,8 @@ import dev.stapler.stelekit.sketch.v2.index.SpatialIndex
 import dev.stapler.stelekit.sketch.v2.runtime.constraints.SolveOutcome
 import dev.stapler.stelekit.sketch.v2.runtime.constraints.SolveRunner
 import dev.stapler.stelekit.sketch.v2.runtime.constraints.SolveState
+import dev.stapler.stelekit.sketch.v2.render.SeedSource
+import dev.stapler.stelekit.sketch.v2.render.SheetStyleDefaults
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetSaver
 import dev.stapler.stelekit.sketch.v2.runtime.telemetry.QualitySignals
@@ -79,6 +81,8 @@ class EditorPorts(
     val sequencer: OnboardingSequencer? = null,
     /** Local, never-transmitted counters for the flag-exit criteria; null counts nothing. */
     val quality: QualitySignals? = null,
+    /** Where a new shape's Sketchy seed comes from; null folds the clock with the sheet. */
+    val seeds: SeedSource? = null,
 )
 
 /**
@@ -106,6 +110,7 @@ class SketchEditorController(
     private val gate = Mutex()
     private val pending = MutableStateFlow(0)
     private val index = SpatialIndex()
+    internal val creation = ElementCreation(initial, ports.seeds ?: ElementCreation.defaultSeeds(initial.sheetUuid, ports.clockMillis()))
 
     var history: HistoryV2 by mutableStateOf(HistoryV2.of(initial, ports.limits))
         private set
@@ -117,7 +122,10 @@ class SketchEditorController(
     var activeLayer: LayerId by mutableStateOf(LayerId.Default)
 
     /** The style new shapes take; the Style panel's defaults row writes it. */
-    var defaultStyle: ElementStyle by mutableStateOf(ElementStyle())
+    var defaultStyle: ElementStyle by mutableStateOf(creation.startingStyle())
+
+    /** The sheet's style (Clean unless the sheet is Sketchy, OD-5). */
+    val sheetStyle: SheetStyleDefaults get() = creation.sheetStyle
 
     var overlay: EditorOverlay? by mutableStateOf(null)
 
@@ -186,15 +194,15 @@ class SketchEditorController(
 
     private fun commitToolCommand(raw: ToolCommand) {
         val command = interceptToolCommand(raw) ?: return
-        val creation = command as? AddElementCommand
-        val placed = if (creation != null && activeLayer != LayerId.Default) {
-            AddElementCommand(creation.element.withBase(creation.element.base.copy(layerId = activeLayer)))
+        val drawn = (command as? AddElementCommand)?.let(creation::seeded)
+        val placed = if (drawn != null && activeLayer != LayerId.Default) {
+            AddElementCommand(drawn.element.withBase(drawn.element.base.copy(layerId = activeLayer)))
         } else {
-            command
+            drawn ?: command
         }
         placed.toCommand().fold(
             notifier::refuse,
-            { if (submit(it) == null && creation != null) ports.quality?.elementDrawn(history.present.sheetUuid) },
+            { if (submit(it) == null && drawn != null) ports.quality?.elementDrawn(history.present.sheetUuid) },
         )
     }
 
@@ -279,7 +287,7 @@ class SketchEditorController(
         ui.selection = ui.selection.filterTo(LinkedHashSet()) { next.present.scene[ElementId(it)] != null }
         tools.selectionPruned()
         revision += 1
-        saves.submit(next.present)
+        saves.submit(creation.forSave(next.present))
         if (next.present.constraints.isEmpty()) constraintState.cleared()
     }
 
@@ -298,6 +306,7 @@ class SketchEditorController(
     /** Replaces the whole document after the saver reloaded it from disk (the other device's version). */
     fun reloaded(doc: SketchDocumentV2) {
         history = HistoryV2.of(doc, ports.limits)
+        creation.reload(doc)
         index.rebuild(doc.scene)
         ui.selection = emptySet()
         revision += 1

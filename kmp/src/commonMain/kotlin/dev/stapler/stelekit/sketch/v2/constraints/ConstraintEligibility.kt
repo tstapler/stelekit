@@ -47,6 +47,9 @@ enum class ElementKind {
 enum class ConstraintKind {
     Coincident, Horizontal, Vertical, Parallel, Perpendicular, Equal, Tangent, Symmetric, Fixed,
     Distance, Angle, Radius, Diameter,
+
+    /** Signed horizontal and vertical distance between two points (the solver's `DistanceX` and `DistanceY`). */
+    DistanceX, DistanceY,
 }
 
 /** Whether a constraint kind can apply to an element kind, and if not, the plain-language reason. */
@@ -71,6 +74,7 @@ object SketchReasonText {
     const val SelectAnElement = "Select an element to constrain"
     const val CoincidentNeedsTwo = "Coincident needs two elements"
     const val DistanceNeedsMeasure = "Distance needs a line or rectangle, or two points"
+    const val DistanceAxisNeedsPoints = "Horizontal and vertical distance need two points"
     const val ReferenceNeedsDimension = "Reference needs a dimension on the selection"
 
     /** The diagnostics entry written when `CommandError.ConstraintCapExceeded` is returned (Story 4.2.1). */
@@ -100,6 +104,7 @@ object ConstraintEligibility {
     fun selectionReason(constraint: ConstraintKind): String = when (constraint) {
         ConstraintKind.Coincident -> SketchReasonText.CoincidentNeedsTwo
         ConstraintKind.Distance -> SketchReasonText.DistanceNeedsMeasure
+        ConstraintKind.DistanceX, ConstraintKind.DistanceY -> SketchReasonText.DistanceAxisNeedsPoints
         else -> needs(constraint).reason
     }
 
@@ -119,6 +124,7 @@ object ConstraintEligibility {
         ConstraintKind.Symmetric -> Need(lines + ElementKind.Point, SketchReasonText.SymmetricNeedsPointsOrLine)
         ConstraintKind.Radius -> Need(curves, SketchReasonText.RadiusNeedsCircle)
         ConstraintKind.Diameter -> Need(curves, SketchReasonText.DiameterNeedsCircle)
+        ConstraintKind.DistanceX, ConstraintKind.DistanceY -> Need(technical, SketchReasonText.DistanceAxisNeedsPoints)
     }
 }
 

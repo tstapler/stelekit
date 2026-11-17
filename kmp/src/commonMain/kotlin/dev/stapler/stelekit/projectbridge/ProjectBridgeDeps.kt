@@ -69,6 +69,8 @@ class ProjectBridgeDeps(
     val engineChange: EngineChangeBus = EngineChangeBus(),
     /** The platform root's palm, cancel, edge-exclusion and raw-pointer seams of the v2 canvas (Task 3.1.2h). */
     val sketchInput: dev.stapler.stelekit.platform.SketchPlatformInput = dev.stapler.stelekit.platform.SketchPlatformInput.None,
+    /** Copies a sketch project to another graph from the Sketch screen; null where no router or no second graph can exist. */
+    val sketchCopy: SketchCopyHost? = null,
 ) {
     /** The `GraphManager.onGraphRemoved` cleanup of the per-graph consent records; a root composes it into its one handler slot. */
     fun onGraphRemoved(graphId: String) {

@@ -130,11 +130,11 @@ data class Constraint(
     }
 
     companion object {
-        val DIMENSIONAL = setOf(ConstraintKind.Distance, ConstraintKind.Angle, ConstraintKind.Radius, ConstraintKind.Diameter)
+        val DIMENSIONAL = setOf(ConstraintKind.Distance, ConstraintKind.Angle, ConstraintKind.Radius, ConstraintKind.Diameter, ConstraintKind.DistanceX, ConstraintKind.DistanceY)
 
         fun arityOf(kind: ConstraintKind): Arity = when (kind) {
             ConstraintKind.Coincident, ConstraintKind.Parallel, ConstraintKind.Perpendicular,
-            ConstraintKind.Equal, ConstraintKind.Tangent, ConstraintKind.Angle,
+            ConstraintKind.Equal, ConstraintKind.Tangent, ConstraintKind.Angle, ConstraintKind.DistanceX, ConstraintKind.DistanceY,
             -> Arity.exactly(PAIR)
             ConstraintKind.Fixed, ConstraintKind.Radius, ConstraintKind.Diameter -> Arity.exactly(1)
             ConstraintKind.Horizontal, ConstraintKind.Vertical, ConstraintKind.Distance -> Arity(1, PAIR)

@@ -73,7 +73,7 @@ class KeyboardPanningTest {
     fun constrainMnemonics_should_PickWhileTheMenuIsOpen_And_NeverTheCanvasShortcuts() {
         val letters = ConstrainMenuItem.entries.map { it.mnemonic }
         assertEquals(letters.size, letters.toSet().size, "no two entries share a mnemonic")
-        assertEquals("CHVLPETSFDARX", letters.joinToString(""))
+        assertEquals("CHVLPETSFDARXWG", letters.joinToString(""))
         val all = ConstrainMenuItem.entries.toSet()
         assertEquals(ConstrainMenuItem.Coincident, ConstrainMnemonics.pick("c", all))
         assertEquals(ConstrainMenuItem.Parallel, ConstrainMnemonics.pick("L", all))

@@ -6,6 +6,7 @@ package dev.stapler.stelekit.ui.sketch
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -24,9 +25,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.projectbridge.SketchCopyHost
 import dev.stapler.stelekit.ui.components.typedItems
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchEngineStrings
 
 /** Flag-gated project list with creation and the per-graph settings; reached from the Sketch row. */
 @Composable
@@ -35,6 +39,7 @@ fun ProjectListScreen(
     onOpenProject: (String) -> Unit,
     modifier: Modifier = Modifier,
     registryEditor: (() -> RegistryEditorViewModel)? = null,
+    sketchCopy: SketchCopyHost? = null,
 ) {
     DisposableEffect(viewModel) { onDispose { viewModel.close() } }
     val state by viewModel.state.collectAsState()
@@ -45,9 +50,13 @@ fun ProjectListScreen(
         RegistryEditorScreen(editorViewModel, onBack = { editing = false }, modifier = modifier)
         return
     }
+    var copying by remember { mutableStateOf<ProjectRow?>(null) }
+    val copyHost = sketchCopy
+    if (copyHost != null) copying?.let { row -> SketchCopyFlow(copyHost, row) { copying = null } }
     ProjectListContent(
         state = state,
         onCreate = viewModel::createProject,
+        onCopySketch = if (copyHost?.available() == true) ({ copying = it }) else null,
         onNewSketch = if (viewModel.sketchesAvailable) ({ viewModel.createSketch(onOpenProject) }) else null,
         onDismissMessage = viewModel::dismissMessage,
         onOpen = onOpenProject,
@@ -88,6 +97,7 @@ internal fun ProjectListContent(
     settings: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     onNewSketch: (() -> Unit)? = null,
+    onCopySketch: ((ProjectRow) -> Unit)? = null,
 ) {
     var creating by remember { mutableStateOf(false) }
     // One scrolling list: on a phone the settings panel is taller than the screen, so a fixed column would squeeze the rows to nothing.
@@ -96,7 +106,7 @@ internal fun ProjectListContent(
         if (state.sketches.isNotEmpty()) {
             item { Text("Recent sketches", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp)) }
             typedItems(state.sketches, key = { it.uuid }) {
-                Text("Sketch ${it.slug.removePrefix("proj-")}", modifier = Modifier.fillMaxWidth().clickable { onOpen(it.uuid) }.padding(16.dp))
+                SketchRow(it, onOpen, onCopySketch)
             }
         }
         item { ProjectsHeader(isEmpty = state.projects.isEmpty(), onNewProject = { creating = true }) }
@@ -152,4 +162,13 @@ private fun NewProjectDialog(onCreate: (String) -> Unit, onDismiss: () -> Unit) 
         confirmButton = { TextButton(onClick = { onCreate(name) }, enabled = name.isNotBlank()) { Text("Create") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+/** One recent sketch: tap to open; "Copy to graph..." sits beside it where a router and a second graph exist. */
+@Composable
+private fun SketchRow(row: ProjectRow, onOpen: (String) -> Unit, onCopySketch: ((ProjectRow) -> Unit)?) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("Sketch ${row.slug.removePrefix("proj-")}", modifier = Modifier.weight(1f).clickable { onOpen(row.uuid) }.padding(16.dp))
+        if (onCopySketch != null) TextButton(onClick = { onCopySketch(row) }) { Text(SketchEngineStrings.SketchCopy.ACTION) }
+    }
 }
