@@ -18,6 +18,7 @@ import dev.stapler.stelekit.sketch.v2.diagnostics.InMemoryDiagnosticsPort
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetSaver
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetSaverPorts
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetTarget
+import dev.stapler.stelekit.sketch.v2.runtime.telemetry.QualitySignals
 import dev.stapler.stelekit.sketch.v2.runtime.telemetry.SketchLog
 import dev.stapler.stelekit.sketch.v2.runtime.telemetry.SketchLogSink
 import dev.stapler.stelekit.sketch.v2.scene.ElementBase
@@ -36,6 +37,7 @@ internal class SaverRig(
     context: CoroutineContext,
     val slugLock: SidecarSlugLock = SidecarSlugLock(),
     externalChanges: Flow<Unit> = emptyFlow(),
+    signals: QualitySignals? = null,
 ) {
     val sheet = SheetUuid(MixedProjectFixtures.SHEET_A)
     val path = SheetPaths.pathFor(sheet, SheetPaths.SCHEMA_V2)
@@ -47,7 +49,7 @@ internal class SaverRig(
         SheetTarget(MixedProjectFixtures.slug, SketchTestSupport.P, sheet, ContentHasher.sha256(loadedBytes)),
         SheetSaverPorts(
             device.repos, device.store, slugLock, diagnostics,
-            log = SketchLog(SketchLogSink { logLines += it }),
+            log = SketchLog(SketchLogSink { logLines += it }, signals = signals),
             externalChanges = externalChanges,
         ),
         context = context,

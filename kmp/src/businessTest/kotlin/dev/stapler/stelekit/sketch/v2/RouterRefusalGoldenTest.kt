@@ -54,6 +54,6 @@ class RouterRefusalGoldenTest {
         val caps = V2Capabilities.of(V2Storage.Available)
         val routed = SketchEditorRouter.route(RouteInput(V2Mode.On, caps, SheetSchema.V1, refusal = refusal))
         assertEquals(RouteOutcome.Legacy(UpgradeAffordance.Disabled(HasTechnicalData)), routed)
-        assertEquals("This sketch has zones or dimensions the new editor can't edit yet.", SketchReasonText.HAS_TECHNICAL_DATA)
+        assertEquals("This build does not upgrade sketches that have zones or dimensions.", SketchReasonText.HAS_TECHNICAL_DATA)
     }
 }

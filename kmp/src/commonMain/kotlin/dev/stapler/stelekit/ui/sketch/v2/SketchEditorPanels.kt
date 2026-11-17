@@ -54,7 +54,7 @@ private fun LayersTab(controller: SketchEditorController) {
         onActiveLayer = { controller.activeLayer = it },
         onCommand = { controller.submit(it) },
         onNewLayer = { controller.submit(LayersPanelModel.newLayer(controller.doc.scene, LayerId("layer-${UuidGenerator.generateV7()}"))) },
-        onVisibilityChanged = { layer, visible -> if (!visible) controller.view.afterHide(layer) },
+        onVisibilityChange = { layer, visible -> if (!visible) controller.view.afterHide(layer) },
         modifier = Modifier.fillMaxWidth(),
     )
 }

@@ -52,7 +52,7 @@ class ShortcutsSheetTest {
     fun sheet_should_ListAll14ToolsAndCloseOnButton_UX42() {
         var closed = 0
         val model = ShortcutsSheetModel.of(linux, singleKeyEnabled = true)
-        rule.setContent { ShortcutsSheet(model, onSingleKeyChanged = {}, onClose = { closed++ }) }
+        rule.setContent { ShortcutsSheet(model, onSingleKeyChange = {}, onClose = { closed++ }) }
         rule.waitForIdle()
         rule.onNodeWithTag(ShortcutsSheetTags.row("rectangle")).assert(hasContentDescription("Rectangle: R, 2"))
         rule.onNodeWithTag(ShortcutsSheetTags.CLOSE).performClick()
@@ -62,7 +62,7 @@ class ShortcutsSheetTest {
     @Test
     fun settingSwitch_should_ReportTheNewValue() {
         var enabled by mutableStateOf(true)
-        rule.setContent { ShortcutsSheet(ShortcutsSheetModel.of(linux, enabled), onSingleKeyChanged = { enabled = it }, onClose = {}) }
+        rule.setContent { ShortcutsSheet(ShortcutsSheetModel.of(linux, enabled), onSingleKeyChange = { enabled = it }, onClose = {}) }
         rule.waitForIdle()
         rule.onNodeWithTag(ShortcutsSheetTags.SETTING).performClick()
         rule.waitForIdle()

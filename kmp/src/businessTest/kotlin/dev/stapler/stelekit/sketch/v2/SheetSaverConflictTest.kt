@@ -7,6 +7,7 @@ package dev.stapler.stelekit.sketch.v2
 import dev.stapler.stelekit.sketch.v2.codec.SheetCodecV2
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
+import dev.stapler.stelekit.sketch.v2.runtime.telemetry.QualitySignals
 import dev.stapler.stelekit.util.ContentHasher
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.runBlocking
@@ -56,6 +57,24 @@ class SheetSaverConflictTest {
         assertTrue(copy.contains(ContentHasher.sha256(mineBytes).take(HASH8)), "hash8 is the scene's own sha256")
         assertEquals(listOf(BannerRowId.SaveConflict), a.rows())
         assertEquals(listOf("sketch.save.conflict sheet=$sheetId"), a.logLines)
+        a.saver.close()
+    }
+
+    @Test
+    fun saveConflict_should_CountOnceInTheLocalQualitySignals() = runBlocking<Unit> {
+        val signals = QualitySignals(MapSettings())
+        val a = SaverRig(MixedProjectFixtures.device(convertA = true), coroutineContext, signals = signals)
+        val b = SaverRig(MixedProjectFixtures.device(convertA = true), coroutineContext)
+        b.saver.submit(SaverRig.withRect(b.loadedDoc(), "theirs", 700))
+        assertEquals(SaveState.Saved, b.saver.flush())
+        a.device.pullFrom(b.device)
+        b.saver.close()
+
+        a.saver.submit(SaverRig.withRect(a.loadedDoc(), "mine", 300))
+        assertIs<SaveState.Conflict>(a.saver.flush())
+
+        assertEquals(1L, signals.counts().conflicts)
+        assertEquals(0L, signals.counts().solves)
         a.saver.close()
     }
 

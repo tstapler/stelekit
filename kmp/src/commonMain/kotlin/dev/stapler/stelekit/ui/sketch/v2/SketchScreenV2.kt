@@ -124,6 +124,8 @@ data class SketchShellConfig(
     val snap: Boolean = false,
     val onGrid: (() -> Unit)? = null,
     val onSnap: (() -> Unit)? = null,
+    /** The overflow entry "Restore original (v1) sheet"; null hides it (no restore action wired). */
+    val restore: RestoreMenuEntry? = null,
 )
 
 object ShellTags {
@@ -141,6 +143,7 @@ object ShellTags {
     const val OVERFLOW_TIPS = "sketch.overflow.tips"
     const val OVERFLOW_IMPORT = "sketch.overflow.import"
     const val OVERFLOW_EXPORT = "sketch.overflow.export"
+    const val OVERFLOW_RESTORE = "sketch.overflow.restore"
     const val OVERFLOW_GO_TO = "sketch.overflow.goto"
     const val BANNER = "sketch.banner"
     const val HINT = "sketch.hint"
@@ -313,7 +316,7 @@ private fun ShellTopBar(state: SketchEditorState, config: SketchShellConfig, foc
             .focusProperties { next = if (state.walkthrough.step == WalkthroughStep.Shortcuts) state.walkthrough.popoverFocus else FocusRequester.Default }
             .focusRequester(focus.overflow)
             .mark(regions, TabStop.TopBar),
-        onOverflowOpened = { state.walkthrough.anchorActivated(WalkthroughStep.Shortcuts) },
+        onOverflowOpen = { state.walkthrough.anchorActivated(WalkthroughStep.Shortcuts) },
     ) { close -> OverflowItems(state, config, grouped, close) }
 }
 
@@ -369,6 +372,7 @@ private fun OverflowItems(state: SketchEditorState, config: SketchShellConfig, g
                 modifier = Modifier.testTag(ShellTags.OVERFLOW_EXPORT),
             )
         }
+        config.restore?.let { RestoreMenuItem(it, close) }
         for (tool in config.model.overflowTools) {
             DropdownMenuItem(
                 text = { Text("More tools: ${tool.label}  ${tool.shortcut}") },
@@ -377,6 +381,24 @@ private fun OverflowItems(state: SketchEditorState, config: SketchShellConfig, g
             )
         }
     }
+}
+
+/** "Restore original (v1) sheet": hidden without a backup, shown disabled with its reason where it cannot run (UX-90, UX-137). */
+@Composable
+private fun RestoreMenuItem(entry: RestoreMenuEntry, close: () -> Unit) {
+    val availability = entry.availability
+    if (availability == RestoreAvailability.Hidden) return
+    DropdownMenuItem(
+        text = {
+            Column {
+                Text(RestoreCopy.ACTION)
+                (availability as? RestoreAvailability.Disabled)?.let { Text(it.reason, style = MaterialTheme.typography.bodySmall) }
+            }
+        },
+        onClick = { close(); entry.onRestore() },
+        enabled = availability == RestoreAvailability.Enabled,
+        modifier = Modifier.testTag(ShellTags.OVERFLOW_RESTORE),
+    )
 }
 
 /** "Import .excalidraw..." with, where it is disabled, the reason beneath it (UX-135): the reason is visible text, not a tooltip. */

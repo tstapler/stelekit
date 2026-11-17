@@ -48,50 +48,8 @@ sealed interface SidecarWriteOutcome {
     data object StaleOpaque : SidecarWriteOutcome
 }
 
-/**
- * The in-graph sidecar bundle of each sketch project, under `assets/stelekit-sketch/<slug>/`. Sidecar files are
- * assets, not pages: they are written here, never through `GraphWriter`.
- */
-interface ProjectSidecarStore {
-    suspend fun read(slug: String): SidecarRead
-
-    /**
-     * Reads ONLY `project-model.json` (one file, no `sheets/` listing, no sheet file): `Present` holds just the model
-     * entry. The `NewSketchProject` predicate uses it to resolve each sheet's file name without reading 500 sheets.
-     */
-    suspend fun readModel(slug: String): SidecarRead
-
-    /**
-     * The first [maxBytes] bytes of the sidecar file [relPath] (a path the model's `sheetRef` names, relative to the
-     * project directory); null when it is absent, unreadable, unsafe or the platform cannot store it. No whole-file read.
-     */
-    suspend fun readSheetPrefix(slug: String, relPath: String, maxBytes: Int): ByteArray?
-
-    /** True when this platform can write the sidecar safely right now: atomic writes work and the storage status is ready. */
-    fun isAvailable(): Boolean
-
-    /** The platform's raw storage status (`Checking` while a browser probes), before the atomic-write check of [isAvailable]. */
-    fun storageStatus(): V2StorageStatus
-
-    /**
-     * Writes [files]. [opaque] maps each v2 sheet path to the sha the caller planned against: those paths are never
-     * replaced or deleted here, and a mismatch with the bytes on disk (checked under the store mutex, and again when a
-     * parked write is replayed) writes nothing and returns [SidecarWriteOutcome.StaleOpaque].
-     */
-    suspend fun write(slug: String, files: Map<String, ByteArray>, opaque: Map<String, String> = emptyMap()): SidecarWriteOutcome
-
-    /** Like [write] but never parks: while a git sync is in flight it returns [SidecarWriteOutcome.Deferred] and keeps nothing. */
-    suspend fun writeNow(slug: String, files: Map<String, ByteArray>, opaque: Map<String, String> = emptyMap()): SidecarWriteOutcome
-
-    /** Keeps [files] (the local state) beside a sidecar the reconcile would not overwrite; returns the path. */
-    suspend fun writeConflict(slug: String, files: Map<String, ByteArray>): Either<DomainError, String>
-
-    /** Stores a picked YAML source's content as `sources/yaml-<hash8>.yaml`; no path or filename is kept. */
-    suspend fun writeSourceSnapshot(slug: String, hash8: String, bytes: ByteArray): SidecarWriteOutcome
-
-    /** The stored YAML snapshot named by [hash8], or null when absent or unavailable on this platform. */
-    suspend fun readSourceSnapshot(slug: String, hash8: String): ByteArray?
-
+/** The sheet-file half of [ProjectSidecarStore]: v1 backups, v2 sheet files, conflict copies and their retention. */
+interface SidecarSheetFileStore {
     /**
      * Keeps the pre-conversion sheet [bytes] as `<slug>/backup/<sheetUuid>.v1.json` (temp+rename, then a read-back
      * sha check). An existing backup is the original and is never overwritten. `backup/` is invisible to [read].
@@ -133,6 +91,51 @@ interface ProjectSidecarStore {
      * [read] never opens); null when it is absent, the uuid is unsafe or the platform cannot store it.
      */
     suspend fun readV2SheetFile(slug: String, sheetUuid: String): ByteArray?
+}
+
+/**
+ * The in-graph sidecar bundle of each sketch project, under `assets/stelekit-sketch/<slug>/`. Sidecar files are
+ * assets, not pages: they are written here, never through `GraphWriter`.
+ */
+interface ProjectSidecarStore : SidecarSheetFileStore {
+    suspend fun read(slug: String): SidecarRead
+
+    /**
+     * Reads ONLY `project-model.json` (one file, no `sheets/` listing, no sheet file): `Present` holds just the model
+     * entry. The `NewSketchProject` predicate uses it to resolve each sheet's file name without reading 500 sheets.
+     */
+    suspend fun readModel(slug: String): SidecarRead
+
+    /**
+     * The first [maxBytes] bytes of the sidecar file [relPath] (a path the model's `sheetRef` names, relative to the
+     * project directory); null when it is absent, unreadable, unsafe or the platform cannot store it. No whole-file read.
+     */
+    suspend fun readSheetPrefix(slug: String, relPath: String, maxBytes: Int): ByteArray?
+
+    /** True when this platform can write the sidecar safely right now: atomic writes work and the storage status is ready. */
+    fun isAvailable(): Boolean
+
+    /** The platform's raw storage status (`Checking` while a browser probes), before the atomic-write check of [isAvailable]. */
+    fun storageStatus(): V2StorageStatus
+
+    /**
+     * Writes [files]. [opaque] maps each v2 sheet path to the sha the caller planned against: those paths are never
+     * replaced or deleted here, and a mismatch with the bytes on disk (checked under the store mutex, and again when a
+     * parked write is replayed) writes nothing and returns [SidecarWriteOutcome.StaleOpaque].
+     */
+    suspend fun write(slug: String, files: Map<String, ByteArray>, opaque: Map<String, String> = emptyMap()): SidecarWriteOutcome
+
+    /** Like [write] but never parks: while a git sync is in flight it returns [SidecarWriteOutcome.Deferred] and keeps nothing. */
+    suspend fun writeNow(slug: String, files: Map<String, ByteArray>, opaque: Map<String, String> = emptyMap()): SidecarWriteOutcome
+
+    /** Keeps [files] (the local state) beside a sidecar the reconcile would not overwrite; returns the path. */
+    suspend fun writeConflict(slug: String, files: Map<String, ByteArray>): Either<DomainError, String>
+
+    /** Stores a picked YAML source's content as `sources/yaml-<hash8>.yaml`; no path or filename is kept. */
+    suspend fun writeSourceSnapshot(slug: String, hash8: String, bytes: ByteArray): SidecarWriteOutcome
+
+    /** The stored YAML snapshot named by [hash8], or null when absent or unavailable on this platform. */
+    suspend fun readSourceSnapshot(slug: String, hash8: String): ByteArray?
 
     /** Writes queued bundles once the git sync is idle; returns how many were written. */
     suspend fun flushPending(): Int
@@ -145,19 +148,26 @@ interface ProjectSidecarStore {
 }
 
 /** [ProjectSidecarStore] over [FileSystem] with temp-and-rename writes; its own mutex, not `GraphWriteLock` (JSON, not markdown). */
-class FileProjectSidecarStore(
-    private val fs: FileSystem,
-    private val graphRoot: String,
-    private val writer: AtomicFileWriter,
-    private val lease: SketchWriterLease,
+class FileProjectSidecarStore private constructor(
+    private val core: SidecarCore,
     private val isGitSyncBusy: () -> Boolean,
-) : ProjectSidecarStore {
-    private val mutex = Mutex()
+) : ProjectSidecarStore, SidecarSheetFileStore by SidecarSheetFiles(core) {
+    constructor(
+        fs: FileSystem,
+        graphRoot: String,
+        writer: AtomicFileWriter,
+        lease: SketchWriterLease,
+        isGitSyncBusy: () -> Boolean,
+    ) : this(SidecarCore(fs, graphRoot, writer, lease), isGitSyncBusy)
+
+    private val fs = core.fs
+    private val lease = core.lease
+    private val mutex = core.mutex
+    private val gate = core.gate
+    private val disk = core.disk
 
     /** [epoch] is the lease epoch at park time: a bundle is never replayed under a later epoch (D-150). */
     private class PendingWrite(val files: Map<String, ByteArray>, val opaque: Map<String, String>, val epoch: Long)
-
-    private val gate = LeaseGate(lease)
 
     private val pending = LinkedHashMap<String, PendingWrite>()
 
@@ -168,8 +178,6 @@ class FileProjectSidecarStore(
     /** How many parked bundles became conflict copies because the lease epoch moved (diagnostics and tests). */
     var staleBundlesKept = 0
         private set
-
-    private val disk = SidecarDisk(fs, graphRoot, writer)
 
     override suspend fun read(slug: String): SidecarRead = mutex.withLock {
         if (disk.unavailable()) return SidecarRead.Unavailable
@@ -230,86 +238,6 @@ class FileProjectSidecarStore(
         disk.writeConflictCopy(slug, files)
     }
 
-    override suspend fun writeBackup(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String> = mutex.withLock {
-        val path = "${disk.dir(slug)}/$BACKUP_DIR/$sheetUuid.v1.json"
-        if (!gate.held()) return gate.refusal(path).left()
-        if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
-        if (!SAFE_SEGMENT.matches(sheetUuid)) return DomainError.FileSystemError.WriteFailed(path, "unsafe sheet uuid").left()
-        if (fs.fileExists(path)) return path.right()
-        disk.writeVerified(path, bytes)?.let { return it.left() }
-        path.right()
-    }
-
-    override suspend fun readBackup(slug: String, sheetUuid: String): ByteArray? = mutex.withLock {
-        if (disk.unavailable() || !SAFE_SEGMENT.matches(sheetUuid)) null else fs.readFileBytes("${disk.dir(slug)}/$BACKUP_DIR/$sheetUuid.v1.json")
-    }
-
-    override suspend fun writeV2BeforeRestore(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String> = mutex.withLock {
-        val path = "${disk.dir(slug)}/$BACKUP_DIR/$sheetUuid.v2-before-restore.json"
-        if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
-        if (!SAFE_SEGMENT.matches(sheetUuid)) return DomainError.FileSystemError.WriteFailed(path, "unsafe sheet uuid").left()
-        disk.writeVerified(path, bytes)?.let { return it.left() }
-        path.right()
-    }
-
-    override suspend fun deleteBackups(slug: String): Either<DomainError, Int> = mutex.withLock {
-        val dir = "${disk.dir(slug)}/$BACKUP_DIR"
-        if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(dir).left()
-        var deleted = 0
-        for (name in fs.listFiles(dir)) {
-            if (!fs.deleteFile("$dir/$name")) return DomainError.FileSystemError.WriteFailed("$dir/$name", "delete failed").left()
-            deleted++
-        }
-        deleted.right()
-    }
-
-    override suspend fun writeSheetConflictCopy(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String> = mutex.withLock {
-        val path = "${disk.dir(slug)}/$CONFLICTS_DIR/$sheetUuid.v2.conflict-${ContentHasher.sha256(bytes).take(HASH8)}.json"
-        if (!gate.held()) return gate.refusal(path).left()
-        disk.writeSheetCopy(sheetUuid, bytes, path)
-    }
-
-    override suspend fun pruneConflictCopies(slug: String, sheetUuid: String, unresolved: Set<String>): Either<DomainError, Int> = mutex.withLock {
-        val dir = "${disk.dir(slug)}/$CONFLICTS_DIR"
-        if (!gate.held()) return gate.refusal(dir).left()
-        if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(dir).left()
-        if (!SAFE_SEGMENT.matches(sheetUuid)) return DomainError.FileSystemError.WriteFailed(dir, "unsafe sheet uuid").left()
-        val copies = fs.listFiles(dir).filter { RetentionPolicy.sheetOfConflictCopy(it) == sheetUuid }
-            .map { RetentionPolicy.ConflictCopy(it, fs.getLastModifiedTime("$dir/$it") ?: 0L) }
-        var deleted = 0
-        for (name in RetentionPolicy.conflictCopiesToPrune(copies, unresolved)) {
-            if (!fs.deleteFile("$dir/$name")) return DomainError.FileSystemError.WriteFailed("$dir/$name", "delete failed").left()
-            deleted++
-        }
-        deleted.right()
-    }
-
-    override suspend fun retentionSize(slug: String): RetentionPolicy.Size = mutex.withLock {
-        if (disk.unavailable()) return RetentionPolicy.Size(0, 0, 0, 0)
-        fun measure(sub: String): Pair<Int, Long> {
-            val dir = "${disk.dir(slug)}/$sub"
-            val names = fs.listFiles(dir)
-            return names.size to names.sumOf { fs.getFileSize("$dir/$it") ?: 0L }
-        }
-        val (bf, bb) = measure(BACKUP_DIR)
-        val (cf, cb) = measure(CONFLICTS_DIR)
-        RetentionPolicy.Size(bf, bb, cf, cb)
-    }
-
-    override suspend fun deleteV2Sheet(slug: String, sheetUuid: String): Either<DomainError, Unit> = mutex.withLock {
-        val path = "${disk.dir(slug)}/${SidecarCodec.SHEETS_DIR}/$sheetUuid.v2.json"
-        if (!gate.held()) return gate.refusal(path).left()
-        if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
-        if (!SAFE_SEGMENT.matches(sheetUuid)) return DomainError.FileSystemError.WriteFailed(path, "unsafe sheet uuid").left()
-        if (fs.fileExists(path) && !fs.deleteFile(path)) return DomainError.FileSystemError.WriteFailed(path, "delete failed").left()
-        Unit.right()
-    }
-
-    override suspend fun readV2SheetFile(slug: String, sheetUuid: String): ByteArray? = mutex.withLock {
-        if (disk.unavailable() || !SAFE_SEGMENT.matches(sheetUuid)) null
-        else fs.readFileBytes("${disk.dir(slug)}/${SidecarCodec.SHEETS_DIR}/$sheetUuid.v2.json")
-    }
-
     override suspend fun writeSourceSnapshot(slug: String, hash8: String, bytes: ByteArray): SidecarWriteOutcome = mutex.withLock {
         if (!gate.held()) return SidecarWriteOutcome.Failed(gate.refusal("${disk.dir(slug)}/sources"))
         if (disk.unavailable()) return SidecarWriteOutcome.Unavailable
@@ -367,8 +295,108 @@ class FileProjectSidecarStore(
     }
 }
 
+/** What the store and its collaborators share: the file system, the one mutex, the lease gate and the disk layout. */
+internal class SidecarCore(
+    val fs: FileSystem,
+    graphRoot: String,
+    writer: AtomicFileWriter,
+    val lease: SketchWriterLease,
+) {
+    val mutex = Mutex()
+    val gate = LeaseGate(lease)
+    val disk = SidecarDisk(fs, graphRoot, writer)
+}
+
+/** Backups, v2 sheet files and conflict copies of [FileProjectSidecarStore], under its mutex. */
+internal class SidecarSheetFiles(core: SidecarCore) : SidecarSheetFileStore {
+    private val fs = core.fs
+    private val mutex = core.mutex
+    private val gate = core.gate
+    private val disk = core.disk
+
+    override suspend fun writeBackup(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String> = mutex.withLock {
+        val path = "${disk.dir(slug)}/${FileProjectSidecarStore.BACKUP_DIR}/$sheetUuid.v1.json"
+        if (!gate.held()) return gate.refusal(path).left()
+        if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
+        if (!SAFE_SEGMENT.matches(sheetUuid)) return DomainError.FileSystemError.WriteFailed(path, "unsafe sheet uuid").left()
+        if (fs.fileExists(path)) return path.right()
+        disk.writeVerified(path, bytes)?.let { return it.left() }
+        path.right()
+    }
+
+    override suspend fun readBackup(slug: String, sheetUuid: String): ByteArray? = mutex.withLock {
+        if (disk.unavailable() || !SAFE_SEGMENT.matches(sheetUuid)) null else fs.readFileBytes("${disk.dir(slug)}/${FileProjectSidecarStore.BACKUP_DIR}/$sheetUuid.v1.json")
+    }
+
+    override suspend fun writeV2BeforeRestore(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String> = mutex.withLock {
+        val path = "${disk.dir(slug)}/${FileProjectSidecarStore.BACKUP_DIR}/$sheetUuid.v2-before-restore.json"
+        if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
+        if (!SAFE_SEGMENT.matches(sheetUuid)) return DomainError.FileSystemError.WriteFailed(path, "unsafe sheet uuid").left()
+        disk.writeVerified(path, bytes)?.let { return it.left() }
+        path.right()
+    }
+
+    override suspend fun deleteBackups(slug: String): Either<DomainError, Int> = mutex.withLock {
+        val dir = "${disk.dir(slug)}/${FileProjectSidecarStore.BACKUP_DIR}"
+        if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(dir).left()
+        var deleted = 0
+        for (name in fs.listFiles(dir)) {
+            if (!fs.deleteFile("$dir/$name")) return DomainError.FileSystemError.WriteFailed("$dir/$name", "delete failed").left()
+            deleted++
+        }
+        deleted.right()
+    }
+
+    override suspend fun writeSheetConflictCopy(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String> = mutex.withLock {
+        val path = "${disk.dir(slug)}/${FileProjectSidecarStore.CONFLICTS_DIR}/$sheetUuid.v2.conflict-${ContentHasher.sha256(bytes).take(FileProjectSidecarStore.HASH8)}.json"
+        if (!gate.held()) return gate.refusal(path).left()
+        disk.writeSheetCopy(sheetUuid, bytes, path)
+    }
+
+    override suspend fun pruneConflictCopies(slug: String, sheetUuid: String, unresolved: Set<String>): Either<DomainError, Int> = mutex.withLock {
+        val dir = "${disk.dir(slug)}/${FileProjectSidecarStore.CONFLICTS_DIR}"
+        if (!gate.held()) return gate.refusal(dir).left()
+        if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(dir).left()
+        if (!SAFE_SEGMENT.matches(sheetUuid)) return DomainError.FileSystemError.WriteFailed(dir, "unsafe sheet uuid").left()
+        val copies = fs.listFiles(dir).filter { RetentionPolicy.sheetOfConflictCopy(it) == sheetUuid }
+            .map { RetentionPolicy.ConflictCopy(it, fs.getLastModifiedTime("$dir/$it") ?: 0L) }
+        var deleted = 0
+        for (name in RetentionPolicy.conflictCopiesToPrune(copies, unresolved)) {
+            if (!fs.deleteFile("$dir/$name")) return DomainError.FileSystemError.WriteFailed("$dir/$name", "delete failed").left()
+            deleted++
+        }
+        deleted.right()
+    }
+
+    override suspend fun retentionSize(slug: String): RetentionPolicy.Size = mutex.withLock {
+        if (disk.unavailable()) return RetentionPolicy.Size(0, 0, 0, 0)
+        fun measure(sub: String): Pair<Int, Long> {
+            val dir = "${disk.dir(slug)}/$sub"
+            val names = fs.listFiles(dir)
+            return names.size to names.sumOf { fs.getFileSize("$dir/$it") ?: 0L }
+        }
+        val (bf, bb) = measure(FileProjectSidecarStore.BACKUP_DIR)
+        val (cf, cb) = measure(FileProjectSidecarStore.CONFLICTS_DIR)
+        RetentionPolicy.Size(bf, bb, cf, cb)
+    }
+
+    override suspend fun deleteV2Sheet(slug: String, sheetUuid: String): Either<DomainError, Unit> = mutex.withLock {
+        val path = "${disk.dir(slug)}/${SidecarCodec.SHEETS_DIR}/$sheetUuid.v2.json"
+        if (!gate.held()) return gate.refusal(path).left()
+        if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
+        if (!SAFE_SEGMENT.matches(sheetUuid)) return DomainError.FileSystemError.WriteFailed(path, "unsafe sheet uuid").left()
+        if (fs.fileExists(path) && !fs.deleteFile(path)) return DomainError.FileSystemError.WriteFailed(path, "delete failed").left()
+        Unit.right()
+    }
+
+    override suspend fun readV2SheetFile(slug: String, sheetUuid: String): ByteArray? = mutex.withLock {
+        if (disk.unavailable() || !SAFE_SEGMENT.matches(sheetUuid)) null
+        else fs.readFileBytes("${disk.dir(slug)}/${SidecarCodec.SHEETS_DIR}/$sheetUuid.v2.json")
+    }
+}
+
 /** The writer-lease check of [FileProjectSidecarStore]: whether this process may write, and the typed refusal otherwise. */
-private class LeaseGate(private val lease: SketchWriterLease) {
+internal class LeaseGate(private val lease: SketchWriterLease) {
     fun held() = lease.state.value == SketchWriterLeaseState.Held
     fun refusal(path: String) = DomainError.FileSystemError.WriterLeaseNotHeld(path)
 }
@@ -412,7 +440,7 @@ internal object ModelSheetRefs {
 }
 
 /** File-level operations of [FileProjectSidecarStore]: path layout, temp-and-rename writes, the `.gitignore` rule. */
-private class SidecarDisk(private val fs: FileSystem, private val graphRoot: String, private val writer: AtomicFileWriter) {
+internal class SidecarDisk(private val fs: FileSystem, private val graphRoot: String, private val writer: AtomicFileWriter) {
     fun root() = "${graphRoot.trimEnd('/')}/${FileProjectSidecarStore.ROOT_DIR}"
     fun dir(slug: String) = "${root()}/$slug"
     fun unavailable() = writer.mode(root()) == AtomicWriteMode.UNSUPPORTED

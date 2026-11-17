@@ -71,6 +71,7 @@ fun SketchEditorV2Host(
     modifier: Modifier = Modifier,
     pointer: PointerClass = PointerClass.MouseOnly,
     window: WindowDp? = null,
+    restore: RestoreMenuEntry? = null,
 ) {
     val controller = session.controller
     val state = controller.ui
@@ -134,6 +135,7 @@ fun SketchEditorV2Host(
         snap = extras.snap,
         onGrid = extras::toggleGrid,
         onSnap = extras::toggleSnap,
+        restore = restore,
     )
     DiagnosticsHost(session.diagnostics, modifier.testTag(HostTags.ROOT)) {
         SketchScreenV2(
@@ -274,7 +276,7 @@ private fun HostOverlays(controller: SketchEditorController, extras: EditorExtra
     when (controller.overlay) {
         EditorOverlay.Shortcuts -> ShortcutsSheet(
             ShortcutsSheetModel.of(controller.keymap, singleKey),
-            onSingleKeyChanged = onSingleKey,
+            onSingleKeyChange = onSingleKey,
             onClose = { controller.overlay = null },
         )
         EditorOverlay.GoToElement -> GoToElementDialog(

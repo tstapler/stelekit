@@ -6,13 +6,20 @@ package dev.stapler.stelekit.ui.sketch.v2
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import arrow.core.right
 import dev.stapler.stelekit.model.SheetUuid
+import dev.stapler.stelekit.projectbridge.RetentionPolicy
 import dev.stapler.stelekit.sketch.v2.runtime.convert.RestoreOutcome
+import dev.stapler.stelekit.ui.sketch.v2.migration.BackupsSection
+import dev.stapler.stelekit.ui.sketch.v2.migration.BackupsSectionTags
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -27,7 +34,7 @@ import kotlin.test.assertTrue
  * Gradle-only: composes @Composable lambdas, which the Bazel android target cannot compile (see BUILD.bazel).
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [29], qualifiers = "w360dp-h640dp-xhdpi")
+@Config(sdk = [29], qualifiers = "w800dp-h800dp-mdpi")
 class RestoreBackupDialogTest {
     @get:Rule
     val rule = createComposeRule()
@@ -83,5 +90,71 @@ class RestoreBackupDialogTest {
         rule.onNodeWithTag(DELETE_BACKUPS_CONFIRM_TAG).performClick()
 
         assertEquals(listOf("delete"), calls)
+    }
+
+    private fun showMenu(entry: RestoreMenuEntry?) {
+        rule.setContent {
+            SketchScreenV2(SketchEditorState(), SketchShellConfig(ToolStripModel(true), PointerClass.MouseOnly, restore = entry), window = WindowDp(1280, 800))
+        }
+        rule.onNodeWithTag(ShellTags.OVERFLOW).performClick()
+    }
+
+    @Test
+    fun overflowMenu_should_OfferRestoreOriginal_AndRunItOnClick() {
+        showMenu(RestoreMenuEntry(RestoreAvailability.Enabled) { calls += "restore" })
+
+        rule.onNodeWithTag(ShellTags.OVERFLOW_RESTORE).assertIsEnabled()
+        rule.onNodeWithText(RestoreCopy.ACTION).assertIsDisplayed()
+        rule.onNodeWithTag(ShellTags.OVERFLOW_RESTORE).performClick()
+
+        assertEquals(listOf("restore"), calls)
+    }
+
+    @Test
+    fun overflowMenu_should_ShowRestoreDisabledWithItsReason_WhereTheBuildCannotRestore() {
+        showMenu(RestoreMenuEntry(RestoreAvailability.Disabled(RestoreCopy.BUILD_CAPPED)) { calls += "restore" })
+
+        rule.onNodeWithTag(ShellTags.OVERFLOW_RESTORE).assertIsNotEnabled()
+        rule.onNodeWithText(RestoreCopy.BUILD_CAPPED).assertIsDisplayed()
+    }
+
+    @Test
+    fun overflowMenu_should_HideRestore_WhenTheSheetHasNoBackup() {
+        showMenu(RestoreMenuEntry(RestoreAvailability.Hidden) { calls += "restore" })
+
+        rule.onNodeWithTag(ShellTags.OVERFLOW_RESTORE).assertDoesNotExist()
+    }
+
+    @Test
+    fun backupsSection_should_ShowTheSizeRow_AndDeleteOnlyAfterTheConfirmation() {
+        var files = 2
+        val model = BackupsSectionModel({ RetentionPolicy.Size(files, 1_536, 0, 0) }, { val n = files; files = 0; n.right() })
+        rule.setContent { BackupsSection(model) }
+        rule.waitForIdle()
+
+        rule.onNodeWithText(SketchStrings.Restore.backupsRow("2 files, 1.5 KB")).assertIsDisplayed()
+        rule.onNodeWithTag(BackupsSectionTags.DELETE).performClick()
+        assertEquals(2, files, "asking to delete deletes nothing")
+        rule.onNodeWithTag(DELETE_BACKUPS_CANCEL_TAG).assertIsFocused()
+        rule.onNodeWithTag(DELETE_BACKUPS_CONFIRM_TAG).performClick()
+        rule.waitForIdle()
+
+        assertEquals(0, files)
+        rule.onNodeWithText(SketchStrings.Restore.backupsRow(SketchStrings.Restore.NONE)).assertIsDisplayed()
+        rule.onNodeWithTag(BackupsSectionTags.DELETE).assertDoesNotExist()
+    }
+
+    @Test
+    fun backupsSection_should_DeleteNothing_WhenTheConfirmationIsCancelled() {
+        var deleted = 0
+        val model = BackupsSectionModel({ RetentionPolicy.Size(1, 10, 0, 0) }, { deleted++; 1.right() })
+        rule.setContent { BackupsSection(model) }
+        rule.waitForIdle()
+
+        rule.onNodeWithTag(BackupsSectionTags.DELETE).performClick()
+        rule.onNodeWithTag(DELETE_BACKUPS_CANCEL_TAG).performClick()
+
+        assertEquals(0, deleted)
+        rule.onNodeWithTag(DELETE_BACKUPS_CONFIRM_TAG).assertDoesNotExist()
     }
 }

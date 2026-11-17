@@ -40,7 +40,6 @@ object RouteTags {
     const val CLASSIC_NOTICE_DISMISS = "sketch.route.classic-notice.dismiss"
     const val ENGINE_CHANGE = "sketch.route.engine-change"
     const val ENGINE_REOPEN = "sketch.route.engine-change.reopen"
-    const val RESTORE_ENTRY = "sketch.route.restore"
     const val RESTORED_DONE = "sketch.route.restored.done"
     const val UPGRADE_DETAILS = "sketch.route.upgrade-details"
     const val UPGRADE_DETAILS_CLOSE = "sketch.route.upgrade-details.close"
@@ -112,16 +111,6 @@ internal fun EngineChangeRow(onReopen: () -> Unit, modifier: Modifier = Modifier
             Text(SketchMigrationStrings.Toasts.ENGINE_CHANGE, Modifier.weight(1f).padding(vertical = 12.dp))
             TextButton(onClick = onReopen, modifier = Modifier.testTag(RouteTags.ENGINE_REOPEN)) { Text(SketchMigrationStrings.Toasts.ENGINE_CHANGE_ACTION) }
         }
-    }
-}
-
-/** The entry that starts the confirmed restore of a converted sheet; shown only while a backup exists. */
-@Composable
-internal fun RestoreEntry(available: RestoreAvailability, onRestore: () -> Unit, modifier: Modifier = Modifier) {
-    when (available) {
-        RestoreAvailability.Enabled -> TextButton(onClick = onRestore, modifier = modifier.testTag(RouteTags.RESTORE_ENTRY)) { Text(RestoreCopy.ACTION) }
-        is RestoreAvailability.Disabled -> Text(available.reason, modifier.padding(8.dp))
-        RestoreAvailability.Hidden -> Unit
     }
 }
 

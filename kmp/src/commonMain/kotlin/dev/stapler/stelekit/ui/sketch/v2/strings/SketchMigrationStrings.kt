@@ -104,7 +104,7 @@ object SketchMigrationStrings {
         fun reason(failure: ConversionFailure): String = "Reason: ${words(failure)} (${failure.token})"
 
         fun words(failure: ConversionFailure): String = when (failure) {
-            ConversionFailure.HasTechnicalData -> "this project has dimensions or zones the new editor can't hold yet"
+            ConversionFailure.HasTechnicalData -> "this build does not upgrade projects with dimensions or zones"
             ConversionFailure.NotFound -> "the sketch could not be found"
             ConversionFailure.StorageUnavailable -> "this device can't save new-editor sketches"
             ConversionFailure.CorruptSidecar -> "the saved project files could not be read"
@@ -112,6 +112,8 @@ object SketchMigrationStrings {
             ConversionFailure.CannotLift -> "the sketch has content the new editor can't carry over"
             ConversionFailure.Encode, ConversionFailure.Write -> "the new copy could not be saved"
             ConversionFailure.Verify -> "the new copy did not read back correctly"
+            ConversionFailure.NotReady -> "upgrading isn't available in this build yet"
+            ConversionFailure.Deferred -> "a sync is running, so the upgrade was postponed"
         }
     }
 

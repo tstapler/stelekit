@@ -5,13 +5,12 @@
 package dev.stapler.stelekit.ui.sketch.v2
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import dev.stapler.stelekit.ui.components.typedItems
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -53,7 +52,7 @@ object ShortcutsSheetTags {
 @Composable
 fun ShortcutsSheet(
     model: ShortcutsSheetModel,
-    onSingleKeyChanged: (Boolean) -> Unit,
+    onSingleKeyChange: (Boolean) -> Unit,
     onClose: () -> Unit,
 ) {
     AlertDialog(
@@ -64,7 +63,7 @@ fun ShortcutsSheet(
                 item {
                     Row(
                         Modifier.fillMaxWidth().testTag(ShortcutsSheetTags.SETTING)
-                            .toggleable(model.singleKeyEnabled, role = Role.Switch, onValueChange = onSingleKeyChanged),
+                            .toggleable(model.singleKeyEnabled, role = Role.Switch, onValueChange = onSingleKeyChange),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
@@ -74,7 +73,7 @@ fun ShortcutsSheet(
                 }
                 for (section in model.sections) {
                     item { Text(section.title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp).semantics { heading() }) }
-                    items(section.rows, key = { "${section.title}.${it.id}" }) { row ->
+                    typedItems(section.rows, key = { "${section.title}.${it.id}" }) { row ->
                         Row(
                             Modifier.fillMaxWidth().testTag(ShortcutsSheetTags.row(row.id)).semantics(mergeDescendants = true) {
                                 contentDescription = "${row.label}: ${row.keys.joinToString(", ")}"

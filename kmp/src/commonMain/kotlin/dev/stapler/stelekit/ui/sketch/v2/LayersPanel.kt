@@ -24,16 +24,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
@@ -85,8 +80,8 @@ fun LayersPanel(
     onActiveLayer: (LayerId) -> Unit,
     onCommand: (Command) -> CommandError?,
     onNewLayer: () -> Unit,
-    onVisibilityChanged: (LayerId, Boolean) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
+    onVisibilityChange: (LayerId, Boolean) -> Unit = { _, _ -> },
 ) {
     if (!LayersPanelModel.isVisible(scene)) return
     var renaming by remember { mutableStateOf<LayerId?>(null) }
@@ -105,7 +100,7 @@ fun LayersPanel(
             ) {
                 SwitchCell(LayersPanelTags.visible(id), row.visibilityLabel, row.layer.visible, if (row.layer.visible) "Hide" else "Show") {
                     onCommand(SetLayerVisible(id, !row.layer.visible))
-                    onVisibilityChanged(id, !row.layer.visible)
+                    onVisibilityChange(id, !row.layer.visible)
                 }
                 SwitchCell(LayersPanelTags.locked(id), row.lockLabel, row.layer.locked, if (row.layer.locked) "Unlock" else "Lock") {
                     onCommand(SetLayerLocked(id, !row.layer.locked))

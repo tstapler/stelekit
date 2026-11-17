@@ -43,7 +43,7 @@ object SketchReasonText {
     const val BUILD_CAPPED = "Not available in this build yet"
     const val OTHER_TAB = "Edited in another tab."
     const val CHECKING_STORAGE = "Checking whether this browser can save new-editor sketches..."
-    const val HAS_TECHNICAL_DATA = "This sketch has zones or dimensions the new editor can't edit yet."
+    const val HAS_TECHNICAL_DATA = "This build does not upgrade sketches that have zones or dimensions."
     const val UPGRADE_UNAVAILABLE_PREFIX = "Can't upgrade this sketch: "
 
     const val STORAGE_IOS = "The new editor can't save sketches on iOS yet."
@@ -102,7 +102,7 @@ object SketchReasonText {
         ClassicNoticeReason.Platform ->
             if (storage == V2Storage.NoStore) "this graph can't hold new-editor sketches" else "this device can't save new-editor sketches yet"
         ClassicNoticeReason.BuildCapped -> "this version of SteleKit can't use the new editor yet"
-        ClassicNoticeReason.TechnicalData -> "this project has dimensions or zones, and the new editor can't hold those yet"
+        ClassicNoticeReason.TechnicalData -> "this build keeps projects with dimensions or zones in the classic editor"
         ClassicNoticeReason.ModeOff -> "the new editor is off for this graph"
         ClassicNoticeReason.NpoClassicSheets ->
             "this project already has sketches from before the new editor, and New sketch projects only limits the new editor " +

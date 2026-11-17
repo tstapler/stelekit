@@ -13,6 +13,7 @@ import androidx.compose.ui.text.AnnotatedString
 import dev.stapler.stelekit.model.SheetUuid
 import dev.stapler.stelekit.sketch.v2.runtime.convert.ConversionFailure
 import dev.stapler.stelekit.sketch.v2.runtime.convert.ConversionOutcome
+import dev.stapler.stelekit.sketch.v2.runtime.convert.failureReason
 import dev.stapler.stelekit.sketch.v2.text.TextMetricsProvider
 import dev.stapler.stelekit.ui.sketch.v2.migration.ConversionFailureDialog
 import dev.stapler.stelekit.ui.sketch.v2.migration.FirstV2WriteDialog
@@ -113,8 +114,8 @@ class EntrySteps(
                 hooks.setBusy(false)
                 hooks.setDialog(EntryDialog.FirstWrite(actions.firstWriteModel(FirstWriteVariant.Convert, classic.projectName, sheet), classic))
             }
-            is ConversionOutcome.Failed -> failed(classic, result.reason)
-            ConversionOutcome.NotReady, ConversionOutcome.Deferred -> failed(classic, ConversionFailure.Write)
+            is ConversionOutcome.Failed, ConversionOutcome.NotReady, ConversionOutcome.Deferred ->
+                result.failureReason()?.let { failed(classic, it) }
         }
     }
 

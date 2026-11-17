@@ -71,7 +71,7 @@ fun TopBar(
     actions: TopBarActions,
     modifier: Modifier = Modifier,
     overflowModifier: Modifier = Modifier,
-    onOverflowOpened: () -> Unit = {},
+    onOverflowOpen: () -> Unit = {},
     overflowMenu: @Composable ColumnScope.(close: () -> Unit) -> Unit = {},
 ) {
     var menu by remember { mutableStateOf(false) }
@@ -102,7 +102,7 @@ fun TopBar(
             Text(
                 OVERFLOW_GLYPH,
                 Modifier.testTag(ShellTags.OVERFLOW).size(ChromeBudget.OVERFLOW_DP.dp).then(overflowModifier)
-                    .clickable { onOverflowOpened(); menu = true }
+                    .clickable { onOverflowOpen(); menu = true }
                     .semantics { contentDescription = SketchStrings.Chrome.MORE_OPTIONS },
             )
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -152,13 +152,16 @@ private fun SaveStatusButton(plan: TopBarPlan, status: SaveStatus) {
 
 @Composable
 private fun SelectionOverflowItems(content: TopBarContent, actions: TopBarActions, close: () -> Unit) {
-    for (action in content.selectionItems) {
-        DropdownMenuItem(
-            text = { Text(SelectionMenuModel.label(action)) },
-            onClick = { close(); actions.onSelectionAction(action) },
-            modifier = Modifier.testTag(SelectionMenuTags.item(action)),
-        )
-    }
+    content.selectionItems.forEach { action -> SelectionOverflowItem(action, actions, close) }
+}
+
+@Composable
+private fun SelectionOverflowItem(action: SelectionAction, actions: TopBarActions, close: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(SelectionMenuModel.label(action)) },
+        onClick = { close(); actions.onSelectionAction(action) },
+        modifier = Modifier.testTag(SelectionMenuTags.item(action)),
+    )
 }
 
 private fun saveShortText(status: SaveStatus): String = when (status) {

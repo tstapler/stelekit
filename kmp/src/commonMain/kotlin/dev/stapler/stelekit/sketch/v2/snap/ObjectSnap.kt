@@ -83,7 +83,8 @@ object ObjectSnap {
     ): SnapOutcome {
         val moving = movingIds.mapNotNull { scene[it] }
         val base = SceneBounds.of(moving)
-        if (disabled || base == null || !zoom.isFinite() || zoom <= 0.0) return SnapOutcome(dx, dy, emptyList())
+        val usableZoom = zoom.isFinite() && zoom > 0.0
+        if (disabled || base == null || !usableZoom) return SnapOutcome(dx, dy, emptyList())
         val tolerance = SNAP_RADIUS_PX / zoom
         val proposed = SceneBounds(base.minX + dx, base.minY + dy, base.maxX + dx, base.maxY + dy)
         val near = index.query(Bounds(proposed.minX, proposed.minY, proposed.maxX, proposed.maxY).inflated(SNAP_REACH_PX / zoom))

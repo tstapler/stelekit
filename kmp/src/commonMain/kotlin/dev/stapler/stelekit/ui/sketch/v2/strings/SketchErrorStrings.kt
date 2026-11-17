@@ -29,7 +29,7 @@ object SketchErrorStrings {
         SketchErrorState.ExportEncodeFailed -> "Couldn't create the image. Try a smaller scale."
         SketchErrorState.ExportWriteFailed -> "Couldn't save the file."
         SketchErrorState.ConversionFailed -> "Couldn't upgrade this sketch. Your original sketch wasn't changed."
-        SketchErrorState.HasTechnicalData -> "This sketch has zones or dimensions that can't be upgraded yet."
+        SketchErrorState.HasTechnicalData -> "This build does not upgrade sketches that have zones or dimensions."
         SketchErrorState.ConstraintConflict -> SketchConstraintStrings.WarningNotice.SUMMARY
         SketchErrorState.ConstraintNoConvergence -> SketchConstraintStrings.Panel.NOT_SOLVED
         SketchErrorState.ConstraintCapReached -> SketchStrings.Capacity.CONSTRAINT_LIMIT_SUMMARY

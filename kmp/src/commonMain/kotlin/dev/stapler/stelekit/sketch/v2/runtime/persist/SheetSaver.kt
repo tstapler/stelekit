@@ -80,6 +80,12 @@ sealed interface SaveState {
     val hasUnsavedWork: Boolean get() = this != Saved
 }
 
+private const val OOM_NAME = "OutOfMemoryError"
+
+/** `OutOfMemoryError` has no common-stdlib type, so it is told apart by name (it only picks the logged token). */
+private fun failureOf(t: Throwable): SaveFailure =
+    if (t::class.simpleName == OOM_NAME) SaveFailure.OutOfMemory else SaveFailure.Unexpected
+
 /** A conflict or a lost writer lease stops the debounce: no further write is attempted from this state. */
 private val SaveState.blocksSaving: Boolean get() = this is SaveState.Conflict || this == SaveState.LeaseConflict
 
@@ -245,12 +251,12 @@ class SheetSaver(
     private suspend fun awaitQuiet() {
         while (true) {
             val seen = latest.value?.version
-            delay(debounceMs())
+            delay(debounceMs)
             if (latest.value?.version == seen) return
         }
     }
 
-    private fun debounceMs(): Long = if (backoffLevel == 0) config.debounceMs else config.backoffMs[backoffLevel - 1]
+    private val debounceMs: Long get() = if (backoffLevel == 0) config.debounceMs else config.backoffMs[backoffLevel - 1]
 
     private suspend fun saveLatest() = saveGate.withLock {
         val snap = latest.value ?: return@withLock
@@ -343,10 +349,6 @@ class SheetSaver(
         fail(failureOf(t))
     }
 
-    /** `OutOfMemoryError` has no common-stdlib type, so it is told apart by name (it only picks the logged token). */
-    private fun failureOf(t: Throwable): SaveFailure =
-        if (t::class.simpleName == OOM_NAME) SaveFailure.OutOfMemory else SaveFailure.Unexpected
-
     private suspend fun conflict(encoded: Encoded, diskSha: String?) {
         ports.log.saveConflict(target.sheet.value)
         SheetSaveGuard.writeConflictCopy(ports.store, target.slug, target.sheet, encoded.bytes).fold(
@@ -375,7 +377,6 @@ class SheetSaver(
 
     private companion object {
         const val REPLAN_ATTEMPTS = 3
-        const val OOM_NAME = "OutOfMemoryError"
         const val QUOTA_DETAIL = "quota"
     }
 }

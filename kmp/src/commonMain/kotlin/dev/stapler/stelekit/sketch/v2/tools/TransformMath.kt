@@ -44,7 +44,8 @@ object TransformMath {
         val grow = if (fromCentre) HALF else 1.0
         var w = if (handle.sx == 0) box.width else max(MIN_SIDE, box.width + handle.sx * lx * grow)
         var h = if (handle.sy == 0) box.height else max(MIN_SIDE, box.height + handle.sy * ly * grow)
-        if (keepAspect && handle.isCorner && box.width > 0.0 && box.height > 0.0) {
+        val hasArea = box.width > 0.0 && box.height > 0.0
+        if (keepAspect && handle.isCorner && hasArea) {
             val k = max(w / box.width, h / box.height)
             w = max(MIN_SIDE, box.width * k)
             h = max(MIN_SIDE, box.height * k)

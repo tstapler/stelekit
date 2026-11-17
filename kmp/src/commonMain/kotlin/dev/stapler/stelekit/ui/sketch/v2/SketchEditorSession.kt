@@ -268,6 +268,7 @@ fun ProjectBridgeDeps.v2EditorDeps(
     acks = acks,
     classicNotices = classicNotices,
     quality = quality,
+    log = SketchLog(signals = quality),
     persistence = browserPersistence,
     warningForm = { if (sessionConfirmation.confirmed) SketchConsentCopy.WarningForm.Reference else SketchConsentCopy.WarningForm.Full },
     engineChange = engineChange,

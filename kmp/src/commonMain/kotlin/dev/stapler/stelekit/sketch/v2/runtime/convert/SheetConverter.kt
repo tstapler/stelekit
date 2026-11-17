@@ -39,7 +39,7 @@ import dev.stapler.stelekit.util.ContentHasher
 
 /** Why a conversion did not happen. Nothing is lost in any case: the v1 sheet stays the referenced one. */
 enum class ConversionFailure(val token: String) {
-    /** The sheet's project has zones or dimensions the v2 editor cannot edit yet (Story 1.1.4). */
+    /** Refused only when [ConversionPolicy.TECHNICAL_DATA_EDITABLE] is overridden off: the project has zones or dimensions (Story 1.1.4). */
     HasTechnicalData("technical-data"),
     NotFound("not-found"),
 
@@ -59,6 +59,12 @@ enum class ConversionFailure(val token: String) {
 
     /** A written file did not read back as the bytes that were planned. */
     Verify("verify"),
+
+    /** `ConversionReady` is false in this build: the conversion was not attempted and nothing was written. */
+    NotReady("not-ready"),
+
+    /** A git sync was in flight, so the conversion stopped before writing anything it could not finish; retry later. */
+    Deferred("deferred"),
 }
 
 sealed interface ConversionOutcome {
@@ -77,6 +83,14 @@ sealed interface ConversionOutcome {
     data class RequiresConfirmation(val slug: String) : ConversionOutcome
 
     data class Failed(val reason: ConversionFailure, val detail: String = "") : ConversionOutcome
+}
+
+/** The failure the user is told about for this outcome; null when the outcome is not a refusal or failure. */
+fun ConversionOutcome.failureReason(): ConversionFailure? = when (this) {
+    is ConversionOutcome.Failed -> reason
+    ConversionOutcome.NotReady -> ConversionFailure.NotReady
+    ConversionOutcome.Deferred -> ConversionFailure.Deferred
+    is ConversionOutcome.Converted, ConversionOutcome.AlreadyConverted, is ConversionOutcome.RequiresConfirmation -> null
 }
 
 /** The steps of the protocol, each a crash boundary. */

@@ -28,9 +28,11 @@ import dev.stapler.stelekit.projectbridge.ProjectBridgeSettings
 import dev.stapler.stelekit.projectbridge.SessionConfirmation
 import dev.stapler.stelekit.projectbridge.V2Capabilities
 import dev.stapler.stelekit.projectbridge.V2Mode
+import dev.stapler.stelekit.projectbridge.isAvailable
 import dev.stapler.stelekit.projectbridge.v2Storage
 import dev.stapler.stelekit.sketch.v2.runtime.session.ProjectAckStore
 import dev.stapler.stelekit.sketch.v2.runtime.telemetry.QualitySignals
+import dev.stapler.stelekit.ui.sketch.v2.BackupsSectionModel
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchMigrationStrings
 import kotlinx.coroutines.launch
 
@@ -44,6 +46,8 @@ class SketchSettingsPorts(
     val persistence: BrowserPersistence,
     val session: SessionConfirmation,
     val engineChange: EngineChangeBus,
+    /** The Backups row and its Delete backups action; null shows neither. */
+    val backups: BackupsSectionModel? = null,
 )
 
 /** The settings section's ports from the project bridge; null where the bridge keeps no consent records (nothing to show). */
@@ -59,6 +63,7 @@ fun ProjectBridgeDeps.sketchSettingsPorts(graphId: () -> String?): SketchSetting
         persistence = browserPersistence,
         session = sessionConfirmation,
         engineChange = engineChange,
+        backups = GraphBackups(sidecarStore).model(),
     )
 }
 
@@ -104,6 +109,8 @@ fun SketchSettingsHost(ports: SketchSettingsPorts, editorOpen: Boolean, modifier
         )
         BrowserStorage(ports.persistence)
         SketchSignalsReadout(SignalsReadoutModel(ports.quality.adoption(), ports.quality.counts(), stored, ports.quality.recentSessions(), ports.quality.recentSolves()))
+        if (capabilities.storage.isAvailable) ports.backups?.let { BackupsSection(it) }
+        SketchSignalsReadout(SignalsReadoutModel(ports.quality.adoption(), ports.quality.counts(), stored))
     }
     confirm?.let { plan ->
         EnableV2Confirmation(plan.variant, onConfirm = { confirm = null; apply(plan.mode, true) }, onCancel = { confirm = null }, onLearn = { learn = true })

@@ -252,7 +252,7 @@ object SketchStrings {
         const val DELETE_ACTION = "Delete backups"
         const val DELETE_TITLE = "Delete backups?"
         const val DELETE_BODY =
-            "The original copies of upgraded sketches in this project are deleted. Restore original is not available for them afterwards."
+            "The original copies of upgraded sketches in this graph are deleted. Restore original is not available for them afterwards."
         const val BUILD_CAPPED = "Not available in this build yet"
         const val NOT_CONVERTED = "This sketch is already the original version. Nothing was changed."
         const val BACKUP_MISSING = "The original copy of this sketch was not found. Nothing was changed."

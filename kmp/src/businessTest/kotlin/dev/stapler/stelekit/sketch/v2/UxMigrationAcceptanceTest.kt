@@ -13,6 +13,8 @@ import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerTier
 import dev.stapler.stelekit.sketch.v2.diagnostics.InMemoryDiagnosticsPort
 import dev.stapler.stelekit.sketch.v2.runtime.convert.ConversionFailure
+import dev.stapler.stelekit.sketch.v2.runtime.convert.ConversionOutcome
+import dev.stapler.stelekit.sketch.v2.runtime.convert.failureReason
 import dev.stapler.stelekit.sketch.v2.runtime.session.ClassicNoticeLedger
 import dev.stapler.stelekit.sketch.v2.runtime.session.ProjectAckStore
 import dev.stapler.stelekit.ui.sketch.ClassicNoticeReason
@@ -199,6 +201,21 @@ class UxMigrationAcceptanceTest {
             val line = SketchMigrationStrings.Failure.reason(it)
             assertTrue(line.startsWith("Reason: ") && line.endsWith("(${it.token})"), line)
         }
+    }
+
+    @Test
+    fun notReadyAndDeferred_should_HaveTheirOwnFailureWording_NotTheGenericWriteFailure() {
+        assertEquals(ConversionFailure.NotReady, ConversionOutcome.NotReady.failureReason())
+        assertEquals(ConversionFailure.Deferred, ConversionOutcome.Deferred.failureReason())
+        assertEquals(ConversionFailure.Verify, ConversionOutcome.Failed(ConversionFailure.Verify).failureReason())
+        assertNull(ConversionOutcome.AlreadyConverted.failureReason())
+        assertNull(ConversionOutcome.Converted(dev.stapler.stelekit.model.SheetUuid("s"), 1).failureReason())
+        val notReady = SketchMigrationStrings.Failure.reason(ConversionFailure.NotReady)
+        val deferred = SketchMigrationStrings.Failure.reason(ConversionFailure.Deferred)
+        assertEquals("Reason: upgrading isn't available in this build yet (not-ready)", notReady)
+        assertEquals("Reason: a sync is running, so the upgrade was postponed (deferred)", deferred)
+        val write = SketchMigrationStrings.Failure.reason(ConversionFailure.Write)
+        assertTrue(notReady != write && deferred != write, "neither reads as the generic write failure")
     }
 
     @Test

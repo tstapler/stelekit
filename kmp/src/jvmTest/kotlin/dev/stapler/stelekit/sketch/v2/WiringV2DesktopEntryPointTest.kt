@@ -108,6 +108,11 @@ class WiringV2DesktopEntryPointTest {
         root.settings.setV2Mode(V2EditorRig.GRAPH, V2Mode.On)
         val deps = root.v2EditorDeps(wired.repos.sketchRepositories, wired.repos.writeActor, { V2EditorRig.GRAPH }, KeymapEnv(isMac = false, isWeb = false), touchPresent = false)
 
+        val quality = assertNotNull(root.quality)
+        val conflictsBefore = quality.counts().conflicts
+        deps.log.saveConflict("wired-sheet")
+        assertEquals(conflictsBefore + 1, quality.counts().conflicts, "the editor's log feeds the root's quality counters")
+
         val session = assertIs<EditorOpening.Editor>(runBlocking { V2EditorOpener(deps, Dispatchers.Default).open(rig.project.uuid, FixedAdvanceTextMetricsProvider()) }).session
         val controller = session.controller
         controller.tools.chooseTool(ToolId.Rectangle)

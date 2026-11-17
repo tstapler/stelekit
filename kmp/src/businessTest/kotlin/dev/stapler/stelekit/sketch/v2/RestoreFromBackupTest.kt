@@ -15,6 +15,7 @@ import dev.stapler.stelekit.sketch.v2.runtime.convert.RestoreFailure
 import dev.stapler.stelekit.sketch.v2.runtime.convert.RestoreOutcome
 import dev.stapler.stelekit.sketch.v2.runtime.convert.RestoreStep
 import dev.stapler.stelekit.sketch.v2.runtime.convert.SketchBackupRestore
+import dev.stapler.stelekit.ui.sketch.v2.migration.GraphBackups
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -196,5 +197,22 @@ class RestoreFromBackupTest {
         assertFalse(d.fs.fileExists(backupPath()))
         assertIs<SidecarRead.Present>(d.store.read(f.slug))
         assertEquals(RestoreOutcome.NotConverted, restorer(d).restore(f.slug, s1))
+    }
+
+    @Test
+    fun graphBackups_should_SumEveryProjectAndDeleteOnlyBackups() = runBlocking<Unit> {
+        val (d, _) = converted()
+        assertIs<RestoreOutcome.Restored>(restorer(d).restore(f.slug, s1))
+        val backups = GraphBackups { d.store }
+
+        val size = backups.size()
+        assertEquals(d.store.retentionSize(f.slug).backupFiles, size.backupFiles)
+        assertEquals(2, size.backupFiles)
+        assertEquals(2, backups.delete().getOrNull())
+
+        assertEquals(0, backups.size().backupFiles)
+        assertEquals(0, GraphBackups { null }.size().backupFiles, "no store means nothing to count")
+        assertEquals(0, GraphBackups { null }.delete().getOrNull())
+        assertIs<SidecarRead.Present>(d.store.read(f.slug))
     }
 }

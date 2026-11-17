@@ -132,7 +132,7 @@ fun SketchEditorV2Route(
     EntryDialogs(dialog, steps, scope, restore, hooks)
 }
 
-/** One editor session with the restore entry over it while the sheet has a backup. */
+/** One editor session; its overflow menu carries the restore entry while the sheet has a backup. */
 @Composable
 private fun EditorStage(
     session: SketchEditorSession,
@@ -145,13 +145,13 @@ private fun EditorStage(
     var hasBackup by remember(session) { mutableStateOf(false) }
     val sheet = session.sheet
     LaunchedEffect(session) { if (actions != null && sheet != null) hasBackup = actions.hasBackup(session.slug, sheet) }
-    Box {
-        SketchEditorV2Host(session, environment, onBack, Modifier, pointer)
-        if (restore != null && sheet != null && !session.controller.readOnly) {
-            val availability = RestoreAvailability.of(platformReason = null, buildCapped = !V2Build.CONVERSION_READY, hasBackup = hasBackup)
-            RestoreEntry(availability, onRestore = { restore.request(session.slug, sheet) }, modifier = Modifier.align(Alignment.BottomStart))
-        }
+    val entry = if (restore != null && sheet != null && !session.controller.readOnly) {
+        val availability = RestoreAvailability.of(platformReason = null, buildCapped = !V2Build.CONVERSION_READY, hasBackup = hasBackup)
+        RestoreMenuEntry(availability) { restore.request(session.slug, sheet) }
+    } else {
+        null
     }
+    SketchEditorV2Host(session, environment, onBack, Modifier, pointer, restore = entry)
 }
 
 @Composable

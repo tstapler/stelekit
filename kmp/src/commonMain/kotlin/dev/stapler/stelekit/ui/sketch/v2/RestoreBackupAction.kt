@@ -74,6 +74,9 @@ sealed interface RestoreAvailability {
     }
 }
 
+/** The overflow-menu entry that starts the confirmed restore of the open sheet (ux.md 14.6); [availability] decides whether it shows. */
+class RestoreMenuEntry(val availability: RestoreAvailability, val onRestore: () -> Unit)
+
 /** What the restore dialog and notice queue show. */
 sealed interface RestoreBackupState {
     data object Idle : RestoreBackupState
