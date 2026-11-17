@@ -26,6 +26,8 @@ object WiringAudit {
         "TextMetricsProvider",
         "SketchWriterLease",
         "BrowserPersistence",
+        "SketchDurability",
+        "PageLifecycle",
     )
 
     const val MAX_RENEWALS = 2

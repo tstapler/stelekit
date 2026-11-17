@@ -35,6 +35,7 @@ import dev.stapler.stelekit.ui.components.settings.ReconciliationUiState
 import kotlinx.browser.localStorage
 import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -159,7 +160,7 @@ fun main() {
         // the normal one below — it skips OPFS, localStorage/PlatformSettings, and host-directory
         // sync entirely rather than threading an "ephemeral" flag through that whole sequence.
         if (window.location.search.contains("mode=ephemeral")) {
-            runEphemeralSession()
+            runEphemeralSession(scope)
             return@launch
         }
 
@@ -169,6 +170,12 @@ fun main() {
         val opfsGraphPath = "/stelekit/$graphId"
 
         val opfsFileSystem = PlatformFileSystem()
+
+        // Once per page load (Task 1.4.7m, D-137): the verdict the storage status waits for; never gates first paint.
+        dev.stapler.stelekit.platform.PageLoadProbe(
+            probe = { dev.stapler.stelekit.platform.OpfsCapability().probe() },
+            record = opfsFileSystem::recordProbe,
+        ).startOnce(scope)
 
         // Wire GitHub config before preload() so the lazy GitHub-fetch fallback in
         // PlatformFileSystem.readFileSuspend() has credentials available for returning
@@ -347,6 +354,8 @@ fun main() {
                             reloadSidecarRoot = opfsFileSystem::reloadSidecarRoot,
                         ),
                         browserPersistence = dev.stapler.stelekit.platform.WasmBrowserPersistence(),
+                        sketchDurability = dev.stapler.stelekit.projectbridge.FileSystemSketchDurability(fileSystem, graphRoot = { graphPath }),
+                        pageLifecycle = dev.stapler.stelekit.platform.WasmPageLifecycle(),
                         platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
                         // Demo-fallback mode has no persistent OPFS content to write attachments
                         // into (matches graphMoveQuiesceStrategy/hostLinkStep/insufficientSpaceCheck's
@@ -449,7 +458,7 @@ fun main() {
  * directory would reintroduce exactly the persistent side channel this mode exists to avoid.
  */
 @OptIn(ExperimentalComposeUiApi::class)
-private suspend fun runEphemeralSession() {
+private suspend fun runEphemeralSession(scope: CoroutineScope) {
     EphemeralSettingsMode.enable()
     // Direct, awaited suspend call — same boot-ordering requirement as the normal path above.
     // Not a real persistence step here (EphemeralSettingsMode.active is already true), just a
@@ -458,6 +467,10 @@ private suspend fun runEphemeralSession() {
 
     val fileSystem = PlatformFileSystem()
     fileSystem.markEphemeral()
+    dev.stapler.stelekit.platform.PageLoadProbe(
+        probe = { dev.stapler.stelekit.platform.OpfsCapability().probe() },
+        record = fileSystem::recordProbe,
+    ).startOnce(scope)
     val graphPath = "/stelekit/ephemeral"
     fileSystem.preload(graphPath)
 
@@ -503,6 +516,8 @@ private suspend fun runEphemeralSession() {
                         reloadSidecarRoot = fileSystem::reloadSidecarRoot,
                     ),
                     browserPersistence = dev.stapler.stelekit.platform.WasmBrowserPersistence(),
+                    sketchDurability = dev.stapler.stelekit.projectbridge.FileSystemSketchDurability(fileSystem, graphRoot = { graphPath }),
+                    pageLifecycle = dev.stapler.stelekit.platform.WasmPageLifecycle(),
                     platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
                     attachmentService = WasmMediaAttachmentService(fileSystem),
                     gitRepository = wasmGitRepository,

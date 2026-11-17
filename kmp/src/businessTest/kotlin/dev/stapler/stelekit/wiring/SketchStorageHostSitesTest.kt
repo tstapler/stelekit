@@ -51,6 +51,20 @@ class SketchStorageHostSitesTest {
     }
 
     @Test
+    fun wasmSites_should_ConstructTheWebDurabilityAndLifecycle_AndStartTheProbeOncePerBootPath() {
+        val sources = WiringInputs.productionSources
+        val wasm = sitesIn(sources).filterKeys { it.startsWith("wasmJsMain/") }
+        assertEquals(2, wasm.size, "browser/Main.kt has two construction sites, found ${wasm.keys}")
+        for ((site, args) in wasm) {
+            assertTrue("FileSystemSketchDurability(" in valueOf(args, "sketchDurability"), "$site does not construct the durability port")
+            assertTrue("WasmPageLifecycle(" in valueOf(args, "pageLifecycle"), "$site does not construct the page lifecycle")
+        }
+        val main = sources.entries.single { it.key == "wasmJsMain/dev/stapler/stelekit/browser/Main.kt" }.value
+        assertEquals(2, Regex("""\bPageLoadProbe\(""").findAll(main).count(), "one probe per boot path (persistent and temporary)")
+        assertEquals(2, Regex("""\.startOnce\(""").findAll(main).count())
+    }
+
+    @Test
     fun scanner_should_RejectAHostThatOmitsOrOverrides() {
         val omitting = mapOf("hostMain/a/Main.kt" to "val x = StelekitAppPlatformIntegrations(\n  taskRegistry = r,\n  sketchWriterLease = L,\n)\n")
         val overriding = mapOf(

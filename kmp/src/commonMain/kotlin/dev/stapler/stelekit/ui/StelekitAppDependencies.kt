@@ -175,6 +175,11 @@ data class StelekitAppPlatformIntegrations(
     val sketchWriterLease: dev.stapler.stelekit.platform.SketchWriterLease,
     /** Browser persistence request for v2 sheets (D-146). No default on purpose: every host names its value. */
     val browserPersistence: dev.stapler.stelekit.platform.BrowserPersistence,
+    /** Waits until a sheet's files reach storage (D-119); only the web root replaces the immediate default (Task 1.4.7m). */
+    val sketchDurability: dev.stapler.stelekit.projectbridge.SketchDurability =
+        dev.stapler.stelekit.projectbridge.ImmediateSketchDurability,
+    /** The hidden-page flush request that open savers collect; only the web root replaces the silent default (Task 1.4.7m). */
+    val pageLifecycle: dev.stapler.stelekit.projectbridge.PageLifecycle = dev.stapler.stelekit.projectbridge.NoPageLifecycle,
     /** Downloads, clones and other work that finishes later; shown on the Background jobs screen. */
     val backgroundJobs: dev.stapler.stelekit.jobs.BackgroundJobRegistry = dev.stapler.stelekit.jobs.NoBackgroundJobs,
     /** Reads HTML from the system clipboard (bounded). Null disables rich-text paste; set on Desktop. */
