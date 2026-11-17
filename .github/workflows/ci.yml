@@ -211,6 +211,21 @@ jobs:
       - name: Committed fixture matches ux.md
         run: python3 scripts/sketch-chrome/gen-chrome-fixture.py --check
 
+  # Task 6.2.5a, metric 6: no baseline sketch test or golden fixture was removed or edited since the recorded pre-change SHA.
+  sketch-regression-baseline:
+    name: Sketch regression baseline (metric 6)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # a shallow clone cannot reach the baseline SHA
+
+      - name: Script self-test
+        run: scripts/sketch-baseline/test-check-sketch-baseline.sh
+
+      - name: Baseline holds at the recorded SHA
+        run: scripts/sketch-baseline/check-sketch-baseline.sh
+
   # Story 6.2.2: the sketch engine's JVM performance budgets. No draft-PR `if:` here, so it also runs on push to
   # main (BUG-002 only affects benchmark.yml and android-benchmark.yml).
   sketch-engine-budgets:

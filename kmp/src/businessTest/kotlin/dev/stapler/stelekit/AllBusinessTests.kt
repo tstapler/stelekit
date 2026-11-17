@@ -1110,6 +1110,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.projectbridge.FusionHarnessLocalRunTest::class,
     dev.stapler.stelekit.wiring.SketchStorageHostSitesTest::class,
     dev.stapler.stelekit.sketch.v2.FlagModeMatrixTest::class,
+    dev.stapler.stelekit.sketch.v2.FlagRolloutTest::class,
     dev.stapler.stelekit.sketch.v2.EditorRouterTest::class,
     dev.stapler.stelekit.sketch.v2.SheetLeaseRegistryTest::class,
     dev.stapler.stelekit.sketch.v2.WriterLeaseRouterTest::class,

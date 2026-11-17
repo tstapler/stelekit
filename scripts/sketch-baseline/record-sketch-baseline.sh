@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Records the metric-6 regression baseline for the excalidraw-sketch-engine project (Task 0.1.7d).
-# Usage: record-sketch-baseline.sh [--sha <40-hex>] [--out <file>]
+# Usage: record-sketch-baseline.sh [--sha <40-hex>] [--out <file>] [--allow-unmerged]
+# --allow-unmerged skips the origin/main ancestor check; only check-sketch-baseline.sh uses it, to count the files at HEAD.
 # Content comes only from `git ls-tree -r <sha>` and `git show <sha>:<path>`, never the working tree,
 # so re-running with the recorded SHA reproduces the file byte for byte.
 set -euo pipefail
@@ -9,8 +10,10 @@ root=$(git rev-parse --show-toplevel)
 cd "$root"
 out="project_plans/excalidraw-sketch-engine/implementation/regression-baseline.txt"
 sha=""
+allow_unmerged=0
 while [ $# -gt 0 ]; do
   case "$1" in
+    --allow-unmerged) allow_unmerged=1; shift ;;
     --sha) sha="$2"; shift 2 ;;
     --out) out="$2"; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -20,10 +23,14 @@ done
 if [ -z "$sha" ]; then
   sha=$(git merge-base origin/main HEAD)
 fi
+if ! git cat-file -e "${sha}^{commit}" 2>/dev/null; then
+  echo "baseline SHA not reachable: shallow clone or not on main" >&2
+  exit 1
+fi
 sha=$(git rev-parse --verify "${sha}^{commit}")
 # A SHA only on the engine branch vanishes on squash merge, so refuse it.
-if ! git merge-base --is-ancestor "$sha" origin/main; then
-  echo "refusing $sha: not an ancestor of origin/main" >&2
+if [ "$allow_unmerged" -eq 0 ] && ! git merge-base --is-ancestor "$sha" origin/main 2>/dev/null; then
+  echo "baseline SHA not reachable: shallow clone or not on main" >&2
   exit 1
 fi
 

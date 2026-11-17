@@ -119,6 +119,11 @@ its verdict, then each step as pass, fail or not run.
 - [ ] If the owner answered "use defaults" for U8 (shortcut and tool-lock behaviour against the live Excalidraw dialog), U11 (screen-reader quick keys) and U12 (stylus eraser end and barrel),
   the shortcuts sheet footnote still reads "not verified against the live Excalidraw dialog or your screen reader". Re-check each against the live dialog, the owner's reader and the stylus, then record: U8 ______ ; U11 ______ ; U12 ______
 
+### 8. Usability sessions (Story 6.2.8; protocol in `usability-protocol.md`)
+
+- [ ] Schedule the think-aloud sessions (2 to 4 people the owner knows plus the owner, one on a phone without a stylus). NOT RUN: `usability-results.md` is a blank
+  template and every usability claim stays UNMEASURED until the owner fills it in. Date booked: ______
+
 ### Record
 
 - Date of the pass, device model, app build: ______

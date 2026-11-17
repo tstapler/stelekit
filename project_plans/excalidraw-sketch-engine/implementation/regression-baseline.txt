@@ -1,6 +1,8 @@
 baseline-sha: db40c57e561f0c3f2d4bf079b303ef6ff0598309
 test-class-count: 67
 golden-fixture-count: 9
+change-record: kmp/src/businessTest/kotlin/dev/stapler/stelekit/db/SketchMigrationTest.kt -- additive sketch_sheets.schema_version column (commit bac2d41bdc); the test asserts the new column set, no assertion weakened
+change-record: kmp/src/businessTest/kotlin/dev/stapler/stelekit/db/SketchStubGatingTest.kt -- insertSketchSheet takes the new schema_version argument (commit bac2d41bdc); same assertions
 # sketch test files (path)
 kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/sketch/DimensionFieldTest.kt
 kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/sketch/DrawingAttachUiTest.kt
