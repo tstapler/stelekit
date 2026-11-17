@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchGoToStrings
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchHostStrings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchImportExportStrings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 
@@ -116,6 +117,13 @@ data class SketchShellConfig(
     val escRows: () -> Set<EscRow> = { emptySet() },
     /** A key pressed while the canvas has focus; true when the host used it. */
     val onCanvasKey: (KeyEvent) -> Boolean = { false },
+    /** Chips the host adds after the shell's own (the Cancel chip of a slow solve). */
+    val extraChips: List<ActionChip> = emptyList(),
+    /** The view cluster's grid and snap toggles live in the host when [onGrid] and [onSnap] are set; the cluster keeps its own state otherwise. */
+    val grid: Boolean = false,
+    val snap: Boolean = false,
+    val onGrid: (() -> Unit)? = null,
+    val onSnap: (() -> Unit)? = null,
 )
 
 object ShellTags {
@@ -408,7 +416,7 @@ private fun CanvasArea(
             listOfNotNull(
                 if (state.toolLock) ActionChip(ShellTags.TOOL_LOCK_CHIP, SketchStrings.Chrome.TOOL_LOCK_CHIP) { state.toolLock = false } else null,
                 config.autoConstrain?.takeIf { config.constraintsAvailable }?.let(AutoConstrainChips::freeDraw),
-            ),
+            ) + config.extraChips,
             Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 8.dp),
         )
         HelpPopupHost(state.help, Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
@@ -453,16 +461,18 @@ internal fun hintLine(state: SketchEditorState, pointer: PointerClass = PointerC
 @Composable
 private fun ViewCluster(state: SketchEditorState, config: SketchShellConfig, modifier: Modifier = Modifier) {
     val target = 44.dp
-    var grid by remember { mutableStateOf(false) }
-    var snap by remember { mutableStateOf(false) }
+    var localGrid by remember { mutableStateOf(false) }
+    var localSnap by remember { mutableStateOf(false) }
+    val grid = if (config.onGrid != null) config.grid else localGrid
+    val snap = if (config.onSnap != null) config.snap else localSnap
     // Activating a view button is what the zoom step points at, so it ends the walkthrough (ux.md section 22).
     val act = { action: () -> Unit -> { state.walkthrough.anchorActivated(WalkthroughStep.Zoom); action() } }
     Row(modifier.testTag(ShellTags.VIEW_CLUSTER), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         ClusterButton("sketch.zoomout", "Zoom out", "−", target, act { state.viewport = state.viewport.zoomBy(centre, ZOOM_STEP_OUT) })
         ClusterButton("sketch.zoomlevel", "Zoom ${(state.viewport.zoom * PERCENT).toInt()}%", "${(state.viewport.zoom * PERCENT).toInt()}%", target, act { state.viewport = state.viewport.zoomTo(centre, 1.0) })
         ClusterButton("sketch.zoomin", "Zoom in", "+", target, act { state.viewport = state.viewport.zoomBy(centre, ZOOM_STEP_IN) })
-        ClusterButton("sketch.grid", if (grid) "Grid on" else "Grid off", "#", target, act { grid = !grid })
-        ClusterButton("sketch.snap", if (snap) "Snap on" else "Snap off", "⊙", target, act { snap = !snap })
+        ClusterButton("sketch.grid", if (grid) SketchHostStrings.View.GRID_ON else SketchHostStrings.View.GRID_OFF, "#", target, act { config.onGrid?.invoke() ?: run { localGrid = !localGrid } })
+        ClusterButton("sketch.snap", if (snap) SketchHostStrings.View.SNAP_ON else SketchHostStrings.View.SNAP_OFF, "⊙", target, act { config.onSnap?.invoke() ?: run { localSnap = !localSnap } })
         if (PanPadPolicy.buttonShown(config.panArrows, state.fingerDrawing, config.pointer == PointerClass.TouchOrPen)) {
             PanButton(state.panPadOpen, { state.panPadOpen = !state.panPadOpen })
         }

@@ -5,13 +5,13 @@
 package dev.stapler.stelekit.ui.sketch.v2
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import dev.stapler.stelekit.sketch.constraints.SolverTier
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.LayerId
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
@@ -19,14 +19,14 @@ import dev.stapler.stelekit.util.UuidGenerator
 
 /** One panel tab's content, fed by the controller's state and calling back into it (Story 6.2.0b). */
 @Composable
-internal fun SketchPanels(controller: SketchEditorController, tab: PanelTab) {
+internal fun SketchPanels(controller: SketchEditorController, tab: PanelTab, extras: EditorExtras) {
     Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         when (tab) {
             PanelTab.Style -> StyleTab(controller)
             PanelTab.Layers -> LayersTab(controller)
-            PanelTab.Constraints -> ConstraintsTab(controller)
+            PanelTab.Constraints -> ConstraintsTab(controller, extras)
             PanelTab.Elements -> ElementsTab(controller)
-            PanelTab.Library -> Unit
+            PanelTab.Library -> LibraryPanel(controller, extras, Modifier.fillMaxWidth())
         }
     }
 }
@@ -61,17 +61,20 @@ private fun LayersTab(controller: SketchEditorController) {
 
 @Composable
 private fun ElementsTab(controller: SketchEditorController) {
-    ElementsPanel(
-        scene = controller.doc.scene,
-        selection = controller.ui.selection.mapTo(LinkedHashSet(), ::ElementId),
-        onSelect = { controller.tools.select(listOf(it)) },
-        onCommand = { controller.submit(it) },
-        modifier = Modifier.fillMaxWidth(),
-    )
+    Column(Modifier.fillMaxWidth()) {
+        if (controller.ui.selection.isNotEmpty()) ArrangeControls(controller, Modifier.fillMaxWidth())
+        ElementsPanel(
+            scene = controller.doc.scene,
+            selection = controller.ui.selection.mapTo(LinkedHashSet(), ::ElementId),
+            onSelect = { controller.tools.select(listOf(it)) },
+            onCommand = { controller.submit(it) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
 }
 
 @Composable
-private fun ConstraintsTab(controller: SketchEditorController) {
+private fun ConstraintsTab(controller: SketchEditorController, extras: EditorExtras) {
     val creation = controller.constraints
     ConstraintPanel(
         input = ConstraintPanelInput(
@@ -79,8 +82,8 @@ private fun ConstraintsTab(controller: SketchEditorController) {
             analysis = controller.constraintState.analysis,
             technical = false,
             selection = controller.selectedElements(),
-            tier = SolverTier.Full,
-            card = controller.constraintState.card,
+            tier = extras.tier,
+            card = extras.dimension.card ?: controller.constraintState.card,
         ),
         actions = ConstraintPanelActions(
             onConstrain = { item ->
@@ -90,7 +93,11 @@ private fun ConstraintsTab(controller: SketchEditorController) {
             onRowSelected = { row -> creation.highlighted = row?.let { setOf(it.id) }.orEmpty() },
             onDelete = creation::remove,
             onSetReference = creation::setReference,
-            onConflictAction = controller::onConflictAction,
+            onConflictAction = { action ->
+                extras.dimension.dismissCard()
+                controller.onConflictAction(action)
+            },
+            onEditDimension = extras::editDimension,
         ),
         modifier = Modifier.fillMaxWidth(),
     )

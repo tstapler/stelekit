@@ -72,7 +72,13 @@ class SketchEditorSession(
     /** The project slug and sheet this session edits; empty for a session built without them (a test). */
     val slug: String = "",
     val sheet: SheetUuid? = null,
+    /** The platform seams of Import, Export, the image assets and the library (Task 6.2.0d). */
+    val services: HostServices = HostServices(),
 ) {
+    /** The host's extras while it is mounted (set by [SketchEditorV2Host]); a test reaches the surfaces' state through it. */
+    var extras: EditorExtras? = null
+        internal set
+
     fun close() {
         controller.close()
         lease?.release()
@@ -137,6 +143,8 @@ class V2EditorDeps(
     val engineChange: EngineChangeBus = EngineChangeBus(),
     val newId: () -> String = { UuidGenerator.generateV7() },
     val epochDay: () -> Long = { clockMillis() / MILLIS_PER_DAY },
+    /** What the platform root adds for Import, Export, the image assets and the library. */
+    val platform: HostPlatform = HostPlatform(),
 )
 
 private const val MILLIS_PER_DAY = 86_400_000L
@@ -242,7 +250,8 @@ class V2EditorOpener(private val deps: V2EditorDeps, private val context: Corout
         )
         val diagnostics = DiagnosticsHostState(port, controller.notices, deps.clockMillis)
         readOnlyReason?.let { port.raise(BannerRowId.ReadOnly, it) }
-        return EditorOpening.Editor(SketchEditorSession(controller, diagnostics, target.projectName, lease, target.slug, target.sheet))
+        val services = HostServices.of(deps.platform, { target.store.v2Storage() }, deps.limits)
+        return EditorOpening.Editor(SketchEditorSession(controller, diagnostics, target.projectName, lease, target.slug, target.sheet, services))
     }
 }
 
@@ -254,6 +263,7 @@ fun ProjectBridgeDeps.v2EditorDeps(
     keymap: KeymapEnv,
     touchPresent: Boolean,
     onboarding: OnboardingSequencer? = null,
+    platform: HostPlatform = HostPlatform(),
 ): V2EditorDeps = V2EditorDeps(
     acks = acks,
     classicNotices = classicNotices,
@@ -273,4 +283,5 @@ fun ProjectBridgeDeps.v2EditorDeps(
     durability = sketchDurability,
     lifecycle = pageLifecycle,
     onboarding = onboarding,
+    platform = platform,
 )

@@ -11,6 +11,7 @@ import dev.stapler.stelekit.sketch.v2.commands.Command
 import dev.stapler.stelekit.sketch.v2.commands.SequenceCommand
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.constraints.AddConstraint
+import dev.stapler.stelekit.sketch.v2.constraints.Constraint
 import dev.stapler.stelekit.sketch.v2.constraints.ConstraintId
 import dev.stapler.stelekit.sketch.v2.constraints.ConstraintTarget
 import dev.stapler.stelekit.sketch.v2.constraints.RemoveConstraint
@@ -35,6 +36,9 @@ class ConstraintCreation(
 
     /** The constraints the selected list row highlights on the canvas (UX-34). */
     var highlighted: Set<ConstraintId> by mutableStateOf(emptySet())
+
+    /** Takes the draft of a dimension a complete pick built and opens its label editor; true when it did (the host sets it), so nothing is committed. */
+    var onDimensionDraft: ((Constraint) -> Boolean)? = null
 
     /** Arms the picker for [item]; the reference toggle and the kinds with no free target act at once. */
     fun arm(item: ConstrainMenuItem) {
@@ -68,6 +72,7 @@ class ConstraintCreation(
             }
             is PickStep.Complete -> {
                 picker = null
+                if (step.constraint.isDimensional && onDimensionDraft?.invoke(step.constraint) == true) return
                 commit(AddConstraint(step.constraint))
             }
         }

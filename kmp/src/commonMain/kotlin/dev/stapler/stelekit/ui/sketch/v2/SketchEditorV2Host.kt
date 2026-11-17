@@ -74,8 +74,16 @@ fun SketchEditorV2Host(
 ) {
     val controller = session.controller
     val state = controller.ui
-    DisposableEffect(session) { onDispose { session.close() } }
+    val extras = remember(session, environment) { EditorExtras(controller, session.services, environment) }
+    SideEffect { session.extras = extras }
+    DisposableEffect(session) {
+        onDispose {
+            extras.close()
+            session.close()
+        }
+    }
     val saveState by controller.saves.state.collectAsState()
+    val solving = controller.solveState.collectAsState().value.solving
     val toasts = remember(controller) { ToastLaneHost(controller.notices, { controller.notifier.now() }, ToastActions(onPrimary = { controller.notifier.act(it, controller::undo) })) }
     val banner = remember(controller) { BannerSlotState(controller.notices) }
     val entries by session.diagnostics.port.diagnostics.collectAsState()
@@ -96,7 +104,7 @@ fun SketchEditorV2Host(
         model = remember(controller) { ToolStripModel(technicalSheet = false, keymapEnv = controller.keymap) },
         pointer = pointer,
         status = ToolStripStatus(controller.canUndo, controller.canRedo, state.selection.size),
-        actions = ToolStripActions(onUndo = controller::undo, onRedo = controller::redo, onDelete = { controller.keys.run(KeyAction.Delete) }, onConstrain = { state.panelTab = PanelTab.Constraints }),
+        actions = ToolStripActions(onUndo = controller::undo, onRedo = controller::redo, onDelete = { controller.keys.run(KeyAction.Delete) }, onConstrain = { controller.overlay = EditorOverlay.ConstrainMenu }),
         title = session.title,
         hasMultipleLayers = controller.doc.scene.layers.size > 1,
         onFit = { state.viewport = controller.view.fit() },
@@ -113,24 +121,37 @@ fun SketchEditorV2Host(
         toasts = toasts,
         onGoToElement = { controller.overlay = EditorOverlay.GoToElement },
         selectionItems = selectionItems(controller),
-        onSelectionAction = { controller.onSelectionAction(it) },
-        escRows = controller.escRows,
-        onCanvasKey = { event -> canvasKey(controller, event, singleKey) },
+        onSelectionAction = { controller.onSelectionAction(it, extras) },
+        escRows = { controller.escRows() + extras.escRows() },
+        onCanvasKey = { event -> extras.dimension.state == DimensionEditState.Closed && canvasKey(controller, event, singleKey) },
+        constraintsAvailable = extras.constraintsAvailable,
+        autoConstrain = extras.autoConstrain,
+        onImport = { extras.importer.chooseFile() },
+        importDisabledReason = extras.importDisabledReason,
+        onExport = if (extras.exportAvailable) extras.exporter::open else null,
+        extraChips = solveChips(controller, solving),
+        grid = extras.grid,
+        snap = extras.snap,
+        onGrid = extras::toggleGrid,
+        onSnap = extras::toggleSnap,
     )
     DiagnosticsHost(session.diagnostics, modifier.testTag(HostTags.ROOT)) {
         SketchScreenV2(
             state = state,
             config = config,
             window = window,
-            panel = { tab -> SketchPanels(controller, tab) },
-            canvas = { SketchCanvasContent(controller, environment, pointer) },
+            panel = { tab -> SketchPanels(controller, tab, extras) },
+            canvas = {
+                SketchCanvasContent(controller, environment, pointer)
+                ExtrasCanvasOverlays(controller, extras, pointer)
+            },
         )
-        HostOverlays(controller, singleKey) { singleKey = it }
+        HostOverlays(controller, extras, singleKey) { singleKey = it }
     }
 }
 
-/** The selection-menu entries this editor runs; Align, Order, Transform and Bind end open their own panels, which are not mounted yet. */
-private val MENU_ACTIONS = setOf(SelectionAction.Duplicate, SelectionAction.Group, SelectionAction.Ungroup, SelectionAction.Lock, SelectionAction.Unlock)
+/** The selection-menu entries this editor runs; Align, Order, Transform and Bind end open [ExtraPanel]s. */
+private val MENU_ACTIONS = SelectionAction.entries.toSet()
 
 private fun selectionItems(controller: SketchEditorController): List<SelectionAction> {
     val selected = controller.ui.selection.mapNotNull { controller.doc.scene[ElementId(it)] }
@@ -138,7 +159,7 @@ private fun selectionItems(controller: SketchEditorController): List<SelectionAc
     return SelectionMenuModel.items(anyUnlocked = selected.any { !it.base.locked }, oneArrowSelected = selected.singleOrNull() is ArrowElement).filter { it in MENU_ACTIONS }
 }
 
-private fun SketchEditorController.onSelectionAction(action: SelectionAction) {
+private fun SketchEditorController.onSelectionAction(action: SelectionAction, extras: EditorExtras) {
     val ids = ui.selection.map(::ElementId)
     when (action) {
         SelectionAction.Duplicate -> keys.run(KeyAction.Duplicate)
@@ -146,9 +167,13 @@ private fun SketchEditorController.onSelectionAction(action: SelectionAction) {
         SelectionAction.Ungroup -> keys.run(KeyAction.Ungroup)
         SelectionAction.Lock -> submit(LockElements(ids, true))
         SelectionAction.Unlock -> submit(LockElements(ids, false))
-        else -> Unit
+        SelectionAction.Align, SelectionAction.Order, SelectionAction.Transform, SelectionAction.BindEnd -> extras.open(action)
     }
 }
+
+/** The Cancel chip of a solve that is running; it survives a collapsed status row (ux.md section 9). */
+private fun solveChips(controller: SketchEditorController, solving: Boolean): List<ActionChip> =
+    if (solving) listOf(SolveMessages.cancelChip(controller::cancelSolve)) else emptyList()
 
 private fun canvasKey(controller: SketchEditorController, event: KeyEvent, singleKey: Boolean): Boolean {
     val press = event.toKeyPress() ?: return false
@@ -244,7 +269,8 @@ private fun Modifier.wheelInput(controller: SketchEditorController): Modifier = 
 }
 
 @Composable
-private fun HostOverlays(controller: SketchEditorController, singleKey: Boolean, onSingleKey: (Boolean) -> Unit) {
+private fun HostOverlays(controller: SketchEditorController, extras: EditorExtras, singleKey: Boolean, onSingleKey: (Boolean) -> Unit) {
+    ExtrasDialogs(extras)
     when (controller.overlay) {
         EditorOverlay.Shortcuts -> ShortcutsSheet(
             ShortcutsSheetModel.of(controller.keymap, singleKey),
@@ -259,10 +285,7 @@ private fun HostOverlays(controller: SketchEditorController, singleKey: Boolean,
             },
             onDismiss = { controller.overlay = null },
         )
-        EditorOverlay.ConstrainMenu -> LaunchedEffect(Unit) {
-            controller.ui.panelTab = PanelTab.Constraints
-            controller.overlay = null
-        }
+        EditorOverlay.ConstrainMenu -> ConstrainMenuDialog(controller, extras)
         null -> Unit
     }
 }

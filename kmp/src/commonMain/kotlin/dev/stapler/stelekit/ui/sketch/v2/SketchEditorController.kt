@@ -8,12 +8,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import arrow.core.Either
 import arrow.core.flatMap
+import arrow.core.left
+import dev.stapler.stelekit.sketch.v2.commands.Applied
 import dev.stapler.stelekit.sketch.v2.commands.Command
 import dev.stapler.stelekit.sketch.v2.commands.CommandError
 import dev.stapler.stelekit.sketch.v2.commands.Committed
 import dev.stapler.stelekit.sketch.v2.commands.HistoryV2
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
+import dev.stapler.stelekit.sketch.v2.commands.SequenceCommand
 import dev.stapler.stelekit.sketch.v2.commands.StylePatch
 import dev.stapler.stelekit.sketch.v2.commands.Transaction
 import dev.stapler.stelekit.sketch.v2.constraints.ConstraintId
@@ -117,6 +121,12 @@ class SketchEditorController(
 
     var overlay: EditorOverlay? by mutableStateOf(null)
 
+    /** Keys the host-level surfaces own (clipboard, grid, snap); asked after the view keys. */
+    var extraKeys: (KeyAction) -> Boolean = { false }
+
+    /** Rewrites a finished tool gesture before it is committed (snap, auto-constrain); null means the hook committed it itself. */
+    var interceptToolCommand: (ToolCommand) -> ToolCommand? = { it }
+
     val doc: SketchDocumentV2 get() = history.present
     val canUndo: Boolean get() = history.canUndo && !readOnly
     val canRedo: Boolean get() = history.canRedo && !readOnly
@@ -136,7 +146,7 @@ class SketchEditorController(
         ui, ports, { history.present },
         KeyEffects(
             chooseTool = tools::chooseTool, undo = ::undo, redo = ::redo, escape = tools::escape,
-            open = { overlay = it }, submit = { submit(it) }, lockedSkipped = notifier::lockedSkipped, view = view::apply,
+            open = { overlay = it }, submit = { submit(it) }, lockedSkipped = notifier::lockedSkipped, view = { view.apply(it) || extraKeys(it) },
             textEditOpen = { tools.textSession != null },
         ),
     )
@@ -174,7 +184,8 @@ class SketchEditorController(
 
     private fun toolContext() = ToolContext(history.present.scene, ui.viewport.zoom, defaultStyle, ports.ids, index)
 
-    private fun commitToolCommand(command: ToolCommand) {
+    private fun commitToolCommand(raw: ToolCommand) {
+        val command = interceptToolCommand(raw) ?: return
         val creation = command as? AddElementCommand
         val placed = if (creation != null && activeLayer != LayerId.Default) {
             AddElementCommand(creation.element.withBase(creation.element.base.copy(layerId = activeLayer)))
@@ -195,7 +206,14 @@ class SketchEditorController(
     fun submit(command: Command, solve: Boolean = false): CommandError? {
         if (readOnly) return CommandError.Unsupported("sheet", "read-only")
         if (solve || history.present.constraints.isNotEmpty() || pending.value > 0) {
-            enqueue(command)
+            pending.update { it + 1 }
+            scope.launch {
+                try {
+                    gate.withLock { runSolved(command) }
+                } finally {
+                    pending.update { it - 1 }
+                }
+            }
             return null
         }
         val before = history.present
@@ -208,15 +226,32 @@ class SketchEditorController(
         )
     }
 
-    private fun enqueue(command: Command) {
-        pending.update { it + 1 }
-        scope.launch {
-            try {
-                gate.withLock { runSolved(command) }
-            } finally {
-                pending.update { it - 1 }
-            }
+    /**
+     * Applies [command] now as one history step and returns the document it left, or why it was refused. For commands that touch no
+     * constraint (an import, a paste): a sheet with a solve in flight refuses it rather than queue it.
+     */
+    fun commitNow(command: Command): Either<CommandError, Applied> {
+        if (readOnly) return CommandError.Unsupported("sheet", "read-only").left()
+        if (pending.value > 0) return CommandError.Unsupported("sheet", "busy").left()
+        val before = history.present
+        return Transaction.begin(before).apply(command).flatMap { it.commit() }.flatMap { step -> history.commit(step).map { step to it } }.map { (step, next) ->
+            adopt(next, before.scene.order.toSet() + next.present.scene.order.toSet())
+            Applied(next.present, step.changedIds)
+        }.onLeft { if (it != CommandError.NoChange) notifier.refuse(it) }
+    }
+
+    /**
+     * Runs a label-editor solve through the shared [SolveRunner] under the edit gate and adopts the step it committed, so the new
+     * value and the geometry the solver moved are one history step. Returns the editor's outcome.
+     */
+    internal suspend fun runLabelEdit(edit: suspend (SolveRunner) -> SolveOutcome?): SolveOutcome? = gate.withLock {
+        if (readOnly) return@withLock null
+        val outcome = edit(runner)
+        if (outcome is SolveOutcome.Done) {
+            commitStep(outcome.step)
+            constraintState.solved(SequenceCommand(emptyList()), outcome)
         }
+        outcome
     }
 
     private suspend fun runSolved(command: Command) {

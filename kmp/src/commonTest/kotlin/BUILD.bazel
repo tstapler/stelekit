@@ -322,6 +322,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/ContainerTextTest.kt",
         "dev/stapler/stelekit/sketch/v2/SolveRunnerTest.kt",
         "dev/stapler/stelekit/sketch/v2/SketchEditorControllerTest.kt",
+        "dev/stapler/stelekit/sketch/v2/EditorExtrasTest.kt",
         "dev/stapler/stelekit/sketch/v2/SketchEditorOpenerTest.kt",
         "dev/stapler/stelekit/sketch/v2/SketchEditorStringsTest.kt",
         "dev/stapler/stelekit/sketch/v2/V2EditorRig.kt",

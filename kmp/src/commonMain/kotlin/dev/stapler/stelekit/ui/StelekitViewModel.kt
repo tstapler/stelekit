@@ -517,7 +517,21 @@ class StelekitViewModel(
             isMac = device.osVersion.contains(MAC_OS_NAME, ignoreCase = true),
             isWeb = device.platform.contains(WEB_PLATFORM_NAME, ignoreCase = true),
         )
-        return projectBridgeDeps?.bridgeV2EditorDeps(repos, writeActor, activeGraphIdProvider, keymap, touchPresent, dev.stapler.stelekit.ui.sketch.v2.OnboardingSequencer(dev.stapler.stelekit.ui.sketch.v2.OnboardingCounters(platformSettings)))
+        val platform = dev.stapler.stelekit.ui.sketch.v2.HostPlatform(
+            files = dev.stapler.stelekit.platform.FileSystemSketchFilePort(
+                fileSystem,
+                web = keymap.isWeb,
+                opensSavedFiles = !keymap.isWeb,
+                canPickFiles = !device.platform.contains(IOS_PLATFORM_NAME, ignoreCase = true),
+            ),
+            fileSystem = fileSystem,
+            notesDirectory = { _uiState.value.currentNotesPath?.directory() },
+        )
+        return projectBridgeDeps?.bridgeV2EditorDeps(
+            repos, writeActor, activeGraphIdProvider, keymap, touchPresent,
+            dev.stapler.stelekit.ui.sketch.v2.OnboardingSequencer(dev.stapler.stelekit.ui.sketch.v2.OnboardingCounters(platformSettings)),
+            platform,
+        )
     }
 
     /** The Settings > Sketches controls' ports (mode, signals, browser storage); null where the project bridge keeps no consent records. */
@@ -2617,6 +2631,7 @@ class StelekitViewModel(
     companion object {
         private const val MAC_OS_NAME = "mac"
         private const val WEB_PLATFORM_NAME = "browser"
+        private const val IOS_PLATFORM_NAME = "ios"
 
         private const val CACHED_GRAPH_PATH_KEY = "cached_graph_path"
         private const val WIPE_WATCHDOG_INTERVAL_MS = 10_000L

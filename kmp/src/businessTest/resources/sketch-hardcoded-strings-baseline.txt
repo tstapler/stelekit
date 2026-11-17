@@ -204,8 +204,6 @@ ui/sketch/v2/ShortcutsSheetModel.kt :: const val TITLE = "Keyboard shortcuts"
 ui/sketch/v2/ShortcutsSheetModel.kt :: const val TOOLS = "Tools"
 ui/sketch/v2/ShortcutsSheetModel.kt :: const val VIEW = "View"
 ui/sketch/v2/SketchFontResources.kt :: logger.warn("bundled sketch fonts did not load: ${e::class.simpleName}")
-ui/sketch/v2/SketchScreenV2.kt :: ClusterButton("sketch.grid", if (grid) "Grid on" else "Grid off", "#", target, act { grid = !grid })
-ui/sketch/v2/SketchScreenV2.kt :: ClusterButton("sketch.snap", if (snap) "Snap on" else "Snap off", "⊙", target, act { snap = !snap })
 ui/sketch/v2/SketchScreenV2.kt :: ClusterButton("sketch.zoomin", "Zoom in", "+", target, act { state.viewport = state.viewport.zoomBy(centre, ZOOM_STEP_IN) })
 ui/sketch/v2/SketchScreenV2.kt :: ClusterButton("sketch.zoomlevel", "Zoom ${(state.viewport.zoom * PERCENT).toInt()}%", "${(state.viewport.zoom * PERCENT).toInt()}%", target, act { state.viewport = state.viewport.zoomTo(centre, 1.0) })
 ui/sketch/v2/SketchScreenV2.kt :: ClusterButton("sketch.zoomout", "Zoom out", "−", target, act { state.viewport = state.viewport.zoomBy(centre, ZOOM_STEP_OUT) })
