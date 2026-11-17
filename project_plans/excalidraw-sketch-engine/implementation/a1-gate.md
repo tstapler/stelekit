@@ -28,3 +28,8 @@
 - Would continue: UNRECORDED
 - Named blockers (must-fix defects): UNRECORDED
 - Outcome: NOT RECORDED
+
+## Owner waiver of the A1 gate (2026-11-17)
+- The owner chose "Waive it, build them" when asked whether to hold Stories 4.2.2, 4.2.3, 4.2.5, 4.2.6b, 4.2.7b, 4.2.7d, 5.1.5, 5.2.3 and Task 6.2.5c until the gate is run.
+- Effect: the held set is released and built. The gate result stays **UNMEASURED**: no paired run was timed, no ratio exists, and nothing in the product, docs or release notes may say the A1 gate passed.
+- The A1 gate harness (`A1Gate`) and this record remain, so the owner can still run the paired run later and fill in the fields above.
