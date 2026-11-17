@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.sketch.v2.importer
 
+import dev.stapler.stelekit.sketch.excalidraw.ExcalidrawScene
 import dev.stapler.stelekit.sketch.excalidraw.ImportReason
 import dev.stapler.stelekit.sketch.excalidraw.ImportReport
 import dev.stapler.stelekit.sketch.v2.commands.ImportScene
@@ -86,7 +87,12 @@ data class ImportedScene(
     val parse: ImportReport,
     val backgroundColor: String?,
     val gridSize: Double?,
+    /** The file's `version` member, or null when absent; see `ExcalidrawScene.fileVersion`. */
+    val fileVersion: Int? = null,
 ) {
+    /** True when a newer Excalidraw wrote the file: the import proceeds with a notice and a Cancel before commit (Story 5.1.5b). */
+    val newerSchema: Boolean get() = fileVersion != null && fileVersion > ExcalidrawScene.KNOWN_FILE_VERSION
+
     /** The single undoable command that adds everything to a sheet (Story 5.1.2c). */
     fun command(): ImportScene = ImportScene(elements, layers)
 }

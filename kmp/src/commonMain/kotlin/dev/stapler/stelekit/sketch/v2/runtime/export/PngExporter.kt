@@ -47,6 +47,9 @@ data class PngExportOptions(
     }
 }
 
+/** The pixel size of an export. */
+data class PixelSize(val widthPx: Long, val heightPx: Long)
+
 sealed interface PngExportError {
     /** The image would exceed `SceneLimits.maxPngSidePx` on a side; nothing was allocated. The dialog offers 1x. */
     data class TooLarge(val widthPx: Long, val heightPx: Long, val maxSidePx: Int) : PngExportError
@@ -70,7 +73,31 @@ class PngExporter(
     private val resources: PainterResources = PainterResources(),
     private val limits: SceneLimits = SceneLimits.Default,
 ) {
+    /** The pixel size [export] would produce, or why it would refuse; nothing is allocated or drawn. */
+    fun measure(scene: SketchSceneV2, options: PngExportOptions = PngExportOptions()): Either<PngExportError, PixelSize> =
+        plan(scene, options).map { PixelSize(it.widthPx, it.heightPx) }
+
     fun export(scene: SketchSceneV2, builder: DrawListBuilder, style: RenderStyle, options: PngExportOptions = PngExportOptions()): Either<PngExportError, ByteArray> {
+        val plan = plan(scene, options).fold({ return it.left() }, { it })
+        val content = plan.content
+        val bitmap = ImageBitmap(plan.widthPx.toInt(), plan.heightPx.toInt(), ImageBitmapConfig.Argb8888)
+        val viewport = SketchViewport.of(
+            zoom = options.scale.toDouble(),
+            panX = -(content.minX - options.padding) * options.scale,
+            panY = -(content.minY - options.padding) * options.scale,
+        )
+        val ops = builder.build(plan.subject, style)
+        CanvasDrawScope().draw(Density(1f), LayoutDirection.Ltr, Canvas(bitmap), Size(bitmap.width.toFloat(), bitmap.height.toFloat())) {
+            options.background?.let { drawRect(CssColor.parse(it)) }
+            ScenePainter(resources = resources).paint(this, ops, viewport, null)
+        }
+        val bytes = encoder.encode(bitmap)
+        return if (bytes.isEmpty()) PngExportError.EncodeFailed.left() else bytes.right()
+    }
+
+    private class Plan(val subject: SketchSceneV2, val content: Bounds, val widthPx: Long, val heightPx: Long)
+
+    private fun plan(scene: SketchSceneV2, options: PngExportOptions): Either<PngExportError, Plan> {
         if (options.scale !in 1..PngExportOptions.MAX_SCALE) return PngExportError.InvalidScale.left()
         val subject = options.selection?.let { keep -> scene.order.filter { it !in keep }.fold(scene) { s, id -> s.remove(id).getOrNull() ?: s } } ?: scene
         val content = options.bounds ?: contentBounds(subject) ?: return PngExportError.NothingToExport.left()
@@ -79,19 +106,7 @@ class PngExporter(
         if (widthPx > limits.maxPngSidePx || heightPx > limits.maxPngSidePx) {
             return PngExportError.TooLarge(widthPx, heightPx, limits.maxPngSidePx).left()
         }
-        val bitmap = ImageBitmap(widthPx.toInt(), heightPx.toInt(), ImageBitmapConfig.Argb8888)
-        val viewport = SketchViewport.of(
-            zoom = options.scale.toDouble(),
-            panX = -(content.minX - options.padding) * options.scale,
-            panY = -(content.minY - options.padding) * options.scale,
-        )
-        val ops = builder.build(subject, style)
-        CanvasDrawScope().draw(Density(1f), LayoutDirection.Ltr, Canvas(bitmap), Size(bitmap.width.toFloat(), bitmap.height.toFloat())) {
-            options.background?.let { drawRect(CssColor.parse(it)) }
-            ScenePainter(resources = resources).paint(this, ops, viewport, null)
-        }
-        val bytes = encoder.encode(bitmap)
-        return if (bytes.isEmpty()) PngExportError.EncodeFailed.left() else bytes.right()
+        return Plan(subject, content, widthPx, heightPx).right()
     }
 
     /** The pixel width or height of [sceneUnits] at [scale], at least one pixel. */

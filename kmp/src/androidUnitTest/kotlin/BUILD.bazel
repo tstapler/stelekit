@@ -121,6 +121,10 @@ kt_android_library(
             "**/SketchCopyDialogTest.kt",
             # Compose host test for the sketch embed dispatcher (Gradle-only, no Compose plugin or commonTest in this target)
             "**/SketchRenderDispatcherTest.kt",
+            # Compose host tests for the sketch import and export dialogs and their success toasts (Gradle-only, no Compose plugin or commonTest in this target)
+            "**/ImportFlowTest.kt",
+            "**/ExportDialogTest.kt",
+            "**/SuccessFeedbackTest.kt",
         ],
     ),
     custom_package = "dev.stapler.stelekit",

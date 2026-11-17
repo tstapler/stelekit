@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchImportExportStrings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 
 /** Window size in dp; the host passes it, or [SketchScreenV2] measures it. */
@@ -99,6 +100,11 @@ data class SketchShellConfig(
     val constraintsAvailable: Boolean = true,
     /** The sheet's auto-constrain setting; its toggle joins the overflow menu and its "Free draw" chip the chip row (Story 4.2.2c). */
     val autoConstrain: AutoConstrainState? = null,
+    /** The overflow entries "Import .excalidraw..." and "Export..." (Stories 5.1.5, 5.2.3); null hides the entry. */
+    val onImport: (() -> Unit)? = null,
+    /** Why Import cannot run here (no file storage, UX-135): the entry is then shown disabled with this text. */
+    val importDisabledReason: String? = null,
+    val onExport: (() -> Unit)? = null,
 )
 
 object ShellTags {
@@ -114,6 +120,8 @@ object ShellTags {
     const val OVERFLOW_PAN = "sketch.overflow.pan"
     const val OVERFLOW_SHORTCUTS = "sketch.overflow.shortcuts"
     const val OVERFLOW_TIPS = "sketch.overflow.tips"
+    const val OVERFLOW_IMPORT = "sketch.overflow.import"
+    const val OVERFLOW_EXPORT = "sketch.overflow.export"
     const val BANNER = "sketch.banner"
     const val HINT = "sketch.hint"
     const val PANEL = "sketch.panel"
@@ -308,6 +316,21 @@ private fun OverflowItems(state: SketchEditorState, config: SketchShellConfig, g
             },
             modifier = Modifier.testTag(ShellTags.OVERFLOW_TIPS),
         )
+        config.onImport?.let { onImport ->
+            DropdownMenuItem(
+                text = { ImportMenuLabel(config.importDisabledReason) },
+                onClick = { close(); onImport() },
+                enabled = config.importDisabledReason == null,
+                modifier = Modifier.testTag(ShellTags.OVERFLOW_IMPORT),
+            )
+        }
+        config.onExport?.let { onExport ->
+            DropdownMenuItem(
+                text = { Text(SketchImportExportStrings.Export.MENU_ITEM) },
+                onClick = { close(); onExport() },
+                modifier = Modifier.testTag(ShellTags.OVERFLOW_EXPORT),
+            )
+        }
         for (tool in config.model.overflowTools) {
             DropdownMenuItem(
                 text = { Text("More tools: ${tool.label}  ${tool.shortcut}") },
@@ -315,6 +338,15 @@ private fun OverflowItems(state: SketchEditorState, config: SketchShellConfig, g
                 modifier = Modifier.testTag(ShellTags.overflowTool(tool.id)),
             )
         }
+    }
+}
+
+/** "Import .excalidraw..." with, where it is disabled, the reason beneath it (UX-135): the reason is visible text, not a tooltip. */
+@Composable
+private fun ImportMenuLabel(disabledReason: String?) {
+    Column {
+        Text(SketchImportExportStrings.Import.MENU_ITEM)
+        disabledReason?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
     }
 }
 

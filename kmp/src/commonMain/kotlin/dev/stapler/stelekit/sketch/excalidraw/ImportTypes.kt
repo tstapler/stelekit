@@ -120,7 +120,14 @@ data class ExcalidrawScene(
     val appState: ExcalidrawAppState?,
     /** File ids whose image was refused; elements that reference them become placeholders. */
     val placeholderFileIds: Set<String>,
-)
+    /** The file's own `version` member when it is an integer; a value above [KNOWN_FILE_VERSION] means a newer Excalidraw wrote it. */
+    val fileVersion: Int? = null,
+) {
+    companion object {
+        /** The `version` Excalidraw v0.18.1 writes; a larger one gets the "created by a newer Excalidraw" notice (Story 5.1.5b). */
+        const val KNOWN_FILE_VERSION: Int = 2
+    }
+}
 
 data class ImportResult(val scene: ExcalidrawScene, val report: ImportReport)
 

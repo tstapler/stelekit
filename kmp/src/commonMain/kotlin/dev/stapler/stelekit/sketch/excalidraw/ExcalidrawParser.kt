@@ -16,6 +16,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlin.math.floor
 
 /**
  * Bounded, tolerant `.excalidraw` and `.excalidrawlib` parser and sanitiser (Story 5.1.1). It is the single
@@ -181,7 +182,7 @@ class ExcalidrawParser(
 
         val placeholderIds = LinkedHashSet<String>(assembled.placeholders.keys)
         val files = extractFiles(root["files"], budget, issues, placeholderIds)
-        val scene = ExcalidrawScene(repaired, files, extractAppState(root["appState"]), placeholderIds)
+        val scene = ExcalidrawScene(repaired, files, extractAppState(root["appState"]), placeholderIds, extractFileVersion(root["version"]))
         return ImportResult(scene, ImportReport(issues, tally.deleted, tally.unknown, tally.unsupported))
     }
 
@@ -252,6 +253,11 @@ class ExcalidrawParser(
             }
         }
         return admitted
+    }
+
+    private fun extractFileVersion(raw: JsonElement?): Int? {
+        val value = (raw as? JsonPrimitive)?.takeIf { !it.isString }?.let { CanonicalJson.doubleOf(it) } ?: return null
+        return if (value.isFinite() && value == floor(value) && value in 0.0..Int.MAX_VALUE.toDouble()) value.toInt() else null
     }
 
     private fun extractAppState(raw: JsonElement?): ExcalidrawAppState? {

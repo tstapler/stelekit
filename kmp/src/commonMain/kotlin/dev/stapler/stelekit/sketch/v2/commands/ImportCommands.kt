@@ -17,10 +17,16 @@ import dev.stapler.stelekit.sketch.v2.scene.SceneElement
  * imported elements are remapped, new ordinals are assigned in paint order, and the result is reconciled. A sheet
  * already at `SceneLimits.maxElements` refuses the whole import and changes nothing.
  */
-data class ImportScene(val elements: List<SceneElement>, val layers: List<Layer> = emptyList()) : Command {
+data class ImportScene(
+    val elements: List<SceneElement>,
+    val layers: List<Layer> = emptyList(),
+    /** Shifts every element by this much, so the import lands at the viewport centre (ux.md section 11). */
+    val dx: Double = 0.0,
+    val dy: Double = 0.0,
+) : Command {
     override fun apply(doc: SketchDocumentV2): Either<CommandError, Applied> = either {
         val withLayers = doc.copy(scene = doc.scene.withLayers(mergedLayers(doc)))
-        PasteElements(elements, idMap(doc)).apply(withLayers).bind()
+        PasteElements(elements, idMap(doc), dx, dy).apply(withLayers).bind()
     }
 
     private fun mergedLayers(doc: SketchDocumentV2): List<Layer> {

@@ -111,6 +111,61 @@ class SheetSplitter(
             .also { log.migrateOutcome("split-${(it as? SplitOutcome.Failed)?.reason?.token ?: "done"}") }
     }
 
+    /**
+     * Creates [newSheet] holding [document] beside [anchorSheet] in the same project, for "Import into a new sketch" (Story 5.1.5b).
+     * Same protocol and crash boundaries as [split] (stage, one model write, rows) but the anchor sheet is never touched.
+     */
+    suspend fun addSheet(projectUuid: ProjectUuid, anchorSheet: SheetUuid, document: SketchDocumentV2, newSheet: SheetUuid): SplitOutcome {
+        val loaded = repos.projects.loadProject(projectUuid).getOrNull() ?: return failed(SplitFailure.NotFound, "project")
+        val slug = loaded.project.slug
+        return slugLock.withSlug(slug) { addLocked(projectUuid, slug, anchorSheet, document, newSheet) }
+            .also { log.migrateOutcome("add-${(it as? SplitOutcome.Failed)?.reason?.token ?: "done"}") }
+    }
+
+    private suspend fun addLocked(projectUuid: ProjectUuid, slug: String, anchor: SheetUuid, document: SketchDocumentV2, newSheet: SheetUuid): SplitOutcome {
+        val disk = when (val read = store.read(slug)) {
+            SidecarRead.Unavailable -> return failed(SplitFailure.StorageUnavailable)
+            is SidecarRead.Corrupt -> return failed(SplitFailure.CorruptSidecar)
+            SidecarRead.Absent -> null
+            is SidecarRead.Present -> read.files
+        }
+        val project = repos.projects.loadProject(projectUuid).getOrNull()?.project ?: return failed(SplitFailure.NotFound, "project")
+        val local = LocalBundleLoader.load(repos, project, disk.orEmpty()).getOrNull() ?: return failed(SplitFailure.Write, "local bundle")
+        val row = local.sheets.firstOrNull { it.uuid == anchor } ?: return failed(SplitFailure.NotFound, "sheet")
+        if (row.schemaVersion != SheetPaths.SCHEMA_V2) return failed(SplitFailure.NotV2)
+        if (ConversionPolicy.refusal(local, row, technicalDataEditable) != null) return failed(SplitFailure.HasTechnicalData)
+
+        val doc = document.copy(sheetUuid = newSheet.value)
+        val newBytes = SheetCodecV2.encode(doc, limits).getOrNull() ?: return failed(SplitFailure.Encode, "new sheet")
+        val newPath = SheetPaths.pathFor(newSheet, SheetPaths.SCHEMA_V2)
+        stop(store.writeNow(slug, (disk ?: SidecarCodec.encode(local)) + (newPath to newBytes)))?.let { return it }
+        crashPoint.after(SplitStep.NewSheetStaged)
+
+        val created = row.copy(
+            uuid = newSheet,
+            position = (local.sheets.maxOfOrNull { it.position } ?: 0L) + 1,
+            layers = V2ToV1.projectScene(doc.scene).layers.map { it.encode() },
+            schemaVersion = SheetPaths.SCHEMA_V2,
+        )
+        val bundle = local.copy(sheets = local.sheets + created, sheetPayloads = local.sheetPayloads + (newSheet to SheetPayload.V2Opaque.of(newBytes)))
+        val modelFiles = SidecarCodec.encode(bundle)
+        val others = bundle.sheetPayloads.filterKeys { it != newSheet }
+            .mapNotNull { (uuid, payload) -> (payload as? SheetPayload.V2Opaque)?.let { SheetPaths.pathFor(uuid, SheetPaths.SCHEMA_V2) to it.sha256 } }.toMap()
+        stop(store.writeNow(slug, modelFiles - others.keys, others))?.let { return it }
+        crashPoint.after(SplitStep.SourceAndModelWritten)
+        return finishAdded(bundle.project, created, SidecarCodec.bundleHash(modelFiles), doc.scene.size).also { crashPoint.after(SplitStep.RowsWritten) }
+    }
+
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun finishAdded(project: SketchProject, created: SketchSheet, hash: String, elementCount: Int): SplitOutcome {
+        val token = repos.projects.loadProject(project.uuid).getOrNull()?.token ?: return failed(SplitFailure.Write, "project token")
+        write { repos.sheets.saveSheet(created, token) }.onLeft { return failed(SplitFailure.Write, "new row") }
+        val fresh = repos.projects.loadProject(project.uuid).getOrNull()?.project ?: project
+        write { repos.projects.saveProject(fresh.copy(lastSyncedSidecarHash = hash, baseRevision = fresh.modelRevision)) }
+            .onLeft { return failed(SplitFailure.Write, "project base") }
+        return SplitOutcome.Split(created.uuid, elementCount, clearedBindings = 0, carriedConstraints = 0, droppedConstraints = 0)
+    }
+
     private fun refusal(r: SplitRefusal): SplitOutcome = when (r) {
         SplitRefusal.NothingSelected -> failed(SplitFailure.NothingSelected)
         is SplitRefusal.UnknownElement -> failed(SplitFailure.UnknownElement)

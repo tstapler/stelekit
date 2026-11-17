@@ -26,6 +26,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.time.Clock
 
 actual class PlatformFileSystem actual constructor() : FileSystem {
@@ -849,7 +851,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      * `WasmMediaAttachmentService` for attachment uploads) — no OPFS-write logic duplicated here.
      */
     override fun writeFileBytes(path: String, data: ByteArray): Boolean {
-        if (path.startsWith(DOWNLOAD_PREFIX)) return false
+        if (path.startsWith(DOWNLOAD_PREFIX)) return downloadBytes(path.removePrefix(DOWNLOAD_PREFIX), data)
         bytesCache[path] = data
         recordDirty(path, DirtyOp.WRITE)
         if (!ephemeral) queueBytesWrite(path, data)
@@ -1166,6 +1168,30 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     }
     override suspend fun pickFileAsync(): String? = null
 
+    private var pickedPath: String? = null
+
+    /**
+     * A browser file input (the sketch import, Story 5.1.5). The bytes are read in the browser and held in [bytesCache] under a
+     * synthetic path, which is returned so `readFileBytesSuspend` finds them; the next pick replaces them. The browser shows no path.
+     * UNVERIFIED in a real browser: the click comes from a coroutine, so it relies on the browser's transient user activation.
+     */
+    override suspend fun pickFileAsync(title: String, extensions: List<String>): String? {
+        val picked = pickBrowserFile(extensions.joinToString(",") { ".$it" }).await<JsAny?>() ?: return null
+        val path = "$PICKED_PREFIX${pickedName(picked)}"
+        pickedPath?.let { bytesCache.remove(it) }
+        bytesCache[path] = jsArrayBufferToByteArray(pickedBuffer(picked))
+        pickedPath = path
+        return path
+    }
+
+    @OptIn(ExperimentalEncodingApi::class)
+    private fun downloadBytes(filename: String, data: ByteArray): Boolean = try {
+        triggerBrowserBytesDownload(filename, Base64.encode(data), pendingDownloadMimeType)
+        true
+    } catch (e: Throwable) {
+        false
+    }
+
     /**
      * Epic 3.2 (Task 3.2.2a/d): delegates to [HostDirectorySync.onHostConflict]. Wired from
      * `App.kt` alongside the other write-behind flush callbacks (not `Main.kt` — `GraphLoader` is
@@ -1254,6 +1280,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
         /** The short-lived Web Lock of the once-per-preload temp sweep of [graphId] (D-130); never the writer lease. */
         fun sweepLockName(graphId: String): String = "stelekit-sketch-sweep:$graphId"
+        private const val PICKED_PREFIX = "/_wasm_pick_/"
         var githubOwner: String = ""
         var githubRepo: String = ""
         var githubBranch: String = "main"
@@ -1270,6 +1297,38 @@ private fun triggerBrowserTextDownload(filename: String, content: String, mimeTy
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
     })()""")
+
+private fun triggerBrowserBytesDownload(filename: String, base64: String, mimeType: String): Unit =
+    js("""(function() {
+        var binary = atob(base64);
+        var bytes = new Uint8Array(binary.length);
+        for (var i = 0; i < binary.length; i++) { bytes[i] = binary.charCodeAt(i); }
+        var blob = new Blob([bytes], { type: mimeType });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+    })()""")
+
+private fun pickBrowserFile(accept: String): kotlin.js.Promise<JsAny?> =
+    js("""new Promise(function(resolve) {
+        var input = document.createElement('input');
+        input.type = 'file'; input.accept = accept; input.style.display = 'none';
+        input.addEventListener('change', function() {
+            var file = input.files && input.files[0];
+            document.body.removeChild(input);
+            if (!file) { resolve(null); return; }
+            file.arrayBuffer().then(function(buffer) { resolve({ name: file.name, buffer: buffer }); }, function() { resolve(null); });
+        });
+        input.addEventListener('cancel', function() { document.body.removeChild(input); resolve(null); });
+        document.body.appendChild(input);
+        input.click();
+    })""")
+
+private fun pickedName(picked: JsAny): String = js("picked.name")
+
+private fun pickedBuffer(picked: JsAny): JsAny = js("picked.buffer")
 
 /** How the sidecar-root byte preload ended (D-131, D-143); `preloadState` of Task 1.4.7j is derived from it. */
 internal sealed interface SidecarPreloadOutcome {

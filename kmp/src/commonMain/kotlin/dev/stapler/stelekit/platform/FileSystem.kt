@@ -154,6 +154,12 @@ interface FileSystem {
     suspend fun pickFileAsync(): String? = null
 
     /**
+     * [pickFileAsync] with a dialog [title] and a hint of the wanted [extensions] (no dot, lowercase). Platforms whose picker cannot
+     * filter ignore the hint. The sketch import (Story 5.1.5) uses this; the no-argument form stays the SSH-key picker.
+     */
+    suspend fun pickFileAsync(title: String, extensions: List<String>): String? = pickFileAsync()
+
+    /**
      * Re-points an already-tracked graph's host-directory connection at a newly-picked folder,
      * reusing [existingPath] (the graph's existing internal path) rather than deriving a new one —
      * unlike [pickDirectoryAsync], which always creates a brand-new graph. Imports the newly

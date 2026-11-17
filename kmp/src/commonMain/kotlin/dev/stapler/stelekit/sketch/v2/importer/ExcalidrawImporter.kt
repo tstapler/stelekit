@@ -69,6 +69,7 @@ class ExcalidrawImporter(
             parse = result.report,
             backgroundColor = scene.appState?.viewBackgroundColor,
             gridSize = scene.appState?.gridSize,
+            fileVersion = scene.fileVersion,
         )
     }
 

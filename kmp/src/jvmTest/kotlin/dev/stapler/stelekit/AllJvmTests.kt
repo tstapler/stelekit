@@ -560,6 +560,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.baseline.CanvasReferenceBenchmark::class,
     dev.stapler.stelekit.ui.sketch.v2.ScenePainterTest::class,
     dev.stapler.stelekit.sketch.v2.PngExportTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.SketchExportRunnerPngTest::class,
     SqlDelightMeasurementAnnotationRepositoryTest::class,
     UpgradeResilienceTest::class,
     AnnotationExporterTest::class,
