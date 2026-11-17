@@ -7,6 +7,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performMouseInput
+import dev.stapler.stelekit.projectbridge.V2Mode
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
 import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.text.FixedAdvanceTextMetricsProvider
@@ -65,6 +66,30 @@ class SketchEditorHostTest {
         rule.runOnUiThread { controller.undo() }
         rule.waitForIdle()
         assertTrue(controller.doc.scene.elementsInOrder.none { it is RectElement }, "undo removed the rectangle")
+        session.close()
+    }
+
+    @Test
+    fun sheetOfAModeThatIsOff_should_ShowTheReadOnlyBannerAndIgnoreTheDrag() {
+        val rig = V2EditorRig(mode = V2Mode.Off)
+        runBlocking { rig.seed() }
+        val metrics = FixedAdvanceTextMetricsProvider()
+        val session = assertIs<EditorOpening.Editor>(runBlocking { V2EditorOpener(rig.deps, Dispatchers.Default).open(rig.project.uuid, metrics) }).session
+        val controller = session.controller
+        rule.setContent { SketchEditorV2Host(session, ModernPreviewEnvironment(metrics, PainterResources()), onBack = {}) }
+        rule.runOnUiThread { controller.tools.chooseTool(ToolId.Rectangle) }
+        rule.waitForIdle()
+
+        rule.onNodeWithTag(ShellTags.BANNER).assertExists()
+        rule.onNodeWithTag(HostTags.CANVAS_INPUT).performMouseInput {
+            moveTo(Offset(40f, 40f))
+            press()
+            moveTo(Offset(140f, 110f))
+            release()
+        }
+        rule.waitForIdle()
+
+        assertTrue(controller.doc.scene.elementsInOrder.none { it is RectElement }, "a read-only sheet takes no edit")
         session.close()
     }
 }

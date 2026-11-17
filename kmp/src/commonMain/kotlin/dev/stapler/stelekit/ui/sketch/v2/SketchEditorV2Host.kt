@@ -46,6 +46,7 @@ import dev.stapler.stelekit.sketch.v2.view.ScreenPx
 import dev.stapler.stelekit.ui.sketch.ModernPreviewEnvironment
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchEditorStrings
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.yield
 
 /** Test tags of the host's own surfaces; the shell's tags are in [ShellTags]. */
 object HostTags {
@@ -80,6 +81,8 @@ fun SketchEditorV2Host(
     val entries by session.diagnostics.port.diagnostics.collectAsState()
     val empty = controller.doc.scene.order.isEmpty()
     LaunchedEffect(entries, controller.notifier.revision) {
+        // The diagnostics host attaches the port's entries to the queue in its own effect; let it run first.
+        yield()
         banner.refresh(empty)
         toasts.refresh()
         while (controller.notifier.hasTimedToast()) {

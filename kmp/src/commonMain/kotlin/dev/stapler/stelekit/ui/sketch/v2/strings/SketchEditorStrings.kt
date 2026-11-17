@@ -29,19 +29,20 @@ object SketchEditorStrings {
         fun lockedNotErased(count: Int) = if (count == 1) "1 locked element wasn't erased" else "$count locked elements weren't erased"
     }
 
+    /** The banner rows the editor host owns. Every fixed string fits `BannerTextBudget` (a row that does not is refused when it is raised). */
     object Banners : BannerStringSource {
-        const val SAVE_FAILED_SUMMARY = "Couldn't save this sketch. Your work is kept here."
+        const val SAVE_FAILED_SUMMARY = "Couldn't save. Work is kept."
         const val SAVE_FAILED_SHORT = "Not saved"
         const val SAVE_RETRY = "Retry"
-        const val SAVE_CONFLICT_SUMMARY = "This sketch changed on disk while you were editing."
-        const val SAVE_CONFLICT_SHORT = "Sketch changed"
+        const val SAVE_CONFLICT_SUMMARY = "File changed on disk."
+        const val SAVE_CONFLICT_SHORT = "Changed"
         const val KEEP_MINE = "Keep mine"
         const val USE_THEIRS = "Use theirs"
         const val READ_ONLY_SUMMARY = "This sketch is read-only."
         const val READ_ONLY_SHORT = "Read-only"
-        const val LEASE_SUMMARY = "This sketch is open in another tab."
-        const val LEASE_SHORT = "Open elsewhere"
-        const val DISMISS = "Dismiss"
+        const val LEASE_SUMMARY = "Open in another tab."
+        const val LEASE_SHORT = "Other tab"
+        const val DISMISS = "OK"
 
         override fun summary(row: BannerRowId): String = when (row) {
             BannerRowId.SaveFailed -> SAVE_FAILED_SUMMARY
