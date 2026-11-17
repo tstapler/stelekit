@@ -8,6 +8,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.raise.either
 import arrow.core.right
+import dev.stapler.stelekit.sketch.v2.binding.BindingEngine
 import dev.stapler.stelekit.sketch.v2.binding.followBoundArrows
 import dev.stapler.stelekit.sketch.v2.constraints.withoutOrphans
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
@@ -150,15 +151,19 @@ private fun moveSet(scene: SketchSceneV2, ids: Collection<ElementId>): Either<Co
     out
 }
 
-/** Translates [ids] by ([dx], [dy]) scene units; a frame takes its members and a container its bound labels along, and arrow ends bound to a moved shape follow it. */
+/**
+ * Translates [ids] by ([dx], [dy]) scene units; a frame takes its members and a container its bound labels along, and arrow
+ * ends bound to a moved shape follow it. An arrow moved without the shape an end is bound to is unbound from it there.
+ */
 data class MoveElements(val ids: List<ElementId>, val dx: Double, val dy: Double) : Command {
     override fun apply(doc: SketchDocumentV2): Either<CommandError, Applied> = either {
         val scene = doc.scene
         var out = scene
         val moved = moveSet(scene, ids).bind()
         for (id in moved) out = out.replace(scene.element(id).bind().shifted(dx, dy, scene.limits).bind().touched()).bind()
-        val followed = out.followBoundArrows(moved).bind()
-        finish(doc, followed.scene, moved + followed.arrows)
+        val freed = BindingEngine.unbindStranded(out, moved).bind()
+        val followed = freed.scene.followBoundArrows(moved).bind()
+        finish(doc, followed.scene, moved + freed.changed + followed.arrows)
     }
 }
 
