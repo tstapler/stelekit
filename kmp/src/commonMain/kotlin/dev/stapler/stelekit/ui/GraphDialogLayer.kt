@@ -164,6 +164,9 @@ private fun SettingsDialogHost(
         onDeveloperModeToggle = console?.let { c -> { on: Boolean -> c.developerMode.set(on) } },
         homeSketchEnabled = homeSketchOn,
         onHomeSketchToggle = { on -> viewModel.setHomeSketchEnabled(on) },
+        sketchSection = viewModel.sketchSettingsPorts()?.let { ports ->
+            { dev.stapler.stelekit.ui.sketch.v2.migration.SketchSettingsHost(ports, editorOpen = (appState.currentScreen as? Screen.Sketch)?.projectUuid != null) }
+        },
         onOpenConsole = console?.let {
             {
                 viewModel.setSettingsVisible(false)

@@ -4,18 +4,27 @@
 
 package dev.stapler.stelekit.ui.sketch.v2
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import dev.stapler.stelekit.model.ProjectUuid
+import dev.stapler.stelekit.model.SheetUuid
+import dev.stapler.stelekit.projectbridge.V2Build
 import dev.stapler.stelekit.ui.sketch.rememberModernPreviewEnvironment
+import dev.stapler.stelekit.ui.sketch.v2.migration.EditorOpen
+import dev.stapler.stelekit.ui.sketch.v2.migration.EngineChangeFlow
 import dev.stapler.stelekit.ui.sketch.v2.migration.NoEditorAction
 import dev.stapler.stelekit.ui.sketch.v2.migration.NoEditorDetails
 import dev.stapler.stelekit.ui.sketch.v2.migration.NoEditorModel
@@ -23,12 +32,23 @@ import dev.stapler.stelekit.ui.sketch.v2.migration.NoEditorScreen
 import dev.stapler.stelekit.ui.sketch.v2.migration.PendingModel
 import dev.stapler.stelekit.ui.sketch.v2.migration.PendingScreen
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
- * Where the app opens a project's sheet (Story 6.2.0b): the router's outcome for the sheet decides between the v2 editor
- * ([SketchEditorV2Host]), the no-editor and pending screens, and [legacy] for a classic sheet. [legacy] is composed only for a
- * classic outcome, so the classic editor never takes the edit lease of a sheet the new editor holds. With no [deps] (a platform
- * without the sketch project bridge) the classic editor opens as it always did.
+ * The flush of the classic editor that is open, set by the classic editor's call site: a conversion saves its pending edits
+ * before the sheet changes under it and never reads the classic view model itself.
+ */
+class LegacyFlushHandle {
+    var flush: suspend () -> Unit = {}
+}
+
+/**
+ * Where the app opens a project's sheet (Story 6.2.0b, Task 6.2.0c): the router's outcome for the sheet decides between the v2
+ * editor ([SketchEditorV2Host]), the no-editor and pending screens, the first-write dialog of a new v2 sketch, and [legacy] for a
+ * classic sheet (with the Upgrade chip above it when the router offers one). [legacy] is composed only for a classic outcome, so
+ * the classic editor never takes the edit lease of a sheet the new editor holds. With no [deps] (a platform without the sketch
+ * project bridge) the classic editor opens as it always did. Nothing here writes a v2 file before the first-write dialog was
+ * confirmed.
  */
 @Composable
 fun SketchEditorV2Route(
@@ -37,19 +57,100 @@ fun SketchEditorV2Route(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     pointer: PointerClass = PointerClass.MouseOnly,
+    legacyFlush: LegacyFlushHandle = remember { LegacyFlushHandle() },
     legacy: @Composable () -> Unit,
 ) {
     val environment = rememberModernPreviewEnvironment()
     val opener = remember(deps) { deps?.let { V2EditorOpener(it, Dispatchers.Default) } }
+    val actions = remember(deps) { deps?.let { V2EntryActions(it) } }
     var attempt by remember(projectUuid) { mutableIntStateOf(0) }
     var opening by remember(projectUuid, deps) { mutableStateOf<EditorOpening?>(if (deps == null) EditorOpening.Legacy else null) }
-    LaunchedEffect(projectUuid, deps, attempt) { opener?.let { opening = it.open(projectUuid, environment.metrics) } }
-    when (val current = opening) {
-        null -> SketchEditorLoading(modifier)
-        EditorOpening.Legacy -> legacy()
-        EditorOpening.Pending -> PendingScreen(PendingModel.at(0), onClose = onBack, modifier = modifier)
-        is EditorOpening.NoEditor -> NoEditor(current, onBack, { attempt += 1 }, modifier)
-        is EditorOpening.Editor -> SketchEditorV2Host(current.session, environment, onBack, modifier, pointer)
+    var busy by remember(projectUuid, deps) { mutableStateOf(false) }
+    var dialog by remember(projectUuid, deps) { mutableStateOf<EntryDialog?>(null) }
+    var converted by remember(projectUuid, deps) { mutableStateOf<SheetUuid?>(null) }
+    var engineChanged by remember(projectUuid, deps) { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val current by rememberUpdatedState(opening)
+    LaunchedEffect(projectUuid, deps, attempt) {
+        opener?.let {
+            opening = null
+            opening = it.open(projectUuid, environment.metrics)
+            busy = false
+        }
+    }
+    val flow = remember(deps) {
+        EngineChangeFlow(
+            savePending = { (current as? EditorOpening.Editor)?.session?.controller?.flush() ?: legacyFlush.flush() },
+            reopenSketch = { engineChanged = false; attempt += 1 },
+        )
+    }
+    LaunchedEffect(opening, deps) {
+        val bus = deps?.engineChange ?: return@LaunchedEffect
+        val base = bus.revision.value
+        bus.revision.collect { if (it != base && flow.onModeChanged(EditorOpen.Yes) != null) engineChanged = true }
+    }
+    val hooks = remember(projectUuid, deps) {
+        EntryHooks(onBack, { opening = it }, { dialog = it }, { busy = it }, { converted = it }, { attempt += 1 }, legacyFlush)
+    }
+    val steps = remember(actions, opener) { if (actions == null || opener == null) null else EntrySteps(actions, opener, environment.metrics, hooks) }
+    val restore = remember(actions) {
+        actions?.let { a ->
+            RestoreBackupAction { slug, sheet ->
+                (current as? EditorOpening.Editor)?.session?.controller?.flush()
+                busy = true
+                withFrameNanos { }
+                a.restore(slug, sheet)
+            }
+        }
+    }
+    LaunchedEffect(opening) {
+        val shown = opening
+        if (shown is EditorOpening.NewSheetNeedsConfirm && dialog == null) dialog = steps?.newSheetDialog(shown)
+        val sheet = converted
+        if (shown is EditorOpening.Editor && sheet != null && shown.session.sheet == sheet) {
+            actions?.postConversion(shown.session, sheet)
+            converted = null
+        }
+    }
+    Box(modifier) {
+        val stage = opening
+        when {
+            busy || stage == null || stage is EditorOpening.NewSheetNeedsConfirm -> SketchEditorLoading()
+            stage === EditorOpening.Pending -> PendingScreen(PendingModel.at(0), onClose = onBack)
+            stage is EditorOpening.NoEditor -> NoEditor(stage, onBack, onReload = { attempt += 1 })
+            stage is EditorOpening.Editor -> EditorStage(stage.session, environment, onBack, pointer, actions, restore)
+            else -> if (stage is EditorOpening.ClassicEditor && actions != null && deps != null) {
+                ClassicWithOffer(stage, actions, deps, onStart = { steps?.start(scope, stage) }, legacy = legacy)
+            } else {
+                legacy()
+            }
+        }
+        if (engineChanged && !busy) {
+            EngineChangeRow({ scope.launch { flow.reopen() } }, Modifier.align(Alignment.BottomCenter))
+        }
+    }
+    EntryDialogs(dialog, steps, scope, restore, hooks)
+}
+
+/** One editor session with the restore entry over it while the sheet has a backup. */
+@Composable
+private fun EditorStage(
+    session: SketchEditorSession,
+    environment: dev.stapler.stelekit.ui.sketch.ModernPreviewEnvironment,
+    onBack: () -> Unit,
+    pointer: PointerClass,
+    actions: V2EntryActions?,
+    restore: RestoreBackupAction?,
+) {
+    var hasBackup by remember(session) { mutableStateOf(false) }
+    val sheet = session.sheet
+    LaunchedEffect(session) { if (actions != null && sheet != null) hasBackup = actions.hasBackup(session.slug, sheet) }
+    Box {
+        SketchEditorV2Host(session, environment, onBack, Modifier, pointer)
+        if (restore != null && sheet != null && !session.controller.readOnly) {
+            val availability = RestoreAvailability.of(platformReason = null, buildCapped = !V2Build.CONVERSION_READY, hasBackup = hasBackup)
+            RestoreEntry(availability, onRestore = { restore.request(session.slug, sheet) }, modifier = Modifier.align(Alignment.BottomStart))
+        }
     }
 }
 

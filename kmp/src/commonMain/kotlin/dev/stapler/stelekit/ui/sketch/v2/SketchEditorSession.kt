@@ -8,10 +8,14 @@ import arrow.core.Either
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.model.ProjectUuid
 import dev.stapler.stelekit.model.SheetUuid
+import dev.stapler.stelekit.model.SketchProject
 import dev.stapler.stelekit.projectbridge.ImmediateSketchDurability
 import dev.stapler.stelekit.projectbridge.NoPageLifecycle
 import dev.stapler.stelekit.projectbridge.PageLifecycle
 import dev.stapler.stelekit.projectbridge.ProjectBridgeDeps
+import dev.stapler.stelekit.platform.BrowserPersistence
+import dev.stapler.stelekit.platform.UnsupportedBrowserPersistence
+import dev.stapler.stelekit.projectbridge.EngineChangeBus
 import dev.stapler.stelekit.projectbridge.ProjectBridgeSettings
 import dev.stapler.stelekit.projectbridge.SketchDurability
 import dev.stapler.stelekit.projectbridge.ProjectSidecarStore
@@ -30,10 +34,13 @@ import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetLoader
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetSaver
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetSaverPorts
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetTarget
+import dev.stapler.stelekit.sketch.v2.runtime.session.ClassicNoticeLedger
 import dev.stapler.stelekit.sketch.v2.runtime.session.LeaseHolder
 import dev.stapler.stelekit.sketch.v2.runtime.session.LeaseRefusal
 import dev.stapler.stelekit.sketch.v2.runtime.session.SheetLease
+import dev.stapler.stelekit.sketch.v2.runtime.session.ProjectAckStore
 import dev.stapler.stelekit.sketch.v2.runtime.session.SheetLeaseRegistry
+import dev.stapler.stelekit.sketch.v2.runtime.telemetry.QualitySignals
 import dev.stapler.stelekit.sketch.v2.runtime.telemetry.SketchErrorState
 import dev.stapler.stelekit.sketch.v2.runtime.telemetry.SketchLog
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
@@ -47,6 +54,9 @@ import dev.stapler.stelekit.ui.sketch.RouteOutcome
 import dev.stapler.stelekit.ui.sketch.SheetSchema
 import dev.stapler.stelekit.ui.sketch.SketchEditorRouter
 import dev.stapler.stelekit.ui.sketch.SketchReasonText
+import dev.stapler.stelekit.ui.sketch.UpgradeAffordance
+import dev.stapler.stelekit.ui.sketch.v2.migration.ClassicNoticeDecision
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchConsentCopy
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchEditorStrings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchErrorStrings
 import dev.stapler.stelekit.util.UuidGenerator
@@ -59,6 +69,9 @@ class SketchEditorSession(
     val diagnostics: DiagnosticsHostState,
     val title: String,
     private val lease: SheetLease?,
+    /** The project slug and sheet this session edits; empty for a session built without them (a test). */
+    val slug: String = "",
+    val sheet: SheetUuid? = null,
 ) {
     fun close() {
         controller.close()
@@ -78,6 +91,22 @@ sealed interface EditorOpening {
 
     /** The v2 editor; [readOnly] shows the sheet without edits and with the router's banner. */
     class Editor(val session: SketchEditorSession) : EditorOpening
+
+    /**
+     * The classic editor for a project the new editor could own: [sheet] is its classic sheet (null for a project that has none
+     * yet), [affordance] says whether the Upgrade chip is offered, [createdNotice] the "Created as classic." toast to show once.
+     */
+    class ClassicEditor(
+        val projectUuid: ProjectUuid,
+        val slug: String,
+        val projectName: String,
+        val sheet: SheetUuid?,
+        val affordance: UpgradeAffordance,
+        val createdNotice: ClassicNoticeDecision.Toast?,
+    ) : EditorOpening
+
+    /** A new sketch project whose first sheet would be v2: the first-write dialog must be confirmed before anything is written. */
+    class NewSheetNeedsConfirm(val projectUuid: ProjectUuid, val slug: String, val projectName: String, val form: SketchConsentCopy.WarningForm) : EditorOpening
 }
 
 /** The seams the opener reads. The slug lock is the one the saver writes under. */
@@ -99,23 +128,49 @@ class V2EditorDeps(
     val durability: SketchDurability = ImmediateSketchDurability,
     /** The hidden-page flush request every open saver collects; silent elsewhere. */
     val lifecycle: PageLifecycle = NoPageLifecycle,
+    /** The device-local consent records; null leaves every project classic (Task 6.2.0c). */
+    val acks: ProjectAckStore? = null,
+    val classicNotices: ClassicNoticeLedger? = null,
+    val quality: QualitySignals? = null,
+    val persistence: BrowserPersistence = UnsupportedBrowserPersistence,
+    val warningForm: () -> SketchConsentCopy.WarningForm = { SketchConsentCopy.WarningForm.Full },
+    val engineChange: EngineChangeBus = EngineChangeBus(),
+    val newId: () -> String = { UuidGenerator.generateV7() },
+    val epochDay: () -> Long = { clockMillis() / MILLIS_PER_DAY },
 )
+
+private const val MILLIS_PER_DAY = 86_400_000L
 
 /**
  * Resolves what a project's first sheet opens in (Story 6.2.0b): the router's outcome for a v2 file, the legacy editor for anything
  * else. A v2 outcome that edits takes the sheet's edit lease first, so the classic editor can never open the same sheet.
  */
 class V2EditorOpener(private val deps: V2EditorDeps, private val context: CoroutineContext) {
-    suspend fun open(projectUuid: ProjectUuid?, metrics: TextMetricsProvider): EditorOpening {
+    private val entry = V2EntryDecider(deps)
+
+    suspend fun open(projectUuid: ProjectUuid?, metrics: TextMetricsProvider): EditorOpening = open(projectUuid, metrics, allowCreate = true)
+
+    /** Creates the project's first sheet as v2 after the first-write flow confirmed, then opens it. */
+    suspend fun createAndOpen(projectUuid: ProjectUuid, metrics: TextMetricsProvider): EditorOpening =
+        entry.createSheet(projectUuid).fold({ EditorOpening.Legacy }, { open(projectUuid, metrics, allowCreate = false) })
+
+    private suspend fun open(projectUuid: ProjectUuid?, metrics: TextMetricsProvider, allowCreate: Boolean): EditorOpening {
         val repos = deps.repos
         val uuid = projectUuid ?: repos.projects.getProjects(1, 0).first().getOrNull()?.firstOrNull()?.uuid ?: return EditorOpening.Legacy
         val project = repos.projects.loadProject(uuid).getOrNull()?.project ?: return EditorOpening.Legacy
-        val sheet = repos.sheets.getSheets(uuid, 1).first().getOrNull()?.items?.firstOrNull() ?: return EditorOpening.Legacy
-        val store = deps.store()
-        val isV2 = sheet.schemaVersion == SheetPaths.SCHEMA_V2 || store?.let { SheetFileSchemaProbe(it).isV2(project.slug, sheet.uuid) } == true
-        if (!isV2 || store == null) return EditorOpening.Legacy
+        val sheet = repos.sheets.getSheets(uuid, 1).first().getOrNull()?.items?.firstOrNull()
+        val store = deps.store() ?: return EditorOpening.Legacy
+        if (sheet == null) return openNew(project, store, metrics, allowCreate)
+        val isV2 = sheet.schemaVersion == SheetPaths.SCHEMA_V2 || SheetFileSchemaProbe(store).isV2(project.slug, sheet.uuid)
+        if (!isV2) return entry.forClassicSheet(project, sheet, store)
         return openV2(OpenTarget(store, project.slug, project.name, uuid, sheet.uuid), metrics)
     }
+
+    private suspend fun openNew(project: SketchProject, store: ProjectSidecarStore, metrics: TextMetricsProvider, allowCreate: Boolean): EditorOpening =
+        when (val decision = entry.forNewProject(project, store)) {
+            is EntryDecision.Show -> decision.opening
+            EntryDecision.CreateNow -> if (allowCreate) createAndOpen(project.uuid, metrics) else EditorOpening.Legacy
+        }
 
     /** Everything that names the one sheet being opened. */
     private class OpenTarget(val store: ProjectSidecarStore, val slug: String, val projectName: String, val project: ProjectUuid, val sheet: SheetUuid)
@@ -180,13 +235,14 @@ class V2EditorOpener(private val deps: V2EditorDeps, private val context: Corout
                 keymap = deps.keymap,
                 touchPresent = deps.touchPresent,
                 sequencer = deps.onboarding,
+                quality = deps.quality,
             ),
             context,
             readOnly = readOnlyReason != null,
         )
         val diagnostics = DiagnosticsHostState(port, controller.notices, deps.clockMillis)
         readOnlyReason?.let { port.raise(BannerRowId.ReadOnly, it) }
-        return EditorOpening.Editor(SketchEditorSession(controller, diagnostics, target.projectName, lease))
+        return EditorOpening.Editor(SketchEditorSession(controller, diagnostics, target.projectName, lease, target.slug, target.sheet))
     }
 }
 
@@ -199,6 +255,12 @@ fun ProjectBridgeDeps.v2EditorDeps(
     touchPresent: Boolean,
     onboarding: OnboardingSequencer? = null,
 ): V2EditorDeps = V2EditorDeps(
+    acks = acks,
+    classicNotices = classicNotices,
+    quality = quality,
+    persistence = browserPersistence,
+    warningForm = { if (sessionConfirmation.confirmed) SketchConsentCopy.WarningForm.Reference else SketchConsentCopy.WarningForm.Full },
+    engineChange = engineChange,
     repos = repos,
     store = sidecarStore,
     leases = sheetLeases,

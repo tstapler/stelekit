@@ -24,6 +24,7 @@ import dev.stapler.stelekit.sketch.v2.runtime.constraints.SolveRunner
 import dev.stapler.stelekit.sketch.v2.runtime.constraints.SolveState
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetSaver
+import dev.stapler.stelekit.sketch.v2.runtime.telemetry.QualitySignals
 import dev.stapler.stelekit.sketch.v2.runtime.telemetry.SketchErrorState
 import dev.stapler.stelekit.sketch.v2.runtime.telemetry.SketchLog
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
@@ -72,6 +73,8 @@ class EditorPorts(
     val touchPresent: Boolean = false,
     /** The onboarding sequencer the notice queue and the banner slot share; null shows no coach mark. */
     val sequencer: OnboardingSequencer? = null,
+    /** Local, never-transmitted counters for the flag-exit criteria; null counts nothing. */
+    val quality: QualitySignals? = null,
 )
 
 /**
@@ -166,6 +169,7 @@ class SketchEditorController(
     init {
         index.rebuild(initial.scene)
         if (initial.constraints.isNotEmpty()) analyze()
+        if (!readOnly) ports.quality?.beginSession()
     }
 
     private fun toolContext() = ToolContext(history.present.scene, ui.viewport.zoom, defaultStyle, ports.ids, index)
@@ -177,7 +181,10 @@ class SketchEditorController(
         } else {
             command
         }
-        placed.toCommand().fold(notifier::refuse, { submit(it) })
+        placed.toCommand().fold(
+            notifier::refuse,
+            { if (submit(it) == null && creation != null) ports.quality?.elementDrawn(history.present.sheetUuid) },
+        )
     }
 
     /**
@@ -283,6 +290,7 @@ class SketchEditorController(
     suspend fun flush(): SaveState = saves.flush()
 
     fun close() {
+        if (!readOnly) ports.quality?.endSession(ports.log)
         saves.close()
         runner.close()
         scope.cancel()

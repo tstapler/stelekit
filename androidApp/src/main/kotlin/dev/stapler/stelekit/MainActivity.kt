@@ -374,11 +374,15 @@ class MainActivity : ComponentActivity() {
                     backgroundTaskScheduler, taskSettingsStore, app.taskRegistry,
                 )
                 val manager = app.graphManager
-                val handler: (dev.stapler.stelekit.model.GraphId) -> Unit =
-                    { id -> cleanup.onRemoved(dev.stapler.stelekit.jobs.schedule.TaskScope(id.value)) }
+                // The slot is single: keep a handler the project bridge already chained onto it.
+                val previous = manager?.onGraphRemoved ?: {}
+                val handler: (dev.stapler.stelekit.model.GraphId) -> Unit = { id ->
+                    previous(id)
+                    cleanup.onRemoved(dev.stapler.stelekit.jobs.schedule.TaskScope(id.value))
+                }
                 manager?.onGraphRemoved = handler
                 onDispose {
-                    if (manager?.onGraphRemoved === handler) manager.onGraphRemoved = {}
+                    if (manager?.onGraphRemoved === handler) manager.onGraphRemoved = previous
                     cleanup.close()
                 }
             }

@@ -97,6 +97,7 @@ import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import dev.stapler.stelekit.model.EffectiveNotesPath
+import dev.stapler.stelekit.ui.sketch.v2.migration.sketchSettingsPorts as bridgeSketchSettingsPorts
 import dev.stapler.stelekit.ui.sketch.v2.v2EditorDeps as bridgeV2EditorDeps
 
 sealed class IndexingState {
@@ -518,6 +519,10 @@ class StelekitViewModel(
         )
         return projectBridgeDeps?.bridgeV2EditorDeps(repos, writeActor, activeGraphIdProvider, keymap, touchPresent, dev.stapler.stelekit.ui.sketch.v2.OnboardingSequencer(dev.stapler.stelekit.ui.sketch.v2.OnboardingCounters(platformSettings)))
     }
+
+    /** The Settings > Sketches controls' ports (mode, signals, browser storage); null where the project bridge keeps no consent records. */
+    fun sketchSettingsPorts(): dev.stapler.stelekit.ui.sketch.v2.migration.SketchSettingsPorts? =
+        projectBridgeDeps?.bridgeSketchSettingsPorts(activeGraphIdProvider)
 
     /** The graph's one sheet edit-lease registry; null where the project bridge is not wired. */
     fun sheetLeaseRegistry(): dev.stapler.stelekit.sketch.v2.runtime.session.SheetLeaseRegistry? = projectBridgeDeps?.sheetLeases

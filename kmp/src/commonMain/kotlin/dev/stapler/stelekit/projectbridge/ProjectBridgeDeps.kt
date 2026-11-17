@@ -9,7 +9,12 @@ import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.jobs.JobTracker
 import dev.stapler.stelekit.merge.TargetWriterRouter
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.sketch.v2.runtime.session.ClassicNoticeLedger
+import dev.stapler.stelekit.sketch.v2.runtime.session.ProjectAckStore
 import dev.stapler.stelekit.sketch.v2.runtime.session.SheetLeaseRegistry
+import dev.stapler.stelekit.sketch.v2.runtime.telemetry.QualitySignals
+import dev.stapler.stelekit.platform.BrowserPersistence
+import dev.stapler.stelekit.platform.UnsupportedBrowserPersistence
 import dev.stapler.stelekit.repository.SketchRepositories
 import kotlinx.coroutines.flow.Flow
 
@@ -53,4 +58,19 @@ class ProjectBridgeDeps(
     val sketchDurability: SketchDurability = ImmediateSketchDurability,
     /** The hidden-page flush request open savers collect; only the web root replaces the silent default. */
     val pageLifecycle: PageLifecycle = NoPageLifecycle,
-)
+    /** The device-local consent records of the migration UI (Task 6.2.0c); built once per root, null where no graph state exists. */
+    val acks: ProjectAckStore? = null,
+    val classicNotices: ClassicNoticeLedger? = null,
+    val quality: QualitySignals? = null,
+    val browserPersistence: BrowserPersistence = UnsupportedBrowserPersistence,
+    /** Whether a warning was confirmed in Settings this session (the first-write dialog then shows it by reference). */
+    val sessionConfirmation: SessionConfirmation = SessionConfirmation(),
+    /** Tells an open sketch editor that Settings changed the mode (UX-69). */
+    val engineChange: EngineChangeBus = EngineChangeBus(),
+) {
+    /** The `GraphManager.onGraphRemoved` cleanup of the per-graph consent records; a root composes it into its one handler slot. */
+    fun onGraphRemoved(graphId: String) {
+        acks?.removeGraph(graphId)
+        classicNotices?.removeGraph(graphId)
+    }
+}

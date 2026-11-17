@@ -25,6 +25,8 @@ fun LabsSection(
     homeSketchEnabled: Boolean,
     onHomeSketchToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    /** The Settings > Sketches new-editor controls; shown under the switch while sketching is on. */
+    sketchSection: (@Composable () -> Unit)? = null,
 ) {
     Column(modifier = modifier) {
         SettingsSection("Labs") {
@@ -40,6 +42,7 @@ fun LabsSection(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
                 )
+                sketchSection?.invoke()
             }
         }
     }

@@ -15,6 +15,9 @@ import androidx.test.core.app.ApplicationProvider
 import dev.stapler.stelekit.db.sidecar.FakeFileSystem
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.projectbridge.ProjectBridgeDeps
+import kotlin.test.assertFalse
+import dev.stapler.stelekit.sketch.v2.runtime.session.ProjectAckStore
+import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.projectbridge.SidecarCodec
 import dev.stapler.stelekit.projectbridge.SidecarRead
 import dev.stapler.stelekit.projectbridge.SketchDurability
@@ -140,6 +143,17 @@ class WiringV2AndroidEntryPointTest {
             val saved = SheetCodecV2.decode(read.files.getValue(rig.path)).getOrNull()
             assertEquals(1, saved?.scene?.elementsInOrder?.count { it is RectElement }, "the drawn rectangle is in the file the root's store holds")
         }
+
+        // Task 6.2.0c: the root built the consent records, and a graph removal clears them through GraphManager's one handler slot.
+        val settings = wired.deps.platformSettings
+        val gone = "removed-graph"
+        ProjectAckStore(settings) { gone }.acknowledge("proj-x")
+        val notices = assertNotNull(root.classicNotices)
+        notices.record(gone, "proj-x", "ModeOff", null)
+        assertNotNull(root.quality)
+        wired.graphManager.onGraphRemoved(GraphId(gone))
+        assertFalse(runBlocking { ProjectAckStore(settings) { gone }.isAcknowledged("proj-x") }, "the removed graph's acknowledgements are gone")
+        assertEquals(0, notices.size(gone), "the removed graph's classic-notice ledger is gone")
     }
 
     private companion object {

@@ -97,6 +97,8 @@ kt_android_library(
             # Mounts the v2 editor host over the root's project bridge and the commonTest rig (Gradle-only, no Compose plugin or commonTest here)
             "**/SketchEditorHostTest.kt",
             "**/WiringV2AndroidEntryPointTest.kt",
+            # Mounts the v2 route and the sketch settings section over the commonTest rig (Gradle-only, no Compose plugin or commonTest here)
+            "**/V2EntryRouteTest.kt",
             "**/DimensionFieldTest.kt",
             "**/SketchSheetPanelsTest.kt",
             "**/SketchDeleteAndPreviewTest.kt",

@@ -1143,6 +1143,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.ConsentCopyTest::class,
     dev.stapler.stelekit.sketch.v2.UxMigrationAcceptanceTest::class,
     dev.stapler.stelekit.sketch.v2.UpgradeOfferTest::class,
+    dev.stapler.stelekit.sketch.v2.V2EntryFlowTest::class,
     dev.stapler.stelekit.sketch.v2.UpgradeChipConsentSheetTest::class,
     dev.stapler.stelekit.sketch.v2.FlagModeSettingsTest::class,
     dev.stapler.stelekit.sketch.v2.NewerSchemaScreenTest::class,

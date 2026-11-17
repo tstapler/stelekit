@@ -23,7 +23,10 @@ import dev.stapler.stelekit.projectbridge.ClassicGatedSidecarStore
 import dev.stapler.stelekit.projectbridge.SyncedV2ProjectDiscovery
 import dev.stapler.stelekit.projectbridge.WebFileSideVerdict
 import dev.stapler.stelekit.projectbridge.FileProjectSidecarStore
+import dev.stapler.stelekit.sketch.v2.runtime.session.ClassicNoticeLedger
+import dev.stapler.stelekit.sketch.v2.runtime.session.ProjectAckStore
 import dev.stapler.stelekit.sketch.v2.runtime.session.SheetLeaseRegistry
+import dev.stapler.stelekit.sketch.v2.runtime.telemetry.QualitySignals
 import dev.stapler.stelekit.projectbridge.LoaderPageSettleProbe
 import dev.stapler.stelekit.projectbridge.ProjectSidecarStore
 import dev.stapler.stelekit.projectbridge.ProjectBridgeDeps
@@ -236,7 +239,7 @@ internal fun buildProjectBridgeDeps(
             ).also { cachedStore = root to it }
         }
     }
-    return ProjectBridgeDeps(
+    val bridge = ProjectBridgeDeps(
         routerProvider = deps.routerHolder::get,
         sketchRepositories = { deps.repos.sketchRepositories },
         sidecarStore = sidecarStore,
@@ -273,6 +276,10 @@ internal fun buildProjectBridgeDeps(
         },
         sketchDurability = deps.platformIntegrations.sketchDurability,
         pageLifecycle = deps.platformIntegrations.pageLifecycle,
+        acks = ProjectAckStore(deps.platformSettings) { graphManager.readyGraphId?.value },
+        classicNotices = ClassicNoticeLedger(deps.platformSettings),
+        quality = QualitySignals(deps.platformSettings),
+        browserPersistence = deps.platformIntegrations.browserPersistence,
         pageSettleProbe = LoaderPageSettleProbe(
             isIndexOnlyStub = { page ->
                 deps.repos.pageRepository.getPageByName(page.pageName).first().getOrNull()?.isContentLoaded == false
@@ -284,4 +291,11 @@ internal fun buildProjectBridgeDeps(
             },
         ),
     )
+    // GraphManager keeps ONE removal slot: chain onto whatever a root already installed (the cleanup is idempotent).
+    val previousHandler = graphManager.onGraphRemoved
+    graphManager.onGraphRemoved = { id ->
+        previousHandler(id)
+        bridge.onGraphRemoved(id.value)
+    }
+    return bridge
 }

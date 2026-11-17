@@ -457,10 +457,12 @@ internal fun ScreenRouter(
                     }
                     val previewLoader = dev.stapler.stelekit.ui.sketch.LocalSketchPreviewLoader.current
                     val v2Deps = remember(repos, viewModel) { viewModel.v2EditorDeps(repos.sketchRepositories, repos.writeActor) }
+                    val legacyFlush = remember { dev.stapler.stelekit.ui.sketch.v2.LegacyFlushHandle() }
                     dev.stapler.stelekit.ui.sketch.v2.SketchEditorV2Route(
                         deps = v2Deps,
                         projectUuid = currentScreen.projectUuid?.let { dev.stapler.stelekit.model.ProjectUuid(it) },
                         onBack = { viewModel.goBack() },
+                        legacyFlush = legacyFlush,
                     ) {
                         val sketchViewModel = remember(currentScreen.projectUuid, sketchExporter, previewLoader) {
                             dev.stapler.stelekit.ui.sketch.sketchViewModelFor(
@@ -471,6 +473,7 @@ internal fun ScreenRouter(
                                 v2Probe = viewModel.projectSidecarStore()?.let { dev.stapler.stelekit.projectbridge.SheetFileSchemaProbe(it) },
                             )
                         }
+                        SideEffect { legacyFlush.flush = { sketchViewModel.flush() } }
                         dev.stapler.stelekit.ui.sketch.SketchScreen(viewModel = sketchViewModel, onNavigateBack = { viewModel.goBack() }, exporter = sketchExporter)
                     }
                 }
