@@ -180,6 +180,8 @@ data class StelekitAppPlatformIntegrations(
         dev.stapler.stelekit.projectbridge.ImmediateSketchDurability,
     /** The hidden-page flush request that open savers collect; only the web root replaces the silent default (Task 1.4.7m). */
     val pageLifecycle: dev.stapler.stelekit.projectbridge.PageLifecycle = dev.stapler.stelekit.projectbridge.NoPageLifecycle,
+    /** The platform input seams of the v2 sketch canvas (palm, system cancel, edge exclusion, web raw pointers); nothing by default. */
+    val sketchInput: dev.stapler.stelekit.platform.SketchPlatformInput = dev.stapler.stelekit.platform.SketchPlatformInput.None,
     /** Downloads, clones and other work that finishes later; shown on the Background jobs screen. */
     val backgroundJobs: dev.stapler.stelekit.jobs.BackgroundJobRegistry = dev.stapler.stelekit.jobs.NoBackgroundJobs,
     /** Reads HTML from the system clipboard (bounded). Null disables rich-text paste; set on Desktop. */

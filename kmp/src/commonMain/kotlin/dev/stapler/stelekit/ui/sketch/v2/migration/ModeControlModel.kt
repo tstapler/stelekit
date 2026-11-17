@@ -4,8 +4,8 @@
 
 package dev.stapler.stelekit.ui.sketch.v2.migration
 
-import dev.stapler.stelekit.platform.PersistenceState
 import dev.stapler.stelekit.projectbridge.ModeDisabled
+import dev.stapler.stelekit.projectbridge.SessionConfirmation
 import dev.stapler.stelekit.projectbridge.V2Capabilities
 import dev.stapler.stelekit.projectbridge.V2Mode
 import dev.stapler.stelekit.projectbridge.isAvailable
@@ -68,17 +68,9 @@ object ModeChangePlanner {
         if (capabilities.disabledReason(V2Mode.NewProjectsOnly) == null) ModeChange.Confirm(EnableVariant.ReadOnlyUseNew, V2Mode.NewProjectsOnly) else null
 }
 
-/** Whether a warning was confirmed in Settings during THIS app session (the first-write dialog then shows it by reference). */
-class EnableSession {
-    private var confirmed = false
-
-    fun confirmedHere() {
-        confirmed = true
-    }
-
-    val form: SketchConsentCopy.WarningForm
-        get() = if (confirmed) SketchConsentCopy.WarningForm.Reference else SketchConsentCopy.WarningForm.Full
-}
+/** The warning form the first-write dialog shows: by reference right after the warning was confirmed in Settings during THIS app session. */
+val SessionConfirmation.warningForm: SketchConsentCopy.WarningForm
+    get() = if (confirmed) SketchConsentCopy.WarningForm.Reference else SketchConsentCopy.WarningForm.Full
 
 /** Whether the graph reaches durable storage; a graph opened temporarily keeps its sketches for the session only (UX-139). */
 enum class GraphLifetime { Persistent, Temporary }
@@ -125,21 +117,6 @@ data class ModeControlModel(
                 temporaryGraphLine = if (graph == GraphLifetime.Temporary) SketchMigrationStrings.Mode.TEMPORARY_GRAPH else null,
                 restDisabledReason = if (storageOk) null else SketchReasonText.v2StorageUnavailable(capabilities.storage),
             )
-        }
-    }
-}
-
-/** The "Browser storage" row of Settings > Sketches on the web build (UX-143, UX-147): a refused click is never silent. */
-data class BrowserStorageRow(val label: String, val statusLine: String?, val actionLabel: String?) {
-    companion object {
-        fun of(state: PersistenceState, asking: Boolean = false): BrowserStorageRow = when {
-            state == PersistenceState.Granted -> BrowserStorageRow(SketchMigrationStrings.Mode.STORAGE_KEPT, null, null)
-            state == PersistenceState.Unsupported ->
-                BrowserStorageRow(SketchMigrationStrings.Mode.STORAGE_NOT_GUARANTEED, SketchMigrationStrings.Mode.PERSIST_UNSUPPORTED, null)
-            asking -> BrowserStorageRow(SketchMigrationStrings.Mode.STORAGE_NOT_GUARANTEED, SketchMigrationStrings.Mode.ASKING, null)
-            state == PersistenceState.Denied ->
-                BrowserStorageRow(SketchMigrationStrings.Mode.STORAGE_NOT_GUARANTEED, SketchMigrationStrings.Mode.REFUSED, SketchMigrationStrings.Mode.ASK_BROWSER)
-            else -> BrowserStorageRow(SketchMigrationStrings.Mode.STORAGE_NOT_GUARANTEED, null, SketchMigrationStrings.Mode.ASK_BROWSER)
         }
     }
 }

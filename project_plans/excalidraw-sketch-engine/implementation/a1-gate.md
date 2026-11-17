@@ -12,7 +12,7 @@
 | Item | State |
 |---|---|
 | Rendered slice (Task 6.2.4g, `RenderedSliceScenarioTest`) | merged in W9 |
-| Decision rule (`A1Gate` in `sketch/v2/diagnostics/A1Gate.kt`, `A1GateTest`): UNMEASURED, PIVOT, ADJUST, PROCEED; ratio bar `A1Gate.RATIO_BAR` = 2.0 (INFERRED, tunable) | written and tested with fixture inputs, not owner data |
+| Decision rule (`A1Gate` in `commonTest/.../sketch/v2/diagnostics/A1Gate.kt`, `A1GateTest`): UNMEASURED, PIVOT, ADJUST, PROCEED; ratio bar `A1Gate.RATIO_BAR` = 2.0 (INFERRED, tunable) | written and tested with fixture inputs, not owner data |
 | Choosing a reachable diagram, drawing it twice, timing both, naming blockers, answering would-continue | OWNER-ONLY, not done |
 | Recording the result below | OWNER-ONLY, not done |
 

@@ -58,6 +58,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
+import dev.stapler.stelekit.ui.sketch.CuePlacement
+import dev.stapler.stelekit.ui.sketch.DurabilityCue
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchGoToStrings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchHostStrings
@@ -126,6 +128,8 @@ data class SketchShellConfig(
     val onSnap: (() -> Unit)? = null,
     /** The overflow entry "Restore original (v1) sheet"; null hides it (no restore action wired). */
     val restore: RestoreMenuEntry? = null,
+    /** The persistent cue of a suspected private window or a temporary graph (UX-153); null shows none. */
+    val durabilityCue: DurabilityCueView? = null,
 )
 
 object ShellTags {
@@ -147,6 +151,7 @@ object ShellTags {
     const val OVERFLOW_GO_TO = "sketch.overflow.goto"
     const val BANNER = "sketch.banner"
     const val HINT = "sketch.hint"
+    const val DURABILITY_CUE = "sketch.cue.durability"
     const val PANEL = "sketch.panel"
     fun tab(tab: PanelTab) = "sketch.tab.${tab.name.lowercase()}"
     fun layout(placement: StripPlacement) = "sketch.layout.${placement.name.lowercase()}"
@@ -201,6 +206,7 @@ private fun SketchShell(
     val fontScale = LocalDensity.current.fontScale.toDouble()
     val plan = remember(window, fontScale) { ChromeBudget.plan(window.width, window.height, fontScale, config.model.stripTools.size) }
     val hintShown = ChromeRow.HintStatus in ChromeBudget.presentRows(layout) && ChromeRow.HintStatus !in plan.collapsed
+    val cue = remember(config.durabilityCue, window, fontScale) { config.durabilityCue?.let { DurabilityCueHost.shown(it, window.width, window.height, fontScale) } }
     val focus = remember { ShellFocus(FocusRequester(), FocusRequester()) }
     val grouped = !config.model.isFlat(extent)
     val regions = remember { RegionFocus(mapOf(TabStop.Canvas to focus.canvas, TabStop.TopBar to focus.overflow)) }
@@ -220,7 +226,7 @@ private fun SketchShell(
                 Column(Modifier.fillMaxSize()) {
                     ShellTopBar(state, config, focus, grouped, window, regions)
                     BannerSlot(state, config, focus, grouped)
-                    CanvasArea(state, config, focus, regions, Modifier.weight(1f), hintShown, canvas)
+                    CanvasArea(state, config, focus, regions, Modifier.weight(1f), hintShown, cue, canvas)
                     if (state.panelTab != null) panelContent()
                     strip(Modifier.fillMaxWidth())
                 }
@@ -230,7 +236,7 @@ private fun SketchShell(
                     Column(Modifier.weight(1f)) {
                         ShellTopBar(state, config, focus, grouped, window, regions)
                         BannerSlot(state, config, focus, grouped)
-                        CanvasArea(state, config, focus, regions, Modifier.weight(1f), hintShown, canvas)
+                        CanvasArea(state, config, focus, regions, Modifier.weight(1f), hintShown, cue, canvas)
                     }
                     if (layout.panels == PanelHost.PersistentPane || state.panelTab != null) panelContent()
                 }
@@ -423,6 +429,7 @@ private fun CanvasArea(
     regions: RegionFocus,
     modifier: Modifier = Modifier,
     hintShown: Boolean = true,
+    cue: ShownCue? = null,
     canvas: @Composable BoxScope.() -> Unit,
 ) {
     var canvasPx by remember { mutableStateOf(IntSize.Zero) }
@@ -431,11 +438,12 @@ private fun CanvasArea(
         canvas()
         if (config.banner?.emptyStateVisible == true) EmptyState(config.emptyActions, Modifier.align(Alignment.Center))
         Column(Modifier.align(Alignment.TopStart).padding(8.dp)) {
-            if (hintShown) Text(hintLine(state, config.pointer), Modifier.testTag(ShellTags.HINT), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (hintShown) Text(cueHint(cue, hintLine(state, config.pointer), canvasPx.width / density.density), Modifier.testTag(ShellTags.HINT), color = MaterialTheme.colorScheme.onSurfaceVariant)
             config.toasts?.let { ToastLaneOverlay(it, canvasPx.height / density.density) }
         }
         ActionChipRow(
             listOfNotNull(
+                cue?.takeIf { it.placement == CuePlacement.ChipRow }?.let { ActionChip(ShellTags.DURABILITY_CUE, it.chip?.text.orEmpty(), it.view.accessibleName, it.view.onActivate) },
                 if (state.toolLock) ActionChip(ShellTags.TOOL_LOCK_CHIP, SketchStrings.Chrome.TOOL_LOCK_CHIP) { state.toolLock = false } else null,
                 config.autoConstrain?.takeIf { config.constraintsAvailable }?.let(AutoConstrainChips::freeDraw),
             ) + config.extraChips,
@@ -463,6 +471,9 @@ private fun CanvasArea(
         }
     }
 }
+
+private fun cueHint(cue: ShownCue?, hint: String, widthDp: Float): String =
+    DurabilityCueHost.hintText(cue, hint, DurabilityCue.charsThatFit(widthDp.toInt(), 1.0))
 
 /** The tools that draw by dragging: with Finger drawing OFF and a touch pointer present they say how to draw with touch (UX-80). */
 private val DRAG_TOOLS = setOf(ToolId.Rectangle, ToolId.Diamond, ToolId.Ellipse, ToolId.Arrow, ToolId.Freedraw, ToolId.Frame)

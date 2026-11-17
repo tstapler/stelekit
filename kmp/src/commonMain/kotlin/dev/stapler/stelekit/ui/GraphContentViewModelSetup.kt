@@ -280,6 +280,7 @@ internal fun buildProjectBridgeDeps(
         classicNotices = ClassicNoticeLedger(deps.platformSettings),
         quality = QualitySignals(deps.platformSettings),
         browserPersistence = deps.platformIntegrations.browserPersistence,
+        sketchInput = deps.platformIntegrations.sketchInput,
         pageSettleProbe = LoaderPageSettleProbe(
             isIndexOnlyStub = { page ->
                 deps.repos.pageRepository.getPageByName(page.pageName).first().getOrNull()?.isContentLoaded == false

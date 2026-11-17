@@ -149,6 +149,7 @@ import org.junit.runners.Suite
     // ChromeBudgetTest, ActionChipRowTest, TopBarTest and CapacityUxTest (sketch v2, Stories 3.1.4 and 2.2.4) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
     // TextMetricsAndroidEntryPointTest is excluded for the same reason (1) and composes a @Composable (no Compose plugin in this target).
     // SketchStorageAndroidEntryPointTest (Task 1.4.3q) is excluded for the same reason (1), composes @Composable calls and needs the commonTest FakeFileSystem.
+    // SketchPlatformInputAndroidEntryPointTest (Task 3.1.2h) is excluded for the same reason (1), composes @Composable calls and needs the commonTest FakeFileSystem.
     // LeaveSketchPromptTest is excluded for the same reason (1) and composes a @Composable (no Compose plugin in this target).
     // RestoreBackupDialogTest (sketch backup restore, Tasks 6.2.6b and 6.2.6c) is excluded for the same reason (1) and composes @Composable lambdas (no Compose plugin in this target).
     // MigrationUiTest (sketch v2 migration and enablement composables, Story 1.4.6) is excluded for the same reason (1) and composes @Composable lambdas (no Compose plugin in this target).

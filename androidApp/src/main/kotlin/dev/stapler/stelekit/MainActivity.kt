@@ -559,6 +559,16 @@ class MainActivity : ComponentActivity() {
                         taskRegistry = app.taskRegistry,
                         sketchWriterLease = dev.stapler.stelekit.ui.SketchStorageDefaults.writerLease(),
                         browserPersistence = dev.stapler.stelekit.ui.SketchStorageDefaults.browserPersistence(),
+                        sketchInput = remember {
+                            dev.stapler.stelekit.platform.SketchPlatformInput(
+                                palm = dev.stapler.stelekit.platform.AndroidPalmClassifier,
+                                cancel = dev.stapler.stelekit.platform.AndroidPointerCancelDetector,
+                                edgeExclusion = dev.stapler.stelekit.platform.AndroidEdgeGestureExclusion(
+                                    window.decorView,
+                                    (dev.stapler.stelekit.ui.sketch.v2.EdgePanGeometry.EXPECTED_SPAN_DP * resources.displayMetrics.density).toInt(),
+                                ),
+                            )
+                        },
                         backgroundSyncSchedulerFactory = BackgroundSyncSchedulerFactory(
                             minimumIntervalMinutes = WorkManagerSyncScheduler.MIN_PERIODIC_INTERVAL_MINUTES.toInt(),
                         ) { graphId -> WorkManagerSyncScheduler(applicationContext, graphId) },

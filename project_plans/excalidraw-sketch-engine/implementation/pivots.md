@@ -8,7 +8,7 @@ Outcomes are proceed, narrow or defer. No checkpoint removes a feature from scop
 Trigger: the 500-element p95 frame time of a target exceeds BOTH 1.5x the empty-canvas reference (Task 0.1.7b) AND the 24 ms ceiling.
 Order when it fires: (1) confirm the static layer cache and viewport culling (built in Story 2.1.3), (2) lower
 `SceneLimits.softElementThreshold` for that target only, (3) if still failing, record the supported element count in the release notes.
-It never blocks the JVM/desktop release. The rule is `CanvasPerfCheckpoint` (`sketch/v2/diagnostics/CanvasPerfCheckpoint.kt`,
+It never blocks the JVM/desktop release. The rule is `CanvasPerfCheckpoint` (`commonTest/.../sketch/v2/diagnostics/CanvasPerfCheckpoint.kt`,
 `CanvasPerfCheckpointTest`); rerun it with each new figure.
 
 | Target | Figure (p95, 500 elements) | Empty canvas p95 | Source | Outcome |
@@ -50,7 +50,7 @@ Notes:
 Trigger (requirements.md "Abort and pivot criteria"): fewer than all six hand-authored fixtures round-trip with exact geometry for the supported subset.
 Switch when it fires: the failing fixtures' element kinds leave the stated supported subset (importer placeholders per OD-6 apply); with four or fewer of six
 passing, import ships labelled "beta" and export stays off by default until fixed; the owner, not the implementer, then amends metric 7.
-The rule is `FidelityCheckpoint` (`sketch/v2/diagnostics/FidelityCheckpoint.kt`, `FidelityCheckpointTest`); rerun it with each new set of results.
+The rule is `FidelityCheckpoint` (`commonTest/.../sketch/v2/diagnostics/FidelityCheckpoint.kt`, `FidelityCheckpointTest`); rerun it with each new set of results.
 
 | Fixture set | Result | Source | Outcome |
 |---|---|---|---|
@@ -65,7 +65,7 @@ Notes:
 
 Trigger (requirements.md "Abort and pivot criteria"): `BindingInvariantPropertyTest` cannot hold the invariant (every `Binding.elementId` resolves, `reconcile` has nothing to repair) over rotate, group transform and paste.
 Switch when it fires: v1 ships bind-on-drop, follow-on-move and unbind-on-delete only; rotate and group transform leave a bound arrow end at its last position, unbind it and show a notice. Elbow routing stays stored-only (OD-7) in every outcome. A dangling id after `reconcile` blocks release; a missing convenience does not.
-The rule is `BindingCheckpoint` (`sketch/v2/diagnostics/BindingCheckpoint.kt`, `BindingCheckpointTest`); rerun it with each new set of results.
+The rule is `BindingCheckpoint` (`commonTest/.../sketch/v2/diagnostics/BindingCheckpoint.kt`, `BindingCheckpointTest`); rerun it with each new set of results.
 
 | Operation | Invariant | Source | Outcome |
 |---|---|---|---|

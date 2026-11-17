@@ -18,19 +18,23 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import dev.stapler.stelekit.model.ProjectUuid
 import dev.stapler.stelekit.model.SheetUuid
+import dev.stapler.stelekit.projectbridge.FileProjectSidecarStore
 import dev.stapler.stelekit.projectbridge.V2Build
 import dev.stapler.stelekit.ui.sketch.rememberModernPreviewEnvironment
 import dev.stapler.stelekit.ui.sketch.v2.migration.EditorOpen
 import dev.stapler.stelekit.ui.sketch.v2.migration.EngineChangeFlow
+import dev.stapler.stelekit.ui.sketch.v2.migration.LastBackupExporter
 import dev.stapler.stelekit.ui.sketch.v2.migration.NoEditorAction
 import dev.stapler.stelekit.ui.sketch.v2.migration.NoEditorDetails
 import dev.stapler.stelekit.ui.sketch.v2.migration.NoEditorModel
 import dev.stapler.stelekit.ui.sketch.v2.migration.NoEditorScreen
 import dev.stapler.stelekit.ui.sketch.v2.migration.PendingModel
 import dev.stapler.stelekit.ui.sketch.v2.migration.PendingScreen
+import dev.stapler.stelekit.ui.sketch.v2.migration.ReleasesPageUpdateCheck
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -117,7 +121,7 @@ fun SketchEditorV2Route(
         when {
             busy || stage == null || stage is EditorOpening.NewSheetNeedsConfirm -> SketchEditorLoading()
             stage === EditorOpening.Pending -> PendingScreen(PendingModel.at(0), onClose = onBack)
-            stage is EditorOpening.NoEditor -> NoEditor(stage, onBack, onReload = { attempt += 1 })
+            stage is EditorOpening.NoEditor -> NoEditor(stage, deps?.platform ?: HostPlatform(), onBack, onReload = { attempt += 1 })
             stage is EditorOpening.Editor -> EditorStage(stage.session, environment, onBack, pointer, actions, restore)
             else -> if (stage is EditorOpening.ClassicEditor && actions != null && deps != null) {
                 ClassicWithOffer(stage, actions, deps, onStart = { steps?.start(scope, stage) }, legacy = legacy)
@@ -155,9 +159,20 @@ private fun EditorStage(
 }
 
 @Composable
-private fun NoEditor(opening: EditorOpening.NoEditor, onBack: () -> Unit, onReload: () -> Unit, modifier: Modifier = Modifier) {
-    val model = NoEditorModel.of(opening.reason, hasBackup = false)
+private fun NoEditor(
+    opening: EditorOpening.NoEditor,
+    platform: HostPlatform,
+    onBack: () -> Unit,
+    onReload: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val exporter = remember(opening, platform) { lastBackupExporterOf(platform, opening.slug) }
+    val hasBackup = remember(exporter) { exporter?.hasBackup() == true }
+    val model = remember(opening, hasBackup) { NoEditorModel.of(opening.reason, hasBackup) }
     val clipboard = LocalClipboardManager.current
+    val uriHandler = LocalUriHandler.current
+    val updateCheck = remember(uriHandler) { ReleasesPageUpdateCheck(uriHandler::openUri) }
+    val scope = rememberCoroutineScope()
     NoEditorScreen(
         model,
         onAction = { action ->
@@ -166,11 +181,21 @@ private fun NoEditor(opening: EditorOpening.NoEditor, onBack: () -> Unit, onRelo
                 NoEditorAction.Reload -> onReload()
                 NoEditorAction.CopyDetails ->
                     clipboard.setText(AnnotatedString(NoEditorDetails(opening.sketchName, opening.projectName, SCHEMA_V2, PLATFORM_UNKNOWN).text(model)))
+                NoEditorAction.CheckForUpdates -> updateCheck.check()
+                NoEditorAction.ExportLastBackup -> exporter?.let { scope.launch { it.export() } }
                 else -> Unit
             }
         },
         modifier = modifier,
     )
+}
+
+/** The exporter of the newest v1 backup of the project [slug] names, or null where the host has no file system, notes folder or slug. */
+internal fun lastBackupExporterOf(platform: HostPlatform, slug: String?): LastBackupExporter? {
+    val fs = platform.fileSystem ?: return null
+    val notes = platform.notesDirectory() ?: return null
+    val project = slug ?: return null
+    return LastBackupExporter(fs, "${notes.trimEnd('/')}/${FileProjectSidecarStore.ROOT_DIR}/$project/${FileProjectSidecarStore.BACKUP_DIR}")
 }
 
 private const val SCHEMA_V2 = "2"

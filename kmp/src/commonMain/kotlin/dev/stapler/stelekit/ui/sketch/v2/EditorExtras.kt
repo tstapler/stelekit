@@ -79,6 +79,9 @@ class EditorExtras(
     }
     val library = LibraryHost(controller, services)
 
+    /** The platform input seams: palm, system cancel, edge-pan strips and the web raw pointer source. */
+    val input = PlatformInputHost(services.platform, controller.tools.adapter, controller.tools::onPointerActions, controller.notifier.queue.sequencer)
+
     private val filePort: SketchFilePort = services.files ?: UnavailableFilePort
 
     val importer = ExcalidrawImportController(

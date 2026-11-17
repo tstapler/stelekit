@@ -76,6 +76,9 @@ object SketchWebStorageStrings {
 
     /** The four forms of a persistent cue, longest first (block `cue-forms`). */
     object Cue {
+        /** The key of the toast the cue chip raises, so repeated activations coalesce. */
+        const val TOAST_KEY = "DurabilityCue"
+
         const val PRIVATE_FULL = "Private window: may be cleared."
         const val PRIVATE_MID = "Private window: may clear."
         const val PRIVATE_COMPACT = "Private: may clear."

@@ -6,6 +6,7 @@ IOSCameraProvider  out-of-scope-ios  never
 IOSKableBleScanner  out-of-scope-ios  never
 CoreMlImageLabeler  out-of-scope-ios  never
 IosPdfTextExtractor  out-of-scope-ios  never
+IosEdgeGestureExclusion  out-of-scope-ios  never
 # Verified false positives and entry points (Task 7.5a); non-expiring, dated with the verification day.
 AhoCorasickBenchmark  entry-point kotlinx-benchmark class run by ./gradlew :kmp:jvmBenchmark (7 benchmarks in kmp/build/reports/benchmarks/main/*/jvm.json)  2026-10-27  renewals=0
 ICommandRegistry  false-positive interface seam implemented by CommandRegistry in editor/commands/CommandRegistry.kt:57  2026-10-27  renewals=0

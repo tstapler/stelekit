@@ -67,6 +67,8 @@ class ProjectBridgeDeps(
     val sessionConfirmation: SessionConfirmation = SessionConfirmation(),
     /** Tells an open sketch editor that Settings changed the mode (UX-69). */
     val engineChange: EngineChangeBus = EngineChangeBus(),
+    /** The platform root's palm, cancel, edge-exclusion and raw-pointer seams of the v2 canvas (Task 3.1.2h). */
+    val sketchInput: dev.stapler.stelekit.platform.SketchPlatformInput = dev.stapler.stelekit.platform.SketchPlatformInput.None,
 ) {
     /** The `GraphManager.onGraphRemoved` cleanup of the per-graph consent records; a root composes it into its one handler slot. */
     fun onGraphRemoved(graphId: String) {

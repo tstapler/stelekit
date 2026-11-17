@@ -45,6 +45,7 @@ import dev.stapler.stelekit.sketch.v2.view.SceneBounds
 import dev.stapler.stelekit.sketch.v2.view.ScreenPx
 import dev.stapler.stelekit.ui.sketch.ModernPreviewEnvironment
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchEditorStrings
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchWebStorageStrings
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.yield
 
@@ -77,6 +78,10 @@ fun SketchEditorV2Host(
     val state = controller.ui
     val extras = remember(session, environment) { EditorExtras(controller, session.services, environment) }
     SideEffect { session.extras = extras }
+    if (controller.keymap.isWeb) StillSavingEffect(controller)
+    val cue = remember(session) {
+        DurabilityCueHost.viewOf(session.services.platform.storageStatus()) { controller.notifier.toast(SketchWebStorageStrings.Cue.TOAST_KEY, it) }
+    }
     DisposableEffect(session) {
         onDispose {
             extras.close()
@@ -131,6 +136,8 @@ fun SketchEditorV2Host(
         importDisabledReason = extras.importDisabledReason,
         onExport = if (extras.exportAvailable) extras.exporter::open else null,
         extraChips = solveChips(controller, solving),
+        edgeStripAtEnd = extras.input.stripAtEnd,
+        durabilityCue = cue,
         grid = extras.grid,
         snap = extras.snap,
         onGrid = extras::toggleGrid,
@@ -144,8 +151,9 @@ fun SketchEditorV2Host(
             window = window,
             panel = { tab -> SketchPanels(controller, tab, extras) },
             canvas = {
-                SketchCanvasContent(controller, environment, pointer)
+                SketchCanvasContent(controller, environment, pointer, extras.input)
                 ExtrasCanvasOverlays(controller, extras, pointer)
+                PlatformInputOverlays(extras.input)
             },
         )
         HostOverlays(controller, extras, singleKey) { singleKey = it }
@@ -200,7 +208,7 @@ private fun SaveState.toStatus(): SaveStatus = when (this) {
 
 /** The canvas: the static scene, the live gesture preview, the selection frame, name tags and the text editor, with pointer and wheel input on top. */
 @Composable
-private fun BoxScope.SketchCanvasContent(controller: SketchEditorController, environment: ModernPreviewEnvironment, pointer: PointerClass) {
+private fun BoxScope.SketchCanvasContent(controller: SketchEditorController, environment: ModernPreviewEnvironment, pointer: PointerClass, input: PlatformInputHost) {
     val state = controller.ui
     val fontStatus = environment.metrics.fontStatus
     val builder = remember(environment) { DrawListBuilder(environment.metrics) }
@@ -217,7 +225,7 @@ private fun BoxScope.SketchCanvasContent(controller: SketchEditorController, env
         Modifier.fillMaxSize()
             .testTag(HostTags.CANVAS_INPUT)
             .onSizeChanged { controller.view.canvasSize = ScreenPx(it.width.toDouble(), it.height.toDouble()) }
-            .sketchPointerInput(controller.tools.adapter) { controller.tools.onPointerActions(it) }
+            .platformPointerInput(controller, input)
             .wheelInput(controller),
     ) {
         SketchCanvasV2(layer, liveOps, viewport, painter)
@@ -254,6 +262,14 @@ private fun BoxScope.NameTagsOverlay(controller: SketchEditorController) {
     }
     NameTags(layout, Modifier.align(Alignment.TopStart))
 }
+
+/** Compose's pointer events feed the adapter through the platform's palm and cancel seams, unless the platform supplies its own samples (the web). */
+private fun Modifier.platformPointerInput(controller: SketchEditorController, input: PlatformInputHost): Modifier =
+    if (input.usesRawPointers) {
+        this
+    } else {
+        sketchPointerInput(controller.tools.adapter, input.palm, input.cancel) { controller.tools.onPointerActions(it) }
+    }
 
 /** The wheel and trackpad scroll: it pans, and with Ctrl it zooms; the adapter holds the rule. */
 private fun Modifier.wheelInput(controller: SketchEditorController): Modifier = pointerInput(controller) {

@@ -12,13 +12,14 @@ import dev.stapler.stelekit.projectbridge.V2Mode
 import dev.stapler.stelekit.projectbridge.V2Storage
 import dev.stapler.stelekit.sketch.v2.runtime.session.AckLevel
 import dev.stapler.stelekit.sketch.v2.runtime.session.ProjectAckStore
-import dev.stapler.stelekit.ui.sketch.v2.migration.BrowserStorageRow
+import dev.stapler.stelekit.ui.sketch.BrowserStorageUx
 import dev.stapler.stelekit.ui.sketch.v2.migration.EnableVariant
 import dev.stapler.stelekit.ui.sketch.v2.migration.GraphLifetime
 import dev.stapler.stelekit.ui.sketch.v2.migration.ModeChange
 import dev.stapler.stelekit.ui.sketch.v2.migration.ModeChangePlanner
 import dev.stapler.stelekit.ui.sketch.v2.migration.ModeControlModel
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchMigrationStrings
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchWebStorageStrings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -139,13 +140,14 @@ class FlagModeSettingsTest {
 
     @Test
     fun theBrowserStorageRow_should_NeverBeSilentAboutARefusal() {
-        assertEquals(BrowserStorageRow("Kept", null, null), BrowserStorageRow.of(PersistenceState.Granted))
-        assertEquals(SketchMigrationStrings.Mode.ASK_BROWSER, BrowserStorageRow.of(PersistenceState.NotRequested).actionLabel)
-        assertEquals("Asking the browser...", BrowserStorageRow.of(PersistenceState.NotRequested, asking = true).statusLine)
-        val refused = BrowserStorageRow.of(PersistenceState.Denied)
+        val kept = BrowserStorageUx.row(PersistenceState.Granted)
+        assertEquals(listOf("Kept", null, null), listOf(kept.label, kept.statusLine, kept.actionLabel))
+        assertEquals(SketchWebStorageStrings.StorageRow.ASK, BrowserStorageUx.row(PersistenceState.NotRequested).actionLabel)
+        assertEquals("Asking the browser...", BrowserStorageUx.askingRow().statusLine)
+        val refused = BrowserStorageUx.row(PersistenceState.Denied)
         assertTrue(refused.statusLine!!.startsWith("The browser said no."))
-        assertEquals(SketchMigrationStrings.Mode.ASK_BROWSER, refused.actionLabel)
-        val unsupported = BrowserStorageRow.of(PersistenceState.Unsupported)
+        assertEquals(SketchWebStorageStrings.StorageRow.ASK, refused.actionLabel)
+        val unsupported = BrowserStorageUx.row(PersistenceState.Unsupported)
         assertNull(unsupported.actionLabel)
         assertEquals("This browser can't promise to keep site storage.", unsupported.statusLine)
     }

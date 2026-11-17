@@ -37,7 +37,10 @@ object WebSketchPlatformInput {
             onPointer(raw)
         }
         val handle = addListeners(host, listener)
-        return { removeListeners(host, handle) }
+        return {
+            removeListeners(host, handle)
+            clearTouchAction(host)
+        }
     }
 
     /**
@@ -89,6 +92,10 @@ object WebSketchPlatformInput {
         else -> PointerKind.Touch
     }
 
+    /** The web root's [SketchPlatformInput]: the DOM pointer source and the overscroll-based edge exclusion of [host]. */
+    fun sketchInput(host: JsAny): SketchPlatformInput =
+        SketchPlatformInput(rawPointers = RawPointerSource { onPointer -> install(host, onPointer) }, edgeExclusion = edgeExclusion(host))
+
     internal fun computedStyle(host: JsAny, property: String): String = computedStyleOf(host, property)
 
     /**
@@ -109,6 +116,9 @@ private fun computedStyleOf(host: JsAny, property: String): String =
 
 private fun setOverscroll(host: JsAny, value: String): Unit =
     js("(function() { host.style.overscrollBehavior = value; })()")
+
+private fun clearTouchAction(host: JsAny): Unit =
+    js("(function() { host.style.touchAction = ''; host.style.overscrollBehavior = ''; })()")
 
 private fun applyTouchAction(host: JsAny): Unit =
     js("(function() { host.style.touchAction = 'none'; host.style.overscrollBehavior = 'none'; })()")

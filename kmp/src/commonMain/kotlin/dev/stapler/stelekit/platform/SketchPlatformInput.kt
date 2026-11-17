@@ -4,6 +4,8 @@
 
 package dev.stapler.stelekit.platform
 
+import dev.stapler.stelekit.ui.sketch.v2.RawPointer
+
 /**
  * Platform seams of the v2 sketch canvas input (Task 3.1.2h). Each platform supplies its own host; the pointer adapter and
  * the edge-pan strip (Task 3.1.2g) only see these interfaces. Device behaviour is UNVERIFIED until Task 0.1.4d: no host
@@ -59,5 +61,30 @@ fun interface PalmClassifier {
     companion object {
         /** No platform classification: every contact is a deliberate touch. */
         val None = PalmClassifier { _, _ -> false }
+    }
+}
+
+/**
+ * Feeds the host the pointer samples of a platform that has a richer source than Compose (the web build's DOM pointer events,
+ * which carry pen type, pressure, eraser and barrel button). [install] starts forwarding and returns the disposer. A host
+ * that has a source takes its samples from it and does not also listen through Compose, so no contact is seen twice.
+ */
+fun interface RawPointerSource {
+    fun install(onPointer: (RawPointer) -> Unit): () -> Unit
+}
+
+/**
+ * What one platform root adds to the v2 canvas input (Task 3.1.2h): the palm classifier, the system-cancel detector, the
+ * edge-gesture exclusion and, on the web, a raw pointer source. Every field defaults to "nothing": a root that wires none
+ * keeps the Compose-only input and the edge-pan strip Off.
+ */
+data class SketchPlatformInput(
+    val palm: PalmClassifier = PalmClassifier.None,
+    val cancel: PointerCancelDetector = PointerCancelDetector.None,
+    val edgeExclusion: EdgeGestureExclusion? = null,
+    val rawPointers: RawPointerSource? = null,
+) {
+    companion object {
+        val None = SketchPlatformInput()
     }
 }

@@ -4,7 +4,8 @@
 
 package dev.stapler.stelekit.sketch.v2
 
-import dev.stapler.stelekit.ui.sketch.v2.migration.EnableSession
+import dev.stapler.stelekit.projectbridge.SessionConfirmation
+import dev.stapler.stelekit.ui.sketch.v2.migration.warningForm
 import dev.stapler.stelekit.ui.sketch.v2.migration.EnableVariant
 import dev.stapler.stelekit.ui.sketch.v2.migration.FirstWriteDialogModel
 import dev.stapler.stelekit.ui.sketch.v2.migration.FirstWriteVariant
@@ -63,11 +64,11 @@ class ConsentCopyTest {
 
     @Test
     fun firstWriteDialog_should_UseTheReferenceFormOnlyRightAfterAnEnableConfirmation() {
-        val session = EnableSession()
-        val before = dialog(FirstWriteVariant.Convert, session.form).blocks
+        val session = SessionConfirmation()
+        val before = dialog(FirstWriteVariant.Convert, session.warningForm).blocks
         assertTrue(warning in before)
         session.confirmedHere()
-        val after = dialog(FirstWriteVariant.Convert, session.form).blocks
+        val after = dialog(FirstWriteVariant.Convert, session.warningForm).blocks
         assertFalse(warning in after.joinToString(" "))
         assertTrue(SketchConsentCopy.projectReference("Kitchen") in after)
         assertTrue(SketchConsentCopy.backupSentence("kitchen/backup/") in after, "the backup sentence stays in the convert variant")

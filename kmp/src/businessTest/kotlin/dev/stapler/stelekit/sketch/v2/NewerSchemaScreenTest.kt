@@ -8,6 +8,8 @@ import dev.stapler.stelekit.git.testsupport.StubFileSystem
 import dev.stapler.stelekit.platform.StorageReason
 import dev.stapler.stelekit.projectbridge.V2Storage
 import dev.stapler.stelekit.ui.sketch.NoEditorReason
+import dev.stapler.stelekit.ui.sketch.v2.HostPlatform
+import dev.stapler.stelekit.ui.sketch.v2.lastBackupExporterOf
 import dev.stapler.stelekit.ui.sketch.v2.migration.LastBackupExporter
 import dev.stapler.stelekit.ui.sketch.v2.migration.NoEditorAction
 import dev.stapler.stelekit.ui.sketch.v2.migration.NoEditorDetails
@@ -131,5 +133,16 @@ class NewerSchemaScreenTest {
         val fs = BackupFs(mutableMapOf("$backupDir/a.v1.json" to byteArrayOf(1)), picked = null)
         assertNull(LastBackupExporter(fs, backupDir).export())
         assertTrue(fs.written.isEmpty())
+    }
+
+    @Test
+    fun theRoute_should_FindTheBackupOfTheSlugItOpened_AndNoneWithoutAFileSystemFolderOrSlug() {
+        val fs = BackupFs(mutableMapOf("$backupDir/a.v1.json" to byteArrayOf(1)))
+        val platform = HostPlatform(fileSystem = fs, notesDirectory = { "/g/" })
+        assertTrue(lastBackupExporterOf(platform, "kitchen")!!.hasBackup())
+        assertFalse(lastBackupExporterOf(platform, "other")!!.hasBackup())
+        assertNull(lastBackupExporterOf(platform, null))
+        assertNull(lastBackupExporterOf(HostPlatform(fileSystem = fs), "kitchen"))
+        assertNull(lastBackupExporterOf(HostPlatform(notesDirectory = { "/g" }), "kitchen"))
     }
 }

@@ -56,6 +56,7 @@ import dev.stapler.stelekit.ui.sketch.SketchEditorRouter
 import dev.stapler.stelekit.ui.sketch.SketchReasonText
 import dev.stapler.stelekit.ui.sketch.UpgradeAffordance
 import dev.stapler.stelekit.ui.sketch.v2.migration.ClassicNoticeDecision
+import dev.stapler.stelekit.ui.sketch.v2.migration.warningForm
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchConsentCopy
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchEditorStrings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchErrorStrings
@@ -93,7 +94,7 @@ sealed interface EditorOpening {
     /** The platform storage check is still running (UX-141). */
     data object Pending : EditorOpening
 
-    class NoEditor(val reason: NoEditorReason, val sketchName: String, val projectName: String) : EditorOpening
+    class NoEditor(val reason: NoEditorReason, val sketchName: String, val projectName: String, val slug: String? = null) : EditorOpening
 
     /** The v2 editor; [readOnly] shows the sheet without edits and with the router's banner. */
     class Editor(val session: SketchEditorSession) : EditorOpening
@@ -190,7 +191,7 @@ class V2EditorOpener(private val deps: V2EditorDeps, private val context: Corout
         val stored = deps.graphId()?.let { deps.settings?.v2Mode(it) } ?: V2Mode.Off
         return when (val outcome = SketchEditorRouter.route(RouteInput(stored, capabilities, schema))) {
             RouteOutcome.Pending -> EditorOpening.Pending
-            is RouteOutcome.NoEditor -> EditorOpening.NoEditor(outcome.reason, target.sheet.value, target.projectName)
+            is RouteOutcome.NoEditor -> EditorOpening.NoEditor(outcome.reason, target.sheet.value, target.projectName, target.slug)
             is RouteOutcome.Legacy, RouteOutcome.ConvertThenV2 -> EditorOpening.Legacy
             is RouteOutcome.V2ReadOnly -> editor(loaded, target, metrics, readOnlyReason = outcome.reason, lease = null)
             is RouteOutcome.LeaseConflict -> editor(loaded, target, metrics, readOnlyReason = SketchReasonText.OTHER_TAB, lease = null)
@@ -270,7 +271,7 @@ fun ProjectBridgeDeps.v2EditorDeps(
     quality = quality,
     log = SketchLog(signals = quality),
     persistence = browserPersistence,
-    warningForm = { if (sessionConfirmation.confirmed) SketchConsentCopy.WarningForm.Reference else SketchConsentCopy.WarningForm.Full },
+    warningForm = { sessionConfirmation.warningForm },
     engineChange = engineChange,
     repos = repos,
     store = sidecarStore,

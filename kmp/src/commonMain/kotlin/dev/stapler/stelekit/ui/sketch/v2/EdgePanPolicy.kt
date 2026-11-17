@@ -13,7 +13,19 @@ import dev.stapler.stelekit.sketch.v2.runtime.settings.EdgePanSettings
 import dev.stapler.stelekit.sketch.v2.runtime.settings.EdgePanSide
 
 /** The target classes Task 0.1.4d marks Supported or not. */
-enum class EdgeTarget { Android, Ios, Web, TouchDesktop }
+enum class EdgeTarget {
+    Android, Ios, Web, TouchDesktop;
+
+    companion object {
+        /** The target class of a device platform name (`DeviceInfo.platform`); anything not Android, iOS or web is the desktop. */
+        fun of(platformName: String): EdgeTarget = when {
+            platformName.contains("android", ignoreCase = true) -> Android
+            platformName.contains("ios", ignoreCase = true) -> Ios
+            platformName.contains("web", ignoreCase = true) -> Web
+            else -> TouchDesktop
+        }
+    }
+}
 
 /**
  * The recorded result of Task 0.1.4d per target class. Supported only when a real drag that started in the protected span

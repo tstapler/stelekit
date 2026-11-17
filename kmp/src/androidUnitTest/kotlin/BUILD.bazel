@@ -94,6 +94,8 @@ kt_android_library(
             "**/TextMetricsAndroidEntryPointTest.kt",
             # Composes the root store provider and needs the commonTest FakeFileSystem (Gradle-only, no Compose plugin here)
             "**/SketchStorageAndroidEntryPointTest.kt",
+            # Composes the root store provider and needs the commonTest FakeFileSystem (Gradle-only, no Compose plugin here)
+            "**/SketchPlatformInputAndroidEntryPointTest.kt",
             # Mounts the v2 editor host over the root's project bridge and the commonTest rig (Gradle-only, no Compose plugin or commonTest here)
             "**/SketchEditorHostTest.kt",
             "**/SketchEditorHostExtrasTest.kt",

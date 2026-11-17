@@ -17,3 +17,6 @@ SketchWriterLease  SketchStorageDesktopEntryPointTest  effect:sketch-writer-leas
 BrowserPersistence  SketchStorageDesktopEntryPointTest  effect:browser-persistence-unsupported-desktop
 SketchDurability  WiringV2AndroidEntryPointTest  effect:sketch-durability-consulted-android
 SketchDurability  WiringV2DesktopEntryPointTest  effect:sketch-durability-consulted-desktop
+PalmClassifier  SketchPlatformInputAndroidEntryPointTest  effect:palm-contact-rejected-android
+PointerCancelDetector  SketchPlatformInputAndroidEntryPointTest  effect:pointer-cancel-detected-android
+EdgeGestureExclusion  SketchPlatformInputAndroidEntryPointTest  effect:edge-exclusion-claimed-android

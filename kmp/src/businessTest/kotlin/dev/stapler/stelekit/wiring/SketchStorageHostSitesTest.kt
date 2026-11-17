@@ -65,6 +65,23 @@ class SketchStorageHostSitesTest {
     }
 
     @Test
+    fun androidAndWasmSites_should_WireThePlatformInputSeams() {
+        val sites = sitesIn(WiringInputs.productionSources)
+        val android = sites.filterKeys { it.startsWith("androidApp.main/") }
+        assertEquals(1, android.size, "MainActivity has one construction site, found ${android.keys}")
+        val args = android.values.single()
+        assertTrue(fieldRegex("sketchInput").containsMatchIn(args), "MainActivity does not name sketchInput")
+        for (seam in listOf("AndroidPalmClassifier", "AndroidPointerCancelDetector", "AndroidEdgeGestureExclusion(")) {
+            assertTrue(seam in args, "MainActivity does not wire $seam")
+        }
+        val wasm = sites.filterKeys { it.startsWith("wasmJsMain/") }
+        assertEquals(2, wasm.size, "browser/Main.kt has two construction sites, found ${wasm.keys}")
+        for ((site, args) in wasm) {
+            assertTrue("WebSketchPlatformInput.sketchInput(" in valueOf(args, "sketchInput"), "$site does not wire the web input seams")
+        }
+    }
+
+    @Test
     fun scanner_should_RejectAHostThatOmitsOrOverrides() {
         val omitting = mapOf("hostMain/a/Main.kt" to "val x = StelekitAppPlatformIntegrations(\n  taskRegistry = r,\n  sketchWriterLease = L,\n)\n")
         val overriding = mapOf(

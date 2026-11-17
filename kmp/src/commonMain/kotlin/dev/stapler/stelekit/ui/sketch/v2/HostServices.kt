@@ -8,6 +8,8 @@ import arrow.core.Either
 import arrow.core.left
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.PngEncoder
+import dev.stapler.stelekit.platform.SketchPlatformInput
+import dev.stapler.stelekit.platform.V2StorageStatus
 import dev.stapler.stelekit.platform.SketchFilePort
 import dev.stapler.stelekit.projectbridge.V2Storage
 import dev.stapler.stelekit.sketch.constraints.SolverTier
@@ -18,6 +20,7 @@ import dev.stapler.stelekit.sketch.v2.image.ImageHeaderProbe
 import dev.stapler.stelekit.sketch.v2.library.InMemoryLibraryStorage
 import dev.stapler.stelekit.sketch.v2.library.LibraryStorage
 import dev.stapler.stelekit.sketch.v2.runtime.image.ImageAssetStore
+import dev.stapler.stelekit.sketch.v2.runtime.settings.EdgePanSettings
 import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
 
 /**
@@ -30,6 +33,14 @@ class HostPlatform(
     val fileSystem: FileSystem? = null,
     /** The graph's notes folder (the one that holds `pages/`, `journals/` and `assets/`); null with no graph open. */
     val notesDirectory: () -> String? = { null },
+    /** The platform's palm, cancel, edge-exclusion and raw-pointer seams of the canvas. */
+    val input: SketchPlatformInput = SketchPlatformInput.None,
+    /** The target class the edge-pan spike results are recorded for. */
+    val edgeTarget: EdgeTarget = EdgeTarget.TouchDesktop,
+    /** The persisted edge-pan choice; null leaves the strip Off. */
+    val edgePan: EdgePanSettings? = null,
+    /** What the browser storage is now: the durability cue reads the temporary-graph and private-window flags. */
+    val storageStatus: () -> V2StorageStatus = { V2StorageStatus.Ready(sessionOnly = false, privateSuspected = false) },
 )
 
 /**
@@ -48,6 +59,8 @@ class HostServices(
     /** Adds a sheet to the project beside the open one (the over-cap "new sketch" path); null where the host cannot. */
     val createSheet: (suspend (SketchDocumentV2) -> Either<String, Unit>)? = null,
     val limits: SceneLimits = SceneLimits.Default,
+    /** What the platform root supplied (input seams, edge-pan settings, storage status). */
+    val platform: HostPlatform = HostPlatform(),
 ) {
     /** The stored bytes of an image element, for SVG and Excalidraw export; a missing file is a placeholder in the output. */
     val imageSource: SvgImageSource = SvgImageSource { fileId ->
@@ -71,7 +84,7 @@ class HostServices(
             val fs = platform.fileSystem
             val images = if (notes != null && fs != null) ImageAssetStore(fs, assetsDirectory(notes), limits) else null
             val library = if (notes != null && fs != null) FileLibraryStorage(fs, libraryPath(notes)) else InMemoryLibraryStorage()
-            return HostServices(platform.files, images, storage, library, tier, limits = limits)
+            return HostServices(platform.files, images, storage, library, tier, limits = limits, platform = platform)
         }
     }
 }

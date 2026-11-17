@@ -28,6 +28,9 @@ object WiringAudit {
         "BrowserPersistence",
         "SketchDurability",
         "PageLifecycle",
+        "PalmClassifier",
+        "PointerCancelDetector",
+        "EdgeGestureExclusion",
     )
 
     const val MAX_RENEWALS = 2

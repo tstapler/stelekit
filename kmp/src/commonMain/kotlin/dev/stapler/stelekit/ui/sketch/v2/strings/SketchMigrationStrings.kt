@@ -138,14 +138,6 @@ object SketchMigrationStrings {
         const val UPGRADE_MENU_ENTRY = "Upgrade to the new editor"
         const val CANCEL = "Cancel"
         const val BROWSER_STORAGE = "Browser storage"
-        const val STORAGE_KEPT = "Kept"
-        const val STORAGE_NOT_GUARANTEED = "Not guaranteed"
-        const val ASK_BROWSER = "Ask the browser to keep it"
-        const val ASKING = "Asking the browser..."
-        const val REFUSED =
-            "The browser said no. It decides on its own, often after you use SteleKit more; keep git sync or a linked folder as " +
-                "your backup."
-        const val PERSIST_UNSUPPORTED = "This browser can't promise to keep site storage."
     }
 
     /** The no-editor screen (Task 1.4.6j, ux.md 14.7) and the pending screen (UX-146). */

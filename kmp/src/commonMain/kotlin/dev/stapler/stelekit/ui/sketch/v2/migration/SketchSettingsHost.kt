@@ -32,6 +32,7 @@ import dev.stapler.stelekit.projectbridge.isAvailable
 import dev.stapler.stelekit.projectbridge.v2Storage
 import dev.stapler.stelekit.sketch.v2.runtime.session.ProjectAckStore
 import dev.stapler.stelekit.sketch.v2.runtime.telemetry.QualitySignals
+import dev.stapler.stelekit.ui.sketch.BrowserStorageUx
 import dev.stapler.stelekit.ui.sketch.v2.BackupsSectionModel
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchMigrationStrings
 import kotlinx.coroutines.launch
@@ -110,7 +111,6 @@ fun SketchSettingsHost(ports: SketchSettingsPorts, editorOpen: Boolean, modifier
         BrowserStorage(ports.persistence)
         SketchSignalsReadout(SignalsReadoutModel(ports.quality.adoption(), ports.quality.counts(), stored, ports.quality.recentSessions(), ports.quality.recentSolves()))
         if (capabilities.storage.isAvailable) ports.backups?.let { BackupsSection(it) }
-        SketchSignalsReadout(SignalsReadoutModel(ports.quality.adoption(), ports.quality.counts(), stored))
     }
     confirm?.let { plan ->
         EnableV2Confirmation(plan.variant, onConfirm = { confirm = null; apply(plan.mode, true) }, onCancel = { confirm = null }, onLearn = { learn = true })
@@ -135,7 +135,7 @@ private fun BrowserStorage(persistence: BrowserPersistence) {
     var state by remember { mutableStateOf(PersistenceState.NotRequested) }
     var asking by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val row = BrowserStorageRow.of(state, asking)
+    val row = if (asking) BrowserStorageUx.askingRow() else BrowserStorageUx.row(state)
     Column(Modifier.testTag(SketchSettingsTags.BROWSER_ROW), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(SketchMigrationStrings.Mode.BROWSER_STORAGE)
         Text(row.label)

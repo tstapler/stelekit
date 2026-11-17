@@ -526,6 +526,10 @@ class StelekitViewModel(
             ),
             fileSystem = fileSystem,
             notesDirectory = { _uiState.value.currentNotesPath?.directory() },
+            input = projectBridgeDeps?.sketchInput ?: dev.stapler.stelekit.platform.SketchPlatformInput.None,
+            edgeTarget = dev.stapler.stelekit.ui.sketch.v2.EdgeTarget.of(device.platform),
+            edgePan = dev.stapler.stelekit.sketch.v2.runtime.settings.EdgePanSettings(platformSettings),
+            storageStatus = { fileSystem.storageStatus },
         )
         return projectBridgeDeps?.bridgeV2EditorDeps(
             repos, writeActor, activeGraphIdProvider, keymap, touchPresent,
