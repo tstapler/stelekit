@@ -34,7 +34,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -86,6 +85,16 @@ data class SketchShellConfig(
     val onShortcuts: () -> Unit = {},
     /** The user toggled Finger drawing from the top-bar chip: the host stores it as an explicit choice (UX-80). */
     val onFingerDrawingChosen: (Boolean) -> Unit = {},
+    /** The top bar's Back button; null hides it. */
+    val onBack: (() -> Unit)? = null,
+    val saveStatus: SaveStatus = SaveStatus.Saved,
+    /** The compact-height Selection menu (UX-127): the items for the current selection and what each does. */
+    val selectionItems: List<SelectionAction> = emptyList(),
+    val onSelectionAction: (SelectionAction) -> Unit = {},
+    /** What the banner row's primary button and More items do (Story 3.1.4). */
+    val bannerActions: BannerActions = BannerActions(),
+    /** The toast lane's queue; null shows no toasts (Story 3.1.4c). */
+    val toasts: ToastLaneHost? = null,
 )
 
 object ShellTags {
@@ -153,7 +162,10 @@ private fun SketchShell(
     canvas: @Composable BoxScope.() -> Unit,
 ) {
     val layout = ShellLayout.choose(window.width, window.height)
-    val extent = if (layout.placement == StripPlacement.BottomDock) window.width else window.height
+    val extent = ChromeBudget.stripExtentDp(layout.placement, window.width, window.height)
+    val fontScale = LocalDensity.current.fontScale.toDouble()
+    val plan = remember(window, fontScale) { ChromeBudget.plan(window.width, window.height, fontScale, config.model.stripTools.size) }
+    val hintShown = ChromeRow.HintStatus in ChromeBudget.presentRows(layout) && ChromeRow.HintStatus !in plan.collapsed
     val focus = remember { ShellFocus(FocusRequester(), FocusRequester()) }
     val grouped = !config.model.isFlat(extent)
     val driver = remember(extent, config.model) { WalkthroughDriver({ state.lastInput }, { grouped }, focus::restore) }
@@ -167,9 +179,9 @@ private fun SketchShell(
         Surface(Modifier.fillMaxSize().testTag(ShellTags.layout(layout.placement)).trackInput(state), color = MaterialTheme.colorScheme.background) {
             if (layout.placement == StripPlacement.BottomDock) {
                 Column(Modifier.fillMaxSize()) {
-                    TopBar(state, config, focus, grouped)
+                    ShellTopBar(state, config, focus, grouped, window)
                     BannerSlot(state, config, focus, grouped)
-                    CanvasArea(state, config, focus, Modifier.weight(1f), canvas)
+                    CanvasArea(state, config, focus, Modifier.weight(1f), hintShown, canvas)
                     if (state.panelTab != null) panelContent()
                     strip(Modifier.fillMaxWidth())
                 }
@@ -177,9 +189,9 @@ private fun SketchShell(
                 Row(Modifier.fillMaxSize()) {
                     strip(Modifier.fillMaxHeight())
                     Column(Modifier.weight(1f)) {
-                        TopBar(state, config, focus, grouped)
+                        ShellTopBar(state, config, focus, grouped, window)
                         BannerSlot(state, config, focus, grouped)
-                        CanvasArea(state, config, focus, Modifier.weight(1f), canvas)
+                        CanvasArea(state, config, focus, Modifier.weight(1f), hintShown, canvas)
                     }
                     if (layout.panels == PanelHost.PersistentPane || state.panelTab != null) panelContent()
                 }
@@ -226,7 +238,7 @@ private fun BannerSlot(state: SketchEditorState, config: SketchShellConfig, focu
     val banner = config.banner ?: return
     val head = banner.head ?: return
     if (head.row != BannerRowId.CoachMark) {
-        Text(head.summary, Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag(ShellTags.BANNER))
+        BannerSlotContent(head, config.bannerActions, Modifier.testTag(ShellTags.BANNER))
         return
     }
     CoachMarkRow(
@@ -243,34 +255,23 @@ private fun BannerSlot(state: SketchEditorState, config: SketchShellConfig, focu
 }
 
 @Composable
-private fun TopBar(state: SketchEditorState, config: SketchShellConfig, focus: ShellFocus, grouped: Boolean) {
-    var menu by remember { mutableStateOf(false) }
-    Row(
-        Modifier.fillMaxWidth().height(48.dp).testTag(ShellTags.TOP_BAR).padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(config.title, Modifier.weight(1f))
-        Text(
-            if (state.fingerDrawing) "Finger: On" else "Finger: Off",
-            Modifier.testTag(ShellTags.FINGER_CHIP).clickable {
+private fun ShellTopBar(state: SketchEditorState, config: SketchShellConfig, focus: ShellFocus, grouped: Boolean, window: WindowDp) {
+    val fontScale = LocalDensity.current.fontScale.toDouble()
+    val plan = ChromeBudget.topBar(ShellLayout.choose(window.width, window.height), window.width, fontScale)
+    TopBar(
+        TopBarContent(config.title, plan, state.fingerDrawing, config.pointer, config.saveStatus, state.selection.size, config.selectionItems),
+        TopBarActions(
+            onBack = config.onBack,
+            onFingerToggle = {
                 state.fingerDrawing = !state.fingerDrawing
                 config.onFingerDrawingChosen(state.fingerDrawing)
-            }
-                .size(width = 88.dp, height = TouchTargetFloor.floorDp(config.pointer).dp.coerceAtLeast(48.dp)),
-        )
-        Box {
-            Text(
-                "⋮",
-                Modifier.testTag(ShellTags.OVERFLOW).size(48.dp).anchorFor(state, WalkthroughStep.Shortcuts).focusRequester(focus.overflow)
-                    .clickable { state.walkthrough.anchorActivated(WalkthroughStep.Shortcuts); menu = true }
-                    .semantics { contentDescription = "More options" },
-            )
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                OverflowItems(state, config, grouped) { menu = false }
-            }
-        }
-    }
+            },
+            onSelectionAction = config.onSelectionAction,
+        ),
+        Modifier.padding(horizontal = 16.dp),
+        Modifier.anchorFor(state, WalkthroughStep.Shortcuts).focusRequester(focus.overflow),
+        onOverflowOpened = { state.walkthrough.anchorActivated(WalkthroughStep.Shortcuts) },
+    ) { close -> OverflowItems(state, config, grouped, close) }
 }
 
 @Composable
@@ -316,29 +317,22 @@ private fun OverflowItems(state: SketchEditorState, config: SketchShellConfig, g
  * The strip is outside this box, so it can never cover them.
  */
 @Composable
-private fun CanvasArea(state: SketchEditorState, config: SketchShellConfig, focus: ShellFocus, modifier: Modifier = Modifier, canvas: @Composable BoxScope.() -> Unit) {
+private fun CanvasArea(state: SketchEditorState, config: SketchShellConfig, focus: ShellFocus, modifier: Modifier = Modifier, hintShown: Boolean = true, canvas: @Composable BoxScope.() -> Unit) {
     var canvasPx by remember { mutableStateOf(IntSize.Zero) }
     val density = LocalDensity.current
     Box(modifier.fillMaxWidth().testTag(ShellTags.CANVAS).onSizeChanged { canvasPx = it }.focusRequester(focus.canvas).focusable()) {
         canvas()
         if (config.banner?.emptyStateVisible == true) EmptyState(config.emptyActions, Modifier.align(Alignment.Center))
-        Text(
-            hintLine(state, config.pointer),
-            Modifier.align(Alignment.TopStart).padding(8.dp).testTag(ShellTags.HINT),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Row(
-            Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 8.dp).testTag(ShellTags.CHIP_ROW),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (state.toolLock) {
-                Text(
-                    "Tool lock",
-                    Modifier.testTag(ShellTags.TOOL_LOCK_CHIP).size(width = 88.dp, height = 44.dp)
-                        .background(MaterialTheme.colorScheme.secondaryContainer).clickable { state.toolLock = false },
-                )
-            }
+        Column(Modifier.align(Alignment.TopStart).padding(8.dp)) {
+            if (hintShown) Text(hintLine(state, config.pointer), Modifier.testTag(ShellTags.HINT), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            config.toasts?.let { ToastLaneOverlay(it, canvasPx.height / density.density) }
         }
+        ActionChipRow(
+            listOfNotNull(
+                if (state.toolLock) ActionChip(ShellTags.TOOL_LOCK_CHIP, SketchStrings.Chrome.TOOL_LOCK_CHIP) { state.toolLock = false } else null,
+            ),
+            Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 8.dp),
+        )
         HelpPopupHost(state.help, Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
         val stripInset = PanPadPolicy.stripInsetDp(config.edgeStripAtEnd).dp
         Column(

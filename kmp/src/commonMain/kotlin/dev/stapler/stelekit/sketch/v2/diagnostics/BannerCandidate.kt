@@ -38,6 +38,9 @@ interface BannerStringSource {
     fun primaryLabel(row: BannerRowId): String
 
     fun moreItems(row: BannerRowId): List<String>
+
+    /** The accessible name of the primary button: the visible label plus its object (WCAG 2.5.3); the label itself by default. */
+    fun primaryAccessibleName(row: BannerRowId): String = primaryLabel(row)
 }
 
 sealed interface BannerRejection {
@@ -67,6 +70,7 @@ class BannerCandidate private constructor(
     val primaryLabel: String,
     val moreItems: List<String>,
     val details: String,
+    val primaryAccessibleName: String = primaryLabel,
 ) {
     val tier: BannerTier get() = row.tier
 
@@ -98,7 +102,7 @@ class BannerCandidate private constructor(
             }
             val label = strings.primaryLabel(row)
             if (!labelFits(label)) return BannerRejection.LabelBreaksRule(row).left()
-            return BannerCandidate(row, summary, shortTitle, label, strings.moreItems(row), details).right()
+            return BannerCandidate(row, summary, shortTitle, label, strings.moreItems(row), details, strings.primaryAccessibleName(row)).right()
         }
 
         private fun labelFits(label: String): Boolean {

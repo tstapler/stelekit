@@ -277,6 +277,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/LargeSceneDegradationPolicyTest.kt",
         "dev/stapler/stelekit/sketch/v2/KeyDispatcherTest.kt",
         "dev/stapler/stelekit/sketch/v2/BannerCandidateTest.kt",
+        "dev/stapler/stelekit/sketch/v2/ChromeBudgetPolicyTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/ShapeToolsTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/NoticeTestSupport.kt",
         "dev/stapler/stelekit/ui/sketch/v2/NoticeQueueTest.kt",

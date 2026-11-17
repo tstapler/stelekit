@@ -39,7 +39,7 @@ class AdaptiveStateSurvivalTest {
     val rule = createComposeRule()
 
     private val folded = WindowDp(360, 640)
-    private val unfolded = WindowDp(1280, 800)
+    private val unfolded = WindowDp(1280, 900)
 
     private fun busyState() = SketchEditorState(
         activeTool = ToolId.Ellipse,

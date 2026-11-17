@@ -950,6 +950,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.LargeSceneDegradationPolicyTest::class,
     dev.stapler.stelekit.sketch.v2.KeyDispatcherTest::class,
     dev.stapler.stelekit.sketch.v2.BannerCandidateTest::class,
+    dev.stapler.stelekit.sketch.v2.ChromeBudgetPolicyTest::class,
+    dev.stapler.stelekit.sketch.v2.SheetSplitterTest::class,
     dev.stapler.stelekit.sketch.v2.tools.ShapeToolsTest::class,
     dev.stapler.stelekit.ui.sketch.v2.NoticeQueueTest::class,
     dev.stapler.stelekit.ui.sketch.v2.OnboardingPolicyTest::class,

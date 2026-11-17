@@ -90,50 +90,31 @@ class ToolStripModel(val technicalSheet: Boolean, private val keymapEnv: KeymapE
         if (block == null) "${tool.label} (${tool.shortcut})" else "${tool.label}, unavailable: ${block.reason()}"
 
     /** Flat items are the singles and group members; grouped items are the singles and one split button per group. */
-    fun flatExtentDp(): Int =
-        TouchTargetFloor.PINNED_COUNT * TouchTargetFloor.PRIMARY_DP + TouchTargetFloor.DELETE_GAP_DP +
-            (stripTools.size + EXTRA_STRIP_BUTTONS) * TouchTargetFloor.TOUCH_DP
+    fun flatExtentDp(): Int = ChromeBudget.flatExtentDp(stripTools.size)
 
-    fun groupedExtentDp(): Int {
-        val singles = stripTools.count { it.group == null }
-        return TouchTargetFloor.PINNED_COUNT * TouchTargetFloor.PRIMARY_DP + TouchTargetFloor.DELETE_GAP_DP +
-            (singles + groups.size * SPLIT_TARGETS + EXTRA_STRIP_BUTTONS) * TouchTargetFloor.TOUCH_DP
-    }
+    fun groupedExtentDp(): Int = ChromeBudget.groupedExtentDp(stripTools.count { it.group == null }, groups.size)
 
-    /** ONE rule at every width class: flat whenever the flat extent fits the strip extent, else grouped. */
-    fun isFlat(stripExtentDp: Int): Boolean = flatExtentDp() <= stripExtentDp
+    /** ONE rule at every width class (`ChromeBudget.isFlat`): flat whenever the flat extent fits the strip extent, else grouped. */
+    fun isFlat(stripExtentDp: Int): Boolean = ChromeBudget.isFlat(stripTools.size, stripExtentDp)
 
     private fun shortcutOf(id: ToolId): String {
         val entry = KeymapSpec.tools.first { it.id == id.name.lowercase() }
         return KeymapSpec.displayLabel(entry.bindings.first(), keymapEnv)
     }
-
-    private companion object {
-        /** Constrain and Tool lock follow the tools in the strip (chrome table `[strip]`). */
-        const val EXTRA_STRIP_BUTTONS = 2
-        const val SPLIT_TARGETS = 2
-    }
 }
 
-/** Where the strip sits and where panels open (UX-06, UX-119). Story 3.1.4's chrome budget replaces [choose]'s inputs, not its outputs. */
+/** Where the strip sits and where panels open (UX-06, UX-119). [choose] reads its rule from `ChromeBudget` (Story 3.1.4). */
 enum class StripPlacement { BottomDock, LeftRail }
 
 enum class PanelHost { BottomSheet, SideSheet, PersistentPane }
 
 data class ShellLayout(val placement: StripPlacement, val panels: PanelHost) {
     companion object {
-        const val COMPACT_HEIGHT_DP = 480
-        const val EXPANDED_WIDTH_DP = 840
+        const val COMPACT_HEIGHT_DP = ChromeBudget.COMPACT_HEIGHT_DP
+        const val EXPANDED_WIDTH_DP = ChromeBudget.EXPANDED_WIDTH_DP
 
-        /**
-         * Layout from both axes, never width alone: compact height uses the rail and a side sheet whatever the width;
-         * Expanded width at regular height uses the rail and the persistent pane; the rest the dock and the bottom sheet.
-         */
-        fun choose(widthDp: Int, heightDp: Int): ShellLayout = when {
-            heightDp < COMPACT_HEIGHT_DP -> ShellLayout(StripPlacement.LeftRail, PanelHost.SideSheet)
-            widthDp >= EXPANDED_WIDTH_DP -> ShellLayout(StripPlacement.LeftRail, PanelHost.PersistentPane)
-            else -> ShellLayout(StripPlacement.BottomDock, PanelHost.BottomSheet)
-        }
+        /** Layout from both axes, never width alone; the rule and its figures are `ChromeBudget.layout`. */
+        fun choose(widthDp: Int, heightDp: Int): ShellLayout = ChromeBudget.layout(widthDp, heightDp)
     }
 }
 

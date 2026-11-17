@@ -61,6 +61,11 @@ kt_android_library(
             "**/ShortcutsSheetTest.kt",
             "**/ElementsPanelTest.kt",
             # Compose host tests and commonTest-fixture pixel test for the v2 strip, shell and painter (Gradle-only)
+            # Compose host tests for the v2 chrome budget, action chip row, toast lane, top bar and capacity messages (Gradle-only, no Compose plugin in this target)
+            "**/ChromeBudgetTest.kt",
+            "**/ActionChipRowTest.kt",
+            "**/TopBarTest.kt",
+            "**/CapacityUxTest.kt",
             "**/ToolStripTest.kt",
             "**/AdaptiveStateSurvivalTest.kt",
             "**/SketchCanvasRecompositionTest.kt",

@@ -215,4 +215,102 @@ object SketchStrings {
 
         fun kilobytes(tenths: String): String = "$tenths KB"
     }
+
+    /** Chrome shared by the banner row, the toast lane, the chip row and the top bar (Story 3.1.4). */
+    object Chrome {
+        /** Toast placeholders and the filler the worst-case fit check expands them with (never shown to a user). */
+        const val PLACEHOLDER_NAME = "{name}"
+        const val PLACEHOLDER_COUNT = "{n:3}"
+        const val PLACEHOLDER_NAME_FILL = "x"
+        const val PLACEHOLDER_COUNT_FILL = "000"
+
+        const val MORE = "More"
+        const val DISMISS = "Dismiss"
+        const val DETAILS = "Details"
+        const val TOOL_LOCK_CHIP = "Tool lock"
+        const val MORE_OPTIONS = "More options"
+        const val SCROLL_CHIPS = "More actions"
+        const val UPGRADE_SHEET_NOT_NOW = "Not now"
+        const val SEVERITY_BLOCKING = "Error"
+        const val SEVERITY_STATE = "Notice"
+        const val SEVERITY_WARNING = "Warning"
+        const val SEVERITY_INFO = "Information"
+        const val SEVERITY_ONBOARDING = "Tip"
+
+        fun moreNotices(count: Int): String = "+$count more"
+
+        fun moreFor(name: String): String = "$MORE: $name"
+    }
+
+    /** The top bar (Story 3.1.4d, UX-80): the Finger drawing chip at both tiers and the save status. */
+    object TopBar {
+        const val BACK = "Back"
+        const val FINGER_ON = "Finger: On"
+        const val FINGER_OFF = "Finger: Off"
+        const val FINGER_ON_SHORT = "On"
+        const val FINGER_OFF_SHORT = "Off"
+        const val FINGER_SEMANTICS = "Finger drawing"
+        const val FINGER_TOOLTIP_ON = "Finger drawing: On"
+        const val FINGER_TOOLTIP_OFF = "Finger drawing: Off"
+        const val STATE_ON = "on"
+        const val STATE_OFF = "off"
+        const val SAVED = "Saved"
+        const val SAVING = "Saving"
+        const val UNSAVED = "Unsaved"
+        const val FAILED = "Failed"
+        const val SAVED_FULL = "Saved"
+        const val SAVING_FULL = "Saving"
+        const val UNSAVED_FULL = "Unsaved changes"
+        const val FAILED_FULL = "Save failed"
+    }
+
+    /** The compact-height Selection menu (Story 3.1.4d, UX-127). */
+    object SelectionMenu {
+        const val BUTTON = "Selection"
+        const val DUPLICATE = "Duplicate"
+        const val GROUP = "Group"
+        const val UNGROUP = "Ungroup"
+        const val ALIGN = "Align"
+        const val ORDER = "Order"
+        const val TRANSFORM = "Transform"
+        const val LOCK = "Lock"
+        const val UNLOCK = "Unlock"
+        const val BIND_END = "Bind end..."
+
+        fun semantics(count: Int): String = "$BUTTON, $count ${if (count == 1) "element" else "elements"} selected"
+    }
+
+    /** The scene hard cap and the constraint cap (Story 2.2.4, UX-73) and the low-memory toast. */
+    object Capacity {
+        const val DELETE_SOME = "Delete some"
+        const val SPLIT = "Split into a new sketch"
+        const val OK = "OK"
+        const val CONSTRAINT_LIMIT_KEY = "ConstraintLimit"
+        const val CONSTRAINT_LIMIT_SUMMARY = "Constraint limit reached."
+        const val CONSTRAINT_LIMIT_SHORT = "Limit"
+        const val CONSTRAINT_LIMIT_REVIEW = "Review"
+        const val LOW_MEMORY_KEY = "LowMemory"
+        const val LOW_MEMORY_SUMMARY = "Low memory."
+        const val LOW_MEMORY_SHORT = "Low memory"
+        const val LOW_MEMORY_ACTION = "Save now"
+        const val LOW_MEMORY_DETAILS = "Save and reopen the sketch."
+        const val SPLIT_UNDONE_ACTION = "Delete the new sketch"
+        const val SPLIT_NEEDS_SELECTION = "Select the elements to move first"
+        const val SPLIT_UNDONE_KEY = "SplitUndone"
+
+        fun sheetLabel(position: Int): String = "Sheet ${position + 1}"
+
+        fun hardCap(maxElements: Int): String = "This sketch has ${grouped(maxElements)} elements, the maximum."
+
+        fun constraintLimitDetails(maxConstraints: Int): String = "$maxConstraints constraints is the limit for one sketch."
+
+        fun splitUndoneNotice(name: String): String = "$SPLIT_UNDONE_ACTION '$name'"
+
+        private fun grouped(value: Int): String {
+            val digits = value.toString()
+            return digits.reversed().chunked(GROUP_DIGITS).joinToString(",").reversed()
+        }
+
+        private const val GROUP_DIGITS = 3
+    }
 }

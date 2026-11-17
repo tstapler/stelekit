@@ -30,13 +30,14 @@ import kotlin.test.assertTrue
  * needed. Gradle-only: composes @Composable lambdas, which the Bazel android target cannot compile (see BUILD.bazel).
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [29], qualifiers = "w1280dp-h800dp-mdpi")
+@Config(sdk = [29], qualifiers = "w1280dp-h900dp-mdpi")
 class ToolStripTest {
     @get:Rule
     val rule = createComposeRule()
 
     private val phone = WindowDp(360, 640)
-    private val desktop = WindowDp(1280, 800)
+    /** 900 tall so the rail strip is flat: ChromeBudget gives the rail the window height less the top-bar reserve. */
+    private val desktop = WindowDp(1280, 900)
     private var constrained = 0
 
     private fun show(

@@ -141,6 +141,7 @@ import org.junit.runners.Suite
     // DiscoverabilityTest, CoachWalkthroughTest and EmptyStateTest (sketch v2, Stories 3.6.8 and 3.6.6) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
     // ToolStripTest, AdaptiveStateSurvivalTest, SketchCanvasRecompositionTest and ScenePainterAndroidTest (sketch v2, Stories 3.1.3 and 2.1.3)
     // are excluded for the same reason (1) and compose @Composable lambdas or need commonTest fixtures (no Compose plugin or commonTest in this target).
+    // ChromeBudgetTest, ActionChipRowTest, TopBarTest and CapacityUxTest (sketch v2, Stories 3.1.4 and 2.2.4) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
     // TextMetricsAndroidEntryPointTest is excluded for the same reason (1) and composes a @Composable (no Compose plugin in this target).
     // SketchStorageAndroidEntryPointTest (Task 1.4.3q) is excluded for the same reason (1), composes @Composable calls and needs the commonTest FakeFileSystem.
     // LeaveSketchPromptTest is excluded for the same reason (1) and composes a @Composable (no Compose plugin in this target).

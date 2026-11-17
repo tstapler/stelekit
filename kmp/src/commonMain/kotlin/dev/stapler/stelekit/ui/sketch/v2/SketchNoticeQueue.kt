@@ -22,6 +22,12 @@ data class SketchNotice(
     val text: String,
     val action: String? = null,
     val confirmsUndoableEdit: Boolean = false,
+    /** The toast's short title (shown where the text does not fit, Story 3.1.4); null shows [text] always. */
+    val shortTitle: String? = null,
+    /** Names and counts the one-row text cannot hold; an item of the toast's More menu when present. */
+    val details: String? = null,
+    /** Further actions under More, before Details and Dismiss (for example "Switch layer"). */
+    val secondaryActions: List<String> = emptyList(),
 )
 
 /** What the live region should say: [assertive] only for an error that blocks work (UX-48). */
@@ -153,6 +159,17 @@ class SketchNoticeQueue(
     fun dismiss(key: String, now: Long) {
         advance(now)
         active.filter { it.notice.key == key }.forEach(::retire)
+        syncYield()
+    }
+
+    /**
+     * Lane of one (ux.md section 1): where the lane holds a single toast a newer toast does not wait behind the displayed
+     * one, which moves to the diagnostics list (its actions stay there). A lane of two or more keeps every toast.
+     */
+    fun fitLane(laneSize: Int, now: Long) {
+        advance(now)
+        if (laneSize != 1 || active.size <= 1) return
+        active.filter { it !== active.last() }.forEach(::retire)
         syncYield()
     }
 
