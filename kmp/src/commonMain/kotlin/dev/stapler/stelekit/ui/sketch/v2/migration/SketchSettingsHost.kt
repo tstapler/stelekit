@@ -103,7 +103,7 @@ fun SketchSettingsHost(ports: SketchSettingsPorts, editorOpen: Boolean, modifier
             onLearn = { learn = true },
         )
         BrowserStorage(ports.persistence)
-        SketchSignalsReadout(SignalsReadoutModel(ports.quality.adoption(), ports.quality.counts(), stored))
+        SketchSignalsReadout(SignalsReadoutModel(ports.quality.adoption(), ports.quality.counts(), stored, ports.quality.recentSessions(), ports.quality.recentSolves()))
     }
     confirm?.let { plan ->
         EnableV2Confirmation(plan.variant, onConfirm = { confirm = null; apply(plan.mode, true) }, onCancel = { confirm = null }, onLearn = { learn = true })

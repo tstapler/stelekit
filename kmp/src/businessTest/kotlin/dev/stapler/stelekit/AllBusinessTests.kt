@@ -1150,6 +1150,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.NewerSchemaScreenTest::class,
     dev.stapler.stelekit.sketch.v2.ClassicNoticeLedgerTest::class,
     dev.stapler.stelekit.sketch.v2.QualitySignalsLocalOnlyTest::class,
+    dev.stapler.stelekit.sketch.v2.QualitySignalsThresholdTest::class,
     dev.stapler.stelekit.sketch.v2.SheetAddSheetTest::class,
     dev.stapler.stelekit.ui.sketch.v2.ImportControllerTest::class,
     dev.stapler.stelekit.ui.sketch.v2.ExportDialogModelTest::class,

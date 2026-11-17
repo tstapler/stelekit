@@ -364,6 +364,13 @@ object SketchStrings {
         fun noConvergence(count: Long) = "Solves that did not converge: $count"
 
         fun conflicts(count: Long) = "Save conflicts: $count"
+
+        const val READINGS_NOTE = "Readings against the exit thresholds. They advise your decision; nothing changes by itself."
+        const val STOP_SHIP = "Stop-ship threshold reached: turn the new editor off and report it."
+
+        fun crashReading(reading: String) = "Crash rate: $reading"
+
+        fun noConvergenceReading(reading: String) = "Solves that did not converge: $reading"
     }
 
     /** The scene hard cap and the constraint cap (Story 2.2.4, UX-73) and the low-memory toast. */

@@ -24,6 +24,28 @@ Claims, and the test or file that backs each:
 | Older builds fail closed on a project holding a v2 sheet | `LegacyStoreRefusesV2Test` (same directory); an older build's behaviour is only checked by the owner's device pass below |
 | Never creates a v2 sheet | holds only while no creation path is reachable: see the first checklist item |
 
+### OWNER DECISION, open: how the first release closes creation (OD-1 says reader-only first; this tree does not do that yet)
+
+OD-1 (decided 2026-11-16, plan "Unresolved Questions") is "ship a reader-only release one release before conversion is reachable". In this tree
+`V2Build.CONVERSION_READY` and `V2Build.CONVERSION_OFFERED` are both `true` (`kmp/src/commonMain/kotlin/dev/stapler/stelekit/projectbridge/V2Mode.kt`,
+lines 34 and 37 at the time of writing), so a build cut from it is NOT reader-only: the Settings mode control offers "New sketch projects only"
+and "All sketches (Upgrade)", the read-only banner offers "Use new", and conversion and v2 creation are reachable. An agent did not flip them
+(Task 6.2.5e is release text; the flip is a release decision). Pick one:
+
+| | Option A: reader-only first (matches OD-1) | Option B: ship reader and creation together |
+|---|---|---|
+| Edit before cutting the release | In `V2Mode.kt` set `CONVERSION_READY = false` AND `CONVERSION_OFFERED = false`. | None. |
+| Effect | `V2Capabilities.of` caps every mode to `Off`: both new-mode radios show "Not available in this build yet", "Use new" disappears from the read-only banner (it says "This version of SteleKit can't edit new-editor sketches yet."), no v2 sheet can be created or converted, v2 sheets open read-only. | Users can turn the new editor on at once; creation, conversion and the Upgrade chip are reachable. |
+| Second release | Flip both back to `true` (one edit), re-run `ConversionReadyConsistencyTest` (it holds `CONVERSION_READY` honest) and publish the "Conversion and flag release" notes below. | None; there is only one release. |
+| Cost | One extra release cycle. | Drops the old-build safety step: a device that has not updated can meet a v2 project before it can read it (it refuses the whole project, no data change). |
+| Release notes | Use the "Reader-only release notes" above unchanged. | Use the "Reader-only release notes" with the first and last sentences replaced by the combined text in the section "Conversion and flag release", AND rewrite the OD-1 note in plan.md "Unresolved Questions" and ADR-005, because the "one release earlier" safety step no longer exists. |
+
+Either way the conversion release (Task 6.2.5c) stays gated on the A1 gate, which was WAIVED, never passed (see the pass section below).
+The two constants are a one-line edit each. Option A has NOT been built or tested with both `false` by an agent: before cutting the release run
+`bazel test //kmp:business_tests` with the edit (`ConversionReadyConsistencyTest` returns early when `CONVERSION_READY` is false;
+`V2Capabilities.of` feeds the router, the entry flow and the settings host, and `RouterRefusalGoldenTest` calls it) and expect any
+test that assumes a reachable creation path to fail until it is told the build is capped. Owner choice recorded here: ______
+
 ### Checklist
 
 - [ ] The build being released cannot create or convert a v2 sheet. UNVERIFIED: at the time of writing `V2Build.CONVERSION_READY` and
@@ -41,7 +63,116 @@ Claims, and the test or file that backs each:
 - [ ] No A1-gate, solver, importer or conversion text appears in these notes (script-checked edge: 6.2.5e has no path to 6.2.4e, 6.2.4f,
   6.2.5a or a parked node).
 
-Later releases (Task 6.2.5c and 6.2.5d) add their own sections here; the Task 6.2.4c device passes follow.
+## Conversion and flag release (Task 6.2.5c; the release AFTER the reader-only one, or the only release under Option B)
+
+Not publishable by an agent. Needs Task 6.2.5e (the reader-only release out, or Option B recorded above) and the A1 gate. The A1 gate was
+WAIVED by the owner on 2026-11-17 (`a1-gate.md`, "Owner waiver of the A1 gate"); its verdict is **UNMEASURED**. This release's notes must
+never say it passed. iOS is unverified (BUG-001, `docs/bugs/open/BUG-001-kotlin-native-bundle-service-classloader-mismatch.md`): no iOS
+statement is made; the new editor is compile-only and storage-unavailable there.
+
+### Flag defaults for this release
+
+- `sketch.engine.v2` ships default `Off` (a missing, blank or unknown stored value reads as `Off`, `V2Mode.parse`). This release makes the
+  new editor AVAILABLE; it does not turn it on for anyone. Turning it on is the user's own Settings > Sketches choice, behind the per-device
+  confirmation (Task 1.4.6c) and, for the first v2 write in a project, the first-write dialog.
+- Both `V2Build` constants must be `true` in the build released (Option A: flipped back from the reader-only release; Option B: unchanged).
+  Under an A4 NO-GO, `CONVERSION_OFFERED` stays `false`: the mode setting then tops out at "New sketch projects only", "All sketches (Upgrade)"
+  shows "Not available in this build yet", and the conversion paragraph of the notes below is omitted.
+- Changing the DEFAULT mode in code is NOT part of this release. It follows the "Flag-exit checklist" below and the owner's ADR-005 entry.
+
+### Release notes (paste into the release body; omit the conversion sentences under an A4 NO-GO or an import/export-first pivot)
+
+> **Sketches: a new editor you can turn on.** SteleKit now has a new sketch editor (shapes, text, arrows that follow shapes, frames,
+> layers, constraints and `.excalidraw` import and export). It is **off by default**. Turn it on in Settings > Sketches, per graph:
+> "New sketch projects only" creates new-editor sketches only in new sketch projects; "All sketches (Upgrade)" also lets you upgrade
+> existing sketches one at a time.
+>
+> **Read this before you turn it on.** Once a sketch is upgraded, older versions of SteleKit, including another device you have not
+> updated, cannot open **any** sketch in that project. They refuse it and change nothing. Update SteleKit on every device first.
+>
+> **Your original is kept.** Upgrading keeps a copy of the original sketch in the project's `backup/` folder. To go back, open the
+> upgraded sketch and choose "Restore original (v1) sheet"; the new-editor version is kept in `backup/` too.
+> "Delete backups" in Settings removes those copies and ends Restore for them.
+>
+> **To turn it off:** set the mode to Off. New-editor sketches then open read-only ("Turn on the new editor to edit.") and nothing is
+> converted back by itself.
+>
+> **Not verified:** the new editor has not been measured against Excalidraw on a real task (that check was skipped on purpose), iOS is not
+> verified and cannot save new-editor sketches yet, and the timing, device and usability checks listed in the project's owner checklist
+> have not been recorded. No claim here depends on them.
+
+### Rollback procedure (what to do when a stop-ship row fires or a report arrives)
+
+1. Settings > Sketches > mode: Off. (Code: set `sketch.engine.v2` to `Off`; v2 sheets then render read-only, no data conversion needed.)
+2. To get an upgraded sheet's v1 content back, run Restore original on that sheet (`SketchBackupRestore`, Story 6.2.6): it copies
+   `backup/<uuid>.v1.json` to `sheets/<uuid>.json`, removes `sheets/<uuid>.v2.json`, rewrites the model reference and `fileSha256` in one
+   model write, and keeps the new-editor version as `backup/<uuid>.v2-before-restore.json`. It is a tested function, not a manual file copy.
+3. Code revert is a standard PR revert; a revert never touches written sheets.
+4. Log any loss in `quality-signals.md` (data-loss log) with its regression test, and halt the release until the test exists.
+
+### Checklist (each is checked by the owner before the release-please PR is merged)
+
+- [ ] The A1 gate status is stated in the notes as "not run / waived", never as passed.
+- [ ] The release-please PR for this release names the reader-only release as already out, or records Option B in this file.
+- [ ] Both `V2Build` constants match the intent above (`true` for conversion; `CONVERSION_OFFERED = false` under an A4 NO-GO).
+- [ ] The release notes above are in the release body, the "older versions cannot open ANY sketch" paragraph unchanged, and the
+  "where backups live, how to restore, how to turn it off" paragraphs present.
+- [ ] Owner device pass of the previous section ("Owner device and desktop passes") recorded, or listed as not run in the notes.
+- [ ] Restore original was exercised once on a real upgraded sheet on a device: ______
+- [ ] A4: every device that opens the graph is on the reader-only release or later: ______
+
+## Flag-exit and legacy-retirement checklist (Task 6.2.5d)
+
+Nothing in this section changes the flag default by itself. Counters never flip anything: the owner records a flip in the ADR-005 index.
+The Settings > Sketches readout now shows each counter row against its threshold (`QualityThresholds`, tested by
+`QualitySignalsThresholdTest`: integer arithmetic, "not enough data yet" below the minimum n) and a stop-ship line; the data-loss row is read
+from the owner's log, `quality-signals.md`. Thresholds are INFERRED and `[tunable]` (requirements.md "Flag and legacy-editor exit criteria").
+The window starts at `window-start:` in `quality-signals.md` (UNSET: no flag release exists yet) and is capped at 26 weeks.
+
+| Signal | To flip the default | Stop-ship (flag back OFF) |
+|---|---|---|
+| Data-loss reports (owner log) | 0 confirmed in the 4 weeks before the flip, each root-caused with a regression test | any confirmed report: flag OFF, release halted until a regression test exists, restore offered |
+| Crash rate `crashes / v2Sessions` | n at least 50 and at most floor(n / 100) crashes (0 in 50 to 99, at most 1 in 100 to 199) | 2 or more among the last 20 sessions |
+| `NoConvergence` rate | n at least 200 committed solves and at most floor(n / 50) (4 in 200) | 11 or more among the last 100 solves: constraint UI hidden |
+| Save conflicts | informational | none |
+
+Insufficient data: while the constraint UI is parked or hidden the `NoConvergence` row is not applicable; a row whose minimum n is unmet at
+26 weeks reads "insufficient data, UNMEASURED", flips nothing, and the mode stays `Off` unless the owner records `NewProjectsOnly`, or
+extends the window once. At one-user scale the minimum n is likely never reached, so the flip is in practice the owner's recorded decision.
+
+Flip to `On` (ceiling `On`, A4 GO) needs ALL of:
+- [ ] the A1 gate recorded PROCEED (it is UNMEASURED today because it was waived; this item stays unchecked until the owner runs the paired run or records a different decision in the ADR index)
+- [ ] `ParityV1SuiteTest` and the `FlagRolloutTest` baseline at 100%
+- [ ] the applicable thresholds above holding with minimum n met, or the owner's recorded insufficient-data decision
+- [ ] the reader-only release out and every device reader-capable (A4)
+- [ ] the owner's confirmation in the ADR-005 index
+
+Flip to `NewProjectsOnly` (capped rows: A4 NO-GO, PIVOT "import/export first", PIVOT "Job 2 first" under A4 NO-GO) needs ALL of:
+- [ ] the A1 gate recorded PROCEED, or PIVOT with the option that ships this release recorded in its ADR
+- [ ] `FlagRolloutTest` baseline at 100% and `ParityV1SuiteTest` at 100% for the behaviours a new sheet uses
+- [ ] applicable thresholds holding from the same window start and the same 26-week cap
+- [ ] the reader-only release out (6.2.5e); "every device reader-capable (A4)" does NOT apply here
+- [ ] the owner's confirmation in the ADR-005 index
+
+A flipped default shows the per-device enable confirmation (Task 1.4.6c) before the first v2 sheet is created on a device that has not acknowledged it.
+
+Retiring the classic editor UI (its own change and ADR, not a task of this plan) additionally needs: the default `On` for at least 8 weeks
+with data loss at 0 and the crash threshold held; every sheet in the owner's graphs either Converted or consciously `Declined`; the parity
+gate still green. Retirement removes only the editor UI: the v1 READ path, the `SketchRenderDispatcher` v1 branch and `V1ToV2.lift` stay.
+
+## Task 6.2.5b verification run
+
+Run by an agent in the worktree before this file was committed; results are in the commit message and the report of that wave, not
+repeated here as a claim. Not covered and stated so: the display-checked `jvm_tests` UI run, `:kmp:wasmJsBrowserTest` and
+`compileKotlinIosArm64` (BUG-001 blocks iOS on this Linux host; no iOS result exists). Owner or CI: ______
+
+## Observation windows (owner only)
+
+- [ ] `window-start:` in `quality-signals.md` set to the date of the flag release, then counters copied in when a window is read.
+- [ ] 8-week adoption window (metric 8, advisory) read: authored ______ of new diagrams (minimum 5): ______
+- [ ] 4-week data-loss window before any default flip: reports ______
+
+The Task 6.2.4c device passes follow.
 
 ## Owner device and desktop passes (Task 6.2.4c; before any flag release of Task 6.2.5c)
 
