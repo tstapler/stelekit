@@ -97,6 +97,7 @@ import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import dev.stapler.stelekit.model.EffectiveNotesPath
+import dev.stapler.stelekit.ui.sketch.v2.v2EditorDeps as bridgeV2EditorDeps
 
 sealed class IndexingState {
     object Idle : IndexingState()
@@ -510,24 +511,12 @@ class StelekitViewModel(
         writeActor: dev.stapler.stelekit.db.DatabaseWriteActor?,
         touchPresent: Boolean = false,
     ): dev.stapler.stelekit.ui.sketch.v2.V2EditorDeps? {
-        val bridge = projectBridgeDeps ?: return null
         val device = dev.stapler.stelekit.performance.getDeviceInfo()
-        return dev.stapler.stelekit.ui.sketch.v2.V2EditorDeps(
-            repos = repos,
-            store = bridge.sidecarStore,
-            leases = bridge.sheetLeases,
-            settings = bridge.settings,
-            graphId = activeGraphIdProvider,
-            writeActor = writeActor,
-            clockMillis = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
-            keymap = dev.stapler.stelekit.ui.sketch.v2.KeymapEnv(
-                isMac = device.osVersion.contains(MAC_OS_NAME, ignoreCase = true),
-                isWeb = device.platform.contains(WEB_PLATFORM_NAME, ignoreCase = true),
-            ),
-            touchPresent = touchPresent,
-            durability = bridge.sketchDurability,
-            lifecycle = bridge.pageLifecycle,
+        val keymap = dev.stapler.stelekit.ui.sketch.v2.KeymapEnv(
+            isMac = device.osVersion.contains(MAC_OS_NAME, ignoreCase = true),
+            isWeb = device.platform.contains(WEB_PLATFORM_NAME, ignoreCase = true),
         )
+        return projectBridgeDeps?.bridgeV2EditorDeps(repos, writeActor, activeGraphIdProvider, keymap, touchPresent)
     }
 
     /** The graph's one sheet edit-lease registry; null where the project bridge is not wired. */

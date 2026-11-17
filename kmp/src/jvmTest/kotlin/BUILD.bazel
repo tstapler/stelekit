@@ -62,6 +62,8 @@ kt_jvm_test(
             "**/ToolsEndToEndTest.kt",
             # Task 6.2.4b: drives ScenarioEditor (commonTest) and SketchTestSupport (businessTest), neither on this target's classpath; Gradle-only.
             "**/ParityV1SuiteTest.kt",
+            # Story 6.2.0b: drives the commonTest V2EditorRig (not on this target's classpath); Gradle-only.
+            "**/WiringV2DesktopEntryPointTest.kt",
             # Reads the bundled fonts through Compose Multiplatform's generated `Res`, which Bazel does not generate (commonMain
             # uses bazel_stubs/SketchFontResources.kt instead); Gradle-only. Also skipped by AllJvmTestsCompletenessTest.
             "dev/stapler/stelekit/ui/sketch/v2/ComposeTextMetricsProviderTest.kt",

@@ -37,6 +37,7 @@ class WiredAppFixture private constructor(
     taskScheduler: dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler,
     taskRegistry: dev.stapler.stelekit.jobs.schedule.TaskRegistry,
     sketchWriterLease: dev.stapler.stelekit.platform.SketchWriterLease,
+    sketchDurability: dev.stapler.stelekit.projectbridge.SketchDurability,
 ) {
     internal val deps = GraphContentDeps(
         repos = repos,
@@ -49,6 +50,7 @@ class WiredAppFixture private constructor(
             backgroundTaskScheduler = taskScheduler,
             taskRegistry = taskRegistry,
             sketchWriterLease = sketchWriterLease,
+            sketchDurability = sketchDurability,
             browserPersistence = dev.stapler.stelekit.ui.SketchStorageDefaults.browserPersistence(),
             platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
             gitRepository = ports.gitRepository,
@@ -92,6 +94,8 @@ class WiredAppFixture private constructor(
             dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler = { _, _ -> dev.stapler.stelekit.jobs.schedule.NoopTaskScheduler() },
             /** The lease the sketch store consults; a test passes one that answers `HeldElsewhere` (Task 1.4.3q). */
             sketchWriterLease: dev.stapler.stelekit.platform.SketchWriterLease = dev.stapler.stelekit.ui.SketchStorageDefaults.writerLease(),
+            /** What the sketch saver waits on after a write; a test passes a recording one. */
+            sketchDurability: dev.stapler.stelekit.projectbridge.SketchDurability = dev.stapler.stelekit.projectbridge.ImmediateSketchDurability,
         ): WiredAppFixture {
             SteleKitContext.init(context)
             DriverFactory.setContext(context)
@@ -103,7 +107,7 @@ class WiredAppFixture private constructor(
                 defaultBackend = GraphBackend.IN_MEMORY,
             )
             val registry = dev.stapler.stelekit.jobs.schedule.TaskRegistry()
-            return WiredAppFixture(manager, manager.openGraph(graphPath), ports, dataDir, schedulerFactory, taskScheduler(ports, registry), registry, sketchWriterLease)
+            return WiredAppFixture(manager, manager.openGraph(graphPath), ports, dataDir, schedulerFactory, taskScheduler(ports, registry), registry, sketchWriterLease, sketchDurability)
         }
     }
 }

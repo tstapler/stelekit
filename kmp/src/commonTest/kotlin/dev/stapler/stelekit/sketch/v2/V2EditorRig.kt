@@ -58,14 +58,19 @@ class V2EditorRig(
         graphId = { GRAPH },
     )
 
-    /** Writes [doc] as the sheet's v2 file and its row; returns the bytes. */
-    suspend fun seed(doc: SketchDocumentV2 = SketchDocumentV2(sheetUuid = sheet.value)): ByteArray {
+    /** The project with one v2 sheet holding [doc], as the bridge stores it. */
+    fun bundle(doc: SketchDocumentV2 = SketchDocumentV2(sheetUuid = sheet.value)): ProjectBundle {
         val bytes = SheetCodecV2.encode(doc).getOrNull()!!
         val row = SketchSheet(sheet, project.uuid, "plan", "top", "in", 16, schemaVersion = SheetPaths.SCHEMA_V2)
-        val bundle = ProjectBundle(project, listOf(row), emptyList(), emptyList(), mapOf(sheet to SheetPayload.V2Opaque.of(bytes)))
+        return ProjectBundle(project, listOf(row), emptyList(), emptyList(), mapOf(sheet to SheetPayload.V2Opaque.of(bytes)))
+    }
+
+    /** Writes [doc] as the sheet's v2 file and its row into the rig's own store; returns the bytes. */
+    suspend fun seed(doc: SketchDocumentV2 = SketchDocumentV2(sheetUuid = sheet.value)): ByteArray {
+        val bundle = bundle(doc)
         repos.projects.replaceProjectContents(project.uuid, bundle)
         store.files.putAll(SidecarCodec.encode(bundle))
-        return bytes
+        return SheetCodecV2.encode(doc).getOrNull()!!
     }
 
     fun diskDoc(): SketchDocumentV2 = SheetCodecV2.decode(store.files.getValue(path)).getOrNull()!!

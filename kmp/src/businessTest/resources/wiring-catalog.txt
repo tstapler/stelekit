@@ -15,3 +15,5 @@ SketchWriterLease  SketchStorageAndroidEntryPointTest  effect:sketch-writer-leas
 BrowserPersistence  SketchStorageAndroidEntryPointTest  effect:browser-persistence-unsupported-android
 SketchWriterLease  SketchStorageDesktopEntryPointTest  effect:sketch-writer-lease-held-desktop
 BrowserPersistence  SketchStorageDesktopEntryPointTest  effect:browser-persistence-unsupported-desktop
+SketchDurability  WiringV2AndroidEntryPointTest  effect:sketch-durability-consulted-android
+SketchDurability  WiringV2DesktopEntryPointTest  effect:sketch-durability-consulted-desktop

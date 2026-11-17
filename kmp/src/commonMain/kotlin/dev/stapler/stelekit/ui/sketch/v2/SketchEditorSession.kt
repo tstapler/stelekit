@@ -11,6 +11,7 @@ import dev.stapler.stelekit.model.SheetUuid
 import dev.stapler.stelekit.projectbridge.ImmediateSketchDurability
 import dev.stapler.stelekit.projectbridge.NoPageLifecycle
 import dev.stapler.stelekit.projectbridge.PageLifecycle
+import dev.stapler.stelekit.projectbridge.ProjectBridgeDeps
 import dev.stapler.stelekit.projectbridge.ProjectBridgeSettings
 import dev.stapler.stelekit.projectbridge.SketchDurability
 import dev.stapler.stelekit.projectbridge.ProjectSidecarStore
@@ -188,3 +189,24 @@ class V2EditorOpener(private val deps: V2EditorDeps, private val context: Corout
         return EditorOpening.Editor(SketchEditorSession(controller, diagnostics, target.projectName, lease))
     }
 }
+
+/** What the v2 editor needs from the project bridge: its store, leases, mode settings, durability and page lifecycle. */
+fun ProjectBridgeDeps.v2EditorDeps(
+    repos: SketchRepositories,
+    writeActor: DatabaseWriteActor?,
+    graphId: () -> String?,
+    keymap: KeymapEnv,
+    touchPresent: Boolean,
+): V2EditorDeps = V2EditorDeps(
+    repos = repos,
+    store = sidecarStore,
+    leases = sheetLeases,
+    settings = settings,
+    graphId = graphId,
+    writeActor = writeActor,
+    clockMillis = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+    keymap = keymap,
+    touchPresent = touchPresent,
+    durability = sketchDurability,
+    lifecycle = pageLifecycle,
+)
