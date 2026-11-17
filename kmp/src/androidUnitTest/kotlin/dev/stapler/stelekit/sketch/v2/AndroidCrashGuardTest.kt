@@ -9,15 +9,30 @@ import dev.stapler.stelekit.model.SheetUuid
 import dev.stapler.stelekit.projectbridge.ProjectSidecarStore
 import dev.stapler.stelekit.projectbridge.SidecarSlugLock
 import dev.stapler.stelekit.repository.inMemorySketchRepositories
+import dev.stapler.stelekit.sketch.v2.commands.AddElements
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
+import dev.stapler.stelekit.sketch.v2.constraints.AddConstraint
+import dev.stapler.stelekit.sketch.v2.constraints.Constraint
+import dev.stapler.stelekit.sketch.v2.constraints.ConstraintId
+import dev.stapler.stelekit.sketch.v2.constraints.ConstraintKind
+import dev.stapler.stelekit.sketch.v2.constraints.ConstraintTarget
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerStringSource
 import dev.stapler.stelekit.sketch.v2.diagnostics.InMemoryDiagnosticsPort
+import dev.stapler.stelekit.sketch.v2.runtime.constraints.SolveEngine
+import dev.stapler.stelekit.sketch.v2.runtime.constraints.SolveOutcome
+import dev.stapler.stelekit.sketch.v2.runtime.constraints.SolveRejection
+import dev.stapler.stelekit.sketch.v2.runtime.constraints.SolveRunner
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveFailure
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetSaver
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetSaverPorts
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetTarget
+import dev.stapler.stelekit.sketch.v2.scene.ElementBase
+import dev.stapler.stelekit.sketch.v2.scene.ElementId
+import dev.stapler.stelekit.sketch.v2.scene.LineElement
+import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
+import dev.stapler.stelekit.sketch.v2.scene.SceneUnit
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -34,8 +49,8 @@ import kotlin.test.assertTrue
 /**
  * Story 1.4.4 (engineering rule "uncaught coroutine Throwables kill the process on Android"): an `OutOfMemoryError` in the
  * saver, whether inside the guarded save or anywhere else in its scope, must end as a failed save and never reach
- * `Thread.getDefaultUncaughtExceptionHandler`, which on Android kills the process. The `SolveRunner` scope joins this test
- * when that class exists (Story 4.1).
+ * `Thread.getDefaultUncaughtExceptionHandler`, which on Android kills the process. The `SolveRunner` (Story 4.1.4) is held to the same
+ * rule: an `OutOfMemoryError` in the solver becomes a rejected edit at the last good pose.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class AndroidCrashGuardTest {
@@ -108,6 +123,24 @@ class AndroidCrashGuardTest {
             assertEquals(listOf(BannerRowId.SaveFailed), diagnostics.diagnostics.value.entries.map { it.row })
             assertTrue(seen.isEmpty(), "the default uncaught-exception handler saw $seen")
             saver.close()
+        }
+    }
+
+    @Test
+    fun heapExhaustionInTheSolver_should_RejectTheEditAndKeepTheProcessAlive() = runTest {
+        withRecordingDefaultHandler { seen ->
+            val dispatcher = StandardTestDispatcher(testScheduler)
+            val runner = SolveRunner(engine = SolveEngine { _, _ -> throw OutOfMemoryError("test") }, context = dispatcher)
+            fun p(x: Double, y: Double) = ScenePoint(SceneUnit.of(x).getOrNull()!!, SceneUnit.of(y).getOrNull()!!)
+            val line = LineElement(ElementBase(id = ElementId("L1")), listOf(p(0.0, 0.0), p(100.0, 12.0)))
+            val base = AddElements(listOf(line)).apply(SketchDocumentV2()).getOrNull()!!.doc
+            val horizontal = Constraint(ConstraintId("h"), ConstraintKind.Horizontal, listOf(ConstraintTarget(ElementId("L1"))))
+
+            val out = runner.commitEdit(base, AddConstraint(horizontal))
+
+            assertEquals(SolveOutcome.Rejected(SolveRejection.Crashed("out-of-memory"), base), out)
+            assertTrue(seen.isEmpty(), "the default uncaught-exception handler saw $seen")
+            runner.close()
         }
     }
 }

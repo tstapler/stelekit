@@ -333,6 +333,17 @@ object SketchStrings {
         fun semantics(count: Int): String = "$BUTTON, $count ${if (count == 1) "element" else "elements"} selected"
     }
 
+    /** The solver runner's status text and its failure toast (Story 4.1.4, UX-35, UX-36). */
+    object Solve {
+        const val SOLVING = "Solving..."
+        const val CANCEL = "Cancel"
+        const val CANCEL_NAME = "Cancel solving"
+        const val CANT_SATISFY_KEY = "CantSatisfy"
+        const val CANT_SATISFY_SUMMARY = "Can't satisfy constraints here."
+        const val CANT_SATISFY_SHORT = "Can't solve"
+        const val CANT_SATISFY_DETAILS = "The constraints disagree, so nothing was moved. Undo the last change or remove a constraint."
+    }
+
     /** The scene hard cap and the constraint cap (Story 2.2.4, UX-73) and the low-memory toast. */
     object Capacity {
         const val DELETE_SOME = "Delete some"
