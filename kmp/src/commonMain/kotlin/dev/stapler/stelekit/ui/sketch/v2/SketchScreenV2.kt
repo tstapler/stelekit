@@ -95,6 +95,10 @@ data class SketchShellConfig(
     val bannerActions: BannerActions = BannerActions(),
     /** The toast lane's queue; null shows no toasts (Story 3.1.4c). */
     val toasts: ToastLaneHost? = null,
+    /** False when the target's solver tier is `Hidden`: the Constraints tab and the Constrain entries are not shown (ADR-003). */
+    val constraintsAvailable: Boolean = true,
+    /** The sheet's auto-constrain setting; its toggle joins the overflow menu and its "Free draw" chip the chip row (Story 4.2.2c). */
+    val autoConstrain: AutoConstrainState? = null,
 )
 
 object ShellTags {
@@ -277,11 +281,14 @@ private fun ShellTopBar(state: SketchEditorState, config: SketchShellConfig, foc
 @Composable
 private fun OverflowItems(state: SketchEditorState, config: SketchShellConfig, grouped: Boolean, close: () -> Unit) {
     Column {
-        DropdownMenuItem(
-            text = { Text("Constrain (K)") },
-            onClick = { close(); config.actions.onConstrain() },
-            modifier = Modifier.testTag(ShellTags.OVERFLOW_CONSTRAIN),
-        )
+        if (config.constraintsAvailable) {
+            DropdownMenuItem(
+                text = { Text("Constrain (K)") },
+                onClick = { close(); config.actions.onConstrain() },
+                modifier = Modifier.testTag(ShellTags.OVERFLOW_CONSTRAIN),
+            )
+        }
+        config.autoConstrain?.takeIf { config.constraintsAvailable }?.let { AutoConstrainToggle(it, Modifier.padding(horizontal = 16.dp)) }
         DropdownMenuItem(
             text = { Text("Pan arrows") },
             onClick = { close(); state.panPadOpen = true },
@@ -330,6 +337,7 @@ private fun CanvasArea(state: SketchEditorState, config: SketchShellConfig, focu
         ActionChipRow(
             listOfNotNull(
                 if (state.toolLock) ActionChip(ShellTags.TOOL_LOCK_CHIP, SketchStrings.Chrome.TOOL_LOCK_CHIP) { state.toolLock = false } else null,
+                config.autoConstrain?.takeIf { config.constraintsAvailable }?.let(AutoConstrainChips::freeDraw),
             ),
             Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 8.dp),
         )
@@ -406,7 +414,7 @@ private const val PERCENT = 100.0
 
 @Composable
 private fun PanelHostContent(state: SketchEditorState, config: SketchShellConfig, host: PanelHost, windowHeightDp: Int, panel: @Composable (PanelTab) -> Unit) {
-    val tabs = PanelTab.entries.filter { it != PanelTab.Layers || config.hasMultipleLayers }
+    val tabs = PanelTab.entries.filter { (it != PanelTab.Layers || config.hasMultipleLayers) && (it != PanelTab.Constraints || config.constraintsAvailable) }
     val open = state.panelTab ?: PanelTab.Style
     val shape = when (host) {
         PanelHost.BottomSheet -> Modifier.fillMaxWidth().height(if (state.sheetSize == SheetSize.Full) (windowHeightDp * FULL_SHEET_SHARE).dp else PANEL_SHEET_HEIGHT)

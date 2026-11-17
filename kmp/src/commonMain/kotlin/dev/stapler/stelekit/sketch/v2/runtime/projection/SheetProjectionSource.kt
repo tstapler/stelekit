@@ -15,6 +15,9 @@ import dev.stapler.stelekit.projectbridge.SheetPaths
 import dev.stapler.stelekit.projectbridge.SidecarRead
 import dev.stapler.stelekit.sketch.SketchLayer
 import dev.stapler.stelekit.sketch.SketchPrimitive
+import dev.stapler.stelekit.sketch.v2.bridge.DimensionExpectation
+import dev.stapler.stelekit.sketch.v2.bridge.DimensionMismatch
+import dev.stapler.stelekit.sketch.v2.bridge.ProjectionReports
 import dev.stapler.stelekit.sketch.v2.bridge.V2ToV1
 import dev.stapler.stelekit.sketch.v2.codec.SheetCodecV2
 import dev.stapler.stelekit.sketch.v2.codec.SheetError
@@ -34,7 +37,12 @@ class SheetProjection(
     val droppedCount: Int,
     /** The decoded v2 scene the projection came from; the embed preview draws it directly (Story 6.1.1). */
     val scene: SketchSceneV2 = SketchSceneV2.empty(),
-)
+    /** How many projected elements were rounded to sixteenths (Story 4.2.4); the primitives are rounded once, here and nowhere else. */
+    val roundedCount: Int = 0,
+) {
+    /** The named dimensions this projection no longer measures exactly; reported, never snapped (fusion shows "off by 1/16"). */
+    fun mismatches(expectations: List<DimensionExpectation>): List<DimensionMismatch> = ProjectionReports.mismatches(primitives, expectations)
+}
 
 /** What reading a v2 sheet gave: the projection, a file that needs a newer app, or any other failure. */
 sealed interface SheetProjectionRead {
@@ -92,7 +100,9 @@ class SheetProjectionSource(private val storeProvider: () -> ProjectSidecarStore
             },
             { doc ->
                 val projection = V2ToV1.projectScene(doc.scene)
-                SheetProjectionRead.Loaded(SheetProjection(sha, projection.primitives, projection.layers, projection.droppedCount, doc.scene))
+                SheetProjectionRead.Loaded(
+                    SheetProjection(sha, projection.primitives, projection.layers, projection.droppedCount, doc.scene, ProjectionReports.of(projection, doc.scene.elementsInOrder.toList(), emptyList()).rounded),
+                )
             },
         )
 }

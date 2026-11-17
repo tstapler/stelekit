@@ -69,6 +69,9 @@ object SketchReasonText {
     const val TangentNeedsCurve = "Tangent needs a circle or arc and one more element"
     const val SymmetricNeedsPointsOrLine = "Symmetric needs two points and a line"
     const val SelectAnElement = "Select an element to constrain"
+    const val CoincidentNeedsTwo = "Coincident needs two elements"
+    const val DistanceNeedsMeasure = "Distance needs a line or rectangle, or two points"
+    const val ReferenceNeedsDimension = "Reference needs a dimension on the selection"
 
     /** The diagnostics entry written when `CommandError.ConstraintCapExceeded` is returned (Story 4.2.1). */
     fun constraintLimitReached(limit: Int) = "Constraint limit reached ($limit)"
@@ -92,6 +95,13 @@ object ConstraintEligibility {
     }
 
     fun reason(element: SceneElement, constraint: ConstraintKind): Eligibility = reason(ElementKind.of(element), constraint)
+
+    /** What to say when every selected element suits [constraint] on its own but together they do not make a complete operand list. */
+    fun selectionReason(constraint: ConstraintKind): String = when (constraint) {
+        ConstraintKind.Coincident -> SketchReasonText.CoincidentNeedsTwo
+        ConstraintKind.Distance -> SketchReasonText.DistanceNeedsMeasure
+        else -> needs(constraint).reason
+    }
 
     private class Need(val kinds: Set<ElementKind>, val reason: String)
 

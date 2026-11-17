@@ -60,6 +60,9 @@ kt_android_library(
             # Compose host tests for the v2 scene semantics and the technical-data panel (Gradle-only, no Compose plugin in this target)
             "**/SceneSemanticsTest.kt",
             "**/TechnicalDataPanelTest.kt",
+            # Compose host tests for the v2 constraint panel, glyph overlay and auto-constrain toggle (Gradle-only, no Compose plugin in this target)
+            "**/ConstraintPanelTest.kt",
+            "**/UxConstraintsAcceptanceTest.kt",
             # Compose host tests for the v2 layers panel, style panel and shortcuts sheet (Gradle-only, no Compose plugin in this target)
             "**/LayersPanelTest.kt",
             "**/StylePanelTest.kt",

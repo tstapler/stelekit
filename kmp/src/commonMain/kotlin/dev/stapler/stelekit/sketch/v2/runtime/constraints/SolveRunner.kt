@@ -4,10 +4,12 @@
 
 package dev.stapler.stelekit.sketch.v2.runtime.constraints
 
+import arrow.core.right
 import dev.stapler.stelekit.sketch.constraints.ConstraintProblem
 import dev.stapler.stelekit.sketch.constraints.SolveResult
 import dev.stapler.stelekit.sketch.constraints.Solver
 import dev.stapler.stelekit.sketch.constraints.SolverTier
+import dev.stapler.stelekit.sketch.v2.commands.Applied
 import dev.stapler.stelekit.sketch.v2.commands.CommandError
 import dev.stapler.stelekit.sketch.v2.commands.Command
 import dev.stapler.stelekit.sketch.v2.commands.Committed
@@ -116,6 +118,15 @@ class SolveRunner(
     /** Applies [edit] to [base], solves, and returns the one history step; [base] and the caller's history are never touched. */
     suspend fun commitEdit(base: SketchDocumentV2, edit: Command): SolveOutcome = execute(base) {
         pipeline.run(base, edit).fold({ SolveOutcome.Rejected(it, base) }, { finished(base, it) })
+    }
+
+    /**
+     * Solves [doc] as it stands, with no edit, for the status line: [SolveOutcome.Posed] carries the degrees of freedom and the
+     * redundant constraints, [SolveOutcome.Rejected] the constraints that disagree (a sheet loaded with conflicts). Nothing is
+     * recorded in history and the document is never changed.
+     */
+    suspend fun analyze(doc: SketchDocumentV2): SolveOutcome = execute(doc) {
+        pipeline.run(doc, Command { Applied(it, emptySet()).right() }).fold({ SolveOutcome.Rejected(it, doc) }, { SolveOutcome.Posed(doc, it.summary) })
     }
 
     /** Opens a drag whose updates solve from the previous pose and which commits once, on [DragSession.release]. */
