@@ -342,7 +342,10 @@ fun main() {
                         backgroundSyncSchedulerFactory = dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory.None,
                         backgroundTaskScheduler = dev.stapler.stelekit.jobs.schedule.NoopTaskScheduler(),
                         taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry().also { it.registerGitSync() },
-                        sketchWriterLease = dev.stapler.stelekit.ui.SketchStorageDefaults.writerLease(),
+                        sketchWriterLease = dev.stapler.stelekit.platform.WasmSketchWriterLease(
+                            readyGraphId = dev.stapler.stelekit.platform.readyGraphIdState(graphManager),
+                            reloadSidecarRoot = opfsFileSystem::reloadSidecarRoot,
+                        ),
                         browserPersistence = dev.stapler.stelekit.platform.WasmBrowserPersistence(),
                         platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
                         // Demo-fallback mode has no persistent OPFS content to write attachments
@@ -495,7 +498,10 @@ private suspend fun runEphemeralSession() {
                     backgroundSyncSchedulerFactory = dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory.None,
                     backgroundTaskScheduler = dev.stapler.stelekit.jobs.schedule.NoopTaskScheduler(),
                     taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry().also { it.registerGitSync() },
-                    sketchWriterLease = dev.stapler.stelekit.ui.SketchStorageDefaults.writerLease(),
+                    sketchWriterLease = dev.stapler.stelekit.platform.WasmSketchWriterLease(
+                        readyGraphId = dev.stapler.stelekit.platform.readyGraphIdState(graphManager),
+                        reloadSidecarRoot = fileSystem::reloadSidecarRoot,
+                    ),
                     browserPersistence = dev.stapler.stelekit.platform.WasmBrowserPersistence(),
                     platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
                     attachmentService = WasmMediaAttachmentService(fileSystem),
