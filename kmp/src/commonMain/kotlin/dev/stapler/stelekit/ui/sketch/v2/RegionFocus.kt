@@ -36,11 +36,11 @@ class RegionFocus(seed: Map<TabStop, FocusRequester> = emptyMap()) {
 
     fun requester(stop: TabStop): FocusRequester = requesters.getOrPut(stop) { FocusRequester() }
 
-    internal fun register(stop: TabStop) {
+    fun register(stop: TabStop) {
         shown += stop
     }
 
-    internal fun unregister(stop: TabStop) {
+    fun unregister(stop: TabStop) {
         shown -= stop
     }
 
