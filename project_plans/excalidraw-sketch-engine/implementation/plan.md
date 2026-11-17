@@ -2056,6 +2056,18 @@ This story is NOT held back by the A1 gate or by an A6 DEFER (D-46): it has no d
 ##### Task 6.1.2c: Result model (destination, Open action, Rename and copy) and its dialog (XS)
 
 ### Epic 6.2: Quality gates and rollout
+#### Story 6.2.0: Editor host assembly (ADDED DURING IMPLEMENTATION, 2026-11-17; not in the reviewed plan)
+**As a** user, **I want** to open a v2 sheet and draw, edit, constrain, save, import and export in it, **so that** the parts built by Stories 1.x to 6.x are one working editor and not only unit-tested pieces.
+**Why added**: by wave 12 every implementing group reported that no object connects `SketchScreenV2` to the document, tool registry, history, solver, saver, router, panels and import/export. Story 6.2.1 only audits reachability, so without this story the product has no openable v2 editor.
+**Acceptance Criteria**:
+- *Given* a v2 sheet routed `V2Editable` by `SketchEditorRouter`, *When* the user opens it, *Then* a `SketchEditorV2Host` mounts `SketchScreenV2` with live state: tool commands from `SketchPointerAdapter` and the keyboard apply to a `SketchDocumentV2` through `Transaction`/`HistoryV2`, the canvas repaints, undo and redo work, and every edit reaches `SheetSaver`.
+- Solving goes only through `SolveRunner`; panels, picker, dimension editor, chips, notices, import, export, go-to-element and the Esc rows are mounted and fed by the host.
+- A headless host test draws a rectangle, saves, reloads and gets the same scene; a Robolectric test mounts the host and draws by tap.
+- Every platform root that can open v2 constructs the host (Desktop, Android, Web); iOS compiles only.
+**Files**: `UI2/SketchEditorV2Host.kt`, `UI2/SketchEditorController.kt` (state holder), the `ScreenRouter`/embed call sites, `AT/sketch/v2/SketchEditorHostTest.kt`, `CT/sketch/v2/SketchEditorControllerTest.kt`
+##### Task 6.2.0a: `SketchEditorController` (pure state holder: document, history, selection, active tool, viewport, tool registry, saver, solver, diagnostics) with commonTest (M)
+##### Task 6.2.0b: `SketchEditorV2Host` composable mounting every merged panel and dialog, and the router/embed integration in the three platform roots, with Robolectric and wiring entry-point tests (M)
+
 #### Story 6.2.1: Wiring, registration and audits
 **Acceptance Criteria**:
 - All new seams are classified and covered (D-146). Five of the 14 names are interfaces on `WiringAudit.SEAMS` (`TextMetricsProvider`, `SketchWriterLease`, `BrowserPersistence`, `SketchDurability`, `PageLifecycle`): each implementation is constructed in a composition root by the task that adds its interface to the list or by the task that declares it, each commonMain implementation has `wiring-catalog.txt` lines and an entry-point test in `androidUnitTest` and `jvmTest` (the only source sets with a fixture; businessTest cannot call `WiredAppFixture` or `DesktopWiredAppFixture`) added by a task after the list task, and the wasm-only implementations have no catalog line (D-141); the nine others (`StrokeStyleProvider`, `SheetSaver`, `SolveRunner`, `PngEncoder`, `SketchEditorRouter`, `SheetLeaseRegistry`, `SheetConverter`, `SheetProjectionSource`, `ImageAssetStore`) are classes or pure strategies, never on the list and never catalogued, and the two reachability tests of Task 6.2.1a drive the real fixtures and assert each is reachable; `first-open-screens.txt` and `FIRST_OPEN_SCREENS` gain "SketchScreenV2"; no new baseline entries; all test classes registered.
