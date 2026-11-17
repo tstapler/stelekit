@@ -22,10 +22,12 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.unit.dp
@@ -136,7 +138,9 @@ class ConstraintTargetPickerTest {
         // the Pick target list: grouped by element, by name, and picking from it is a pick
         rule.onNodeWithTag(PickerTags.LIST_BUTTON).performClick()
         rule.onNodeWithTag(PickerTags.listRow("b:start")).assertTextEquals("Line 2 start")
+        rule.onNodeWithTag(PickerTags.LIST).performScrollToNode(hasTestTag(PickerTags.listRow("c:centre")))
         rule.onNodeWithTag(PickerTags.listRow("c:centre")).assertTextEquals("Circle 1 centre")
+        rule.onNodeWithTag(PickerTags.LIST).performScrollToNode(hasTestTag(PickerTags.listRow("b:start")))
         rule.onNodeWithTag(PickerTags.listRow("b:start")).performClick()
 
         val done = run.completed
@@ -196,7 +200,7 @@ class ConstraintTargetPickerTest {
     }
 
     private fun androidx.compose.ui.test.junit4.ComposeContentTestRule.onAllNodesWithTagCount(tag: String): Int =
-        onAllNodes(androidx.compose.ui.test.hasTestTag(tag)).fetchSemanticsNodes().size
+        onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().size
 
     private companion object {
         const val SCALE = 10.0

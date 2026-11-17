@@ -12,7 +12,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
@@ -22,6 +21,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.requestFocus
 import dev.stapler.stelekit.sketch.constraints.SolverTier
 import dev.stapler.stelekit.sketch.v2.commands.AddElements
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
@@ -118,7 +118,7 @@ class DimensionEditTest {
 
         rule.onNodeWithTag(DimensionEditorTags.FIELD).performTextReplacement("six")
         rule.onNodeWithTag(DimensionEditorTags.SET).performClick()
-        rule.onNodeWithTag(DimensionEditorTags.ERROR).assertTextEquals("Not a length. Try 12 3/16\"")
+        rule.onNodeWithTag(DimensionEditorTags.ERROR, useUnmergedTree = true).assertTextEquals("Not a length. Try 12 3/16\"")
         rule.onNodeWithTag(DimensionEditorTags.FIELD).assertIsDisplayed()
         assertEquals(5.0, valueOf(host.doc, "d"))
         assertEquals(5.0, length(host.doc))
@@ -126,11 +126,11 @@ class DimensionEditTest {
         rule.onNodeWithTag(DimensionEditorTags.FIELD).performKeyInput { pressKey(Key.Escape) }
         rule.onNodeWithTag(DimensionEditorTags.FIELD).assertDoesNotExist()
 
-        rule.onNodeWithTag(ConstraintGlyphTags.glyph(ConstraintId("d"))).performKeyInput { pressKey(Key.Enter) }
+        rule.onNodeWithTag(ConstraintGlyphTags.glyph(ConstraintId("d"))).requestFocus().performKeyInput { pressKey(Key.Enter) }
         rule.onNodeWithTag(DimensionEditorTags.FIELD).assertIsDisplayed()
         rule.onNodeWithTag(DimensionEditorTags.FIELD).performKeyInput { pressKey(Key.Escape) }
 
-        rule.onNodeWithTag(ConstraintGlyphTags.glyph(ConstraintId("d"))).performKeyInput { pressKey(Key.F2) }
+        rule.onNodeWithTag(ConstraintGlyphTags.glyph(ConstraintId("d"))).requestFocus().performKeyInput { pressKey(Key.F2) }
         rule.onNodeWithTag(DimensionEditorTags.FIELD).assertIsDisplayed()
     }
 
@@ -160,9 +160,9 @@ class DimensionEditTest {
                 DimensionLabelEditor(host.editor, DimensionEditorActions())
             }
         }
-        rule.onNodeWithTag(ConstraintPanelTags.row(ConstraintId("h"))).performKeyInput { pressKey(Key.F2) }
+        rule.onNodeWithTag(ConstraintPanelTags.row(ConstraintId("h"))).requestFocus().performKeyInput { pressKey(Key.F2) }
         rule.onNodeWithTag(DimensionEditorTags.FIELD).assertDoesNotExist()
-        rule.onNodeWithTag(ConstraintPanelTags.row(ConstraintId("d"))).performKeyInput { pressKey(Key.F2) }
+        rule.onNodeWithTag(ConstraintPanelTags.row(ConstraintId("d"))).requestFocus().performKeyInput { pressKey(Key.F2) }
         rule.onNodeWithTag(DimensionEditorTags.FIELD).assertIsDisplayed()
     }
 
@@ -229,11 +229,11 @@ class DimensionEditTest {
         rule.onNodeWithTag(DimensionEditorTags.FIELD).performKeyInput { pressKey(Key.Escape) }
         rule.onNodeWithTag(DimensionEditorTags.FIELD).assertDoesNotExist()
 
-        rule.onNodeWithTag(DimensionChipTags.CHIP).performKeyInput { pressKey(Key.D) }
+        rule.onNodeWithTag(DimensionChipTags.CHIP).requestFocus().performKeyInput { pressKey(Key.D) }
         rule.onNodeWithTag(DimensionEditorTags.FIELD).assertIsDisplayed()
         rule.onNodeWithTag(DimensionEditorTags.FIELD).performKeyInput { pressKey(Key.Escape) }
 
-        rule.onNodeWithTag(DimensionChipTags.CHIP).performKeyInput { pressKey(Key.Enter) }
+        rule.onNodeWithTag(DimensionChipTags.CHIP).requestFocus().performKeyInput { pressKey(Key.Enter) }
         rule.onNodeWithTag(DimensionEditorTags.FIELD).assertIsDisplayed()
     }
 
