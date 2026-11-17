@@ -1126,5 +1126,6 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.FlagModeSettingsTest::class,
     dev.stapler.stelekit.sketch.v2.NewerSchemaScreenTest::class,
     dev.stapler.stelekit.sketch.v2.ClassicNoticeLedgerTest::class,
+    dev.stapler.stelekit.sketch.v2.QualitySignalsLocalOnlyTest::class,
 )
 class AllBusinessTests

@@ -6,6 +6,8 @@
 package dev.stapler.stelekit.sketch.v2
 
 import arrow.core.Either
+import dev.stapler.stelekit.sketch.v2.runtime.telemetry.SketchLog
+import dev.stapler.stelekit.sketch.v2.runtime.telemetry.SketchLogSink
 import dev.stapler.stelekit.sketch.constraints.SolveResult
 import dev.stapler.stelekit.sketch.constraints.Solver
 import dev.stapler.stelekit.sketch.constraints.SolverTier
@@ -171,6 +173,29 @@ class SolveRunnerTest {
         assertIs<SolveOutcome.Unchanged>(drag.release())
         assertEquals(SketchStrings.Solve.CANT_SATISFY_SUMMARY, SolveMessages.cantSatisfy().text)
         assertEquals("CantSatisfy", SolveMessages.cantSatisfy().key)
+    }
+
+    @Test
+    fun solves_should_FeedTheQualityCounters_WithNoConvergenceAmongThem() = runTest {
+        val values = mutableMapOf<String, Any>()
+        val settings = object : dev.stapler.stelekit.platform.Settings {
+            override fun getBoolean(key: String, defaultValue: Boolean) = values[key] as? Boolean ?: defaultValue
+            override fun putBoolean(key: String, value: Boolean) { values[key] = value }
+            override fun getString(key: String, defaultValue: String) = values[key] as? String ?: defaultValue
+            override fun putString(key: String, value: String) { values[key] = value }
+            override fun containsKey(key: String) = key in values
+        }
+        val signals = dev.stapler.stelekit.sketch.v2.runtime.telemetry.QualitySignals(settings)
+        val log = SketchLog(SketchLogSink { }, signals = signals)
+        val ok = SolveRunner(SceneLimits.Default, SolverEngine(), SolverTier.Full, StandardTestDispatcher(testScheduler), log)
+        assertIs<SolveOutcome.Done>(ok.commitEdit(docOf(line("L1", 0.0, 0.0, 100.0, 12.0)), AddConstraint(c("h", ConstraintKind.Horizontal, "L1"))))
+        val stalled = SolveEngine { _, start -> SolveResult.NoConvergence(StopReason.Stalled, start.copyOf(), 0, 1.0, 5, null) }
+        val failing = SolveRunner(SceneLimits.Default, stalled, SolverTier.Full, StandardTestDispatcher(testScheduler), log)
+        failing.beginDrag(horizontalLine()).update(SetLinePoints(id("L1"), listOf(SheetFixtures.pt(0.0, 0.0), SheetFixtures.pt(50.0, 30.0))))
+
+        assertEquals(2L, signals.counts().solves)
+        assertEquals(1L, signals.counts().noConvergence)
+        assertEquals(listOf(false, true), signals.recentSolves())
     }
 
     @Test

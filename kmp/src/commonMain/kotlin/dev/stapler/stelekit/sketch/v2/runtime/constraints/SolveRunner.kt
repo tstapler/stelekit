@@ -206,7 +206,20 @@ class SolveRunner(
             throw e
         } catch (t: Throwable) {
             SolveOutcome.Rejected(SolveRejection.Crashed(tokenOf(t)), lastGood)
-        }.also { outcome -> if (outcome is SolveOutcome.Rejected) logRejection(outcome.reason) }
+        }.also { outcome ->
+            if (outcome is SolveOutcome.Rejected) logRejection(outcome.reason)
+            countSolve(outcome)
+        }
+
+    /** Feeds the local quality counters (Task 6.2.3b): every solver run that ended solved (a drag pose included) or unsatisfiable is one solve. */
+    private fun countSolve(outcome: SolveOutcome) {
+        when {
+            outcome is SolveOutcome.Done && outcome.summary != null -> log?.solveCommitted()
+            outcome is SolveOutcome.Posed && outcome.summary != null -> log?.solveCommitted()
+            outcome is SolveOutcome.Rejected && outcome.reason is SolveRejection.Unsatisfiable ->
+                if (outcome.reason.kind == UnsatisfiedKind.NoConvergence) log?.solveNoConvergence() else log?.solveCommitted()
+        }
+    }
 
     private fun logRejection(reason: SolveRejection) {
         when (reason) {

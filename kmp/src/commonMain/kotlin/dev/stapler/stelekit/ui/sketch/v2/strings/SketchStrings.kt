@@ -344,6 +344,28 @@ object SketchStrings {
         const val CANT_SATISFY_DETAILS = "The constraints disagree, so nothing was moved. Undo the last change or remove a constraint."
     }
 
+    /** The local usage counters of Settings > Sketches (Task 6.2.3b; metric 8 and the flag-exit criteria). */
+    object Signals {
+        const val HEADING = "Usage counts on this device"
+        const val LOCAL_ONLY = "Kept on this device only. Never sent anywhere."
+        const val SELF_REPORT = "Diagrams drawn elsewhere are not seen here, so the share of your new diagrams is your own count."
+        const val NEW_PROJECTS_ONLY = "New sketch projects only: new diagrams in existing projects are classic and are not counted."
+
+        fun authored(count: Long) = "Sketches drawn in the new editor: $count"
+
+        fun imported(count: Long) = "Excalidraw files imported: $count"
+
+        fun sessions(count: Long) = "New-editor sessions: $count"
+
+        fun crashes(count: Long) = "Crashes: $count"
+
+        fun solves(count: Long) = "Constraint solves: $count"
+
+        fun noConvergence(count: Long) = "Solves that did not converge: $count"
+
+        fun conflicts(count: Long) = "Save conflicts: $count"
+    }
+
     /** The scene hard cap and the constraint cap (Story 2.2.4, UX-73) and the low-memory toast. */
     object Capacity {
         const val DELETE_SOME = "Delete some"
