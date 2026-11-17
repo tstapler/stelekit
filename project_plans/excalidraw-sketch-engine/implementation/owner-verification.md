@@ -30,6 +30,11 @@ Claims, and the test or file that backs each:
   `V2Build.CONVERSION_OFFERED` are both `true` in `kmp/src/commonMain/kotlin/dev/stapler/stelekit/projectbridge/V2Mode.kt`, so the mode
   picker can offer New projects only and On. The owner decides how the reader-only build closes that (build constants for this
   release, or the picker hidden) before this note is published; until then the note's "never creates" sentence is not true of this tree.
+  After Story 1.4.6 the build constants ARE the one edit: every reader of the two flags (the router, the mode control, the
+  flag-enable confirmation, the classic-notice policy and the read-only banner's "Use new") goes through `V2Capabilities.of`, which
+  reads `V2Build`. Setting both to `false` disables both On radios with "Not available in this build yet" and removes "Use new"
+  (the banner then says "This version of SteleKit can't edit new-editor sketches yet."); `ConversionReadyConsistencyTest` must be
+  re-read at the same time, because it holds `CONVERSION_READY` honest against the registered test classes. The flip was NOT made in Story 1.4.6.
 - [ ] The release notes above are in the release body, with the "update every device first" sentence unchanged.
 - [ ] Owner device pass: a v2 sheet copied to a second device on the previous release is refused there with no data change; the same
   sheet on this build shows read-only with the reason text "Turn on the new editor to edit." (`SketchReasonText.READ_ONLY_TURN_ON`).

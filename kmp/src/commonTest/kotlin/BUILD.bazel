@@ -198,6 +198,8 @@ kt_jvm_library(
         "dev/stapler/stelekit/platform/OpfsProbeDirectoryTest.kt",
         "dev/stapler/stelekit/platform/OpfsStorageVerdictTest.kt",
         "dev/stapler/stelekit/platform/V2StorageStatusTest.kt",
+        "dev/stapler/stelekit/platform/SidecarLiveSetTest.kt",
+        "dev/stapler/stelekit/platform/Utf8PrefixTest.kt",
         "dev/stapler/stelekit/platform/diagnostics/ExitRecordFormatterTest.kt",
         "dev/stapler/stelekit/platform/diagnostics/LogRedactorTest.kt",
         "dev/stapler/stelekit/platform/diagnostics/ProcStatParserTest.kt",

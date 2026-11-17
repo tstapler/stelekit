@@ -1108,5 +1108,14 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.SheetSaverDurabilityTest::class,
     dev.stapler.stelekit.sketch.v2.SheetSaverConflictTest::class,
     dev.stapler.stelekit.sketch.v2.SheetSaverReconcileIntegrationTest::class,
+    dev.stapler.stelekit.platform.SidecarLiveSetTest::class,
+    dev.stapler.stelekit.platform.Utf8PrefixTest::class,
+    dev.stapler.stelekit.sketch.v2.ConsentCopyTest::class,
+    dev.stapler.stelekit.sketch.v2.UxMigrationAcceptanceTest::class,
+    dev.stapler.stelekit.sketch.v2.UpgradeOfferTest::class,
+    dev.stapler.stelekit.sketch.v2.UpgradeChipConsentSheetTest::class,
+    dev.stapler.stelekit.sketch.v2.FlagModeSettingsTest::class,
+    dev.stapler.stelekit.sketch.v2.NewerSchemaScreenTest::class,
+    dev.stapler.stelekit.sketch.v2.ClassicNoticeLedgerTest::class,
 )
 class AllBusinessTests

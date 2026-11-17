@@ -99,6 +99,8 @@ kt_android_library(
             "**/LeaveSketchPromptTest.kt",
             # Compose host test for the restore and delete-backups dialogs (Gradle-only, no Compose plugin in this target)
             "**/RestoreBackupDialogTest.kt",
+            # Compose host test for the sketch v2 migration and enablement composables (Gradle-only, no Compose plugin in this target)
+            "**/MigrationUiTest.kt",
             # Compose host test for the sketch copy result dialog (Gradle-only, no Compose plugin in this target)
             "**/SketchCopyDialogTest.kt",
             # Compose host test for the sketch embed dispatcher (Gradle-only, no Compose plugin or commonTest in this target)

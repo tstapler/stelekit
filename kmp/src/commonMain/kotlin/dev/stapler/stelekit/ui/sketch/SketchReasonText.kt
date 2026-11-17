@@ -18,6 +18,22 @@ sealed interface ClassicReason {
 }
 
 /**
+ * The closed set of reasons of the `ClassicEditor` toast (ux.md 14.1 table) in PRECEDENCE order: a toast names only the
+ * first applicable one (UX-131). [settingsCanChange] is true only for the New-sketch-projects-only reasons, where choosing
+ * All sketches (Upgrade) in Settings would change the outcome.
+ */
+enum class ClassicNoticeReason(val settingsCanChange: Boolean) {
+    Platform(false),
+    BuildCapped(false),
+    TechnicalData(false),
+    ModeOff(false),
+    NpoClassicSheets(true),
+    NpoEmptyProject(true),
+    NpoUnreadable(true),
+    UserChose(false),
+}
+
+/**
  * The ONE table of reason strings the router, the mode control and the render dispatcher show. Storage texts follow
  * the web reason table of ux.md 14.1; the rest are the strings quoted by the router matrix of plan Story 1.4.3.
  */
@@ -75,5 +91,31 @@ object SketchReasonText {
         ClassicReason.ProjectNotNew -> "this project already holds classic sketches, so an older version of SteleKit can still open it."
         ClassicReason.TechnicalData -> HAS_TECHNICAL_DATA
         is ClassicReason.Storage -> v2StorageUnavailable(reason.storage)
+    }
+
+    private const val NPO_ROUTE =
+        "To use the new editor in an existing project, choose All sketches (Upgrade) in Settings: sketches you add to that " +
+            "project then use the new editor (after a one-time confirmation), and each classic sketch offers Upgrade."
+
+    /** The `<reason>` of "Created with the classic editor because <reason>." (ux.md 14.1 reason table). */
+    fun noticeReason(reason: ClassicNoticeReason, storage: V2Storage = V2Storage.NoStore): String = when (reason) {
+        ClassicNoticeReason.Platform ->
+            if (storage == V2Storage.NoStore) "this graph can't hold new-editor sketches" else "this device can't save new-editor sketches yet"
+        ClassicNoticeReason.BuildCapped -> "this version of SteleKit can't use the new editor yet"
+        ClassicNoticeReason.TechnicalData -> "this project has dimensions or zones, and the new editor can't hold those yet"
+        ClassicNoticeReason.ModeOff -> "the new editor is off for this graph"
+        ClassicNoticeReason.NpoClassicSheets ->
+            "this project already has sketches from before the new editor, and New sketch projects only limits the new editor " +
+                "to projects created from now on"
+        ClassicNoticeReason.NpoEmptyProject ->
+            "this project already existed, and New sketch projects only limits the new editor to projects created from now on"
+        ClassicNoticeReason.NpoUnreadable -> "SteleKit couldn't confirm that every sketch in this project uses the new editor"
+        ClassicNoticeReason.UserChose -> "you chose it"
+    }
+
+    /** The Details of the `ClassicEditor` toast; every New-sketch-projects-only reason ends with the route to the new editor. */
+    fun classicDetails(reason: ClassicNoticeReason, storage: V2Storage = V2Storage.NoStore): String {
+        val line = "Created with the classic editor because ${noticeReason(reason, storage)}."
+        return if (reason.settingsCanChange) "$line $NPO_ROUTE" else line
     }
 }
