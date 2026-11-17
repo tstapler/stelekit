@@ -533,6 +533,7 @@ class StelekitViewModel(
             edgeTarget = dev.stapler.stelekit.ui.sketch.v2.EdgeTarget.of(device.platform),
             edgePan = dev.stapler.stelekit.sketch.v2.runtime.settings.EdgePanSettings(platformSettings),
             storageStatus = { fileSystem.storageStatus },
+            canvasDrop = dev.stapler.stelekit.platform.WebCanvasDrop.host,
         )
         return projectBridgeDeps?.bridgeV2EditorDeps(
             repos, writeActor, activeGraphIdProvider, keymap, touchPresent,

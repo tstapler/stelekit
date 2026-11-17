@@ -167,7 +167,7 @@ object KeyDispatcher {
     private const val ARROW_RIGHT = "arrowright"
     private const val ARROW_UP = "arrowup"
     private const val ARROW_DOWN = "arrowdown"
-    private const val ENTER = "enter"
+    internal const val ENTER = "enter"
     private const val ESCAPE = "escape"
 
     private val ARROW_DIRECTIONS = mapOf(ARROW_LEFT to (-1 to 0), ARROW_RIGHT to (1 to 0), ARROW_UP to (0 to -1), ARROW_DOWN to (0 to 1))

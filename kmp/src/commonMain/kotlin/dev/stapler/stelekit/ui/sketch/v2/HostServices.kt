@@ -6,6 +6,7 @@ package dev.stapler.stelekit.ui.sketch.v2
 
 import arrow.core.Either
 import arrow.core.left
+import dev.stapler.stelekit.platform.CanvasFileDropHost
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.PngEncoder
 import dev.stapler.stelekit.platform.SketchPlatformInput
@@ -43,6 +44,8 @@ class HostPlatform(
     val edgePan: EdgePanSettings? = null,
     /** What the browser storage is now: the durability cue reads the temporary-graph and private-window flags. */
     val storageStatus: () -> V2StorageStatus = { V2StorageStatus.Ready(sessionOnly = false, privateSuspected = false) },
+    /** The web canvas element's own drop and paste handler; null where the canvas has none (every other target). */
+    val canvasDrop: CanvasFileDropHost? = null,
 )
 
 /**
@@ -63,6 +66,8 @@ class HostServices(
     val limits: SceneLimits = SceneLimits.Default,
     /** What the platform root supplied (input seams, edge-pan settings, storage status). */
     val platform: HostPlatform = HostPlatform(),
+    /** The named dimensions and zones of a technical sheet; null for a sheet that has none. */
+    val technical: TechnicalDataSource? = null,
 ) {
     /** The stored bytes of an image element, for SVG and Excalidraw export; a missing file is a placeholder in the output. */
     val imageSource: SvgImageSource = SvgImageSource { fileId ->

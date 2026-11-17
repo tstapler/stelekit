@@ -22,7 +22,7 @@ import dev.stapler.stelekit.sketch.v2.view.SketchViewport
 enum class InputKind { Mouse, TouchOrPen, Keyboard }
 
 /** The panel tabs, ONE list (ux.md section 1): Layers is hidden until a second layer exists. */
-enum class PanelTab { Style, Layers, Constraints, Elements, Library }
+enum class PanelTab { Style, Layers, Constraints, Elements, Library, Technical }
 
 /**
  * Editor state that must survive a fold or unfold, a rotation and a resize (UX-93, Story 3.1.3): the active tool, tool

@@ -43,6 +43,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -130,6 +131,12 @@ data class SketchShellConfig(
     val restore: RestoreMenuEntry? = null,
     /** The persistent cue of a suspected private window or a temporary graph (UX-153); null shows none. */
     val durabilityCue: DurabilityCueView? = null,
+    /** True for a technical sheet: the Technical tab (named dimensions and zones) is listed. */
+    val technicalPanel: Boolean = false,
+    /** Applied to the canvas region: Tab, F6 and Esc through the canvas stops ([canvasRegionKeys]). */
+    val canvasModifier: Modifier = Modifier,
+    /** Told once the shell has its regions, so the host can move focus between them. */
+    val onRegions: (RegionFocus) -> Unit = {},
 )
 
 object ShellTags {
@@ -210,6 +217,7 @@ private fun SketchShell(
     val focus = remember { ShellFocus(FocusRequester(), FocusRequester()) }
     val grouped = !config.model.isFlat(extent)
     val regions = remember { RegionFocus(mapOf(TabStop.Canvas to focus.canvas, TabStop.TopBar to focus.overflow)) }
+    SideEffect { config.onRegions(regions) }
     val driver = remember(extent, config.model, config.escRows) {
         WalkthroughDriver({ state.lastInput }, { grouped }, focus::restore, regions) { ShellEscape.walkthroughActs(state, config.escRows()) }
     }
@@ -434,7 +442,7 @@ private fun CanvasArea(
 ) {
     var canvasPx by remember { mutableStateOf(IntSize.Zero) }
     val density = LocalDensity.current
-    Box(modifier.fillMaxWidth().testTag(ShellTags.CANVAS).onSizeChanged { canvasPx = it }.focusRequester(focus.canvas).mark(regions, TabStop.Canvas).focusable().onKeyEvent(config.onCanvasKey)) {
+    Box(modifier.fillMaxWidth().testTag(ShellTags.CANVAS).onSizeChanged { canvasPx = it }.focusRequester(focus.canvas).mark(regions, TabStop.Canvas).focusable().then(config.canvasModifier).onKeyEvent(config.onCanvasKey)) {
         canvas()
         if (config.banner?.emptyStateVisible == true) EmptyState(config.emptyActions, Modifier.align(Alignment.Center))
         Column(Modifier.align(Alignment.TopStart).padding(8.dp)) {
@@ -527,7 +535,9 @@ private const val PERCENT = 100.0
 
 @Composable
 private fun PanelHostContent(state: SketchEditorState, config: SketchShellConfig, host: PanelHost, windowHeightDp: Int, panel: @Composable (PanelTab) -> Unit) {
-    val tabs = PanelTab.entries.filter { (it != PanelTab.Layers || config.hasMultipleLayers) && (it != PanelTab.Constraints || config.constraintsAvailable) }
+    val tabs = PanelTab.entries.filter {
+        (it != PanelTab.Layers || config.hasMultipleLayers) && (it != PanelTab.Constraints || config.constraintsAvailable) && (it != PanelTab.Technical || config.technicalPanel)
+    }
     val open = state.panelTab ?: PanelTab.Style
     val shape = when (host) {
         PanelHost.BottomSheet -> Modifier.fillMaxWidth().height(if (state.sheetSize == SheetSize.Full) (windowHeightDp * FULL_SHEET_SHARE).dp else PANEL_SHEET_HEIGHT)

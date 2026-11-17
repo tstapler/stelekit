@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import arrow.core.Either
 import arrow.core.left
+import dev.stapler.stelekit.platform.CanvasFileDropHost
 import dev.stapler.stelekit.platform.PickedImportFile
 import dev.stapler.stelekit.platform.SketchFilePort
 import dev.stapler.stelekit.platform.SketchSaveOutcome
@@ -67,6 +68,9 @@ class EditorExtras(
     /** Labels, freeing an arrow end and point editing of a line (the engine's own commands). */
     val engine = EngineSurfaces(controller, environment.metrics)
 
+    /** Keyboard-only drawing (Crosshair mode) and the Esc of an armed picker; its Esc rows join [escRows]. */
+    val access = EditorKeyboardAccess(controller)
+
     val dimension = DimensionEditor(technical = false)
     val autoConstrain = AutoConstrainState(SheetKind.Diagram)
 
@@ -112,6 +116,15 @@ class EditorExtras(
 
     val canCreateSheet: Boolean get() = services.createSheet != null
 
+    /** The web canvas element's drop and paste handler, or null where the canvas has none. */
+    val canvasDrop: CanvasFileDropHost? get() = services.platform.canvasDrop
+
+    /** Text pasted on the canvas element (web): imported at the middle of the view like a keyboard paste. */
+    fun pasteText(text: String) {
+        val (x, y) = viewportCentre()
+        importer.paste(text, x, y)
+    }
+
     init {
         controller.constraints.onDimensionDraft = ::openDimensionDraft
         controller.extraKeys = ::onKey
@@ -119,7 +132,8 @@ class EditorExtras(
     }
 
     /** The Esc row of the dimension field, while its label editor is open. */
-    fun escRows(): Set<EscRow> = if (dimension.state == DimensionEditState.Closed) emptySet() else setOf(EscRow.TextOverlayOrDimensionField)
+    fun escRows(): Set<EscRow> =
+        (if (dimension.state == DimensionEditState.Closed) emptySet() else setOf(EscRow.TextOverlayOrDimensionField)) + access.escRows()
 
     fun close() {
         importer.close()

@@ -111,5 +111,6 @@ fun KeyEvent.toKeyPress(): KeyPress? {
 private val NAMED_KEYS: Map<Key, String> = mapOf(
     Key.DirectionUp to "ArrowUp", Key.DirectionDown to "ArrowDown", Key.DirectionLeft to "ArrowLeft", Key.DirectionRight to "ArrowRight",
     Key.Delete to "Delete", Key.Backspace to "Backspace", Key.Escape to "Escape", Key.F6 to "F6",
+    Key.Enter to KeyDispatcher.ENTER, Key.NumPadEnter to KeyDispatcher.ENTER,
     Key.PageUp to "PageUp", Key.PageDown to "PageDown", Key.MoveHome to "Home",
 )

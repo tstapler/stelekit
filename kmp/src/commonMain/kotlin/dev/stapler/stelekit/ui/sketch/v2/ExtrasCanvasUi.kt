@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -36,12 +37,16 @@ private const val STATUS_PAD_DP = 8
  * nothing to show, and a `Hidden` solver tier removes every constraint aid.
  */
 @Composable
-internal fun BoxScope.ExtrasCanvasOverlays(controller: SketchEditorController, extras: EditorExtras, pointer: PointerClass) {
+internal fun BoxScope.ExtrasCanvasOverlays(controller: SketchEditorController, extras: EditorExtras, pointer: PointerClass, glyphsHidden: Boolean = false) {
     val clipboard = LocalClipboardManager.current
     SideEffect { extras.clipboard.port = ClipboardPort({ clipboard.getText()?.text }, { clipboard.setText(AnnotatedString(it)) }) }
     Box(Modifier.fillMaxSize().canvasFileDrop(extras.importer::importDropped))
+    DisposableEffect(extras) {
+        val remove = extras.canvasDrop?.install(extras.importer::importDropped, extras::pasteText)
+        onDispose { remove?.invoke() }
+    }
     if (extras.constraintsAvailable) {
-        GlyphOverlay(controller, extras, pointer)
+        if (!glyphsHidden) GlyphOverlay(controller, extras, pointer)
         SuggestionChip(controller, extras)
     }
     DimensionEditorOverlay(extras)

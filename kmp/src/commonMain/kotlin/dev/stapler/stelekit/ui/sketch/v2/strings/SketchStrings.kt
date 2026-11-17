@@ -147,6 +147,26 @@ object SketchStrings {
 
     object EdgePan {
         const val DETAILS = "Edge pan stopped working here. Use two fingers, the Hand tool or the pan arrows."
+        const val SUMMARY = "Edge pan stopped."
+        const val SHORT = "Edge pan off"
+        const val PRIMARY = "Got it"
+    }
+
+    /** The `LargeDrawing` banner row (ux.md section 15): what it says and its one button. */
+    object LargeScene {
+        const val SUMMARY = "Large drawing: effects off."
+        const val SHORT = "Large drawing"
+        const val PRIMARY = "Turn on"
+        const val PRIMARY_NAME = "Re-enable effects"
+    }
+
+    /** The web `SingleKeyChip` banner row (UX-108). */
+    object SingleKeyChip {
+        const val SUMMARY = "Single keys are off."
+        const val SHORT = "Keys off"
+        const val PRIMARY = "Turn on"
+        const val PRIMARY_NAME = "Turn on single-key shortcuts"
+        const val GOT_IT = "Got it"
     }
 
     object FingerDrawing {
@@ -227,6 +247,11 @@ object SketchStrings {
         const val CANCELLED = "Cancelled. Nothing was added."
         const val ENDED = "Crosshair mode ended."
         const val NOTHING_DRAWN = "Nothing drawn"
+        const val CHIP = "Crosshair"
+        const val PAD = "Crosshair pad"
+        const val PLACE = "Place point"
+        const val EXIT = "Exit Crosshair"
+        const val CHIP_TAG_NAME = "Start Crosshair mode"
 
         fun added(name: String): String = "Added $name"
 

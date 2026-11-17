@@ -19,9 +19,10 @@ import dev.stapler.stelekit.util.UuidGenerator
 
 /** One panel tab's content, fed by the controller's state and calling back into it (Story 6.2.0b). */
 @Composable
-internal fun SketchPanels(controller: SketchEditorController, tab: PanelTab, extras: EditorExtras) {
+internal fun SketchPanels(controller: SketchEditorController, tab: PanelTab, extras: EditorExtras, technical: TechnicalPanelState? = null) {
     Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         when (tab) {
+            PanelTab.Technical -> technical?.let { TechnicalTab(controller, it, Modifier.fillMaxWidth()) }
             PanelTab.Style -> StyleTab(controller)
             PanelTab.Layers -> LayersTab(controller)
             PanelTab.Constraints -> ConstraintsTab(controller, extras)

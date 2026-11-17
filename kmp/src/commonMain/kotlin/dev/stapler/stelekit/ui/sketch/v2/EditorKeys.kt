@@ -40,6 +40,9 @@ class EditorKeys(
     private val doc: () -> SketchDocumentV2,
     private val effects: KeyEffects,
 ) {
+    /** The web chip that offers the single-key setting when a tool letter is blocked; the host sets it once its diagnostics exist. */
+    var hint: SingleKeyHintProducer? = null
+
     /**
      * Returns true when the key was ours. [focus] says what holds keyboard focus: while a text field or a dialog does, nothing fires
      * (UX-22).
@@ -53,7 +56,8 @@ class EditorKeys(
             hasSelection = ui.selection.isNotEmpty(),
             handToolActive = ui.activeTool == ToolId.Hand,
         )
-        return when (val outcome = KeyDispatcher.dispatch(press, context)) {
+        val decided = hint?.let { SketchKeyboard(it).onKey(press, context) } ?: KeyDispatcher.dispatch(press, context)
+        return when (val outcome = decided) {
             is KeyOutcome.Handled -> run(outcome.action)
             else -> false
         }

@@ -42,6 +42,7 @@ import dev.stapler.stelekit.sketch.v2.tools.ElementIdSource
 import dev.stapler.stelekit.sketch.v2.tools.ToolCommand
 import dev.stapler.stelekit.sketch.v2.tools.ToolContext
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
+import dev.stapler.stelekit.sketch.v2.tools.Tool
 import dev.stapler.stelekit.sketch.v2.tools.ToolRegistry
 import dev.stapler.stelekit.sketch.v2.tools.toCommand
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchEditorStrings
@@ -135,6 +136,9 @@ class SketchEditorController(
     /** Rewrites a finished tool gesture before it is committed (snap, auto-constrain); null means the hook committed it itself. */
     var interceptToolCommand: (ToolCommand) -> ToolCommand? = { it }
 
+    /** What undo and redo say through the live region ("Undid: move rectangle"); it mirrors the history. */
+    private var undoLabels = UndoAnnouncer.Empty
+
     val doc: SketchDocumentV2 get() = history.present
     val canUndo: Boolean get() = history.canUndo && !readOnly
     val canRedo: Boolean get() = history.canRedo && !readOnly
@@ -174,6 +178,7 @@ class SketchEditorController(
             if (overlay != null) add(EscRow.DialogOrSheet)
             if (tools.textSession != null) add(EscRow.TextOverlayOrDimensionField)
             if (solveState.value.solving) add(EscRow.Solving)
+            if (constraints.picker != null) add(EscRow.ArmedPicker)
             if (tools.preview != null) add(EscRow.MidDraw)
             if (ui.activeTool != ToolId.Select) add(EscRow.ActiveTool)
             if (ui.selection.isNotEmpty()) add(EscRow.Selection)
@@ -192,7 +197,10 @@ class SketchEditorController(
 
     private fun toolContext() = ToolContext(history.present.scene, ui.viewport.zoom, defaultStyle, ports.ids, index)
 
-    private fun commitToolCommand(raw: ToolCommand) {
+    /** A fresh idle tool for [id], for the keyboard path (Crosshair mode) that runs a tool beside the pointer's. */
+    internal val newTool: (ToolId) -> Tool? = { id -> ports.tools.create(id) }
+
+    internal fun commitToolCommand(raw: ToolCommand) {
         val command = interceptToolCommand(raw) ?: return
         val drawn = (command as? AddElementCommand)?.let(creation::seeded)
         val placed = if (drawn != null && activeLayer != LayerId.Default) {
@@ -228,6 +236,7 @@ class SketchEditorController(
         return Transaction.begin(before).apply(command).flatMap { it.commit() }.flatMap { history.commit(it) }.fold(
             { error -> if (error == CommandError.NoChange) null else error.also(notifier::refuse) },
             { next ->
+                undoLabels = undoLabels.recorded(CommandLabels.of(command, before.scene))
                 adopt(next, before.scene.order.toSet() + next.present.scene.order.toSet())
                 null
             },
@@ -243,6 +252,7 @@ class SketchEditorController(
         if (pending.value > 0) return CommandError.Unsupported("sheet", "busy").left()
         val before = history.present
         return Transaction.begin(before).apply(command).flatMap { it.commit() }.flatMap { step -> history.commit(step).map { step to it } }.map { (step, next) ->
+            undoLabels = undoLabels.recorded(CommandLabels.of(command, before.scene))
             adopt(next, before.scene.order.toSet() + next.present.scene.order.toSet())
             Applied(next.present, step.changedIds)
         }.onLeft { if (it != CommandError.NoChange) notifier.refuse(it) }
@@ -256,6 +266,7 @@ class SketchEditorController(
         if (readOnly) return@withLock null
         val outcome = edit(runner)
         if (outcome is SolveOutcome.Done) {
+            undoLabels = undoLabels.recorded(CommandLabels.of(SequenceCommand(emptyList()), history.present.scene))
             commitStep(outcome.step)
             constraintState.solved(SequenceCommand(emptyList()), outcome)
         }
@@ -265,6 +276,7 @@ class SketchEditorController(
     private suspend fun runSolved(command: Command) {
         when (val outcome = runner.commitEdit(history.present, command)) {
             is SolveOutcome.Done -> {
+                undoLabels = undoLabels.recorded(CommandLabels.of(command, history.present.scene))
                 commitStep(outcome.step)
                 constraintState.solved(command, outcome)
             }
@@ -291,9 +303,19 @@ class SketchEditorController(
         if (next.present.constraints.isEmpty()) constraintState.cleared()
     }
 
-    fun undo() = step(history.undo())
+    fun undo() {
+        val (text, next) = undoLabels.undone()
+        if (canUndo) undoLabels = next
+        step(history.undo())
+        notifier.announce(text)
+    }
 
-    fun redo() = step(history.redo())
+    fun redo() {
+        val (text, next) = undoLabels.redone()
+        if (canRedo) undoLabels = next
+        step(history.redo())
+        notifier.announce(text)
+    }
 
     private fun step(to: HistoryV2) {
         val from = history
@@ -307,6 +329,7 @@ class SketchEditorController(
     fun reloaded(doc: SketchDocumentV2) {
         history = HistoryV2.of(doc, ports.limits)
         creation.reload(doc)
+        undoLabels = UndoAnnouncer.Empty
         index.rebuild(doc.scene)
         ui.selection = emptySet()
         revision += 1

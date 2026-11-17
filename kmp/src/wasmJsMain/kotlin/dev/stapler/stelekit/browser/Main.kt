@@ -137,6 +137,7 @@ private fun preventBrowserTabFocusTraversal(): Unit = js(
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
     preventBrowserTabFocusTraversal()
+    dev.stapler.stelekit.platform.WebCanvasDrop.host = dev.stapler.stelekit.platform.LazyCanvasFileDrop()
     val scope = MainScope()
 
     // One-shot startup sweep for an interrupted relocate's staging directory (Story 3.1.2), the

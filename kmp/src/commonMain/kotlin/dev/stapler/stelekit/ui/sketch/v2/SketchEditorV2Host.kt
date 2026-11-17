@@ -28,9 +28,11 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.sketch.v2.commands.LockElements
+import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
 import dev.stapler.stelekit.sketch.v2.render.DrawListBuilder
 import dev.stapler.stelekit.sketch.v2.render.RenderStyle
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
@@ -82,15 +84,22 @@ fun SketchEditorV2Host(
     val cue = remember(session) {
         DurabilityCueHost.viewOf(session.services.platform.storageStatus()) { controller.notifier.toast(SketchWebStorageStrings.Cue.TOAST_KEY, it) }
     }
+    val largeScene = remember(session) { EditorLargeScene(controller, session.diagnostics.port, session.services) }
+    val canvasAccess = remember(session, window) { EditorCanvasAccess(controller, window) }
+    val hint = remember(session) { SingleKeyHintProducer(session.diagnostics.port, controller.keymap.isWeb) }
+    val technical = remember(session) { session.services.technical?.let { source -> session.sheet?.let { TechnicalPanelState(source, it) } } }
+    SideEffect { controller.keys.hint = hint }
+    LaunchedEffect(controller.revision) { largeScene.refresh() }
     DisposableEffect(session) {
         onDispose {
+            largeScene.close()
             extras.close()
             session.close()
         }
     }
     val saveState by controller.saves.state.collectAsState()
     val solving = controller.solveState.collectAsState().value.solving
-    val toasts = remember(controller) { ToastLaneHost(controller.notices, { controller.notifier.now() }, ToastActions(onPrimary = { controller.notifier.act(it, controller::undo) })) }
+    val toasts = remember(controller) { ToastLaneHost(controller.notices, { controller.notifier.now() }, ToastActions(onPrimary = { controller.notifier.act(it, controller::undo) }, onMoreItem = { notice, item -> controller.onToastMore(notice, item) })) }
     val banner = remember(controller) { BannerSlotState(controller.notices) }
     val entries by session.diagnostics.port.diagnostics.collectAsState()
     val empty = controller.doc.scene.order.isEmpty()
@@ -121,7 +130,16 @@ fun SketchEditorV2Host(
         onBack = onBack,
         saveStatus = saveState.toStatus(),
         bannerActions = BannerActions(
-            onPrimary = { controller.saves.bannerPrimary(it.row) },
+            onPrimary = { candidate ->
+                when (candidate.row) {
+                    BannerRowId.LargeDrawing -> largeScene.reenableEffects()
+                    BannerRowId.SingleKeyChip -> {
+                        singleKey = true
+                        hint.resolve()
+                    }
+                    else -> controller.saves.bannerPrimary(candidate.row)
+                }
+            },
             onMoreItem = { candidate, label -> controller.saves.bannerMore(candidate.row, label) },
         ),
         toasts = toasts,
@@ -129,13 +147,13 @@ fun SketchEditorV2Host(
         selectionItems = selectionItems(controller) + extras.engine.menuItems(),
         onSelectionAction = { controller.onSelectionAction(it, extras) },
         escRows = { controller.escRows() + extras.escRows() },
-        onCanvasKey = { event -> extras.dimension.state == DimensionEditState.Closed && canvasKey(controller, event, singleKey) },
+        onCanvasKey = { event -> extras.dimension.state == DimensionEditState.Closed && canvasKey(controller, extras, event, singleKey) },
         constraintsAvailable = extras.constraintsAvailable,
         autoConstrain = extras.autoConstrain,
         onImport = { extras.importer.chooseFile() },
         importDisabledReason = extras.importDisabledReason,
         onExport = if (extras.exportAvailable) extras.exporter::open else null,
-        extraChips = solveChips(controller, solving),
+        extraChips = solveChips(controller, solving) + extras.access.chips(),
         edgeStripAtEnd = extras.input.stripAtEnd,
         durabilityCue = cue,
         grid = extras.grid,
@@ -143,17 +161,23 @@ fun SketchEditorV2Host(
         onGrid = extras::toggleGrid,
         onSnap = extras::toggleSnap,
         restore = restore,
+        technicalPanel = technical != null,
+        canvasModifier = remember(canvasAccess) { canvasRegionKeysOf(canvasAccess) },
+        onRegions = { canvasAccess.regions = it },
     )
     DiagnosticsHost(session.diagnostics, modifier.testTag(HostTags.ROOT)) {
         SketchScreenV2(
             state = state,
             config = config,
             window = window,
-            panel = { tab -> SketchPanels(controller, tab, extras) },
+            panel = { tab -> SketchPanels(controller, tab, extras, technical) },
             canvas = {
-                SketchCanvasContent(controller, environment, pointer, extras.input)
-                ExtrasCanvasOverlays(controller, extras, pointer)
+                SketchCanvasContent(controller, environment, pointer, extras, largeScene.degradation)
+                ExtrasCanvasOverlays(controller, extras, pointer, glyphsHidden = largeScene.degradation.has(DegradationStep.ConstraintGlyphsHidden))
                 PlatformInputOverlays(extras.input)
+                CanvasAccessLayer(controller, canvasAccess)
+                CrosshairLayer(extras.access, state.viewport, canvasAccess.regions)
+                largeScene.hardCap?.let { HardCapNotice(it, largeScene::answer, Modifier.align(Alignment.TopCenter)) }
             },
         )
         HostOverlays(controller, extras, singleKey) { singleKey = it }
@@ -186,17 +210,27 @@ private fun SketchEditorController.onSelectionAction(action: SelectionAction, ex
 private fun solveChips(controller: SketchEditorController, solving: Boolean): List<ActionChip> =
     if (solving) listOf(SolveMessages.cancelChip(controller::cancelSolve)) else emptyList()
 
-private fun canvasKey(controller: SketchEditorController, event: KeyEvent, singleKey: Boolean): Boolean {
+private fun canvasKey(controller: SketchEditorController, extras: EditorExtras, event: KeyEvent, singleKey: Boolean): Boolean {
     val press = event.toKeyPress() ?: return false
-    val state = controller.ui
-    if (event.key == Key.Escape && shellOwnsEscape(controller)) return false
-    return controller.keys.onKey(press, KeyFocus(singleKeyEnabled = singleKey))
+    if (event.key == Key.Escape && shellOwnsEscape(controller, extras)) return false
+    val focus = KeyFocus(singleKeyEnabled = singleKey)
+    val rows = { controller.escRows() + extras.escRows() + ShellEscape.shellRows(controller.ui) }
+    return extras.access.onKey(press, focus, rows) || controller.keys.onKey(press, focus)
 }
 
+/** Tab, F6 and Esc across the canvas stops (skip link, elements) and out to the other regions of the one tab order. */
+private fun canvasRegionKeysOf(access: EditorCanvasAccess): Modifier = Modifier.canvasRegionKeys(
+    focus = { access.focus },
+    stops = { access.tree().tabStops },
+    present = { access.present },
+    moveWithin = access::moveWithin,
+    moveOut = access::moveOut,
+)
+
 /** True when the first row of the one Esc order that applies is the shell's (the Pan pad, a help popup or the tour), so the canvas passes the press on. */
-private fun shellOwnsEscape(controller: SketchEditorController): Boolean {
+private fun shellOwnsEscape(controller: SketchEditorController, extras: EditorExtras): Boolean {
     val state = controller.ui
-    val first = EscOrder.resolve(ShellEscape.shellRows(state) + controller.escRows())
+    val first = EscOrder.resolve(ShellEscape.shellRows(state) + controller.escRows() + extras.escRows())
     return first == EscRow.MenuOrFlyout || first == EscRow.Walkthrough
 }
 
@@ -209,18 +243,29 @@ private fun SaveState.toStatus(): SaveStatus = when (this) {
 
 /** The canvas: the static scene, the live gesture preview, the selection frame, name tags and the text editor, with pointer and wheel input on top. */
 @Composable
-private fun BoxScope.SketchCanvasContent(controller: SketchEditorController, environment: ModernPreviewEnvironment, pointer: PointerClass, input: PlatformInputHost) {
+private fun BoxScope.SketchCanvasContent(
+    controller: SketchEditorController,
+    environment: ModernPreviewEnvironment,
+    pointer: PointerClass,
+    extras: EditorExtras,
+    degradation: Degradation,
+) {
+    val input = extras.input
     val state = controller.ui
     val fontStatus = environment.metrics.fontStatus
     val builder = remember(environment) { DrawListBuilder(environment.metrics) }
     val previewBuilder = remember(environment) { DrawListBuilder(environment.metrics) }
     val painter = remember(environment) { ScenePainter(resources = environment.resources) }
     val layer = remember { StaticLayerHandle() }
-    val ops = remember(controller.revision, fontStatus) { builder.build(controller.doc.scene, RenderStyle.Sketchy) }
+    val style = degradation.effectiveStyle(RenderStyle.Sketchy)
+    val ops = remember(controller.revision, fontStatus, style) { builder.build(controller.doc.scene, style) }
     SideEffect { layer.set(ops, controller.spatialIndex) }
-    val liveOps = remember(controller.tools.preview, fontStatus) {
-        controller.tools.preview?.let { preview -> previewBuilder.build(sceneOf(preview.elements), RenderStyle.Sketchy) }.orEmpty()
+    val shown = controller.tools.preview ?: extras.access.preview
+    val liveOps = remember(shown, fontStatus, style) {
+        shown?.let { preview -> previewBuilder.build(sceneOf(preview.elements), style) }.orEmpty()
     }
+    val pxPerDp = LocalDensity.current.density.toDouble()
+    SideEffect { controller.view.pxPerDp = pxPerDp }
     val viewport = remember(state) { derivedStateOf { state.viewport } }
     Box(
         Modifier.fillMaxSize()

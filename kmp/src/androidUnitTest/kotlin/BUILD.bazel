@@ -142,6 +142,8 @@ kt_android_library(
             "**/ImportFlowTest.kt",
             "**/ExportDialogTest.kt",
             "**/SuccessFeedbackTest.kt",
+            # Mounts the v2 host over the commonTest rig for keyboard-only drawing and the Esc rows (Gradle-only, no Compose plugin or commonTest here)
+            "**/KeyboardAccessHostTest.kt",
         ],
     ),
     custom_package = "dev.stapler.stelekit",

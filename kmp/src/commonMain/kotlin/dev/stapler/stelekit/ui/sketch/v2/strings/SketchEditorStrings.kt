@@ -52,6 +52,9 @@ object SketchEditorStrings {
             BannerRowId.WarningNotice -> SketchConstraintStrings.WarningNotice.summary(row)
             BannerRowId.UpgradeChip, BannerRowId.PostConversion -> SketchMigrationStrings.Banners.summary(row)
             BannerRowId.CoachMark -> SketchStrings.CoachMark.summary(row)
+            BannerRowId.LargeDrawing -> SketchStrings.LargeScene.SUMMARY
+            BannerRowId.SingleKeyChip -> SketchStrings.SingleKeyChip.SUMMARY
+            BannerRowId.EdgePanStopped -> SketchStrings.EdgePan.SUMMARY
             else -> row.name
         }
 
@@ -63,6 +66,9 @@ object SketchEditorStrings {
             BannerRowId.WarningNotice -> SketchConstraintStrings.WarningNotice.shortTitle(row)
             BannerRowId.UpgradeChip, BannerRowId.PostConversion -> SketchMigrationStrings.Banners.shortTitle(row)
             BannerRowId.CoachMark -> SketchStrings.CoachMark.shortTitle(row)
+            BannerRowId.LargeDrawing -> SketchStrings.LargeScene.SHORT
+            BannerRowId.SingleKeyChip -> SketchStrings.SingleKeyChip.SHORT
+            BannerRowId.EdgePanStopped -> SketchStrings.EdgePan.SHORT
             else -> row.name
         }
 
@@ -73,7 +79,16 @@ object SketchEditorStrings {
             BannerRowId.WarningNotice -> SketchConstraintStrings.WarningNotice.primaryLabel(row)
             BannerRowId.UpgradeChip, BannerRowId.PostConversion -> SketchMigrationStrings.Banners.primaryLabel(row)
             BannerRowId.CoachMark -> SketchStrings.CoachMark.primaryLabel(row)
+            BannerRowId.LargeDrawing -> SketchStrings.LargeScene.PRIMARY
+            BannerRowId.SingleKeyChip -> SketchStrings.SingleKeyChip.PRIMARY
+            BannerRowId.EdgePanStopped -> SketchStrings.EdgePan.PRIMARY
             else -> DISMISS
+        }
+
+        override fun primaryAccessibleName(row: BannerRowId): String = when (row) {
+            BannerRowId.LargeDrawing -> SketchStrings.LargeScene.PRIMARY_NAME
+            BannerRowId.SingleKeyChip -> SketchStrings.SingleKeyChip.PRIMARY_NAME
+            else -> primaryLabel(row)
         }
 
         override fun moreItems(row: BannerRowId): List<String> = when (row) {
@@ -81,6 +96,7 @@ object SketchEditorStrings {
             BannerRowId.WarningNotice -> SketchConstraintStrings.WarningNotice.moreItems(row)
             BannerRowId.UpgradeChip, BannerRowId.PostConversion -> SketchMigrationStrings.Banners.moreItems(row)
             BannerRowId.CoachMark -> SketchStrings.CoachMark.moreItems(row)
+            BannerRowId.SingleKeyChip -> listOf(SketchStrings.SingleKeyChip.GOT_IT)
             else -> emptyList()
         }
     }

@@ -25,6 +25,9 @@ class EditorNotifier(val queue: SketchNoticeQueue, private val clockMillis: () -
     var revision: Int by mutableIntStateOf(0)
         private set
 
+    /** Told of every refused edit, so the host can raise the hard-cap notice that goes with a refusal at the element cap. */
+    var onRefused: (CommandError) -> Unit = {}
+
     fun now(): Long = clockMillis()
 
     fun toast(key: String, text: String) = post(SketchNotice(key, BannerTier.Info, text))
@@ -54,6 +57,7 @@ class EditorNotifier(val queue: SketchNoticeQueue, private val clockMillis: () -
             else -> SketchEditorStrings.Toasts.EDIT_FAILED
         }
         toast(SketchEditorStrings.Toasts.KEY_REFUSED, text)
+        onRefused(error)
     }
 
     /** Says why the solve refused an edit. */
@@ -67,7 +71,16 @@ class EditorNotifier(val queue: SketchNoticeQueue, private val clockMillis: () -
     }
 
     fun lockedSkipped(count: Int) {
-        if (count > 0) toast(SketchEditorStrings.Toasts.KEY_LOCKED_SKIPPED, SketchEditorStrings.Toasts.lockedSkipped(count))
+        if (count <= 0) return
+        post(
+            SketchNotice(
+                SketchEditorStrings.Toasts.KEY_LOCKED_SKIPPED,
+                BannerTier.Info,
+                SketchEditorStrings.Toasts.lockedSkipped(count),
+                details = LayerNotices.skippedDetails(count),
+                secondaryActions = listOf(LayerNotices.unlockAll(emptyList()).label),
+            ),
+        )
     }
 
     /** True while a toast with a deadline is up, so the lane keeps re-reading the queue until it expires. */

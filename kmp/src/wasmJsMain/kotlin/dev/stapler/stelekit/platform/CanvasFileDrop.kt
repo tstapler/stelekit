@@ -98,3 +98,13 @@ private fun removeCanvasListeners(host: JsAny, handle: JsAny): Unit = js(
     })()
     """,
 )
+
+/** Finds the Compose canvas when the editor installs, not at startup, because the viewport mounts after `main` begins. */
+class LazyCanvasFileDrop(private val limits: SceneLimits = SceneLimits.Default) : CanvasFileDropHost {
+    override fun install(onFile: (DroppedCanvasFile) -> Unit, onPasteText: (String) -> Unit): () -> Unit {
+        val canvas = composeCanvas() ?: return {}
+        return CanvasFileDrop(canvas, limits).install(onFile, onPasteText)
+    }
+}
+
+private fun composeCanvas(): JsAny? = js("document.querySelector('canvas')")
