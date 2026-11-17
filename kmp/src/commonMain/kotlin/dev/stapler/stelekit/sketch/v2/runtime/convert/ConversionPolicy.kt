@@ -7,16 +7,16 @@ package dev.stapler.stelekit.sketch.v2.runtime.convert
 import dev.stapler.stelekit.model.ProjectBundle
 import dev.stapler.stelekit.model.SketchSheet
 
-/** Why a v1 sheet is not converted: the project holds zones or dimensions the v2 editor cannot edit yet. */
+/** Why a v1 sheet is not converted: the project holds zones or dimensions the v2 editor cannot edit (before Story 4.2.5). */
 data object HasTechnicalData
 
 /**
  * Conversion refusal (Story 1.1.4). A v1 sheet is refused iff its own zones are non-empty or its project has any
- * dimension (dimensions carry no sheet reference). Refusal never writes. Story 4.2.5 flips [TECHNICAL_DATA_EDITABLE].
+ * dimension (dimensions carry no sheet reference). Refusal never writes. Story 4.2.5 flipped [TECHNICAL_DATA_EDITABLE], so [refusal] is null; the predicate stays for the override.
  */
 object ConversionPolicy {
-    /** Flips to true when the v2 editor can edit zones and dimensions (Story 4.2.5). */
-    const val TECHNICAL_DATA_EDITABLE: Boolean = false
+    /** True: the v2 editor edits zones and dimensions (`TechnicalDataPanel`, Story 4.2.5), so nothing is refused. */
+    const val TECHNICAL_DATA_EDITABLE: Boolean = true
 
     fun refusal(project: ProjectBundle, sheet: SketchSheet): HasTechnicalData? =
         refusal(project, sheet, TECHNICAL_DATA_EDITABLE)

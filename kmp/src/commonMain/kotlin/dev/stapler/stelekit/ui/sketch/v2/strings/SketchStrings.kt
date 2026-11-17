@@ -377,4 +377,68 @@ object SketchStrings {
 
         private const val GROUP_DIGITS = 3
     }
+
+    /** The technical-data panel of the v2 editor (Story 4.2.5): named dimensions and zones of a converted sheet. */
+    object TechnicalData {
+        const val HEADING = "Dimensions and zones"
+        const val DIMENSIONS_HEADING = "Named dimensions"
+        const val NO_DIMENSIONS = "No named dimensions in this project"
+        const val SUM_VIOLATED = "Zones do not add up to the total"
+        const val NOT_REPRESENTABLE_NOTE = "not a whole sixteenth of an inch"
+
+        fun lockedDimension(key: String, value: String) = "$key, $value, locked"
+
+        fun dimensionSet(key: String, value: String) = "Set $key to $value"
+    }
+
+    /** Screen-reader text of the canvas elements, the skip link and the focus ring (Story 3.6.2, UX-44, UX-45, UX-117). */
+    object Semantics {
+        const val CANVAS = "Sketch canvas"
+        const val SKIP_CANVAS_ELEMENTS = "Skip canvas elements"
+        const val EMPTY_SHEET = "Empty sheet"
+        const val LOCKED = "locked"
+        const val POINTS_NOUN = "points"
+        const val ELEMENTS_NOUN = "elements"
+        const val HORIZONTAL = "horizontal"
+        const val VERTICAL = "vertical"
+
+        fun withDetail(name: String, detail: String) = "$name, $detail"
+
+        fun sized(name: String, width: Long, height: Long) = "$name, $width by $height"
+
+        fun radius(name: String, radius: Long) = "$name, radius $radius"
+
+        fun lineLength(name: String, orientation: String, length: Long) = "$name, $orientation, length $length"
+
+        fun polyline(name: String, points: Int) = "$name, $points $POINTS_NOUN"
+
+        fun quoted(name: String, text: String) = "$name, \"$text\""
+
+        fun container(name: String, text: String) = "$name, labelled \"$text\""
+
+        fun frame(name: String, members: Int) = "$name, $members $ELEMENTS_NOUN"
+
+        fun pointAt(name: String, x: Long, y: Long) = "$name, at $x, $y"
+
+        fun arrowBetween(from: String, to: String) = "Arrow from $from to $to"
+
+        fun arrowFrom(from: String) = "Arrow from $from"
+
+        fun arrowTo(to: String) = "Arrow to $to"
+
+        fun arrowNamed(name: String, arrow: String) = "$name, ${arrow.replaceFirstChar { it.lowercase() }}"
+
+        fun lockedSuffix(label: String) = "$label, $LOCKED"
+
+        /** Spoken once, with the nodes, when the sheet has more elements than the semantics tree may hold (UX-44). */
+        fun capStatement(shown: Int, total: Int) =
+            "Showing ${grouped(shown)} of ${grouped(total)} elements for screen reader; use Find to reach others"
+
+        private fun grouped(value: Int): String {
+            val digits = value.toString()
+            return digits.reversed().chunked(GROUP_DIGITS).joinToString(",").reversed()
+        }
+
+        private const val GROUP_DIGITS = 3
+    }
 }

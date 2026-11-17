@@ -62,14 +62,14 @@ class TechnicalDataConversionGoldenTest {
     }
 
     @Test
-    fun conversion_should_CarryZonesDimensionsAndScaleVerbatim_WhenTheRefusalIsLifted() = runBlocking<Unit> {
+    fun conversion_should_CarryZonesDimensionsAndScaleVerbatim_AgainstTheRealPolicy() = runBlocking<Unit> {
         val d = MixedProjectFixtures.device(convertA = false)
         val before = outputs(d)
         val carriedBefore = carried(d)
         assertTrue((carriedBefore.first.getValue("dimensions") as JsonArray).isNotEmpty(), "the fixture has dimensions")
         assertTrue(carriedBefore.second.any { it.getValue("zones").jsonArray.isNotEmpty() }, "the fixture has zones")
 
-        val outcome = ConversionFixtures.converter(d, technicalDataEditable = true).convert(SketchTestSupport.P, sheetA)
+        val outcome = ConversionFixtures.converter(d).convert(SketchTestSupport.P, sheetA)
 
         assertIs<ConversionOutcome.Converted>(outcome)
         assertEquals(carriedBefore, carried(d), "zones, dimensions and scale bytes are unchanged")
@@ -77,11 +77,11 @@ class TechnicalDataConversionGoldenTest {
     }
 
     @Test
-    fun conversion_should_RefuseAndWriteNothing_WhileTheProjectHasTechnicalData() = runBlocking<Unit> {
+    fun conversion_should_RefuseAndWriteNothing_WhenTheTestOnlyOverrideRestoresTheRefusal() = runBlocking<Unit> {
         val d = MixedProjectFixtures.device(convertA = false)
         val writes = d.fs.writeCount
 
-        val outcome = ConversionFixtures.converter(d).convert(SketchTestSupport.P, sheetA)
+        val outcome = ConversionFixtures.converter(d, technicalDataEditable = false).convert(SketchTestSupport.P, sheetA)
 
         assertEquals(ConversionOutcome.Failed(ConversionFailure.HasTechnicalData), outcome)
         assertEquals(writes, d.fs.writeCount)

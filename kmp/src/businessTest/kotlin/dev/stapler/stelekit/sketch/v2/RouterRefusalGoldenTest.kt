@@ -42,10 +42,10 @@ class RouterRefusalGoldenTest {
         device.store.write("proj-0a1b2c", SidecarCodec.encode(bundle))
         device.repos.projects.replaceProjectContents(SketchTestSupport.P, bundle)
         val writesBefore = device.fs.writeCount
-        val refusal = ConversionPolicy.refusal(bundle, bundle.sheets.first { it.uuid == sheet })
+        val refusal = ConversionPolicy.refusal(bundle, bundle.sheets.first { it.uuid == sheet }, technicalDataEditable = false)
         assertEquals(HasTechnicalData, refusal)
 
-        val converter = SheetConverter(device.repos, device.store, SidecarSlugLock(), ProjectAcknowledgements.Always, { true })
+        val converter = SheetConverter(device.repos, device.store, SidecarSlugLock(), ProjectAcknowledgements.Always, { true }, technicalDataEditable = false)
         val outcome = converter.convert(SketchTestSupport.P, sheet)
 
         assertEquals(ConversionOutcome.Failed(ConversionFailure.HasTechnicalData), outcome)

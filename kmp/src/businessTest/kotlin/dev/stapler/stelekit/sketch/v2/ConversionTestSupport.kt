@@ -17,6 +17,7 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.SketchTestSupport
 import dev.stapler.stelekit.sketch.v2.runtime.convert.ConversionCrashPoint
 import dev.stapler.stelekit.sketch.v2.runtime.convert.ProjectAcknowledgements
+import dev.stapler.stelekit.sketch.v2.runtime.convert.ConversionPolicy
 import dev.stapler.stelekit.sketch.v2.runtime.convert.SheetConverter
 import dev.stapler.stelekit.sketch.v2.runtime.projection.SheetProjectionSource
 import dev.stapler.stelekit.ui.sketch.SketchDocumentSource
@@ -63,7 +64,7 @@ internal object ConversionFixtures {
         d: Device,
         ready: Boolean = true,
         acknowledged: Boolean = true,
-        technicalDataEditable: Boolean = false,
+        technicalDataEditable: Boolean = ConversionPolicy.TECHNICAL_DATA_EDITABLE,
         crashPoint: ConversionCrashPoint = ConversionCrashPoint.None,
     ) = SheetConverter(
         d.repos, d.store, SidecarSlugLock(), ProjectAcknowledgements { acknowledged }, { ready },

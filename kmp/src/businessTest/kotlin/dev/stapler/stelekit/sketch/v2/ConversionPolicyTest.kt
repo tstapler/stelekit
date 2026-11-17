@@ -14,6 +14,7 @@ import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** Story 1.1.4a: the exact refusal predicate. */
 class ConversionPolicyTest {
@@ -30,20 +31,27 @@ class ConversionPolicyTest {
     @Test
     fun refusal_should_BeNull_WhenNoZonesAndNoDimensions() {
         val b = bundle(JsonArray(emptyList()), dims = false)
-        b.sheets.forEach { assertNull(ConversionPolicy.refusal(b, it)) }
+        b.sheets.forEach { assertNull(ConversionPolicy.refusal(b, it, technicalDataEditable = false)) }
     }
 
     @Test
     fun refusal_should_BeHasTechnicalData_WhenTheSheetHasZones() {
         val b = bundle(zones, dims = false)
-        assertEquals(HasTechnicalData, ConversionPolicy.refusal(b, b.sheets[0]))
-        assertNull(ConversionPolicy.refusal(b, b.sheets[1]))
+        assertEquals(HasTechnicalData, ConversionPolicy.refusal(b, b.sheets[0], technicalDataEditable = false))
+        assertNull(ConversionPolicy.refusal(b, b.sheets[1], technicalDataEditable = false))
     }
 
     @Test
     fun refusal_should_BeHasTechnicalDataForEverySheet_WhenTheProjectHasDimensions() {
         val b = bundle(JsonArray(emptyList()), dims = true)
-        b.sheets.forEach { assertEquals(HasTechnicalData, ConversionPolicy.refusal(b, it)) }
+        b.sheets.forEach { assertEquals(HasTechnicalData, ConversionPolicy.refusal(b, it, technicalDataEditable = false)) }
+    }
+
+    @Test
+    fun refusal_should_BeNullWithTheRealPolicy_AfterStory425() {
+        val b = bundle(zones, dims = true)
+        assertTrue(ConversionPolicy.TECHNICAL_DATA_EDITABLE)
+        b.sheets.forEach { assertNull(ConversionPolicy.refusal(b, it)) }
     }
 
     @Test
