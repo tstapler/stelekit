@@ -197,6 +197,7 @@ fun ProjectBridgeDeps.v2EditorDeps(
     graphId: () -> String?,
     keymap: KeymapEnv,
     touchPresent: Boolean,
+    onboarding: OnboardingSequencer? = null,
 ): V2EditorDeps = V2EditorDeps(
     repos = repos,
     store = sidecarStore,
@@ -209,4 +210,5 @@ fun ProjectBridgeDeps.v2EditorDeps(
     touchPresent = touchPresent,
     durability = sketchDurability,
     lifecycle = pageLifecycle,
+    onboarding = onboarding,
 )

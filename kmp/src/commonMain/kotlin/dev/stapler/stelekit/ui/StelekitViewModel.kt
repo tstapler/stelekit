@@ -516,7 +516,7 @@ class StelekitViewModel(
             isMac = device.osVersion.contains(MAC_OS_NAME, ignoreCase = true),
             isWeb = device.platform.contains(WEB_PLATFORM_NAME, ignoreCase = true),
         )
-        return projectBridgeDeps?.bridgeV2EditorDeps(repos, writeActor, activeGraphIdProvider, keymap, touchPresent)
+        return projectBridgeDeps?.bridgeV2EditorDeps(repos, writeActor, activeGraphIdProvider, keymap, touchPresent, dev.stapler.stelekit.ui.sketch.v2.OnboardingSequencer(dev.stapler.stelekit.ui.sketch.v2.OnboardingCounters(platformSettings)))
     }
 
     /** The graph's one sheet edit-lease registry; null where the project bridge is not wired. */

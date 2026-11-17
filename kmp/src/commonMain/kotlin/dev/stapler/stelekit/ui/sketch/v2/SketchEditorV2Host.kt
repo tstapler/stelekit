@@ -30,9 +30,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.sketch.v2.commands.LockElements
 import dev.stapler.stelekit.sketch.v2.render.DrawListBuilder
 import dev.stapler.stelekit.sketch.v2.render.RenderStyle
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
+import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
@@ -107,6 +109,8 @@ fun SketchEditorV2Host(
         ),
         toasts = toasts,
         onGoToElement = { controller.overlay = EditorOverlay.GoToElement },
+        selectionItems = selectionItems(controller),
+        onSelectionAction = { controller.onSelectionAction(it) },
         escRows = controller.escRows,
         onCanvasKey = { event -> canvasKey(controller, event, singleKey) },
     )
@@ -119,6 +123,27 @@ fun SketchEditorV2Host(
             canvas = { SketchCanvasContent(controller, environment, pointer) },
         )
         HostOverlays(controller, singleKey) { singleKey = it }
+    }
+}
+
+/** The selection-menu entries this editor runs; Align, Order, Transform and Bind end open their own panels, which are not mounted yet. */
+private val MENU_ACTIONS = setOf(SelectionAction.Duplicate, SelectionAction.Group, SelectionAction.Ungroup, SelectionAction.Lock, SelectionAction.Unlock)
+
+private fun selectionItems(controller: SketchEditorController): List<SelectionAction> {
+    val selected = controller.ui.selection.mapNotNull { controller.doc.scene[ElementId(it)] }
+    if (selected.isEmpty()) return emptyList()
+    return SelectionMenuModel.items(anyUnlocked = selected.any { !it.base.locked }, oneArrowSelected = selected.singleOrNull() is ArrowElement).filter { it in MENU_ACTIONS }
+}
+
+private fun SketchEditorController.onSelectionAction(action: SelectionAction) {
+    val ids = ui.selection.map(::ElementId)
+    when (action) {
+        SelectionAction.Duplicate -> keys.run(KeyAction.Duplicate)
+        SelectionAction.Group -> keys.run(KeyAction.Group)
+        SelectionAction.Ungroup -> keys.run(KeyAction.Ungroup)
+        SelectionAction.Lock -> submit(LockElements(ids, true))
+        SelectionAction.Unlock -> submit(LockElements(ids, false))
+        else -> Unit
     }
 }
 
