@@ -1120,6 +1120,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.EmbedDispatchTest::class,
     dev.stapler.stelekit.sketch.v2.SheetSaverTest::class,
     dev.stapler.stelekit.sketch.v2.SheetSaverDurabilityTest::class,
+    dev.stapler.stelekit.sketch.v2.WebStorageUxTest::class,
     dev.stapler.stelekit.sketch.v2.SheetSaverConflictTest::class,
     dev.stapler.stelekit.sketch.v2.SheetSaverReconcileIntegrationTest::class,
     dev.stapler.stelekit.platform.SidecarLiveSetTest::class,
