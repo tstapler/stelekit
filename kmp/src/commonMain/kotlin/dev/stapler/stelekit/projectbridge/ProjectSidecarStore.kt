@@ -139,6 +139,9 @@ interface ProjectSidecarStore {
 
     /** Slugs that have a sidecar directory in the graph. */
     suspend fun slugsOnDisk(): List<String>
+
+    /** File names directly under the project's `sheets/` directory, sorted; no file is opened. Empty when none or unavailable. */
+    suspend fun listSheetFiles(slug: String): List<String> = emptyList()
 }
 
 /** [ProjectSidecarStore] over [FileSystem] with temp-and-rename writes; its own mutex, not `GraphWriteLock` (JSON, not markdown). */
@@ -349,6 +352,10 @@ class FileProjectSidecarStore(
 
     override suspend fun slugsOnDisk(): List<String> = mutex.withLock {
         if (disk.unavailable()) emptyList() else fs.listDirectories(disk.root()).sorted()
+    }
+
+    override suspend fun listSheetFiles(slug: String): List<String> = mutex.withLock {
+        if (disk.unavailable()) emptyList() else fs.listFiles("${disk.dir(slug)}/${SidecarCodec.SHEETS_DIR}").sorted()
     }
 
     companion object {

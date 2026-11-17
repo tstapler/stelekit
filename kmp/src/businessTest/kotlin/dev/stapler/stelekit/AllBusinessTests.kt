@@ -1065,6 +1065,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.ViewTransformTest::class,
     dev.stapler.stelekit.projectbridge.SidecarBundleTest::class,
     dev.stapler.stelekit.projectbridge.SidecarReconcileTest::class,
+    dev.stapler.stelekit.projectbridge.SyncedV2ProjectDiscoveryTest::class,
     dev.stapler.stelekit.projectbridge.ProjectSidecarStoreTest::class,
     dev.stapler.stelekit.projectbridge.SidecarOldReaderSchemaGateTest::class,
     dev.stapler.stelekit.projectbridge.SidecarBackupAndStagingTest::class,

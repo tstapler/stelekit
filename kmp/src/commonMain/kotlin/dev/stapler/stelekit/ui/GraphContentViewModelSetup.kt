@@ -18,7 +18,10 @@ import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.platform.AtomicFileWriter
+import dev.stapler.stelekit.projectbridge.ClassicFileSideSetting
 import dev.stapler.stelekit.projectbridge.ClassicGatedSidecarStore
+import dev.stapler.stelekit.projectbridge.SyncedV2ProjectDiscovery
+import dev.stapler.stelekit.projectbridge.WebFileSideVerdict
 import dev.stapler.stelekit.projectbridge.FileProjectSidecarStore
 import dev.stapler.stelekit.sketch.v2.runtime.session.SheetLeaseRegistry
 import dev.stapler.stelekit.projectbridge.LoaderPageSettleProbe
@@ -261,6 +264,13 @@ internal fun buildProjectBridgeDeps(
         fusionSetup = { loadFusionSetup(deps.repos.sketchRepositories) },
         pngTags = { readPngTags(deps.repos.sketchRepositories) },
         sheetLeases = SheetLeaseRegistry(deps.platformIntegrations.sketchWriterLease),
+        syncedV2Discovery = {
+            val store = sidecarStore()
+            val gated = effectiveFileSystem.classicFileSideNeedsOptIn &&
+                bridgeSettings.webClassicFileSide() == ClassicFileSideSetting.Off &&
+                store != null && WebFileSideVerdict.of(store.storageStatus()) == WebFileSideVerdict.Available
+            if (gated && store != null) SyncedV2ProjectDiscovery(store) else null
+        },
         pageSettleProbe = LoaderPageSettleProbe(
             isIndexOnlyStub = { page ->
                 deps.repos.pageRepository.getPageByName(page.pageName).first().getOrNull()?.isContentLoaded == false

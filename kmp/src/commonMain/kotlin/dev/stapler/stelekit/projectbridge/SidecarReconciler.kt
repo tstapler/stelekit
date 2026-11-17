@@ -88,6 +88,8 @@ class SidecarReconciler(
     private val writeActor: DatabaseWriteActor? = null,
     /** Shared with every other sidecar writer of the graph so no two interleave on one slug. */
     private val slugLock: SidecarSlugLock = SidecarSlugLock(),
+    /** Non-null only where the classic file side is closed (web, setting Off): unknown projects are found by it and imported v2-only. */
+    private val v2Discovery: SyncedV2ProjectDiscovery? = null,
 ) {
     private suspend fun write(op: suspend () -> Either<DomainError, Unit>): Either<DomainError, Unit> =
         writeActor?.execute { op() } ?: op()
@@ -106,7 +108,13 @@ class SidecarReconciler(
             if (page.size < PAGE) break
             offset += PAGE
         }
-        for (slug in store.slugsOnDisk().filter { it !in known }) outcomes += importNew(slug)
+        val unknown = store.slugsOnDisk().filter { it !in known }
+        if (v2Discovery == null) {
+            for (slug in unknown) outcomes += importNew(slug)
+        } else {
+            val found = v2Discovery.scan(unknown).found
+            for (slug in found) outcomes += slugLock.withSlug(slug) { importNewLocked(slug, v2Only = true) }
+        }
         return ReconcileSummary(outcomes)
     }
 
@@ -141,6 +149,10 @@ class SidecarReconciler(
         }
         val localFiles = SidecarCodec.encode(local)
         val localHash = SidecarCodec.bundleHash(localFiles)
+        // Gated: a bundle holding classic sheets this database lacks (a v2-only import) is never pushed over or pulled whole.
+        if (v2Discovery != null && presentFiles.keys.any { ClassicWebFileSidePolicy.kindOfSheetPath(it) == SheetFileKind.Classic && it !in localFiles }) {
+            return ReconcileOutcome.Unchanged(slug)
+        }
         return when (val action = ReconcileDecision.decide(localHash, project.lastSyncedSidecarHash, disk)) {
             is ReconcileAction.SetBase -> setBase(project, action.hash).let { if (it == null) ReconcileOutcome.Unchanged(slug) else ReconcileOutcome.Failed(slug, it) }
             ReconcileAction.WriteLocal -> push(project, local, localFiles, localHash)
@@ -193,7 +205,7 @@ class SidecarReconciler(
 
     private suspend fun importNew(slug: String): ReconcileOutcome = slugLock.withSlug(slug) { importNewLocked(slug) }
 
-    private suspend fun importNewLocked(slug: String): ReconcileOutcome {
+    private suspend fun importNewLocked(slug: String, v2Only: Boolean = false): ReconcileOutcome {
         val read = store.read(slug)
         if (read is SidecarRead.Corrupt) return ReconcileOutcome.CorruptKept(slug, read.reason, null)
         if (read !is SidecarRead.Present) return ReconcileOutcome.Unchanged(slug)
@@ -201,7 +213,8 @@ class SidecarReconciler(
         if (decoded.project.slug != slug) return ReconcileOutcome.Failed(slug, "sidecar slug does not match its directory")
         val hash = SidecarCodec.bundleHash(read.files)
         val project = decoded.project.copy(baseRevision = decoded.project.modelRevision, lastSyncedSidecarHash = hash)
-        return write { @OptIn(DirectRepositoryWrite::class) repos.projects.replaceProjectContents(project.uuid, decoded.copy(project = project)) }.fold(
+        val bundle = decoded.copy(project = project).let { if (v2Only) SyncedV2ProjectDiscovery.v2SheetsOnly(it) else it }
+        return write { @OptIn(DirectRepositoryWrite::class) repos.projects.replaceProjectContents(project.uuid, bundle) }.fold(
             { ReconcileOutcome.Failed(slug, it.message) },
             { ReconcileOutcome.Pulled(slug) },
         )
