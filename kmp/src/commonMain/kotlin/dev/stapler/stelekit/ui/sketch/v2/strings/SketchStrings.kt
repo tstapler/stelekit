@@ -162,6 +162,26 @@ object SketchStrings {
 
     object Shortcuts {
         fun constrainMenuRow(label: String): String = "$label (Constrain menu open)"
+
+        /** The recorded WCAG 2.5.7 exemption: a freehand stroke is path-dependent, so its own stroke needs a drag (UX-107). */
+        const val FREEDRAW_EXEMPTION =
+            "Freedraw strokes need a drag, so the Freedraw tool has no keyboard path. Draw a polyline with the Line tool, or with Crosshair mode and Draw polyline by points."
+    }
+
+    /** What Crosshair drawing says through the live region while a drawing tool is driven by the keyboard (UX-107, ux.md section 10). */
+    object KeyboardDrawing {
+        const val STARTED = "Crosshair mode. Arrow keys move the crosshair, Shift moves ten units. Enter places a point. Esc cancels."
+        const val CANCELLED = "Cancelled. Nothing was added."
+        const val ENDED = "Crosshair mode ended."
+        const val NOTHING_DRAWN = "Nothing drawn"
+
+        fun added(name: String): String = "Added $name"
+
+        fun cornerPlaced(x: Int, y: Int): String = "Corner placed at $x, $y. Move the crosshair, then press Enter for the opposite corner."
+
+        fun pointPlaced(count: Int, x: Int, y: Int): String = "Point $count placed at $x, $y."
+
+        fun crosshairAt(x: Int, y: Int): String = "Crosshair at $x, $y"
     }
 
     /** The restore and delete-backups dialogs, the `Restored` toast, failure messages and the backups size row. */

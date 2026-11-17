@@ -77,6 +77,9 @@ object ArcFromThreePoints {
 class ArcTool(private val placed: List<ScenePoint> = emptyList()) : Tool {
     override val id: ToolId = ToolId.Arc
 
+    /** The points placed so far (0 to 2), for the keyboard flow's mid-draw check. */
+    val placedPoints: List<ScenePoint> get() = placed
+
     override fun onEvent(event: InputEvent, ctx: ToolContext): ToolResult = when (event.type) {
         InputType.Down -> ToolResult(next = Pressed(this, event.pointerId))
         InputType.Move -> if (placed.isEmpty()) ToolResult.Nothing else ToolResult(preview = previewWith(event.point, ctx))

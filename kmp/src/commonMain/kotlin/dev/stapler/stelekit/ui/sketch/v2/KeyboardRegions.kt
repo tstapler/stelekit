@@ -14,6 +14,12 @@ enum class TabStop(val inF6: Boolean) {
 }
 
 object KeyboardRegions {
+    /**
+     * The stops Tab walks, in the one order of ux.md section 10, among [present] (the canvas is always there). Shift+Tab walks
+     * it reversed; the walk has no trap because every present stop is reachable from every other.
+     */
+    fun tabOrder(present: Set<TabStop>): List<TabStop> = TabStop.entries.filter { it in present || it == TabStop.Canvas }
+
     /** The stops F6 visits, in order. */
     val f6: List<TabStop> = TabStop.entries.filter { it.inF6 }
 

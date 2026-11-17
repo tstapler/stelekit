@@ -42,6 +42,9 @@ sealed interface KeyAction {
     data object NextRegion : KeyAction
     data object PreviousRegion : KeyAction
     data object Escape : KeyAction
+
+    /** A key Crosshair mode owns while it is active: arrows move the crosshair, Enter places a point, Esc backs out one row. */
+    data class Crosshair(val key: CrosshairKey) : KeyAction
 }
 
 /** What the editor knows when a key arrives. */
@@ -54,6 +57,8 @@ data class KeyContext(
     val textInputOrDialogFocused: Boolean,
     val hasSelection: Boolean,
     val handToolActive: Boolean = false,
+    /** Crosshair mode is active, so arrows, Enter and Esc go to it instead of nudging, panning or the Esc row below it. */
+    val crosshairActive: Boolean = false,
 )
 
 /** What the dispatcher decided. */
@@ -76,6 +81,7 @@ sealed interface KeyOutcome {
 object KeyDispatcher {
     fun dispatch(press: KeyPress, ctx: KeyContext): KeyOutcome {
         if (ctx.textInputOrDialogFocused) return KeyOutcome.Ignored
+        if (ctx.crosshairActive) crosshairKey(press)?.let { return KeyOutcome.Handled(KeyAction.Crosshair(it)) }
         val matched = matching(press, ctx.env)
         val hit = matched.firstOrNull() ?: return KeyOutcome.Ignored
         val (entry, binding) = hit
@@ -86,11 +92,21 @@ object KeyDispatcher {
         return actionFor(entry, binding, ctx)?.let { KeyOutcome.Handled(it) } ?: KeyOutcome.Ignored
     }
 
+    private fun crosshairKey(press: KeyPress): CrosshairKey? {
+        if (press.hasModifier()) return null
+        return when (val direction = ARROW_DIRECTIONS[press.produced?.lowercase()]) {
+            null -> NAMED_CROSSHAIR_KEYS[press.produced?.lowercase()]
+            else -> CrosshairKey.Move(direction.first, direction.second, press.shift)
+        }
+    }
+
+    private fun KeyPress.hasModifier(): Boolean = ctrl || meta || alt
+
     private fun matching(press: KeyPress, env: KeymapEnv): List<Pair<KeymapEntry, KeyBinding>> {
         val normal = KeymapSpec.entries.flatMap { e -> e.bindings.filter { KeymapSpec.matches(it, press, env) }.map { e to it } }
         if (normal.isNotEmpty()) return normal
         // Backspace deletes like Delete without a second row in the table.
-        return if (press.produced == BACKSPACE && !press.ctrl && !press.meta && !press.alt) {
+        return if (press.produced == BACKSPACE && !press.hasModifier()) {
             KeymapSpec.others.filter { it.id == "delete" }.map { it to it.bindings.first() }
         } else {
             emptyList()
@@ -144,4 +160,14 @@ object KeyDispatcher {
     }
 
     private const val BACKSPACE = "Backspace"
+
+    private const val ARROW_LEFT = "arrowleft"
+    private const val ARROW_RIGHT = "arrowright"
+    private const val ARROW_UP = "arrowup"
+    private const val ARROW_DOWN = "arrowdown"
+    private const val ENTER = "enter"
+    private const val ESCAPE = "escape"
+
+    private val ARROW_DIRECTIONS = mapOf(ARROW_LEFT to (-1 to 0), ARROW_RIGHT to (1 to 0), ARROW_UP to (0 to -1), ARROW_DOWN to (0 to 1))
+    private val NAMED_CROSSHAIR_KEYS = mapOf(ENTER to CrosshairKey.Enter, ESCAPE to CrosshairKey.Escape)
 }

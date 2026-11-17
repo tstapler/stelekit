@@ -53,7 +53,7 @@ data class ShortcutsSheetModel(
             )
             fun group(vararg groups: KeymapGroup) = KeymapSpec.entries.filter { it.group in groups }.map(::row)
             val sections = listOf(
-                ShortcutSection(TOOLS, group(KeymapGroup.Tools)),
+                ShortcutSection(TOOLS, group(KeymapGroup.Tools), notes = listOf(SketchStrings.Shortcuts.FREEDRAW_EXEMPTION)),
                 ShortcutSection(EDIT, group(KeymapGroup.Edit)),
                 ShortcutSection(ARRANGE, group(KeymapGroup.Arrange)),
                 ShortcutSection(VIEW, group(KeymapGroup.View, KeymapGroup.Pan), notes = listOf(REGION_NOTE)),
