@@ -32,11 +32,13 @@ import dev.stapler.stelekit.ui.rememberGraphContentGraphIoStack
 import dev.stapler.stelekit.ui.rememberGraphContentVaultSetup
 import dev.stapler.stelekit.ui.sketch.ModernPreviewEnvironment
 import dev.stapler.stelekit.ui.sketch.v2.EditorOpening
+import dev.stapler.stelekit.ui.sketch.v2.HostPlatform
 import dev.stapler.stelekit.ui.sketch.v2.HostTags
 import dev.stapler.stelekit.ui.sketch.v2.KeymapEnv
 import dev.stapler.stelekit.ui.sketch.v2.PainterResources
 import dev.stapler.stelekit.ui.sketch.v2.SketchEditorSession
 import dev.stapler.stelekit.ui.sketch.v2.SketchEditorV2Host
+import dev.stapler.stelekit.ui.sketch.v2.V2EditorDeps
 import dev.stapler.stelekit.ui.sketch.v2.V2EditorOpener
 import dev.stapler.stelekit.ui.sketch.v2.v2EditorDeps
 import dev.stapler.stelekit.wiring.FakePlatformPorts
@@ -52,6 +54,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import java.io.File
 import kotlin.io.path.createTempDirectory
 import kotlin.test.assertEquals
@@ -66,6 +69,7 @@ import kotlin.test.assertTrue
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 @OptIn(DirectRepositoryWrite::class)
 class WiringV2AndroidEntryPointTest {
     @get:Rule
@@ -91,8 +95,9 @@ class WiringV2AndroidEntryPointTest {
         dataDir.deleteRecursively()
     }
 
-    @Test
-    fun androidRoot_should_OpenTheV2EditorOverItsOwnStoreAndSaveThroughItsDurability() {
+    private class Opened(val wired: WiredAppFixture, val root: ProjectBridgeDeps, val rig: V2EditorRig, val deps: V2EditorDeps, val session: SketchEditorSession, val durability: RecordingDurability)
+
+    private fun wireAndOpen(platform: HostPlatform = HostPlatform()): Opened {
         val durability = RecordingDurability()
         val wired = runBlocking {
             WiredAppFixture.android(context, dataDir, ports = FakePlatformPorts(fileSystem = fs), graphPath = graphPath, sketchDurability = durability)
@@ -119,14 +124,17 @@ class WiringV2AndroidEntryPointTest {
         }
         root.settings.setV2Mode(V2EditorRig.GRAPH, V2Mode.On)
         val metrics = FixedAdvanceTextMetricsProvider()
-        val deps = root.v2EditorDeps(wired.repos.sketchRepositories, wired.repos.writeActor, { V2EditorRig.GRAPH }, KeymapEnv(isMac = false, isWeb = false), touchPresent = false)
+        val deps = root.v2EditorDeps(wired.repos.sketchRepositories, wired.repos.writeActor, { V2EditorRig.GRAPH }, KeymapEnv(isMac = false, isWeb = false), touchPresent = false, platform = platform)
         val session = assertIs<EditorOpening.Editor>(runBlocking { V2EditorOpener(deps, Dispatchers.Default).open(rig.project.uuid, metrics) }).session
         composeRule.runOnUiThread {
             opened = session
             session.controller.tools.chooseTool(ToolId.Rectangle)
         }
         composeRule.waitForIdle()
+        return Opened(wired, root, rig, deps, session, durability)
+    }
 
+    private fun drawRectangle() {
         composeRule.onNodeWithTag(HostTags.CANVAS_INPUT).performMouseInput {
             moveTo(Offset(30f, 30f))
             press()
@@ -135,6 +143,18 @@ class WiringV2AndroidEntryPointTest {
             release()
         }
         composeRule.waitForIdle()
+    }
+
+    @Test
+    fun androidRoot_should_OpenTheV2EditorOverItsOwnStoreAndSaveThroughItsDurability() {
+        val opened = wireAndOpen()
+        val wired = opened.wired
+        val root = opened.root
+        val rig = opened.rig
+        val durability = opened.durability
+        val session = opened.session
+        val store = assertNotNull(root.sidecarStore())
+        drawRectangle()
         runBlocking { session.controller.flush() }
 
         ObservableEffect.assert("sketch-durability-consulted-android") {
@@ -156,7 +176,19 @@ class WiringV2AndroidEntryPointTest {
         assertEquals(0, notices.size(gone), "the removed graph's classic-notice ledger is gone")
     }
 
+    @Test
+    fun androidRoot_should_ReachTheNineClassSeamsOfTheV2Editor() {
+        val platform = HostPlatform(fileSystem = fs, notesDirectory = { NOTES })
+        val opened = wireAndOpen(platform)
+        drawRectangle()
+        runBlocking {
+            opened.session.controller.flush()
+            V2ClassSeamProbe.assertAllReachable(opened.root, opened.deps, opened.session, opened.rig)
+        }
+    }
+
     private companion object {
+        const val NOTES = "/test/notes"
         const val WAIT_MS = 60_000L
     }
 }

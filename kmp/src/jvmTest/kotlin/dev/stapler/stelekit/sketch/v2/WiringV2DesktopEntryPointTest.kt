@@ -27,7 +27,11 @@ import dev.stapler.stelekit.ui.buildProjectBridgeDeps
 import dev.stapler.stelekit.ui.rememberGraphContentGraphIoStack
 import dev.stapler.stelekit.ui.rememberGraphContentVaultSetup
 import dev.stapler.stelekit.ui.sketch.v2.EditorOpening
+import dev.stapler.stelekit.ui.sketch.v2.HostPlatform
 import dev.stapler.stelekit.ui.sketch.v2.KeymapEnv
+import dev.stapler.stelekit.ui.sketch.v2.SketchEditorController
+import dev.stapler.stelekit.ui.sketch.v2.SketchEditorSession
+import dev.stapler.stelekit.ui.sketch.v2.V2EditorDeps
 import dev.stapler.stelekit.ui.sketch.v2.RawPhase
 import dev.stapler.stelekit.ui.sketch.v2.RawPointer
 import dev.stapler.stelekit.ui.sketch.v2.V2EditorOpener
@@ -76,8 +80,9 @@ class WiringV2DesktopEntryPointTest {
         dataDir.deleteRecursively()
     }
 
-    @Test
-    fun desktopRoot_should_OpenTheV2EditorOverItsOwnStoreAndSaveThroughItsDurability() {
+    private class Opened(val wired: DesktopWiredAppFixture, val root: ProjectBridgeDeps, val rig: V2EditorRig, val deps: V2EditorDeps, val session: SketchEditorSession, val durability: RecordingDurability)
+
+    private fun wireAndOpen(platform: HostPlatform = HostPlatform()): Opened {
         val durability = RecordingDurability()
         val wired = runBlocking { DesktopWiredAppFixture.desktop(dataDir, FakePlatformPorts(fileSystem = fs), graphPath = graphPath, sketchDurability = durability) }
         fixture = wired
@@ -106,7 +111,7 @@ class WiringV2DesktopEntryPointTest {
             store.write(rig.slug, SidecarCodec.encode(rig.bundle()))
         }
         root.settings.setV2Mode(V2EditorRig.GRAPH, V2Mode.On)
-        val deps = root.v2EditorDeps(wired.repos.sketchRepositories, wired.repos.writeActor, { V2EditorRig.GRAPH }, KeymapEnv(isMac = false, isWeb = false), touchPresent = false)
+        val deps = root.v2EditorDeps(wired.repos.sketchRepositories, wired.repos.writeActor, { V2EditorRig.GRAPH }, KeymapEnv(isMac = false, isWeb = false), touchPresent = false, platform = platform)
 
         val quality = assertNotNull(root.quality)
         val conflictsBefore = quality.counts().conflicts
@@ -114,13 +119,29 @@ class WiringV2DesktopEntryPointTest {
         assertEquals(conflictsBefore + 1, quality.counts().conflicts, "the editor's log feeds the root's quality counters")
 
         val session = assertIs<EditorOpening.Editor>(runBlocking { V2EditorOpener(deps, Dispatchers.Default).open(rig.project.uuid, FixedAdvanceTextMetricsProvider()) }).session
-        val controller = session.controller
+        return Opened(wired, root, rig, deps, session, durability)
+    }
+
+    private fun drawRectangle(controller: SketchEditorController) {
         controller.tools.chooseTool(ToolId.Rectangle)
         var t = 0L
         for ((phase, at) in listOf(RawPhase.Down to ScreenPx(30.0, 30.0), RawPhase.Move to ScreenPx(80.0, 60.0), RawPhase.Move to ScreenPx(130.0, 90.0), RawPhase.Up to ScreenPx(130.0, 90.0))) {
             controller.tools.onPointer(RawPointer(1, PointerKind.Mouse, phase, at, timestamp = t++))
         }
         runBlocking { controller.flush() }
+    }
+
+    @Test
+    fun desktopRoot_should_OpenTheV2EditorOverItsOwnStoreAndSaveThroughItsDurability() {
+        val opened = wireAndOpen()
+        val wired = opened.wired
+        val root = opened.root
+        val rig = opened.rig
+        val durability = opened.durability
+        val session = opened.session
+        val controller = session.controller
+        val store = assertNotNull(root.sidecarStore())
+        drawRectangle(controller)
 
         ObservableEffect.assert("sketch-durability-consulted-desktop") {
             assertTrue(durability.waited.any { it.first == rig.slug && it.second == rig.path }, "the saver waited on the root's durability: ${durability.waited}")
@@ -142,7 +163,16 @@ class WiringV2DesktopEntryPointTest {
         assertEquals(0, notices.size(gone), "the removed graph's classic-notice ledger is gone")
     }
 
+    @Test
+    fun desktopRoot_should_ReachTheNineClassSeamsOfTheV2Editor() {
+        val opened = wireAndOpen(HostPlatform(fileSystem = fs, notesDirectory = { NOTES }))
+        drawRectangle(opened.session.controller)
+        runBlocking { V2ClassSeamProbe.assertAllReachable(opened.root, opened.deps, opened.session, opened.rig) }
+        opened.session.close()
+    }
+
     private companion object {
+        const val NOTES = "/test/notes"
         const val TIMEOUT_NANOS = 60_000_000_000L
     }
 }

@@ -389,6 +389,7 @@ import dev.stapler.stelekit.voice.MlKitAvailabilityMappingTest
 import dev.stapler.stelekit.voice.VoicePipelineConfigTest
 import dev.stapler.stelekit.audit.TestHygieneAuditTest
 import dev.stapler.stelekit.audit.TestPlacementAuditTest
+import dev.stapler.stelekit.audit.TestRegistrationAuditTest
 import dev.stapler.stelekit.google.GoogleAuthCodeExchangeTest
 import dev.stapler.stelekit.google.GoogleDriveFlowTest
 import dev.stapler.stelekit.google.GooglePhotosFlowTest
@@ -779,6 +780,7 @@ import org.junit.runners.Suite
     QueryExecutorTest::class,
     TestHygieneAuditTest::class,
     TestPlacementAuditTest::class,
+    TestRegistrationAuditTest::class,
     FirstOpenSmokeCatalogTest::class,
     ObservableEffectCatalogTest::class,
     PlantedDeadCodeConstructorTest::class,

@@ -710,5 +710,10 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.jobs.schedule.InProcessTaskSchedulerContractTest::class,
     dev.stapler.stelekit.jobs.schedule.InProcessTaskSchedulerTest::class,
     dev.stapler.stelekit.ui.settings.ScheduledSyncRadioKeyboardTest::class,
+    // Gradle-only sketch v2 classes (kmp/src/jvmTest/kotlin/BUILD.bazel excludes each: the commonTest fixtures they drive, or Compose
+    // Multiplatform's generated `Res`, are not on this target's classpath). They run under `./gradlew :kmp:jvmTest`; they are named here
+    // so TestRegistrationAuditTest can tell an exclusion from an unregistered class: ArchitectureScenarioTest, ToolsEndToEndTest,
+    // ParityV1SuiteTest, RenderedSliceScenarioTest, DeterminismSpikeJvmTest, LargeSceneDegradationTest, ComposeTextMetricsProviderTest
+    // and, for Task 6.2.1c, WiringV2DesktopEntryPointTest (it drives the commonTest V2EditorRig).
 )
 class AllJvmTests

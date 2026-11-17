@@ -113,10 +113,14 @@ class ToolSession(
         take(editing.commit(context()))
     }
 
-    /** Esc: the tool abandons its gesture, or, with nothing to abandon, the selection is dropped. */
+    /** Esc: the tool abandons its gesture, else a drawing tool returns to Select, else the selection is dropped (ux.md section 17). */
     fun escape() {
         if (preview != null || textSession != null || !selecting()) {
-            take(tool.onEvent(InputEvent.escape(notifier.now()), context()))
+            val idleDrawingTool = preview == null && textSession == null && ui.activeTool != ToolId.Select
+            val result = tool.onEvent(InputEvent.escape(notifier.now()), context())
+            take(result)
+            // Row 10 of the one Esc order: a tool with nothing left to abandon hands the canvas back to Select.
+            if (idleDrawingTool && result.next == null && result.command == null) chooseTool(ToolId.Select)
         } else {
             ui.selection = emptySet()
             tool = SelectTool(emptyList(), ports.touchPresent)

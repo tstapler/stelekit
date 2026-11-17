@@ -180,9 +180,15 @@ private fun solveChips(controller: SketchEditorController, solving: Boolean): Li
 private fun canvasKey(controller: SketchEditorController, event: KeyEvent, singleKey: Boolean): Boolean {
     val press = event.toKeyPress() ?: return false
     val state = controller.ui
-    val shellOwnsEscape = state.walkthrough.active || state.panPadOpen || state.help.shown != null
-    if (event.key == Key.Escape && shellOwnsEscape) return false
+    if (event.key == Key.Escape && shellOwnsEscape(controller)) return false
     return controller.keys.onKey(press, KeyFocus(singleKeyEnabled = singleKey))
+}
+
+/** True when the first row of the one Esc order that applies is the shell's (the Pan pad, a help popup or the tour), so the canvas passes the press on. */
+private fun shellOwnsEscape(controller: SketchEditorController): Boolean {
+    val state = controller.ui
+    val first = EscOrder.resolve(ShellEscape.shellRows(state) + controller.escRows())
+    return first == EscRow.MenuOrFlyout || first == EscRow.Walkthrough
 }
 
 private fun SaveState.toStatus(): SaveStatus = when (this) {

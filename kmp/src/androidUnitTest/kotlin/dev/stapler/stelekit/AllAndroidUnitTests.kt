@@ -166,5 +166,8 @@ import org.junit.runners.Suite
     // They run under Gradle's testDebugUnitTest.
     // BackgroundTasksUxGapsTest, ScheduledSyncStatusActionsTest, TaskSettingsAccessibilityAndErrorsTest,
     // DepthEstimationPanelLiveRegionTest and ScheduledSyncControlsApplyTest are excluded for the same reason (1).
+    // AndroidPixelSpikeTest (Spike 0.1.3e) needs the commonTest DeterminismSpikeSupport and InputSpikeAndroidTest composes @Composable lambdas (no Compose plugin or commonTest in this target); both run under Gradle.
+    // EscOrderIntegrationTest and BracketPlateUxScenarioTest (sketch v2, Tasks 6.2.4h and 6.2.4f) mount the real host (composeRule, no Compose plugin in this target) over the commonTest rig; Gradle-only.
+    // Task 6.2.1c: WiringV2AndroidEntryPointTest (the root, the class seams of the plan-seam-classes block and the saver's durability) stays Gradle-only for the reasons named above; it is named here so TestRegistrationAuditTest can tell an exclusion from an unregistered class.
 )
 class AllAndroidUnitTests
