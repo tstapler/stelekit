@@ -60,6 +60,8 @@ kt_jvm_test(
             # Task 6.2.4a: the scripted architecture diagram and the end-to-end tool run use commonTest ArchitectureScenario/Golden (not on this target's classpath); Gradle-only.
             "**/ArchitectureScenarioTest.kt",
             "**/ToolsEndToEndTest.kt",
+            # Task 6.2.4b: drives ScenarioEditor (commonTest) and SketchTestSupport (businessTest), neither on this target's classpath; Gradle-only.
+            "**/ParityV1SuiteTest.kt",
             # Reads the bundled fonts through Compose Multiplatform's generated `Res`, which Bazel does not generate (commonMain
             # uses bazel_stubs/SketchFontResources.kt instead); Gradle-only. Also skipped by AllJvmTestsCompletenessTest.
             "dev/stapler/stelekit/ui/sketch/v2/ComposeTextMetricsProviderTest.kt",

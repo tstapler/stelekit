@@ -75,6 +75,19 @@ class SketchLog(
         "noConvergence" to count(noConvergence), "conflicts" to count(conflicts),
     )
 
+    /**
+     * The one line of a user-visible error state (UX-71): its fixed name from [SketchErrorState.logName] and its reason token,
+     * plus constraint ids for a solve failure. Ids and tokens only, never element text.
+     */
+    fun errorState(state: SketchErrorState, constraintIds: List<String> = emptyList()) {
+        if (state == SketchErrorState.SaveConflict) signals?.recordConflict()
+        if (constraintIds.isEmpty()) {
+            emit(state.logName, "reason" to state.reasonCode)
+        } else {
+            emit(state.logName, "reason" to state.reasonCode, "ids" to ids(constraintIds))
+        }
+    }
+
     /** A notice or banner row reached the screen; [key] is its fixed id (`AddedConstraint`), never its text. */
     fun noticeShown(key: String) = emit("sketch.notice.shown", "key" to clean(key))
 
@@ -98,13 +111,12 @@ class SketchLog(
     private fun count(value: Long): String = value.coerceAtLeast(0).toString()
 
     private fun clean(value: String): String =
-        if (value.isNotEmpty() && value.length <= limits.maxLayerIdChars && value.all(::isTokenChar)) value else "?"
-
-    private fun isTokenChar(c: Char): Boolean =
-        c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9' || c == '_' || c == '.' || c == '-'
+        if (value.isNotEmpty() && value.length <= limits.maxLayerIdChars && value.all(Char::isTokenChar)) value else "?"
 
     private object LoggerSink : SketchLogSink {
         private val logger = Logger("sketch")
         override fun emit(line: String) = logger.info(line)
     }
 }
+
+private fun Char.isTokenChar(): Boolean = this in 'a'..'z' || this in 'A'..'Z' || this in '0'..'9' || this == '_' || this == '.' || this == '-'

@@ -113,6 +113,7 @@ import org.junit.runners.Suite
     MermaidWebViewBridgeTest::class,
     MermaidWebViewSettingsTest::class,
     dev.stapler.stelekit.sketch.v2.AndroidCrashGuardTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.DeadEndWalkTest::class,
     // MermaidWebViewHostTest and MermaidWebViewSecurityDirectiveTest are deliberately NOT
     // registered here (unlike Gradle's testDebugUnitTest, which does run them): this repo's
     // Bazel android_local_test setup has two pre-existing gaps unrelated to Mermaid — (1) the

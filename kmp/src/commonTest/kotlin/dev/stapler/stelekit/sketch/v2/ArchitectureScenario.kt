@@ -29,6 +29,7 @@ import dev.stapler.stelekit.sketch.v2.tools.ElementIdSource
 import dev.stapler.stelekit.sketch.v2.tools.FrameTool
 import dev.stapler.stelekit.sketch.v2.tools.InputEvent
 import dev.stapler.stelekit.sketch.v2.tools.InputType
+import dev.stapler.stelekit.sketch.v2.tools.LineTool
 import dev.stapler.stelekit.sketch.v2.tools.Modifiers
 import dev.stapler.stelekit.sketch.v2.tools.PointerKind
 import dev.stapler.stelekit.sketch.v2.tools.RectangleTool
@@ -85,6 +86,7 @@ class ScenarioEditor(limits: SceneLimits = SceneLimits.Default, private val poin
         tool = when (id) {
             ToolId.Rectangle -> RectangleTool()
             ToolId.Arrow -> ArrowTool()
+            ToolId.Line -> LineTool()
             ToolId.Frame -> FrameTool()
             ToolId.Select -> SelectTool()
             else -> error("the architecture script does not use $id")
