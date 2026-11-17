@@ -979,6 +979,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.HitTesterTest::class,
     dev.stapler.stelekit.sketch.v2.CanvasPerfCheckpointTest::class,
     dev.stapler.stelekit.sketch.v2.FidelityCheckpointTest::class,
+    dev.stapler.stelekit.sketch.v2.BindingCheckpointTest::class,
+    dev.stapler.stelekit.sketch.v2.A1GateTest::class,
     dev.stapler.stelekit.sketch.v2.ConstraintTargetTest::class,
     dev.stapler.stelekit.sketch.v2.PartHitTesterTest::class,
     dev.stapler.stelekit.sketch.v2.SetDimensionValueTest::class,

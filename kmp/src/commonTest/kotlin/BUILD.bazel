@@ -307,6 +307,8 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/HitTesterTest.kt",
         "dev/stapler/stelekit/sketch/v2/CanvasPerfCheckpointTest.kt",
         "dev/stapler/stelekit/sketch/v2/FidelityCheckpointTest.kt",
+        "dev/stapler/stelekit/sketch/v2/BindingCheckpointTest.kt",
+        "dev/stapler/stelekit/sketch/v2/A1GateTest.kt",
         "dev/stapler/stelekit/sketch/v2/RestoreBackupActionTest.kt",
         "dev/stapler/stelekit/sketch/v2/SketchyAvailabilityTest.kt",
         "dev/stapler/stelekit/sketch/v2/ConstraintTargetTest.kt",

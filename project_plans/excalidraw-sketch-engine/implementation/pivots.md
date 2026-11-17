@@ -60,3 +60,22 @@ The rule is `FidelityCheckpoint` (`sketch/v2/diagnostics/FidelityCheckpoint.kt`,
 Notes:
 - The fixtures were authored from Excalidraw v0.18.1 `types.ts`, so passing shows the exporter and importer agree with each other and with that reading of the format, not with files real Excalidraw writes. The pivot is re-evaluated when real exports exist.
 - The six fixtures are asserted inside three tests, not one test per fixture, so a failure names the fixture in the assertion message rather than in the test name.
+
+## Task 6.2.9b - Arrow binding and elbow routing (Story 3.3.2)
+
+Trigger (requirements.md "Abort and pivot criteria"): `BindingInvariantPropertyTest` cannot hold the invariant (every `Binding.elementId` resolves, `reconcile` has nothing to repair) over rotate, group transform and paste.
+Switch when it fires: v1 ships bind-on-drop, follow-on-move and unbind-on-delete only; rotate and group transform leave a bound arrow end at its last position, unbind it and show a notice. Elbow routing stays stored-only (OD-7) in every outcome. A dangling id after `reconcile` blocks release; a missing convenience does not.
+The rule is `BindingCheckpoint` (`sketch/v2/diagnostics/BindingCheckpoint.kt`, `BindingCheckpointTest`); rerun it with each new set of results.
+
+| Operation | Invariant | Source | Outcome |
+|---|---|---|---|
+| Rotate (`RotateElement` of a bound shape) | held | `BindingInvariantPropertyTest`: random sequences of 10 command kinds, 40 committed steps per seed, `:kmp:jvmTest`, 1 test PASSED, 2026-11-16 | PROCEED |
+| Group transform (`GroupElements`, `UngroupElements`, `MoveElements` over a selection) | held | same test; group and ungroup were added to its generator in this task | PROCEED |
+| Paste and duplicate (`SceneClipboard.paste`, `DuplicateElements`) | held | same test | PROCEED |
+| Undo of the whole sequence restores the start | held | same test | PROCEED |
+| Elbow routing | stored only | OD-7 | not a binding outcome; unchanged |
+
+Notes:
+- The property test ran on the JVM only; wasmJs, Android and iOS were not run for this checkpoint, so the outcome is claimed for the shared `commonMain` logic as exercised on the JVM.
+- There is no group-level rotate command (only `RotateElement` on one element), so "group transform" is move of grouped members plus group and ungroup; a group rotate would need a new command and a re-run.
+- The figures above are the recorded inputs to `BindingCheckpoint.evaluate`; there is no automated link from the test result to the rule.

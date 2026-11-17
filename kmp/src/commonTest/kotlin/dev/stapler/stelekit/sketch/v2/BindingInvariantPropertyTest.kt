@@ -11,18 +11,21 @@ import dev.stapler.stelekit.sketch.v2.commands.AddElement
 import dev.stapler.stelekit.sketch.v2.commands.Command
 import dev.stapler.stelekit.sketch.v2.commands.DeleteElements
 import dev.stapler.stelekit.sketch.v2.commands.DuplicateElements
+import dev.stapler.stelekit.sketch.v2.commands.GroupElements
 import dev.stapler.stelekit.sketch.v2.commands.HistoryV2
 import dev.stapler.stelekit.sketch.v2.commands.MoveElements
 import dev.stapler.stelekit.sketch.v2.commands.ResizeElement
 import dev.stapler.stelekit.sketch.v2.commands.RotateElement
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.commands.Transaction
+import dev.stapler.stelekit.sketch.v2.commands.UngroupElements
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.BindingEnd
 import dev.stapler.stelekit.sketch.v2.scene.DiamondElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementBase
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.EllipseElement
+import dev.stapler.stelekit.sketch.v2.scene.GroupId
 import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneUnit
@@ -40,9 +43,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Story 3.3.2, Task 3.3.2c (R-18): after ANY sequence of commands every `Binding.elementId` resolves to a live element, no
- * arrow binds to an arrow or itself, `reconcile` has nothing to repair, and the reciprocal entries match both ways (the
- * engine removes the target's entry on unbind, so none outlives its binding). Undo then restores the start exactly.
+ * Story 3.3.2, Task 3.3.2c (R-18): after ANY sequence of commands (move, resize, rotate, group, ungroup, paste, duplicate,
+ * delete, bind, unbind) every `Binding.elementId` resolves to a live element, no arrow binds to an arrow or itself,
+ * `reconcile` has nothing to repair, and the reciprocal entries match both ways (the engine removes the target's entry on unbind, so none outlives its binding). Undo then restores the start exactly.
  */
 class BindingInvariantPropertyTest {
     private fun su(i: Int) = SceneUnit.ofInt(i)
@@ -88,6 +91,8 @@ class BindingInvariantPropertyTest {
             4 -> DeleteElements(listOf(any()))
             5 -> SceneClipboard.paste(SceneClipboard.copy(scene, some()), r.nextInt(3), Ids("p$serial-"))
             6 -> some().let { ids -> val gen = Ids("d$serial-"); DuplicateElements(ids, ids.associateWith { gen.next() }, MOVE.toDouble(), MOVE.toDouble()) }
+            7 -> GroupElements(some(), GroupId("g$serial"))
+            8 -> UngroupElements(some())
             else -> UnbindArrowEnd(arrow, end)
         }
     }
@@ -139,7 +144,7 @@ class BindingInvariantPropertyTest {
         const val MAX_SIDE = 120
         const val MOVE = 30
         const val KINDS = 3
-        const val OPERATIONS = 8
+        const val OPERATIONS = 10
         const val STEPS = 40
         const val ATTEMPTS = 400
         const val TURN = 6.2
