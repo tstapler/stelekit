@@ -749,6 +749,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val bytes = bytesCache[from]
         val content = cache[from]
         if (bytes == null && content == null) return false
+        // A sidecar temp swap (D-121): the target is the one dirty file and the host gets one write of its final bytes.
+        val finalBytes = bytes ?: content?.encodeToByteArray()
         if (bytes != null) {
             bytesCache[to] = bytes
             cache.remove(to)
@@ -760,15 +762,27 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         cache.remove(from)
         bytesCache.remove(from)
         sidecarNamesOnly.remove(from)
-        if (hostDirectorySync.hostDirHandle != null) {
-            if (bytes != null) {
-                hostDirectorySync.scheduleHostWriteThrough(to, HostWritePayload.Bytes(bytes))
-                hostDirectorySync.scheduleHostWriteThrough(from, HostWritePayload.Delete)
-            } else if (content != null) {
-                scope.launch { hostDirectorySync.renameHostFile(from, to, content) }
+        val sidecarSwap = bytes != null || SidecarLiveSet.isUnderRoot(graphRootPath(), to)
+        if (sidecarSwap) {
+            dropDirty(from)
+            recordDirty(to, DirtyOp.WRITE)
+            if (hostDirectorySync.hostDirHandle != null && finalBytes != null) {
+                hostDirectorySync.scheduleHostWriteThrough(to, HostWritePayload.Bytes(finalBytes))
             }
+        } else if (hostDirectorySync.hostDirHandle != null && content != null) {
+            scope.launch { hostDirectorySync.renameHostFile(from, to, content) }
         }
         return true
+    }
+
+    /** Forgets a path's dirty entry without recording a `DELETE`: a temp that never reached git or a host folder. */
+    private fun dropDirty(path: String) {
+        val repoRelative = path.removePrefix("/stelekit/").substringAfter("/")
+        val dirtySet = sessionHolder.current.gitWriteState.dirtySet
+        if (dirtySet.remove(repoRelative) != null) {
+            _dirtyFileCountFlow.value = dirtySet.size
+            scheduleMarkerWrite()
+        }
     }
 
     actual override fun pickDirectory(): String? = null
@@ -796,15 +810,31 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return true
     }
 
-    /** Moves [from]'s bytes over [to] in the caches at once and queues the OPFS move behind both paths' tails. */
+    /**
+     * Moves [from]'s bytes over [to] in the caches at once and queues the OPFS move behind both paths' tails (D-121). A
+     * `.json` file is kept as its decoded text (the preload's form) and every other file as bytes; the temp leaves both
+     * caches and the dirty set; [to] becomes dirty once and the host folder gets one write of the final bytes.
+     */
     override fun replaceFileAtomically(from: String, to: String): Boolean {
         val bytes = bytesCache[from] ?: cache[from]?.encodeToByteArray() ?: return false
-        bytesCache[to] = bytes
-        cache.remove(to)
+        val text = if (to.endsWith(".json")) bytes.decodeToString().takeIf { it.encodeToByteArray().contentEquals(bytes) } else null
+        if (text != null) {
+            cache[to] = text
+            bytesCache.remove(to)
+        } else {
+            bytesCache[to] = bytes
+            cache.remove(to)
+        }
         bytesCache.remove(from)
         cache.remove(from)
         sidecarNamesOnly.remove(from)
+        sidecarNamesOnly.remove(to)
+        dropDirty(from)
+        recordDirty(to, DirtyOp.WRITE)
         if (!ephemeral) writeQueue.enqueue(listOf(from, to)) { moveOrCopyVerify(from, to) }
+        if (hostDirectorySync.hostDirHandle != null) {
+            hostDirectorySync.scheduleHostWriteThrough(to, HostWritePayload.Bytes(bytes))
+        }
         return true
     }
 

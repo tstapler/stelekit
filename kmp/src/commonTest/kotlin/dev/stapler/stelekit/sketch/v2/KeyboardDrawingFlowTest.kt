@@ -51,6 +51,7 @@ import dev.stapler.stelekit.ui.sketch.v2.ShortcutsSheetModel
 import dev.stapler.stelekit.ui.sketch.v2.StripPlacement
 import dev.stapler.stelekit.ui.sketch.v2.TabStop
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
+import kotlin.reflect.KClass
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -120,13 +121,13 @@ class KeyboardDrawingFlowTest {
 
     @Test
     fun diamondEllipseAndFrame_should_FollowTheSameCornerRule() {
-        for ((tool, type) in listOf<Pair<Tool, Class<*>>>(DiamondTool() to DiamondElement::class.java, EllipseTool() to EllipseElement::class.java, FrameTool() to FrameElement::class.java)) {
+        for ((tool, type) in listOf<Pair<Tool, KClass<*>>>(DiamondTool() to DiamondElement::class, EllipseTool() to EllipseElement::class, FrameTool() to FrameElement::class)) {
             val w = walk(tool)
             w.press(CrosshairKey.Enter)
             w.times(2, farRight)
             w.times(2, farDown)
             w.press(CrosshairKey.Enter)
-            assertEquals(type, w.commands.single()::class.java, "${tool.id}")
+            assertEquals(type, w.commands.single()::class, "${tool.id}")
         }
     }
 

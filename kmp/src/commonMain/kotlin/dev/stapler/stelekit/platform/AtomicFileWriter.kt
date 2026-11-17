@@ -62,17 +62,17 @@ class AtomicFileWriter(
         val tmp = "$path.${UuidGenerator.generateV7()}$tempSuffix"
         var deletedOriginal = false
         try {
-            if (!fs.writeFileBytes(tmp, bytes)) return failAndClean(tmp, path, "temp write failed")
+            if (!fs.writeTempBytes(tmp, bytes)) return failAndClean(tmp, path, "temp write failed")
             if (precondition != null) {
                 val current = when (val r = precondition()) {
                     is Either.Left -> {
-                        runCatching { fs.deleteFile(tmp) }
+                        runCatching { fs.deleteTempBytes(tmp) }
                         return r
                     }
                     is Either.Right -> r.value
                 }
                 if (!current) {
-                    runCatching { fs.deleteFile(tmp) }
+                    runCatching { fs.deleteTempBytes(tmp) }
                     return DomainError.MergeError.Retryable("The file changed while it was being written; try again.").left()
                 }
             }
@@ -93,7 +93,7 @@ class AtomicFileWriter(
             return Unit.right()
         } catch (e: Throwable) {
             if (deletedOriginal && original != null && !fs.fileExists(path)) runCatching { fs.writeFileBytes(path, original) }
-            runCatching { fs.deleteFile(tmp) }
+            runCatching { fs.deleteTempBytes(tmp) }
             if (e is CancellationException) throw e
             if (e is UnsupportedOperationException) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
             return DomainError.FileSystemError.WriteFailed(path, e.message ?: "write failed").left()
@@ -101,7 +101,7 @@ class AtomicFileWriter(
     }
 
     private fun failAndClean(tmp: String, path: String, why: String): Either<DomainError, Unit> {
-        runCatching { fs.deleteFile(tmp) }
+        runCatching { fs.deleteTempBytes(tmp) }
         return DomainError.FileSystemError.WriteFailed(path, why).left()
     }
 

@@ -28,6 +28,8 @@ class AtomicFileWriterTest {
         var crashAtReplace = false
         var dead = false
         val mtimes = mutableMapOf<String, Long>()
+        val tempWrites = mutableListOf<String>()
+        val tempDeletes = mutableListOf<String>()
 
         override val supportsTempRenameWrites get() = tempRenameSupported
         override fun supportsAtomicReplace(path: String) = atomic
@@ -37,6 +39,16 @@ class AtomicFileWriterTest {
             if (dead) error("process is gone")
             if (byteWritesThrow) throw UnsupportedOperationException("no byte writes")
             return super.writeFileBytes(path, if (corruptTemp && path.endsWith(".tmp")) data.copyOf(data.size - 1) else data)
+        }
+
+        override fun writeTempBytes(path: String, data: ByteArray): Boolean {
+            tempWrites += path
+            return super.writeTempBytes(path, data)
+        }
+
+        override fun deleteTempBytes(path: String): Boolean {
+            tempDeletes += path
+            return super.deleteTempBytes(path)
         }
 
         override fun deleteFile(path: String): Boolean {
@@ -71,6 +83,18 @@ class AtomicFileWriterTest {
     fun write_should_CreateAFileThatDidNotExist() {
         assertEquals(Unit.right(), writer().write(dest, new, original = null))
         assertContentEquals(new, fs.readFileBytes(dest))
+        assertEquals(emptyList(), fs.tmps())
+    }
+
+    @Test
+    fun atomicFileWriter_should_WriteItsTempThroughWriteTempBytes() {
+        fs.atomic = true
+        fs.seed(dest, old)
+        assertIs<DomainError.MergeError.Retryable>(
+            writer().write(dest, new, original = old, precondition = { false.right() }).leftValue(),
+        )
+        assertEquals(1, fs.tempWrites.size)
+        assertEquals(fs.tempWrites, fs.tempDeletes)
         assertEquals(emptyList(), fs.tmps())
     }
 
