@@ -28,6 +28,9 @@ object ConstraintToasts {
         details = SketchConstraintStrings.Toast.details(constraints.map { SketchConstraintStrings.Panel.kindLabel(it.kind) }),
     )
 
+    /** The toast of a two-pick creation (Task 4.2.6b): the same notice, with [details] from `PickStep.Complete`, "Added Coincident: Line 1 end, Line 2 start". */
+    fun addedByPick(details: String): SketchNotice = added(emptyList()).copy(details = details)
+
     /** Posts the toast for a drawn shape's inferred constraints; nothing is posted when none were added (Ctrl held, toggle off, nothing snapped). */
     fun post(queue: SketchNoticeQueue, result: AutoConstrainResult, now: Long): SketchNotice? {
         val with = result as? AutoConstrainResult.WithConstraints ?: return null

@@ -81,6 +81,9 @@ class ConstraintTargetPickerModelTest {
         val done = assertIs<PickStep.Complete>(TargetPicker.pick(doc, first.state, at("b", TargetPart.Start), newId))
         assertEquals(Constraint(ConstraintId("k1"), ConstraintKind.Coincident, listOf(at("a", TargetPart.End), at("b", TargetPart.Start))), done.constraint)
         assertEquals("Added Coincident: Line 1 end, Line 2 start", done.details)
+        val toast = ConstraintToasts.addedByPick(done.details)
+        assertEquals("Constraint added.", toast.text)
+        assertEquals(done.details, toast.details)
         assertFalse(done.needsValue)
         assertEquals(1, AddConstraint(done.constraint).apply(doc).get().doc.constraints.size)
     }
