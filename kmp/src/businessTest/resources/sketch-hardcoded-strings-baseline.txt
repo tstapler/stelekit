@@ -168,24 +168,6 @@ ui/sketch/v2/LayersPanelModel.kt :: while ("Layer $n" in used) n++
 ui/sketch/v2/LeaveSketchPrompt.kt :: text = { Text("Your latest changes are not saved yet. Your work is kept until you choose.") },
 ui/sketch/v2/LeaveSketchPrompt.kt :: title = { Text("Changes not saved") },
 ui/sketch/v2/NameTagsModel.kt :: val description: String get() = "$count element names here, zoom in to read them"
-ui/sketch/v2/NonDragTransformMode.kt :: Locked("Locked: unlock it to edit."),
-ui/sketch/v2/NonDragTransformMode.kt :: MinimumSize("Minimum size reached"),
-ui/sketch/v2/NonDragTransformMode.kt :: MoveElement("Move element"),
-ui/sketch/v2/NonDragTransformMode.kt :: NonDragAction.Resize -> resized().let { "width ${Readout.number(frame.width)} → ${Readout.number(it.width)}, height ${Readout.number(frame.height)} → ${Readout.number(it.height)}" }
-ui/sketch/v2/NonDragTransformMode.kt :: NonDragAction.Rotate -> "angle ${Readout.number(Readout.degrees(frameAngle))}° → ${Readout.number(Readout.degrees(TransformMath.normalise(frameAngle + deltaAngle())))}°"
-ui/sketch/v2/NonDragTransformMode.kt :: NotRotatable("This selection cannot be rotated."),
-ui/sketch/v2/NonDragTransformMode.kt :: NothingSelected("Select an element first."),
-ui/sketch/v2/NonDragTransformMode.kt :: One("1 px"),
-ui/sketch/v2/NonDragTransformMode.kt :: Resize("Resize"),
-ui/sketch/v2/NonDragTransformMode.kt :: Rotate("Rotate"),
-ui/sketch/v2/NonDragTransformMode.kt :: Ten("10 px"),
-ui/sketch/v2/NonDragTransformPanel.kt :: Chip(NonDragTags.APPLY, "Apply", selected = false) { state.apply(callbacks) }
-ui/sketch/v2/NonDragTransformPanel.kt :: Chip(NonDragTags.CANCEL, "Cancel", selected = false) { state.cancel(callbacks) }
-ui/sketch/v2/NonDragTransformPanel.kt :: PadButton("down", "Nudge down", "↓") { onNudge(0, 1) }
-ui/sketch/v2/NonDragTransformPanel.kt :: PadButton("left", "Nudge left", "←") { onNudge(-1, 0) }
-ui/sketch/v2/NonDragTransformPanel.kt :: PadButton("right", "Nudge right", "→") { onNudge(1, 0) }
-ui/sketch/v2/NonDragTransformPanel.kt :: PadButton("up", "Nudge up", "↑") { onNudge(0, -1) }
-ui/sketch/v2/NonDragTransformPanel.kt :: Text("Step")
 ui/sketch/v2/PanPad.kt :: ) { Text("Pan") }
 ui/sketch/v2/PanPad.kt :: .semantics { role = Role.Button; contentDescription = if (open) "Close pan pad" else "Pan"; onClick { onToggle(); true } }
 ui/sketch/v2/PanPad.kt :: Down(0, 1, "Pan down"),

@@ -168,6 +168,59 @@ object SketchStrings {
             "Freedraw strokes need a drag, so the Freedraw tool has no keyboard path. Draw a polyline with the Line tool, or with Crosshair mode and Draw polyline by points."
     }
 
+    /** The non-drag transform, bind-end and marquee panel of Crosshair mode (ux.md section 10, UX-40). */
+    object NonDrag {
+        const val MOVE_ELEMENT = "Move element"
+        const val RESIZE = "Resize"
+        const val ROTATE = "Rotate"
+        const val BIND_END = "Bind end"
+        const val MARQUEE = "Marquee"
+
+        const val STEP = "Step"
+        const val STEP_ONE = "1 px"
+        const val STEP_TEN = "10 px"
+        const val STEP_PERCENT = "1%"
+
+        const val MINIMUM_SIZE = "Minimum size reached"
+        const val LOCKED = "Locked: unlock it to edit."
+        const val NOTHING_SELECTED = "Select an element first."
+        const val NOT_ROTATABLE = "This selection cannot be rotated."
+        const val NOT_AN_ARROW = "Select one arrow first."
+        const val NO_TARGETS = "No shape to bind to."
+
+        const val CANCEL = "Cancel"
+        const val APPLY = "Apply"
+        const val SELECT = "Select"
+        const val PLACE_CORNER = "Place corner"
+        const val NUDGE_UP = "Nudge up"
+        const val NUDGE_DOWN = "Nudge down"
+        const val NUDGE_LEFT = "Nudge left"
+        const val NUDGE_RIGHT = "Nudge right"
+        const val END_START = "Start"
+        const val END_END = "End"
+        const val TARGETS = "Shapes near this end"
+
+        fun movePreview(x: String, y: String) = "x $x, y $y"
+
+        fun resizePreview(w0: String, w1: String, h0: String, h1: String) = "width $w0 → $w1, height $h0 → $h1"
+
+        fun rotatePreview(from: String, to: String) = "angle $from° → $to°"
+
+        fun bindPreview(end: String, target: String?) = if (target == null) "Pick a shape to bind the $end to." else "Bind the $end to $target"
+
+        fun candidateLabel(name: String, text: String) = if (text.isEmpty()) name else "$name: $text"
+
+        fun firstCorner(x: Int, y: Int) = "Corner placed at $x, $y. Move the crosshair, then place the opposite corner."
+
+        fun cursorAt(x: Int, y: Int) = "Crosshair at $x, $y. Place the first corner."
+
+        fun regionSummary(count: Int) = when (count) {
+            0 -> "No elements in region"
+            1 -> "1 element in region"
+            else -> "$count elements in region"
+        }
+    }
+
     /** What Crosshair drawing says through the live region while a drawing tool is driven by the keyboard (UX-107, ux.md section 10). */
     object KeyboardDrawing {
         const val STARTED = "Crosshair mode. Arrow keys move the crosshair, Shift moves ten units. Enter places a point. Esc cancels."

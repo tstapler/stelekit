@@ -957,6 +957,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.ui.sketch.v2.OnboardingPolicyTest::class,
     dev.stapler.stelekit.ui.sketch.v2.OnboardingSequencerTest::class,
     dev.stapler.stelekit.ui.sketch.v2.NonDragTransformModeTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.NonDragPickModesTest::class,
     dev.stapler.stelekit.ui.sketch.v2.PanPadPolicyTest::class,
     dev.stapler.stelekit.ui.sketch.v2.FingerDrawingDefaultsTest::class,
     dev.stapler.stelekit.ui.sketch.v2.EdgePanPolicyTest::class,

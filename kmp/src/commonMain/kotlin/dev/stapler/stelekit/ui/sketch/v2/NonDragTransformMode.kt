@@ -26,36 +26,43 @@ import dev.stapler.stelekit.sketch.v2.tools.TransformSelectionCommand
 import dev.stapler.stelekit.sketch.v2.tools.ownAngle
 import dev.stapler.stelekit.sketch.v2.tools.ownBox
 import dev.stapler.stelekit.sketch.v2.tools.previewOf
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.roundToLong
 
-/** What the non-drag layer can do to a selection (Story 3.6.3, Task 3.6.3a); bind, marquee and polyline arrive with Task 3.6.3b and 3.6.3c. */
+/** What the non-drag layer can do to a selection (Story 3.6.3, Task 3.6.3a); bind and marquee are the modes of `NonDragPickModes.kt` (Task 3.6.3b). */
 enum class NonDragAction(val label: String) {
-    MoveElement("Move element"),
-    Resize("Resize"),
-    Rotate("Rotate"),
+    MoveElement(SketchStrings.NonDrag.MOVE_ELEMENT),
+    Resize(SketchStrings.NonDrag.RESIZE),
+    Rotate(SketchStrings.NonDrag.ROTATE),
 }
 
 /** The nudge step of the pad; [label]s are the ones of the Crosshair pad (ux.md section 10). Steps are scene units. */
 enum class NudgeStep(val label: String) {
-    One("1 px"),
-    Ten("10 px"),
-    Percent("1%"),
+    One(SketchStrings.NonDrag.STEP_ONE),
+    Ten(SketchStrings.NonDrag.STEP_TEN),
+    Percent(SketchStrings.NonDrag.STEP_PERCENT),
 }
 
 /** Why a mode did not start or a change was limited; the host owns the wording (UX-12). */
 enum class NonDragNotice(val text: String) {
     /** Resize hit the smallest side; the result is clamped to it. */
-    MinimumSize("Minimum size reached"),
+    MinimumSize(SketchStrings.NonDrag.MINIMUM_SIZE),
 
     /** Nothing in the selection can be edited from the canvas (all locked, or on a locked or hidden layer). */
-    Locked("Locked: unlock it to edit."),
+    Locked(SketchStrings.NonDrag.LOCKED),
 
-    NothingSelected("Select an element first."),
+    NothingSelected(SketchStrings.NonDrag.NOTHING_SELECTED),
 
     /** Rotate needs rectangles, diamonds, ellipses, text, images or frames. */
-    NotRotatable("This selection cannot be rotated."),
+    NotRotatable(SketchStrings.NonDrag.NOT_ROTATABLE),
+
+    /** Bind end needs exactly one arrow. */
+    NotAnArrow(SketchStrings.NonDrag.NOT_AN_ARROW),
+
+    /** No shape can take the arrow end (the scene has none, or all are on hidden layers). */
+    NoTargets(SketchStrings.NonDrag.NO_TARGETS),
 }
 
 /** The outcome of Apply: the command to run (null when nothing changed) and what to tell the user. */
@@ -109,9 +116,14 @@ class NonDragTransformMode private constructor(
 
     /** "x +30, y 0", "width 120 → 150, height 80 → 80" or "angle 0° → 15°": what Apply would do. */
     fun previewText(): String = when (action) {
-        NonDragAction.MoveElement -> "x ${Readout.signed(offsetX)}, y ${Readout.signed(offsetY)}"
-        NonDragAction.Resize -> resized().let { "width ${Readout.number(frame.width)} → ${Readout.number(it.width)}, height ${Readout.number(frame.height)} → ${Readout.number(it.height)}" }
-        NonDragAction.Rotate -> "angle ${Readout.number(Readout.degrees(frameAngle))}° → ${Readout.number(Readout.degrees(TransformMath.normalise(frameAngle + deltaAngle())))}°"
+        NonDragAction.MoveElement -> SketchStrings.NonDrag.movePreview(Readout.signed(offsetX), Readout.signed(offsetY))
+        NonDragAction.Resize -> resized().let {
+            SketchStrings.NonDrag.resizePreview(Readout.number(frame.width), Readout.number(it.width), Readout.number(frame.height), Readout.number(it.height))
+        }
+        NonDragAction.Rotate -> SketchStrings.NonDrag.rotatePreview(
+            Readout.number(Readout.degrees(frameAngle)),
+            Readout.number(Readout.degrees(TransformMath.normalise(frameAngle + deltaAngle()))),
+        )
     }
 
     /** The "Minimum size reached" notice when the pending resize is clamped. */
@@ -198,7 +210,7 @@ class NonDragTransformMode private constructor(
 }
 
 /** How the preview line writes numbers: whole when whole, else one decimal, with a sign for a displacement. */
-private object Readout {
+internal object Readout {
     private const val TENTHS = 10.0
     private const val ROUNDING = 1e-9
     private const val HALF_TURN_DEGREES = 180.0

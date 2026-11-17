@@ -7,6 +7,7 @@ package dev.stapler.stelekit.sketch.v2.tools
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
+import dev.stapler.stelekit.sketch.v2.binding.BindArrowEnd
 import dev.stapler.stelekit.sketch.v2.commands.AddElement
 import dev.stapler.stelekit.sketch.v2.commands.AssignToFrame
 import dev.stapler.stelekit.sketch.v2.commands.Command
@@ -35,6 +36,7 @@ fun ToolCommand.toCommand(): Either<CommandError, Command> = when (this) {
     is EraseCommand -> DeleteElements(ids).right()
     is AddFrameCommand -> SequenceCommand(listOfNotNull(AddElement(frame), memberIds.takeIf { it.isNotEmpty() }?.let { AssignToFrame(frame.id, it) })).right()
     is SetLinePointsCommand -> SetLinePoints(id, points).right()
+    is BindArrowEndCommand -> BindArrowEnd(arrow, end, target).right()
     else -> CommandError.Unsupported(this::class.simpleName.orEmpty(), "toCommand").left()
 }
 

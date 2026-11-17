@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.sketch.v2.tools
 
+import dev.stapler.stelekit.sketch.v2.scene.BindingEnd
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.FrameElement
 import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
@@ -62,4 +63,7 @@ data class EraseCommand(val ids: List<ElementId>) : ToolCommand
 data class AddFrameCommand(val frame: FrameElement, val memberIds: List<ElementId>) : ToolCommand
 
 /** Replaces the vertices of the line [id], the commit of a point-editing drag (Task 3.2.1b); one undo step. */
+/** Binds one end of [arrow] to [target] (the non-drag "Bind end" path); the end snaps onto the target outline. */
+data class BindArrowEndCommand(val arrow: ElementId, val end: BindingEnd, val target: ElementId) : ToolCommand
+
 data class SetLinePointsCommand(val id: ElementId, val points: List<ScenePoint>) : ToolCommand

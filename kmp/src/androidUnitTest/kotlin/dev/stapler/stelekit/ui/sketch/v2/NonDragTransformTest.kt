@@ -14,6 +14,11 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.pressKey
+import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
+import dev.stapler.stelekit.sketch.v2.scene.BindingEnd
+import dev.stapler.stelekit.sketch.v2.scene.ElementBase
+import dev.stapler.stelekit.sketch.v2.scene.ElementId
+import dev.stapler.stelekit.sketch.v2.tools.BindArrowEndCommand
 import dev.stapler.stelekit.sketch.v2.tools.ElementTransform
 import dev.stapler.stelekit.sketch.v2.tools.MoveSelectionCommand
 import dev.stapler.stelekit.sketch.v2.tools.RectSpec
@@ -22,6 +27,7 @@ import dev.stapler.stelekit.sketch.v2.tools.TransformSelectionCommand
 import dev.stapler.stelekit.sketch.v2.tools.elId
 import dev.stapler.stelekit.sketch.v2.tools.filledRectEl
 import dev.stapler.stelekit.sketch.v2.tools.sceneOfElements
+import dev.stapler.stelekit.sketch.v2.tools.sp
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -129,6 +135,80 @@ class NonDragTransformTest {
         assertEquals(1, commands.size)
     }
 
+    // ---- bind end and marquee, taps only (Task 3.6.3b) ----------------------------------------------------------
+
+    private val bindScene = sceneOfElements(
+        filledRectEl("a", 0, 0, 100, 60), filledRectEl("b", 300, 0, 100, 60),
+        ArrowElement(ElementBase(elId("ar")), listOf(sp(110, 30), sp(250, 30))),
+    )
+    private val selected = mutableListOf<List<ElementId>>()
+
+    private fun showBindPanel(selection: List<String>, cursorX: Double = -10.0) {
+        val callbacks = NonDragCallbacks({ commands += it }, { n, skipped -> notices += n to skipped }, { exited++ }, { selected += it })
+        rule.setContent { NonDragTransformPanel(bindScene, selection.map(::elId), callbacks, cursorX = cursorX, cursorY = -10.0) }
+        rule.waitForIdle()
+    }
+
+    @Test
+    fun bindEnd_should_BindThePickedShape_WithTapsOnly_AsOneCommand() {
+        showBindPanel(listOf("ar"))
+        tap(NonDragTags.BIND)
+        tap(NonDragTags.candidate(elId("b")))
+        rule.onNodeWithTag(NonDragTags.PREVIEW).assertTextEquals("Bind the end to Rectangle")
+        assertTrue(commands.isEmpty(), "nothing is committed before Apply")
+        tap(NonDragTags.APPLY)
+        val bound = assertIs<BindArrowEndCommand>(commands.single())
+        assertEquals(elId("b"), bound.target)
+        assertEquals(BindingEnd.End, bound.end)
+    }
+
+    @Test
+    fun bindEnd_should_SwitchEndsAndKeepTheModeWhenApplyIsTappedWithNoPick() {
+        showBindPanel(listOf("ar"))
+        tap(NonDragTags.BIND)
+        tap(NonDragTags.end(BindingEnd.Start))
+        tap(NonDragTags.APPLY)
+        assertTrue(commands.isEmpty())
+        tap(NonDragTags.candidate(elId("a")))
+        tap(NonDragTags.APPLY)
+        assertEquals(BindingEnd.Start, assertIs<BindArrowEndCommand>(commands.single()).end)
+    }
+
+    @Test
+    fun bindEnd_should_ExplainWhy_When_NoArrowIsSelected() {
+        showBindPanel(listOf("a"))
+        tap(NonDragTags.BIND)
+        rule.onNodeWithTag(NonDragTags.NOTICE).assertTextEquals(NonDragNotice.NotAnArrow.text)
+        assertTrue(commands.isEmpty())
+    }
+
+    @Test
+    fun marquee_should_SelectTheRegionFromTwoCornerTaps_AndSayHowMany() {
+        showBindPanel(emptyList())
+        tap(NonDragTags.MARQUEE)
+        tap(NonDragTags.PLACE_CORNER)
+        repeat(MARQUEE_TAPS) { tap(NonDragTags.nudge("down")); tap(NonDragTags.nudge("right")) }
+        tap(NonDragTags.PLACE_CORNER)
+        rule.onNodeWithTag(NonDragTags.PREVIEW).assertTextEquals("1 element in region")
+        tap(NonDragTags.SELECT)
+        assertEquals(listOf(listOf(elId("a"))), selected)
+    }
+
+    @Test
+    fun marquee_should_StayWhenTheRegionIsEmpty_AndCancelStartsOverBeforeLeaving() {
+        showBindPanel(emptyList(), cursorX = FAR_AWAY)
+        tap(NonDragTags.MARQUEE)
+        tap(NonDragTags.PLACE_CORNER)
+        tap(NonDragTags.nudge("down"))
+        tap(NonDragTags.PLACE_CORNER)
+        rule.onNodeWithTag(NonDragTags.PREVIEW).assertTextEquals("No elements in region")
+        tap(NonDragTags.SELECT)
+        assertTrue(selected.isEmpty())
+        tap(NonDragTags.CANCEL)
+        rule.onNodeWithTag(NonDragTags.PREVIEW).assertTextEquals("Crosshair at 5000, 0. Place the first corner.")
+        assertEquals(0, exited)
+    }
+
     // ---- the bottom sheet and the pan pad, taps only ------------------------------------------------------------
 
     private fun showShell(state: SketchEditorState, config: SketchShellConfig = SketchShellConfig(ToolStripModel(true), PointerClass.TouchOrPen)) {
@@ -229,6 +309,10 @@ class NonDragTransformTest {
 
     private companion object {
         const val CLAMP_TAPS = 11
+
+        /** Ten-unit nudges that carry the cursor from (-10, -10) to (110, 110), past box A. */
+        const val MARQUEE_TAPS = 12
+        const val FAR_AWAY = 5000.0
     }
 }
 
