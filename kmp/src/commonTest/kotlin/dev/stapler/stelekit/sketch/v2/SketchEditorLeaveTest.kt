@@ -98,6 +98,18 @@ class SketchEditorLeaveTest {
     }
 
     @Test
+    fun back_should_AskInsteadOfThrowing_When_TheFlushThrows() = runTest {
+        val left = mutableListOf<Unit>()
+        val guard = LeaveGuard(flush = { throw IllegalStateException("flush blew up") }, scope = this, leave = { left += Unit })
+
+        guard.requestLeave()
+        advanceUntilIdle()
+
+        assertTrue(guard.prompting, "a flush that threw is an unsaved sheet: ask, never swallow the back press")
+        assertTrue(left.isEmpty())
+    }
+
+    @Test
     fun keepEditing_should_CloseThePromptAndStay() = runTest {
         val left = mutableListOf<Unit>()
         val guard = guard(ArrayDeque(listOf(SaveState.Pending)), left)

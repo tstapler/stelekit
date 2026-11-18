@@ -58,6 +58,7 @@ import dev.stapler.stelekit.sketch.v2.view.ScreenPx
 import dev.stapler.stelekit.ui.sketch.ModernPreviewEnvironment
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchEditorStrings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchWebStorageStrings
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.yield
 
@@ -116,7 +117,12 @@ fun SketchEditorV2Host(
     DisposableEffect(extras) { onDispose { extras.close() } }
     val latestBack by rememberUpdatedState(onBack)
     // Owned here, not rememberCoroutineScope: the remembered LeaveGuard would outlive that scope (ScopeEscapeAuditTest).
-    val leaveScope = remember(session) { kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + dev.stapler.stelekit.coroutines.PlatformDispatcher.Main) }
+    val leaveScope = remember(session) {
+        kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.SupervisorJob() + dev.stapler.stelekit.coroutines.PlatformDispatcher.Main +
+                CoroutineExceptionHandler { _, t -> controller.log.persistFailed(t::class.simpleName.orEmpty()) },
+        )
+    }
     val leave = remember(session) { LeaveGuard(controller::flush, leaveScope) { latestBack() } }
     PlatformBackHandler(enabled = true) { leave.requestLeave() }
     DisposableEffect(session) {

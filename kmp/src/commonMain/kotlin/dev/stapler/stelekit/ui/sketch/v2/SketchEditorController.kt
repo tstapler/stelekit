@@ -53,12 +53,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.CoroutineContext
 
 /** What the host may open over the canvas on the controller's say (a key or a menu): one at a time. */
@@ -114,8 +110,8 @@ class SketchEditorController(
 ) {
     private val scope = CoroutineScope(adoption + SupervisorJob() + CoroutineExceptionHandler { _, t -> onUncaught(t) })
     private val runner: SolveRunner = ports.solver ?: SolveRunner(ports.limits, context = context, log = ports.log)
-    private val gate = Mutex()
-    private val pending = MutableStateFlow(0)
+    private var closed = false
+    private val queue = EditQueue(scope)
     private val index = SpatialIndex()
     internal val creation = ElementCreation(initial, ports.seeds ?: ElementCreation.defaultSeeds(initial.sheetUuid, ports.clockMillis()))
 
@@ -156,7 +152,7 @@ class SketchEditorController(
     val notifier = EditorNotifier(SketchNoticeQueue(ports.limits, ports.sequencer, ports.log), ports.clockMillis)
     val notices: SketchNoticeQueue get() = notifier.queue
     val constraintState = ConstraintState(runner, ports.diagnostics, notifier) { history.present }
-    val saves = EditorSaves(ports.saver, scope, notifier, ::reloaded)
+    val saves = EditorSaves(ports.saver, scope, notifier, ::reloaded) { creation.forSave(history.present) }
 
     val tools = ToolSession(ui, ports, ::toolContext, notifier, readOnly, ::commitToolCommand)
     val view = EditorView(ui, { history.present }, tools::select, notifier)
@@ -228,15 +224,8 @@ class SketchEditorController(
      */
     fun submit(command: Command, solve: Boolean = false): CommandError? {
         if (readOnly) return CommandError.Unsupported("sheet", "read-only")
-        if (solve || history.present.constraints.isNotEmpty() || pending.value > 0) {
-            pending.update { it + 1 }
-            scope.launch {
-                try {
-                    gate.withLock { runSolved(command) }
-                } finally {
-                    pending.update { it - 1 }
-                }
-            }
+        if (solve || history.present.constraints.isNotEmpty() || queue.pending.value > 0) {
+            queue.enqueue { runSolved(command) }
             return null
         }
         val before = history.present
@@ -256,7 +245,7 @@ class SketchEditorController(
      */
     fun commitNow(command: Command): Either<CommandError, Applied> {
         if (readOnly) return CommandError.Unsupported("sheet", "read-only").left()
-        if (pending.value > 0) return CommandError.Unsupported("sheet", "busy").left()
+        if (queue.pending.value > 0) return CommandError.Unsupported("sheet", "busy").left()
         val before = history.present
         return Transaction.begin(before).apply(command).flatMap { it.commit() }.flatMap { step -> history.commit(step).map { step to it } }.map { (step, next) ->
             undoLabels = undoLabels.recorded(CommandLabels.of(command, before.scene))
@@ -269,8 +258,8 @@ class SketchEditorController(
      * Runs a label-editor solve through the shared [SolveRunner] under the edit gate and adopts the step it committed, so the new
      * value and the geometry the solver moved are one history step. Returns the editor's outcome.
      */
-    internal suspend fun runLabelEdit(edit: suspend (SolveRunner) -> SolveOutcome?): SolveOutcome? = gate.withLock {
-        if (readOnly) return@withLock null
+    internal suspend fun runLabelEdit(edit: suspend (SolveRunner) -> SolveOutcome?): SolveOutcome? = queue.exclusive {
+        if (readOnly) return@exclusive null
         val outcome = edit(runner)
         if (outcome is SolveOutcome.Done) {
             undoLabels = undoLabels.recorded(CommandLabels.of(SequenceCommand(emptyList()), history.present.scene))
@@ -310,14 +299,14 @@ class SketchEditorController(
         if (next.present.constraints.isEmpty()) constraintState.cleared()
     }
 
-    fun undo() {
+    fun undo() = queue.afterQueued {
         val (text, next) = undoLabels.undone()
         if (canUndo) undoLabels = next
         step(history.undo())
         notifier.announce(text)
     }
 
-    fun redo() {
+    fun redo() = queue.afterQueued {
         val (text, next) = undoLabels.redone()
         if (canRedo) undoLabels = next
         step(history.redo())
@@ -344,9 +333,7 @@ class SketchEditorController(
     }
 
     /** Re-reads the degrees of freedom and conflicts for the status line; nothing is recorded in history. */
-    fun analyze() {
-        scope.launch { gate.withLock { constraintState.analyze() } }
-    }
+    fun analyze() = queue.enqueue { constraintState.analyze() }
 
     /** Cancels a slow solve; the document keeps its last good pose. */
     fun cancelSolve() = runner.cancel()
@@ -361,12 +348,22 @@ class SketchEditorController(
         constraintState.onAction(action, { submit(it, solve = true) }) { constraints.highlighted = it }
 
     /** Solves [submit] queued and not yet finished; a host test waits for 0 because the canvas going idle does not wait for a solve on the solver dispatcher. */
-    internal val pendingSolves: StateFlow<Int> get() = pending
+    internal val pendingSolves: StateFlow<Int> get() = queue.pending
 
-    /** Saves what the editor holds now (leaving the sheet, a hidden page) and returns where that left the file. */
-    suspend fun flush(): SaveState = saves.flush()
+    /**
+     * Saves what the editor holds now (leaving the sheet, a hidden page) and returns where that left the file. Solves already queued
+     * finish first, because an edit reaches the saver only when its solve is adopted; one that outlasts [SOLVE_WAIT_MS] leaves the
+     * state unsaved so the caller prompts instead of dropping the edit.
+     */
+    suspend fun flush(): SaveState {
+        val settled = queue.settle(SOLVE_WAIT_MS)
+        val state = saves.flush()
+        return if (settled || state.hasUnsavedWork) state else SaveState.Pending
+    }
 
     fun close() {
+        if (closed) return
+        closed = true
         if (!readOnly) ports.quality?.endSession(ports.log)
         saves.close()
         runner.close()
@@ -380,6 +377,8 @@ class SketchEditorController(
         scope.launch { notifier.toast(SketchEditorStrings.Toasts.KEY_REFUSED, SketchErrorStrings.message(SketchErrorState.LowMemory)) }
     }
 }
+
+private const val SOLVE_WAIT_MS = 10_000L
 
 /** [this] with every field [patch] sets replaced; a sharp-corners patch clears the roundness. */
 internal fun ElementStyle.patched(patch: StylePatch): ElementStyle = copy(
