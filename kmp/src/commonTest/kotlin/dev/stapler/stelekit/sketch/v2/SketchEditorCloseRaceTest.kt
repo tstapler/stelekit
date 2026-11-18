@@ -28,6 +28,7 @@ import dev.stapler.stelekit.ui.sketch.v2.V2EditorOpener
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -46,21 +47,28 @@ class SketchEditorCloseRaceTest {
         SceneUnit.ofInt(0), SceneUnit.ofInt(0), SceneUnit.ofInt(10), SceneUnit.ofInt(10),
     )
 
-    /** Real dispatchers: the saver encodes on `Dispatchers.Default`, which virtual time would outrun (the registry's bounded wait is a virtual delay). */
+    /**
+     * Real dispatchers: the saver encodes on `Dispatchers.Default`, which virtual time would outrun (the registry's bounded wait is a virtual delay).
+     * Repeated, because without the lease handshake the reopen only loses the race when it beats the flush: one pass can slip through.
+     */
     @Test
     fun reopen_should_SeeTheLeftSheetsEditsAndBeEditable_When_ItRacesTheDeferredClose() = runTest {
         withContext(Dispatchers.Default) {
-            val rig = V2EditorRig(leases = SheetLeaseRegistry(AlwaysHeldSketchWriterLease())).also { it.seed() }
-            val opener = V2EditorOpener(rig.deps, Dispatchers.Default)
-            val first = assertIs<EditorOpening.Editor>(opener.open(rig.project.uuid, FixedAdvanceTextMetricsProvider())).session
-            first.controller.submit(AddElements(listOf(rect("R1"))))
+            repeat(REPEATS) { round ->
+                val rig = V2EditorRig(leases = SheetLeaseRegistry(AlwaysHeldSketchWriterLease())).also { it.seed() }
+                val opener = V2EditorOpener(rig.deps, Dispatchers.Default)
+                val first = assertIs<EditorOpening.Editor>(opener.open(rig.project.uuid, FixedAdvanceTextMetricsProvider())).session
+                first.controller.submit(AddElements(listOf(rect("R1"))))
+                val leaveScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-            first.closeAfterSave(discard = false, scope = CoroutineScope(SupervisorJob() + Dispatchers.Default))
-            val second = assertIs<EditorOpening.Editor>(opener.open(rig.project.uuid, FixedAdvanceTextMetricsProvider())).session
+                first.closeAfterSave(discard = false, scope = leaveScope)
+                val second = assertIs<EditorOpening.Editor>(opener.open(rig.project.uuid, FixedAdvanceTextMetricsProvider())).session
 
-            assertFalse(second.controller.readOnly, "the user's own leave must not leave the sheet busy")
-            assertTrue(ElementId("R1") in second.controller.doc.scene.order, "the reopen read the file after the old session's flush")
-            second.close()
+                assertFalse(second.controller.readOnly, "round $round: the user's own leave must not leave the sheet busy")
+                assertTrue(ElementId("R1") in second.controller.doc.scene.order, "round $round: the reopen read the file after the old session's flush")
+                second.close()
+                leaveScope.cancel()
+            }
         }
     }
 
@@ -84,5 +92,9 @@ class SketchEditorCloseRaceTest {
 
         assertTrue(afterFirst > 0, "control: the first close logs the session's adoption line")
         assertEquals(afterFirst, lines.size, "the second close logged nothing")
+    }
+
+    private companion object {
+        const val REPEATS = 25
     }
 }
