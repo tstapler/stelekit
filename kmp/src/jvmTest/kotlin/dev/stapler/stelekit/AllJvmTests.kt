@@ -19,6 +19,7 @@ import dev.stapler.stelekit.db.DatabaseWriteActorTest
 import dev.stapler.stelekit.db.DemoGraphIntegrationTest
 import dev.stapler.stelekit.db.DiffMergeTest
 import dev.stapler.stelekit.db.ExternalChangeConflictTest
+import dev.stapler.stelekit.db.DiskAppliedStateTest
 import dev.stapler.stelekit.db.FileRegistryTest
 import dev.stapler.stelekit.db.GraphLoaderIntegrationTest
 import dev.stapler.stelekit.db.GraphLoaderNotesPathTest
@@ -172,14 +173,23 @@ import dev.stapler.stelekit.git.GitHubDeviceFlowClientTest
 import dev.stapler.stelekit.git.GitHubDeviceFlowClientEdgeCasesTest
 import dev.stapler.stelekit.git.GitRefDiagnosticsRedactionTest
 import dev.stapler.stelekit.git.GitSyncAttributeMergeE2ETest
+import dev.stapler.stelekit.git.GitSyncConflictReloadE2ETest
 import dev.stapler.stelekit.git.GitSyncServiceLfsJvmTest
 import dev.stapler.stelekit.git.lfs.JvmGitRepositoryLfsTransferTest
 import dev.stapler.stelekit.git.lfs.LfsTransferPolicyTest
 import dev.stapler.stelekit.git.lfs.LfsBatchClientStatusTest
 import dev.stapler.stelekit.git.lfs.LfsEndpointTest
 import dev.stapler.stelekit.platform.download.ResumableDownloadTest
+import dev.stapler.stelekit.git.CloneEntryPointGateTest
 import dev.stapler.stelekit.git.JvmGitCloneWorkerLauncherTest
 import dev.stapler.stelekit.git.JvmGitRepositoryTest
+import dev.stapler.stelekit.git.JgitCancelLockTest
+import dev.stapler.stelekit.git.LockClaimIntegrationTest
+import dev.stapler.stelekit.git.BeginOwnedOperationOrderingTest
+import dev.stapler.stelekit.git.ProcessKillOrphanLockTest
+import dev.stapler.stelekit.git.TwoJvmRecoveryRaceTest
+import dev.stapler.stelekit.git.CrossProcessSyncOverDeadRecordTest
+import dev.stapler.stelekit.git.JgitCancelSweepTest
 import dev.stapler.stelekit.git.RemoteBranchResolutionTest
 import dev.stapler.stelekit.git.GitSafetyScansJvmTest
 import dev.stapler.stelekit.git.GitAbortRecoveryJvmTest
@@ -217,6 +227,7 @@ import dev.stapler.stelekit.capture.PendingCapturePollerTest
 import dev.stapler.stelekit.capture.PendingCaptureWriterTest
 import dev.stapler.stelekit.cli.ArgParserTest
 import dev.stapler.stelekit.cli.SyncCommandsTest
+import dev.stapler.stelekit.cli.SyncMainClaimTest
 import dev.stapler.stelekit.coroutines.GraphScopedSessionThreadSafetyTest
 import dev.stapler.stelekit.desktop.CaptureCliArgsTest
 import dev.stapler.stelekit.domain.CaptureEnrichmentCoordinatorRealDispatcherTest
@@ -255,6 +266,7 @@ import dev.stapler.stelekit.benchmark.LibsqlSequentialWriteBenchmarkTest
 import dev.stapler.stelekit.benchmark.UnifiedBenchmarkRunner
 import dev.stapler.stelekit.benchmark.UserSessionBenchmarkTest
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorScreenKeyboardTest
+import dev.stapler.stelekit.ui.annotate.AnnotationKeyboardShortcutsTest
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorScreenTagWiringTest
 import dev.stapler.stelekit.ui.annotate.AnnotationToolbarShortcutTest
 import dev.stapler.stelekit.ui.annotate.DisabledTintContrastTest
@@ -369,6 +381,7 @@ import org.junit.runners.Suite
     DiffMergeTest::class,
     ExternalChangeConflictTest::class,
     FileRegistryTest::class,
+    DiskAppliedStateTest::class,
     GraphLoaderIntegrationTest::class,
     GraphLoaderNotesPathTest::class,
     ImageSidecarIndexerTest::class,
@@ -519,14 +532,23 @@ import org.junit.runners.Suite
     GitHubDeviceFlowClientEdgeCasesTest::class,
     GitRefDiagnosticsRedactionTest::class,
     GitSyncAttributeMergeE2ETest::class,
+    GitSyncConflictReloadE2ETest::class,
     GitSyncServiceLfsJvmTest::class,
     JvmGitRepositoryLfsTransferTest::class,
     LfsTransferPolicyTest::class,
     LfsBatchClientStatusTest::class,
     LfsEndpointTest::class,
     ResumableDownloadTest::class,
+    CloneEntryPointGateTest::class,
     JvmGitCloneWorkerLauncherTest::class,
     JvmGitRepositoryTest::class,
+    JgitCancelLockTest::class,
+    LockClaimIntegrationTest::class,
+    BeginOwnedOperationOrderingTest::class,
+    ProcessKillOrphanLockTest::class,
+    TwoJvmRecoveryRaceTest::class,
+    CrossProcessSyncOverDeadRecordTest::class,
+    JgitCancelSweepTest::class,
     RemoteBranchResolutionTest::class,
     GitSafetyScansJvmTest::class,
     GitAbortRecoveryJvmTest::class,
@@ -574,6 +596,7 @@ import org.junit.runners.Suite
     PendingCaptureWriterTest::class,
     ArgParserTest::class,
     SyncCommandsTest::class,
+    SyncMainClaimTest::class,
     GraphScopedSessionThreadSafetyTest::class,
     CaptureCliArgsTest::class,
     CaptureEnrichmentCoordinatorRealDispatcherTest::class,
@@ -613,6 +636,7 @@ import org.junit.runners.Suite
     UnifiedBenchmarkRunner::class,
     UserSessionBenchmarkTest::class,
     AnnotationEditorScreenKeyboardTest::class,
+    AnnotationKeyboardShortcutsTest::class,
     AnnotationEditorScreenTagWiringTest::class,
     AnnotationToolbarShortcutTest::class,
     DisabledTintContrastTest::class,
@@ -714,5 +738,6 @@ import org.junit.runners.Suite
     // so TestRegistrationAuditTest can tell an exclusion from an unregistered class: ArchitectureScenarioTest, ToolsEndToEndTest,
     // ParityV1SuiteTest, RenderedSliceScenarioTest, DeterminismSpikeJvmTest, LargeSceneDegradationTest, ComposeTextMetricsProviderTest, SketchExportRunnerPngTest
     // and, for Task 6.2.1c, WiringV2DesktopEntryPointTest (it drives the commonTest V2EditorRig).
+    dev.stapler.stelekit.calibration.RealPhotoHoldOutStudyTest::class,
 )
 class AllJvmTests

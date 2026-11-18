@@ -111,6 +111,7 @@ class GraphManagerCloneTest {
 
         val result = gm.cloneAndAdd(
             gitRepository = fakeGit,
+            gate = dev.stapler.stelekit.git.RepoOpGate(),
             url = "https://example.com/repo.git",
             localPath = "/tmp/cloned-graph",
             auth = GitAuth.None,
@@ -138,6 +139,7 @@ class GraphManagerCloneTest {
 
         val result = gm.cloneAndAdd(
             gitRepository = fakeGit,
+            gate = dev.stapler.stelekit.git.RepoOpGate(),
             url = "https://example.com/bad-repo.git",
             localPath = "/tmp/bad-clone",
             auth = GitAuth.None,
@@ -153,6 +155,20 @@ class GraphManagerCloneTest {
             "Failed clone must not register a new graph"
         )
         assertEquals(graphCountBefore, graphCountAfter, "Graph count should not change after a failed clone")
+    }
+
+    @Test
+    fun `cloneAndAdd returns SyncInProgress and registers nothing when the destination is held`() = runTest {
+        val gm = graphManager()
+        val fakeGit = FakeGitRepository(cloneResult = Unit.right())
+        val gate = dev.stapler.stelekit.git.RepoOpGate()
+        val hold = checkNotNull(gate.tryAcquire(checkNotNull(fakeGit.gateKeyForRoot("/tmp/held-clone")), dev.stapler.stelekit.git.SyncOrigin.UiPress))
+
+        val result = gm.cloneAndAdd(gitRepository = fakeGit, gate = gate, url = "https://example.com/r.git", localPath = "/tmp/held-clone", auth = GitAuth.None, onProgress = {})
+
+        assertIs<DomainError.GitError.SyncInProgress>((result as Either.Left).value)
+        assertFalse(gm.graphRegistry.value.graphs.any { it.path == "/tmp/held-clone" })
+        gate.releaseOrHandOff(hold)
     }
 
     @Test

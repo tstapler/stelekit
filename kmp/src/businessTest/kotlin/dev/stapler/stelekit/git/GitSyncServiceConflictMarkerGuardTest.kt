@@ -70,6 +70,7 @@ class GitSyncServiceConflictMarkerGuardTest {
             networkMonitor = NetworkMonitor(),
             fileSystem = fs,
             graphId = "test-graph",
+            gate = RepoOpGate(),
         )
     }
 

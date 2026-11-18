@@ -9,8 +9,11 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 
-/** Smallest scale: the image fitted to the canvas. */
-const val MIN_VIEW_SCALE: Float = 1f
+/** The image fitted to the canvas: the identity view, and the boundary between centred and pannable. */
+const val FIT_SCALE: Float = 1f
+
+/** Smallest scale; below [FIT_SCALE] the image floats on a pasteboard. */
+const val MIN_VIEW_SCALE: Float = 0.25f
 
 /** Largest scale. */
 const val MAX_VIEW_SCALE: Float = 8f
@@ -21,7 +24,8 @@ const val DOUBLE_TAP_SCALE: Float = 4f
 /** Factor of one zoom-in or zoom-out button press. */
 const val ZOOM_STEP_FACTOR: Float = 1.5f
 
-private const val FIT_EPSILON = 1e-3f
+internal const val FIT_EPSILON = 1e-3f
+private const val DEFAULT_SLACK_FRACTION = 0.25f
 private const val WHEEL_BASE = 1.1f
 private const val MAX_LOUPE_ZOOM = 16f
 private const val MIN_LOUPE_ZOOM = 3f
@@ -42,7 +46,11 @@ data class ViewGeometry(
     val viewportWidth: Float,
     val viewportHeight: Float,
     val slack: Float = 0f,
+    val slackFraction: Float = DEFAULT_SLACK_FRACTION,
 ) {
+    /** Pan room past the far edge on an axis: the larger of [slack] and [slackFraction] of that viewport dimension. */
+    internal fun slackFor(viewportDimension: Float): Float = max(slack, slackFraction * viewportDimension)
+
     /** The viewport centre in local coordinates. */
     val viewportCenter: Offset
         get() = Offset(viewportWidth / 2f - canvasLeft, viewportHeight / 2f - canvasTop)
@@ -50,15 +58,15 @@ data class ViewGeometry(
 
 /**
  * The view onto the image: `local = canvas * scale + offset`, with `scale` in
- * [MIN_VIEW_SCALE]..[MAX_VIEW_SCALE]. A pure view concern. Annotation geometry stays in normalised
+ * [MIN_VIEW_SCALE]..[MAX_VIEW_SCALE] (default [FIT_SCALE]). A pure view concern. Annotation geometry stays in normalised
  * image coordinates and is never persisted or exported through this.
  */
 data class AnnotationViewTransform(
-    val scale: Float = MIN_VIEW_SCALE,
+    val scale: Float = FIT_SCALE,
     val offsetX: Float = 0f,
     val offsetY: Float = 0f,
 ) {
-    val isFit: Boolean get() = scale <= MIN_VIEW_SCALE + FIT_EPSILON
+    val isFit: Boolean get() = abs(scale - FIT_SCALE) <= FIT_EPSILON
 
     /** Canvas-pixel point to local screen position. */
     fun toView(canvas: Offset): Offset = Offset(canvas.x * scale + offsetX, canvas.y * scale + offsetY)
@@ -68,7 +76,7 @@ data class AnnotationViewTransform(
 
     /** Moves the image by [delta] screen pixels, clamped so it cannot leave the viewport. */
     fun panned(delta: Offset, geometry: ViewGeometry): AnnotationViewTransform =
-        copy(offsetX = offsetX + delta.x, offsetY = offsetY + delta.y).clamped(geometry)
+        copy(offsetX = offsetX + delta.x, offsetY = offsetY + delta.y).clampedKeepingScale(geometry)
 
     /** Zooms to [newScale] keeping the image point under [anchor] (local) fixed, subject to clamping. */
     fun zoomedTo(newScale: Float, anchor: Offset, geometry: ViewGeometry): AnnotationViewTransform =
@@ -78,11 +86,13 @@ data class AnnotationViewTransform(
     fun transformed(centroid: Offset, pan: Offset, zoom: Float, geometry: ViewGeometry): AnnotationViewTransform {
         val newScale = (scale * zoom).coerceIn(MIN_VIEW_SCALE, MAX_VIEW_SCALE)
         val ratio = newScale / scale
+        val about = if (newScale < FIT_SCALE - FIT_EPSILON) geometry.viewportCenter else centroid
+        // Keeps the unsnapped scale so a slow pinch-out can leave Fit; only isFit/toggledAt snap.
         return AnnotationViewTransform(
             scale = newScale,
-            offsetX = centroid.x - (centroid.x - offsetX) * ratio + pan.x,
-            offsetY = centroid.y - (centroid.y - offsetY) * ratio + pan.y,
-        ).clamped(geometry)
+            offsetX = about.x - (about.x - offsetX) * ratio + pan.x,
+            offsetY = about.y - (about.y - offsetY) * ratio + pan.y,
+        ).clampedKeepingScale(geometry)
     }
 
     /** Double-tap: back to fit when zoomed, otherwise [DOUBLE_TAP_SCALE] about [anchor] (local). */
@@ -102,17 +112,19 @@ data class AnnotationViewTransform(
     }
 
     /**
-     * Pulls the offset into the legal range. At fit the transform is the identity. When the zoomed
-     * image is smaller than the viewport on an axis it is centred on that axis; otherwise it can
-     * travel until its far edge is [ViewGeometry.slack] short of the viewport edge.
+     * Pulls the offset into the legal range. At fit the transform is the identity. When the scaled
+     * image is smaller than the viewport on an axis (always so below Fit) it is centred on that axis;
+     * otherwise it can travel until its far edge is [ViewGeometry.slackFor] short of the viewport edge.
      */
-    fun clamped(geometry: ViewGeometry): AnnotationViewTransform {
+    fun clamped(geometry: ViewGeometry): AnnotationViewTransform =
+        if (isFit) Fit else clampedKeepingScale(geometry)
+
+    private fun clampedKeepingScale(geometry: ViewGeometry): AnnotationViewTransform {
         val s = scale.coerceIn(MIN_VIEW_SCALE, MAX_VIEW_SCALE)
-        if (s <= MIN_VIEW_SCALE + FIT_EPSILON) return Fit
         return AnnotationViewTransform(
             scale = s,
-            offsetX = clampAxis(offsetX, s, AxisExtent(geometry.canvasWidth, geometry.canvasLeft, geometry.viewportWidth, geometry.slack)),
-            offsetY = clampAxis(offsetY, s, AxisExtent(geometry.canvasHeight, geometry.canvasTop, geometry.viewportHeight, geometry.slack)),
+            offsetX = clampAxis(offsetX, s, AxisExtent(geometry.canvasWidth, geometry.canvasLeft, geometry.viewportWidth, geometry.slackFor(geometry.viewportWidth))),
+            offsetY = clampAxis(offsetY, s, AxisExtent(geometry.canvasHeight, geometry.canvasTop, geometry.viewportHeight, geometry.slackFor(geometry.viewportHeight))),
         )
     }
 

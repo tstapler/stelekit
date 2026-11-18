@@ -60,12 +60,15 @@ class GitSyncServiceStuckStateTest {
     @Test
     fun aCancelledSyncDoesNotLeaveTheStateMerging() = runTest {
         val entered = CompletableDeferred<Unit>()
-        val git = Behind().apply { onMerge = { entered.complete(Unit); CompletableDeferred<Unit>().await() } }
+        val release = CompletableDeferred<Unit>()
+        val git = Behind().apply { onMerge = { entered.complete(Unit); release.await() } }
         val svc = service(git)
 
         val job = launch(start = CoroutineStart.UNDISPATCHED) { svc.sync("g") }
         entered.await()
+        // The merge unit is non-cancellable (1.5a), so the cancel lands once the blocked merge returns.
         job.cancel()
+        release.complete(Unit)
         job.join()
 
         assertEquals(SyncState.Idle, svc.syncState.value)

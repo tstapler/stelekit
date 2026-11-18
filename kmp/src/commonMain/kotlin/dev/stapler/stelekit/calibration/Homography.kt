@@ -91,7 +91,7 @@ object HomographyFitter {
     }
 
     /** Gaussian elimination with partial pivoting; null when the system is singular. */
-    private fun solve(m: Array<DoubleArray>, rhs: DoubleArray): DoubleArray? {
+    internal fun solve(m: Array<DoubleArray>, rhs: DoubleArray): DoubleArray? {
         val n = rhs.size
         val a = Array(n) { m[it].copyOf() }
         val b = rhs.copyOf()

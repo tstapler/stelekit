@@ -31,6 +31,7 @@ class SyncSafetyActions(
     private val scope: CoroutineScope,
     private val uiState: MutableStateFlow<AppState>,
     private val jobTracker: JobTracker,
+    private val emit: (SyncUiEvent) -> Unit = {},
     private val currentSyncState: () -> SyncState,
 ) {
     private fun graphId(): String? = activeGraphIdProvider() ?: uiState.value.currentGraphId
@@ -88,17 +89,52 @@ class SyncSafetyActions(
         }
     }
 
+    /** "Retry now" in the paused sheet: an extra attempt through the gate; a press that coalesces announces it. */
+    fun retryNow() {
+        activeGitSyncService.value?.retryNow { emit(SyncUiEvent.AlreadySyncing) }
+    }
+
+    private fun removalRefusal(error: DomainError.GitError): SyncUiEvent = when (error) {
+        is DomainError.GitError.SyncInProgress -> SyncUiEvent.AlreadySyncing
+        is DomainError.GitError.StaleLockFile -> SyncUiEvent.LockRemovalRefused(
+            "The lock file was kept: it changed recently or another git process or device may still be using it. " +
+                (error.retryAfterMs?.takeIf { it > 0 }?.let { "Close other git tools, then try again in about ${(it + 59_999) / 60_000} minutes." }
+                    ?: "Close other git tools and devices using this folder, then try again."),
+        )
+        else -> SyncUiEvent.LockRemovalRefused("The lock file could not be removed: ${error.message}")
+    }
+
+    /** Confirmed "Remove lock file" in the sheet: removes the leftover lock, then syncs so the user sees it work. */
+    fun removeLockFile() {
+        val graphId = graphId() ?: return
+        scope.launch {
+            val service = activeGitSyncService.value ?: return@launch
+            service.removeLockFile(graphId).fold(
+                { emit(removalRefusal(it)) },
+                { service.sync(graphId) },
+            )
+        }
+    }
+
     /**
      * Runs one manual sync with the mass-deletion guard lifted for this run only, after the typed-count
      * confirm. Foreground only: scheduled runs never lift the guard (see [GitSyncService.sync]).
      */
     fun confirmMassChangeSync() {
         val graphId = graphId() ?: return
+        // The lift is for one run and is never queued behind another, so refuse and keep the dialog open.
+        if (activeGitSyncService.value?.inFlight?.value != null) {
+            emit(SyncUiEvent.MassChangeConfirmRefused)
+            return
+        }
         dismissMassChangeConfirm()
         scope.launch {
             val service = activeGitSyncService.value ?: return@launch
             jobTracker.track(JobKind.GitSync, "Syncing with remote") { handle ->
-                service.sync(graphId, liftMassChangeGuard = true).onLeft { handle.fail(it.message) }
+                service.sync(graphId, liftMassChangeGuard = true).onLeft {
+                    handle.failUnlessCoalesced(it)
+                    if (it is DomainError.GitError.SyncInProgress) emit(SyncUiEvent.MassChangeConfirmRefused)
+                }
             }
         }
     }

@@ -94,6 +94,7 @@ class GitSyncServiceChangeGuardsTest {
             graphId = "test-graph",
             settings = settings,
             isOnline = { true },
+            gate = RepoOpGate(),
         )
     }
 

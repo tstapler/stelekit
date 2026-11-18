@@ -217,6 +217,8 @@ private class SteleDatabaseImpl(
           |    label             TEXT,
           |    color_hex         TEXT NOT NULL DEFAULT '#FF0000',
           |    ble_device_id     TEXT,
+          |    value_source          TEXT NOT NULL DEFAULT 'COMPUTED',
+          |    value_original_meters REAL,
           |    FOREIGN KEY (image_uuid) REFERENCES image_annotations(uuid) ON DELETE CASCADE
           |)
           """.trimMargin(), 0).await()

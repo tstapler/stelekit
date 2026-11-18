@@ -23,8 +23,9 @@ internal fun cappedCaptureResolutionSelector(): ResolutionSelector =
         .build()
 
 /** The still-capture use case shared by the headless provider and the viewfinder dialog. */
-internal fun buildCappedImageCapture(): ImageCapture =
+internal fun buildCappedImageCapture(configure: (ImageCapture.Builder) -> Unit = {}): ImageCapture =
     ImageCapture.Builder()
         .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
         .setResolutionSelector(cappedCaptureResolutionSelector())
+        .also(configure)
         .build()

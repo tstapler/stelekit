@@ -83,6 +83,7 @@ class GitSyncWorkerStaleGateTest {
         SteleKitContext.init(context)
         WorkManagerTestInitHelper.initializeTestWorkManager(context, Configuration.Builder().setExecutor(SynchronousExecutor()).build())
         GitSyncWorker.runLogOverride = { log }
+        GitSyncWorker.processColdPathRunner = AndroidColdPathRunner(context, RepoOpGate())
         GitSyncWorker.snapshotProviderOverride = { NetworkSnapshotProvider { NetworkSnapshot(true, false) } }
         GitSyncWorker.hooksOverride = object : GitSyncWorkerHooks {
             override suspend fun runWatchdog(context: Context, graphId: String) = Unit
@@ -101,6 +102,7 @@ class GitSyncWorkerStaleGateTest {
         GitSyncWorker.hooksOverride = null
         GitSyncWorker.snapshotProviderOverride = null
         GitSyncWorker.runLogOverride = null
+        GitSyncWorker.processColdPathRunner = null
         TaskWorkerRuntime.knownScopes = KnownScopes { KnownScopesResult.Unknown }
         GitSyncServiceRegistry.unregister(graphId)
     }
@@ -125,6 +127,7 @@ class GitSyncWorkerStaleGateTest {
             settings = MapSettings(),
             isOnline = { true },
             isAppOwnedPath = { true },
+            gate = RepoOpGate(),
         )
         GitSyncServiceRegistry.register(graphId, service)
     }

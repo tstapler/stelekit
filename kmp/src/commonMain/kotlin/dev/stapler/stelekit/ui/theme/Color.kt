@@ -28,3 +28,8 @@ val AmberHighlight = Color(0xFFD79921)       // amber — highlights
 // === Shared constants ===
 const val INDENT_GUIDE_ALPHA = 0.1f
 const val BLOCK_REF_ALPHA = 0.08f
+
+// Warning amber: dark amber on the light parchment surface, light amber on the dark stone surfaces.
+val WarningLight = Color(0xFF8A5300)
+val WarningDark = Color(0xFFF5B544)
+val OnWarningDark = Color(0xFF1A1200)

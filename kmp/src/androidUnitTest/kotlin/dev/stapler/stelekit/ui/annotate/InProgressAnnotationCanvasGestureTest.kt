@@ -19,10 +19,15 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
 
-/** Drives the real gesture loop and asserts which pointer position reaches the ViewModel. */
+/**
+ * Drives the real gesture loop and asserts which pointer position reaches the ViewModel.
+ * Phone-sized screen: the wrapping 48 dp toolbar is ~226 dp tall, so the default 320x470 screen leaves a zero-height viewport.
+ */
 @RunWith(RobolectricTestRunner::class)
+@Config(qualifiers = "w411dp-h891dp-mdpi")
 class InProgressAnnotationCanvasGestureTest {
     @get:Rule
     val rule = createComposeRule()

@@ -8,6 +8,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,10 +42,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import dev.stapler.stelekit.ui.theme.StelekitTheme
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.error.toSyncErrorMessage
 import dev.stapler.stelekit.git.SyncDetailsTarget
+import dev.stapler.stelekit.git.SyncSheetState
 import dev.stapler.stelekit.git.detailsTarget
 import dev.stapler.stelekit.git.lfs.LfsViolation
 import dev.stapler.stelekit.git.model.SyncState
@@ -69,6 +75,8 @@ data class GitSyncStatus(
     val scheduledSyncPaused: Boolean = false,
     /** Always-visible "last merged · behind n" chip; null when there is no git sync service. */
     val stalenessChip: StalenessChipState? = null,
+    /** Running, Paused or Failed for the sync row (ux.md S1); null keeps the plain state rendering. */
+    val sheetState: SyncSheetState? = null,
 )
 
 /**
@@ -132,6 +140,7 @@ fun SyncStatusBadge(
                 onReviewFirstSync = onReviewFirstSync,
                 onOpenScheduledSyncSettings = onOpenScheduledSyncSettings,
                 onSyncDetails = onSyncDetails,
+                onOpenSyncStatus = onOpenSyncStatus,
             )
 
             Spacer(modifier = Modifier.width(4.dp))
@@ -162,7 +171,7 @@ private fun StalenessChip(chip: StalenessChipState, onClick: (() -> Unit)?, modi
         text = chip.text,
         style = MaterialTheme.typography.labelSmall,
         color = when (chip.severity) {
-            StalenessSeverity.Amber -> Color(0xFFF59E0B)
+            StalenessSeverity.Amber -> StelekitTheme.colors.warning
             StalenessSeverity.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
             StalenessSeverity.Healthy -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
         },
@@ -180,6 +189,7 @@ private fun SyncStateBadge(
     onReviewFirstSync: (() -> Unit)? = null,
     onOpenScheduledSyncSettings: (() -> Unit)? = null,
     onSyncDetails: (() -> Unit)? = null,
+    onOpenSyncStatus: (() -> Unit)? = null,
 ) {
     val syncState = status.state
     // Paused is a warning, not an error: it shows only over an otherwise-quiet badge, so a live
@@ -200,14 +210,14 @@ private fun SyncStateBadge(
             Icon(
                 imageVector = Icons.Default.Warning,
                 contentDescription = "Review first sync",
-                tint = Color(0xFFF59E0B), // amber-400
+                tint = StelekitTheme.colors.warning,
                 modifier = Modifier.size(16.dp),
             )
             Spacer(modifier = Modifier.width(2.dp))
             Text(
                 text = "Review first sync",
                 style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFFF59E0B),
+                color = StelekitTheme.colors.warning,
             )
         }
         return
@@ -252,14 +262,14 @@ private fun SyncStateBadge(
                 Icon(
                     imageVector = Icons.Default.Warning,
                     contentDescription = "Merge conflict",
-                    tint = Color(0xFFF59E0B), // amber-400
+                    tint = StelekitTheme.colors.warning,
                     modifier = Modifier.size(16.dp),
                 )
                 Spacer(modifier = Modifier.width(2.dp))
                 Text(
                     text = "Conflict",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFFF59E0B),
+                    color = StelekitTheme.colors.warning,
                 )
             }
         }
@@ -285,6 +295,17 @@ private fun SyncStateBadge(
         }
 
         is SyncState.Error -> {
+            when (val sheet = status.sheetState) {
+                is SyncSheetState.Paused -> {
+                    PausedSyncRow(sheet.rowText, onOpenSyncStatus ?: onSyncDetails, modifier)
+                    return
+                }
+                is SyncSheetState.Failed -> {
+                    FailedSyncRow(sheet.text, onSyncClick, onOpenSyncStatus ?: onSyncDetails, modifier)
+                    return
+                }
+                else -> Unit
+            }
             val isAuthError = syncState.error is DomainError.GitError.AuthFailed
             val isBranchMissing = syncState.error is DomainError.GitError.RemoteBranchNotFound
             val hasDetails = syncState.detailsTarget() != SyncDetailsTarget.None && onSyncDetails != null
@@ -345,14 +366,14 @@ private fun SyncStateBadge(
                 Icon(
                     imageVector = Icons.Default.Warning,
                     contentDescription = "Journal merge ready",
-                    tint = Color(0xFFF59E0B), // amber-400
+                    tint = StelekitTheme.colors.warning,
                     modifier = Modifier.size(16.dp),
                 )
                 Spacer(modifier = Modifier.width(2.dp))
                 Text(
                     text = "Merge ready",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFFF59E0B),
+                    color = StelekitTheme.colors.warning,
                 )
             }
         }
@@ -428,6 +449,50 @@ private fun SyncStateBadge(
     }
 }
 
+/** Paused on an unknown lock owner: calm amber, at least 48 dp tall, and a tap opens Details (never a retry). */
+@Composable
+private fun PausedSyncRow(text: String, onOpenDetails: (() -> Unit)?, modifier: Modifier = Modifier) {
+    val tap = if (onOpenDetails == null) modifier else modifier.clickable(onClick = onOpenDetails)
+    Row(
+        modifier = tap.heightIn(min = 48.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Default.PauseCircle,
+            contentDescription = "Sync paused - tap for details",
+            tint = StelekitTheme.colors.warning,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(text = text, style = MaterialTheme.typography.labelSmall, color = StelekitTheme.colors.warning)
+    }
+}
+
+/** Both automatic retries failed: error color, with "Sync now" (a fresh run) and "Details", each at least 48 dp. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FailedSyncRow(text: String, onSyncNow: () -> Unit, onDetails: (() -> Unit)?, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier.heightIn(min = 48.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Error,
+                contentDescription = "Sync failed",
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(text = text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+        }
+        FlowRow {
+            TextButton(onClick = onSyncNow, modifier = Modifier.heightIn(min = 48.dp)) { Text("Sync now") }
+            onDetails?.let { TextButton(onClick = it, modifier = Modifier.heightIn(min = 48.dp)) { Text("Details") } }
+        }
+    }
+}
+
 /** Amber chip shown when scheduled sync paused itself after repeated failures; the pause icon differs in shape from the error icon. */
 @Composable
 private fun ScheduledSyncPausedChip(onOpen: (() -> Unit)?, modifier: Modifier = Modifier) {
@@ -440,11 +505,11 @@ private fun ScheduledSyncPausedChip(onOpen: (() -> Unit)?, modifier: Modifier = 
         Icon(
             imageVector = Icons.Default.PauseCircle,
             contentDescription = "Sync paused - tap to open settings",
-            tint = Color(0xFFF59E0B), // amber-400
+            tint = StelekitTheme.colors.warning,
             modifier = Modifier.size(16.dp),
         )
         Spacer(modifier = Modifier.width(2.dp))
-        Text(text = "Sync paused", style = MaterialTheme.typography.labelSmall, color = Color(0xFFF59E0B))
+        Text(text = "Sync paused", style = MaterialTheme.typography.labelSmall, color = StelekitTheme.colors.warning)
     }
 }
 
@@ -462,11 +527,11 @@ private fun LfsHeldBadge(held: List<LfsViolation>, modifier: Modifier = Modifier
         Icon(
             imageVector = Icons.Default.Warning,
             contentDescription = "$label by Git LFS — tap for details",
-            tint = Color(0xFFF59E0B), // amber-400
+            tint = StelekitTheme.colors.warning,
             modifier = Modifier.size(16.dp),
         )
         Spacer(modifier = Modifier.width(2.dp))
-        Text(text = label, style = MaterialTheme.typography.labelSmall, color = Color(0xFFF59E0B))
+        Text(text = label, style = MaterialTheme.typography.labelSmall, color = StelekitTheme.colors.warning)
     }
     if (sheetOpen) LfsHeldFilesSheet(held = held, onDismiss = { sheetOpen = false })
 }

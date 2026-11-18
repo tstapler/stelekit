@@ -31,6 +31,7 @@ object WiringAudit {
         "PalmClassifier",
         "PointerCancelDetector",
         "EdgeGestureExclusion",
+        "CameraLensCatalog",
     )
 
     const val MAX_RENEWALS = 2

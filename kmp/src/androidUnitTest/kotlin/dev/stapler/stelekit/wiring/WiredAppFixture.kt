@@ -40,6 +40,9 @@ class WiredAppFixture private constructor(
     sketchDurability: dev.stapler.stelekit.projectbridge.SketchDurability,
     sketchInput: dev.stapler.stelekit.platform.SketchPlatformInput,
 ) {
+    /** The one gate the fixture's root hands every participant; tests assert identity against it. */
+    val repoOpGate = dev.stapler.stelekit.git.RepoOpGate()
+
     internal val deps = GraphContentDeps(
         repos = repos,
         fileSystem = ports.fileSystem,
@@ -56,6 +59,7 @@ class WiredAppFixture private constructor(
             browserPersistence = dev.stapler.stelekit.ui.SketchStorageDefaults.browserPersistence(),
             platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
             gitRepository = ports.gitRepository,
+            repoOpGate = repoOpGate,
         ),
     )
 

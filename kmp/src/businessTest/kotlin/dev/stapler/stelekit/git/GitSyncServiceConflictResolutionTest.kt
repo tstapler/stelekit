@@ -228,4 +228,62 @@ class GitSyncServiceConflictResolutionTest {
 
         assertEquals(null, service.localStatus.value)
     }
+
+    /** Story 1.5: a conflict that exits the merge unit returns its Left and push is never called. */
+    @Test
+    fun `push is never called after a conflict in the merge unit`() = runTest {
+        val conflict = ConflictFile(
+            filePath = "/repo/c.md",
+            wikiRelativePath = "c.md",
+            hunks = listOf(dev.stapler.stelekit.git.model.ConflictHunk(id = "h", localLines = listOf("- a"), remoteLines = listOf("- b"))),
+            rawContent = "<<<<<<< LOCAL\n- a\n=======\n- b\n>>>>>>> REMOTE\n",
+        )
+        var pushes = 0
+        val repo = object : StubGitRepository() {
+            override suspend fun status(config: GitConfig) = GitStatus(false, emptyList(), emptyList()).right()
+            override suspend fun fetch(config: GitConfig) = FetchResult(hasRemoteChanges = true, remoteCommitCount = 1).right()
+            override suspend fun merge(config: GitConfig) = MergeResult(true, listOf(conflict), emptyList(), 1).right()
+            override suspend fun push(config: GitConfig): Either<DomainError.GitError, Unit> {
+                pushes++
+                return Unit.right()
+            }
+        }
+        val service = buildGitSyncTestService(
+            gitRepository = repo,
+            configRepository = StubConfigRepository(Either.Right(sampleConfig)),
+            isOnline = { true },
+        )
+
+        val result = service.sync("test-graph")
+
+        assertIs<DomainError.GitError.MergeConflict>(result.leftOrNull())
+        assertEquals(0, pushes)
+        assertIs<SyncState.ConflictPending>(service.syncState.value)
+    }
+
+    /** U-E1-19: the gate is not held across ConflictPending, so a tick is refused by the repository-state guard instead. */
+    @Test
+    fun tickDuringPendingMerge_should_BeSkipped_When_ConflictPending_AndGateReleased() = runTest {
+        val gate = RepoOpGate()
+        var merging = true
+        val repo = object : ResolvingGitRepository() {
+            override fun gateKeyFor(config: GitConfig): String = "k"
+            override suspend fun repositoryHealth(config: GitConfig) =
+                if (merging) RepositoryHealth(safe = false, state = "MERGING") else RepositoryHealth.Clean
+            override suspend fun status(config: GitConfig) = GitStatus(false, emptyList(), emptyList()).right()
+        }
+        val service = buildGitSyncTestService(
+            gitRepository = repo,
+            configRepository = StubConfigRepository(Either.Right(sampleConfig)),
+            isOnline = { true },
+            gate = gate,
+        )
+
+        val tick = service.sync("test-graph", SyncTrigger.Automatic)
+
+        assertIs<DomainError.GitError.RepairNeeded>(tick.leftOrNull())
+        assertEquals(false, gate.isHeld("k"), "a pending merge must not keep the gate")
+        merging = false
+        service.shutdown()
+    }
 }

@@ -136,20 +136,6 @@ class GitOperationSupportHelpersTest {
     // retry cleanup
 
     @Test
-    fun deleteLockFileIfStaleForRetry_deletesOnlyLocksOlderThanTheRetryLoop() {
-        val dir = tempDir()
-        val old = File(dir, "old.lock").apply { writeText("") ; setLastModified(1_000L) }
-        val fresh = File(dir, "fresh.lock").apply { writeText("") }
-
-        deleteLockFileIfStaleForRetry(old, retryLoopStartMs = 5_000L)
-        deleteLockFileIfStaleForRetry(fresh, retryLoopStartMs = 5_000L)
-        deleteLockFileIfStaleForRetry(File(dir, "absent.lock"), retryLoopStartMs = 5_000L)
-
-        assertFalse(old.exists())
-        assertTrue(fresh.exists())
-    }
-
-    @Test
     fun deleteDirectoryContentsForRetry_emptiesTheDirectoryButKeepsIt() {
         val dir = tempDir()
         File(dir, "a.txt").writeText("a")

@@ -3,7 +3,6 @@ package dev.stapler.stelekit.platform.sensor
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -172,7 +171,7 @@ private class ProcessCameraProviderBinder(private val context: Context) : Camera
         // case from AndroidCameraPreviewBinder, not tear it down. Only this class's own
         // ImageAnalysis use case is tracked and unbound (via CameraXBinder.unbind), symmetric with
         // how AndroidCameraPreviewBinder.unbind only unbinds its own Preview.
-        provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, imageAnalysis)
+        provider.bindToLifecycle(lifecycleOwner, defaultBackSelector(), imageAnalysis)
         return imageAnalysis
     }
 

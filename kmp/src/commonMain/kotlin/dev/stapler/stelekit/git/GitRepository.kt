@@ -83,6 +83,41 @@ interface GitRepository {
     suspend fun removeStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit>
 
     /**
+     * Claims the repository for one owned run (ADR-001 decision 12): reads the owner record, recovers a dead
+     * owner's locks only under the recovery lock, then publishes ours. Left [DomainError.GitError.SyncInProgress]
+     * when another run holds it; a non-claiming verdict (alive, unknown, no record) is a Right and nothing was
+     * deleted. The default never claims no lock exists: unported platforms fail closed.
+     */
+    suspend fun beginOwnedOperation(config: GitConfig, info: OwnedOperationInfo): Either<DomainError.GitError, LockVerdict> =
+        Either.Right(LockVerdict.OwnerUnknown(UnknownReason.RecoveryLockUnsupported))
+
+    /**
+     * The process-gate key for [config]'s resolved git dir ([RepoOpGate.keyForOrNull]); null when it cannot be
+     * resolved (callers fail closed). JVM and Android canonicalise; this default hashes `<repoRoot>/.git` as written.
+     */
+    fun gateKeyFor(config: GitConfig): String? = gateKeyForRoot(config.repoRoot.value)
+
+    /**
+     * Same key from a bare repo root, for callers with no [GitConfig] yet (a clone destination, a setup form).
+     * It must equal [gateKeyFor] for the same directory before and after the clone.
+     */
+    fun gateKeyForRoot(repoRoot: String): String? =
+        RepoOpGate.keyForOrNull("${repoRoot.trimEnd('/')}/.git") { it }
+
+    /** Releases the claim taken by [beginOwnedOperation]. Default: nothing held, nothing to release. */
+    suspend fun endOwnedOperation(config: GitConfig) {}
+
+    /** The 5 s heartbeat: bumps the owner record's mtime while a run holds the claim. Default no-op. */
+    suspend fun touchOwnedOperation(config: GitConfig) {}
+
+    /**
+     * The confirm-gated manual lock removal (ADR-001 decision 12a): the caller holds the gate; refuses on a live
+     * owner or a registered run. Default refuses and deletes nothing.
+     */
+    suspend fun forceRemoveLock(config: GitConfig): Either<DomainError.GitError, Unit> =
+        Either.Left(DomainError.GitError.NotSupported("this platform"))
+
+    /**
      * Repository-level LFS backstop: every staged blob at an LFS-tracked path that is not a pointer. Implementations
      * that report anything also un-stage those paths, so the next [commit] cannot include them. Default empty
      * (platforms without a staging index of their own, such as web, guard in their own write path).
@@ -168,6 +203,9 @@ interface GitRepository {
      */
     fun setCredentialAccess(access: CredentialAccess) {}
 }
+
+/** What an owned run records about itself in the owner record: the operation name and who started it. */
+data class OwnedOperationInfo(val op: String, val origin: SyncOrigin)
 
 data class FetchResult(val hasRemoteChanges: Boolean, val remoteCommitCount: Int)
 

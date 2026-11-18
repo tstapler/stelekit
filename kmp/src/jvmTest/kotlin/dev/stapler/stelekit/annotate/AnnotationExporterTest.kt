@@ -132,6 +132,7 @@ class AnnotationExporterTest {
         vm.addPoint(NormalizedPoint(0.1, 0.5))
         vm.addPoint(NormalizedPoint(0.9, 0.5))
 
+        vm.selectTool(AnnotationTool.DISTANCE) // first commit returned the tool to SELECT
         vm.addPoint(NormalizedPoint(0.5, 0.1))
         vm.addPoint(NormalizedPoint(0.5, 0.9))
 

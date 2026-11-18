@@ -277,20 +277,6 @@ val DEFAULT_GIT_TRANSPORT_RETRY_MAX_ELAPSED: Duration = 10.minutes
 const val GIT_TRANSPORT_RETRY_MAX_ATTEMPTS = 5
 
 /**
- * Deletes [lockFile] only if it predates [retryLoopStartMs] — a lock created by this same retry
- * loop's own just-failed attempt (which may still be releasing it as the process unwinds) must
- * never be treated as stale by a fixed age threshold alone, unlike [AndroidGitRepository]/
- * [JvmGitRepository]'s standalone `deleteStaleLockFile` (60s age check for a user-initiated
- * retry). Only a lock that already existed before this retry loop even started is safe to remove.
- * Best-effort and silent: a `beforeRetry` hook must never fail the retry it's guarding.
- */
-fun deleteLockFileIfStaleForRetry(lockFile: File, retryLoopStartMs: Long) {
-    if (lockFile.exists() && lockFile.lastModified() < retryLoopStartMs) {
-        lockFile.delete()
-    }
-}
-
-/**
  * Clone's `beforeRetry` cleanup (Story 2.1.3): deletes [dir]'s contents, not [dir] itself, so a
  * retry after an interrupted first attempt doesn't hit JGit's "already exists and is not an empty
  * directory" guard. Re-transfers the bounded shallow pack from zero (ADR-001), not a partial-pack

@@ -1,5 +1,7 @@
 package dev.stapler.stelekit.error
 
+import dev.stapler.stelekit.git.LockVerdict
+import dev.stapler.stelekit.git.SyncOrigin
 import dev.stapler.stelekit.merge.WriteRefusedReason
 
 sealed interface DomainError {
@@ -105,8 +107,15 @@ sealed interface DomainError {
         data class DetachedHead(val path: String) : GitError {
             override val message: String = "Repository is in detached HEAD state: $path"
         }
-        data class StaleLockFile(val lockPath: String) : GitError {
+        data class StaleLockFile(val lockPath: String, val verdict: LockVerdict? = null, val retryAfterMs: Long? = null) : GitError {
             override val message: String = "Stale git lock file found: $lockPath"
+        }
+        /**
+         * Another operation already holds this repository ([heldBy] is null when it is another process).
+         * A coalesced trigger, not a failure: it never becomes a sync error state.
+         */
+        data class SyncInProgress(val heldBy: SyncOrigin?) : GitError {
+            override val message: String = "A sync is already running"
         }
         data class NotSupported(val platform: String) : GitError {
             override val message: String = "Git integration not yet supported on $platform"
@@ -402,7 +411,8 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.GitError.CommitFailed -> "Git commit failed"
     is DomainError.GitError.NotAGitRepo -> "Not a git repository"
     is DomainError.GitError.DetachedHead -> "Repository in detached HEAD state"
-    is DomainError.GitError.StaleLockFile -> "Git lock file found — another process may be using the repository"
+    is DomainError.GitError.StaleLockFile -> "Sync paused - retrying automatically"
+    is DomainError.GitError.SyncInProgress -> inProgressMessage(heldBy)
     is DomainError.GitError.NotSupported -> message
     is DomainError.GitError.Offline -> message
     is DomainError.GitError.EditingInProgress -> message
@@ -453,7 +463,7 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.StorageError.DestinationNotWritable -> "Can't write to the selected location"
     is DomainError.StorageError.PartialCopyDetected -> "Copy is incomplete — nothing was changed"
     is DomainError.StorageError.InsufficientSpace -> "Not enough free space at the destination"
-    is DomainError.StorageError.QuiesceTimedOut -> "Timed out waiting for sync to finish — please try again"
+    is DomainError.StorageError.QuiesceTimedOut -> "A sync is still finishing — please try again in a moment"
     is DomainError.StorageError.ReopenFailed -> "Move may have partially completed — please restart the app"
     is DomainError.StorageError.RelocationFailed -> "Couldn't move file — nothing was changed"
 }
@@ -462,7 +472,8 @@ fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
     is DomainError.GitError.AuthFailed -> "Authentication failed — tap to update credentials"
     is DomainError.GitError.Offline -> "Offline — sync will resume when connected"
     is DomainError.GitError.DetachedHead -> "Repository is in detached HEAD state"
-    is DomainError.GitError.StaleLockFile -> "Stale git lock file — tap to retry"
+    is DomainError.GitError.StaleLockFile -> "Sync paused - retrying automatically"
+    is DomainError.GitError.SyncInProgress -> inProgressMessage(heldBy)
     is DomainError.GitError.MergeConflict -> "Merge conflict in $conflictCount file(s) — resolve to continue"
     is DomainError.GitError.FetchFailed -> "Fetch failed — tap to retry"
     is DomainError.GitError.PushFailed -> "Push failed — tap to retry"
@@ -498,6 +509,9 @@ fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
     is DomainError.GitError.LfsNotSupportedHere -> message
     is DomainError.GitError.LfsStorageInsufficient -> message
 }
+
+private fun inProgressMessage(heldBy: SyncOrigin?): String =
+    if (heldBy == SyncOrigin.Quiesce) "Moving your graph storage. Sync resumes afterwards." else "Already syncing"
 
 /** Up to three paths verbatim, then "and N more", for one-line LFS messages. */
 internal fun lfsPathList(paths: List<String>): String =

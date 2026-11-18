@@ -114,6 +114,8 @@ kt_jvm_test(
     visibility = ["//visibility:public"],
     deps = [
         "//kmp/src/commonMain/resources:common_resources",
+        # RealPhotoHoldOutStudyTest uses ConstraintStudyRunner / StudyFixture from commonTest.
+        "//kmp/src/commonTest/kotlin:business_common_tests",
         "//kmp/src/commonTest/kotlin:common_test_fixtures",
         "//kmp/src/commonTest/kotlin:git_testsupport",
         "//kmp/src/commonTest/kotlin:merge_fixtures",

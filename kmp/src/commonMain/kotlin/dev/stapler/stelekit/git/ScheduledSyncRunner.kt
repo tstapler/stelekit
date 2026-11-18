@@ -85,7 +85,7 @@ class ScheduledSyncRunner(
         if (reason.fetchesAnyway) {
             val fetched = fetch(graphId)
             if (reason == ScheduledSkipReason.RepoState) syncState.value = SyncState.Error(DomainError.GitError.RepairNeeded(health.state))
-            fetched.onLeft { err -> return TickOutcome.Failure(err.message, err) }
+            fetched.onLeft { err -> return err.toSkipOrFailure() ?: TickOutcome.Failure(err.message, err) }
             // The tick did its job (a fetch); the policy only withheld the merge, so it must not read as skipped.
             return TickOutcome.Fetched
         }
@@ -106,8 +106,7 @@ class ScheduledSyncRunner(
         }
         return fullSync(graphId).fold(
             { err ->
-                when (err) {
-                    is DomainError.GitError.Offline -> TickOutcome.Skip(SkipReason.Offline)
+                err.toSkipOrFailure() ?: when (err) {
                     is DomainError.GitError.FirstSyncReviewPending ->
                         TickOutcome.Skip(SkipReason.Policy(ScheduledSkipReason.FirstSyncUnconfirmed))
                     else -> {

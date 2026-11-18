@@ -283,4 +283,88 @@ class CameraProfileTest {
         val withProfile = LensCalibration(k = -0.01, profileId = "cam-1", profileLabel = "L")
         assertEquals(withProfile, dev.stapler.stelekit.model.LensCalibrationCodec.decode(dev.stapler.stelekit.model.LensCalibrationCodec.encode(withProfile)))
     }
+
+    // ── optional lens id (Task 3.9b); E4's capture record is faked by LensRecordInput ──────────
+
+    private fun lensProfile(id: String, focal: Double, lensId: String?, createdAtMs: Long = 1L) =
+        profile(id = id, focal = focal, eq = null, createdAtMs = createdAtMs).let {
+            it.copy(match = it.match.copy(lensId = lensId))
+        }
+
+    private fun record(
+        lensId: String? = "2",
+        zoom: Double? = 1.0,
+        focal: Double? = 2.2,
+        exifFocal: Double? = 2.2,
+        selected: Boolean = false,
+    ) = LensRecordInput(lensId, zoom, focal, exifFocal, isSelectedLensSource = selected)
+
+    private val ultraWide = lensProfile("ultra", 2.2, "2")
+    private val mainLens = lensProfile("main", 5.6, "0")
+    private val photoUltra get() = sensor.copy(focalLengthMm = 2.2, focalLength35mmEq = null)
+
+    @Test
+    fun match_should_EqualTodaysMatch_When_NoLensRecord() {
+        val profiles = listOf(ultraWide, mainLens)
+        assertEquals(CameraProfiles.match(profiles, photoUltra, w, h), CameraProfiles.match(profiles, photoUltra, w, h, LensMatchKey.from(null)))
+        assertEquals(ultraWide, CameraProfiles.match(profiles, photoUltra, w, h))
+    }
+
+    @Test
+    fun match_should_ChooseUltraWide_When_LensIdAgreesAndRejectWithLensMismatch_When_ItDoesNot() {
+        val profiles = listOf(ultraWide, mainLens)
+        val ok = CameraProfiles.matchDetailed(profiles, photoUltra, w, h, LensMatchKey.from(record(lensId = "2")))
+        assertEquals(ultraWide, ok.getOrNull())
+        val bad = CameraProfiles.matchDetailed(profiles, photoUltra, w, h, LensMatchKey.from(record(lensId = "7")))
+        assertEquals(ProfileRejection.LensMismatch, bad.leftOrNull())
+        assertNull(CameraProfiles.match(profiles, photoUltra, w, h, LensMatchKey.from(record(lensId = "7"))))
+    }
+
+    @Test
+    fun match_should_MarkCropped_When_ZoomRatioIsNotOne() {
+        val zoomed = CameraProfiles.matchDetailed(listOf(ultraWide), photoUltra, w, h, LensMatchKey.from(record(zoom = 2.0)))
+        assertEquals(ProfileRejection.ZoomedFrame, zoomed.leftOrNull())
+    }
+
+    @Test
+    fun match_should_IgnoreLensId_When_RecordIsSelectedLensSource() {
+        val key = assertNotNull(LensMatchKey.from(record(lensId = "7", selected = true)))
+        assertNull(key.lensId, "a chip selection names the button, not the lens that took the photo")
+        assertEquals(ultraWide, CameraProfiles.match(listOf(ultraWide, mainLens), photoUltra, w, h, key))
+    }
+
+    @Test
+    fun match_should_BeDisabled_When_RecordFocalDisagreesWithExifByMoreThan15Percent() {
+        val key = LensMatchKey.from(record(focal = 2.2, exifFocal = 2.2 * 1.2))
+        val result = CameraProfiles.matchDetailed(listOf(ultraWide), photoUltra, w, h, key)
+        assertEquals(ProfileRejection.LensRecordUntrusted, result.leftOrNull())
+        val near = LensMatchKey.from(record(focal = 2.2, exifFocal = 2.2 * 1.1))
+        assertEquals(ultraWide, CameraProfiles.match(listOf(ultraWide), photoUltra, w, h, near))
+    }
+
+    @Test
+    fun match_should_NeverMatch_When_ProvidedLensIdsDiffer_AndBeOrderIndependent() = runTest {
+        checkAll(Arb.int(0..9), Arb.int(0..9), Arb.int(0..5)) { a, b, shift ->
+            val profiles = listOf(
+                lensProfile("p0", 2.2, a.toString(), createdAtMs = 1L),
+                lensProfile("p1", 2.2, "x$a", createdAtMs = 2L),
+                lensProfile("p2", 2.2, null, createdAtMs = 3L),
+            )
+            val rotated = profiles.drop(shift % profiles.size) + profiles.take(shift % profiles.size)
+            val key = LensMatchKey(lensId = b.toString(), zoomRatio = 1.0)
+            val first = CameraProfiles.match(profiles, photoUltra, w, h, key)
+            assertEquals(first, CameraProfiles.match(rotated, photoUltra, w, h, key), "order independent")
+            if (first != null) {
+                val id = first.match.lensId
+                assertTrue(id == null || id == b.toString(), "matched profile with lens id $id for photo lens $b")
+            }
+        }
+    }
+
+    @Test
+    fun learn_should_RecordLensId_When_Provided() {
+        val p = assertNotNull(CameraProfiles.learn(autoCalibration(), sensor, w, h, "cam-1", 5L, lensId = "2").getOrNull())
+        assertEquals("2", p.match.lensId)
+        assertNull(assertNotNull(CameraProfiles.learn(autoCalibration(), sensor, w, h, "cam-2", 5L).getOrNull()).match.lensId)
+    }
 }

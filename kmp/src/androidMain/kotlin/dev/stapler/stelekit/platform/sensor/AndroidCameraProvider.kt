@@ -3,7 +3,6 @@ package dev.stapler.stelekit.platform.sensor
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -110,10 +109,9 @@ class AndroidCameraProvider(
                 // 4. Bind to ProcessLifecycleOwner — no Activity reference required.
                 // Use fully-qualified class to avoid the Glance bindToLifecycle extension clash.
                 val lifecycleOwner = androidx.lifecycle.ProcessLifecycleOwner.get()
-                cameraProvider.unbindAll()
                 cameraProvider.bindToLifecycle(
                     lifecycleOwner,
-                    CameraSelector.DEFAULT_BACK_CAMERA,
+                    defaultBackSelector(),
                     imageCapture,
                 )
 
@@ -158,7 +156,8 @@ class AndroidCameraProvider(
                     }
                 } finally {
                     executor.shutdown()
-                    cameraProvider.unbindAll()
+                    // Only this one-shot's own use case: unbindAll() would tear down another binder's Preview or analysis.
+                    cameraProvider.unbind(imageCapture)
                 }
 
                 if (!outputFile.exists()) {

@@ -234,6 +234,12 @@ data class StelekitAppPlatformIntegrations(
      */
     val gitSyncBusyCounter: dev.stapler.stelekit.git.GitSyncBusyCounter? = null,
     /**
+     * The process-wide per-repo gate every git entry point shares (sync service, cold runner, scheduler,
+     * quiesce). Built once in each composition root. Null means no `GitSyncService` is built: there is
+     * deliberately no private-gate fallback, which would let two paths mutate one repo at once.
+     */
+    val repoOpGate: dev.stapler.stelekit.git.RepoOpGate? = null,
+    /**
      * Android's 10 s resource sampler for the annotation editor (diagnostics-first, PR-0). The editor
      * starts it while composed and stops it on dispose. Null (default) samples nothing.
      */

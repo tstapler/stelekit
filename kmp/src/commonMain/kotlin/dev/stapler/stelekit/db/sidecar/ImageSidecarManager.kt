@@ -7,6 +7,7 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationMethod
+import dev.stapler.stelekit.model.CaptureLensRecord
 import dev.stapler.stelekit.model.DEFAULT_MEASUREMENT_UNIT
 import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.model.ImageAnnotation
@@ -14,7 +15,9 @@ import dev.stapler.stelekit.model.ImageSensorData
 import dev.stapler.stelekit.model.ImageSource
 import dev.stapler.stelekit.model.MeasurementAnnotation
 import dev.stapler.stelekit.model.MeasurementUnit
+import dev.stapler.stelekit.model.MeasurementValue
 import dev.stapler.stelekit.model.NormalizedPoint
+import dev.stapler.stelekit.model.ValueSource
 import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
@@ -32,7 +35,7 @@ import kotlinx.serialization.json.Json
 class ImageSidecarManager(
     private val fileSystem: FileSystem,
 ) {
-    private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
+    private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true; prettyPrint = false }
 
     /**
      * Serialize [annotation] + [measurements] to JSON and write to the sidecar path.
@@ -48,12 +51,22 @@ class ImageSidecarManager(
             val path = sidecarPath(notesPath, annotation.uuid)
             ensureSidecarDir(notesPath)
 
+            val existingText = fileSystem.readFile(path)
+            // The editor rebuilds its image from DB columns, which have no lens record; keep the stored one.
+            val sidecarAnnotation = annotation.toSidecar().let { fresh ->
+                if (fresh.lensRecord != null) fresh else fresh.copy(lensRecord = storedLensRecord(existingText))
+            }
+            val sidecarMeasurements = measurements.map { it.toSidecar() }
             val sidecar = SidecarFile(
-                schemaVersion = 1,
-                imageAnnotation = annotation.toSidecar(),
-                measurements = measurements.map { it.toSidecar() },
+                schemaVersion = SidecarVersion.forContent(sidecarAnnotation, sidecarMeasurements),
+                imageAnnotation = sidecarAnnotation,
+                measurements = sidecarMeasurements,
             )
-            val jsonString = json.encodeToString(SidecarFile.serializer(), sidecar)
+            val jsonString = SidecarJsonMerge.overlayUnknownKeys(
+                existingText,
+                json.encodeToString(SidecarFile.serializer(), sidecar),
+                json,
+            )
             val written = fileSystem.writeFile(path, jsonString)
             if (written) Unit.right()
             else DomainError.FileSystemError.WriteFailed(path, "FileSystem.writeFile returned false").left()
@@ -85,6 +98,27 @@ class ImageSidecarManager(
             DomainError.ParseError.InvalidSyntax("Malformed sidecar JSON at $path: ${e.message}").left()
         } catch (e: Exception) {
             DomainError.FileSystemError.ReadFailed(path, e.message ?: "unknown").left()
+        }
+    }
+
+    /** The capture lens record stored in [uuid]'s sidecar, or null when absent or unreadable (Task 3.9c). */
+    fun readLensRecord(notesPath: EffectiveNotesPath, uuid: String): CaptureLensRecord? =
+        storedLensRecord(fileSystem.readFile(sidecarPath(notesPath, uuid)))?.toDomain()
+
+    /** [readLensRecord] for [annotation], read off the caller's thread. */
+    suspend fun lensRecordFor(annotation: ImageAnnotation): CaptureLensRecord? =
+        kotlinx.coroutines.withContext(dev.stapler.stelekit.coroutines.PlatformDispatcher.IO) {
+            readLensRecord(EffectiveNotesPath(annotation.graphPath), annotation.uuid)
+        }
+
+    private fun storedLensRecord(text: String?): SidecarLensRecord? {
+        if (text.isNullOrBlank()) return null
+        return try {
+            json.decodeFromString(SidecarFile.serializer(), text).imageAnnotation.lensRecord
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: kotlinx.serialization.SerializationException) {
+            null
         }
     }
 
@@ -121,6 +155,7 @@ private fun ImageAnnotation.toSidecar(): SidecarImageAnnotation {
         calibrationBasisVersion = calibration.basisVersion,
         calibrationLens = calibration.lens,
         calibrationGeometry = calibration.geometry,
+        lensRecord = sensorData.lensRecord?.toSidecar(),
         unit = unit.name,
         tags = tags,
         latLng = latLngStr,
@@ -135,8 +170,9 @@ private fun ImageAnnotation.toSidecar(): SidecarImageAnnotation {
     )
 }
 
-private fun MeasurementAnnotation.toSidecar(): SidecarMeasurement =
-    SidecarMeasurement(
+private fun MeasurementAnnotation.toSidecar(): SidecarMeasurement {
+    val overridden = value as? MeasurementValue.Overridden
+    return SidecarMeasurement(
         uuid = uuid,
         imageUuid = imageUuid,
         annotationType = annotationType.name,
@@ -146,7 +182,10 @@ private fun MeasurementAnnotation.toSidecar(): SidecarMeasurement =
         label = label,
         colorHex = colorHex,
         bleDeviceId = bleDeviceId,
+        valueSource = if (overridden != null) ValueSource.USER_OVERRIDE.name else SidecarMeasurement.SOURCE_COMPUTED,
+        originalValueMeters = overridden?.originalMeters,
     )
+}
 
 // ── Sidecar → domain conversions ──────────────────────────────────────────────
 
@@ -191,6 +230,7 @@ fun SidecarFile.toDomainAnnotation(): ImageAnnotation {
             focalLength35mmEq = ann.focalLength35mmEq,
             cameraMake = ann.cameraMake,
             cameraModel = ann.cameraModel,
+            lensRecord = ann.lensRecord?.toDomain(),
         ),
     )
 }
@@ -209,5 +249,11 @@ fun SidecarFile.toDomainMeasurements(): List<MeasurementAnnotation> =
             label = m.label,
             colorHex = m.colorHex,
             bleDeviceId = m.bleDeviceId,
+        ).withValue(
+            MeasurementValue.fromColumns(
+                m.valueMeters,
+                runCatching { ValueSource.valueOf(m.valueSource) }.getOrDefault(ValueSource.COMPUTED),
+                m.originalValueMeters,
+            ),
         )
     }

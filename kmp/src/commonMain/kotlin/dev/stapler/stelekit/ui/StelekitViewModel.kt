@@ -302,6 +302,9 @@ class StelekitViewModel(
 
     /** Triggers a full sync (commit → fetch → merge → push) on the active graph. */
     fun triggerSync() = gitSyncCoordinator.triggerSync()
+    fun retrySyncNow() = gitSyncCoordinator.safety.retryNow()
+    fun removeSyncLockFile() = gitSyncCoordinator.safety.removeLockFile()
+    val syncEvents: kotlinx.coroutines.flow.SharedFlow<SyncUiEvent> get() = gitSyncCoordinator.syncEvents
     fun openBranchRepair() = _uiState.update { it.copy(branchRepairVisible = true) }
     fun dismissBranchRepair() = _uiState.update { it.copy(branchRepairVisible = false) }
     fun openFirstSyncReview() = _uiState.update { it.copy(firstSyncReviewVisible = true, branchRepairVisible = false) }
@@ -1776,6 +1779,9 @@ class StelekitViewModel(
                     diskBlockContent = diskBlockContent
                 )
                 if (conflict == null) {
+                    // Local already matches disk, but the watcher left the file unapplied (the event was
+                    // suppressed above): without this the pre-write guard would silently drop the save.
+                    graphLoader.acknowledgeDiskContent(event.filePath)
                     blockStateManager?.queuePageSave(currentPage.uuid.value)
                     return@collect
                 }
@@ -1867,6 +1873,8 @@ class StelekitViewModel(
         val conflict = _uiState.value.diskConflict ?: return
         _uiState.update { it.copy(diskConflict = null) }
         scope.launch {
+            // The user chose their version over the disk's: lift the pre-write guard before the save below.
+            graphLoader.acknowledgeDiskContent(conflict.filePath)
             if (conflict.editingBlockUuid != null) {
                 val block = blockRepository.getBlockByUuid(conflict.editingBlockUuid).first().getOrNull()
                 if (block != null) {
@@ -1919,6 +1927,7 @@ class StelekitViewModel(
         val conflict = _uiState.value.diskConflict ?: return
         _uiState.update { it.copy(diskConflict = null) }
         scope.launch {
+            graphLoader.acknowledgeDiskContent(conflict.filePath)
             val conflictContent = buildString {
                 appendLine("<<<<<<< Your edit")
                 append(conflict.localContent)
@@ -2147,6 +2156,9 @@ class StelekitViewModel(
             )
         }
     }
+
+    /** Backing store for the Settings dialog's image-annotator toggles. */
+    val annotatorSettings: Settings get() = platformSettings
 
     fun setLeftHanded(value: Boolean) {
         platformSettings.putBoolean("isLeftHanded", value)

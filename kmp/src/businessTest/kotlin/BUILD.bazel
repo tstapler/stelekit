@@ -61,6 +61,13 @@ java_library(
     resource_strip_prefix = "project_plans/rich-editing-experience/implementation",
 )
 
+# Bundles accuracy-study.md as the classpath resource "accuracy-study.md" for AccuracyStudyVerdictTest.
+java_library(
+    name = "accuracy_study_doc_as_resource",
+    resources = ["//:accuracy_study_doc"],
+    resource_strip_prefix = "project_plans/sync-lock-and-image-annotator/implementation",
+)
+
 # Bundles docs/journeys/*.md as classpath resources under "journeys/" (e.g.
 # "journeys/insert-tag.md") for DocRepoLocator's Bazel path.
 java_library(
@@ -180,6 +187,7 @@ kt_jvm_test(
         ":jvm_git_repository_as_resource",
         ":android_git_repository_as_resource",
         ":rich_editing_backlog_docs_as_resources",
+        ":accuracy_study_doc_as_resource",
         ":journey_docs_as_resources",
         ":wiring_kmp_sources_as_resources",
         ":wiring_androidapp_sources_as_resources",

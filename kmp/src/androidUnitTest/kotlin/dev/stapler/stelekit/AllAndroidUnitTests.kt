@@ -1,7 +1,10 @@
 package dev.stapler.stelekit
 
+import dev.stapler.stelekit.db.AndroidGraphMoveQuiesceStrategyTest
+import dev.stapler.stelekit.db.QuiesceRealFlushTest
 import dev.stapler.stelekit.db.WalConfiguredCallbackTest
 import dev.stapler.stelekit.git.AndroidGitLegacyConfigSourceTest
+import dev.stapler.stelekit.git.AndroidGitRepositoryClaimTest
 import dev.stapler.stelekit.git.AndroidGitRepositoryLfsGuardTest
 import dev.stapler.stelekit.google.AndroidGoogleSupportTest
 import dev.stapler.stelekit.git.AndroidBatterySettingsLauncherTest
@@ -45,6 +48,11 @@ import dev.stapler.stelekit.platform.measurement.usb.AndroidUsbSerialFactoryTest
 import dev.stapler.stelekit.platform.security.AndroidCredentialStoreCommitTest
 import dev.stapler.stelekit.platform.security.AndroidCredentialStoreFailsLoudTest
 import dev.stapler.stelekit.platform.image.PlatformImageDownscalerAndroidTest
+import dev.stapler.stelekit.platform.sensor.CameraCaptureCleanupTest
+import dev.stapler.stelekit.platform.sensor.CameraLensSourceTest
+import dev.stapler.stelekit.platform.sensor.CameraXBackendTest
+import dev.stapler.stelekit.platform.sensor.ExifOrientationFixerLensTest
+import dev.stapler.stelekit.wiring.CameraLensCatalogEntryPointTest
 import dev.stapler.stelekit.platform.sensor.ExifOrientationFixerTest
 import dev.stapler.stelekit.platform.sensor.ImageMemoryGlueTest
 import dev.stapler.stelekit.ui.LoadingStateTest
@@ -53,6 +61,7 @@ import dev.stapler.stelekit.ui.components.MermaidWebViewSettingsTest
 import dev.stapler.stelekit.ui.transfer.QrDecodeViewModelBackgroundingTest
 import dev.stapler.stelekit.voice.AndroidSpeechRecognizerPermissionTest
 import dev.stapler.stelekit.wiring.PlatformCapsRootTest
+import dev.stapler.stelekit.wiring.RepoGateSharedEntryPointTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
 
@@ -60,6 +69,8 @@ import org.junit.runners.Suite
 @Suite.SuiteClasses(
     WalConfiguredCallbackTest::class,
     PlatformEdgeHostsTest::class,
+    AndroidGraphMoveQuiesceStrategyTest::class,
+    QuiesceRealFlushTest::class,
     WorkManagerJitterSpikeTest::class,
     WorkManagerTaskSchedulerContractTest::class,
     WorkManagerTaskSchedulerConstraintsTest::class,
@@ -86,9 +97,11 @@ import org.junit.runners.Suite
     AndroidGitLegacyConfigSourceTest::class,
     PlatformSettingsColdPathTest::class,
     PlatformCapsRootTest::class,
+    RepoGateSharedEntryPointTest::class,
     AndroidGoogleSupportTest::class,
     GitSyncBusyCounterSharedWiringTest::class,
     AndroidGitRepositoryTestRemoteTest::class,
+    AndroidGitRepositoryClaimTest::class,
     AndroidGitRepositoryLfsGuardTest::class,
     LegacyPathValidationTest::class,
     PlatformFileSystemPickerTest::class,
@@ -105,6 +118,11 @@ import org.junit.runners.Suite
     AndroidCredentialStoreCommitTest::class,
     AndroidCredentialStoreFailsLoudTest::class,
     ExifOrientationFixerTest::class,
+    ExifOrientationFixerLensTest::class,
+    CameraCaptureCleanupTest::class,
+    CameraXBackendTest::class,
+    CameraLensSourceTest::class,
+    CameraLensCatalogEntryPointTest::class,
     ImageMemoryGlueTest::class,
     PlatformImageDownscalerAndroidTest::class,
     LoadingStateTest::class,
@@ -173,5 +191,10 @@ import org.junit.runners.Suite
     // EscOrderIntegrationTest and BracketPlateUxScenarioTest (sketch v2, Tasks 6.2.4h and 6.2.4f) mount the real host (composeRule, no Compose plugin in this target) over the commonTest rig; Gradle-only.
     // KeyboardAccessHostTest (sketch v2, Task 3.6.3c and the host's accessibility mounts) mounts the real host over the commonTest rig (composeRule, no Compose plugin in this target); Gradle-only.
     // Task 6.2.1c: WiringV2AndroidEntryPointTest (the root, the class seams of the plan-seam-classes block and the saver's durability) stays Gradle-only for the reasons named above; it is named here so TestRegistrationAuditTest can tell an exclusion from an unregistered class.
+    // SyncStatusSheetStatesTest, SyncStatusBadgeTest and SyncStatusTextScaleTest (Task 1.7b) are excluded for the same reason (1).
+    // MeasurementValueEditorTest, MeasurementValueEditorErrorStatesTest, ValueEditorTextScaleTest, ValueEditorSheetTest,
+    // CalibrationPillTest, KnownDistancesSheetTest, ValueEditorScopeTest and AnnotationEditorValueHooksTest (E3 value editor,
+    // calibration pill, Known distances sheet) are Compose host tests, excluded from the Bazel target like the other annotate
+    // ones; they run under Gradle's testDebugUnitTest.
 )
 class AllAndroidUnitTests

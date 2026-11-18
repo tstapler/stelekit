@@ -16,8 +16,11 @@ import kotlinx.coroutines.flow.update
 object GitSyncServiceRegistry {
     private val services = MutableStateFlow<Map<String, GitSyncService>>(emptyMap())
 
+    /** A replaced service's periodic loop is stopped: the new stack composes before the old one is disposed. */
     fun register(graphId: String, service: GitSyncService) {
+        val replaced = services.value[graphId]
         services.update { it + (graphId to service) }
+        if (replaced != null && replaced !== service) replaced.stopPeriodicSync()
     }
 
     /** Removes [graphId] only while it still maps to [service], so a late dispose cannot drop a newer registration. */

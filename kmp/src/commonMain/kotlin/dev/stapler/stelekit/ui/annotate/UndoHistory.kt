@@ -19,6 +19,11 @@ class UndoHistory<S>(private val maxHistory: Int = 50) {
         redoStack.clear()
     }
 
+    /** Drops the newest undo point without parking it for redo; for a step that turned out to be a no-op. */
+    fun discardLatest() {
+        undoStack.removeLastOrNull()
+    }
+
     /** Pops the previous state, parking [current] for redo; null when nothing to undo. */
     fun undo(current: S): S? {
         val prev = undoStack.removeLastOrNull() ?: return null
@@ -43,11 +48,22 @@ class UndoHistory<S>(private val maxHistory: Int = 50) {
 fun AnnotationEditorState.restoredOver(current: AnnotationEditorState): AnnotationEditorState =
     copy(
         currentTool = current.currentTool,
+        stickiness = current.stickiness,
+        pendingKnownDistance = current.pendingKnownDistance,
         inProgressPoints = emptyList(),
         error = current.error,
         placement = current.placement,
         // A unit change is not an undoable step: keep the chosen unit and show restored measurements in it.
         selectedUnit = current.selectedUnit,
-        imageAnnotation = imageAnnotation?.copy(unit = current.selectedUnit),
+        // Calibration is not an undoable step here (see undoCalibration): a restored snapshot must not leave the saved
+        // image row on one scale and the shown values on another.
+        calibration = current.calibration,
+        imageAnnotation = imageAnnotation?.copy(
+            unit = current.selectedUnit,
+            calibration = current.imageAnnotation?.calibration ?: imageAnnotation.calibration,
+        ),
         committedAnnotations = committedAnnotations.map { it.relabeled(current.selectedUnit) },
+        // Rows this step removed stay deleted for a late load; rows it brought back are no longer deleted.
+        sessionDeleted = (current.sessionDeleted + (current.committedAnnotations.map { it.uuid }.toSet() - committedAnnotations.map { it.uuid }.toSet()))
+            - committedAnnotations.map { it.uuid }.toSet(),
     )

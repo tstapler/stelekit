@@ -43,6 +43,8 @@ data class SidecarImageAnnotation(
     @SerialName("calibrationLens") val calibrationLens: dev.stapler.stelekit.model.LensCalibration? = null,
     /** Height offset and camera distance. Additive: absent in older sidecars, which read as null. */
     @SerialName("calibrationGeometry") val calibrationGeometry: dev.stapler.stelekit.model.GeometryCalibration? = null,
+    /** Which lens took the photo. Additive, v2: absent in older sidecars, which read as null. */
+    @SerialName("lensRecord") val lensRecord: SidecarLensRecord? = null,
     @SerialName("unit") val unit: String = "METERS",
     @SerialName("tags") val tags: List<String> = emptyList(),
     @SerialName("latLng") val latLng: String? = null,
@@ -67,7 +69,15 @@ data class SidecarMeasurement(
     @SerialName("label") val label: String? = null,
     @SerialName("colorHex") val colorHex: String = "#FF0000",
     @SerialName("bleDeviceId") val bleDeviceId: String? = null,
-)
+    /** `COMPUTED` or `USER_OVERRIDE` (a String so an unknown future value still decodes). Additive, v2. */
+    @SerialName("valueSource") val valueSource: String = SOURCE_COMPUTED,
+    /** The computed value an override replaced. Additive, v2. */
+    @SerialName("originalValueMeters") val originalValueMeters: Double? = null,
+) {
+    companion object {
+        const val SOURCE_COMPUTED = "COMPUTED"
+    }
+}
 
 @Serializable
 data class SidecarPoint(

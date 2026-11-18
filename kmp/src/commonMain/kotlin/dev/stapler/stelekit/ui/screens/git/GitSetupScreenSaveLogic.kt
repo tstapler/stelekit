@@ -16,6 +16,9 @@ import dev.stapler.stelekit.git.GitRepoHistoryStore
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.GitTransportRetryState
+import dev.stapler.stelekit.git.RepoOpGate
+import dev.stapler.stelekit.git.SyncOrigin
+import dev.stapler.stelekit.git.withExclusiveLease
 import dev.stapler.stelekit.git.model.CloneDepthState
 import dev.stapler.stelekit.git.model.DEFAULT_CLONE_DEPTH
 import dev.stapler.stelekit.git.model.GitAuthType
@@ -67,6 +70,7 @@ internal suspend fun testGitConnection(
     form: GitSetupFormSnapshot,
     gitRepository: GitRepository,
     credentialStore: CredentialStore,
+    gate: RepoOpGate,
 ): Either<DomainError.GitError, Unit> {
     if (form.cloneMode == CloneMode.CloneNewRepository) {
         val cloneAuth = buildCloneAuth(
@@ -95,7 +99,12 @@ internal suspend fun testGitConnection(
         sshKeyPassphraseKey = testSshPassphraseKey,
         oauthTokenKey = testOauthTokenKey,
     )
-    return gitRepository.fetch(config).map { Unit }
+    // A fetch writes into the repository, so it takes the gate keyed by the form's repo root like any sync would.
+    return gate.withExclusiveLease(
+        key = gitRepository.gateKeyFor(config),
+        origin = SyncOrigin.Setup,
+        unresolved = DomainError.GitError.FetchFailed("Cannot resolve the git directory of ${form.repoRoot}"),
+    ) { gitRepository.fetch(config).map { Unit } }
 }
 
 /** Outcome of [performCloneAndSave], reported back to the composable for UI/state updates. */

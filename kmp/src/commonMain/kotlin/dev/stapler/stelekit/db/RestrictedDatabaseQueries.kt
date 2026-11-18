@@ -627,9 +627,12 @@ class RestrictedDatabaseQueries(
         label: String?,
         color_hex: String,
         ble_device_id: String?,
+        value_source: String,
+        value_original_meters: Double?,
     ): Long = queries.insertMeasurementAnnotation(
         uuid, image_uuid, annotation_type, normalized_points,
         value_meters, value_display, label, color_hex, ble_device_id,
+        value_source, value_original_meters,
     )
 
     @DirectSqlWrite

@@ -8,8 +8,13 @@ import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationBasis
 import dev.stapler.stelekit.model.CalibrationMethod
 import dev.stapler.stelekit.model.CalibrationTick
+import dev.stapler.stelekit.model.ConstraintFitRecord
+import dev.stapler.stelekit.model.FitTier
+import dev.stapler.stelekit.model.GeometryCalibration
 import dev.stapler.stelekit.model.LensCalibration
 import dev.stapler.stelekit.model.NormalizedPoint
+import dev.stapler.stelekit.model.PlaneCalibration
+import dev.stapler.stelekit.model.PlaneKind
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.int
 import io.kotest.property.checkAll
@@ -130,5 +135,47 @@ class MeasurementAdvisorTest {
         assertEquals("⚠ 18.0 cm", MeasurementAdvisor.pillText("18.0 cm", true))
         assertEquals("18.0 cm", MeasurementAdvisor.pillText("18.0 cm", false))
         assertFalse(MeasurementAdvisor.pillText("x", false).contains("⚠"))
+    }
+
+    private val identity = List(9) { if (it % 4 == 0) 1.0 else 0.0 }
+
+    private fun withPlane(plane: PlaneCalibration?, fit: ConstraintFitRecord? = null) =
+        calibration(4, 800.0).copy(geometry = GeometryCalibration(plane = plane, fit = fit))
+
+    @Test
+    fun constraintFitPlaneSaysScaleFromKnownDistancesAndSkipsTheCentreCheck() {
+        val plane = PlaneCalibration(identity, "Known distances", 1.2, 0.8, checkResidualMm = 9.0, kind = PlaneKind.CONSTRAINT_FIT)
+        val fit = ConstraintFitRecord(FitTier.GRADIENT, n = 5, residualMeanPct = 0.4, looPct = 0.62)
+        val r = assess(withPlane(plane, fit))
+        assertTrue(r.accuracy.any { it == "Scale from 5 known distances (tier GRADIENT), +/-0.6%." }, r.accuracy.toString())
+        assertTrue(r.accuracy.none { it.contains("Centre check") || it.contains("Plane reference") }, r.accuracy.toString())
+        assertTrue(r.warnings.none { it.contains("centre check") }, r.warnings.toString())
+    }
+
+    @Test
+    fun constraintFitPlaneFallsBackToResidualWhenLeaveOneOutIsUndefined() {
+        val plane = PlaneCalibration(identity, "Known distances", 1.2, 0.8, kind = PlaneKind.CONSTRAINT_FIT)
+        val fit = ConstraintFitRecord(FitTier.SCALE, n = 2, residualMeanPct = 1.04, looPct = null)
+        val r = assess(withPlane(plane, fit))
+        assertTrue(r.accuracy.any { it == "Scale from 2 known distances (tier SCALE), +/-1.0%." }, r.accuracy.toString())
+    }
+
+    @Test
+    fun singleKnownDistanceIsNeverShownAsZeroPercentAccurate() {
+        val plane = PlaneCalibration(identity, "Known distances", 1.2, 0.8, kind = PlaneKind.CONSTRAINT_FIT)
+        val fit = ConstraintFitRecord(FitTier.SCALE, n = 1, residualMeanPct = 0.0, looPct = null)
+        val r = assess(withPlane(plane, fit))
+        assertTrue(r.accuracy.none { it.contains("0.0%") && it.contains("known distance") }, r.accuracy.toString())
+        assertTrue(r.accuracy.any { it.contains("unverified") }, r.accuracy.toString())
+        assertTrue(r.estimatedErrorPercent > 0.0)
+    }
+
+    @Test
+    fun paperReferencePlaneIsUnchanged() {
+        val plane = PlaneCalibration(identity, "A4 sheet", 0.297, 0.21, checkResidualMm = 0.5)
+        val r = assess(withPlane(plane))
+        assertTrue(r.accuracy.any { it.startsWith("Plane reference: A4 sheet") }, r.accuracy.toString())
+        assertTrue(r.accuracy.any { it.startsWith("Centre check off by 0.5 mm") }, r.accuracy.toString())
+        assertTrue(r.accuracy.none { it.contains("known distances") })
     }
 }

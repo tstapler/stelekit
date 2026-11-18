@@ -13,7 +13,11 @@ import kotlinx.coroutines.launch
  * [scope] (never `rememberCoroutineScope()`), so shutting the service down cancels it. Scheduling replaces any
  * earlier retry, and a manual sync calls [cancel] so it supersedes a pending one.
  */
-internal class RateLimitRetry(private val scope: CoroutineScope) {
+internal class RateLimitRetry(
+    private val scope: CoroutineScope,
+    /** Suspends until the graph's repository gate is free, so a retry never fires into a running sync. */
+    private val awaitFree: suspend (String) -> Unit = {},
+) {
     @kotlin.concurrent.Volatile private var job: Job? = null
 
     /** Re-invokes [retryOperation] after [retryAfterSeconds], or [DEFAULT_SECONDS] when the header was absent. */
@@ -21,6 +25,7 @@ internal class RateLimitRetry(private val scope: CoroutineScope) {
         job?.cancel()
         job = scope.launch {
             delay((retryAfterSeconds ?: DEFAULT_SECONDS) * 1000L)
+            awaitFree(graphId)
             // Clear first: the retried sync()/fetchOnly() calls cancel() at their top and must not cancel this coroutine.
             job = null
             retryOperation(graphId)

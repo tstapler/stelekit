@@ -111,6 +111,21 @@ kt_android_library(
             "**/LabsFlagToggleTest.kt",
             # Compose host test for the annotate non-drag placement UI (Gradle-only, no Compose plugin here)
             "**/AnnotationNonDragModeTest.kt",
+            # Compose host test for the annotator Settings rows (Gradle-only, same reason)
+            "**/AnnotatorSettingsRowsTest.kt",
+            # Compose host tests for the annotator status strip, pasteboard inset and gesture layer (Gradle-only)
+            "**/StatusStripTest.kt",
+            "**/PasteboardInsetTest.kt",
+            "**/AnnotationGestureLayerPlacementTest.kt",
+            "**/PlacementCountersLogTest.kt",
+            # Compose host tests for annotator layout/contrast/voice hint (Gradle-only)
+            "**/AnnotatorLayoutTest.kt",
+            "**/VoiceHintTest.kt",
+            "**/AnnotationToolbarSemanticsTest.kt",
+            "**/AnnotationA11yActionsTest.kt",
+            "**/OneShotToolFlowTest.kt",
+            "**/ToolDisarmTest.kt",
+            "**/PasteboardPlacementTest.kt",
             # Compose host test for annotate zoom/pan (Gradle-only, no Compose plugin here)
             "**/AnnotationZoomPanTest.kt",
             # Compose host test for the plane reference panel (Gradle-only, no Compose plugin here)
@@ -145,6 +160,23 @@ kt_android_library(
             "**/SuccessFeedbackTest.kt",
             # Mounts the v2 host over the commonTest rig for keyboard-only drawing and the Esc rows (Gradle-only, no Compose plugin or commonTest here)
             "**/KeyboardAccessHostTest.kt",
+            # Compose host tests for the sync status sheet/badge (Gradle-only; Density inline fails the Bazel backend)
+            "**/SyncStatusSheetStatesTest.kt",
+            "**/SyncStatusBadgeTest.kt",
+            "**/SyncStatusTextScaleTest.kt",
+            # Compose host tests for the value editor, calibration pill, known-distances sheet and Screen hooks (Gradle-only, no Compose plugin here)
+            "**/MeasurementValueEditorTest.kt",
+            "**/MeasurementValueEditorErrorStatesTest.kt",
+            "**/ValueEditorTextScaleTest.kt",
+            "**/ValueEditorSheetTest.kt",
+            "**/CalibrationPillTest.kt",
+            "**/KnownDistancesSheetTest.kt",
+            "**/ValueEditorScopeTest.kt",
+            "**/AnnotationEditorValueHooksTest.kt",
+            # Compose host tests for the camera lens chips and dialog states (Gradle-only, no Compose plugin here)
+            "**/CameraLensChipsTest.kt",
+            "**/CameraDialogStatesTest.kt",
+            "**/CameraViewfinderDialogTest.kt",
         ],
     ),
     custom_package = "dev.stapler.stelekit",

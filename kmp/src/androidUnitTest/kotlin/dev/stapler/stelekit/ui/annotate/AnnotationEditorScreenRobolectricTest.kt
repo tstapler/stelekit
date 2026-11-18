@@ -60,6 +60,9 @@ class AnnotationEditorScreenRobolectricTest {
 
         rule.setContent { AnnotationEditorScreen(viewModel = vm, imageAnnotation = img) }
         rule.waitForIdle()
+        // Robolectric's default window is short, so the info rows sit behind the Details toggle.
+        rule.onNodeWithText("Details").performClick()
+        rule.waitForIdle()
         rule.onNodeWithText("Tags").assertExists()
     }
 
@@ -86,7 +89,7 @@ class AnnotationEditorScreenRobolectricTest {
         val vm = viewModel(img)
         rule.setContent { AnnotationEditorScreen(viewModel = vm, imageAnnotation = img) }
         rule.waitForIdle()
-        rule.onNodeWithText("Set a scale to measure distances").assertExists()
+        rule.onNodeWithText(CalibrationStatePresenter.NOT_CALIBRATED).assertExists()
     }
 
     @Test

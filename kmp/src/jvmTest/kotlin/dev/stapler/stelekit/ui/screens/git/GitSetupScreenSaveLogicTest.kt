@@ -70,6 +70,7 @@ class GitSetupScreenSaveLogicTest {
             form = baseForm(CloneMode.CloneNewRepository),
             gitRepository = gitRepository,
             credentialStore = CredentialStore(),
+            gate = dev.stapler.stelekit.git.RepoOpGate(),
         )
 
         assertTrue(result.isRight(), "expected testGitConnection to succeed: $result")
@@ -92,6 +93,7 @@ class GitSetupScreenSaveLogicTest {
             form = baseForm(CloneMode.UseExistingClone),
             gitRepository = gitRepository,
             credentialStore = CredentialStore(),
+            gate = dev.stapler.stelekit.git.RepoOpGate(),
         )
 
         assertTrue(result.isRight(), "expected testGitConnection to succeed: $result")

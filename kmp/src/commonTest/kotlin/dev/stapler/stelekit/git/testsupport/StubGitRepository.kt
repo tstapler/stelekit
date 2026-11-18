@@ -14,8 +14,10 @@ import dev.stapler.stelekit.git.GitCommit
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitStatus
 import dev.stapler.stelekit.git.GitTransportRetryState
+import dev.stapler.stelekit.git.LockVerdict
 import dev.stapler.stelekit.git.MergeResult
 import dev.stapler.stelekit.git.MergeSide
+import dev.stapler.stelekit.git.OwnedOperationInfo
 import dev.stapler.stelekit.git.model.GitConfig
 
 /**
@@ -49,6 +51,10 @@ open class StubGitRepository : GitRepository {
     override suspend fun markResolved(config: GitConfig, filePath: String): Either<DomainError.GitError, Unit> = error("not implemented in stub")
     override suspend fun hasDetachedHead(config: GitConfig): Boolean = false
     override suspend fun removeStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit> = Unit.right()
+
+    /** The production default is fail-closed (OwnerUnknown) and would pause every service fixture. */
+    override suspend fun beginOwnedOperation(config: GitConfig, info: OwnedOperationInfo): Either<DomainError.GitError, LockVerdict> =
+        LockVerdict.NoLock.right()
 }
 
 /**

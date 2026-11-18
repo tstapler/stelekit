@@ -10,6 +10,7 @@ import dev.stapler.stelekit.ui.placement.PlacementController
 import dev.stapler.stelekit.ui.placement.PlacementSpace
 import dev.stapler.stelekit.ui.placement.PlacementState
 import dev.stapler.stelekit.ui.placement.PxOffset
+import dev.stapler.stelekit.ui.placement.crosshairPoint
 import kotlin.math.roundToInt
 
 /**
@@ -70,6 +71,20 @@ data class AnnotationPlacementSession(
 }
 
 private fun AnnotationPlacementSession.on(space: PlacementSpace<NormalizedPoint>) = PlacementController(space, state)
+
+/** TalkBack state description of a nudge arrow that cannot move the crosshair further. */
+const val AT_IMAGE_EDGE_DESCRIPTION = "At image edge"
+
+/** True when the crosshair already sits on the image edge in [direction], so that arrow would do nothing. */
+fun AnnotationPlacementSession.atEdge(direction: NudgeDirection): Boolean {
+    val p = state.crosshairPoint ?: return false
+    return when (direction) {
+        NudgeDirection.LEFT -> p.x <= 0.0
+        NudgeDirection.RIGHT -> p.x >= 1.0
+        NudgeDirection.UP -> p.y <= 0.0
+        NudgeDirection.DOWN -> p.y >= 1.0
+    }
+}
 
 fun AnnotationPlacementSession.toggled(space: PlacementSpace<NormalizedPoint>): AnnotationPlacementSession =
     if (active) AnnotationPlacementSession() else AnnotationPlacementSession(on(space).begin().state)

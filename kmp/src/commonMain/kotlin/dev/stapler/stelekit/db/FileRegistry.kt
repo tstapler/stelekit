@@ -20,10 +20,21 @@ class FileRegistry(private val fileSystem: FileSystem) {
     companion object {
         /** True for files the graph indexes as pages; anything else (images, sidecar JSON) must never reach the markdown parser. */
         fun isPageFileName(name: String): Boolean = name.endsWith(".md") || name.endsWith(".md.stek")
+
+        /** Watcher re-reports of a file whose DB apply failed, before giving up (the guard still protects it). */
+        const val MAX_APPLY_RETRIES = 5
     }
 
     private val modTimes = mutableMapOf<FilePath, Long>()
     private val contentHashes = mutableMapOf<FilePath, Int>()
+
+    // modTimes/contentHashes record what was last OBSERVED on disk and advance the moment
+    // detectChanges reports a file. They say nothing about whether the DB applied that content, so a
+    // failed or skipped apply left "disk == baseline" and every consumer treated the file as in sync.
+    // [unapplied] is the missing half: observed-on-disk content the DB has not confirmed.
+    private val unapplied = mutableSetOf<FilePath>()
+    private val retryPending = mutableSetOf<FilePath>()
+    private val retryAttempts = mutableMapOf<FilePath, Int>()
 
     // Serializes detectChanges so concurrent callers (polling loop + ContentObserver
     // callback) cannot both read the same stale modTime and double-emit the same change.
@@ -182,10 +193,79 @@ class FileRegistry(private val fileSystem: FileSystem) {
         deletedPathKeys.forEach { path ->
             modTimes.remove(path)
             contentHashes.remove(path)
+            unapplied.remove(path)
+            retryPending.remove(path)
+            retryAttempts.remove(path)
         }
         val deletedPaths = deletedPathKeys.map { it.value }
 
+        // Anything reported above is observed-but-unapplied until the loader confirms it.
+        // A fresh disk version also restarts its retry budget (the cap is per version, not per file lifetime).
+        for (reported in newFiles) markObservedUnapplied(FilePath(reported.entry.filePath))
+        for (reported in changedFiles) markObservedUnapplied(FilePath(reported.entry.filePath))
+
+        // Re-report files whose apply failed: their baseline already advanced, so without this a
+        // transient DB error (e.g. SQLITE_BUSY_SNAPSHOT) would drop the change permanently.
+        val reportedPaths = (newFiles + changedFiles).mapTo(HashSet()) { it.entry.filePath }
+        for (retryKey in retryPending.toList()) {
+            val retryPath = retryKey.value
+            if (!retryPath.startsWith("$dirPath/") || retryPath !in currentPaths || retryPath in reportedPaths) continue
+            retryPending.remove(retryKey)
+            val isEncrypted = retryPath.endsWith(".md.stek")
+            val content = if (isEncrypted) "" else {
+                fileSystem.invalidateShadow(retryPath)
+                fileSystem.readFile(retryPath) ?: continue
+            }
+            if (!isEncrypted) contentHashes[retryKey] = content.hashCode()
+            val retryModTime = currentFilesWithTimes.firstOrNull { (name, _) -> "$dirPath/$name" == retryPath }?.second ?: 0L
+            changedFiles.add(ChangedFile(FileEntry(retryPath.substringAfterLast('/'), retryPath, retryModTime), content))
+        }
+
         ChangeSet(newFiles, changedFiles, deletedPaths)
+    }
+
+    // ---- Applied-to-DB tracking ----
+
+    private fun markObservedUnapplied(path: FilePath) {
+        unapplied.add(path)
+        retryPending.remove(path)
+        retryAttempts.remove(path)
+    }
+
+    /**
+     * Pre-write guard: true when writing the page back could overwrite newer disk content — the disk
+     * hash differs from the last observed one, or the content was observed but the DB never applied it.
+     * Decided under one lock so the two facts are read consistently.
+     */
+    suspend fun isDiskAhead(filePath: FilePath, diskHash: Int): Boolean = detectMutex.withLock {
+        val lastKnown = contentHashes[filePath]
+        (lastKnown != null && diskHash != lastKnown) || filePath in unapplied
+    }
+
+    /** True while disk content for [filePath] has been observed (or touched by git) but not confirmed applied to the DB. */
+    suspend fun isUnapplied(filePath: FilePath): Boolean = detectMutex.withLock { filePath in unapplied }
+
+    /** Flags [paths] as holding disk content the DB has not applied (e.g. files a git merge just rewrote). */
+    suspend fun markUnapplied(paths: Collection<FilePath>) = detectMutex.withLock {
+        unapplied.addAll(paths.filter { isPageFileName(it.value) })
+    }
+
+    /** The DB now reflects the file's disk content (or the user explicitly resolved the difference). */
+    suspend fun markApplied(filePath: FilePath) = detectMutex.withLock {
+        unapplied.remove(filePath)
+        retryPending.remove(filePath)
+        retryAttempts.remove(filePath)
+    }
+
+    /**
+     * An apply of [filePath] failed. The next [detectChanges] re-reports it, up to [MAX_APPLY_RETRIES]
+     * times; after that it stays unapplied so the pre-write guard keeps protecting the disk content.
+     */
+    suspend fun scheduleRetry(filePath: FilePath) = detectMutex.withLock {
+        unapplied.add(filePath)
+        val attempts = (retryAttempts[filePath] ?: 0) + 1
+        retryAttempts[filePath] = attempts
+        if (attempts <= MAX_APPLY_RETRIES) retryPending.add(filePath) else retryPending.remove(filePath)
     }
 
     // ---- Write Tracking ----
@@ -203,6 +283,9 @@ class FileRegistry(private val fileSystem: FileSystem) {
      */
     suspend fun markWrittenByUs(filePath: String) = detectMutex.withLock {
         val filePathKey = FilePath(filePath)
+        unapplied.remove(filePathKey)
+        retryPending.remove(filePathKey)
+        retryAttempts.remove(filePathKey)
         if (!filePath.endsWith(".md.stek")) {
             // Read file content for the hash guard. SAF readFile is much faster than
             // getLastModifiedTime (no remote metadata query). Set modTimes to 0 so the
@@ -268,6 +351,9 @@ class FileRegistry(private val fileSystem: FileSystem) {
     suspend fun clear() = detectMutex.withLock {
         modTimes.clear()
         contentHashes.clear()
+        unapplied.clear()
+        retryPending.clear()
+        retryAttempts.clear()
         scannedFiles.clear()
     }
 }

@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.git.GitSyncBusyCounter
+import dev.stapler.stelekit.git.RepoOpGate
 import dev.stapler.stelekit.model.StorageLocation
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -24,6 +25,8 @@ class SafGrantReleaseTest {
         val releasedUris = mutableListOf<String>()
         val strategy = AndroidGraphMoveQuiesceStrategy(
             gitSyncBusyCounter = GitSyncBusyCounter(),
+            gate = RepoOpGate(),
+            gateKeyFor = { null },
             shadowWorktreeTarget = { null },
             releaseUriPermission = { treeUri -> releasedUris += treeUri },
         )
@@ -38,6 +41,8 @@ class SafGrantReleaseTest {
         val releasedUris = mutableListOf<String>()
         val strategy = AndroidGraphMoveQuiesceStrategy(
             gitSyncBusyCounter = GitSyncBusyCounter(),
+            gate = RepoOpGate(),
+            gateKeyFor = { null },
             shadowWorktreeTarget = { null },
             releaseUriPermission = { treeUri -> releasedUris += treeUri },
         )

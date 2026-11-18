@@ -179,6 +179,7 @@ import dev.stapler.stelekit.asset.pipeline.CloudStructuralAuditTest
 import dev.stapler.stelekit.asset.pipeline.EgressLedgerTest
 import dev.stapler.stelekit.asset.pipeline.GrantedConsentMintSiteAuditTest
 import dev.stapler.stelekit.audit.EgressSurfaceAuditTest
+import dev.stapler.stelekit.audit.NonCancellableReturnAuditTest
 import dev.stapler.stelekit.llm.AnthropicMessagesClientCharacterizationTest
 import dev.stapler.stelekit.asset.pipeline.AssetPluginsControllerTest
 import dev.stapler.stelekit.asset.pipeline.PluginRegistryTest
@@ -261,6 +262,7 @@ import dev.stapler.stelekit.export.ExportServiceLinkedPagesTest
 import dev.stapler.stelekit.git.GitCloneRetryCleanupTest
 import dev.stapler.stelekit.jobs.TrackedCopyRunHostTest
 import dev.stapler.stelekit.ui.GitSyncCoordinatorJobsTest
+import dev.stapler.stelekit.ui.GitSyncCoordinatorCoalesceTest
 import dev.stapler.stelekit.git.GitConfigCloneDepthMappingTest
 import dev.stapler.stelekit.git.GitOperationSupportClassifierTest
 import dev.stapler.stelekit.git.GitRepositoryUnshallowTest
@@ -268,6 +270,7 @@ import dev.stapler.stelekit.git.GitShadowWorktreeNoCoroutineScopeTest
 import dev.stapler.stelekit.git.GitSyncBusyCounterFetchOnlyTest
 import dev.stapler.stelekit.git.GitSyncServiceChangeBackTest
 import dev.stapler.stelekit.git.GitSyncServiceAutoMergeTest
+import dev.stapler.stelekit.git.SidecarConflictResolverTest
 import dev.stapler.stelekit.git.GitSyncServiceConflictResolutionTest
 import dev.stapler.stelekit.git.GitSyncServiceErrorRoutingTest
 import dev.stapler.stelekit.git.GitSyncServiceConflictMarkerGuardTest
@@ -313,6 +316,15 @@ import dev.stapler.stelekit.migration.ChangeApplierBranchesTest
 import dev.stapler.stelekit.migration.PostMigrationFlusherTest
 import dev.stapler.stelekit.git.GitSyncServiceLfsGuardTest
 import dev.stapler.stelekit.git.GitSyncServicePeriodicTest
+import dev.stapler.stelekit.git.SyncSingleFlightRegressionTest
+import dev.stapler.stelekit.git.GitSyncCancelBoundaryTest
+import dev.stapler.stelekit.git.GitSyncMergeUnitContainmentTest
+import dev.stapler.stelekit.git.GitSyncServiceSingleFlightTest
+import dev.stapler.stelekit.git.ResolveGateKeyFailureTest
+import dev.stapler.stelekit.git.SyncOriginTriggerMappingTest
+import dev.stapler.stelekit.git.SyncSingleFlightModelTest
+import dev.stapler.stelekit.git.GateKeyResolutionTest
+import dev.stapler.stelekit.git.GitSyncServiceRegistryTest
 import dev.stapler.stelekit.git.PeriodicSyncDriverTest
 import dev.stapler.stelekit.git.ConflictMarkerDiffScanTest
 import dev.stapler.stelekit.git.FirstSyncPreviewSourceTest
@@ -332,6 +344,43 @@ import dev.stapler.stelekit.git.UpdatesNotificationToggleTest
 import dev.stapler.stelekit.ui.FirstSyncPreviewLoaderTest
 import dev.stapler.stelekit.ui.GitSyncCoordinatorTest
 import dev.stapler.stelekit.git.GitLastSuccessSourceTest
+import dev.stapler.stelekit.git.ClockStepStartTimeTest
+import dev.stapler.stelekit.git.GateAssertingGitRepositoryTest
+import dev.stapler.stelekit.git.SyncInProgressConsumersTest
+import dev.stapler.stelekit.git.SyncInProgressUiConsumersTest
+import dev.stapler.stelekit.git.GitSyncOneShotConflictAuditTest
+import dev.stapler.stelekit.git.PausedRetryNowAndDurabilityTest
+import dev.stapler.stelekit.git.PausedRetryPolicyTest
+import dev.stapler.stelekit.git.GateBeforeWorktreeOrderTest
+import dev.stapler.stelekit.wiring.NoGateFallbackAuditTest
+import dev.stapler.stelekit.git.GitGateAuditTest
+import dev.stapler.stelekit.git.SyncObservabilityLogTest
+import dev.stapler.stelekit.audit.NewCodeAuditTest
+import dev.stapler.stelekit.audit.ScopeEscapeAuditTest
+import dev.stapler.stelekit.ux.ExitPathAuditTest
+import dev.stapler.stelekit.git.GateKeyAliasTest
+import dev.stapler.stelekit.git.LockRecoveryDecisionTest
+import dev.stapler.stelekit.git.PidNamespaceAbsentPidTest
+import dev.stapler.stelekit.git.EntryPointGateTest
+import dev.stapler.stelekit.git.RateLimitRetryGateTest
+import dev.stapler.stelekit.git.SyncStatusSheetModelPresentationTest
+import dev.stapler.stelekit.git.RepoOpGateReleaseStructureTest
+import dev.stapler.stelekit.git.ProcStatParserTest
+import dev.stapler.stelekit.git.LockRecoveryClaimTest
+import dev.stapler.stelekit.git.StaleLockRecoveryFollowUpTest
+import dev.stapler.stelekit.git.InstallIdTest
+import dev.stapler.stelekit.git.PrivateRootLockFilesTest
+import dev.stapler.stelekit.git.LockRecoveryReviewFixesTest
+import dev.stapler.stelekit.git.SyncSingleFlightCancellationTest
+import dev.stapler.stelekit.git.ActiveRunNotClearedOwnTest
+import dev.stapler.stelekit.git.RecoveryLockInProcessMutexTest
+import dev.stapler.stelekit.git.ForeignLockNewerThanDeadRecordTest
+import dev.stapler.stelekit.git.GitRepositoryDefaultsFailClosedTest
+import dev.stapler.stelekit.git.JvmGitRepositoryOwnedOperationTest
+import dev.stapler.stelekit.git.ForceRemoveRacesLiveRunTest
+import dev.stapler.stelekit.git.OwnerHeartbeatTest
+import dev.stapler.stelekit.git.RepoOpGateTest
+import dev.stapler.stelekit.git.TornRecordIsUnknownTest
 import dev.stapler.stelekit.git.GitSyncTaskMappingTest
 import dev.stapler.stelekit.git.GitSyncTaskRunnerPolicyTest
 import dev.stapler.stelekit.git.ScheduledSyncPolicyTest
@@ -502,6 +551,10 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.platform.diagnostics.ProcStatParserTest::class,
     dev.stapler.stelekit.platform.diagnostics.LogRedactorTest::class,
     dev.stapler.stelekit.ui.annotate.AnnotationEditorCrashGuardTest::class,
+    dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModelToolTest::class,
+    dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModelPlacementTest::class,
+    dev.stapler.stelekit.ui.annotate.StatusStripHintTest::class,
+    dev.stapler.stelekit.ui.annotate.AnnotationExporterPasteboardTest::class,
     dev.stapler.stelekit.ui.annotate.AnnotationPersistenceQueueTest::class,
     dev.stapler.stelekit.repository.MeasurementWritesPriorityTest::class,
     dev.stapler.stelekit.repository.SqlDelightMeasurementAnnotationWritesTest::class,
@@ -533,6 +586,12 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.ui.annotate.AnnotationViewTransformTest::class,
     dev.stapler.stelekit.ui.annotate.AnnotationGestureArbitrationTest::class,
     dev.stapler.stelekit.ui.annotate.AnnotationHitTestUnderTransformTest::class,
+    dev.stapler.stelekit.ui.annotate.AnnotationHitTestScaleTest::class,
+    dev.stapler.stelekit.ui.annotate.AnnotationPointClampTest::class,
+    dev.stapler.stelekit.ui.annotate.EditorChromePolicyTest::class,
+    dev.stapler.stelekit.ui.annotate.LoupeEdgeContainmentTest::class,
+    dev.stapler.stelekit.ui.annotate.PlacementClassifierTest::class,
+    dev.stapler.stelekit.ui.annotate.ToolPolicyTest::class,
     dev.stapler.stelekit.ui.components.CoilSeamTest::class,
     dev.stapler.stelekit.ui.components.ImageLoaderConstructionCountTest::class,
     dev.stapler.stelekit.db.FixtureGraphCountsTest::class,
@@ -579,6 +638,7 @@ import org.junit.runners.Suite
     EgressLedgerTest::class,
     GrantedConsentMintSiteAuditTest::class,
     EgressSurfaceAuditTest::class,
+    NonCancellableReturnAuditTest::class,
     AnthropicMessagesClientCharacterizationTest::class,
     AssetPluginsControllerTest::class,
     PluginHostRemovalAuditTest::class,
@@ -658,6 +718,7 @@ import org.junit.runners.Suite
     GitSyncBusyCounterFetchOnlyTest::class,
     GitSyncServiceChangeBackTest::class,
     GitSyncServiceAutoMergeTest::class,
+    SidecarConflictResolverTest::class,
     GitSyncServiceConflictResolutionTest::class,
     GitSyncServiceErrorRoutingTest::class,
     GitSyncServiceConflictMarkerGuardTest::class,
@@ -703,6 +764,15 @@ import org.junit.runners.Suite
     PostMigrationFlusherTest::class,
     GitSyncServiceLfsGuardTest::class,
     GitSyncServicePeriodicTest::class,
+    SyncSingleFlightRegressionTest::class,
+    GitSyncServiceSingleFlightTest::class,
+    GitSyncCancelBoundaryTest::class,
+    GitSyncMergeUnitContainmentTest::class,
+    ResolveGateKeyFailureTest::class,
+    SyncOriginTriggerMappingTest::class,
+    SyncSingleFlightModelTest::class,
+    GateKeyResolutionTest::class,
+    GitSyncServiceRegistryTest::class,
     PeriodicSyncDriverTest::class,
     ConflictMarkerDiffScanTest::class,
     GitSyncServiceChangeGuardsTest::class,
@@ -724,6 +794,43 @@ import org.junit.runners.Suite
     GitSyncTaskRunnerPolicyTest::class,
     GitSyncTaskMappingTest::class,
     GitLastSuccessSourceTest::class,
+    ClockStepStartTimeTest::class,
+    GateKeyAliasTest::class,
+    GateBeforeWorktreeOrderTest::class,
+    GateAssertingGitRepositoryTest::class,
+    SyncInProgressConsumersTest::class,
+    SyncInProgressUiConsumersTest::class,
+    GitSyncOneShotConflictAuditTest::class,
+    PausedRetryNowAndDurabilityTest::class,
+    PausedRetryPolicyTest::class,
+    NoGateFallbackAuditTest::class,
+    GitGateAuditTest::class,
+    SyncObservabilityLogTest::class,
+    NewCodeAuditTest::class,
+    ScopeEscapeAuditTest::class,
+    ExitPathAuditTest::class,
+    LockRecoveryDecisionTest::class,
+    PidNamespaceAbsentPidTest::class,
+    ProcStatParserTest::class,
+    LockRecoveryClaimTest::class,
+    StaleLockRecoveryFollowUpTest::class,
+    InstallIdTest::class,
+    PrivateRootLockFilesTest::class,
+    LockRecoveryReviewFixesTest::class,
+    SyncSingleFlightCancellationTest::class,
+    ActiveRunNotClearedOwnTest::class,
+    RecoveryLockInProcessMutexTest::class,
+    ForeignLockNewerThanDeadRecordTest::class,
+    GitRepositoryDefaultsFailClosedTest::class,
+    JvmGitRepositoryOwnedOperationTest::class,
+    ForceRemoveRacesLiveRunTest::class,
+    OwnerHeartbeatTest::class,
+    EntryPointGateTest::class,
+    RateLimitRetryGateTest::class,
+    SyncStatusSheetModelPresentationTest::class,
+    RepoOpGateReleaseStructureTest::class,
+    RepoOpGateTest::class,
+    TornRecordIsUnknownTest::class,
     ScheduledSyncPolicyTest::class,
     EditLockTest::class,
     ScheduledSyncStackE2ETest::class,
@@ -835,6 +942,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.ui.annotate.AnnotationEditorUnitTest::class,
     GoldenFileGuardTest::class,
     GitSyncCoordinatorJobsTest::class,
+    GitSyncCoordinatorCoalesceTest::class,
     dev.stapler.stelekit.ui.library.LibraryFilterRulesTest::class,
     dev.stapler.stelekit.ui.library.LibraryFilterRulesPropertyTest::class,
     dev.stapler.stelekit.ui.library.LibrarySearchTest::class,
@@ -1178,5 +1286,45 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.SheetAddSheetTest::class,
     dev.stapler.stelekit.ui.sketch.v2.ImportControllerTest::class,
     dev.stapler.stelekit.ui.sketch.v2.ExportDialogModelTest::class,
+    dev.stapler.stelekit.db.MeasurementValueMigrationTest::class,
+    dev.stapler.stelekit.repository.MeasurementOverridePersistenceTest::class,
+    dev.stapler.stelekit.db.sidecar.SidecarCompatTest::class,
+    dev.stapler.stelekit.db.sidecar.SidecarVersionTest::class,
+    dev.stapler.stelekit.db.sidecar.CaptureLensSidecarTest::class,
+    dev.stapler.stelekit.db.sidecar.LensRecordFocalSourceTest::class,
+    dev.stapler.stelekit.platform.sensor.LensClassifierTest::class,
+    dev.stapler.stelekit.platform.sensor.LensClassifierFixtureMatrixTest::class,
+    dev.stapler.stelekit.platform.sensor.CameraSessionTest::class,
+    dev.stapler.stelekit.platform.sensor.ProbingLensCatalogTest::class,
+    dev.stapler.stelekit.platform.sensor.CaptureLensRecordTest::class,
+    dev.stapler.stelekit.platform.sensor.CameraControlsStateTest::class,
+    dev.stapler.stelekit.platform.sensor.CapabilityProbeFormatTest::class,
+    dev.stapler.stelekit.audit.CameraBinderAuditTest::class,
+    dev.stapler.stelekit.db.sidecar.GoldenSidecarMeasurementIdentityTest::class,
+    dev.stapler.stelekit.db.sidecar.FrozenOldReaderDecodeTest::class,
+    dev.stapler.stelekit.calibration.AccuracyStudyVerdictTest::class,
+    dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModelValueEditTest::class,
+    dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModelConstraintTest::class,
+    dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModelPendingKnownDistanceTest::class,
+    dev.stapler.stelekit.calibration.HeightOffsetPlaneCompositionTest::class,
+    dev.stapler.stelekit.calibration.FocalSourceResolverTest::class,
+    dev.stapler.stelekit.calibration.GoldenSceneBaselineTest::class,
+    dev.stapler.stelekit.calibration.ConstraintAccuracyHarnessTest::class,
+    dev.stapler.stelekit.calibration.ConstraintCalibratorFailureTest::class,
+    dev.stapler.stelekit.calibration.ConstraintOutlierPropertyTest::class,
+    dev.stapler.stelekit.calibration.ConstraintCalibratorPropertyTest::class,
+    dev.stapler.stelekit.calibration.GradientIdentifiabilityTest::class,
+    dev.stapler.stelekit.calibration.GradientNoiseFalsePositiveRateTest::class,
+    dev.stapler.stelekit.calibration.GradientSignificanceTest::class,
+    dev.stapler.stelekit.calibration.GradientLooVetoTest::class,
+    dev.stapler.stelekit.calibration.CroppedFrameRefusalTest::class,
+    dev.stapler.stelekit.calibration.GradientDefaultOffTest::class,
+    dev.stapler.stelekit.calibration.OutOfModelRobustnessTest::class,
+    dev.stapler.stelekit.calibration.ConstraintStudyRunnerTest::class,
+    dev.stapler.stelekit.calibration.ConstraintFitApplierTest::class,
+    dev.stapler.stelekit.model.CalibrationConstraintCodecTest::class,
+    dev.stapler.stelekit.ui.annotate.MeasurementValueEditTest::class,
+    dev.stapler.stelekit.ui.annotate.CalibrationHistoryTest::class,
+    dev.stapler.stelekit.ui.annotate.CalibrationStatePresenterTest::class,
 )
 class AllBusinessTests

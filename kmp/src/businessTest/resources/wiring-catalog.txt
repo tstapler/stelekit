@@ -20,3 +20,4 @@ SketchDurability  WiringV2DesktopEntryPointTest  effect:sketch-durability-consul
 PalmClassifier  SketchPlatformInputAndroidEntryPointTest  effect:palm-contact-rejected-android
 PointerCancelDetector  SketchPlatformInputAndroidEntryPointTest  effect:pointer-cancel-detected-android
 EdgeGestureExclusion  SketchPlatformInputAndroidEntryPointTest  effect:edge-exclusion-claimed-android
+CameraLensCatalog  CameraLensCatalogEntryPointTest  effect:camera-lens-list

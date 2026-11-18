@@ -18,15 +18,18 @@ import dev.stapler.stelekit.platform.security.CredentialStore
  * remote-tracking refs and never touches the working tree, so no shadow write-back happens here. The
  * user's next foreground merge surfaces fetched changes into SAF.
  */
-class AndroidColdPathRunner(private val context: Context) : ColdPathRunner {
+class AndroidColdPathRunner(private val context: Context, private val gate: RepoOpGate) : ColdPathRunner {
     override suspend fun run(graphId: String): TickOutcome {
         CredentialStore.init(context)
         DriverFactory.setContext(context)
+        val repository = AndroidGitRepository(context = context, fileSystem = PlatformFileSystem())
         val outcome = runColdFetch(
             loadConfig = { loadGitConfigFromDb(graphId) },
-            gitRepository = AndroidGitRepository(context = context, fileSystem = PlatformFileSystem()),
+            gitRepository = repository,
             staleness = SyncStalenessStore(PlatformSettings()),
             clock = { System.currentTimeMillis() },
+            gate = gate,
+            gateKeyFor = repository::gateKeyFor,
         )
         return outcome.toTickOutcome()
     }
@@ -35,6 +38,6 @@ class AndroidColdPathRunner(private val context: Context) : ColdPathRunner {
 /** No git config row means there is nothing to fetch: a deliberate skip, not a failure (matches the old `Result.success()`). */
 internal fun ColdSyncOutcome.toTickOutcome(): TickOutcome = when (this) {
     is ColdSyncOutcome.Fetched -> TickOutcome.Fetched
-    is ColdSyncOutcome.Error -> TickOutcome.Failure(cause::class.simpleName ?: "GitError", cause)
+    is ColdSyncOutcome.Error -> cause.toSkipOrFailure() ?: TickOutcome.Failure(cause::class.simpleName ?: "GitError", cause)
     ColdSyncOutcome.NoConfig -> TickOutcome.Skip(SkipReason.Policy(ScheduledSkipReason.RepoState))
 }

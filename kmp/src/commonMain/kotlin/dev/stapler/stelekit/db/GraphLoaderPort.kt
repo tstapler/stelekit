@@ -35,6 +35,12 @@ interface GraphLoaderPort {
     fun setUnsavedPageUuids(uuids: StateFlow<Set<String>>?)
 
     /**
+     * The user resolved a disk-vs-DB difference for [filePath] (e.g. "keep local"), so the pre-write
+     * guard must stop blocking the next save. No-op for loaders that do not track applied state.
+     */
+    suspend fun acknowledgeDiskContent(filePath: String) {}
+
+    /**
      * Emitted when the file watcher detects an external modification to a file.
      */
     val externalFileChanges: SharedFlow<ExternalFileChange>

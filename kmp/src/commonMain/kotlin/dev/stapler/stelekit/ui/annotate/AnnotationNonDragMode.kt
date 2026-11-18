@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.model.NormalizedPoint
@@ -79,6 +80,7 @@ fun AnnotationPlacementControls(
             NudgePad(
                 step = step,
                 isMove = session.moving != null,
+                atEdge = session::atEdge,
                 onStep = { step = it },
                 onNudge = { onNudge(it, step) },
                 onConfirm = onConfirm,
@@ -98,6 +100,7 @@ fun AnnotationPlacementControls(
 private fun NudgePad(
     step: NudgeStep,
     isMove: Boolean,
+    atEdge: (NudgeDirection) -> Boolean,
     onStep: (NudgeStep) -> Unit,
     onNudge: (NudgeDirection) -> Unit,
     onConfirm: () -> Unit,
@@ -115,15 +118,15 @@ private fun NudgePad(
                 )
             }
         }
-        NudgeButton(NudgeDirection.UP, step, onNudge)
+        NudgeButton(NudgeDirection.UP, step, onNudge, atEdge(NudgeDirection.UP))
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-            NudgeButton(NudgeDirection.LEFT, step, onNudge)
+            NudgeButton(NudgeDirection.LEFT, step, onNudge, atEdge(NudgeDirection.LEFT))
             Button(onClick = onConfirm, modifier = Modifier.size(width = PAD_CELL * 2, height = PAD_CELL)) {
                 Text(if (isMove) "Apply" else "Place point")
             }
-            NudgeButton(NudgeDirection.RIGHT, step, onNudge)
+            NudgeButton(NudgeDirection.RIGHT, step, onNudge, atEdge(NudgeDirection.RIGHT))
         }
-        NudgeButton(NudgeDirection.DOWN, step, onNudge)
+        NudgeButton(NudgeDirection.DOWN, step, onNudge, atEdge(NudgeDirection.DOWN))
         TextButton(onClick = onCancel, modifier = Modifier.size(width = PAD_CELL * 2, height = PAD_CELL)) {
             Text(if (isMove) "Cancel move" else "Cancel")
         }
@@ -131,10 +134,20 @@ private fun NudgePad(
 }
 
 @Composable
-private fun NudgeButton(direction: NudgeDirection, step: NudgeStep, onNudge: (NudgeDirection) -> Unit, modifier: Modifier = Modifier) {
+private fun NudgeButton(
+    direction: NudgeDirection,
+    step: NudgeStep,
+    onNudge: (NudgeDirection) -> Unit,
+    atEdge: Boolean,
+    modifier: Modifier = Modifier,
+) {
     FilledTonalButton(
         onClick = { onNudge(direction) },
-        modifier = modifier.size(PAD_CELL).semantics { contentDescription = nudgeDescription(direction, step) },
+        enabled = !atEdge,
+        modifier = modifier.size(PAD_CELL).semantics {
+            contentDescription = nudgeDescription(direction, step)
+            if (atEdge) stateDescription = AT_IMAGE_EDGE_DESCRIPTION
+        },
     ) { Text(direction.arrow()) }
 }
 
