@@ -97,9 +97,8 @@ statement is made; the new editor is compile-only and storage-unavailable there.
 
 1. Settings > Sketches > mode: Off. (Code: set `sketch.engine.v2` to `Off`; v2 sheets then render read-only, no data conversion needed.)
 2. To get an upgraded sheet's v1 content back, run Restore original on that sheet (`SketchBackupRestore`, Story 6.2.6): it copies
-   `backup/<uuid>.v1.json` to `sheets/<uuid>.json`, removes `sheets/<uuid>.v2.json`, rewrites the model reference and `fileSha256` in one
-   model write, and keeps the new-editor version as `backup/<uuid>.v2-before-restore.json`. It is a tested function, not a manual file copy.
-3. Code revert is a standard PR revert; a revert never touches written sheets.
+   `backup/<uuid>.v1.json` to `sheets/<uuid>.json`, replaces the database rows with the v1 scene, rewrites the model reference and `fileSha256`, moves the reconcile base, and only then removes `sheets/<uuid>.v2.json` (a crash at any step leaves disk and database consistent; the backup is the v1 encoding of the scene the user saw when they tapped Upgrade), and keeps the new-editor version as `backup/<uuid>.v2-before-restore.json`. It is a tested function, not a manual file copy.
+3. Do NOT use a code revert as the rollback once any graph has upgraded a sketch: a revert never touches written sheets, so an older build cannot open every sheet of such a project (v2 files fail closed), and Restore original disappears with the code. The supported rollback is step 1 (mode Off) plus step 2 per sheet; revert only before any graph has switched to NewProjectsOnly or On.
 4. Log any loss in `quality-signals.md` (data-loss log) with its regression test, and halt the release until the test exists.
 
 ### Checklist (each is checked by the owner before the release-please PR is merged)
