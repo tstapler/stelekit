@@ -109,12 +109,14 @@ class LargeSceneDegradationPolicyTest {
     }
 
     @Test
-    fun assess_should_MarkATargetUnavailable_When_PixelsMissToleranceOrBuildIsOverTwiceClean() {
-        val ok = SketchyMeasurement(0.001, sketchyBuildNanos = 150, cleanBuildNanos = 100)
+    fun assess_should_MarkATargetUnavailable_When_PixelsMissToleranceOrTheBuildIsOverTheAbsoluteBudget() {
+        val budgetNanos = (SketchyAvailability.SKETCHY_BUILD_BUDGET_MS * NANOS_PER_MILLI).toLong()
+        val ok = SketchyMeasurement(0.001, sketchyBuildNanos = budgetNanos, cleanBuildNanos = 100)
         assertSame(SketchyStatus.Available, SketchyAvailability.assess(ok))
         assertIs<SketchyStatus.Unavailable>(SketchyAvailability.assess(ok.copy(pixelDiffFraction = SketchyAvailability.PIXEL_TOLERANCE_FRACTION + 0.001)))
-        assertIs<SketchyStatus.Unavailable>(SketchyAvailability.assess(ok.copy(sketchyBuildNanos = 201)))
-        assertSame(SketchyStatus.Available, SketchyAvailability.assess(ok.copy(sketchyBuildNanos = 200)))
+        assertIs<SketchyStatus.Unavailable>(SketchyAvailability.assess(ok.copy(sketchyBuildNanos = budgetNanos + 1)))
+        // The Sketchy/Clean ratio is informational only (owner decision 2026-11-17): a 1000x ratio under the budget stays Available.
+        assertSame(SketchyStatus.Available, SketchyAvailability.assess(ok.copy(sketchyBuildNanos = 100_000, cleanBuildNanos = 100)))
     }
 
     @Test
@@ -130,8 +132,11 @@ class LargeSceneDegradationPolicyTest {
     }
 
     @Test
-    fun recordedTargets_should_DrawSketchy_ExceptWhereAMeasurementSaidOtherwise() {
-        for (target in SketchTarget.entries - SketchTarget.Web) assertSame(SketchyStatus.Available, SketchyAvailability().status(target), "$target")
-        assertIs<SketchyStatus.Unavailable>(SketchyAvailability().status(SketchTarget.Web))
+    fun recordedTargets_should_DrawSketchyEverywhere_WhenNoMeasurementSaidOtherwise() {
+        for (target in SketchTarget.entries) assertSame(SketchyStatus.Available, SketchyAvailability().status(target), "$target")
+    }
+
+    private companion object {
+        const val NANOS_PER_MILLI = 1_000_000.0
     }
 }
