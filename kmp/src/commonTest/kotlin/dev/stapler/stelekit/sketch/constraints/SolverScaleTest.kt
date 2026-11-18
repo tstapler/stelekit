@@ -6,7 +6,11 @@
 package dev.stapler.stelekit.sketch.constraints
 
 import dev.stapler.stelekit.sketch.constraints.constraints.AngleDimension
+import dev.stapler.stelekit.sketch.constraints.constraints.DistanceDimension
 import dev.stapler.stelekit.sketch.constraints.constraints.FixedPoint
+import dev.stapler.stelekit.sketch.constraints.constraints.Horizontal
+import dev.stapler.stelekit.sketch.constraints.constraints.Parallel
+import dev.stapler.stelekit.sketch.constraints.constraints.Perpendicular
 import dev.stapler.stelekit.sketch.constraints.constraints.PointLineDistance
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -47,6 +51,31 @@ class SolverScaleTest {
         val solved = Solver().solve(problem, doubleArrayOf(0.0, 0.0, 10.0, 0.0, 5.0, 0.0))
         assertTrue(solved is SolveResult.Solved, "got ${solved::class.simpleName}")
         assertTrue(abs(abs(solved.x[5]) - 3.0) < 1e-6, "distance reached: y = ${solved.x[5]}")
+    }
+
+    /** A 100 x 50 rectangle (a, b, c, d) pinned at `(offset, offset)`, started 0.4 off, solved at that offset. */
+    private fun rectangleSolve(offset: Double): SolveResult {
+        val problem = ConstraintProblem(
+            listOf(
+                FixedPoint("pin", 0, offset, offset), Horizontal("h", 0, 2), DistanceDimension("w", 0, 2, 100.0),
+                Perpendicular("perp", 0, 2, 2, 4), DistanceDimension("ht", 2, 4, 50.0),
+                Parallel("par", 4, 6, 0, 2), DistanceDimension("w2", 4, 6, 100.0),
+            ),
+            variableCount = 8,
+        )
+        val start = doubleArrayOf(0.0, 0.0, 99.6, 0.4, 100.4, 49.6, -0.4, 50.4).also { for (i in it.indices) it[i] += offset }
+        return Solver().solve(problem, start)
+    }
+
+    @Test
+    fun solve_should_ConvergeToTheSameShape_When_TheSketchIsFarFromTheOrigin() {
+        val atOrigin = rectangleSolve(0.0)
+        assertTrue(atOrigin is SolveResult.Solved, "origin: ${atOrigin::class.simpleName}")
+        for (offset in listOf(1e5, 1e7, -1e7, 2.5e8)) {
+            val far = rectangleSolve(offset)
+            assertTrue(far is SolveResult.Solved, "offset $offset: ${far::class.simpleName} residual ${far.residualInf}")
+            for (i in far.x.indices) assertTrue(abs((far.x[i] - offset) - atOrigin.x[i]) < 1e-6, "offset $offset var $i: ${far.x[i] - offset} vs ${atOrigin.x[i]}")
+        }
     }
 
     private companion object {

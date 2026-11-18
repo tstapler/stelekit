@@ -160,6 +160,9 @@ kt_android_library(
             "**/SuccessFeedbackTest.kt",
             # Mounts the v2 host over the commonTest rig for keyboard-only drawing and the Esc rows (Gradle-only, no Compose plugin or commonTest here)
             "**/KeyboardAccessHostTest.kt",
+            # Tasks 6.2.4h/6.2.4f: mount the v2 host over the commonTest V2EditorRig (composeRule; not on this target's classpath) (Gradle-only)
+            "**/EscOrderIntegrationTest.kt",
+            "**/BracketPlateUxScenarioTest.kt",
             # Compose host tests for the sync status sheet/badge (Gradle-only; Density inline fails the Bazel backend)
             "**/SyncStatusSheetStatesTest.kt",
             "**/SyncStatusBadgeTest.kt",
