@@ -360,6 +360,9 @@ class SketchEditorController(
     fun onConflictAction(action: ConflictAction) =
         constraintState.onAction(action, { submit(it, solve = true) }) { constraints.highlighted = it }
 
+    /** Solves [submit] queued and not yet finished; a host test waits for 0 because the canvas going idle does not wait for a solve on the solver dispatcher. */
+    internal val pendingSolves: StateFlow<Int> get() = pending
+
     /** Saves what the editor holds now (leaving the sheet, a hidden page) and returns where that left the file. */
     suspend fun flush(): SaveState = saves.flush()
 

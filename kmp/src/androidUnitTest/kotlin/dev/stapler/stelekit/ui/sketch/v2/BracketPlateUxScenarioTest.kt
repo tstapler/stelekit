@@ -28,6 +28,7 @@ import dev.stapler.stelekit.sketch.v2.scene.LineElement
 import dev.stapler.stelekit.sketch.v2.text.FixedAdvanceTextMetricsProvider
 import dev.stapler.stelekit.ui.sketch.ModernPreviewEnvironment
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
@@ -95,8 +96,10 @@ class BracketPlateUxScenarioTest {
         rule.setContent { SketchEditorV2Host(session, ModernPreviewEnvironment(metrics, PainterResources()), onBack = {}) }
         rule.waitForIdle()
         rule.onNodeWithTag(ShellTags.CANVAS).requestFocus()
-        return Plate(session)
+        return Plate(session).also { mounted = it }
     }
+
+    private var mounted: Plate? = null
 
     private fun drag(from: Offset, to: Offset) {
         rule.onNodeWithTag(HostTags.CANVAS_INPUT).performMouseInput {
@@ -107,6 +110,8 @@ class BracketPlateUxScenarioTest {
             release()
         }
         rule.waitForIdle()
+        // Once the outline has constraints a drawn shape is committed through the async solve gate; waitForIdle does not wait for it.
+        mounted?.let { runBlocking { it.controller.pendingSolves.first { n -> n == 0 } } }
     }
 
     private fun key(key: Key) {
