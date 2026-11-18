@@ -18,10 +18,6 @@ import dev.stapler.stelekit.sketch.v2.codec.SheetCodecV2
 import dev.stapler.stelekit.sketch.v2.image.ImageFileId
 import dev.stapler.stelekit.sketch.v2.image.ImageHeaderProbe
 import dev.stapler.stelekit.sketch.v2.image.ReferencedAssets
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 
 /** One image file of a sketch: its name under the graph's `assets/` folder (`<fileId>.<ext>`) and bytes. */
 class SketchAsset(val fileName: String, val bytes: ByteArray)
@@ -36,24 +32,9 @@ class SketchBundle(
     val assets: List<SketchAsset>,
     val missingAssets: List<String>,
 ) {
-    /** The same bundle under another slug; the model's own `slug` field is rewritten, nothing else changes. */
-    fun renamed(newSlug: String): Either<DomainError, SketchBundle> {
-        val model = files[SidecarCodec.MODEL_PATH] ?: return DomainError.FileSystemError.NotFound(SidecarCodec.MODEL_PATH).left()
-        val rewritten = try {
-            val obj = Json.parseToJsonElement(model.decodeToString()) as JsonObject
-            val next = JsonObject(obj + ("slug" to JsonPrimitive(newSlug)))
-            (PRETTY.encodeToString(JsonElement.serializer(), next) + "\n").encodeToByteArray()
-        } catch (e: IllegalArgumentException) {
-            return DomainError.FileSystemError.ReadFailed(SidecarCodec.MODEL_PATH, e.message ?: "model is not JSON").left()
-        } catch (e: ClassCastException) {
-            return DomainError.FileSystemError.ReadFailed(SidecarCodec.MODEL_PATH, e.message ?: "model is not an object").left()
-        }
-        return SketchBundle(newSlug, files + (SidecarCodec.MODEL_PATH to rewritten), assets, missingAssets).right()
-    }
-
-    private companion object {
-        val PRETTY = Json { prettyPrint = true }
-    }
+    /** The same bundle as a separate project under another slug: its project, sheet and element uuids and sheet file names are remapped too. */
+    fun renamed(newSlug: String): Either<DomainError, SketchBundle> =
+        SketchBundleRemap.remap(files, newSlug).map { SketchBundle(newSlug, it, assets, missingAssets) }
 }
 
 /** What a [SketchBundleWriter] did. A refusal writes nothing. */
@@ -98,6 +79,8 @@ class SketchBundleFiles(private val fs: FileSystem, graphRoot: String) {
         fun fail(path: String): Either<DomainError, SketchBundleOutcome> {
             created.asReversed().forEach { fs.deleteFile(it) }
             createdDirs.asReversed().forEach { fs.deleteFile(it) }
+            // `dir` did not exist when this call began, and creating a nested folder creates it too: leaving it would make every retry SlugExists.
+            fs.deleteFile(dir)
             return DomainError.FileSystemError.WriteFailed(path, "could not write the sketch bundle").left()
         }
         fun put(path: String, bytes: ByteArray): Boolean {

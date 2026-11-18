@@ -18,11 +18,15 @@ import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.GraphRegistry
 import dev.stapler.stelekit.platform.Settings
+import dev.stapler.stelekit.model.ProjectBundle
+import dev.stapler.stelekit.model.SheetPayload
 import dev.stapler.stelekit.projectbridge.ProjectSidecarStore
+import dev.stapler.stelekit.projectbridge.SidecarCodec
 import dev.stapler.stelekit.projectbridge.RetentionPolicy
 import dev.stapler.stelekit.projectbridge.SidecarRead
 import dev.stapler.stelekit.projectbridge.SidecarWriteOutcome
 import dev.stapler.stelekit.repository.GraphBackend
+import dev.stapler.stelekit.repository.SketchTestSupport
 import dev.stapler.stelekit.sketch.v2.codec.SheetCodecV2
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.scene.ElementBase
@@ -181,7 +185,7 @@ class SketchBundleCopyTest {
     @Test
     fun copy_should_RefuseAnExistingSlug_ChangeNothing_And_OfferRename() = realTime {
         val m = newManager().also { it.awaitPendingMigration() }
-        val f = fixture(m)
+        val f = fixture(m, source = validFiles())
         f.copy.copy("kitchen", b).ok()
         val before = f.targetFs.readFileBytes("/data/${b.value}/assets/stelekit-sketch/kitchen/project-model.json")!!
 
@@ -195,8 +199,38 @@ class SketchBundleCopyTest {
 
         val renamed = f.copy.copy("kitchen", b, asSlug = "kitchen-2").ok()
         assertEquals("kitchen-2", renamed.slug)
-        val renamedModel = f.targetFs.readFileBytes("/data/${b.value}/assets/stelekit-sketch/kitchen-2/project-model.json")!!.decodeToString()
-        assertTrue("\"slug\": \"kitchen-2\"" in renamedModel, renamedModel)
+    }
+
+    private fun validFiles(): Map<String, ByteArray> {
+        val sheet = SketchTestSupport.sheet("s1").copy(schemaVersion = 2)
+        val bundle = ProjectBundle(
+            SketchTestSupport.project(slug = "kitchen"), listOf(sheet), emptyList(), emptyList(),
+            mapOf(sheet.uuid to SheetPayload.V2Opaque.of(sheetBytes())),
+        )
+        return SidecarCodec.encode(bundle)
+    }
+
+    @Test
+    fun renameAndCopy_should_GiveTheCopyItsOwnProjectAndSheetIdentity_SoTwoSlugsNeverCollide() = realTime {
+        val m = newManager().also { it.awaitPendingMigration() }
+        val f = fixture(m, source = validFiles())
+        f.copy.copy("kitchen", b).ok()
+        f.copy.copy("kitchen", b, asSlug = "kitchen-2").ok()
+
+        fun decoded(slug: String) = SidecarCodec.decode(
+            f.targetFs.allFilePaths().filter { it.contains("/stelekit-sketch/$slug/") }
+                .associate { it.substringAfter("/stelekit-sketch/$slug/") to f.targetFs.readFileBytes(it)!! },
+        ).getOrNull()!!
+        val first = decoded("kitchen")
+        val second = decoded("kitchen-2")
+
+        assertEquals("kitchen-2", second.project.slug)
+        assertTrue(first.project.uuid != second.project.uuid, "the project uuid is not reused")
+        assertTrue(first.sheets.single().uuid != second.sheets.single().uuid, "the sheet uuid is not reused")
+        val secondSheet = second.sheets.single().uuid
+        assertTrue(f.targetFs.fileExists("/data/${b.value}/assets/stelekit-sketch/kitchen-2/sheets/${secondSheet.value}.v2.json"), "the sheet file follows the new uuid")
+        val doc = SheetCodecV2.decode((second.sheetPayloads.getValue(secondSheet) as SheetPayload.V2Opaque).bytes).getOrNull()!!
+        assertEquals(secondSheet.value, doc.sheetUuid, "the uuid inside the v2 file follows too")
     }
 
     @Test
@@ -240,6 +274,31 @@ class SketchBundleCopyTest {
         assertEquals(listOf(SketchCopyAction.Open(SketchOpenTarget(b, "kitchen")), SketchCopyAction.Done), dialog.actions)
         assertTrue(dialog.detail!!.contains("1 image"))
         assertEquals(null, SketchCopyDialogModel.of("kitchen", "B", ok.copy(missingAssets = emptyList()).right()).detail)
+    }
+
+    @Test
+    fun bundleFiles_should_AllowARetry_AfterAFailedWriteRolledBack() {
+        class FlakyModelFs : FakeRelocationFileSystem() {
+            var failModel = true
+
+            /** Like `mkdirs`: creating a nested folder creates every parent too. */
+            override fun createDirectory(path: String): Boolean {
+                var p = path
+                while (p.contains('/') && p.length > 1) { super.createDirectory(p); p = p.substringBeforeLast('/') }
+                return true
+            }
+
+            override fun writeFileBytes(path: String, data: ByteArray): Boolean =
+                !(failModel && path.endsWith("project-model.json")) && super.writeFileBytes(path, data)
+        }
+        val fs = FlakyModelFs()
+        val bundle = SketchBundle("kitchen", files(), listOf(SketchAsset("$f1.png", png)), emptyList())
+
+        assertIs<DomainError.FileSystemError.WriteFailed>(SketchBundleFiles(fs, "/data/b").write(bundle).err())
+        fs.failModel = false
+        val retry = SketchBundleFiles(fs, "/data/b").write(bundle).ok()
+
+        assertIs<SketchBundleOutcome.Created>(retry)
     }
 
     @Test
