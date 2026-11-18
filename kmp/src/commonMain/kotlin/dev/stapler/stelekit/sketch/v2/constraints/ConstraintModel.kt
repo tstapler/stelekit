@@ -12,7 +12,13 @@ import dev.stapler.stelekit.sketch.v2.commands.Applied
 import dev.stapler.stelekit.sketch.v2.commands.Command
 import dev.stapler.stelekit.sketch.v2.commands.CommandError
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
+import dev.stapler.stelekit.sketch.v2.scene.ArcElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
+import dev.stapler.stelekit.sketch.v2.scene.EllipseElement
+import dev.stapler.stelekit.sketch.v2.scene.LineElement
+import dev.stapler.stelekit.sketch.v2.scene.PointElement
+import dev.stapler.stelekit.sketch.v2.scene.RectElement
+import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
 import kotlin.jvm.JvmInline
 
 /** Stable id of a constraint; survives save, load, undo and redo. Never contains `#` (equation ids use it as a separator). */
@@ -146,11 +152,21 @@ data class Constraint(
     }
 }
 
-/** Constraints whose every operand still exists; the cascade of deleting geometry (Story 4.2.1, UX-38). */
+/**
+ * Constraints whose every operand still exists AND still has the part the constraint names (a vertex a line no longer
+ * has); the cascade of deleting geometry (Story 4.2.1, UX-38) and of editing its vertices.
+ */
 fun SketchDocumentV2.withoutOrphans(): SketchDocumentV2 {
     if (constraints.isEmpty()) return this
-    val kept = constraints.filter { c -> c.targets.all { it.elementId in scene } }
+    val kept = constraints.filter { c -> c.targets.all { operandStillExists(scene, it) } }
     return if (kept.size == constraints.size) this else copy(constraints = kept)
+}
+
+private fun operandStillExists(scene: SketchSceneV2, t: ConstraintTarget): Boolean {
+    val element = scene[t.elementId] ?: return false
+    val partsApply = element is LineElement || element is RectElement || element is ArcElement || element is PointElement ||
+        (element is EllipseElement && element.isCircle)
+    return !partsApply || ConstraintParts.roleOf(element, t.part) != null
 }
 
 /** How many constraints [after] lost against [before] (the count in the deletion toast, UX-38). */

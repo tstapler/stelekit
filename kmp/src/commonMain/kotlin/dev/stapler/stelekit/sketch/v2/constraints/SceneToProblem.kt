@@ -83,6 +83,8 @@ class SceneProblem internal constructor(
     private val bindings: List<ElementBinding>,
     private val dimensions: Map<ConstraintId, DimensionalEquation>,
     private val limits: SceneLimits,
+    /** Constraints left out of the problem because they could not be built (only when built with `skipInvalid`). */
+    val skipped: List<ConstraintId> = emptyList(),
 ) {
     /** The value a dimensional constraint currently measures at [x]; null for a constraint that is not dimensional. */
     fun measure(id: ConstraintId, x: DoubleArray = start): Double? = dimensions[id]?.measure(x)
@@ -122,16 +124,32 @@ class SceneProblem internal constructor(
 data class SolvedScene(val scene: SketchSceneV2, val result: SolveResult)
 
 object SceneToProblem {
-    /** Builds the problem of [constraints] over [scene]; the first constraint that cannot be built is the error. */
-    fun build(scene: SketchSceneV2, constraints: List<Constraint>): Either<CommandError, SceneProblem> = either {
+    /**
+     * Builds the problem of [constraints] over [scene]; the first constraint that cannot be built is the error. With
+     * [skipInvalid] such a constraint is instead left out and named in [SceneProblem.skipped], so one bad constraint
+     * (for example one stored for a vertex that no longer exists) cannot fail every later solve.
+     */
+    fun build(scene: SketchSceneV2, constraints: List<Constraint>, skipInvalid: Boolean = false): Either<CommandError, SceneProblem> = either {
         val builder = Builder(scene)
-        for (c in constraints) builder.add(c).bind()
+        val skipped = ArrayList<ConstraintId>()
+        for (c in constraints) {
+            if (!skipInvalid) {
+                builder.add(c).bind()
+                continue
+            }
+            val mark = builder.mark()
+            if (builder.add(c).isLeft()) {
+                builder.rollback(mark)
+                skipped += c.id
+            }
+        }
         SceneProblem(
             ConstraintProblem(builder.equations, builder.values.size),
             builder.values.toDoubleArray(),
             builder.bindings.values.toList(),
             builder.dimensions,
             scene.limits,
+            skipped,
         )
     }
 
@@ -302,6 +320,18 @@ private class Builder(private val scene: SketchSceneV2) {
     val bindings = LinkedHashMap<ElementId, ElementBinding>()
     val equations = ArrayList<ConstraintEquation>()
     val dimensions = LinkedHashMap<ConstraintId, DimensionalEquation>()
+
+    class Mark(val values: Int, val equations: Int, val bindings: Int, val dimensions: Int)
+
+    fun mark() = Mark(values.size, equations.size, bindings.size, dimensions.size)
+
+    /** Undoes whatever a failed [add] left behind since [mark]. */
+    fun rollback(mark: Mark) {
+        while (values.size > mark.values) values.removeAt(values.lastIndex)
+        while (equations.size > mark.equations) equations.removeAt(equations.lastIndex)
+        bindings.keys.drop(mark.bindings).forEach { bindings.remove(it) }
+        dimensions.keys.drop(mark.dimensions).forEach { dimensions.remove(it) }
+    }
 
     private fun point(px: Double, py: Double): Int {
         val index = values.size

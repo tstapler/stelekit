@@ -945,6 +945,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.ElementNameTest::class,
     dev.stapler.stelekit.sketch.v2.LayersModelTest::class,
     dev.stapler.stelekit.sketch.v2.AlignCommandsTest::class,
+    dev.stapler.stelekit.sketch.v2.StaleConstraintRepairTest::class,
+    dev.stapler.stelekit.sketch.v2.ReconcileScaleTest::class,
     dev.stapler.stelekit.sketch.v2.ObjectSnapTest::class,
     dev.stapler.stelekit.sketch.v2.ElementLibraryTest::class,
     dev.stapler.stelekit.sketch.v2.StylePanelModelTest::class,

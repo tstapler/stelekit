@@ -28,7 +28,7 @@ import kotlinx.coroutines.flow.update
 import kotlin.math.abs
 
 /** What a finished solve reports (the status line): degrees of freedom, effort and any redundant constraints. */
-data class SolveSummary(val dof: Int, val iterations: Int, val algorithm: SolveAlgorithm?, val redundant: List<ConstraintId>)
+data class SolveSummary(val dof: Int, val iterations: Int, val algorithm: SolveAlgorithm?, val redundant: List<ConstraintId>, val skipped: List<ConstraintId> = emptyList())
 
 /** The edit and its solve as one open transaction, so committing it is one history step. */
 internal class Piped(val tx: Transaction, val summary: SolveSummary?)
@@ -53,13 +53,13 @@ internal class SolvePipeline(
         val edited = Transaction.begin(before).apply(edit).getOrElse { return SolveRejection.EditFailed(it).left() }
         val doc = edited.doc
         if (tier == SolverTier.Hidden || doc.constraints.isEmpty()) return Piped(edited, null).right()
-        val problem = SceneToProblem.build(doc.scene, doc.constraints).getOrElse { return SolveRejection.EditFailed(it).left() }
+        val problem = SceneToProblem.build(doc.scene, doc.constraints, skipInvalid = true).getOrElse { return SolveRejection.EditFailed(it).left() }
         val attempt = solve(before, doc, problem)
         val result = attempt.result
         if (result !is SolveResult.Solved && result !is SolveResult.Redundant) {
             return SolveRejection.Unsatisfiable(unsatisfiedIds(result), kindOf(result)).left()
         }
-        val summary = SolveSummary(result.dof, result.iterations + attempt.anchoredIterations, result.algorithm ?: attempt.anchoredAlgorithm, redundantOf(result))
+        val summary = SolveSummary(result.dof, result.iterations + attempt.anchoredIterations, result.algorithm ?: attempt.anchoredAlgorithm, redundantOf(result), problem.skipped)
         val applied = applied(doc, problem, result.x).getOrElse { return SolveRejection.EditFailed(it).left() }
         val next = edited.apply(Command { Applied(applied.doc, applied.changedIds).right() }).getOrElse { return SolveRejection.EditFailed(it).left() }
         return Piped(next, summary).right()
@@ -88,7 +88,7 @@ internal class SolvePipeline(
 
     /** Variables whose value the edit left alone (to within solver noise), found by laying the same constraints over the scene before the edit. */
     private fun unchangedVariables(before: SketchDocumentV2, doc: SketchDocumentV2, problem: SceneProblem): List<Int> {
-        val old = SceneToProblem.build(before.scene, doc.constraints).getOrNull() ?: return emptyList()
+        val old = SceneToProblem.build(before.scene, doc.constraints, skipInvalid = true).getOrNull() ?: return emptyList()
         if (old.problem.variableCount != problem.problem.variableCount || old.elementIds != problem.elementIds) return emptyList()
         return problem.start.indices.filter { abs(old.start[it] - problem.start[it]) <= ANCHOR_TOLERANCE }
     }

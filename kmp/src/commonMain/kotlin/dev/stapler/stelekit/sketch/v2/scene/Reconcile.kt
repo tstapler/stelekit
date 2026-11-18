@@ -72,7 +72,8 @@ fun reconcile(scene: SketchSceneV2): ReconcileResult {
 
     for (id in scene.order) byId[id] = repairOwnReferences(byId.getValue(id), byId, reasons)
     pruneSingletonGroups(byId, reasons)
-    for (id in scene.order) byId[id] = repairBoundElements(byId.getValue(id), byId, reasons)
+    val expectedRefs = expectedRefsByContainer(byId)
+    for (id in scene.order) byId[id] = repairBoundElements(byId.getValue(id), byId, expectedRefs[id].orEmpty(), reasons)
 
     var result = scene
     val changed = LinkedHashSet<ElementId>()
@@ -153,19 +154,29 @@ private fun pruneSingletonGroups(byId: MutableMap<ElementId, SceneElement>, reas
     }
 }
 
-private fun repairBoundElements(e: SceneElement, byId: Map<ElementId, SceneElement>, reasons: MutableList<ReconcileReason>): SceneElement {
+/** Every arrow bound to, and every label contained by, each element, in scene order: one pass instead of one scan per container. */
+private fun expectedRefsByContainer(byId: Map<ElementId, SceneElement>): Map<ElementId, Map<ElementId, BoundKind>> {
+    val out = HashMap<ElementId, LinkedHashMap<ElementId, BoundKind>>()
+    fun add(container: ElementId, ref: ElementId, kind: BoundKind) { out.getOrPut(container) { LinkedHashMap() }[ref] = kind }
+    for (other in byId.values) {
+        when (other) {
+            is ArrowElement -> {
+                other.startBinding?.let { add(it.elementId, other.id, BoundKind.Arrow) }
+                other.endBinding?.let { add(it.elementId, other.id, BoundKind.Arrow) }
+            }
+            is TextElement -> other.containerId?.let { add(it, other.id, BoundKind.Text) }
+            else -> Unit
+        }
+    }
+    return out
+}
+
+private fun repairBoundElements(e: SceneElement, byId: Map<ElementId, SceneElement>, expected: Map<ElementId, BoundKind>, reasons: MutableList<ReconcileReason>): SceneElement {
     val current = when (e) {
         is RectElement -> e.boundElements
         is DiamondElement -> e.boundElements
         is EllipseElement -> e.boundElements
         else -> return e
-    }
-    val expected = LinkedHashMap<ElementId, BoundKind>()
-    for (other in byId.values) {
-        when {
-            other is ArrowElement && (other.startBinding?.elementId == e.id || other.endBinding?.elementId == e.id) -> expected[other.id] = BoundKind.Arrow
-            other is TextElement && other.containerId == e.id -> expected[other.id] = BoundKind.Text
-        }
     }
     val kept = mutableListOf<BoundRef>()
     val seen = HashSet<ElementId>()
