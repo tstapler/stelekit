@@ -382,6 +382,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/constraints/SolverPropertyTest.kt",
         "dev/stapler/stelekit/sketch/constraints/SolverCorpusTest.kt",
         "dev/stapler/stelekit/sketch/constraints/SolverDeterminismTest.kt",
+        "dev/stapler/stelekit/sketch/constraints/SolverScaleTest.kt",
         "dev/stapler/stelekit/sketch/constraints/FallbackPlateScenarioTest.kt",
         "dev/stapler/stelekit/sketch/constraints/BracketPlateScenarioTest.kt",
         "dev/stapler/stelekit/sketch/constraints/SolverTierTest.kt",

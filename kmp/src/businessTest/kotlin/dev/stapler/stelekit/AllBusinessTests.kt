@@ -1055,6 +1055,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.constraints.SolverPropertyTest::class,
     dev.stapler.stelekit.sketch.constraints.SolverCorpusTest::class,
     dev.stapler.stelekit.sketch.constraints.SolverDeterminismTest::class,
+    dev.stapler.stelekit.sketch.constraints.SolverScaleTest::class,
     dev.stapler.stelekit.sketch.constraints.FallbackPlateScenarioTest::class,
     dev.stapler.stelekit.sketch.constraints.BracketPlateScenarioTest::class,
     dev.stapler.stelekit.sketch.constraints.SolverTierTest::class,

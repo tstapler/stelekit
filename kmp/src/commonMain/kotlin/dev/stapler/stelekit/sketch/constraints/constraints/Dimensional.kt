@@ -39,7 +39,7 @@ class DistanceDimension(id: String, private val p: Int, private val q: Int, valu
 
 /**
  * Perpendicular distance from point [p] to the infinite line through [a] and [b] equals [value] (UX-115 centre-to-edge).
- * The measure is `|cross| / |b - a|`; it is not differentiable at zero, where the gradient is dropped, and a line shorter
+ * The measure is `|cross| / |b - a|`; it is not differentiable at zero, where the positive-side one-sided gradient is used, and a line shorter
  * than [LENGTH_FLOOR] measures zero with no gradient, so the rows stay finite.
  */
 class PointLineDistance(id: String, private val p: Int, private val a: Int, private val b: Int, value: Double, reference: Boolean = false) :
@@ -58,8 +58,9 @@ class PointLineDistance(id: String, private val p: Int, private val a: Int, priv
         val wy = x[p + 1] - x[a + 1]
         val l = dist(x, a, b)
         val cr = cross(x)
-        if (l < LENGTH_FLOOR || cr == 0.0) return
-        val s = if (cr > 0.0) 1.0 else -1.0
+        if (l < LENGTH_FLOOR) return
+        // Exactly on the line the measure |cross| / l has a kink: take the one-sided derivative toward the positive side so the solve can leave it.
+        val s = if (cr >= 0.0) 1.0 else -1.0
         val m = abs(cr) / l
         // d(cross) per variable, then d(m) = s * d(cross) / l - m * d(l) / l, with d(l) = (+-dx, +-dy) / l.
         j.addAt(row, p, s * -dy / l)

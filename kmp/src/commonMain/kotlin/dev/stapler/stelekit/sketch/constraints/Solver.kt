@@ -97,8 +97,9 @@ private const val LAMBDA_GROW = 4.0
 private const val LAMBDA_RETRY_GROW = 10.0
 private const val DIAGONAL_FLOOR = 1e-9
 
-/** Unit scale for the Gauss-Newton ridge: a barely coupled coordinate (gradient near 1e-5) is damped like a coupled one, so it does not take up to residual / (2 * gradient) of a fix. */
+/** Unit scale for the Gauss-Newton ridge, divided by the square of [ridgeScale] so a large sketch (rows with gradient ~1/L) is not over-damped: a barely coupled coordinate (gradient near 1e-5) is damped like a coupled one, so it does not take up to residual / (2 * gradient) of a fix. */
 private const val GAUSS_NEWTON_DIAGONAL_FLOOR = 1.0
+private const val RIDGE_REFERENCE_EXTENT = 256.0
 private const val MAX_DAMPING_RETRIES = 30
 private const val INITIAL_TRUST_RADIUS_FACTOR = 1.0
 private const val TRUST_GROW = 2.0
@@ -108,15 +109,23 @@ private const val TRUST_BAD_RHO = 0.25
 private const val TRUST_ACCEPT_RHO = 1e-4
 private const val TRUST_FLOOR = 1e-14
 
+/** How many times larger than [RIDGE_REFERENCE_EXTENT] the component's coordinates reach (1 at or below it, so small sketches keep the original unit floor). */
+private fun ridgeScale(extent: Double): Double = max(1.0, extent / RIDGE_REFERENCE_EXTENT)
+
+private val NEVER_CANCELLED: () -> Boolean = { false }
+
+/** The solve's start time plus a caller poll; a true [cancelled] stops the solve at the next iteration like the wall-time cap does. */
+private class Deadline(val mark: TimeSource.Monotonic.ValueTimeMark, val cancelled: () -> Boolean)
+
 /**
  * Levenberg-Marquardt with Marquardt diagonal scaling and a DogLeg fallback over connected components
  * (ADR-003; clean-room, textbook trust-region methods only). Never throws: every failure is a [SolveResult] case.
  */
 class Solver(private val options: SolverOptions = SolverOptions()) {
 
-    fun solve(problem: ConstraintProblem, start: DoubleArray): SolveResult {
+    fun solve(problem: ConstraintProblem, start: DoubleArray, cancelled: () -> Boolean = NEVER_CANCELLED): SolveResult {
         require(start.size == problem.variableCount) { "start has ${start.size} values, problem has ${problem.variableCount}" }
-        val clock = TimeSource.Monotonic.markNow()
+        val clock = Deadline(TimeSource.Monotonic.markNow(), cancelled)
         val n = problem.variableCount
         val x = start.copyOf()
         val nonFinite = nonFiniteEquations(problem, x)
@@ -147,7 +156,7 @@ class Solver(private val options: SolverOptions = SolverOptions()) {
 
     private class ComponentRun(val component: Component, val converged: Boolean, val iterations: Int, val algorithm: SolveAlgorithm?, val reason: StopReason?, val stalledAt: DoubleArray? = null)
 
-    private fun solveComponent(problem: ConstraintProblem, comp: Component, x: DoubleArray, tolerance: Double, clock: TimeSource.Monotonic.ValueTimeMark): ComponentRun {
+    private fun solveComponent(problem: ConstraintProblem, comp: Component, x: DoubleArray, tolerance: Double, clock: Deadline): ComponentRun {
         val ws = Workspace(problem, comp, x)
         var iterations = 0
         var reason: StopReason? = StopReason.Stalled
@@ -227,6 +236,8 @@ class Solver(private val options: SolverOptions = SolverOptions()) {
         private val work = DenseMatrix(n, n)
         private val chol = Cholesky(n)
         private val initial = source.copyOf()
+        private val extentScale = ridgeScale(cols.maxOfOrNull { abs(source[it]) } ?: 0.0)
+        private val diagonalFloor = GAUSS_NEWTON_DIAGONAL_FLOOR / (extentScale * extentScale)
         private var xc = source.copyOf()
         private var xt = source.copyOf()
         private var r = DoubleArray(m)
@@ -277,7 +288,7 @@ class Solver(private val options: SolverOptions = SolverOptions()) {
 
         private fun accept() { for (c in cols) xc[c] = xt[c]; val t = r; r = rt; rt = t }
 
-        fun levenbergMarquardt(budget: Int, tolerance: Double, clock: TimeSource.Monotonic.ValueTimeMark): Outcome {
+        fun levenbergMarquardt(budget: Int, tolerance: Double, clock: Deadline): Outcome {
             var lambda = INITIAL_LAMBDA
             var iter = 0
             xc.copyInto(xt)
@@ -313,8 +324,8 @@ class Solver(private val options: SolverOptions = SolverOptions()) {
             return Outcome(iter, if (infNorm(r) <= tolerance) null else StopReason.IterationBudget)
         }
 
-        fun dogLeg(budget: Int, tolerance: Double, clock: TimeSource.Monotonic.ValueTimeMark): Outcome {
-            var radius = INITIAL_TRUST_RADIUS_FACTOR
+        fun dogLeg(budget: Int, tolerance: Double, clock: Deadline): Outcome {
+            var radius = INITIAL_TRUST_RADIUS_FACTOR * extentScale
             var iter = 0
             xc.copyInto(xt)
             while (iter < budget) {
@@ -356,7 +367,7 @@ class Solver(private val options: SolverOptions = SolverOptions()) {
             var ridge = options.gaussNewtonRidge
             repeat(MAX_DAMPING_RETRIES) {
                 work.copyFrom(gram)
-                for (i in 0 until n) work[i, i] = gram[i, i] + ridge * max(gram[i, i], GAUSS_NEWTON_DIAGONAL_FLOOR)
+                for (i in 0 until n) work[i, i] = gram[i, i] + ridge * max(gram[i, i], diagonalFloor)
                 for (i in 0 until n) rhs[i] = -g[i]
                 if (chol.factor(work)) {
                     chol.solve(rhs, gn)
@@ -399,7 +410,7 @@ class Solver(private val options: SolverOptions = SolverOptions()) {
             return s
         }
 
-        private fun wallTimeUp(clock: TimeSource.Monotonic.ValueTimeMark): Boolean = clock.elapsedNow().inWholeMilliseconds >= options.wallTimeMillis
+        private fun wallTimeUp(clock: Deadline): Boolean = clock.cancelled() || clock.mark.elapsedNow().inWholeMilliseconds >= options.wallTimeMillis
     }
 
     private fun infNorm(v: DoubleArray): Double {

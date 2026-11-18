@@ -348,6 +348,26 @@ class SolveRunnerTest {
     }
 
     @Test
+    fun cancelledDragUpdate_should_NotBecomeThePose_When_TheRealSolverFinishesAnyway() = runTest {
+        lateinit var runner: SolveRunner
+        runner = runner(SolveEngine { problem, start ->
+            runner.cancel()
+            Solver().solve(problem, start)
+        })
+        val base = horizontalLine()
+        val drag = runner.beginDrag(base)
+
+        val out = drag.update(SetLinePoints(id("L1"), listOf(SheetFixtures.pt(0.0, 0.0), SheetFixtures.pt(50.0, 30.0))))
+
+        assertIs<SolveOutcome.Cancelled>(out)
+        assertEquals(base, drag.pose, "a cancelled update leaves the pose alone")
+        assertIs<SolveOutcome.Unchanged>(drag.release(), "and so the release has nothing to commit")
+        val next = drag.update(SetLinePoints(id("L1"), listOf(SheetFixtures.pt(0.0, 0.0), SheetFixtures.pt(60.0, 20.0))))
+        assertIs<SolveOutcome.Cancelled>(next, "the engine cancels every call; the pose still never moves")
+        assertEquals(base, drag.pose)
+    }
+
+    @Test
     fun ux36_solveUnderThreshold_should_NeverShowTheIndicator() = runTest {
         val runner = runner(slowEngine(FAST_SOLVE_MS))
         val seen = mutableListOf<SolveState>()

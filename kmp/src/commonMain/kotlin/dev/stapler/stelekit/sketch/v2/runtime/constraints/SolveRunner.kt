@@ -24,6 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
@@ -36,6 +37,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlin.coroutines.CoroutineContext
 
 /** The seam between the runner and the numeric solver, so a test can stand in a solver that takes as long as it likes. */
@@ -43,9 +45,12 @@ fun interface SolveEngine {
     suspend fun solve(problem: ConstraintProblem, start: DoubleArray): SolveResult
 }
 
-/** The real solver as an engine. It computes on the thread the runner gives it and never touches a UI thread. */
+/** The real solver as an engine. It computes on the thread the runner gives it and never touches a UI thread; it stops at its next iteration once the calling coroutine is cancelled. */
 class SolverEngine(private val solver: Solver = Solver()) : SolveEngine {
-    override suspend fun solve(problem: ConstraintProblem, start: DoubleArray): SolveResult = solver.solve(problem, start)
+    override suspend fun solve(problem: ConstraintProblem, start: DoubleArray): SolveResult {
+        val job = currentCoroutineContext()[Job]
+        return solver.solve(problem, start) { job?.isActive == false }
+    }
 }
 
 /** How many solver runs and bound-arrow recomputations the runner has done; a redo must leave both unchanged. */
@@ -93,7 +98,8 @@ sealed interface SolveOutcome {
  * every solve a `Throwable` guard, so an `OutOfMemoryError` becomes [SolveRejection.Crashed] and never reaches the platform's
  * uncaught-exception handler, which kills an Android process. A solve past `SceneLimits.slowSolveIndicatorMs` turns [state]'s
  * `slow` on (the "Solving..." indicator); [cancel] abandons it and the caller keeps the last good document. A cancelled solve's
- * computation finishes in the background and its result is dropped (the solver's own wall-time cap bounds it).
+ * computation stops at the solver's next iteration (an engine that ignores cancellation is bounded by the solver's wall-time cap), its
+ * result is dropped and it never reaches the drag pose; the next call waits for it to stop.
  *
  * [tier] is the per-target `SolverTier`: `Hidden` never solves, so a sheet's edits commit as plain edits.
  */
@@ -151,14 +157,16 @@ class SolveRunner(
         val pose: SketchDocumentV2 get() = lastGood
 
         /** Applies [edit] to the current pose and solves from it. On a refusal the pose is unchanged and the outcome says why. */
-        suspend fun update(edit: Command): SolveOutcome = execute(lastGood) {
-            pipeline.run(lastGood, edit).fold(
-                { SolveOutcome.Rejected(it, lastGood) },
-                { piped ->
-                    lastGood = piped.tx.doc
-                    SolveOutcome.Posed(piped.tx.doc, piped.summary)
-                },
-            )
+        suspend fun update(edit: Command): SolveOutcome {
+            val from = lastGood
+            val outcome = execute(from) {
+                pipeline.run(from, edit).fold(
+                    { SolveOutcome.Rejected(it, from) },
+                    { piped -> SolveOutcome.Posed(piped.tx.doc, piped.summary) },
+                )
+            }
+            if (outcome is SolveOutcome.Posed) lastGood = outcome.doc
+            return outcome
         }
 
         /** Commits the whole gesture as one history step from the pose before it to the current pose. */
@@ -206,6 +214,7 @@ class SolveRunner(
             work.await()
         } catch (e: CancellationException) {
             work.cancel()
+            withContext(NonCancellable) { work.join() }
             if (!currentCoroutineContext().isActive) throw e
             SolveOutcome.Cancelled(lastGood)
         }
