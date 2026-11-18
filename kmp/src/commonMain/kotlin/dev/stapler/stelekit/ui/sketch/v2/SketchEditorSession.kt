@@ -100,14 +100,15 @@ class SketchEditorSession(
      * them), then the session closes. [discard] closes at once, leaving the sheet as last saved (the user's choice, UX-72).
      * Runs on its own scope: it outlives the composition that asked for it.
      */
-    fun closeAfterSave(discard: Boolean) {
+    fun closeAfterSave(discard: Boolean, scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, _ -> close() })) {
         if (discard || controller.readOnly) {
             close()
             return
         }
-        CoroutineScope(SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, _ -> close() }).launch {
+        lease?.markClosing()
+        scope.launch {
             try {
-                controller.flush()
+                if (controller.flush().hasUnsavedWork) controller.log.persistFailed(LEFT_UNSAVED)
             } finally {
                 close()
             }
@@ -179,6 +180,7 @@ class V2EditorDeps(
 
 private const val MILLIS_PER_DAY = 86_400_000L
 private const val NOT_SAVED = "not-saved"
+private const val LEFT_UNSAVED = "left-unsaved"
 
 /**
  * Resolves what a project's first sheet opens in (Story 6.2.0b): the router's outcome for a v2 file, the legacy editor for anything
@@ -228,6 +230,7 @@ class V2EditorOpener(
 
     private suspend fun openV2(target: OpenTarget, metrics: TextMetricsProvider): EditorOpening {
         val capabilities = V2Capabilities.of(target.store.v2Storage())
+        deps.leases?.awaitClosing(target.sheet)
         val loaded = SheetLoader.load(target.store, target.slug, target.sheet, deps.limits)
         val schema = if (loaded is SheetLoad.NewerSchema) SheetSchema.Newer else SheetSchema.V2
         val stored = deps.graphId()?.let { deps.settings?.v2Mode(it) } ?: V2Mode.Off

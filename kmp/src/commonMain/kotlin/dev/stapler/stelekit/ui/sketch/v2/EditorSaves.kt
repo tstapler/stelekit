@@ -23,6 +23,8 @@ class EditorSaves(
     private val scope: CoroutineScope,
     private val notifier: EditorNotifier,
     private val onReloaded: (SketchDocumentV2) -> Unit,
+    /** The document the editor holds now, which "Keep mine" writes even when no edit is waiting. */
+    private val current: () -> SketchDocumentV2,
 ) {
     val state: StateFlow<SaveState> = saver?.state ?: MutableStateFlow(SaveState.Saved)
 
@@ -38,7 +40,7 @@ class EditorSaves(
     fun bannerPrimary(row: BannerRowId) {
         when (row) {
             BannerRowId.SaveFailed -> saver?.retry().also { notifier.refresh() }
-            BannerRowId.SaveConflict -> saver?.let { scope.launch { it.keepMine() } }.also { notifier.refresh() }
+            BannerRowId.SaveConflict -> saver?.let { scope.launch { it.keepMine(current()) } }.also { notifier.refresh() }
             else -> notifier.resolve(row)
         }
     }

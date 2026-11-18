@@ -118,6 +118,7 @@ class SketchEditorController(
     private val scope = CoroutineScope(adoption + SupervisorJob() + CoroutineExceptionHandler { _, t -> onUncaught(t) })
     private val runner: SolveRunner = ports.solver ?: SolveRunner(ports.limits, context = context, log = ports.log)
     private val gate = Mutex()
+    private var closed = false
     private val pending = MutableStateFlow(0)
     private val index = SpatialIndex()
     internal val creation = ElementCreation(initial, ports.seeds ?: ElementCreation.defaultSeeds(initial.sheetUuid, ports.clockMillis()))
@@ -159,7 +160,7 @@ class SketchEditorController(
     val notifier = EditorNotifier(SketchNoticeQueue(ports.limits, ports.sequencer, ports.log), ports.clockMillis)
     val notices: SketchNoticeQueue get() = notifier.queue
     val constraintState = ConstraintState(runner, ports.diagnostics, notifier) { history.present }
-    val saves = EditorSaves(ports.saver, scope, notifier, ::reloaded)
+    val saves = EditorSaves(ports.saver, scope, notifier, ::reloaded) { creation.forSave(history.present) }
 
     val tools = ToolSession(ui, ports, ::toolContext, notifier, readOnly, ::commitToolCommand)
     val view = EditorView(ui, { history.present }, tools::select, notifier)
@@ -396,6 +397,8 @@ class SketchEditorController(
     }
 
     fun close() {
+        if (closed) return
+        closed = true
         if (!readOnly) ports.quality?.endSession(ports.log)
         saves.close()
         runner.close()

@@ -11,7 +11,11 @@ import dev.stapler.stelekit.model.SheetUuid
 import dev.stapler.stelekit.platform.SketchWriterLease
 import dev.stapler.stelekit.platform.SketchWriterLeaseState
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.withTimeoutOrNull
+
+private const val CLOSE_WAIT_MS = 10_000L
 
 /** Which editor holds a sheet's edit lease. */
 enum class LeaseHolder { Legacy, V2 }
@@ -31,6 +35,15 @@ class SheetLease internal constructor(
     val holder: LeaseHolder,
     private val onRelease: (SheetLease) -> Unit,
 ) {
+    private val closingFlag = MutableStateFlow(false)
+
+    /** True once the holder began leaving: it still owns the sheet while its last edits are written. */
+    val closing: Boolean get() = closingFlag.value
+
+    fun markClosing() {
+        closingFlag.value = true
+    }
+
     fun release() = onRelease(this)
 }
 
@@ -53,6 +66,15 @@ class SheetLeaseRegistry(private val writerLease: SketchWriterLease) {
             if (existing == null) current + (sheet.value to lease) else current
         }
         return refusal?.left() ?: lease.right()
+    }
+
+    /**
+     * Suspends while the holder of [sheet] is leaving (its flush has not finished), so a reopen reads the file the leaving editor wrote
+     * and finds the sheet free. Gives up after [CLOSE_WAIT_MS]: a flush stuck on a failing disk must not block the reopen forever.
+     */
+    suspend fun awaitClosing(sheet: SheetUuid) {
+        val leaving = held.value[sheet.value]?.takeIf { it.closing } ?: return
+        withTimeoutOrNull(CLOSE_WAIT_MS) { held.first { it[sheet.value] !== leaving } }
     }
 
     /** The holder of [sheet] now, or null. */

@@ -241,11 +241,22 @@ class SheetSaver(
         )
     } }
 
-    /** Keeps the in-memory scene: re-bases onto the file now on disk and writes over it. The other version stays in git history. */
-    suspend fun keepMine() {
+    /**
+     * Keeps the in-memory scene: re-bases onto the file now on disk and writes over it. The other version stays in git history.
+     * [current] is the scene the editor holds; it is resubmitted so a conflict raised with no local edits still has something to
+     * write. With no scene known at all there is nothing of "mine" to write, so the file is left as is and the base is not re-based.
+     */
+    suspend fun keepMine(current: SketchDocumentV2? = null) = saveGate.withLock {
+        val mine = current ?: latest.value?.doc
+        if (mine == null) {
+            ports.diagnostics.resolve(BannerRowId.SaveConflict)
+            mutableState.value = SaveState.Saved
+            return@withLock
+        }
         ports.slugLock.withSlug(target.slug) { baseSha = persister.readDiskBytes()?.let(SheetSaveGuard::sha) }
         ports.diagnostics.resolve(BannerRowId.SaveConflict)
         ports.store.pruneConflictCopies(target.slug, target.sheet.value, emptySet())
+        latest.value = Submitted((latest.value?.version ?: 0L) + 1, mine)
         mutableState.value = SaveState.Pending
         wake.trySend(true)
     }
@@ -291,10 +302,17 @@ class SheetSaver(
 
     /** Edits made after a conflict are never written over the other version; they go to a conflict copy so none is lost. */
     private suspend fun keepWhileConflicted(snap: Submitted) {
-        copies.keep(snap.version, snap.doc).fold(
-            { ports.log.persistFailed("conflict-copy") },
-            { path -> if (path != null && mutableState.value is SaveState.Conflict) mutableState.value = SaveState.Conflict(path) },
-        )
+        // A throw here (encode, OOM) must not end the save loop or the hidden-page collector; the conflict prompt stays up.
+        try {
+            copies.keep(snap.version, snap.doc).fold(
+                { ports.log.persistFailed("conflict-copy") },
+                { path -> if (path != null && mutableState.value is SaveState.Conflict) mutableState.value = SaveState.Conflict(path) },
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            ports.log.persistFailed(failureOf(t).token)
+        }
     }
 
     private suspend fun saveSnapshot(snap: Submitted) {
