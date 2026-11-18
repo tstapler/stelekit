@@ -137,11 +137,7 @@ object SceneToProblem {
                 builder.add(c).bind()
                 continue
             }
-            val mark = builder.mark()
-            if (builder.add(c).isLeft()) {
-                builder.rollback(mark)
-                skipped += c.id
-            }
+            if (!builder.addOrRollBack(c)) skipped += c.id
         }
         SceneProblem(
             ConstraintProblem(builder.equations, builder.values.size),
@@ -315,23 +311,25 @@ private fun ElementBinding.namedPoint(part: TargetPart): Int? = when (part) {
     TargetPart.Whole, is TargetPart.Edge -> null
 }
 
+/** [add]s [c]; when it cannot be built, undoes whatever it left behind and returns false. */
+private fun Builder.addOrRollBack(c: Constraint): Boolean {
+    val valueCount = values.size
+    val equationCount = equations.size
+    val bindingCount = bindings.size
+    val dimensionCount = dimensions.size
+    if (add(c).isRight()) return true
+    while (values.size > valueCount) values.removeAt(values.lastIndex)
+    while (equations.size > equationCount) equations.removeAt(equations.lastIndex)
+    bindings.keys.drop(bindingCount).forEach { bindings.remove(it) }
+    dimensions.keys.drop(dimensionCount).forEach { dimensions.remove(it) }
+    return false
+}
+
 private class Builder(private val scene: SketchSceneV2) {
     val values = ArrayList<Double>()
     val bindings = LinkedHashMap<ElementId, ElementBinding>()
     val equations = ArrayList<ConstraintEquation>()
     val dimensions = LinkedHashMap<ConstraintId, DimensionalEquation>()
-
-    class Mark(val values: Int, val equations: Int, val bindings: Int, val dimensions: Int)
-
-    fun mark() = Mark(values.size, equations.size, bindings.size, dimensions.size)
-
-    /** Undoes whatever a failed [add] left behind since [mark]. */
-    fun rollback(mark: Mark) {
-        while (values.size > mark.values) values.removeAt(values.lastIndex)
-        while (equations.size > mark.equations) equations.removeAt(equations.lastIndex)
-        bindings.keys.drop(mark.bindings).forEach { bindings.remove(it) }
-        dimensions.keys.drop(mark.dimensions).forEach { dimensions.remove(it) }
-    }
 
     private fun point(px: Double, py: Double): Int {
         val index = values.size
