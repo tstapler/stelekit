@@ -37,6 +37,8 @@ import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetSaver
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetSaverPorts
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetTarget
 import dev.stapler.stelekit.sketch.v2.runtime.session.ClassicNoticeLedger
+import dev.stapler.stelekit.sketch.v2.runtime.split.SheetSplitter
+import dev.stapler.stelekit.sketch.v2.runtime.split.SplitOutcome
 import dev.stapler.stelekit.sketch.v2.runtime.session.LeaseHolder
 import dev.stapler.stelekit.sketch.v2.runtime.session.LeaseRefusal
 import dev.stapler.stelekit.sketch.v2.runtime.session.SheetLease
@@ -64,7 +66,12 @@ import dev.stapler.stelekit.ui.sketch.v2.strings.SketchConsentCopy
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchEditorStrings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchErrorStrings
 import dev.stapler.stelekit.util.UuidGenerator
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlin.coroutines.CoroutineContext
 
 /** One open v2 sheet: the controller, the diagnostics the saver raises into and the lease it holds. Close it when the editor leaves. */
@@ -86,6 +93,25 @@ class SketchEditorSession(
     fun close() {
         controller.close()
         lease?.release()
+    }
+
+    /**
+     * Leaving the sheet: the latest edits are written first (the saver's own scope dies with [close], and its debounce would drop
+     * them), then the session closes. [discard] closes at once, leaving the sheet as last saved (the user's choice, UX-72).
+     * Runs on its own scope: it outlives the composition that asked for it.
+     */
+    fun closeAfterSave(discard: Boolean) {
+        if (discard || controller.readOnly) {
+            close()
+            return
+        }
+        CoroutineScope(SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, _ -> close() }).launch {
+            try {
+                controller.flush()
+            } finally {
+                close()
+            }
+        }
     }
 }
 
@@ -152,12 +178,18 @@ class V2EditorDeps(
 )
 
 private const val MILLIS_PER_DAY = 86_400_000L
+private const val NOT_SAVED = "not-saved"
 
 /**
  * Resolves what a project's first sheet opens in (Story 6.2.0b): the router's outcome for a v2 file, the legacy editor for anything
  * else. A v2 outcome that edits takes the sheet's edit lease first, so the classic editor can never open the same sheet.
  */
-class V2EditorOpener(private val deps: V2EditorDeps, private val context: CoroutineContext) {
+class V2EditorOpener(
+    private val deps: V2EditorDeps,
+    private val context: CoroutineContext,
+    /** Where the controller adopts results the canvas reads; the UI dispatcher in the app. */
+    private val adoption: CoroutineContext = context,
+) {
     private val entry = V2EntryDecider(deps)
 
     suspend fun open(projectUuid: ProjectUuid?, metrics: TextMetricsProvider): EditorOpening = open(projectUuid, metrics, allowCreate = true)
@@ -220,6 +252,22 @@ class V2EditorOpener(private val deps: V2EditorDeps, private val context: Corout
         }
     }
 
+    /**
+     * Adds a sheet holding a document beside the open one ("Split into new sketch", "Import into a new sketch"): the open sheet's
+     * pending edits are saved first, and the splitter then writes the new sheet under the slug lock. Left is the reason token.
+     */
+    private fun newSheetCreator(controller: SketchEditorController, target: OpenTarget): suspend (SketchDocumentV2) -> Either<String, Unit> = { document ->
+        if (controller.flush().hasUnsavedWork) {
+            Either.Left(NOT_SAVED)
+        } else {
+            val splitter = SheetSplitter(deps.repos, target.store, deps.slugLock, deps.writeActor, deps.log, deps.limits)
+            when (val outcome = splitter.addSheet(target.project, target.sheet, document, SheetUuid(deps.newId()))) {
+                is SplitOutcome.Split -> Either.Right(Unit)
+                is SplitOutcome.Failed -> Either.Left(outcome.reason.token)
+            }
+        }
+    }
+
     private fun editor(loaded: SheetLoad, target: OpenTarget, metrics: TextMetricsProvider, readOnlyReason: String?, lease: SheetLease?): EditorOpening {
         val (doc, sha) = when (loaded) {
             is SheetLoad.Loaded -> loaded.doc to loaded.sha
@@ -258,11 +306,13 @@ class V2EditorOpener(private val deps: V2EditorDeps, private val context: Corout
             ),
             context,
             readOnly = readOnlyReason != null,
+            adoption = adoption,
         )
         val diagnostics = DiagnosticsHostState(port, controller.notices, deps.clockMillis)
         readOnlyReason?.let { port.raise(BannerRowId.ReadOnly, it) }
         val solverTarget = if (deps.keymap.isWeb) SolverTarget.WasmJs else SolverTarget.Jvm
-        val services = HostServices.of(deps.platform, { target.store.v2Storage() }, deps.limits) { SolverTierFacts.Recorded.tierOf(solverTarget) }
+        val newSheet = if (readOnlyReason == null) newSheetCreator(controller, target) else null
+        val services = HostServices.of(deps.platform, { target.store.v2Storage() }, deps.limits, createSheet = newSheet) { SolverTierFacts.Recorded.tierOf(solverTarget) }
         return EditorOpening.Editor(SketchEditorSession(controller, diagnostics, target.projectName, lease, target.slug, target.sheet, services))
     }
 }

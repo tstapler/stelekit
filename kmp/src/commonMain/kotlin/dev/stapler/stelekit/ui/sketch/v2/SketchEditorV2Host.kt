@@ -18,6 +18,8 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +34,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.sketch.v2.commands.LockElements
+import dev.stapler.stelekit.ui.PlatformBackHandler
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
 import dev.stapler.stelekit.sketch.v2.render.DrawListBuilder
 import dev.stapler.stelekit.sketch.v2.render.RenderStyle
@@ -90,11 +93,15 @@ fun SketchEditorV2Host(
     val technical = remember(session) { session.services.technical?.let { source -> session.sheet?.let { TechnicalPanelState(source, it) } } }
     SideEffect { controller.keys.hint = hint }
     LaunchedEffect(controller.revision) { largeScene.refresh() }
+    DisposableEffect(extras) { onDispose { extras.close() } }
+    val leaveScope = rememberCoroutineScope()
+    val latestBack by rememberUpdatedState(onBack)
+    val leave = remember(session) { LeaveGuard(controller::flush, leaveScope) { latestBack() } }
+    PlatformBackHandler(enabled = true) { leave.requestLeave() }
     DisposableEffect(session) {
         onDispose {
             largeScene.close()
-            extras.close()
-            session.close()
+            session.closeAfterSave(discard = leave.discarded)
         }
     }
     val saveState by controller.saves.state.collectAsState()
@@ -127,7 +134,7 @@ fun SketchEditorV2Host(
         sheetEmpty = empty,
         emptyActions = EmptyStateActions(onShortcuts = { controller.overlay = EditorOverlay.Shortcuts }),
         onShortcuts = { controller.overlay = EditorOverlay.Shortcuts },
-        onBack = onBack,
+        onBack = leave::requestLeave,
         saveStatus = saveState.toStatus(),
         bannerActions = BannerActions(
             onPrimary = { candidate ->
@@ -181,6 +188,18 @@ fun SketchEditorV2Host(
             },
         )
         HostOverlays(controller, extras, singleKey) { singleKey = it }
+        if (leave.prompting) {
+            LeaveSketchPrompt(
+                onRetry = leave::retry,
+                onExportCopy = {
+                    leave.keepEditing()
+                    extras.exporter.open()
+                },
+                onDiscard = leave::discard,
+                onKeepEditing = leave::keepEditing,
+                canExport = extras.exportAvailable,
+            )
+        }
     }
 }
 

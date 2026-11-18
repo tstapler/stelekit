@@ -13,9 +13,10 @@ import dev.stapler.stelekit.sketch.v2.commands.ImportScene
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.diagnostics.DiagnosticsPort
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchHostStrings
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -30,7 +31,12 @@ class EditorLargeScene(
     diagnostics: DiagnosticsPort,
     private val services: HostServices,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, _ -> })
+    private val scope = CoroutineScope(
+        SupervisorJob() + controller.adoption + CoroutineExceptionHandler { _, t ->
+            if (t !is CancellationException) controller.log.persistFailed(t::class.simpleName.orEmpty())
+            controller.notifier.toast(SketchHostStrings.Errors.EXTRA_FAILED_KEY, SketchHostStrings.Errors.EXTRA_FAILED)
+        },
+    )
     private val degrader = LargeSceneDegradation(diagnostics, services.limits)
 
     /** The steps in force for the size of the scene now. */
@@ -70,7 +76,7 @@ class EditorLargeScene(
     fun close() = scope.cancel()
 
     private fun onRefused(error: CommandError) {
-        hardCap = CapacityMessages.hardCapFor(error, controller.ui.selection.size, services.limits)
+        hardCap = CapacityMessages.hardCapFor(error, controller.ui.selection.size, services.limits, canSplit = services.createSheet != null)
     }
 
     /** Moves the selection into a new sheet, then deletes it here as one undo step; the source keeps it if the new sheet fails. */
@@ -80,10 +86,13 @@ class EditorLargeScene(
         val moved = ids.mapNotNull { scene[it] }
         if (moved.isEmpty()) return
         scope.launch {
-            ImportScene(moved, scene.layers).apply(SketchDocumentV2()).onRight { applied ->
-                services.newSheet(applied.doc).onRight {
-                    controller.submit(DeleteElements(ids))
-                }
+            val document = ImportScene(moved, scene.layers).apply(SketchDocumentV2()).getOrNull()?.doc
+            val created = document?.let { services.newSheet(it) }
+            if (created == null || created.isLeft()) {
+                controller.notifier.toast(SketchHostStrings.Split.FAILED_KEY, SketchHostStrings.Split.FAILED)
+            } else {
+                controller.submit(DeleteElements(ids))
+                controller.notifier.toast(SketchHostStrings.Split.DONE_KEY, SketchHostStrings.Split.done(moved.size))
             }
         }
     }

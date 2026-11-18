@@ -7,6 +7,7 @@ package dev.stapler.stelekit.ui.sketch.v2
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MonotonicFrameClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -20,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.model.ProjectUuid
 import dev.stapler.stelekit.model.SheetUuid
 import dev.stapler.stelekit.projectbridge.FileProjectSidecarStore
@@ -35,7 +37,13 @@ import dev.stapler.stelekit.ui.sketch.v2.migration.NoEditorScreen
 import dev.stapler.stelekit.ui.sketch.v2.migration.PendingModel
 import dev.stapler.stelekit.ui.sketch.v2.migration.PendingScreen
 import dev.stapler.stelekit.ui.sketch.v2.migration.ReleasesPageUpdateCheck
+import dev.stapler.stelekit.sketch.v2.runtime.telemetry.SketchLog
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlinx.coroutines.launch
 
 /**
@@ -65,7 +73,7 @@ fun SketchEditorV2Route(
     legacy: @Composable () -> Unit,
 ) {
     val environment = rememberModernPreviewEnvironment()
-    val opener = remember(deps) { deps?.let { V2EditorOpener(it, Dispatchers.Default) } }
+    val opener = remember(deps) { deps?.let { V2EditorOpener(it, Dispatchers.Default, PlatformDispatcher.Main) } }
     val actions = remember(deps) { deps?.let { V2EntryActions(it) } }
     var attempt by remember(projectUuid) { mutableIntStateOf(0) }
     var opening by remember(projectUuid, deps) { mutableStateOf<EditorOpening?>(if (deps == null) EditorOpening.Legacy else null) }
@@ -73,7 +81,14 @@ fun SketchEditorV2Route(
     var dialog by remember(projectUuid, deps) { mutableStateOf<EntryDialog?>(null) }
     var converted by remember(projectUuid, deps) { mutableStateOf<SheetUuid?>(null) }
     var engineChanged by remember(projectUuid, deps) { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    val frameClock = rememberCoroutineScope().coroutineContext[MonotonicFrameClock]
+    val scope = remember(deps) {
+        routeScope(frameClock, deps?.log) {
+            busy = false
+            dialog = null
+            attempt += 1
+        }
+    }
     val current by rememberUpdatedState(opening)
     LaunchedEffect(projectUuid, deps, attempt) {
         opener?.let {
@@ -134,6 +149,22 @@ fun SketchEditorV2Route(
         }
     }
     EntryDialogs(dialog, steps, scope, restore, hooks)
+}
+
+/**
+ * The scope of the route's multi-step work (a conversion, a restore, a first write). It is owned, not the composition's: leaving the
+ * screen mid-conversion does not cancel it, so a started step finishes and reports. It carries the composition's frame clock (the
+ * steps wait a frame to let the classic editor leave) and a handler, so a throwable ends in [onFailure] and a log line, never in the
+ * platform's uncaught-exception handler (which kills an Android process).
+ */
+private fun routeScope(frameClock: MonotonicFrameClock?, log: SketchLog?, onFailure: () -> Unit): CoroutineScope {
+    val handler = CoroutineExceptionHandler { _, t ->
+        if (t !is CancellationException) {
+            log?.persistFailed(t::class.simpleName.orEmpty())
+            onFailure()
+        }
+    }
+    return CoroutineScope(SupervisorJob() + PlatformDispatcher.Main + (frameClock ?: EmptyCoroutineContext) + handler)
 }
 
 /** One editor session; its overflow menu carries the restore entry while the sheet has a backup. */

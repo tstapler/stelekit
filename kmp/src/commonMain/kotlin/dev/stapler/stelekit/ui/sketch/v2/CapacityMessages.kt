@@ -39,12 +39,13 @@ data class HardCapMessage(val text: String, val actions: List<CapacityAction>, v
 /** The capacity messages as pure data; the composables below only draw them, so the wording is tested without a screen. */
 object CapacityMessages {
     /** The hard-cap message for a refused add or paste, or null for any other error. [selectionCount] enables the split action. */
-    fun hardCapFor(error: CommandError, selectionCount: Int, limits: SceneLimits = SceneLimits.Default): HardCapMessage? =
-        if (error is CommandError.CapacityExceeded) hardCap(selectionCount, limits) else null
+    fun hardCapFor(error: CommandError, selectionCount: Int, limits: SceneLimits = SceneLimits.Default, canSplit: Boolean = true): HardCapMessage? =
+        if (error is CommandError.CapacityExceeded) hardCap(selectionCount, limits, canSplit) else null
 
-    fun hardCap(selectionCount: Int, limits: SceneLimits = SceneLimits.Default): HardCapMessage = HardCapMessage(
+    /** [canSplit] is false where the host cannot add a sheet: the split action is then not offered at all. */
+    fun hardCap(selectionCount: Int, limits: SceneLimits = SceneLimits.Default, canSplit: Boolean = true): HardCapMessage = HardCapMessage(
         SketchStrings.Capacity.hardCap(limits.maxElements),
-        CapacityAction.entries,
+        CapacityAction.entries.filter { canSplit || it != CapacityAction.SplitIntoNewSketch },
         splitEnabled = selectionCount > 0,
     )
 

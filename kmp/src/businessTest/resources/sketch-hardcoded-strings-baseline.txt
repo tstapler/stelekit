@@ -165,8 +165,6 @@ ui/sketch/v2/LayersPanelModel.kt :: val noun = if (skipped.size == 1) "1 locked 
 ui/sketch/v2/LayersPanelModel.kt :: val title: String get() = "Delete layer '${layer.name}' and its $elementCount elements?"
 ui/sketch/v2/LayersPanelModel.kt :: val visibilityLabel: String get() = "Layer ${layer.name}, ${if (layer.visible) "visible" else "hidden"}"
 ui/sketch/v2/LayersPanelModel.kt :: while ("Layer $n" in used) n++
-ui/sketch/v2/LeaveSketchPrompt.kt :: text = { Text("Your latest changes are not saved yet. Your work is kept until you choose.") },
-ui/sketch/v2/LeaveSketchPrompt.kt :: title = { Text("Changes not saved") },
 ui/sketch/v2/NameTagsModel.kt :: val description: String get() = "$count element names here, zoom in to read them"
 ui/sketch/v2/PanPad.kt :: ) { Text("Pan") }
 ui/sketch/v2/PanPad.kt :: .semantics { role = Role.Button; contentDescription = if (open) "Close pan pad" else "Pan"; onClick { onToggle(); true } }

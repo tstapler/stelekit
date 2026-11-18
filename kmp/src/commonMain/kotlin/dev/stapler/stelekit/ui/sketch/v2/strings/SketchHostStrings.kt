@@ -40,6 +40,19 @@ object SketchHostStrings {
         const val NOTHING_TO_PASTE = "Nothing to paste"
     }
 
+    object Split {
+        const val FAILED_KEY = "SplitFailed"
+        const val FAILED = "The new sketch could not be created, so nothing was moved."
+        const val DONE_KEY = "SplitDone"
+
+        fun done(count: Int): String = "Moved $count ${if (count == 1) "element" else "elements"} to a new sketch."
+    }
+
+    object Errors {
+        const val EXTRA_FAILED_KEY = "HostExtraFailed"
+        const val EXTRA_FAILED = "That did not finish. Your drawing is unchanged."
+    }
+
     object View {
         const val GRID_ON = "Grid on"
         const val GRID_OFF = "Grid off"

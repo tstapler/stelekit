@@ -39,7 +39,6 @@ import dev.stapler.stelekit.ui.sketch.ModernPreviewEnvironment
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchHostStrings
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -58,7 +57,19 @@ class EditorExtras(
     private val services: HostServices,
     environment: ModernPreviewEnvironment,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, _ -> })
+    private val scope = CoroutineScope(
+        SupervisorJob() + controller.adoption + CoroutineExceptionHandler { _, t ->
+            controller.notifier.toast(SketchHostStrings.Errors.EXTRA_FAILED_KEY, SketchHostStrings.Errors.EXTRA_FAILED)
+            logUncaught(t)
+        },
+    )
+
+    private fun logUncaught(t: Throwable) {
+        if (t !is kotlinx.coroutines.CancellationException) controller.log.persistFailed(t::class.simpleName.orEmpty())
+    }
+
+    /** Notices from the importer and exporter (which run off the UI thread) reach the adoption-confined queue from here. */
+    private val postNotice: (SketchNotice) -> Unit = { notice -> scope.launch { controller.notifier.post(notice) } }
 
     val tier: SolverTier get() = services.tier()
 
@@ -96,16 +107,18 @@ class EditorExtras(
         files = filePort,
         images = ImportImageSink { bytes -> services.images?.store(bytes) ?: ImageStoreError.WriteFailed("").left() },
         storage = services.storage,
-        postNotice = controller.notifier::post,
+        postNotice = postNotice,
         ids = controller.ids,
         limits = services.limits,
+        log = controller.log,
+        commitContext = controller.adoption,
     )
 
     val exporter = ExportDialogController(
         sourceOf = ::exportSource,
         runner = SketchExportRunner(PngExporter(services.png, environment.resources, services.limits), DrawListBuilder(environment.metrics)),
         files = filePort,
-        postNotice = controller.notifier::post,
+        postNotice = postNotice,
     )
 
     /** Whether Import is offered, and why not: the entry is disabled with this text (UX-135). */

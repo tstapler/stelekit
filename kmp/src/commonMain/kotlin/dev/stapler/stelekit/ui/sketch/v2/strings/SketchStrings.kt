@@ -403,6 +403,15 @@ object SketchStrings {
     }
 
     /** The scene hard cap and the constraint cap (Story 2.2.4, UX-73) and the low-memory toast. */
+    /** The prompt shown when the user leaves a sheet whose latest edits are not on disk (UX-72). */
+    object Leave {
+        const val TITLE = "Changes not saved"
+        const val BODY = "Your latest changes are not saved yet. Your work is kept until you choose."
+        const val RETRY = "Retry save"
+        const val EXPORT_COPY = "Export copy"
+        const val DISCARD = "Discard"
+    }
+
     object Capacity {
         const val DELETE_SOME = "Delete some"
         const val SPLIT = "Split into a new sketch"

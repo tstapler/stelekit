@@ -96,7 +96,8 @@ class EditorPorts(
  *
  * Edits run in ONE [Transaction] per gesture. A sheet with constraints, and any command that adds one, runs through
  * [SolveRunner] only (the controller never calls the solver); the edit and the solve are one history step. Other edits apply on
- * the calling thread. Edits never overlap: while a solve is in flight later edits wait behind it.
+ * the calling thread. Edits never overlap: while a solve is in flight later edits wait behind it. Everything that reads or
+ * writes the state the canvas draws from runs on [adoption]; only the solver and the saver run on [context].
  */
 class SketchEditorController(
     initial: SketchDocumentV2,
@@ -105,8 +106,13 @@ class SketchEditorController(
     val ui: SketchEditorState = SketchEditorState(),
     /** When true the sheet is shown but no edit applies (the router said read-only or another tab holds the lease). */
     val readOnly: Boolean = false,
+    /**
+     * Where the controller adopts results into the state the canvas reads (history, revision, selection, the spatial index, the
+     * notice queue). Pass the UI dispatcher: the solve itself still runs on [context]. Defaults to [context] (tests, single-thread targets).
+     */
+    val adoption: CoroutineContext = context,
 ) {
-    private val scope = CoroutineScope(context + SupervisorJob() + CoroutineExceptionHandler { _, t -> onUncaught(t) })
+    private val scope = CoroutineScope(adoption + SupervisorJob() + CoroutineExceptionHandler { _, t -> onUncaught(t) })
     private val runner: SolveRunner = ports.solver ?: SolveRunner(ports.limits, context = context, log = ports.log)
     private val gate = Mutex()
     private val pending = MutableStateFlow(0)
@@ -188,6 +194,7 @@ class SketchEditorController(
     val keymap: KeymapEnv get() = ports.keymap
     val ids: ElementIdSource get() = ports.ids
     val touchPresent: Boolean get() = ports.touchPresent
+    internal val log: SketchLog get() = ports.log
 
     init {
         index.rebuild(initial.scene)
@@ -366,7 +373,8 @@ class SketchEditorController(
     private fun onUncaught(t: Throwable) {
         if (t is CancellationException) return
         ports.log.persistFailed(t::class.simpleName.orEmpty())
-        notifier.toast(SketchEditorStrings.Toasts.KEY_REFUSED, SketchErrorStrings.message(SketchErrorState.LowMemory))
+        // The handler runs on whichever thread threw; the notice queue is adoption-confined.
+        scope.launch { notifier.toast(SketchEditorStrings.Toasts.KEY_REFUSED, SketchErrorStrings.message(SketchErrorState.LowMemory)) }
     }
 }
 

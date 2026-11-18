@@ -993,6 +993,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.ContainerTextTest::class,
     dev.stapler.stelekit.sketch.v2.SolveRunnerTest::class,
     dev.stapler.stelekit.sketch.v2.SketchEditorControllerTest::class,
+    dev.stapler.stelekit.sketch.v2.SketchEditorThreadingTest::class,
+    dev.stapler.stelekit.sketch.v2.SketchEditorLeaveTest::class,
     dev.stapler.stelekit.sketch.v2.EditorExtrasTest::class,
     dev.stapler.stelekit.sketch.v2.SketchEditorOpenerTest::class,
     dev.stapler.stelekit.sketch.v2.SketchEditorStringsTest::class,
