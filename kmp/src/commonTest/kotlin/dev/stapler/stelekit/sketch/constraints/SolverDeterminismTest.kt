@@ -30,4 +30,17 @@ class SolverDeterminismTest {
         println("SOLVER determinism worst_coordinate_difference=$worst")
         assertTrue(worst < agreementBar, "noise moved the solution by $worst")
     }
+
+    @Test
+    fun seedOneSolution_should_AgreeWithTheJvmGolden_OnEveryTarget() {
+        val case = SolverCorpus.hundredConstraints(1)
+        val res = Solver().solve(case.problem, case.start)
+        assertTrue(res is SolveResult.Solved, "seed 1")
+        val golden = SolverSeed1Golden.jvmSolution
+        assertTrue(res.x.size == golden.size, "size ${res.x.size} vs ${golden.size}")
+        var worst = 0.0
+        for (i in golden.indices) worst = maxOf(worst, abs(res.x[i] - golden[i]))
+        println("SOLVER seed1 max_abs_difference_vs_jvm_golden=$worst")
+        assertTrue(worst < agreementBar, "seed-1 solution differs from the JVM golden by $worst")
+    }
 }

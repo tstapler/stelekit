@@ -32,6 +32,7 @@ class SolverScaleTest {
         val small = angleSolve(100.0)
         val large = angleSolve(LARGE)
         assertTrue(small is SolveResult.Solved && large is SolveResult.Solved, "${small::class.simpleName} / ${large::class.simpleName}")
+        println("SOLVER scale small_its=${small.iterations} large_its=${large.iterations} algorithm=${large.algorithm}")
         assertTrue(abs(atan2(large.x[7], large.x[6]) - ANGLE) < 1e-6, "angle reached")
         assertEquals(small.algorithm, large.algorithm, "same algorithm at both scales (small ${small.iterations} its, large ${large.iterations} its)")
         assertTrue(large.iterations <= LARGE_ITERATION_BAR, "iterations at $LARGE units: ${large.iterations} (before the fix: 104 on Levenberg-Marquardt), at 100 units: ${small.iterations}")
