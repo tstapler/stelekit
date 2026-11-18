@@ -27,7 +27,7 @@ Status (Phase 4 repair): all three P1 items are RESOLVED IN THE PLAN (documents 
 ## P2 items folded into the plan (cheap ones; the rest stay open)
 | # | Folded as | Where |
 |---|---|---|
-| 4 | Reader-only release one release before conversion is reachable; first-write dialog lists affected devices; OD-1 text amended | plan Risk Control (staged rollout), OD-1, Story 1.4.6 |
+| 4 | Reader-only release one release before conversion is reachable; first-write dialog lists affected devices; OD-1 text amended. **AMENDED 2026-11-17: the reader-only release is NOT shipped (owner chose to ship together); this mitigation is dropped, the dialog is the remaining warning (plan "Decision log")** | plan Risk Control (staged rollout), OD-1, Story 1.4.6 |
 | 5 | Geometric-only fallback if Spike 0.1.2 fails; Epic 4.2 lists only property-tested constraint kinds | Story 0.1.2 fallback note, Task 4.2.3b |
 | 6 | `sketch.encode_ms_5000` and `sketch.save_bytes_5000` budgets and CI gate; one-element-per-line canonical layout; background encode with `Throwable` guard and debounce back-off | Observability Plan, Stories 1.1.5, 1.4.4, 6.2.2 |
 | 7 | Persisted text width/height and wrap points are authoritative; cross-target golden on identical sheet bytes | Glossary `TextMetricsProvider`, Story 2.1.2 |
