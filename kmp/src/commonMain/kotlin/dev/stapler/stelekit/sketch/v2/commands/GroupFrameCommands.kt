@@ -27,16 +27,14 @@ data class GroupElements(val ids: List<ElementId>, val groupId: GroupId) : Comma
     }
 }
 
-/** Dissolves the outermost group of each of [ids], for every member of that group (not only the selected ones). */
+/** Removes only the outermost group (the last entry of `groupIds`) of each of [ids]; no other element is touched (Excalidraw-like). */
 data class UngroupElements(val ids: List<ElementId>) : Command {
     override fun apply(doc: SketchDocumentV2): Either<CommandError, Applied> = either {
-        val outermost = doc.scene.requireAllForGroup(ids).bind().mapNotNull { it.base.groupIds.lastOrNull() }.toSet()
         var out = doc.scene
         val changed = LinkedHashSet<ElementId>()
-        for (e in doc.scene.elementsInOrder) {
-            val kept = e.base.groupIds.filter { it !in outermost }
-            if (kept == e.base.groupIds) continue
-            out = out.replace(e.withBase(e.base.copy(groupIds = kept)).touched()).bind()
+        for (e in doc.scene.requireAllForGroup(ids).bind()) {
+            if (e.base.groupIds.isEmpty()) continue
+            out = out.replace(e.withBase(e.base.copy(groupIds = e.base.groupIds.dropLast(1))).touched()).bind()
             changed += e.id
         }
         finish(doc, out, changed)

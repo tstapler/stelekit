@@ -59,6 +59,9 @@ import dev.stapler.stelekit.sketch.v2.tools.ToolCommand
 import dev.stapler.stelekit.sketch.v2.tools.toCommand
 import io.kotest.property.Arb
 import io.kotest.property.PropTestConfig
+import io.kotest.property.arbitrary.boolean
+import io.kotest.property.arbitrary.int
+import io.kotest.property.arbitrary.list
 import io.kotest.property.arbitrary.long
 import io.kotest.property.checkAll
 import kotlinx.coroutines.test.runTest
@@ -337,7 +340,7 @@ class ElementCommandsTest {
     }
 
     @Test
-    fun group_should_NestOutermostLast_And_UngroupPeelsOneLevelForAllMembers() {
+    fun group_should_NestOutermostLast_And_UngroupPeelsOnlyTheSelectedElementsOutermostLevel() {
         val doc = docOf(rect("a"), rect("b"), rect("c"))
         val inner = run(doc, GroupElements(listOf(id("a"), id("b")), GroupId("g1")))
         val outer = run(inner.present, GroupElements(listOf(id("a"), id("b"), id("c")), GroupId("g2")), history = inner)
@@ -346,12 +349,47 @@ class ElementCommandsTest {
 
         val afterUngroup = run(outer.present, UngroupElements(listOf(id("c"))), history = outer)
         val peeled = afterUngroup.present
-        assertEquals(listOf(GroupId("g1")), peeled.scene[id("a")]!!.base.groupIds)
+        assertEquals(listOf(GroupId("g1"), GroupId("g2")), peeled.scene[id("a")]!!.base.groupIds, "an unselected member keeps its groups")
         assertEquals(emptyList(), peeled.scene[id("c")]!!.base.groupIds)
         assertEquals(outer.present, afterUngroup.undo().present)
 
         assertEquals(CommandError.GroupTooSmall(1), GroupElements(listOf(id("a")), GroupId("x")).apply(doc).left())
         assertEquals(CommandError.DuplicateGroup("g1"), GroupElements(listOf(id("a"), id("b")), GroupId("g1")).apply(inner.present).left())
+    }
+
+    @Test
+    fun ungroup_should_RemoveEachSelectedElementsOwnOutermostGroupOnly_When_TheSelectionIsMixed() {
+        val doc = docOf(rect("a"), rect("b"), rect("c"), rect("d"), rect("e"))
+        val g1 = run(doc, GroupElements(listOf(id("a"), id("b"), id("c")), GroupId("g1")))
+        val g2 = run(g1.present, GroupElements(listOf(id("a"), id("d"), id("e")), GroupId("g2")), history = g1)
+        // a is in [g1, g2], b in [g1]; select a and b.
+        val out = run(g2.present, UngroupElements(listOf(id("a"), id("b"))), history = g2).present.scene
+        assertEquals(listOf(GroupId("g1")), out[id("a")]!!.base.groupIds, "a loses g2 only")
+        assertEquals(emptyList(), out[id("b")]!!.base.groupIds, "b loses g1, its own outermost")
+        assertEquals(listOf(GroupId("g1")), out[id("c")]!!.base.groupIds, "unselected c is untouched")
+        assertEquals(listOf(GroupId("g2")), out[id("d")]!!.base.groupIds, "unselected d is untouched")
+    }
+
+    @Test
+    fun ungroup_should_PeelOnlyTheSelectedElementsOutermostGroup_Property() = runTest {
+        checkAll(Arb.list(Arb.int(0..3), 4..4), Arb.list(Arb.boolean(), 4..4)) { depths, picked ->
+            val names = listOf("a", "b", "c", "d")
+            var doc = docOf(*names.map { rect(it) }.toTypedArray())
+            for (level in 0 until 3) { // element i joins g0..g(depth-1), innermost first
+                val members = names.filterIndexed { i, _ -> depths[i] > level }
+                if (members.size >= 2) doc = run(doc, GroupElements(members.map(::id), GroupId("g$level"))).present
+            }
+            val selected = names.filterIndexed { i, _ -> picked[i] }
+            if (selected.isEmpty()) return@checkAll
+            val before = names.associateWith { doc.scene[id(it)]!!.base.groupIds }
+            val peeled = before.mapValues { (n, ids) -> if (n in selected) ids.dropLast(1) else ids }
+            val sizes = peeled.values.flatten().groupingBy { it }.eachCount()
+            val result = UngroupElements(selected.map(::id)).apply(doc).fold({ error("unexpected Left: $it") }, { it.doc })
+            for (n in names) {
+                // reconcile drops a group left with a single member; nothing else may differ
+                assertEquals(peeled.getValue(n).filter { sizes.getValue(it) >= 2 }, result.scene[id(n)]!!.base.groupIds, n)
+            }
+        }
     }
 
     @Test

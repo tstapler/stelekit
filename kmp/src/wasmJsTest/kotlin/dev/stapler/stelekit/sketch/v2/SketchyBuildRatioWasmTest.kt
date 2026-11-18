@@ -19,14 +19,14 @@ import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
 import dev.stapler.stelekit.sketch.v2.text.FixedAdvanceTextMetricsProvider
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlin.time.TimeSource
 
 /**
- * Task 6.2.9a, the wasmJs half of the build-time rule: building the Sketchy draw list for 500 elements may take at most
- * `SketchyAvailability.BUILD_RATIO_LIMIT` times the Clean build on the same host, else the target draws Clean. The pixel half
- * is `LargeSceneDegradationWasmTest`. This test pins `SketchyAvailability.RECORDED` for Web to the measurement, so a faster
- * Sketchy build (or a slower Clean one) fails it until the recorded entry, ADR-004 and pivots.md are updated together.
- * The figures are printed as `SKETCHY_BUILD_RATIO_WASM`.
+ * Task 6.2.9a, the wasmJs half of the build-time rule: building the Sketchy draw list for 500 elements must take at most
+ * `SketchyAvailability.SKETCHY_BUILD_BUDGET_MS` (absolute, owner decision 2026-11-17), else the target draws Clean. The pixel
+ * half is `LargeSceneDegradationWasmTest`. This test pins `SketchyAvailability.RECORDED` for Web to the measurement. The
+ * Sketchy/Clean ratio is printed (informational) with the other figures as `SKETCHY_BUILD_RATIO_WASM`.
  */
 class SketchyBuildRatioWasmTest {
     private fun scene(): SketchSceneV2 = (0 until ELEMENTS).fold(SketchSceneV2.empty()) { s, i ->
@@ -45,12 +45,13 @@ class SketchyBuildRatioWasmTest {
     }
 
     @Test
-    fun sketchyBuild_should_BeWithinTheRatioLimitOfClean_For500Elements_OnWasm() {
+    fun sketchyBuild_should_StayUnderTheAbsoluteBudget_For500Elements_OnWasm() {
         val scene = scene()
         bestNanos(scene, RenderStyle.Clean)
         bestNanos(scene, RenderStyle.Sketchy)
         val measurement = SketchyMeasurement(0.0, sketchyBuildNanos = bestNanos(scene, RenderStyle.Sketchy), cleanBuildNanos = bestNanos(scene, RenderStyle.Clean))
-        println("SKETCHY_BUILD_RATIO_WASM sketchy=${measurement.sketchyBuildNanos} clean=${measurement.cleanBuildNanos} ratio=${measurement.sketchyBuildNanos.toDouble() / measurement.cleanBuildNanos}")
+        println("SKETCHY_BUILD_RATIO_WASM sketchy=${measurement.sketchyBuildNanos} clean=${measurement.cleanBuildNanos} ratio=${measurement.ratio} sketchyMs=${measurement.sketchyBuildMillis} budgetMs=${SketchyAvailability.SKETCHY_BUILD_BUDGET_MS}")
+        assertTrue(measurement.sketchyBuildMillis <= SketchyAvailability.SKETCHY_BUILD_BUDGET_MS, "500-element Sketchy build over the budget: $measurement")
         val measuredUnavailable = SketchyAvailability.assess(measurement) is SketchyStatus.Unavailable
         assertEquals(measuredUnavailable, SketchyAvailability().status(SketchTarget.Web) is SketchyStatus.Unavailable, "RECORDED must follow the measurement: $measurement")
     }

@@ -21,27 +21,38 @@ import kotlin.test.assertTrue
 
 /**
  * Task 6.2.9a: the recorded per-target Sketchy availability is exactly what the checkpoint measured (ADR-004,
- * `implementation/pivots.md`). Web's wasmJs build was 2.17x to 2.29x Clean in four runs, over the 2x limit, so Web draws Clean
- * with the notice; every other target keeps Sketchy, and iOS is unmeasured (BUG-001 blocks its compile on a Linux host).
+ * `implementation/pivots.md`). The rule is the pixel tolerance plus an absolute 4 ms budget for a 500-element Sketchy build
+ * (owner decision 2026-11-17); the Sketchy/Clean ratio is informational. wasmJs built it in about 1.1 ms with 0.0 differing
+ * pixels, so no target is Unavailable; iOS is unmeasured (BUG-001 blocks its compile on a Linux host).
  */
 class SketchyAvailabilityTest {
     private val recorded = SketchyAvailability()
 
     @Test
-    fun web_should_BeUnavailable_BecauseItsSketchyBuildMissedTheRatioLimit() {
-        val unavailable = assertIs<SketchyStatus.Unavailable>(recorded.status(SketchTarget.Web))
-        assertTrue("2x" in unavailable.reason || "2.2x" in unavailable.reason, unavailable.reason)
-        assertEquals(RenderStyle.Clean, recorded.effective(RenderStyle.Sketchy, SketchTarget.Web))
-        assertEquals("Hand-drawn style is not available on this device yet", recorded.notice(RenderStyle.Sketchy, SketchTarget.Web))
-        assertSame(CleanStrokeStyle, StrokeStyleProvider.forTarget(RenderStyle.Sketchy, recorded, SketchTarget.Web))
+    fun web_should_BeAvailable_BecauseItsSketchyBuildIsUnderTheAbsoluteBudget() {
+        assertSame(SketchyStatus.Available, recorded.status(SketchTarget.Web))
+        assertEquals(RenderStyle.Sketchy, recorded.effective(RenderStyle.Sketchy, SketchTarget.Web))
+        assertNull(recorded.notice(RenderStyle.Sketchy, SketchTarget.Web))
+        assertSame(SketchyStrokeStyle, StrokeStyleProvider.forTarget(RenderStyle.Sketchy, recorded, SketchTarget.Web))
     }
 
     @Test
-    fun theMeasuredWasmFigures_should_AssessAsUnavailable_AndTheJvmFiguresAsAvailable() {
-        val wasm = SketchyMeasurement(0.0, sketchyBuildNanos = 1_040_000, cleanBuildNanos = 460_000)
-        val jvm = SketchyMeasurement(0.0, sketchyBuildNanos = 754_260, cleanBuildNanos = 587_298)
-        assertIs<SketchyStatus.Unavailable>(SketchyAvailability.assess(wasm))
+    fun theMeasuredFigures_should_AssessAsAvailable_EvenAtARatioOverTwo() {
+        val wasm = SketchyMeasurement(0.0, sketchyBuildNanos = 1_100_000, cleanBuildNanos = 500_000)
+        val jvm = SketchyMeasurement(0.0, sketchyBuildNanos = 340_000, cleanBuildNanos = 130_000)
+        assertTrue(wasm.ratio > 2.0 && jvm.ratio > 2.0, "the old ratio rule would have switched both off")
+        assertSame(SketchyStatus.Available, SketchyAvailability.assess(wasm))
         assertSame(SketchyStatus.Available, SketchyAvailability.assess(jvm))
+    }
+
+    @Test
+    fun aBuildOverTheBudget_or_APixelDiffOverTolerance_should_AssessAsUnavailable() {
+        val slow = SketchyMeasurement(0.0, sketchyBuildNanos = 4_100_000, cleanBuildNanos = 4_000_000)
+        val atBudget = SketchyMeasurement(0.0, sketchyBuildNanos = 4_000_000, cleanBuildNanos = 100_000)
+        val diff = SketchyMeasurement(0.03, sketchyBuildNanos = 1_000_000, cleanBuildNanos = 500_000)
+        assertIs<SketchyStatus.Unavailable>(SketchyAvailability.assess(slow))
+        assertSame(SketchyStatus.Available, SketchyAvailability.assess(atBudget))
+        assertIs<SketchyStatus.Unavailable>(SketchyAvailability.assess(diff))
     }
 
     @Test

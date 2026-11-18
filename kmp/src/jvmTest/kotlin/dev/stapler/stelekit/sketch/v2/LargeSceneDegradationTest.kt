@@ -72,18 +72,19 @@ class LargeSceneDegradationTest {
     }
 
     @Test
-    fun sketchyBuild_should_BeWithinTheRatioLimitOfClean_For500Elements() {
+    fun sketchyBuild_should_StayUnderTheAbsoluteBudget_For500Elements() {
         val scene = grid(SAMPLE_ELEMENTS)
+        // One sample is BUILDS_PER_SAMPLE builds so JIT/GC jitter cannot dominate a sub-millisecond build; each build gets a
+        // fresh builder because the builder caches per element id (reusing one would time the cache).
         fun best(style: RenderStyle): Long = (0 until ROUNDS).minOf {
-            val b = builder()
             val start = System.nanoTime()
-            b.build(scene, style)
-            System.nanoTime() - start
+            repeat(BUILDS_PER_SAMPLE) { builder().build(scene, style) }
+            (System.nanoTime() - start) / BUILDS_PER_SAMPLE
         }
         best(RenderStyle.Clean)
         best(RenderStyle.Sketchy)
         val measurement = SketchyMeasurement(0.0, sketchyBuildNanos = best(RenderStyle.Sketchy), cleanBuildNanos = best(RenderStyle.Clean))
-        println("SKETCHY_BUILD_RATIO sketchy=${measurement.sketchyBuildNanos} clean=${measurement.cleanBuildNanos} ratio=${measurement.sketchyBuildNanos.toDouble() / measurement.cleanBuildNanos}")
+        println("SKETCHY_BUILD_RATIO sketchy=${measurement.sketchyBuildNanos} clean=${measurement.cleanBuildNanos} ratio=${measurement.ratio} sketchyMs=${measurement.sketchyBuildMillis} budgetMs=${SketchyAvailability.SKETCHY_BUILD_BUDGET_MS}")
         assertEquals(SketchyStatus.Available, SketchyAvailability.assess(measurement), "$measurement")
     }
 
@@ -93,5 +94,6 @@ class LargeSceneDegradationTest {
         const val CELL = 16
         const val SAMPLE_ELEMENTS = 500
         const val ROUNDS = 15
+        const val BUILDS_PER_SAMPLE = 25
     }
 }

@@ -28,21 +28,21 @@ Notes:
 ## Task 6.2.9a - Sketchy on wasmJs and iOS (Story 2.2.3)
 
 Trigger (requirements.md "Sketchy renderer on wasmJs / iOS"): the Sketchy render of architecture-15 differs from the JVM render by more than
-the metric-4 tolerance (2% of pixels), OR the Sketchy draw-list build for 500 elements takes more than 2x the Clean build on the same host.
+the metric-4 tolerance (2% of pixels), OR the Sketchy draw-list build for 500 elements takes more than an absolute 4 ms on the target
+(`SKETCHY_BUILD_BUDGET_MS`; owner restatement 2026-11-17, replacing "more than 2x the Clean build"; the ratio is still printed, as information only).
 Switch when it fires: `SketchyAvailability.RECORDED` marks that target `Unavailable` (draws Clean, notice, stored `roughness` and `seed` kept) and ADR-004 records it.
 It never blocks a release; no checkpoint removes a feature from scope.
 
-| Target | Pixel diff vs JVM | Build ratio, 500 elements | Source | Outcome |
+| Target | Pixel diff vs JVM | Sketchy build, 500 elements (ratio, informational) | Source | Outcome |
 |---|---|---|---|---|
-| Desktop (JVM) | reference mask | 1.28x (best of 15; 1.92x cold single run) | `LargeSceneDegradationTest` | PROCEED |
+| Desktop (JVM) | reference mask | 0.33 to 0.51 ms (2.2x to 2.8x Clean; the old 1.28x came from single-build samples) | `LargeSceneDegradationTest` | PROCEED: under 4 ms |
 | Android | pixel-exact (Spike 0.1.3 Robolectric) | not measured | Spike 0.1.3e | PROCEED on pixels; build ratio is part of the owner-run device pass |
-| wasmJs (headless Chrome 146) | 0.0 differing pixels | 2.17x, 2.26x, 2.29x, 2.18x (four runs) | `LargeSceneDegradationWasmTest`, `SketchyBuildRatioWasmTest`, 2026-11-16 | NARROW: over 2x, so Web draws Clean with the notice |
+| wasmJs (headless Chrome 146) | 0.0 differing pixels | 1.16 ms (2.23x Clean; 2.17x to 2.29x in four earlier runs) | `LargeSceneDegradationWasmTest`, `SketchyBuildRatioWasmTest`, 2026-11-16 and 2026-11-18 | PROCEED: under 4 ms; the 2026-11-16 NARROW (over 2x) is reversed by the owner restatement of 2026-11-17 |
 | iOS | not run | not run | BUG-001 blocks the iOS compile on this Linux host | UNVERIFIED: no outcome is claimed; a macOS or CI run must compile the target first |
 
 Notes:
-- The wasm figure comes from a software Chrome on a 24-CPU desktop under load (load average 8 to 11 during the runs); the ratio is the same-host
-  comparison the rule asks for, but a real browser on a device may differ. The owner can reverse the entry once a faster Sketchy build measures at or under 2x.
-- `StrokeStyleProvider.forTarget` has no production caller yet, so this switch changes no runtime behaviour until the renderer is wired to a target.
+- The wasm figure comes from a software Chrome on a 24-CPU desktop under load (load average 8 to 11 during the runs); the ratio is no longer a switch (it is printed for information), and a real browser on a device may differ. The owner reversed the Web entry on 2026-11-17 by restating the rule as an absolute 4 ms budget.
+- `StrokeStyleProvider.forTarget` has no production caller yet, so the availability rule changes no runtime behaviour until the renderer is wired to a target.
 
 
 ## Task 6.2.9d - .excalidraw fidelity (Story 5.1.3)

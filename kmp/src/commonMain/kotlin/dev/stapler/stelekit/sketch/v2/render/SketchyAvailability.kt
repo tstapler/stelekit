@@ -21,12 +21,21 @@ data class SketchyMeasurement(
     val pixelDiffFraction: Double,
     val sketchyBuildNanos: Long,
     val cleanBuildNanos: Long,
-)
+) {
+    val sketchyBuildMillis: Double get() = sketchyBuildNanos / NANOS_PER_MILLI
+
+    /** Informational only: reported by the measuring tests, never a switch (owner decision 2026-11-17). */
+    val ratio: Double get() = if (cleanBuildNanos <= 0L) 0.0 else sketchyBuildNanos.toDouble() / cleanBuildNanos
+
+    private companion object {
+        const val NANOS_PER_MILLI = 1_000_000.0
+    }
+}
 
 /**
  * Per-target Sketchy availability (Story 2.2.3). A target whose Sketchy render of architecture-15 misses the pixel
- * tolerance, or whose draw-list build for 500 elements takes more than [BUILD_RATIO_LIMIT] times the Clean build on the
- * same host, is marked [SketchyStatus.Unavailable]; [effective] then resolves every request to Clean there. Stored
+ * tolerance, or whose Sketchy draw-list build for 500 elements takes more than [SKETCHY_BUILD_BUDGET_MS] on that target,
+ * is marked [SketchyStatus.Unavailable]; [effective] then resolves every request to Clean there. Stored
  * `roughness` and `seed` are never touched, so a file drawn Sketchy elsewhere still draws Sketchy elsewhere.
  */
 class SketchyAvailability(private val entries: Map<SketchTarget, SketchyStatus> = RECORDED) {
@@ -46,25 +55,27 @@ class SketchyAvailability(private val entries: Map<SketchTarget, SketchyStatus> 
         /** Share of differing pixels still counted as the same render across rasterisers (Task 2.1.3c). */
         const val PIXEL_TOLERANCE_FRACTION = 0.02
 
-        /** The Sketchy draw-list build may take at most this many times the Clean build on the same host. */
-        const val BUILD_RATIO_LIMIT = 2.0
+        /**
+         * Absolute budget for one 500-element Sketchy draw-list build on the target (owner decision 2026-11-17, replacing the
+         * former "at most 2x Clean" ratio rule). The Sketchy/Clean ratio is still reported ([SketchyMeasurement.ratio]) but never switches a target.
+         */
+        const val SKETCHY_BUILD_BUDGET_MS = 4.0
 
         /**
-         * What the measuring tests found; ADR-004 "Sketchy availability per target" records the numbers. Web is Unavailable:
-         * its 500-element Sketchy build took about 2.2x Clean (`SketchyBuildRatioWasmTest`, Task 6.2.9a). iOS is unmeasured
-         * (BUG-001 blocks its compile on this host) and stays Available until a device run says otherwise.
+         * What the measuring tests found; ADR-004 "Sketchy availability per target" records the numbers. No target is
+         * Unavailable: wasmJs built 500 Sketchy elements in about 1.1 ms (budget 4 ms) with 0.0 differing pixels
+         * (`SketchyBuildRatioWasmTest`, Task 6.2.9a). iOS is unmeasured (BUG-001 blocks its compile on this host) and stays
+         * Available until a device run says otherwise.
          */
-        val RECORDED: Map<SketchTarget, SketchyStatus> = mapOf(
-            SketchTarget.Web to SketchyStatus.Unavailable("wasmJs Sketchy build about 2.2x Clean for 500 elements, over the 2x limit (Task 6.2.9a)"),
-        )
+        val RECORDED: Map<SketchTarget, SketchyStatus> = emptyMap()
 
-        /** The abort rule as one function, so the tests and the ADR apply the same one. */
+        /** The switch rule (pixel tolerance and absolute build budget) as one function, so the tests and the ADR apply the same one. */
         fun assess(measurement: SketchyMeasurement): SketchyStatus {
-            val ratio = if (measurement.cleanBuildNanos <= 0L) 0.0 else measurement.sketchyBuildNanos.toDouble() / measurement.cleanBuildNanos
             return when {
                 measurement.pixelDiffFraction > PIXEL_TOLERANCE_FRACTION ->
                     SketchyStatus.Unavailable("pixel diff ${measurement.pixelDiffFraction} over $PIXEL_TOLERANCE_FRACTION")
-                ratio > BUILD_RATIO_LIMIT -> SketchyStatus.Unavailable("Sketchy build $ratio times Clean, over $BUILD_RATIO_LIMIT")
+                measurement.sketchyBuildMillis > SKETCHY_BUILD_BUDGET_MS ->
+                    SketchyStatus.Unavailable("Sketchy build ${measurement.sketchyBuildMillis} ms over the $SKETCHY_BUILD_BUDGET_MS ms budget")
                 else -> SketchyStatus.Available
             }
         }
