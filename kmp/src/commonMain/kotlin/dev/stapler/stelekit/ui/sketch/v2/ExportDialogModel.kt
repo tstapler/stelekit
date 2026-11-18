@@ -109,7 +109,11 @@ class ExportDialogModel(private val source: ExportSource, private val runner: Sk
     companion object {
         /** "This image would be 36,000 px wide. Choose 1x or export a frame." (UX-57); the side over the cap is named. */
         fun tooLargeMessage(failure: ExportFailure.TooLarge): String =
-            if (failure.widthPx > failure.maxSidePx) Strings.tooWide(failure.widthPx) else Strings.tooTall(failure.heightPx)
+            when {
+                failure.widthPx > failure.maxSidePx -> Strings.tooWide(failure.widthPx)
+                failure.heightPx > failure.maxSidePx -> Strings.tooTall(failure.heightPx)
+                else -> Strings.tooManyPixels(failure.widthPx, failure.heightPx)
+            }
     }
 }
 

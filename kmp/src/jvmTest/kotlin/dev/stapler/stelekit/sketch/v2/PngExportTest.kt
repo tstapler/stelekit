@@ -159,6 +159,15 @@ class PngExportTest {
     }
 
     @Test
+    fun measure_should_RefuseBeforeAllocating_When_BothSidesFitButTheAreaExceedsTheCap() {
+        val side = 15_000
+        val scene = sceneOf(listOf(RectElement(base("big"), unit(0), unit(0), unit(side), unit(side))))
+        val tooLarge = exporter.measure(scene, PngExportOptions(scale = 1, padding = 0.0)).leftOrNull() as PngExportError.TooLarge
+        assertTrue(tooLarge.widthPx <= tooLarge.maxSidePx && tooLarge.heightPx <= tooLarge.maxSidePx, "each side is within the side cap")
+        assertTrue(tooLarge.widthPx * tooLarge.heightPx > dev.stapler.stelekit.sketch.v2.scene.SceneLimits.Default.maxPngPixels)
+    }
+
+    @Test
     fun export_should_CropToTheSelection_And_KeepTransparencyWhenAskedFor() {
         val scene = sceneOf(listOf(RectElement(base("a"), unit(0), unit(0), unit(40), unit(40)), RectElement(base("b"), unit(500), unit(500), unit(60), unit(30))))
         val options = PngExportOptions(scale = 1, padding = 0.0, background = null, selection = setOf(ElementId("b")))

@@ -163,6 +163,8 @@ object SketchImportExportStrings {
 
         fun tooTall(heightPx: Long): String = "This image would be ${grouped(heightPx)} px tall. Choose 1x or export a frame."
 
+        fun tooManyPixels(widthPx: Long, heightPx: Long): String = "This image would be ${grouped(widthPx)} by ${grouped(heightPx)} px. Choose 1x or export a frame."
+
         fun previewSize(widthPx: Long, heightPx: Long): String = "${grouped(widthPx)} x ${grouped(heightPx)} px"
 
         fun missingImages(count: Int): String =

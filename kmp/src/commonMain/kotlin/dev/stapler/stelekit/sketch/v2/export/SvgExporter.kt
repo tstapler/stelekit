@@ -77,8 +77,9 @@ object SvgExporter {
         sb.append("<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" version=\"1.1\"")
         sb.append(" width=\"").append(num(width)).append("\" height=\"").append(num(height)).append('"')
         sb.append(" viewBox=\"").append(num(minX)).append(' ').append(num(minY)).append(' ').append(num(width)).append(' ').append(num(height)).append("\">\n")
-        if (w.clips.isNotEmpty()) {
+        if (w.clips.isNotEmpty() || w.symbols.isNotEmpty()) {
             sb.append("<defs>")
+            sb.append(w.symbols)
             for ((rect, id) in w.clips) {
                 sb.append("<clipPath id=\"").append(id).append("\"><rect x=\"").append(num(rect.x)).append("\" y=\"").append(num(rect.y))
                     .append("\" width=\"").append(num(rect.width)).append("\" height=\"").append(num(rect.height)).append("\"/></clipPath>")
@@ -107,6 +108,10 @@ object SvgExporter {
     private class Writer(private val images: SvgImageSource) {
         val body = StringBuilder()
         val clips = LinkedHashMap<DrawRect, String>()
+
+        /** One `<symbol>` per distinct file: every image element of that file only `<use>`s it, so its bytes are written once. */
+        val symbols = StringBuilder()
+        private val symbolIds = HashMap<String, String?>()
 
         fun ops(list: List<DrawOp>) {
             for (op in list) when (op) {
@@ -171,16 +176,15 @@ object SvgExporter {
         }
 
         private fun image(op: DrawOp.ImageOp) {
-            val file = op.fileId?.let { images.load(it) }
+            val symbol = op.fileId?.let(::symbolFor)
             val r = op.rect
-            if (file == null || isSvg(file)) {
+            if (symbol == null) {
                 body.append("<rect x=\"").append(num(r.x)).append("\" y=\"").append(num(r.y)).append("\" width=\"").append(num(r.width))
                     .append("\" height=\"").append(num(r.height)).append("\" fill=\"none\" stroke=\"#868e96\" stroke-dasharray=\"4 4\"")
                 op.fileId?.let { body.append(" data-file-id=\"").append(attr(it)).append('"') }
                 body.append("/>\n")
                 return
             }
-            val href = "data:${attr(file.mime)};base64,${Base64Text.encode(file.bytes)}"
             body.append("<g")
             val transform = transformOf(op)
             if (transform.isNotEmpty()) body.append(" transform=\"").append(transform).append('"')
@@ -188,15 +192,28 @@ object SvgExporter {
             body.append(">")
             val crop = op.crop
             if (crop == null) {
-                body.append("<image x=\"").append(num(r.x)).append("\" y=\"").append(num(r.y)).append("\" width=\"").append(num(r.width))
-                    .append("\" height=\"").append(num(r.height)).append("\" preserveAspectRatio=\"none\" href=\"").append(href).append("\"/>")
+                body.append("<use href=\"#").append(symbol).append("\" x=\"").append(num(r.x)).append("\" y=\"").append(num(r.y)).append("\" width=\"").append(num(r.width))
+                    .append("\" height=\"").append(num(r.height)).append("\"/>")
             } else {
                 body.append("<svg x=\"").append(num(r.x)).append("\" y=\"").append(num(r.y)).append("\" width=\"").append(num(r.width))
                     .append("\" height=\"").append(num(r.height)).append("\" viewBox=\"").append(num(crop.x)).append(' ').append(num(crop.y)).append(' ')
-                    .append(num(crop.width)).append(' ').append(num(crop.height)).append("\" preserveAspectRatio=\"none\"><image width=\"")
-                    .append(num(crop.naturalWidth)).append("\" height=\"").append(num(crop.naturalHeight)).append("\" href=\"").append(href).append("\"/></svg>")
+                    .append(num(crop.width)).append(' ').append(num(crop.height)).append("\" preserveAspectRatio=\"none\"><use href=\"#").append(symbol)
+                    .append("\" width=\"").append(num(crop.naturalWidth)).append("\" height=\"").append(num(crop.naturalHeight)).append("\"/></svg>")
             }
             body.append("</g>\n")
+        }
+
+        /** The symbol id of [fileId]'s image, or null when the file is missing or SVG; the file is read and encoded once per id. */
+        private fun symbolFor(fileId: String): String? {
+            if (symbolIds.containsKey(fileId)) return symbolIds[fileId]
+            val file = images.load(fileId)?.takeUnless(::isSvg)
+            val id = file?.let { "img${symbolIds.size}" }
+            symbolIds[fileId] = id
+            if (file != null) {
+                symbols.append("<symbol id=\"").append(id).append("\"><image width=\"100%\" height=\"100%\" preserveAspectRatio=\"none\" href=\"data:")
+                    .append(attr(file.mime)).append(";base64,").append(Base64Text.encode(file.bytes)).append("\"/></symbol>")
+            }
+            return id
         }
 
         private fun transformOf(op: DrawOp.ImageOp): String {

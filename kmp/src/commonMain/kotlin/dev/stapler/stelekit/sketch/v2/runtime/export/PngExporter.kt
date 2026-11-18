@@ -66,7 +66,7 @@ sealed interface PngExportError {
 /**
  * PNG export (Story 5.2.2): draws the same draw list the editor shows, through [ScenePainter], into an offscreen
  * `ImageBitmap` and encodes it with the platform [PngEncoder]. The pixel size is checked against
- * `SceneLimits.maxPngSidePx` before any bitmap is allocated. Offscreen draw works on wasmJs too (Spike 0.1.3c).
+ * `SceneLimits.maxPngSidePx` and `maxPngPixels` before any bitmap is allocated. Offscreen draw works on wasmJs too (Spike 0.1.3c).
  */
 class PngExporter(
     private val encoder: PngEncoder = PngEncoder(),
@@ -103,7 +103,7 @@ class PngExporter(
         val content = options.bounds ?: contentBounds(subject) ?: return PngExportError.NothingToExport.left()
         val widthPx = pixels(content.maxX - content.minX + 2 * options.padding, options.scale)
         val heightPx = pixels(content.maxY - content.minY + 2 * options.padding, options.scale)
-        if (widthPx > limits.maxPngSidePx || heightPx > limits.maxPngSidePx) {
+        if (widthPx > limits.maxPngSidePx || heightPx > limits.maxPngSidePx || widthPx * heightPx > limits.maxPngPixels) {
             return PngExportError.TooLarge(widthPx, heightPx, limits.maxPngSidePx).left()
         }
         return Plan(subject, content, widthPx, heightPx).right()

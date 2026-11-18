@@ -39,6 +39,8 @@ data class SceneLimits(
     val softElementThreshold: Int = 4_000,
     val softConstraintThreshold: Int = 160,
     val maxPngSidePx: Int = 16_000,
+    /** Width times height of one PNG export; 100 MP is a 400 MB ARGB bitmap, checked before anything is allocated. */
+    val maxPngPixels: Long = 100_000_000,
     val slowSolveIndicatorMs: Long = 100,
     val maxHistoryEntries: Int = 100,
     val maxSemanticsNodes: Int = 200,
@@ -63,7 +65,7 @@ data class SceneLimits(
         "maxImagePixels" to maxImagePixels, "maxDecodedImageBytesPerSheet" to maxDecodedImageBytesPerSheet,
         "maxParseMillis" to maxParseMillis, "maxLibraryItems" to maxLibraryItems, "maxLibraryBytes" to maxLibraryBytes,
         "maxLayers" to maxLayers, "maxLayerIdChars" to maxLayerIdChars, "softElementThreshold" to softElementThreshold,
-        "softConstraintThreshold" to softConstraintThreshold, "maxPngSidePx" to maxPngSidePx,
+        "softConstraintThreshold" to softConstraintThreshold, "maxPngSidePx" to maxPngSidePx, "maxPngPixels" to maxPngPixels,
         "slowSolveIndicatorMs" to slowSolveIndicatorMs, "maxHistoryEntries" to maxHistoryEntries,
         "maxSemanticsNodes" to maxSemanticsNodes, "maxDiagnosticsEntries" to maxDiagnosticsEntries,
         "maxVisibleNotices" to maxVisibleNotices, "maxGoToResults" to maxGoToResults,
