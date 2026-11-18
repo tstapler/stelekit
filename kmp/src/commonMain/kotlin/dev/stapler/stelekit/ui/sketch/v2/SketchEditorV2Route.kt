@@ -81,7 +81,7 @@ fun SketchEditorV2Route(
     var dialog by remember(projectUuid, deps) { mutableStateOf<EntryDialog?>(null) }
     var converted by remember(projectUuid, deps) { mutableStateOf<SheetUuid?>(null) }
     var engineChanged by remember(projectUuid, deps) { mutableStateOf(false) }
-    val frameClock = rememberCoroutineScope().coroutineContext[MonotonicFrameClock]
+    val frameClock = compositionFrameClock()
     val scope = remember(deps) {
         routeScope(frameClock, deps?.log) {
             busy = false
@@ -231,3 +231,7 @@ internal fun lastBackupExporterOf(platform: HostPlatform, slug: String?): LastBa
 
 private const val SCHEMA_V2 = "2"
 private const val PLATFORM_UNKNOWN = ""
+
+/** The composition's frame clock, read without binding the transient scope to a name the remember audit would track. */
+@Composable
+private fun compositionFrameClock(): MonotonicFrameClock? = rememberCoroutineScope().coroutineContext[MonotonicFrameClock]

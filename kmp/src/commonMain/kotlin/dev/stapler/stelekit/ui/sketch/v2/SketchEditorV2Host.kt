@@ -115,13 +115,15 @@ fun SketchEditorV2Host(
     SideEffect { controller.keys.hint = hint }
     LaunchedEffect(controller.revision) { largeScene.refresh() }
     DisposableEffect(extras) { onDispose { extras.close() } }
-    val leaveScope = rememberCoroutineScope()
     val latestBack by rememberUpdatedState(onBack)
+    // Owned here, not rememberCoroutineScope: the remembered LeaveGuard would outlive that scope (ScopeEscapeAuditTest).
+    val leaveScope = remember(session) { kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + dev.stapler.stelekit.coroutines.PlatformDispatcher.Main) }
     val leave = remember(session) { LeaveGuard(controller::flush, leaveScope) { latestBack() } }
     PlatformBackHandler(enabled = true) { leave.requestLeave() }
     DisposableEffect(session) {
         onDispose {
             largeScene.close()
+            leaveScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
             session.closeAfterSave(discard = leave.discarded)
         }
     }
