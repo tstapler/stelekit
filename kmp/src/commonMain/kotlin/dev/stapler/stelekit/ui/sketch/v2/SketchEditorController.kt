@@ -258,7 +258,7 @@ class SketchEditorController(
      * Runs a label-editor solve through the shared [SolveRunner] under the edit gate and adopts the step it committed, so the new
      * value and the geometry the solver moved are one history step. Returns the editor's outcome.
      */
-    internal suspend fun runLabelEdit(edit: suspend (SolveRunner) -> SolveOutcome?): SolveOutcome? = queue.exclusive {
+    suspend fun runLabelEdit(edit: suspend (SolveRunner) -> SolveOutcome?): SolveOutcome? = queue.exclusive {
         if (readOnly) return@exclusive null
         val outcome = edit(runner)
         if (outcome is SolveOutcome.Done) {
@@ -348,7 +348,7 @@ class SketchEditorController(
         constraintState.onAction(action, { submit(it, solve = true) }) { constraints.highlighted = it }
 
     /** Solves [submit] queued and not yet finished; a host test waits for 0 because the canvas going idle does not wait for a solve on the solver dispatcher. */
-    internal val pendingSolves: StateFlow<Int> get() = queue.pending
+    val pendingSolves: StateFlow<Int> get() = queue.pending
 
     /**
      * Saves what the editor holds now (leaving the sheet, a hidden page) and returns where that left the file. Solves already queued
