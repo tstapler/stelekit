@@ -1107,6 +1107,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.SketchEditorThreadingTest::class,
     dev.stapler.stelekit.sketch.v2.SketchEditorInputWiringTest::class,
     dev.stapler.stelekit.sketch.v2.SketchEditorLeaveTest::class,
+    dev.stapler.stelekit.sketch.v2.SketchEditorSolveRaceTest::class,
     dev.stapler.stelekit.sketch.v2.EditorExtrasTest::class,
     dev.stapler.stelekit.sketch.v2.SketchEditorOpenerTest::class,
     dev.stapler.stelekit.sketch.v2.SketchEditorStringsTest::class,
