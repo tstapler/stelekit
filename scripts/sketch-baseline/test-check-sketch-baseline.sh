@@ -17,10 +17,12 @@ git clone -q --depth 1 "file://$root" "$work/shallow"
 check "shallow clone is refused" 1 "baseline SHA not reachable: shallow clone or not on main" "$work/shallow"
 
 git clone -q "$root" "$work/full"
+# CI checks out a detached merge commit with no local `main`, so a clone of it has no origin/main; the script under test needs one.
+git -C "$work/full" update-ref refs/remotes/origin/main "$(git -C "$root" rev-parse origin/main)"
 cp -r "$root/scripts/sketch-baseline" "$work/full/scripts/"
 cp "$root/project_plans/excalidraw-sketch-engine/implementation/regression-baseline.txt" \
   "$work/full/project_plans/excalidraw-sketch-engine/implementation/regression-baseline.txt"
-victim=$(sed -n '/^# sketch test files/,/^# sketch golden fixtures/{/^#/d;/^change-record/d;p}' "$work/full/project_plans/excalidraw-sketch-engine/implementation/regression-baseline.txt" | head -1)
+victim=$(sed -n '/^# sketch test files/,/^# sketch golden fixtures/{/^#/d;/^change-record/d;p}' "$work/full/project_plans/excalidraw-sketch-engine/implementation/regression-baseline.txt" | sed -n 1p)
 check "an unmodified tree passes" 0 "metric 6 baseline holds" "$work/full"
 (cd "$work/full" && echo "// edited" >> "$victim" && git -c user.email=t@example.com -c user.name=t commit -q -am "edit a baseline test")
 check "an edited baseline test fails" 1 "baseline test edited: $victim" "$work/full"
