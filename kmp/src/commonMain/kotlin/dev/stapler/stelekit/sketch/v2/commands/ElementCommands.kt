@@ -167,6 +167,32 @@ data class MoveElements(val ids: List<ElementId>, val dx: Double, val dy: Double
     }
 }
 
+/**
+ * Moves each element of [deltas] by its own delta in ONE pass: one bound-arrow follow and one reconcile for the whole selection.
+ * A frame's members and a container's labels follow their parent's delta (an entry of their own is ignored), and an arrow
+ * stays bound to any target that is also in [deltas].
+ */
+internal fun SketchDocumentV2.moveEach(deltas: Map<ElementId, Pair<Double, Double>>): Either<CommandError, Applied> = either {
+    val scene = scene
+    scene.requireAll(deltas.keys).bind()
+    val effective = LinkedHashMap<ElementId, Pair<Double, Double>>(deltas)
+    val membersByFrame = scene.elementsInOrder.filter { it.base.frameId != null }.groupBy { it.base.frameId }
+    for ((id, d) in deltas) if (scene[id] is FrameElement) membersByFrame[id].orEmpty().forEach { effective[it.id] = d }
+    for (e in scene.elementsInOrder) {
+        val parent = (e as? TextElement)?.containerId ?: continue
+        effective[parent]?.let { effective[e.id] = it }
+    }
+    var out = scene
+    for ((id, d) in effective) {
+        if (d.first == 0.0 && d.second == 0.0) continue
+        out = out.replace(scene.element(id).bind().shifted(d.first, d.second, scene.limits).bind().touched()).bind()
+    }
+    val moved = effective.keys
+    val freed = BindingEngine.unbindStranded(out, moved).bind()
+    val followed = freed.scene.followBoundArrows(moved).bind()
+    finish(this@moveEach, followed.scene, moved + freed.changed + followed.arrows)
+}
+
 /** Sets the bounding box of one element; lines and freedraw strokes are scaled into it, an ellipse is fitted to it, arrow ends bound to it follow. */
 data class ResizeElement(val id: ElementId, val x: Double, val y: Double, val width: Double, val height: Double) : Command {
     override fun apply(doc: SketchDocumentV2): Either<CommandError, Applied> = either {

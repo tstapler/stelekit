@@ -19,7 +19,14 @@ import dev.stapler.stelekit.sketch.v2.commands.DistributeElements
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.commands.StyleElements
 import dev.stapler.stelekit.sketch.v2.commands.StylePatch
+import dev.stapler.stelekit.sketch.v2.binding.BindArrowEnd
+import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
+import dev.stapler.stelekit.sketch.v2.scene.BindingEnd
+import dev.stapler.stelekit.sketch.v2.scene.ElementBase
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
+import dev.stapler.stelekit.sketch.v2.scene.FrameElement
+import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
+import dev.stapler.stelekit.sketch.v2.scene.TextElement
 import dev.stapler.stelekit.sketch.v2.scene.FillStyle
 import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
@@ -44,6 +51,30 @@ class AlignCommandsTest {
         val doc = step(three(), DistributeElements(all, DistributeAxis.Horizontal))
         assertEquals(listOf(0.0, 50.0, 100.0), listOf("a", "b", "c").map { x(doc, it) })
         assertEquals(7.0, y(doc, "b"), "the other axis is untouched")
+    }
+
+    @Test
+    fun align_should_KeepBindingsAndMoveLabelsAndFrameMembersOnce_When_TheyAreInTheSelection() {
+        fun u(v: Int) = W6Kit.u(v)
+        val label = TextElement(ElementBase(ElementId("t")), u(31), u(8), u(5), u(5), text = "l", containerId = ElementId("b"))
+        val arrow = ArrowElement(ElementBase(ElementId("ar")), listOf(ScenePoint(u(5), u(5)), ScenePoint(u(35), u(12))))
+        val frame = FrameElement(ElementBase(ElementId("fr")), u(60), u(60), u(50), u(50))
+        val member = rect("m", 70, 70).let { it.copy(base = it.base.copy(frameId = ElementId("fr"))) }
+        val doc = run(
+            SketchDocumentV2(),
+            AddElements(listOf(rect("a", 0, 0), rect("b", 30, 7), label, arrow, frame, member)),
+            BindArrowEnd(ElementId("ar"), BindingEnd.Start, ElementId("a")),
+            BindArrowEnd(ElementId("ar"), BindingEnd.End, ElementId("b")),
+        )
+
+        val after = step(doc, AlignElements(listOf("a", "b", "t", "ar", "fr", "m").map(::ElementId), AlignEdge.Left))
+
+        val moved = after.scene[ElementId("ar")] as ArrowElement
+        assertNotNull(moved.startBinding, "start stays bound: its target is in the selection")
+        assertNotNull(moved.endBinding, "end stays bound: its target is in the selection")
+        assertEquals(1.0, (after.scene[ElementId("t")] as TextElement).x.value, "the label rides on its container, once")
+        assertEquals(0.0, (after.scene[ElementId("fr")] as FrameElement).x.value)
+        assertEquals(10.0, x(after, "m"), "the member rides on its frame, once")
     }
 
     @Test

@@ -6,6 +6,7 @@ package dev.stapler.stelekit.sketch.v2.commands
 
 import arrow.core.Either
 import arrow.core.raise.either
+import arrow.core.right
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
@@ -36,18 +37,9 @@ private fun SketchSceneV2.boundsOf(ids: List<ElementId>): Either<CommandError, L
     }
 }
 
-/** Applies one delta per element in a single pass; zero deltas are left out so a no-op is [CommandError.NoChange]-clean. */
-private fun SketchDocumentV2.shiftEach(deltas: Map<ElementId, Pair<Double, Double>>): Either<CommandError, Applied> = either {
-    var doc = this@shiftEach
-    val touched = LinkedHashSet<ElementId>()
-    for ((id, d) in deltas) {
-        if (d.first == 0.0 && d.second == 0.0) continue
-        val applied = MoveElements(listOf(id), d.first, d.second).apply(doc).bind()
-        doc = applied.doc
-        touched += applied.changedIds
-    }
-    Applied(doc, touched)
-}
+/** Applies one delta per element as a single batched move; zero deltas are left out so a no-op is [CommandError.NoChange]-clean. */
+private fun SketchDocumentV2.shiftEach(deltas: Map<ElementId, Pair<Double, Double>>): Either<CommandError, Applied> =
+    if (deltas.values.all { it.first == 0.0 && it.second == 0.0 }) Applied(this, emptySet()).right() else moveEach(deltas)
 
 /** Moves every element so the chosen edge or centre of its bounds lines up with the selection's extreme or middle. */
 data class AlignElements(val ids: List<ElementId>, val edge: AlignEdge) : Command {
