@@ -171,4 +171,20 @@ class SheetSaverResilienceTest {
         assertContentEquals(bytesOf(rig.loaded), rig.store.files.getValue(path), "mine replaced theirs, as the button says")
         rig.saver.close()
     }
+
+    @Test
+    fun keepMine_should_WriteTheNewestScene_When_AnEditWasSubmittedAfterTheCallerReadItsScene() = runTest {
+        val rig = Rig(this)
+        rig.start()
+        rig.pullTheirs(this, docOf("e0", "theirs"))
+        val staleCurrent = rig.loaded
+        val newer = docOf("e0", "typed-meanwhile")
+
+        rig.saver.submit(newer)
+        rig.saver.keepMine(staleCurrent)
+        advanceUntilIdle()
+
+        assertContentEquals(bytesOf(newer), rig.store.files.getValue(path), "the edit made while keepMine waited must not be overwritten by the older scene")
+        rig.saver.close()
+    }
 }

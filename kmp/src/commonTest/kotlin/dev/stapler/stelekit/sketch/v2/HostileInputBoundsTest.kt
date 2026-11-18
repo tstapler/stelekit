@@ -120,6 +120,26 @@ class HostileInputBoundsTest {
         assertTrue(ExcalidrawParser(small).parse(ImportSource.ofBytes(text.encodeToByteArray())) is Either.Right)
     }
 
+    @Test
+    fun parse_should_CountTheElementsAndFilesMembersTowardTheTopLevelCap_LikeAnyOtherMember() = runTest {
+        val small = SceneLimits(maxJsonRootMembers = 8)
+        val junk = (0 until small.maxJsonRootMembers - 1).joinToString(",") { "\"k$it\":1" }
+        // `junk` holds cap-1 members, so "elements" or "files" is the (cap)th: accepted. One more junk key before it is cap+1: refused.
+        val oneOver = "$junk,\"k99\":1"
+        listOf(
+            """{$junk,"elements":[]}""" to true,
+            """{$oneOver,"elements":[]}""" to false,
+            """{$junk,"files":{}}""" to true,
+            """{$oneOver,"files":{}}""" to false,
+        ).forEach { (text, accepted) ->
+            val scanner = ExcalidrawParser(small).parse(ImportSource.ofBytes(text.encodeToByteArray()))
+            val oracle = ExcalidrawParser(small).parseWholeFile(text.encodeToByteArray())
+            assertEquals(accepted, scanner is Either.Right, "scanner on $text")
+            assertEquals(accepted, oracle is Either.Right, "oracle on $text")
+            if (!accepted) assertEquals(ImportReason.TooManyElements, (scanner as Either.Left).value.reason)
+        }
+    }
+
     // ---- C-4: colour filter on the native decode path
 
     @Test

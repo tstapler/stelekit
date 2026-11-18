@@ -443,6 +443,7 @@ private class SpanMachine(
         when (role) {
             ROLE_ROOT -> state = S_DONE
             ROLE_FILES -> {
+                caps.checkRootMember(table.members.size, JsonSpanScanner.FILES_KEY in table.members)
                 table.put(JsonSpanScanner.FILES_KEY, Member.Files(fileEntries.values.toList()))
                 state = S_OBJ_AFTER
             }
@@ -458,7 +459,9 @@ private class SpanMachine(
 
     private fun closeArray() {
         if (roles[--top] != ROLE_ARRAY) malformed("mismatched ]")
-        table.put(keys[top - 1] ?: "", Member.Elements(arraySpans))
+        val key = keys[top - 1] ?: ""
+        caps.checkRootMember(table.members.size, key in table.members)
+        table.put(key, Member.Elements(arraySpans))
         state = S_OBJ_AFTER
     }
 

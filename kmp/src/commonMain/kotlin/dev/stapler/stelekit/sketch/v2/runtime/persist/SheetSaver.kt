@@ -247,7 +247,8 @@ class SheetSaver(
      * write. With no scene known at all there is nothing of "mine" to write, so the file is left as is and the base is not re-based.
      */
     suspend fun keepMine(current: SketchDocumentV2? = null) = saveGate.withLock {
-        val mine = current ?: latest.value?.doc
+        // [current] was read before this waited on the gate; an edit submitted meanwhile is newer, so [latest] wins.
+        val mine = latest.value?.doc ?: current
         if (mine == null) {
             ports.diagnostics.resolve(BannerRowId.SaveConflict)
             mutableState.value = SaveState.Saved
