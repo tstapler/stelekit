@@ -31,6 +31,24 @@ class TestRegistrationAuditTest {
             .keys.filter { path -> !suite.contains(path.substringAfterLast('/').removeSuffix(".kt")) }
     }.sorted()
 
+    private fun stripComments(text: String) = text.replace(Regex("""(?s)/\*.*?\*/"""), "").replace(Regex("""//.*|#.*"""), "")
+
+    /**
+     * Files the suite names only in a comment (no `Name::class`) and whose target `BUILD.bazel` does not exclude by code line:
+     * the comment says "excluded" but Bazel still compiles the file, which breaks the whole target when it needs a fixture
+     * (commonTest rig, no Compose plugin) the target lacks. [builds] maps a source set to its BUILD file text.
+     */
+    fun commentOnlyWithoutBuildExclusion(sources: Map<String, String>, builds: Map<String, String>): List<String> =
+        builds.flatMap { (set, build) ->
+            val suiteCode = stripComments(sources[suites.getValue(set)].orEmpty())
+            val buildCode = stripComments(build)
+            sources.filter { (path, text) -> path.startsWith("$set/") && isSketchV2TestFile(path) && hasTests(text) && path != suites.getValue(set) }
+                .keys.filter { path ->
+                    val name = path.substringAfterLast('/').removeSuffix(".kt")
+                    !Regex("""\b$name::class\b""").containsMatchIn(suiteCode) && !buildCode.contains("$name.kt")
+                }
+        }.sorted()
+
     /** commonTest `sketch/v2` test files absent from the BUILD file text. */
     fun missingFromBuild(sources: Map<String, String>, buildText: String): List<String> =
         sources.filter { (path, text) -> path.startsWith("commonTest/") && isSketchV2TestFile(path) && hasTests(text) }
@@ -59,6 +77,34 @@ class TestRegistrationAuditTest {
         assertTrue(suites.values.all { it in sources }, "a suite file was not loaded: ${suites.values.filter { it !in sources }}")
         val unnamed = unnamedInSuite(sources)
         assertTrue(unnamed.isEmpty(), "name each class in its suite file (register it, or list it in the exclusion comment with the reason):\n  ${unnamed.joinToString("\n  ")}")
+    }
+
+    @Test
+    fun testRegistrationAudit_should_FlagACommentOnlyName_When_TheBuildFileDoesNotExcludeIt() {
+        val suite = "jvmTest/dev/stapler/stelekit/AllJvmTests.kt"
+        val planted = mapOf(
+            suite to "// ExcludedTest and LostTest run under Gradle only\nSeenTest::class",
+            "jvmTest/dev/stapler/stelekit/sketch/v2/SeenTest.kt" to "@Test fun a() {}",
+            "jvmTest/dev/stapler/stelekit/sketch/v2/ExcludedTest.kt" to "@Test fun a() {}",
+            "jvmTest/dev/stapler/stelekit/sketch/v2/LostTest.kt" to "@Test fun a() {}",
+        )
+        val build = "# LostTest.kt only in a BUILD comment\nexclude = [\"**/ExcludedTest.kt\"]"
+        assertEquals(
+            listOf("jvmTest/dev/stapler/stelekit/sketch/v2/LostTest.kt"),
+            commentOnlyWithoutBuildExclusion(planted, mapOf("jvmTest" to build)),
+        )
+    }
+
+    @Test
+    fun testRegistrationAudit_should_PassAtHead_When_EveryCommentOnlySketchV2NameIsExcludedInItsBuildFile() {
+        Assume.assumeTrue("BUILD.bazel is not bundled into the Bazel resources; the check runs under Gradle", WiringInputs.mode == "gradle-disk")
+        val root = DocRepoLocator.repoRoot
+        val builds = mapOf(
+            "jvmTest" to root.resolve("kmp/src/jvmTest/kotlin/BUILD.bazel").readText(),
+            "androidUnitTest" to root.resolve("kmp/src/androidUnitTest/kotlin/BUILD.bazel").readText(),
+        )
+        val bad = commentOnlyWithoutBuildExclusion(WiringInputs.testSources, builds)
+        assertTrue(bad.isEmpty(), "named only in a suite comment, so add a BUILD.bazel exclude (or register the class):\n  ${bad.joinToString("\n  ")}")
     }
 
     @Test
