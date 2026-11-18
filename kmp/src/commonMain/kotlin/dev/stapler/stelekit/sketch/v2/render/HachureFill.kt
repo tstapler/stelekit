@@ -41,6 +41,12 @@ object HachureFill {
     private const val MIN_RING = 2
     private const val CURVE_STEPS = 8
 
+    /** Rows the step-1 scan may walk per shape; a taller shape gets a coarser step instead of a longer scan. */
+    const val MAX_SCAN_ITERATIONS = 20_000
+
+    /** Scan lines one shape may yield per pass; a taller or finer-gapped shape gets wider-spaced lines. */
+    const val MAX_HATCH_LINES = 4_000
+
     private class Edge(val yMin: Double, val yMax: Double, var x: Double, val inverseSlope: Double)
 
     /** Polygons (any winding, not necessarily closed) of the outline [clean], curves flattened to short chords. */
@@ -110,9 +116,30 @@ object HachureFill {
 
     private fun hachureLines(polygons: List<List<ScenePt>>, gap: Double, angle: Double, stepOffset: Int): List<HatchLine> {
         val rotated = if (angle != 0.0) polygons.map { ring -> ring.map { rotate(it, angle) } } else polygons
-        val raw = scan(rotated, max(gap, MIN_GAP), stepOffset)
+        val raw = scan(rotated, max(gap, MIN_GAP), boundedStep(rotated, max(gap, MIN_GAP), stepOffset))
         if (angle == 0.0) return raw
         return raw.map { HatchLine(rotate(it.from, -angle), rotate(it.to, -angle)) }
+    }
+
+    /**
+     * [stepOffset], raised so one shape yields at most [MAX_HATCH_LINES] scan lines and the flat (step 1) scan never walks more
+     * than [MAX_SCAN_ITERATIONS] rows. Shapes within both bounds keep the rough.js step, so the golden output is unchanged.
+     */
+    private fun boundedStep(polygons: List<List<ScenePt>>, gap: Double, stepOffset: Int): Int {
+        var lo = Double.POSITIVE_INFINITY
+        var hi = Double.NEGATIVE_INFINITY
+        for (ring in polygons) for (p in ring) {
+            lo = min(lo, p.y)
+            hi = max(hi, p.y)
+        }
+        val height = hi - lo
+        if (!height.isFinite()) return stepOffset
+        val rowsPerLine = if (stepOffset == FLAT_STEP) max(1, gap.toInt()) else stepOffset
+        val walksEveryRow = stepOffset == FLAT_STEP
+        val tooManyLines = height / rowsPerLine > MAX_HATCH_LINES
+        val tooManyRows = walksEveryRow && height > MAX_SCAN_ITERATIONS
+        if (!tooManyLines && !tooManyRows) return stepOffset
+        return max(max(stepOffset, rowsPerLine), kotlin.math.ceil(height / MAX_HATCH_LINES).toInt())
     }
 
     private fun rotate(p: ScenePt, degrees: Double): ScenePt {
@@ -163,7 +190,7 @@ object HachureFill {
                 for (i in 0 until taken) active.add(edges[i])
                 edges.subList(0, taken).clear()
             }
-            active = ArrayList(active.filter { it.yMax > y })
+            active.removeAll { it.yMax <= y }
             active.sortWith { a, b -> if (a.x == b.x) 0 else if (a.x - b.x < 0) -1 else 1 }
             if ((stepOffset != FLAT_STEP || iteration % gapSteps == 0) && active.size > 1) {
                 var i = 0

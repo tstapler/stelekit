@@ -146,6 +146,19 @@ class HachureFillTest {
     }
 
     @Test
+    fun lines_should_StayBounded_When_TheShapeIsHugeAtTheCoordinateCap() {
+        val side = 2.6e8
+        val rect = listOf(ScenePt(0.0, 0.0), ScenePt(side, 0.0), ScenePt(side, side), ScenePt(0.0, side))
+        for (angle in listOf(HachureFill.DEFAULT_ANGLE_DEGREES, 0.0)) {
+            for (roughness in listOf(0.0, 1.0)) {
+                val lines = HachureFill.lines(listOf(rect), 4.0, angle, roughness) { 0.9 }
+                assertTrue(lines.size <= HachureFill.MAX_HATCH_LINES + 1, "hatch lines for a $side rect: ${lines.size}")
+                assertTrue(lines.isNotEmpty(), "a huge shape is still hatched, only more coarsely")
+            }
+        }
+    }
+
+    @Test
     fun builder_should_EmitHatchBeforeStroke_When_SketchyDiamondIsHachured() {
         val ops = DrawListBuilder(FixedAdvanceTextMetricsProvider()).build(scene(FillStyle.Hachure, roughness = 1), RenderStyle.Sketchy)
         assertEquals(2, ops.size)
