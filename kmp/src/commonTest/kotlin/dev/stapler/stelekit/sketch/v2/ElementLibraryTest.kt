@@ -98,6 +98,33 @@ class ElementLibraryTest {
     }
 
     @Test
+    fun decode_should_FallBackToDefaultColours_When_AFileCarriesAUrlOrOverlongColour() = runTest {
+        val hostile = "url(https://evil.example/x.svg#a)"
+        val rect = """{"type":"rectangle","id":"r","x":0,"y":0,"width":10,"height":10,"angle":0,"strokeColor":"$hostile","backgroundColor":"${"a".repeat(65)}","strokeWidth":2,"roughness":1,"opacity":100,"groupIds":[],"locked":false}"""
+        val file = """{"type":"excalidrawlib","version":2,"source":"test","libraryItems":[{"id":"i","status":"unpublished","created":1,"elements":[$rect]}]}"""
+        val style = (LibraryCodec.decode(ImportSource.ofBytes(file.encodeToByteArray())).get().items.single().elements.single()).base.style
+        assertEquals("#1e1e1e", style.strokeColor)
+        assertEquals("transparent", style.backgroundColor)
+        val ok = file.replace(hostile, "rgb(1, 2, 3)")
+        assertEquals("rgb(1, 2, 3)", LibraryCodec.decode(ImportSource.ofBytes(ok.encodeToByteArray())).get().items.single().elements.single().base.style.strokeColor)
+    }
+
+    @Test
+    fun encode_should_WriteCanonicalNumbers_And_DecodeShouldReadThemBack() = runTest {
+        val rect = dev.stapler.stelekit.sketch.v2.scene.RectElement(
+            dev.stapler.stelekit.sketch.v2.scene.ElementBase(dev.stapler.stelekit.sketch.v2.scene.ElementId("r")),
+            dev.stapler.stelekit.sketch.v2.scene.SceneUnit.of(0.1 + 0.2).getOrNull()!!, dev.stapler.stelekit.sketch.v2.scene.SceneUnit.ofInt(2),
+            dev.stapler.stelekit.sketch.v2.scene.SceneUnit.of(1.5).getOrNull()!!, dev.stapler.stelekit.sketch.v2.scene.SceneUnit.ofInt(4),
+        )
+        val item = ElementLibrary.empty().add("i", null, listOf(rect), 1L).get().items.single()
+        val text = LibraryCodec.encode(listOf(item))
+        assertTrue(text.contains("\"x\":0.30000000000000004"), text)
+        assertTrue(text.contains("\"width\":1.5"), text)
+        val back = LibraryCodec.decode(ImportSource.ofBytes(text.encodeToByteArray())).get().items.single().elements.single()
+        assertEquals(0.1 + 0.2, (back as dev.stapler.stelekit.sketch.v2.scene.RectElement).x.value)
+    }
+
+    @Test
     fun merge_should_AddWhatFitsInFileOrder_And_NeverStoreAPartialItem() {
         val limits = SceneLimits(maxLibraryItems = 2)
         val items = (1..3).map { ElementLibrary.empty().add("i$it", null, three, it.toLong()).get().items.single() }

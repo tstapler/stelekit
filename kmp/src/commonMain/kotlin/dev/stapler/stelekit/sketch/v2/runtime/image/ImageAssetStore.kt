@@ -8,6 +8,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.sketch.v2.image.ImageFileId
 import dev.stapler.stelekit.sketch.v2.image.ImageFormat
 import dev.stapler.stelekit.sketch.v2.image.ImageHeader
 import dev.stapler.stelekit.sketch.v2.image.ImageHeaderProbe
@@ -53,6 +54,9 @@ sealed interface ImageStoreError {
  * (Story 3.4.3). The header is probed before anything is written, so an oversized or hostile file never reaches a
  * decoder. [assetsDir] is the absolute path of the folder (no trailing slash needed).
  *
+ * Each file is bounded here (bytes, sides, pixels). The per-sheet decoded-image budget (`maxDecodedImageBytesPerSheet`) is
+ * enforced only by the importer's `ImageAdmitter`; picked, pasted and tool images are not summed per sheet.
+ *
  * Files are written through [FileSystem.writeFileBytes]; the name is the hash, so a torn write is repaired by storing
  * the same bytes again (a size mismatch is treated as absent).
  */
@@ -72,6 +76,7 @@ class ImageAssetStore(
             } },
             { it },
         )
+        if (header.width < 1 || header.height < 1) return ImageStoreError.Unreadable.left()
         if (header.pixels > limits.maxImagePixels || header.width > limits.maxImageSidePx || header.height > limits.maxImageSidePx) {
             return ImageStoreError.TooManyPixels(header.width, header.height, limits.maxImagePixels, limits.maxImageSidePx).left()
         }
@@ -92,14 +97,7 @@ class ImageAssetStore(
     private fun pathFor(fileId: String, format: ImageFormat) = "$dir/$fileId.${format.extension}"
 
     private fun pathOf(fileId: String): String? =
-        if (!isFileId(fileId)) null else ImageFormat.entries.map { pathFor(fileId, it) }.firstOrNull { fs.fileExists(it) }
+        if (!ImageFileId.isValid(fileId)) null else ImageFormat.entries.map { pathFor(fileId, it) }.firstOrNull { fs.fileExists(it) }
 
     private fun holds(path: String, size: Int): Boolean = fs.fileExists(path) && fs.readFileBytes(path)?.size == size
-
-    private fun isFileId(id: String): Boolean = id.length == FILE_ID_LENGTH && id.all { it in '0'..'9' || it in 'a'..'f' }
-
-    private companion object {
-        /** SHA-256 hex digest length. */
-        const val FILE_ID_LENGTH = 64
-    }
 }

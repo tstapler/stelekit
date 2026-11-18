@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.sketch.v2.importer
 
 import dev.stapler.stelekit.sketch.excalidraw.ExcalidrawElement
+import dev.stapler.stelekit.sketch.v2.scene.ColorText
 import dev.stapler.stelekit.sketch.v2.scene.ElementBase
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.ElementStyle
@@ -38,6 +39,13 @@ object StelekitCustomData {
 
     /** `extras` key under which an unsupported element (embeddable, iframe, magicframe) remembers its Excalidraw type. */
     const val EXTRA_UNSUPPORTED_TYPE = "unsupportedType"
+}
+
+/** Ceilings for style numbers a file can set to 1e300; a value above one is clamped, not dropped, so the element still imports. */
+internal object StyleBounds {
+    const val STROKE_WIDTH_CEILING = 256.0
+    const val FONT_SIZE_CEILING = 4096.0
+    const val LINE_HEIGHT_CEILING = 16.0
 }
 
 /** Members every Excalidraw element has; whatever else an element carries stays in `extras`. */
@@ -84,7 +92,7 @@ internal class BaseMapper(private val limits: SceneLimits, private val report: R
             strokeColor = color(raw.text("strokeColor"), DEFAULT_STROKE),
             backgroundColor = color(raw.text("backgroundColor"), TRANSPARENT),
             fillStyle = fill,
-            strokeWidth = raw.number("strokeWidth")?.takeIf { it >= 0.0 } ?: DEFAULT_STROKE_WIDTH,
+            strokeWidth = raw.number("strokeWidth")?.takeIf { it >= 0.0 }?.coerceAtMost(StyleBounds.STROKE_WIDTH_CEILING) ?: DEFAULT_STROKE_WIDTH,
             strokeStyle = stroke,
             roughness = (raw.number("roughness") ?: DEFAULT_ROUGHNESS.toDouble()).toInt().coerceIn(0, MAX_ROUGHNESS),
             roundness = roundness(raw.obj("roundness")),
@@ -99,13 +107,11 @@ internal class BaseMapper(private val limits: SceneLimits, private val report: R
             ADAPTIVE_ROUNDNESS -> RoundnessKind.AdaptiveRadius
             else -> return null
         }
-        return Roundness(kind, obj.number("value"))
+        return Roundness(kind, obj.number("value")?.coerceIn(0.0, limits.maxCoord))
     }
 
     /** Keeps only characters a colour string can hold, so a hostile value never reaches an SVG attribute or a painter. */
-    private fun color(css: String?, default: String): String = css?.takeIf { it.length <= MAX_COLOR_CHARS && it.all(::isColorChar) } ?: default
-
-    private fun isColorChar(c: Char): Boolean = c.isLetterOrDigit() || c in COLOR_PUNCTUATION
+    private fun color(css: String?, default: String): String = ColorText.clean(css, default)
 
     private fun leftovers(x: ExcalidrawElement, known: Set<String>): JsonObject {
         val out = LinkedHashMap<String, kotlinx.serialization.json.JsonElement>()
@@ -136,8 +142,6 @@ internal class BaseMapper(private val limits: SceneLimits, private val report: R
         const val DEFAULT_STROKE_WIDTH = 2.0
         const val DEFAULT_ROUGHNESS = 1
         const val MAX_ROUGHNESS = 2
-        const val MAX_COLOR_CHARS = 64
-        const val COLOR_PUNCTUATION = "#(),.% -"
         const val LEGACY_ROUNDNESS = 1
         const val PROPORTIONAL_ROUNDNESS = 2
         const val ADAPTIVE_ROUNDNESS = 3

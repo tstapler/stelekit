@@ -131,7 +131,7 @@ internal class ShapeMapper(private val ctx: MapContext) {
             angle = x.angle,
             text = content,
             originalText = (raw.text("originalText") ?: content).take(ctx.limits.maxTextChars),
-            fontSize = raw.number("fontSize")?.takeIf { it > 0.0 } ?: TextElement.DEFAULT_FONT_SIZE,
+            fontSize = raw.number("fontSize")?.takeIf { it > 0.0 }?.coerceAtMost(StyleBounds.FONT_SIZE_CEILING) ?: TextElement.DEFAULT_FONT_SIZE,
             fontFamily = raw.number("fontFamily")?.toInt() ?: 1,
             textAlign = when (raw.text("textAlign")) {
                 "center" -> TextAlign.Center
@@ -144,7 +144,7 @@ internal class ShapeMapper(private val ctx: MapContext) {
                 else -> VerticalAlign.Top
             },
             containerId = raw.text("containerId")?.let { ElementId(it) },
-            lineHeight = raw.number("lineHeight")?.takeIf { it > 0.0 } ?: TextElement.DEFAULT_LINE_HEIGHT,
+            lineHeight = raw.number("lineHeight")?.takeIf { it > 0.0 }?.coerceAtMost(StyleBounds.LINE_HEIGHT_CEILING) ?: TextElement.DEFAULT_LINE_HEIGHT,
             autoResize = raw.flag("autoResize") ?: true,
         )
     }

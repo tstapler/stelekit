@@ -67,6 +67,19 @@ class ExcalidrawImporterMappingTest {
     }
 
     @Test
+    fun styleNumbers_should_BeClamped_When_AFileSetsThemTo1e300() = runTest {
+        val huge = element("rectangle", "r1").replace(""""strokeWidth":2""", """"strokeWidth":1e300""").replace("\"locked\":false", "\"locked\":false,\"roundness\":{\"type\":3,\"value\":1e300}")
+        val text = element("text", "t1", extra = ""","text":"hi","fontSize":1e300,"lineHeight":1e300,"fontFamily":1""")
+        val imported = import(scene(listOf(huge, text)))
+        val r = assertIs<RectElement>(imported.elements[0])
+        assertTrue(r.base.style.strokeWidth <= 256.0, "strokeWidth ${r.base.style.strokeWidth}")
+        assertTrue((r.base.style.roundness?.value ?: 0.0) <= SceneLimits.Default.maxCoord)
+        val t = assertIs<dev.stapler.stelekit.sketch.v2.scene.TextElement>(imported.elements[1])
+        assertEquals(4096.0, t.fontSize)
+        assertEquals(16.0, t.lineHeight)
+    }
+
+    @Test
     fun arrowWithoutArrowheadMembers_should_GetTheExcalidrawDefaults() = runTest {
         val imported = import(scene(listOf(linear("arrow", "a1", ""","points":[[0,0],[10,0]]"""))))
         val a = assertIs<ArrowElement>(imported.elements.single())

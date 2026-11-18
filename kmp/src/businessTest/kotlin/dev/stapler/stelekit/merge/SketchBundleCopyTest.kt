@@ -47,8 +47,8 @@ import kotlin.time.Duration.Companion.seconds
 class SketchBundleCopyTest {
     private val a = GraphId("aaaaaaaaaaaaaaaa")
     private val b = GraphId("bbbbbbbbbbbbbbbb")
-    private val f1 = "ab12"
-    private val f2 = "cd34"
+    private val f1 = "ab12".repeat(16)
+    private val f2 = "cd34".repeat(16)
 
     private class MapSettings : Settings {
         private val store = mutableMapOf<String, String>()
@@ -163,6 +163,22 @@ class SketchBundleCopyTest {
     }
 
     @Test
+    fun copy_should_NeverReadOutsideAssets_When_ASyncedSheetNamesAPathAsItsFileId() = realTime {
+        val m = newManager().also { it.awaitPendingMigration() }
+        val hostile = "../../x"
+        val scene = SketchSceneV2.empty().add(ImageElement(ElementBase(ElementId("i0")), u(0), u(0), u(10), u(10), fileId = hostile)).getOrNull()!!
+        val sheet = SheetCodecV2.encode(SketchDocumentV2(scene, "s1")).fold({ error("$it") }, { it })
+        val f = fixture(m, source = mapOf("project-model.json" to model, "sheets/s1.v2.json" to sheet))
+        f.sourceFs.writeFileBytes("/data/a/assets/$hostile.png", png)
+
+        val result = f.copy.copy("kitchen", b).ok()
+
+        assertEquals(listOf(hostile), result.missingAssets)
+        assertTrue(!f.targetFs.fileExists("/data/${b.value}/assets/$hostile.png"))
+        assertTrue(!f.targetFs.fileExists("/data/${b.value}/x.png"))
+    }
+
+    @Test
     fun copy_should_RefuseAnExistingSlug_ChangeNothing_And_OfferRename() = realTime {
         val m = newManager().also { it.awaitPendingMigration() }
         val f = fixture(m)
@@ -218,7 +234,7 @@ class SketchBundleCopyTest {
 
     @Test
     fun dialogModel_should_NameTheDestination_Offer_Open_And_NoteMissingImages() {
-        val ok = SketchCopyResult("kitchen", b, "B", SketchOpenTarget(b, "kitchen"), listOf("cd34"))
+        val ok = SketchCopyResult("kitchen", b, "B", SketchOpenTarget(b, "kitchen"), listOf(f2))
         val dialog = SketchCopyDialogModel.of("kitchen", "B", ok.right())
         assertEquals("Copied to B.", dialog.title)
         assertEquals(listOf(SketchCopyAction.Open(SketchOpenTarget(b, "kitchen")), SketchCopyAction.Done), dialog.actions)

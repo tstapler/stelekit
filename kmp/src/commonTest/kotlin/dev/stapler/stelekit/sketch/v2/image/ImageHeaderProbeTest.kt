@@ -69,6 +69,14 @@ class ImageHeaderProbeTest {
     }
 
     @Test
+    fun probe_should_RefuseANegativeSide_When_APngStatesAWidthOfTwoToThe31OrMore() {
+        for (side in listOf(-1, Int.MIN_VALUE)) {
+            assertEquals(ImageProbeError.ZeroSize, (ImageHeaderProbe.probe(png(side, 5)) as Either.Left).value, "width $side")
+            assertEquals(ImageProbeError.ZeroSize, (ImageHeaderProbe.probe(png(5, side)) as Either.Left).value, "height $side")
+        }
+    }
+
+    @Test
     fun probe_should_NeverThrow_OnAnyPrefix() {
         val sources = listOf(png(9, 9), jpeg(9, 9), gif(9, 9), webpLossy(9, 9), webpLossless(9, 9), webpExtended(9, 9))
         for (full in sources) for (n in 0..full.size) ImageHeaderProbe.probe(full.copyOf(n))

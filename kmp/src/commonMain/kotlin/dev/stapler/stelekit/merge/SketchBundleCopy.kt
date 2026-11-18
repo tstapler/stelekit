@@ -15,6 +15,7 @@ import dev.stapler.stelekit.projectbridge.ProjectSidecarStore
 import dev.stapler.stelekit.projectbridge.SidecarCodec
 import dev.stapler.stelekit.projectbridge.SidecarRead
 import dev.stapler.stelekit.sketch.v2.codec.SheetCodecV2
+import dev.stapler.stelekit.sketch.v2.image.ImageFileId
 import dev.stapler.stelekit.sketch.v2.image.ImageHeaderProbe
 import dev.stapler.stelekit.sketch.v2.image.ReferencedAssets
 import kotlinx.serialization.json.Json
@@ -218,7 +219,7 @@ class SketchBundleCopy(
         val assets = ArrayList<SketchAsset>()
         val missing = ArrayList<String>()
         for (fileId in referenced.sorted()) {
-            val file = locate(fileId)
+            val file = if (ImageFileId.isValid(fileId)) locate(fileId) else null
             if (file == null) missing += fileId else assets += file
         }
         return SketchBundle(slug, files, assets, missing).right()

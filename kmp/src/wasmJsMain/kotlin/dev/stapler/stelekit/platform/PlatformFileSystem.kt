@@ -1170,19 +1170,32 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     private var pickedPath: String? = null
 
+    /** The size of a picked file over [maxPickedBytes], whose bytes were never read. */
+    private val oversizePicks = mutableMapOf<String, Long>()
+
+    /** The largest file the picker reads into memory (`SceneLimits.maxImportBytes`); a test lowers it. */
+    internal var maxPickedBytes: Long = SceneLimits.Default.maxImportBytes
+
     /**
      * A browser file input (the sketch import, Story 5.1.5). The bytes are read in the browser and held in [bytesCache] under a
      * synthetic path, which is returned so `readFileBytesSuspend` finds them; the next pick replaces them. The browser shows no path.
      * UNVERIFIED in a real browser: the click comes from a coroutine, so it relies on the browser's transient user activation.
      */
     override suspend fun pickFileAsync(title: String, extensions: List<String>): String? {
-        val picked = pickBrowserFile(extensions.joinToString(",") { ".$it" }).await<JsAny?>() ?: return null
+        val picked = pickBrowserFile(extensions.joinToString(",") { ".$it" }, maxPickedBytes.toDouble()).await<JsAny?>() ?: return null
         val path = "$PICKED_PREFIX${pickedName(picked)}"
-        pickedPath?.let { bytesCache.remove(it) }
-        bytesCache[path] = jsArrayBufferToByteArray(pickedBuffer(picked))
+        pickedPath?.let {
+            bytesCache.remove(it)
+            oversizePicks.remove(it)
+        }
+        // Like CanvasFileDrop: a file over the cap is never read; only its size is kept so the port refuses it for size.
+        val size = pickedSize(picked).toLong()
+        if (size > maxPickedBytes) oversizePicks[path] = size else bytesCache[path] = jsArrayBufferToByteArray(pickedBuffer(picked))
         pickedPath = path
         return path
     }
+
+    override fun getFileSize(path: String): Long? = oversizePicks[path] ?: super.getFileSize(path)
 
     @OptIn(ExperimentalEncodingApi::class)
     private fun downloadBytes(filename: String, data: ByteArray): Boolean = try {
@@ -1311,7 +1324,7 @@ private fun triggerBrowserBytesDownload(filename: String, base64: String, mimeTy
         setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
     })()""")
 
-private fun pickBrowserFile(accept: String): kotlin.js.Promise<JsAny?> =
+private fun pickBrowserFile(accept: String, maxBytes: Double): kotlin.js.Promise<JsAny?> =
     js("""new Promise(function(resolve) {
         var input = document.createElement('input');
         input.type = 'file'; input.accept = accept; input.style.display = 'none';
@@ -1319,7 +1332,8 @@ private fun pickBrowserFile(accept: String): kotlin.js.Promise<JsAny?> =
             var file = input.files && input.files[0];
             document.body.removeChild(input);
             if (!file) { resolve(null); return; }
-            file.arrayBuffer().then(function(buffer) { resolve({ name: file.name, buffer: buffer }); }, function() { resolve(null); });
+            if (file.size > maxBytes) { resolve({ name: file.name, size: file.size, buffer: null }); return; }
+            file.arrayBuffer().then(function(buffer) { resolve({ name: file.name, size: file.size, buffer: buffer }); }, function() { resolve(null); });
         });
         input.addEventListener('cancel', function() { document.body.removeChild(input); resolve(null); });
         document.body.appendChild(input);
@@ -1327,6 +1341,8 @@ private fun pickBrowserFile(accept: String): kotlin.js.Promise<JsAny?> =
     })""")
 
 private fun pickedName(picked: JsAny): String = js("picked.name")
+
+private fun pickedSize(picked: JsAny): Double = js("picked.size")
 
 private fun pickedBuffer(picked: JsAny): JsAny = js("picked.buffer")
 

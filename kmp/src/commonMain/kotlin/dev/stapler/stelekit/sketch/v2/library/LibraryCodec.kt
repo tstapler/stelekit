@@ -11,7 +11,9 @@ import dev.stapler.stelekit.sketch.excalidraw.ImportError
 import dev.stapler.stelekit.sketch.excalidraw.ImportReport
 import dev.stapler.stelekit.sketch.excalidraw.ImportSource
 import dev.stapler.stelekit.sketch.excalidraw.SpanDecoder
+import dev.stapler.stelekit.sketch.v2.codec.CanonicalJson
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
+import dev.stapler.stelekit.sketch.v2.scene.ColorText
 import dev.stapler.stelekit.sketch.v2.scene.DiamondElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementBase
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
@@ -31,8 +33,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.doubleOrNull
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /** What a library read produced: the items that mapped, and the importer's report (skipped, truncated, image placeholders). */
@@ -90,14 +90,14 @@ object LibraryCodec {
     private fun common(e: SceneElement, type: String, x: Double, y: Double, w: Double, h: Double, angle: Double) = buildJsonObject {
         put("type", type)
         put("id", e.id.value)
-        put("x", x)
-        put("y", y)
-        put("width", w)
-        put("height", h)
-        put("angle", angle)
+        put("x", num(x))
+        put("y", num(y))
+        put("width", num(w))
+        put("height", num(h))
+        put("angle", num(angle))
         put("strokeColor", e.base.style.strokeColor)
         put("backgroundColor", e.base.style.backgroundColor)
-        put("strokeWidth", e.base.style.strokeWidth)
+        put("strokeWidth", num(e.base.style.strokeWidth))
         put("roughness", e.base.style.roughness)
         put("opacity", e.base.opacity)
         put("groupIds", JsonArray(e.base.groupIds.map { JsonPrimitive(it.value) }))
@@ -107,7 +107,7 @@ object LibraryCodec {
     private fun relative(points: List<ScenePoint>): JsonArray {
         val ox = points.firstOrNull()?.x?.value ?: 0.0
         val oy = points.firstOrNull()?.y?.value ?: 0.0
-        return JsonArray(points.map { JsonArray(listOf(JsonPrimitive(it.x.value - ox), JsonPrimitive(it.y.value - oy))) })
+        return JsonArray(points.map { JsonArray(listOf(num(it.x.value - ox), num(it.y.value - oy))) })
     }
 
     private fun lineLike(e: SceneElement, type: String, points: List<ScenePoint>): JsonObject {
@@ -129,12 +129,17 @@ object LibraryCodec {
         is FreedrawElement -> lineLike(e, "freedraw", e.points)
         is TextElement -> JsonObject(
             common(e, "text", e.x.value, e.y.value, e.width.value, e.height.value, e.angle) +
-                mapOf("text" to JsonPrimitive(e.text), "fontSize" to JsonPrimitive(e.fontSize), "fontFamily" to JsonPrimitive(e.fontFamily)),
+                mapOf("text" to JsonPrimitive(e.text), "fontSize" to num(e.fontSize.toDouble()), "fontFamily" to JsonPrimitive(e.fontFamily)),
         )
         else -> null
     }
 
-    private fun JsonObject.num(key: String): Double = (this[key] as? JsonPrimitive)?.doubleOrNull ?: 0.0
+    /** Doubles enter and leave JSON only through [CanonicalJson]: wasmJs `Double.toString` and `toDouble` do not round-trip. */
+    private fun num(d: Double): JsonPrimitive = CanonicalJson.number(d).getOrNull() ?: JsonPrimitive(0)
+
+    private fun JsonElement?.doubleValue(): Double? = (this as? JsonPrimitive)?.let(CanonicalJson::doubleOf)
+
+    private fun JsonObject.num(key: String): Double = this[key].doubleValue() ?: 0.0
 
     private fun JsonObject.str(key: String, default: String): String = (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: default
 
@@ -142,17 +147,17 @@ object LibraryCodec {
         val raw = x.raw
         fun u(v: Double): SceneUnit = SceneUnit.of(v, limits).getOrNull() ?: SceneUnit.ZERO
         val style = ElementStyle(
-            strokeColor = raw.str("strokeColor", "#1e1e1e"),
-            backgroundColor = raw.str("backgroundColor", "transparent"),
+            strokeColor = ColorText.clean(raw.str("strokeColor", "#1e1e1e"), "#1e1e1e"),
+            backgroundColor = ColorText.clean(raw.str("backgroundColor", "transparent"), "transparent"),
             strokeWidth = raw.num("strokeWidth").takeIf { it >= 0.0 && it.isFinite() } ?: 2.0,
-            roughness = (raw["roughness"] as? JsonPrimitive)?.doubleOrNull?.toInt() ?: DEFAULT_ROUGHNESS,
+            roughness = raw["roughness"].doubleValue()?.toInt() ?: DEFAULT_ROUGHNESS,
         )
-        val opacity = ((raw["opacity"] as? JsonPrimitive)?.doubleOrNull?.toInt() ?: OPACITY_FULL).coerceIn(0, ElementBase.FULL_OPACITY)
+        val opacity = (raw["opacity"].doubleValue()?.toInt() ?: OPACITY_FULL).coerceIn(0, ElementBase.FULL_OPACITY)
         val base = ElementBase(id = ElementId(x.id), style = style, opacity = opacity, locked = x.locked)
         val points = (raw["points"] as? JsonArray)?.mapNotNull { p ->
             val pair = p as? JsonArray ?: return@mapNotNull null
             if (pair.size < POINT_PAIR) return@mapNotNull null
-            ScenePoint(u(x.x + (pair[0] as JsonElement).jsonPrimitive.doubleOrNull.orZero()), u(x.y + (pair[1] as JsonElement).jsonPrimitive.doubleOrNull.orZero()))
+            ScenePoint(u(x.x + pair[0].doubleValue().orZero()), u(x.y + pair[1].doubleValue().orZero()))
         }.orEmpty()
         return when (x.type) {
             "rectangle" -> RectElement(base, u(x.x), u(x.y), u(x.width), u(x.height), x.angle)

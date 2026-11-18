@@ -27,7 +27,7 @@ sealed interface ImageProbeError {
     /** A recognised format whose header ends before the dimensions. */
     data object Truncated : ImageProbeError
 
-    /** A header that states a zero width or height. */
+    /** A header that states a zero, negative (PNG side of 2^31 or more) or otherwise unusable width or height. */
     data object ZeroSize : ImageProbeError
 }
 
@@ -48,7 +48,8 @@ object ImageHeaderProbe {
         } catch (_: IndexOutOfBoundsException) {
             null
         } ?: return ImageProbeError.Truncated.left()
-        return if (header.width == 0 || header.height == 0) ImageProbeError.ZeroSize.left() else header.right()
+        // `be32` is signed: a PNG side of 0x80000000 or more arrives negative and is as unusable as zero.
+        return if (header.width < 1 || header.height < 1) ImageProbeError.ZeroSize.left() else header.right()
     }
 
     private val pngSignature = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)

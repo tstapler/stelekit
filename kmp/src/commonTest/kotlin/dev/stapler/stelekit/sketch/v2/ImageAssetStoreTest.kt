@@ -49,6 +49,14 @@ class ImageAssetStoreTest {
     }
 
     @Test
+    fun store_should_RefuseAndWriteNothing_When_APngStatesANegativeSide() {
+        for (bytes in listOf(png(-1, 10), png(10, -1), png(Int.MIN_VALUE, Int.MIN_VALUE))) {
+            assertIs<ImageStoreError.Unreadable>((store.store(bytes) as Either.Left).value)
+        }
+        assertEquals(0, fs.listFiles("/graph/assets").size)
+    }
+
+    @Test
     fun read_should_ReturnStoredBytes_And_ExistsShouldDriveThePlaceholder() {
         val bytes = png(8, 8)
         val id = stored(store.store(bytes)).fileId
