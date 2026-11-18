@@ -21,6 +21,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+/** `PlatformFileSystem.reloadSidecarRoot` could not read the sidecar root back (too large or failed): its cache is not trustworthy. */
+class SidecarReloadFailed(message: String) : Exception(message)
+
 /**
  * The sketch writer lease of the web build (Task 1.4.7i; D-123, D-142, D-150): a releasable Web Lock
  * `stelekit-sketch-writer:<graphId>`, taken when the first v2 sheet of the ready graph opens for editing (never at startup)
@@ -101,6 +104,12 @@ class WasmSketchWriterLease(
     private suspend fun becomeHeld(graph: String, lock: WebLock.HeldLock, gen: Int) {
         try {
             reloadSidecarRoot()
+        } catch (e: SidecarReloadFailed) {
+            // An empty or partial cache would let a reconcile push the database over the real files: stay read-only.
+            lock.release()
+            logger.warn("sidecar reload failed, the lease stays read-only: ${e.message}")
+            if (gen == generation) _state.value = SketchWriterLeaseState.HeldElsewhere
+            return
         } catch (e: Throwable) {
             lock.release()
             throw e

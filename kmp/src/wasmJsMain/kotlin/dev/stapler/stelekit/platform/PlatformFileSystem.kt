@@ -716,15 +716,20 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            sidecarPreloadOutcome = SidecarPreloadOutcome.Failed(e.message ?: "reload failed")
-            return
+            recordReloadOutcome(SidecarPreloadOutcome.Failed(e.message ?: "reload failed"))
+            throw SidecarReloadFailed(e.message ?: "reload failed")
         } ?: return
         loadSidecarRoot(dir, root, graphPath, ::recordReloadOutcome)
+        if (sidecarPreloadOutcome !is SidecarPreloadOutcome.Loaded) throw SidecarReloadFailed(sidecarPreloadOutcome.toString())
     }
 
-    /** A reload keeps [preloadState] as it was: a takeover is not a new availability check. */
+    /**
+     * A successful reload keeps [preloadState] as it was (a takeover is not a new availability check) unless it recovers a
+     * failed one; a failed or too-large reload empties the cache, so the status goes Unavailable and writes are refused.
+     */
     private fun recordReloadOutcome(outcome: SidecarPreloadOutcome) {
-        sidecarPreloadOutcome = outcome
+        if (outcome !is SidecarPreloadOutcome.Loaded || _preloadState.value is PreloadState.Failed) finishSidecarPreload(outcome)
+        else sidecarPreloadOutcome = outcome
     }
 
     private fun isImageFile(name: String): Boolean {
