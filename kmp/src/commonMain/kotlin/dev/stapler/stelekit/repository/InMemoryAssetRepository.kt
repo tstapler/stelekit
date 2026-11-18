@@ -11,6 +11,7 @@ import dev.stapler.stelekit.error.DomainError
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 
 @OptIn(DirectRepositoryWrite::class)
 class InMemoryAssetRepository : AssetRepository {
@@ -139,7 +140,7 @@ class InMemoryAssetRepository : AssetRepository {
         store.value.size.toLong().right()
 
     override suspend fun saveAsset(asset: AssetEntry): Either<DomainError, Unit> {
-        store.value = store.value + (asset.uuid.value to asset)
+        store.update { it + (asset.uuid.value to asset) }
         return Unit.right()
     }
 

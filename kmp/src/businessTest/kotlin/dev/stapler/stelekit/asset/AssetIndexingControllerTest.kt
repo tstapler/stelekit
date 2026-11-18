@@ -122,6 +122,19 @@ class AssetIndexingControllerTest {
     }
 
     @Test
+    fun graphReadyThenFlip_replacedWalkNeverOverlaps_soNothingIsRegisteredTwice() = runBlocking {
+        repeat(100) {
+            val freshRepo = InMemoryAssetRepository()
+            val c = AssetIndexingController(FakeSettings(), AssetIndexService(freshRepo), toggleVisibleProvider = { true })
+            c.onGraphReady(notes, writeActor = null, fileSystem = fs)
+            c.setEnabled(true)
+            awaitFinished(c)
+            assertEquals(5L, freshRepo.countAssets().getOrNull())
+            c.close()
+        }
+    }
+
+    @Test
     fun graphNotReady_stopsBackfill_and_laterReadyRestartsIt() = runBlocking {
         val settings = FakeSettings().apply { putBoolean(key, true) }
         val c = controller(settings, visible = true)

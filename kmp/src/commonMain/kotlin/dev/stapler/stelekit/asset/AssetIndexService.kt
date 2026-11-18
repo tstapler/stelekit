@@ -170,11 +170,15 @@ class AssetIndexService(
         writeActor: DatabaseWriteActor?,
         fileSystem: FileSystem,
     ) {
-        backfillJob?.cancel()
+        val previous = backfillJob
+        previous?.cancel()
         val run = ++runId
         // Set before launching so a caller (and a test) sees "started" without racing the coroutine.
         _progress.value = AssetIndexProgress.Counting
         backfillJob = scope.launch {
+            // cancel() is cooperative; a replaced run may still be saving, and two overlapping walks
+            // both pass the already-indexed check and double-register every file.
+            previous?.join()
             try {
                 backfillGraph(run, notesPath, writeActor, fileSystem)
             } catch (e: CancellationException) {
@@ -189,8 +193,7 @@ class AssetIndexService(
 
     /** Cancels a backfill in flight; already-saved batches stay. */
     fun stopBackfill() {
-        backfillJob?.cancel()
-        backfillJob = null
+        backfillJob?.cancel() // kept so the next startBackfill still joins it
         runId++
         _progress.value = AssetIndexProgress.Idle
     }
