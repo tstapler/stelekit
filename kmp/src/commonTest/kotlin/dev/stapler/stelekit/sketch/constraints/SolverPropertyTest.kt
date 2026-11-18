@@ -25,6 +25,7 @@ import dev.stapler.stelekit.sketch.constraints.constraints.TangentCircleCircle
 import dev.stapler.stelekit.sketch.constraints.constraints.TangentLineCircle
 import dev.stapler.stelekit.sketch.constraints.constraints.Vertical
 import io.kotest.property.Arb
+import io.kotest.property.PropTestConfig
 import io.kotest.property.arbitrary.int
 import io.kotest.property.checkAll
 import kotlinx.coroutines.test.runTest
@@ -49,6 +50,7 @@ class SolverPropertyTest {
     private val variableCount = 14
 
     private val iterationsPerKind = 40
+    private val fixedSeed = 20_260_101L
     private val perturbation = 0.1
     private val minPointSeparation = 0.5
     private val residualPerScale = 1e-9
@@ -133,7 +135,7 @@ class SolverPropertyTest {
     fun everyKind_should_SolveToTheResidualBar_Or_ReturnNoConvergenceWithTheStartValues() = runTest {
         for (kind in kinds) {
             var solved = 0
-            checkAll(iterationsPerKind, Arb.int()) { seed ->
+            checkAll(iterationsPerKind, PropTestConfig(seed = fixedSeed), Arb.int()) { seed ->
                 val rnd = Random(seed)
                 val truth = randomConfig(rnd)
                 kind.satisfy(truth, rnd)
@@ -153,7 +155,7 @@ class SolverPropertyTest {
                     else -> assertTrue(false, "${kind.name}: unexpected ${res::class.simpleName}")
                 }
             }
-            assertTrue(solved >= iterationsPerKind * 9 / 10, "${kind.name}: only $solved of $iterationsPerKind solved")
+            assertEquals(iterationsPerKind, solved, "${kind.name}: only $solved of $iterationsPerKind solved")
         }
     }
 

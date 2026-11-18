@@ -17,9 +17,10 @@ enum class SolveAlgorithm { LevenbergMarquardt, DogLeg }
 data class AlgorithmBudget(val algorithm: SolveAlgorithm, val iterations: Int)
 
 /**
- * Solver knobs. [wallTimeMillis] bounds the whole solve (all components, all algorithms): the caller derives it from
- * `SceneLimits`, the default only keeps a headless call finite. [rowScaling] normalises each Jacobian row to unit length
- * inside the loop (measured in ADR-003; the production rows stay unscaled).
+ * Solver knobs. [wallTimeMillis] bounds the whole solve (all components, all algorithms). No caller overrides it, so every
+ * production solve is capped at [DEFAULT_WALL_TIME_MILLIS] (2 s); `SceneLimits` has no solve-time cap, only the 100 ms
+ * slow-solve indicator. One drag step can run an anchored and then a full solve, each with its own cap.
+ * [rowScaling] normalises each Jacobian row to unit length inside the loop (measured in ADR-003; the production rows stay unscaled).
  */
 data class SolverOptions(
     val algorithms: List<AlgorithmBudget> = DEFAULT_ALGORITHMS,
