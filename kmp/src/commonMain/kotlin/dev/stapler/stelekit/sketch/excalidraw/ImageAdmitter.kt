@@ -62,6 +62,8 @@ internal class ImageAdmitter(
             pos = sliceEnd
             budget.tick(chunk.size.toLong())
             if (!checked) {
+                // Only the leading window is probed (and copied), so a header that never completes costs one window per slice, not the whole payload.
+                if (written > HEADER_WINDOW_BYTES) return Admission.Refused(ImportReason.ImageInvalid, "no image header in the first $HEADER_WINDOW_BYTES bytes")
                 when (val probe = ImageHeader.probe(out.copyOf(written))) {
                     is HeaderProbe.Found -> {
                         checked = true
@@ -97,6 +99,7 @@ internal class ImageAdmitter(
         private const val DATA_PREFIX = "data:"
         private const val BASE64_SUFFIX = ";base64"
         private const val HEADER_SCAN_CHARS = 256
+        private const val HEADER_WINDOW_BYTES = 4 * 1024 * 1024
         private const val BASE64_GROUP_CHARS = 4
         private const val BASE64_GROUP_BYTES = 3
         private const val RGBA_BYTES = 4L

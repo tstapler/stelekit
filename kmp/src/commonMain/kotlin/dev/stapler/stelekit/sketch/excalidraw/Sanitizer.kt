@@ -167,36 +167,52 @@ internal class ElementSanitizer(private val limits: SceneLimits) {
     }
 }
 
-/** Whole-list repairs that need every element: duplicate ids and cyclic `frameId` chains. */
+/** Whole-list repairs that need every element: duplicate ids and cyclic `frameId` chains, each linear in the element count. */
 internal object ElementSetRepair {
-    fun repair(elements: List<ExcalidrawElement>, issues: MutableList<ImportIssue>): List<ExcalidrawElement> =
-        clearCycles(dedupe(elements, issues), issues)
+    suspend fun repair(elements: List<ExcalidrawElement>, issues: MutableList<ImportIssue>, budget: ParseBudget): List<ExcalidrawElement> =
+        clearCycles(dedupe(elements, issues, budget), issues, budget)
 
-    private fun dedupe(elements: List<ExcalidrawElement>, issues: MutableList<ImportIssue>): List<ExcalidrawElement> {
+    private suspend fun dedupe(elements: List<ExcalidrawElement>, issues: MutableList<ImportIssue>, budget: ParseBudget): List<ExcalidrawElement> {
         val seen = HashSet<String>()
         val firstIds = elements.map { it.id }.toHashSet()
-        return elements.map { e ->
-            if (seen.add(e.id)) return@map e
-            var n = 2
+        // Next suffix to try per id: suffixes below it are already taken, so repeated ids do not rescan them.
+        val nextSuffix = HashMap<String, Int>()
+        val out = ArrayList<ExcalidrawElement>(elements.size)
+        for (e in elements) {
+            budget.tick(0, 1)
+            if (seen.add(e.id)) {
+                out += e
+                continue
+            }
+            var n = nextSuffix[e.id] ?: FIRST_SUFFIX
             while ("${e.id}-$n" in seen || "${e.id}-$n" in firstIds) n++
+            nextSuffix[e.id] = n + 1
             val fresh = "${e.id}-$n"
             seen += fresh
             issues += ImportIssue(ImportReason.DuplicateId, e.id, "renamed to $fresh")
-            e.copy(id = fresh, raw = JsonObject(e.raw + ("id" to JsonPrimitive(fresh))))
+            out += e.copy(id = fresh, raw = JsonObject(e.raw + ("id" to JsonPrimitive(fresh))))
         }
+        return out
     }
 
-    private fun clearCycles(elements: List<ExcalidrawElement>, issues: MutableList<ImportIssue>): List<ExcalidrawElement> {
+    /** Three-colour walk of the `frameId` chains: each id is visited once, so N elements cost O(N). */
+    private suspend fun clearCycles(elements: List<ExcalidrawElement>, issues: MutableList<ImportIssue>, budget: ParseBudget): List<ExcalidrawElement> {
         val frameOf = elements.associate { it.id to it.frameId }
+        val done = HashSet<String>()
         val cyclic = HashSet<String>()
         for (e in elements) {
+            budget.tick(0, 1)
+            if (e.id in done) continue
             val path = ArrayList<String>()
+            val onPath = HashSet<String>()
             var cur: String? = e.id
-            while (cur != null && cur !in path) {
+            while (cur != null && cur !in done && onPath.add(cur)) {
                 path += cur
                 cur = frameOf[cur]
             }
-            if (cur != null) cyclic += path.drop(path.indexOf(cur))
+            if (cur != null && cur in onPath) cyclic += path.subList(path.indexOf(cur), path.size)
+            done += path
+            budget.tick(0, path.size / WALK_TICK_DIVISOR)
         }
         if (cyclic.isEmpty()) return elements
         return elements.map { e ->
@@ -205,4 +221,7 @@ internal object ElementSetRepair {
             e.copy(frameId = null, raw = JsonObject(e.raw - "frameId"))
         }
     }
+
+    private const val FIRST_SUFFIX = 2
+    private const val WALK_TICK_DIVISOR = 8
 }

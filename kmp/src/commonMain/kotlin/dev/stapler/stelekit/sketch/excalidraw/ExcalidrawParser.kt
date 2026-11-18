@@ -178,7 +178,7 @@ class ExcalidrawParser(
         val issues = ArrayList<ImportIssue>(assembled.issues)
         val tally = Tally()
         val elements = extractElements(root["elements"], "elements", budget, issues, tally)
-        val repaired = ElementSetRepair.repair(elements, issues)
+        val repaired = ElementSetRepair.repair(elements, issues, budget)
 
         val placeholderIds = LinkedHashSet<String>(assembled.placeholders.keys)
         val files = extractFiles(root["files"], budget, issues, placeholderIds)
@@ -224,10 +224,17 @@ class ExcalidrawParser(
                 }
                 is ElementOutcome.Dropped -> outcome.issue?.let { issues += it }
                 is ElementOutcome.Deleted -> tally.deleted++
-                is ElementOutcome.UnknownType -> tally.unknown[outcome.type] = (tally.unknown[outcome.type] ?: 0) + 1
+                is ElementOutcome.UnknownType -> countUnknownType(tally, outcome.type)
             }
         }
         return kept
+    }
+
+    /** The type text comes from the file and reaches the summary and "Copy details": shorten it and bucket the distinct names. */
+    private fun countUnknownType(tally: Tally, type: String) {
+        val shown = type.take(limits.maxNameChars).map { if (it.isISOControl()) '?' else it }.joinToString("")
+        val key = if (shown in tally.unknown || tally.unknown.size < limits.maxDiagnosticsEntries) shown else OTHER_TYPES
+        tally.unknown[key] = (tally.unknown[key] ?: 0) + 1
     }
 
     private suspend fun extractFiles(raw: JsonElement?, budget: ParseBudget, issues: MutableList<ImportIssue>, placeholderIds: MutableSet<String>): List<ExcalidrawFile> {
@@ -313,10 +320,11 @@ class ExcalidrawParser(
             issues += ImportIssue(ImportReason.LibraryImage, e.id)
             e.copy(raw = JsonObject(e.raw - "fileId"))
         }
-        return ExcalidrawLibraryItem(id, name, ElementSetRepair.repair(noImages, issues))
+        return ExcalidrawLibraryItem(id, name, ElementSetRepair.repair(noImages, issues, budget))
     }
 
     private companion object {
+        const val OTHER_TYPES = "(other)"
         const val BOM_TEXT = "﻿"
         const val SLASH_ESCAPE = "\\/"
         const val TYPE_KEY = "type"

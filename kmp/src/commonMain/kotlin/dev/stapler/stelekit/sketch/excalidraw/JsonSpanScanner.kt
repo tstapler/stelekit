@@ -170,6 +170,41 @@ private class KeyAccumulator(private val maxBytes: Long, private val decoder: Sp
     }
 }
 
+/**
+ * How many spans the scanner keeps before it gives up, so a 20 MB run of `{}` or `1,` cannot allocate millions of ranges.
+ * A scene refuses the file; a library keeps its first items and ignores the rest (the parser reports it).
+ */
+private class SpanCaps(private val limits: SceneLimits, private val scene: Boolean) {
+    private val elementSpanCap = limits.maxElements * SPAN_COUNT_FACTOR
+
+    /** True when the array span at index [kept] is stored. */
+    fun keepElement(kept: Int): Boolean {
+        if (scene) {
+            if (kept >= elementSpanCap) throw tooMany("the elements array has more than $elementSpanCap entries")
+            return true
+        }
+        return kept <= limits.maxLibraryItems
+    }
+
+    fun checkEntry(entries: Int, replaces: Boolean) {
+        if (entries >= elementSpanCap && !replaces) throw tooMany("the files map has more than $elementSpanCap entries")
+    }
+
+    fun checkMember(members: Int) {
+        if (members >= ENTRY_MEMBER_SPANS) throw tooMany("a files entry has more than $ENTRY_MEMBER_SPANS members")
+    }
+
+    private fun tooMany(detail: String) = ImportAbort(ImportError(ImportReason.TooManyElements, detail, elementSpanCap.toLong()))
+
+    private companion object {
+        /** Raw array entries tolerated per kept element: deleted, unknown and malformed ones are dropped later, but are still allocated here. */
+        const val SPAN_COUNT_FACTOR = 4
+
+        /** A real `files` entry has about five members; the rest are junk kept only to be refused. */
+        const val ENTRY_MEMBER_SPANS = 32
+    }
+}
+
 /** The resumable automaton; see [JsonSpanScanner]. */
 private class SpanMachine(
     private val limits: SceneLimits,
@@ -178,6 +213,8 @@ private class SpanMachine(
     private val decoder: SpanDecoder,
 ) {
     private val members = LinkedHashMap<String, Member>()
+
+    private val caps = SpanCaps(limits, descendFiles)
 
     private var state = S_ROOT_BEFORE
     private var bomLeft = 0
@@ -349,6 +386,7 @@ private class SpanMachine(
             }
             ROLE_ENTRY -> {
                 val id = keys[top - 1] ?: ""
+                caps.checkEntry(fileEntries.size, id in fileEntries)
                 fileEntries[id] = FileScan(id, true, entryMembers, entryData, entryEscaped)
                 state = S_OBJ_AFTER
             }
@@ -431,10 +469,11 @@ private class SpanMachine(
         }
         when (spanKind) {
             K_TOP -> recordTop(ref)
-            K_ELEMENT -> arraySpans.add(ref)
+            K_ELEMENT -> if (caps.keepElement(arraySpans.size)) arraySpans.add(ref)
             K_FILE_MEMBER -> recordEntryMember(ref)
             else -> {
                 val id = keys[top - 1] ?: ""
+                caps.checkEntry(fileEntries.size, id in fileEntries)
                 fileEntries[id] = FileScan(id, false, listOf("" to ref), null, false)
             }
         }
@@ -445,7 +484,7 @@ private class SpanMachine(
         val key = keys[top - 1] ?: ""
         if (ref is SpanRef.Dropped) {
             val cap = if (ref.reason == ImportReason.ImportTooDeep) limits.maxJsonDepth.toLong() else limits.maxImportSpanBytes
-            throw ImportAbort(ImportError(ref.reason, "the top-level member \"$key\" is over the limit", cap))
+            throw ImportAbort(ImportError(ref.reason, "the top-level member \"${key.take(limits.maxNameChars)}\" is over the limit", cap))
         }
         members[key] = Member.Value(ref)
     }
@@ -453,6 +492,7 @@ private class SpanMachine(
     private fun recordEntryMember(ref: SpanRef) {
         val key = keys[top - 1] ?: ""
         if (key == JsonSpanScanner.DATA_URL_KEY) entryData = null
+        caps.checkMember(entryMembers.size)
         entryMembers.add(key to ref)
     }
 

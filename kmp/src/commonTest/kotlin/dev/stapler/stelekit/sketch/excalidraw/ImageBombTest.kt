@@ -55,6 +55,17 @@ class ImageBombTest {
     }
 
     @Test
+    fun import_should_RefuseWithoutProbingTheWholePayload_When_AJpegNeverReachesAFrameHeader() = runTest {
+        val segment = byteArrayOf(0xFF.toByte(), 0xE1.toByte(), 0xFF.toByte(), 0xFF.toByte()) + ByteArray(SEGMENT_BODY)
+        val endless = ByteArray(2 + SEGMENTS * segment.size)
+        byteArrayOf(0xFF.toByte(), 0xD8.toByte()).copyInto(endless)
+        repeat(SEGMENTS) { segment.copyInto(endless, 2 + it * segment.size) }
+        val r = import(fileEntry("endless", "image/jpeg", endless))
+        assertEquals(ImportReason.ImageInvalid, reasons(r)["endless"])
+        assertTrue(r.scene.files.isEmpty())
+    }
+
+    @Test
     fun import_should_RefuseAMismatchBetweenDeclaredMimeAndBytes() = runTest {
         val r = import(fileEntry("liar", "image/jpeg", pngBytes(8, 8)), fileEntry("honest", "image/png", pngBytes(8, 8)))
         assertEquals(ImportReason.ImageMimeMismatch, reasons(r)["liar"])
@@ -112,5 +123,7 @@ class ImageBombTest {
         const val FORTY = 40
         const val RGBA = 4L
         const val SMALL_CAP = 1_024L
+        const val SEGMENT_BODY = 65_533
+        const val SEGMENTS = 70
     }
 }
