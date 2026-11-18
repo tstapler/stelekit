@@ -14,6 +14,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -40,6 +41,8 @@ class PlatformEdgeHostsTest {
         }
     }
 
+    /** FLAG_CANCELED is API 33+: pinned so the Bazel run (which has no robolectric.properties) exercises the same SDK as Gradle. */
+    @Config(sdk = [34])
     @Test
     fun framework_should_FlagAPalmCancel_Only_WhenTheCancelCarriesFlagCanceled() {
         val flagged = motion(MotionEvent.ACTION_CANCEL, MotionEvent.TOOL_TYPE_FINGER, AndroidPalmClassifier.FLAG_CANCELED)
@@ -57,6 +60,7 @@ class PlatformEdgeHostsTest {
         assertFalse(PalmClassifier.None.isPalm(motion(MotionEvent.ACTION_DOWN, AndroidPalmClassifier.TOOL_TYPE_PALM), 0))
     }
 
+    @Config(sdk = [34])
     @Test
     fun cancelDetector_should_SeeASystemCancel_ButNotARelease_ANullEvent_OrAPalmFlaggedCancel() {
         assertTrue(AndroidPointerCancelDetector.isCancelled(motion(MotionEvent.ACTION_CANCEL, MotionEvent.TOOL_TYPE_FINGER), 0))
