@@ -10,7 +10,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** Story 1.2.4: the canonical 33-field `SceneLimits` and its defaults (plan "Canonical SceneLimits"). */
+/** Story 1.2.4: the canonical 34-field `SceneLimits` and its defaults (plan "Canonical SceneLimits"). */
 class SceneLimitsTest {
     private val mb = 1_048_576L
 
@@ -23,13 +23,13 @@ class SceneLimitsTest {
         "softElementThreshold" to 4_000, "softConstraintThreshold" to 160, "maxPngSidePx" to 16_000, "maxPngPixels" to 100_000_000L,
         "slowSolveIndicatorMs" to 100L, "maxHistoryEntries" to 100, "maxSemanticsNodes" to 200,
         "maxDiagnosticsEntries" to 20, "maxVisibleNotices" to 3, "maxGoToResults" to 50, "maxConflictCopiesPerSheet" to 10,
-        "minZoomPercent" to 1, "maxZoomPercent" to 3_000, "maxPreloadBytes" to 128 * mb,
+        "minZoomPercent" to 1, "maxZoomPercent" to 3_000, "maxPreloadBytes" to 128 * mb, "maxJsonRootMembers" to 64,
     )
 
     @Test
     fun sceneLimits_should_HaveExactlyTheCanonicalFieldsAndDefaults_And_NoImageMegapixelsFieldRemains() {
         val actual = SceneLimits.Default.asMap()
-        assertEquals(33, canonical.size)
+        assertEquals(34, canonical.size)
         assertEquals(canonical.keys.toList(), actual.keys.toList())
         canonical.forEach { (name, expected) -> assertEquals(expected.toDouble(), actual.getValue(name).toDouble(), name) }
         assertFalse("maxImageMegapixels" in actual)

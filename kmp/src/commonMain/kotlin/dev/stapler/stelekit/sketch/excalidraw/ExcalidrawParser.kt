@@ -61,6 +61,9 @@ class ExcalidrawParser(
                 throw ImportAbort(ImportError(ImportReason.MalformedJson, e.message.orEmpty()))
             }
             val obj = root as? JsonObject ?: throw ImportAbort(ImportError(ImportReason.MalformedJson, "the root is not an object"))
+            if (obj.size > limits.maxJsonRootMembers) {
+                throw ImportAbort(ImportError(ImportReason.TooManyElements, "the file has more than ${limits.maxJsonRootMembers} top-level members", limits.maxJsonRootMembers.toLong()))
+            }
             extractScene(Assembled(obj, emptyMap(), emptyList()), budget)
         }
 
