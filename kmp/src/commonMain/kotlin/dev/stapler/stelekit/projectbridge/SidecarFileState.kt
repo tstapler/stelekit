@@ -4,6 +4,8 @@
 
 package dev.stapler.stelekit.projectbridge
 
+import dev.stapler.stelekit.sketch.v2.codec.CanonicalJson
+import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -37,11 +39,12 @@ object SidecarClassifier {
      * Classifies raw bytes of a JSON sidecar file of [kind]; [bytes] null means the file does not exist. [maxSchema]
      * overrides the kind's limit so a test can simulate an older build (the previous max).
      */
-    fun classifyJson(bytes: ByteArray?, kind: SidecarFileKind = SidecarFileKind.Model, maxSchema: Long = kind.maxSchema): SidecarFileState {
+    fun classifyJson(bytes: ByteArray?, kind: SidecarFileKind = SidecarFileKind.Model, maxSchema: Long = kind.maxSchema, limits: SceneLimits = SceneLimits.Default): SidecarFileState {
         if (bytes == null) return SidecarFileState.Absent
         val text = decode(bytes) ?: return SidecarFileState.Corrupt(CorruptReason.InvalidUtf8)
         if (hasConflictMarkers(text)) return SidecarFileState.Corrupt(CorruptReason.ConflictMarkers)
         if (text.isBlank()) return SidecarFileState.Corrupt(CorruptReason.Truncated)
+        if (!withinParseBounds(bytes, text, limits)) return SidecarFileState.Corrupt(CorruptReason.InvalidJson)
         val obj = try {
             parser.parseToJsonElement(text) as? JsonObject
         } catch (_: Exception) {
@@ -53,15 +56,20 @@ object SidecarClassifier {
     }
 
     /** The `schema` number of a parseable JSON object, or null when [bytes] is absent, unparseable or has none. */
-    fun schemaOf(bytes: ByteArray?): Long? {
+    fun schemaOf(bytes: ByteArray?, limits: SceneLimits = SceneLimits.Default): Long? {
         if (bytes == null) return null
         return try {
-            (parser.parseToJsonElement(bytes.decodeToString(throwOnInvalidSequence = true)) as? JsonObject)
-                ?.get("schema")?.jsonPrimitive?.longOrNull
+            val text = bytes.decodeToString(throwOnInvalidSequence = true)
+            if (!withinParseBounds(bytes, text, limits)) return null
+            (parser.parseToJsonElement(text) as? JsonObject)?.get("schema")?.jsonPrimitive?.longOrNull
         } catch (_: Exception) {
             null
         }
     }
+
+    /** Size and nesting are checked before kotlinx recurses into the text, so hostile depth cannot overflow the stack. */
+    private fun withinParseBounds(bytes: ByteArray, text: String, limits: SceneLimits): Boolean =
+        bytes.size <= limits.maxSheetBytes && CanonicalJson.nestingDepth(text, limits.maxJsonDepth) <= limits.maxJsonDepth
 
     /** Classifies a text snapshot (`sources/yaml-*.yaml`): UTF-8 and conflict markers only. */
     fun classifyText(bytes: ByteArray?): SidecarFileState {

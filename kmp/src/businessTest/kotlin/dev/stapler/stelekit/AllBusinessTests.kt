@@ -1088,6 +1088,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.HistoryV2PropertyTest::class,
     dev.stapler.stelekit.sketch.v2.SheetCodecV2Test::class,
     dev.stapler.stelekit.sketch.v2.SheetCodecV2FuzzTest::class,
+    dev.stapler.stelekit.sketch.v2.HostileInputBoundsTest::class,
     dev.stapler.stelekit.sketch.v2.ElementCommandsTest::class,
     dev.stapler.stelekit.sketch.v2.ConstraintAdapterTest::class,
     dev.stapler.stelekit.sketch.v2.SvgExporterGoldenTest::class,

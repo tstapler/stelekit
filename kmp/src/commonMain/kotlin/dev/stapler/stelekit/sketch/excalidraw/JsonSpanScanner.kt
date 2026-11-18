@@ -224,6 +224,12 @@ private class SpanCaps(private val limits: SceneLimits, private val scene: Boole
         if (entries >= elementSpanCap && !replaces) throw tooMany("the files map has more than $elementSpanCap entries")
     }
 
+    /** A real scene has under ten top-level members; unique junk keys would otherwise each cost a key string and a span. */
+    fun checkRootMember(members: Int, replaces: Boolean) {
+        if (members < limits.maxJsonRootMembers || replaces) return
+        throw ImportAbort(ImportError(ImportReason.TooManyElements, "the file has more than ${limits.maxJsonRootMembers} top-level members", limits.maxJsonRootMembers.toLong()))
+    }
+
     fun checkMember(members: Int) {
         if (members >= ENTRY_MEMBER_SPANS) throw tooMany("a files entry has more than $ENTRY_MEMBER_SPANS members")
     }
@@ -542,6 +548,7 @@ private class SpanMachine(
             val cap = if (ref.reason == ImportReason.ImportTooDeep) limits.maxJsonDepth.toLong() else limits.maxImportSpanBytes
             throw ImportAbort(ImportError(ref.reason, "the top-level member \"${key.take(limits.maxNameChars)}\" is over the limit", cap))
         }
+        caps.checkRootMember(table.members.size, key in table.members)
         table.put(key, Member.Value(ref))
     }
 

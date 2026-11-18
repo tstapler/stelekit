@@ -47,7 +47,7 @@ class ClipboardPayload private constructor(val elements: List<SceneElement>) {
         fun of(elements: List<SceneElement>): ClipboardPayload = ClipboardPayload(elements)
 
         fun fromText(text: String, limits: SceneLimits = SceneLimits.Default): ClipboardPayload? {
-            if (!text.startsWith(MARKER)) return null
+            if (!text.startsWith(MARKER) || text.length > limits.maxSheetBytes) return null
             val doc = SheetCodecV2.decode(text.removePrefix(MARKER).encodeToByteArray(), limits).getOrNull() ?: return null
             return ClipboardPayload(doc.scene.elementsInOrder)
         }

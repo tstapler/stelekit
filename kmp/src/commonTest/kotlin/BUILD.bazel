@@ -330,6 +330,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/HistoryV2PropertyTest.kt",
         "dev/stapler/stelekit/sketch/v2/SheetCodecV2Test.kt",
         "dev/stapler/stelekit/sketch/v2/SheetCodecV2FuzzTest.kt",
+        "dev/stapler/stelekit/sketch/v2/HostileInputBoundsTest.kt",
         "dev/stapler/stelekit/sketch/v2/ElementCommandsTest.kt",
         "dev/stapler/stelekit/sketch/v2/ConstraintAdapterTest.kt",
         "dev/stapler/stelekit/sketch/v2/SvgExporterGoldenTest.kt",

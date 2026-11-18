@@ -22,6 +22,7 @@ import dev.stapler.stelekit.sketch.v2.scene.Binding
 import dev.stapler.stelekit.sketch.v2.scene.BindingMode
 import dev.stapler.stelekit.sketch.v2.scene.BoundKind
 import dev.stapler.stelekit.sketch.v2.scene.BoundRef
+import dev.stapler.stelekit.sketch.v2.scene.ColorText
 import dev.stapler.stelekit.sketch.v2.scene.DiamondElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementBase
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
@@ -177,6 +178,7 @@ object SheetCodecV2 {
 
     private fun CanonicalJsonError.toSheetError(): SheetError = when (this) {
         is CanonicalJsonError.TooDeep -> SheetError.TooDeep(depth)
+        is CanonicalJsonError.TooMany -> SheetError.TooManyElements(count, limit)
         is CanonicalJsonError.NonFinite -> SheetError.NonFinite("document")
         is CanonicalJsonError.Malformed -> SheetError.Malformed("document")
     }
@@ -546,8 +548,8 @@ object SheetCodecV2 {
                 Roundness(enum(ro, "kind", RoundnessKind.Legacy, where), if (ro["value"] == null) null else dbl(ro, "value", where))
             }
             return ElementStyle(
-                strokeColor = strOr(o, "stroke", defaults.strokeColor),
-                backgroundColor = strOr(o, "bg", defaults.backgroundColor),
+                strokeColor = ColorText.clean(strOr(o, "stroke", defaults.strokeColor), defaults.strokeColor),
+                backgroundColor = ColorText.clean(strOr(o, "bg", defaults.backgroundColor), defaults.backgroundColor),
                 fillStyle = enum(o, "fill", FillStyle.Solid, where),
                 strokeWidth = strokeWidth,
                 strokeStyle = enum(o, "ss", StrokeStyle.Solid, where),

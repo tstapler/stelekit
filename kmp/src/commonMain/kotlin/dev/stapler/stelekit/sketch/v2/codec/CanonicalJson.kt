@@ -22,6 +22,9 @@ sealed interface CanonicalJsonError {
     /** NaN or an infinity; JSON has no representation and the scene model rejects it (ADR-002). */
     data class NonFinite(val text: String) : CanonicalJsonError
     data class TooDeep(val depth: Int) : CanonicalJsonError
+
+    /** An array directly under the document root has [count] entries, over [limit]; found by the pre-scan, before any tree exists. */
+    data class TooMany(val count: Int, val limit: Int) : CanonicalJsonError
     data class Malformed(val message: String) : CanonicalJsonError
 }
 
@@ -85,8 +88,7 @@ object CanonicalJson {
         } catch (e: Exception) { // JVM throws a CharacterCodingException, other targets an IllegalArgumentException
             return CanonicalJsonError.Malformed(e.message ?: "invalid UTF-8").left()
         }
-        val depth = nestingDepth(text)
-        if (depth > limits.maxJsonDepth) return CanonicalJsonError.TooDeep(depth).left()
+        boundsError(text, limits)?.let { return it.left() }
         return try {
             Json.parseToJsonElement(text).right()
         } catch (e: Exception) {
@@ -196,7 +198,45 @@ object CanonicalJson {
         sb.append("\\u").append(ch.code.toString(HEX).padStart(4, '0'))
     }
 
-    private fun nestingDepth(text: String): Int {
+    /**
+     * One iterative pass before [Json.parseToJsonElement] builds anything: nesting over `maxJsonDepth`, more than
+     * `maxJsonRootMembers` root members, or an array directly under the root with more than `maxElements` entries.
+     * Counts commas, so a 15 MB run of `{},` is refused after the cap'th entry without allocating a node.
+     */
+    private fun boundsError(text: String, limits: SceneLimits): CanonicalJsonError? {
+        var depth = 0
+        var inString = false
+        var escaped = false
+        var rootCommas = 0
+        var childCommas = 0
+        var childIsArray = false
+        for (ch in text) {
+            if (inString) {
+                if (escaped) escaped = false else if (ch == '\\') escaped = true else if (ch == '"') inString = false
+                continue
+            }
+            when (ch) {
+                '"' -> inString = true
+                '[', '{' -> {
+                    depth++
+                    if (depth > limits.maxJsonDepth) return CanonicalJsonError.TooDeep(depth)
+                    if (depth == 2) { childCommas = 0; childIsArray = ch == '[' }
+                }
+                ']', '}' -> depth--
+                ',' -> when {
+                    depth == 1 -> if (++rootCommas + 1 > limits.maxJsonRootMembers) return CanonicalJsonError.Malformed("too many top-level members")
+                    depth == 2 && childIsArray -> if (++childCommas + 1 > limits.maxElements) return CanonicalJsonError.TooMany(childCommas + 1, limits.maxElements)
+                }
+            }
+        }
+        return null
+    }
+
+    /**
+     * Deepest bracket nesting of [text], string-aware and iterative. Stops early once it passes [stopAbove], so a
+     * 200 KB run of `[` costs one pass and the caller still sees a value over its cap.
+     */
+    fun nestingDepth(text: String, stopAbove: Int = Int.MAX_VALUE): Int {
         var depth = 0
         var deepest = 0
         var inString = false
@@ -208,7 +248,11 @@ object CanonicalJson {
             }
             when (ch) {
                 '"' -> inString = true
-                '[', '{' -> { depth++; if (depth > deepest) deepest = depth }
+                '[', '{' -> {
+                    depth++
+                    deepest = maxOf(deepest, depth)
+                    if (deepest > stopAbove) return deepest
+                }
                 ']', '}' -> depth--
             }
         }

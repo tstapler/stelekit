@@ -52,6 +52,8 @@ data class SceneLimits(
     val maxZoomPercent: Int = 3_000,
     /** Sum of file sizes under the sidecar root the wasm preload may read; over it the status is `Unavailable(PreloadTooLarge)`. */
     val maxPreloadBytes: Long = 128 * MB,
+    /** Distinct top-level members of one JSON document (a sheet or an Excalidraw scene); a real one has under ten. */
+    val maxJsonRootMembers: Int = 64,
 ) {
     /** True for a finite coordinate within `abs(v) <= maxCoord`; NaN, infinities and larger values are rejected (ADR-002). */
     fun isValidCoord(v: Double): Boolean = v.isFinite() && abs(v) <= maxCoord
@@ -70,7 +72,7 @@ data class SceneLimits(
         "maxSemanticsNodes" to maxSemanticsNodes, "maxDiagnosticsEntries" to maxDiagnosticsEntries,
         "maxVisibleNotices" to maxVisibleNotices, "maxGoToResults" to maxGoToResults,
         "maxConflictCopiesPerSheet" to maxConflictCopiesPerSheet, "minZoomPercent" to minZoomPercent,
-        "maxZoomPercent" to maxZoomPercent, "maxPreloadBytes" to maxPreloadBytes,
+        "maxZoomPercent" to maxZoomPercent, "maxPreloadBytes" to maxPreloadBytes, "maxJsonRootMembers" to maxJsonRootMembers,
     )
 
     companion object {
