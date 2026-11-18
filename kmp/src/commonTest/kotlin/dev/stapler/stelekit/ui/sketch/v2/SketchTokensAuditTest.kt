@@ -18,43 +18,18 @@ class SketchTokensAuditTest {
         "high contrast dark" to SketchTokens.highContrast(dark = true),
     )
 
-    /**
-     * Findings the audit made in the app-wide theme (`ui/theme/Theme.kt`), which the v2 stories do not own: `primary` is the
-     * brand teal, below 4.5:1 as text on the parchment surface and its panel in the light scheme and on the panel in the dark and
-     * stone schemes. Filed to the theme owner; the list may only shrink (a fixed colour must be removed, see the stale check).
-     */
-    private val filedThemeFindings = setOf(
-        "light: primary text on surface",
-        "light: primary text on panel",
-        "light: text on primary button",
-        "dark: primary text on panel",
-        "stone: primary text on panel",
-    )
-
     private fun failingKeys() = sets.flatMap { (name, scheme) -> SketchTokens.failing(scheme).map { "$name: ${it.name}" } }.toSet()
 
     @Test
-    fun ux46_tokens_should_Meet4_5To1Text_And3To1NonText_InEveryTokenSet_ExceptTheFiledThemeFindings() {
-        val unfiled = failingKeys() - filedThemeFindings
-        val lines = sets.flatMap { (name, scheme) -> SketchTokens.failures(name, scheme) }.filter { line -> unfiled.any { line.startsWith(it) } }
-        assertTrue(unfiled.isEmpty(), lines.joinToString("\n"))
-    }
-
-    @Test
-    fun filedThemeFindings_should_OnlyShrink_WhenAColourIsFixed() {
-        val stale = filedThemeFindings - failingKeys()
-        assertTrue(stale.isEmpty(), "fixed in the theme, delete from the filed list: $stale")
-        assertTrue(filedThemeFindings.size <= MAX_FILED, "the filed list grew past $MAX_FILED")
+    fun ux46_tokens_should_Meet4_5To1Text_And3To1NonText_InEveryTokenSet() {
+        val lines = sets.flatMap { (name, scheme) -> SketchTokens.failures(name, scheme) }
+        assertTrue(lines.isEmpty(), lines.joinToString("\n"))
     }
 
     @Test
     fun highContrastSets_should_HaveNoFindingAtAll() {
         val findings = failingKeys().filter { it.startsWith("high contrast") }
         assertTrue(findings.isEmpty(), findings.joinToString("\n"))
-    }
-
-    private companion object {
-        const val MAX_FILED = 5
     }
 
     @Test
