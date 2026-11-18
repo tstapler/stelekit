@@ -58,7 +58,7 @@ class AtomicFileWriterTest {
 
         override fun renameFile(from: String, to: String): Boolean {
             if (dead) error("process is gone")
-            if (crashAtRename) { dead = true; error("crash between delete and rename") }
+            if (crashAtRename && to.endsWith(".json")) { dead = true; error("crash between delete and rename") }
             return !failRename && super.renameFile(from, to)
         }
 
@@ -135,8 +135,52 @@ class AtomicFileWriterTest {
 
         writer().write(dest, new, old)
 
-        assertNull(fs.readFileBytes(dest), "documented crash window: the reconciler sees Absent and restores from the database")
+        assertNull(fs.readFileBytes(dest), "the crash window leaves the destination absent")
         assertContentEquals(new, fs.readFileBytes(fs.tmps().single()), "the complete new bytes survive in the temp file")
+    }
+
+    @Test
+    fun recoverInterrupted_should_RenameTheVerifiedTempIntoPlace_AfterACrashBetweenDeleteAndRename() {
+        fs.crashAtRename = true
+        fs.seed(dest, old)
+        writer().write(dest, new, old)
+        fs.dead = false
+        fs.crashAtRename = false
+
+        writer().recoverInterrupted(dest.substringBeforeLast('/'))
+
+        assertContentEquals(new, fs.readFileBytes(dest), "the only copy of the new bytes is back at the destination")
+        assertEquals(emptyList(), fs.tmps())
+    }
+
+    @Test
+    fun sweep_should_NeverDeleteAVerifiedTempWhoseDestinationIsMissing_EvenWhenStale() {
+        fs.crashAtRename = true
+        fs.seed(dest, old)
+        writer().write(dest, new, old)
+        fs.dead = false
+        fs.crashAtRename = false
+        val temp = fs.tmps().single()
+        fs.mtimes[temp] = now - StaleTempSweeper.MAX_AGE.inWholeMilliseconds * 10
+        fs.failRename = true // promotion cannot happen, so the sweep alone must keep it
+
+        writer().write("${dest.substringBeforeLast('/')}/other.json", new)
+
+        assertTrue(fs.fileExists(temp), "stale but the destination is missing: it is the only copy")
+    }
+
+    @Test
+    fun sweep_should_StillRemoveAStaleVerifiedTempWhoseDestinationExists() {
+        val dir = dest.substringBeforeLast('/')
+        val leftover = "$dir/a.json.1.verified$SUFFIX"
+        fs.seed("$dir/a.json", old)
+        fs.seed(leftover, new)
+        fs.mtimes[leftover] = now - StaleTempSweeper.MAX_AGE.inWholeMilliseconds - 1
+
+        writer().write(dest, new)
+
+        assertFalse(fs.fileExists(leftover))
+        assertContentEquals(old, fs.readFileBytes("$dir/a.json"))
     }
 
     @Test

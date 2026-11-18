@@ -14,12 +14,31 @@ internal class StaleTempSweeper(
 ) {
     private val swept = HashSet<String>()
 
+    private val recovered = HashSet<String>()
+
+    /**
+     * A temp named by [verifiedName] holds complete, read-back-checked bytes. When its destination is gone (a crash between
+     * delete and rename) it is renamed into place; it is never swept while the destination is missing.
+     */
+    fun recoverInterrupted(dir: String) {
+        if (!recovered.add(dir)) return
+        for (name in fs.listFiles(dir)) {
+            if (!name.endsWith(VERIFIED + suffix)) continue
+            val target = "$dir/${destinationOf(name)}"
+            if (!fs.fileExists(target)) runCatching { fs.renameFile("$dir/$name", target) }
+        }
+    }
+
+    private fun destinationOf(verifiedTemp: String): String = verifiedTemp.removeSuffix(suffix).removeSuffix(VERIFIED).substringBeforeLast('.')
+
     fun sweepOnce(dir: String) {
+        recoverInterrupted(dir)
         if (!swept.add(dir)) return
         val now = nowMillis()
         for (name in fs.listFiles(dir)) {
             if (!name.endsWith(suffix)) continue
             val file = "$dir/$name"
+            if (name.endsWith(VERIFIED + suffix) && !fs.fileExists("$dir/${destinationOf(name)}")) continue
             val modified = fs.getLastModifiedTime(file) ?: uuidV7Millis(name) ?: continue
             if (now - modified > MAX_AGE.inWholeMilliseconds) runCatching { fs.deleteFile(file) }
         }
@@ -40,12 +59,17 @@ internal class StaleTempSweeper(
      * (its first 48 bits are epoch milliseconds). Null for a name that does not end in a UUIDv7.
      */
     private fun uuidV7Millis(name: String): Long? {
-        val id = name.removeSuffix(suffix).substringAfterLast('.')
+        val id = name.removeSuffix(suffix).removeSuffix(VERIFIED).substringAfterLast('.')
         if (!UUID_V7.matches(id)) return null
         return id.substring(0, 13).replace("-", "").toLong(16)
     }
 
     companion object {
+        private const val VERIFIED = ".verified"
+
+        /** The marked name of the verified temp [tmp] (`<dest>.<uuidv7><suffix>`): `<dest>.<uuidv7>.verified<suffix>`. */
+        fun verifiedName(tmp: String, suffix: String): String = tmp.removeSuffix(suffix) + VERIFIED + suffix
+
         val MAX_AGE = 10.minutes
         private val UUID_V7 = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}")
     }

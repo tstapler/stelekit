@@ -452,6 +452,8 @@ internal class SidecarDisk(private val fs: FileSystem, private val graphRoot: St
      */
     fun readBundle(slug: String): SidecarRead {
         val d = dir(slug)
+        writer.recoverInterrupted(d)
+        writer.recoverInterrupted("$d/${SidecarCodec.SHEETS_DIR}")
         val modelPath = "$d/${SidecarCodec.MODEL_PATH}"
         val model = fs.readFileBytes(modelPath)
         // A model deleted by a torn replace (crash between delete and rename) is Absent: the database restores it.

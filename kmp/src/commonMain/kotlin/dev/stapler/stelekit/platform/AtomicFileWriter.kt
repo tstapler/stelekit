@@ -25,8 +25,8 @@ enum class AtomicWriteMode {
  *
  * Extracted from `MarkdownTargetWriter.replaceFile`: symlink refusal, a compare-and-swap [write] `precondition`
  * between the temp write and the replace, restore of `original` after a failed rename, and a stale-temp sweep.
- * In [AtomicWriteMode.TEMP_RENAME] the delete-then-rename window is a real crash risk (the destination is
- * left absent and the new bytes stay in the temp file until swept); callers must treat Absent as recoverable.
+ * In [AtomicWriteMode.TEMP_RENAME] the delete-then-rename window is a real crash risk: the destination is left absent and
+ * the verified new bytes stay in a marked temp that [recoverInterrupted] (and the next write's sweep) renames into place.
  *
  * @param canonicalize symlink-resolving path function, deliberately without a default so protection is never
  *   silently off. Platforms without symlinks pass an identity function explicitly.
@@ -43,6 +43,9 @@ class AtomicFileWriter(
     private val sweeper = StaleTempSweeper(fs, tempSuffix, nowMillis)
 
     fun mode(path: String): AtomicWriteMode = mode(fs, path, safAtomicReplaceVerified)
+
+    /** Promotes a verified temp whose destination vanished in a crash between delete and rename; once per directory. */
+    fun recoverInterrupted(dir: String) = sweeper.recoverInterrupted(dir)
 
     /**
      * Writes [bytes] to [path]. [original] is the content the caller computed [bytes] from (null: [path] must
@@ -61,6 +64,7 @@ class AtomicFileWriter(
         sweeper.sweepOnce(path.substringBeforeLast('/'))
         val tmp = "$path.${UuidGenerator.generateV7()}$tempSuffix"
         var deletedOriginal = false
+        var live = tmp
         try {
             if (!fs.writeTempBytes(tmp, bytes)) return failAndClean(tmp, path, "temp write failed")
             if (precondition != null) {
@@ -83,17 +87,21 @@ class AtomicFileWriter(
             val readBack = fs.readFileBytes(tmp)
             if (readBack == null || !readBack.contentEquals(bytes)) return failAndClean(tmp, path, "read-back verification failed")
             if (original != null) {
+                // The verified temp gets a marked name before the original goes, so a crash in the delete-to-rename
+                // window leaves a complete file that StaleTempSweeper promotes instead of sweeping.
+                live = StaleTempSweeper.verifiedName(tmp, tempSuffix)
+                if (!fs.renameFile(tmp, live)) return failAndClean(tmp, path, "could not mark the temp verified")
                 deletedOriginal = fs.deleteFile(path)
-                if (!deletedOriginal) return failAndClean(tmp, path, "could not replace existing file")
+                if (!deletedOriginal) return failAndClean(live, path, "could not replace existing file")
             }
-            if (!fs.renameFile(tmp, path)) {
+            if (!fs.renameFile(live, path)) {
                 if (original != null) fs.writeFileBytes(path, original)
-                return failAndClean(tmp, path, "rename failed")
+                return failAndClean(live, path, "rename failed")
             }
             return Unit.right()
         } catch (e: Throwable) {
             if (deletedOriginal && original != null && !fs.fileExists(path)) runCatching { fs.writeFileBytes(path, original) }
-            runCatching { fs.deleteTempBytes(tmp) }
+            runCatching { fs.deleteTempBytes(live) }
             if (e is CancellationException) throw e
             if (e is UnsupportedOperationException) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
             return DomainError.FileSystemError.WriteFailed(path, e.message ?: "write failed").left()
