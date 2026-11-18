@@ -181,7 +181,18 @@ class SheetSaver(
 
     init {
         scope.launch { runLoop() }
-        scope.launch { ports.externalChanges.collect { onExternalChangeGuarded() } }
+        scope.launch {
+            // One failed event must not end the collection: later pulls still need their Reload prompt.
+            ports.externalChanges.collect {
+                try {
+                    onExternalChange()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    ports.log.persistFailed(failureOf(t).token)
+                }
+            }
+        }
         scope.launch { ports.lifecycle.hidden.collect { saveLatest() } }
     }
 
@@ -375,17 +386,6 @@ class SheetSaver(
             },
         )
         if (diskSha == null) ports.log.persistFailed("file-missing")
-    }
-
-    /** One failed event must not end the collection: later pulls still need their Reload prompt. */
-    private suspend fun onExternalChangeGuarded() {
-        try {
-            onExternalChange()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (t: Throwable) {
-            ports.log.persistFailed(failureOf(t).token)
-        }
     }
 
     /** The post-sync coordinator pulled this project: when the open sheet's file changed, prompt Reload without waiting for a save. */

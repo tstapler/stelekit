@@ -38,6 +38,7 @@ internal class SaverRig(
     val slugLock: SidecarSlugLock = SidecarSlugLock(),
     externalChanges: Flow<Unit> = emptyFlow(),
     signals: QualitySignals? = null,
+    storeOf: (dev.stapler.stelekit.projectbridge.ProjectSidecarStore) -> dev.stapler.stelekit.projectbridge.ProjectSidecarStore = { it },
 ) {
     val sheet = SheetUuid(MixedProjectFixtures.SHEET_A)
     val path = SheetPaths.pathFor(sheet, SheetPaths.SCHEMA_V2)
@@ -48,7 +49,7 @@ internal class SaverRig(
     val saver = SheetSaver(
         SheetTarget(MixedProjectFixtures.slug, SketchTestSupport.P, sheet, ContentHasher.sha256(loadedBytes)),
         SheetSaverPorts(
-            device.repos, device.store, slugLock, diagnostics,
+            device.repos, storeOf(device.store), slugLock, diagnostics,
             log = SketchLog(SketchLogSink { logLines += it }, signals = signals),
             externalChanges = externalChanges,
         ),

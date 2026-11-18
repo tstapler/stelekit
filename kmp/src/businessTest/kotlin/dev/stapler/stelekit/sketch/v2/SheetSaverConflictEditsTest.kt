@@ -64,6 +64,35 @@ class SheetSaverConflictEditsTest {
     }
 
     @Test
+    fun aFailedExternalChangeEvent_should_NotStopLaterOnesFromReachingTheSaver() = runBlocking<Unit> {
+        val external = MutableSharedFlow<Unit>(extraBufferCapacity = 2)
+        var reads = 0
+        val flaky = { real: dev.stapler.stelekit.projectbridge.ProjectSidecarStore ->
+            object : dev.stapler.stelekit.projectbridge.ProjectSidecarStore by real {
+                override suspend fun read(slug: String): dev.stapler.stelekit.projectbridge.SidecarRead {
+                    if (reads++ == 0) error("the first read fails")
+                    return real.read(slug)
+                }
+            }
+        }
+        val a = SaverRig(MixedProjectFixtures.device(convertA = true), coroutineContext, externalChanges = external, storeOf = flaky)
+        val b = SaverRig(MixedProjectFixtures.device(convertA = true), coroutineContext)
+        b.saver.submit(SaverRig.withRect(b.loadedDoc(), "theirs", 700))
+        assertEquals(SaveState.Saved, b.saver.flush())
+        a.device.pullFrom(b.device)
+        b.saver.close()
+        yield()
+
+        external.tryEmit(Unit)
+        repeat(20) { yield() }
+        external.tryEmit(Unit)
+        repeat(20) { yield() }
+
+        assertIs<SaveState.Conflict>(a.saver.state.value, "the second event still prompts a Reload")
+        a.saver.close()
+    }
+
+    @Test
     fun externalChangeConflict_should_KeepLaterEditsBeforeReload() = runBlocking<Unit> {
         val external = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
         val a = conflicted(coroutineContext, external)
