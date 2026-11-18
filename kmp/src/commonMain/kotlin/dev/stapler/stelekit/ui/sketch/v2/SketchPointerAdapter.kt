@@ -104,6 +104,9 @@ class SketchPointerAdapter(
 
     var listener: PointerGestureListener? = null
 
+    /** Told of the kind of every pointer that touches the canvas, so the host learns when a touch or pen first shows up (UX-46). */
+    var onKindSeen: (PointerKind) -> Unit = {}
+
     var viewport: SketchViewport = viewport
         private set
 
@@ -132,10 +135,13 @@ class SketchPointerAdapter(
         viewport = value
     }
 
-    fun onPointer(p: RawPointer): List<PointerAction> = when {
-        // A palm never starts or moves a gesture; its Up and Cancel still run so a contact that turned into a palm cannot wedge the state.
-        p.palm && p.phase != RawPhase.Up && p.phase != RawPhase.Cancel -> emptyList()
-        else -> onClassified(p)
+    fun onPointer(p: RawPointer): List<PointerAction> {
+        if (p.phase == RawPhase.Down && !p.palm) onKindSeen(p.kind)
+        return when {
+            // A palm never starts or moves a gesture; its Up and Cancel still run so a contact that turned into a palm cannot wedge the state.
+            p.palm && p.phase != RawPhase.Up && p.phase != RawPhase.Cancel -> emptyList()
+            else -> onClassified(p)
+        }
     }
 
     private fun onClassified(p: RawPointer): List<PointerAction> = when (p.phase) {

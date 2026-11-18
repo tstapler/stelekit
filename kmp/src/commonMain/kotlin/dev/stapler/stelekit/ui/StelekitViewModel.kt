@@ -516,6 +516,7 @@ class StelekitViewModel(
         touchPresent: Boolean = false,
     ): dev.stapler.stelekit.ui.sketch.v2.V2EditorDeps? {
         val device = dev.stapler.stelekit.performance.getDeviceInfo()
+        val touchDevice = TOUCH_PLATFORM_NAMES.any { device.platform.contains(it, ignoreCase = true) }
         val keymap = dev.stapler.stelekit.ui.sketch.v2.KeymapEnv(
             isMac = device.osVersion.contains(MAC_OS_NAME, ignoreCase = true),
             isWeb = device.platform.contains(WEB_PLATFORM_NAME, ignoreCase = true),
@@ -533,10 +534,11 @@ class StelekitViewModel(
             edgeTarget = dev.stapler.stelekit.ui.sketch.v2.EdgeTarget.of(device.platform),
             edgePan = dev.stapler.stelekit.sketch.v2.runtime.settings.EdgePanSettings(platformSettings),
             storageStatus = { fileSystem.storageStatus },
+            fingerDrawing = dev.stapler.stelekit.sketch.v2.runtime.settings.FingerDrawingSettings(platformSettings),
             canvasDrop = dev.stapler.stelekit.platform.WebCanvasDrop.host,
         )
         return projectBridgeDeps?.bridgeV2EditorDeps(
-            repos, writeActor, activeGraphIdProvider, keymap, touchPresent,
+            repos, writeActor, activeGraphIdProvider, keymap, touchPresent || touchDevice,
             dev.stapler.stelekit.ui.sketch.v2.OnboardingSequencer(dev.stapler.stelekit.ui.sketch.v2.OnboardingCounters(platformSettings)),
             platform,
         )
@@ -2639,6 +2641,7 @@ class StelekitViewModel(
     companion object {
         private const val MAC_OS_NAME = "mac"
         private const val WEB_PLATFORM_NAME = "browser"
+        private val TOUCH_PLATFORM_NAMES = listOf("android", "ios")
         private const val IOS_PLATFORM_NAME = "ios"
 
         private const val CACHED_GRAPH_PATH_KEY = "cached_graph_path"

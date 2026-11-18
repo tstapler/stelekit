@@ -83,6 +83,7 @@ kt_android_library(
             "**/CapacityUxTest.kt",
             "**/ToolStripTest.kt",
             "**/AdaptiveStateSurvivalTest.kt",
+            "**/PanelTabsA11yTest.kt",
             "**/SketchCanvasRecompositionTest.kt",
             "**/ScenePainterAndroidTest.kt",
             # Task 6.2.4a: the architecture scenario needs the commonTest fixtures; the UX acceptance test also composes the strip (Gradle-only)

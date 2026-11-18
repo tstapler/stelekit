@@ -6,6 +6,8 @@ package dev.stapler.stelekit.ui.sketch.v2
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -53,6 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
@@ -545,17 +548,26 @@ private fun PanelHostContent(state: SketchEditorState, config: SketchShellConfig
     }
     Column(shape.testTag(ShellTags.PANEL).background(MaterialTheme.colorScheme.surfaceVariant)) {
         if (host == PanelHost.BottomSheet) PanelSheetHeader(state.sheetSize, { state.sheetSize = it }, { state.panelTab = null })
-        Row(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().selectableGroup().semantics { contentDescription = SketchStrings.PanelTabs.LIST }) {
             for (tab in tabs) {
                 Text(
-                    tab.name,
-                    Modifier.testTag(ShellTags.tab(tab)).height(44.dp).clickable { state.panelTab = tab },
+                    tabLabel(tab),
+                    Modifier.testTag(ShellTags.tab(tab)).height(44.dp).selectable(selected = tab == open, role = Role.Tab, onClick = { state.panelTab = tab }),
                     color = if (tab == open) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 )
             }
         }
         panel(open)
     }
+}
+
+private fun tabLabel(tab: PanelTab): String = when (tab) {
+    PanelTab.Style -> SketchStrings.PanelTabs.STYLE
+    PanelTab.Layers -> SketchStrings.PanelTabs.LAYERS
+    PanelTab.Constraints -> SketchStrings.PanelTabs.CONSTRAINTS
+    PanelTab.Elements -> SketchStrings.PanelTabs.ELEMENTS
+    PanelTab.Library -> SketchStrings.PanelTabs.LIBRARY
+    PanelTab.Technical -> SketchStrings.PanelTabs.TECHNICAL
 }
 
 private val PANEL_SHEET_HEIGHT = 240.dp

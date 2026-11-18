@@ -144,6 +144,7 @@ import org.junit.runners.Suite
     // SceneSemanticsTest and TechnicalDataPanelTest (sketch v2, Stories 3.6.2 and 4.2.5) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
     // ConstraintPanelTest and UxConstraintsAcceptanceTest (sketch v2, Stories 4.2.2 and 4.2.3) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
     // ConstraintTargetPickerTest and DimensionEditTest (sketch v2, Tasks 4.2.6b, 4.2.7b and 4.2.7d) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
+    // PanelTabsA11yTest (sketch v2 review finding 6) is excluded for the same reason (1) and composes the shell (no Compose plugin in this target).
     // ToolStripTest, AdaptiveStateSurvivalTest, SketchCanvasRecompositionTest and ScenePainterAndroidTest (sketch v2, Stories 3.1.3 and 2.1.3)
     // are excluded for the same reason (1) and compose @Composable lambdas or need commonTest fixtures (no Compose plugin or commonTest in this target).
     // ChromeBudgetTest, ActionChipRowTest, TopBarTest and CapacityUxTest (sketch v2, Stories 3.1.4 and 2.2.4) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).

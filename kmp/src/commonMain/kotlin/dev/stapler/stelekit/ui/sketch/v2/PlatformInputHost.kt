@@ -58,6 +58,8 @@ class PlatformInputHost(
     private val adapter: SketchPointerAdapter,
     private val onActions: (List<PointerAction>) -> Unit,
     sequencer: OnboardingSequencer?,
+    /** The Finger drawing controller, chained before the edge-pan backstop; null where the setting is not wired. */
+    finger: PointerGestureListener? = null,
 ) {
     private val backstop = platform.edgePan?.let { settings ->
         sequencer?.let { EdgePanBackstop(settings, it, SketchEditorStrings.Banners) }
@@ -66,7 +68,7 @@ class PlatformInputHost(
     private var density = 1.0
 
     init {
-        val existing = adapter.listener
+        val existing = finger ?: adapter.listener
         adapter.listener = object : PointerGestureListener {
             override fun onStylusStrokeEnd() = existing?.onStylusStrokeEnd() ?: Unit
 

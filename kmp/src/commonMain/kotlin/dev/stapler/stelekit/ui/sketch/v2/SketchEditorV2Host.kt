@@ -32,6 +32,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.sketch.v2.commands.LockElements
 import dev.stapler.stelekit.ui.PlatformBackHandler
@@ -45,6 +51,7 @@ import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
 import dev.stapler.stelekit.sketch.v2.tools.SelectTool
 import dev.stapler.stelekit.sketch.v2.tools.ToolContext
+import dev.stapler.stelekit.sketch.v2.tools.PointerKind
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
 import dev.stapler.stelekit.sketch.v2.view.SceneBounds
 import dev.stapler.stelekit.sketch.v2.view.ScreenPx
@@ -80,8 +87,12 @@ fun SketchEditorV2Host(
     restore: RestoreMenuEntry? = null,
 ) {
     val controller = session.controller
+    // A touch or pen contact proves the device has one: from then on the 44 dp floors apply (UX-46), even on a desktop that started mouse-only.
+    var seenTouch by remember(session) { mutableStateOf(false) }
+    SideEffect { controller.tools.adapter.onKindSeen = { kind -> if (kind != PointerKind.Mouse) seenTouch = true } }
+    val pointer = if (seenTouch) PointerClass.TouchOrPen else pointer
     val state = controller.ui
-    val extras = remember(session, environment) { EditorExtras(controller, session.services, environment) }
+    val extras = remember(session, environment) { EditorExtras(controller, session.services, environment, session.diagnostics.port) }
     SideEffect { session.extras = extras }
     if (controller.keymap.isWeb) StillSavingEffect(controller)
     val cue = remember(session) {
@@ -135,6 +146,7 @@ fun SketchEditorV2Host(
         emptyActions = EmptyStateActions(onShortcuts = { controller.overlay = EditorOverlay.Shortcuts }),
         onShortcuts = { controller.overlay = EditorOverlay.Shortcuts },
         onBack = leave::requestLeave,
+        onFingerDrawingChosen = { extras.finger?.choose(it) },
         saveStatus = saveState.toStatus(),
         bannerActions = BannerActions(
             onPrimary = { candidate ->
@@ -144,6 +156,9 @@ fun SketchEditorV2Host(
                         singleKey = true
                         hint.resolve()
                     }
+                    BannerRowId.PenDetected -> extras.finger?.backOn()
+                    BannerRowId.FingerHintOn -> extras.finger?.choose(false)
+                    BannerRowId.FingerHintOff -> extras.finger?.choose(true)
                     else -> controller.saves.bannerPrimary(candidate.row)
                 }
             },
@@ -382,7 +397,14 @@ private fun HostOverlays(controller: SketchEditorController, extras: EditorExtra
 /** Shown while the sheet loads or when the host cannot open it. */
 @Composable
 fun SketchEditorLoading(modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize().testTag(HostTags.LOADING), contentAlignment = Alignment.Center) {
+    Box(
+        modifier.fillMaxSize().testTag(HostTags.LOADING).semantics {
+            liveRegion = LiveRegionMode.Polite
+            progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
+            contentDescription = SketchEditorStrings.Screens.LOADING
+        },
+        contentAlignment = Alignment.Center,
+    ) {
         Text(SketchEditorStrings.Screens.LOADING, Modifier.padding(16.dp))
     }
 }

@@ -55,6 +55,9 @@ object SketchEditorStrings {
             BannerRowId.LargeDrawing -> SketchStrings.LargeScene.SUMMARY
             BannerRowId.SingleKeyChip -> SketchStrings.SingleKeyChip.SUMMARY
             BannerRowId.EdgePanStopped -> SketchStrings.EdgePan.SUMMARY
+            BannerRowId.PenDetected -> SketchStrings.FingerDrawing.PEN_SUMMARY
+            BannerRowId.FingerHintOff -> SketchStrings.FingerDrawing.HINT_OFF_SUMMARY
+            BannerRowId.FingerHintOn -> SketchStrings.FingerDrawing.HINT_ON_SUMMARY
             else -> row.name
         }
 
@@ -69,6 +72,9 @@ object SketchEditorStrings {
             BannerRowId.LargeDrawing -> SketchStrings.LargeScene.SHORT
             BannerRowId.SingleKeyChip -> SketchStrings.SingleKeyChip.SHORT
             BannerRowId.EdgePanStopped -> SketchStrings.EdgePan.SHORT
+            BannerRowId.PenDetected -> SketchStrings.FingerDrawing.PEN_SHORT
+            BannerRowId.FingerHintOff -> SketchStrings.FingerDrawing.HINT_OFF_SHORT
+            BannerRowId.FingerHintOn -> SketchStrings.FingerDrawing.HINT_ON_SHORT
             else -> row.name
         }
 
@@ -82,12 +88,18 @@ object SketchEditorStrings {
             BannerRowId.LargeDrawing -> SketchStrings.LargeScene.PRIMARY
             BannerRowId.SingleKeyChip -> SketchStrings.SingleKeyChip.PRIMARY
             BannerRowId.EdgePanStopped -> SketchStrings.EdgePan.PRIMARY
+            BannerRowId.PenDetected -> SketchStrings.FingerDrawing.PEN_PRIMARY
+            BannerRowId.FingerHintOff -> SketchStrings.FingerDrawing.HINT_OFF_PRIMARY
+            BannerRowId.FingerHintOn -> SketchStrings.FingerDrawing.HINT_ON_PRIMARY
             else -> DISMISS
         }
 
         override fun primaryAccessibleName(row: BannerRowId): String = when (row) {
             BannerRowId.LargeDrawing -> SketchStrings.LargeScene.PRIMARY_NAME
             BannerRowId.SingleKeyChip -> SketchStrings.SingleKeyChip.PRIMARY_NAME
+            BannerRowId.PenDetected -> SketchStrings.FingerDrawing.PEN_PRIMARY_NAME
+            BannerRowId.FingerHintOff -> SketchStrings.FingerDrawing.HINT_OFF_PRIMARY_NAME
+            BannerRowId.FingerHintOn -> SketchStrings.FingerDrawing.HINT_ON_PRIMARY_NAME
             else -> primaryLabel(row)
         }
 
@@ -97,6 +109,7 @@ object SketchEditorStrings {
             BannerRowId.UpgradeChip, BannerRowId.PostConversion -> SketchMigrationStrings.Banners.moreItems(row)
             BannerRowId.CoachMark -> SketchStrings.CoachMark.moreItems(row)
             BannerRowId.SingleKeyChip -> listOf(SketchStrings.SingleKeyChip.GOT_IT)
+            BannerRowId.PenDetected, BannerRowId.FingerHintOff, BannerRowId.FingerHintOn -> listOf(SketchStrings.FingerDrawing.GOT_IT)
             else -> emptyList()
         }
     }

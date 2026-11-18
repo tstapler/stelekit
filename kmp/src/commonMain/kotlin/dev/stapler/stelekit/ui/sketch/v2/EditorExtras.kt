@@ -20,6 +20,7 @@ import dev.stapler.stelekit.sketch.v2.commands.CommandError
 import dev.stapler.stelekit.sketch.v2.constraints.AutoConstrain
 import dev.stapler.stelekit.sketch.v2.constraints.ConstraintId
 import dev.stapler.stelekit.sketch.v2.constraints.SheetKind
+import dev.stapler.stelekit.sketch.v2.diagnostics.DiagnosticsPort
 import dev.stapler.stelekit.sketch.v2.render.DrawListBuilder
 import dev.stapler.stelekit.sketch.v2.runtime.constraints.AutoConstrainResult
 import dev.stapler.stelekit.sketch.v2.runtime.constraints.commitAutoConstrained
@@ -36,6 +37,7 @@ import dev.stapler.stelekit.sketch.v2.tools.ToolCommand
 import dev.stapler.stelekit.sketch.v2.view.SceneBounds
 import dev.stapler.stelekit.sketch.v2.view.ScreenPx
 import dev.stapler.stelekit.ui.sketch.ModernPreviewEnvironment
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchEditorStrings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchHostStrings
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -56,6 +58,8 @@ class EditorExtras(
     private val controller: SketchEditorController,
     private val services: HostServices,
     environment: ModernPreviewEnvironment,
+    /** The banner port Finger drawing raises its pen-detected and hint rows into; null shows none. */
+    diagnostics: DiagnosticsPort? = null,
 ) {
     private val scope = CoroutineScope(
         SupervisorJob() + controller.adoption + CoroutineExceptionHandler { _, t ->
@@ -97,8 +101,18 @@ class EditorExtras(
     }
     val library = LibraryHost(controller, services)
 
+    /** Finger drawing (UX-80, UX-121): the setting, the first-stylus flip and the one-finger hint; null where the setting or the banners are not wired. */
+    val finger: FingerDrawingController? = services.platform.fingerDrawing?.let { settings ->
+        val sequencer = controller.notifier.queue.sequencer
+        if (diagnostics == null || sequencer == null) {
+            null
+        } else {
+            FingerDrawingController(settings, diagnostics, sequencer, SketchEditorStrings.Banners) { controller.ui.fingerDrawing = it }
+        }
+    }
+
     /** The platform input seams: palm, system cancel, edge-pan strips and the web raw pointer source. */
-    val input = PlatformInputHost(services.platform, controller.tools.adapter, controller.tools::onPointerActions, controller.notifier.queue.sequencer)
+    val input = PlatformInputHost(services.platform, controller.tools.adapter, controller.tools::onPointerActions, controller.notifier.queue.sequencer, finger)
 
     private val filePort: SketchFilePort = services.files ?: UnavailableFilePort
 
@@ -139,6 +153,7 @@ class EditorExtras(
     }
 
     init {
+        finger?.let { controller.ui.fingerDrawing = it.on }
         controller.constraints.onDimensionDraft = ::openDimensionDraft
         controller.extraKeys = ::onKey
         controller.interceptToolCommand = ::intercept

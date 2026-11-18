@@ -24,6 +24,7 @@ import dev.stapler.stelekit.sketch.v2.library.InMemoryLibraryStorage
 import dev.stapler.stelekit.sketch.v2.library.LibraryStorage
 import dev.stapler.stelekit.sketch.v2.runtime.image.ImageAssetStore
 import dev.stapler.stelekit.sketch.v2.runtime.settings.EdgePanSettings
+import dev.stapler.stelekit.sketch.v2.runtime.settings.FingerDrawingSettings
 import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
 
 /**
@@ -46,6 +47,8 @@ class HostPlatform(
     val storageStatus: () -> V2StorageStatus = { V2StorageStatus.Ready(sessionOnly = false, privateSuspected = false) },
     /** The web canvas element's own drop and paste handler; null where the canvas has none (every other target). */
     val canvasDrop: CanvasFileDropHost? = null,
+    /** The Finger drawing setting and the per-device stylus flag; null leaves Finger drawing off and shows no hint. */
+    val fingerDrawing: FingerDrawingSettings? = null,
 )
 
 /**

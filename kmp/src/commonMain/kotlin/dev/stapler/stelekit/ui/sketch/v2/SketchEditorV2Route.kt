@@ -137,7 +137,7 @@ fun SketchEditorV2Route(
             busy || stage == null || stage is EditorOpening.NewSheetNeedsConfirm -> SketchEditorLoading()
             stage === EditorOpening.Pending -> PendingScreen(PendingModel.at(0), onClose = onBack)
             stage is EditorOpening.NoEditor -> NoEditor(stage, deps?.platform ?: HostPlatform(), onBack, onReload = { attempt += 1 })
-            stage is EditorOpening.Editor -> EditorStage(stage.session, environment, onBack, pointer, actions, restore)
+            stage is EditorOpening.Editor -> EditorStage(stage.session, environment, onBack, if (deps?.touchPresent == true) PointerClass.TouchOrPen else pointer, actions, restore)
             else -> if (stage is EditorOpening.ClassicEditor && actions != null && deps != null) {
                 ClassicWithOffer(stage, actions, deps, onStart = { steps?.start(scope, stage) }, legacy = legacy)
             } else {

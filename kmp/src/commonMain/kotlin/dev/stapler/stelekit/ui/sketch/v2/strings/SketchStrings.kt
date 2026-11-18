@@ -170,6 +170,21 @@ object SketchStrings {
     }
 
     object FingerDrawing {
+        /** The `PenDetected`, `FingerHintOff` and `FingerHintOn` banner rows (ux.md chrome table rows 6, 10 and 11). */
+        const val PEN_SUMMARY = "Pen found. Finger off."
+        const val PEN_SHORT = "Pen found"
+        const val PEN_PRIMARY = "Back on"
+        const val PEN_PRIMARY_NAME = "Back on for finger drawing"
+        const val HINT_OFF_SUMMARY = "Finger drags move the view."
+        const val HINT_OFF_SHORT = "Finger pans"
+        const val HINT_OFF_PRIMARY = "Draw"
+        const val HINT_OFF_PRIMARY_NAME = "Draw with one finger"
+        const val HINT_ON_SUMMARY = "Finger draws. 2 fingers pan."
+        const val HINT_ON_SHORT = "Finger draws"
+        const val HINT_ON_PRIMARY = "Turn off"
+        const val HINT_ON_PRIMARY_NAME = "Turn off finger drawing"
+        const val GOT_IT = "Got it"
+
         const val PEN_DETECTED_DETAILS = "A pen was detected, so Finger drawing is now off. One finger moves the view; the pen draws."
         const val ON_DETAILS = "Finger drawing is on. Drag to draw; use two fingers to move the view."
         const val OFF_DETAILS = "Finger drags move the view. Turn on Finger drawing to draw with touch."
@@ -404,6 +419,17 @@ object SketchStrings {
 
     /** The scene hard cap and the constraint cap (Story 2.2.4, UX-73) and the low-memory toast. */
     /** The prompt shown when the user leaves a sheet whose latest edits are not on disk (UX-72). */
+    /** The panel's tab names (ux.md section 17): the tab list is a group of selectable tabs, each named in words. */
+    object PanelTabs {
+        const val LIST = "Panels"
+        const val STYLE = "Style"
+        const val LAYERS = "Layers"
+        const val CONSTRAINTS = "Constraints"
+        const val ELEMENTS = "Elements"
+        const val LIBRARY = "Library"
+        const val TECHNICAL = "Technical"
+    }
+
     object Leave {
         const val TITLE = "Changes not saved"
         const val BODY = "Your latest changes are not saved yet. Your work is kept until you choose."
