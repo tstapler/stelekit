@@ -61,6 +61,11 @@ Code: `kmp/.../sketch/constraints/{Solver,Components,Diagnosis,SolverTier}.kt` (
 - Evidence: the 30-seed corpus (worst best-of-5 6.1 ms JVM, 28.2 ms wasm), the property tests and the Jacobian finite-difference test pass.
 - NOT re-done: the JVM-versus-wasm comparison of the printed seed-1 solution (the earlier figure was 6.7e-9 against a 1e-6 bar). Verification must re-run it before this ADR's cross-target claim is repeated.
 
+## Note after review fix D (ridge and trust radius scale)
+- Symptom: an absolute ridge floor of 1.0 over-damps a large sketch. An angle row at L = 9,600 units has gradient ~1/L, so its Gram diagonal is ~1e-8 against a ridge term of 1e-6: DogLeg's Gauss-Newton step is a few percent of Newton, the 100-iteration budget runs out and Levenberg-Marquardt takes over (`SolverScaleTest`: 104 iterations on LM before, 11 on DogLeg after). The initial trust radius of 1 unit has the same absolute-scale flaw.
+- Change: both are multiplied by the component's extent over `RIDGE_REFERENCE_EXTENT` (256 units), clamped at 1: the ridge floor becomes `1 / scale^2`, the initial radius `scale`. A component whose coordinates stay under 256 units sees no change at all, so the earlier 4.2.7d fix (near-vertical centre-to-edge, `JacobianFiniteDifferenceTest`) is untouched there.
+- Evidence: `SolverCorpusTest` and the other `sketch.constraints` JVM tests pass. wasm: see the review-fix report. Sketches above 256 units across with a barely coupled coordinate are the one place the 4.2.7d protection weakens (by `scale^2`); that trade is not measured beyond `SolverScaleTest`.
+
 ## Note after the integration pass (solver surface)
 - The tier is read, not assumed: `SolverTierFacts.Recorded` (kmp/.../sketch/constraints/SolverTierFacts.kt) holds the Story 4.1.3 measurements and `HostServices.tier` takes `tierOf(target)` from it (`SketchEditorSession` picks `WasmJs` for the browser keymap, `Jvm` otherwise). A target with no measurement is `Hidden`; iOS has no v2 editor, so it never asks. Re-measuring edits `Recorded` and `SolverTierFactsTest`.
 - `DistanceX` and `DistanceY` are reachable as the kinds `ConstraintKind.DistanceX` and `DistanceY` (Constrain items "Horizontal distance" and "Vertical distance", `Full` tier only); the equation is built with the pair ordered so the start pose is positive, so the typed value is an unsigned length.
