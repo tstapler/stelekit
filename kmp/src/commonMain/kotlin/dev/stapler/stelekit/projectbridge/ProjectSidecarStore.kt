@@ -228,14 +228,15 @@ class FileProjectSidecarStore private constructor(
 
     /**
      * A parked write is an intent built from the model it read: it is stale when an opaque file changed or when the
-     * model on disk now names a different file for a sheet the parked model also names (a conversion or restore
-     * flipped it), so a replay can never revert that flip or delete a v2 file.
+     * model on disk now names a different sheet set or file (a conversion or restore flipped one, or a sheet was added),
+     * so a replay can never revert that flip, drop a new sheet or delete a v2 file.
      */
     private fun parkedIsStale(slug: String, parked: PendingWrite): Boolean {
         if (disk.opaqueChanged(slug, parked.opaque)) return true
         val parkedModel = parked.files[SidecarCodec.MODEL_PATH]?.let { ModelSheetRefs.sheetFiles(it) } ?: return false
         val diskModel = fs.readFileBytes("${disk.dir(slug)}/${SidecarCodec.MODEL_PATH}")?.let { ModelSheetRefs.sheetFiles(it) } ?: return false
-        return parkedModel.any { (uuid, file) -> diskModel[uuid]?.let { it != file } == true }
+        // Any difference in the sheet set counts: a sheet added since would be dropped from the model by the replay.
+        return parkedModel != diskModel
     }
 
     override suspend fun writeConflict(slug: String, files: Map<String, ByteArray>): Either<DomainError, String> = mutex.withLock {
