@@ -25,8 +25,13 @@ class EditorNotifier(val queue: SketchNoticeQueue, private val clockMillis: () -
     var revision: Int by mutableIntStateOf(0)
         private set
 
-    /** Told of every refused edit, so the host can raise the hard-cap notice that goes with a refusal at the element cap. */
-    var onRefused: (CommandError) -> Unit = {}
+    private val refusedListeners = ArrayList<(CommandError) -> Unit>()
+
+    /** Tells [listener] of every refused edit (the host raises the hard-cap notice at the element cap); returns what removes it. Listeners never replace each other. */
+    fun addRefusedListener(listener: (CommandError) -> Unit): () -> Unit {
+        refusedListeners += listener
+        return { refusedListeners -= listener }
+    }
 
     fun now(): Long = clockMillis()
 
@@ -57,7 +62,7 @@ class EditorNotifier(val queue: SketchNoticeQueue, private val clockMillis: () -
             else -> SketchEditorStrings.Toasts.EDIT_FAILED
         }
         toast(SketchEditorStrings.Toasts.KEY_REFUSED, text)
-        onRefused(error)
+        refusedListeners.toList().forEach { it(error) }
     }
 
     /** Says why the solve refused an edit. */

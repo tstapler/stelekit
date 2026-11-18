@@ -47,9 +47,7 @@ class EditorLargeScene(
     var hardCap: HardCapMessage? by mutableStateOf(null)
         private set
 
-    init {
-        controller.notifier.onRefused = ::onRefused
-    }
+    private val removeRefusedListener = controller.notifier.addRefusedListener(::onRefused)
 
     /** Reads the counts of the document; the host calls it after every committed edit. */
     fun refresh() {
@@ -73,7 +71,10 @@ class EditorLargeScene(
         }
     }
 
-    fun close() = scope.cancel()
+    fun close() {
+        removeRefusedListener()
+        scope.cancel()
+    }
 
     private fun onRefused(error: CommandError) {
         hardCap = CapacityMessages.hardCapFor(error, controller.ui.selection.size, services.limits, canSplit = services.createSheet != null)

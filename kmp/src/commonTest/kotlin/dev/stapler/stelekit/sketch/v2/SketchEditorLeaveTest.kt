@@ -7,6 +7,7 @@ package dev.stapler.stelekit.sketch.v2
 
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.sketch.v2.commands.AddElements
+import dev.stapler.stelekit.sketch.v2.commands.CommandError
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveFailure
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
@@ -18,8 +19,10 @@ import dev.stapler.stelekit.sketch.v2.scene.ZKey
 import dev.stapler.stelekit.sketch.v2.text.FixedAdvanceTextMetricsProvider
 import dev.stapler.stelekit.ui.sketch.v2.CapacityAction
 import dev.stapler.stelekit.ui.sketch.v2.CapacityMessages
+import dev.stapler.stelekit.ui.sketch.v2.EditorNotifier
 import dev.stapler.stelekit.ui.sketch.v2.EditorOpening
 import dev.stapler.stelekit.ui.sketch.v2.LeaveGuard
+import dev.stapler.stelekit.ui.sketch.v2.SketchNoticeQueue
 import dev.stapler.stelekit.ui.sketch.v2.V2EditorOpener
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -154,12 +157,28 @@ class SketchEditorLeaveTest {
 
     @Test
     fun hardCap_should_NotOfferSplit_When_TheHostCannotAddASheet() {
-        val error = dev.stapler.stelekit.sketch.v2.commands.CommandError.CapacityExceeded(1)
+        val error = CommandError.CapacityExceeded(1)
 
         val message = CapacityMessages.hardCapFor(error, selectionCount = 3, canSplit = false)
 
         assertFalse(CapacityAction.SplitIntoNewSketch in message!!.actions)
         assertTrue(CapacityAction.SplitIntoNewSketch in CapacityMessages.hardCapFor(error, 3)!!.actions)
+    }
+
+    @Test
+    fun refusedListeners_should_NotReplaceEachOther_AndStopWhenRemoved() {
+        val notifier = EditorNotifier(SketchNoticeQueue(), { 0L })
+        var first = 0
+        var second = 0
+        val removeFirst = notifier.addRefusedListener { first++ }
+        notifier.addRefusedListener { second++ }
+
+        notifier.refuse(CommandError.CapacityExceeded(1))
+        removeFirst()
+        notifier.refuse(CommandError.CapacityExceeded(1))
+
+        assertEquals(1, first)
+        assertEquals(2, second)
     }
 
     private companion object {

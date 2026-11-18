@@ -17,6 +17,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -71,6 +72,9 @@ object HostTags {
 /** How long the toast lane waits between re-reads while a toast with a deadline is up. */
 private const val TOAST_TICK_MS = 500L
 
+/** How often the web storage status is re-read: the temporary-graph and private-window flags can change while a sheet is open. */
+private const val STORAGE_STATUS_POLL_MS = 5_000L
+
 /**
  * The editor of one open v2 sheet (Story 6.2.0b): mounts [SketchScreenV2] with the [SketchEditorController] of [session], the
  * canvas, every panel and dialog, the banner slot and the toast lane. Nothing here decides an edit: the controller applies
@@ -95,8 +99,14 @@ fun SketchEditorV2Host(
     val extras = remember(session, environment) { EditorExtras(controller, session.services, environment, session.diagnostics.port) }
     SideEffect { session.extras = extras }
     if (controller.keymap.isWeb) StillSavingEffect(controller)
-    val cue = remember(session) {
-        DurabilityCueHost.viewOf(session.services.platform.storageStatus()) { controller.notifier.toast(SketchWebStorageStrings.Cue.TOAST_KEY, it) }
+    val storageStatus by produceState(session.services.platform.storageStatus(), session) {
+        while (controller.keymap.isWeb) {
+            delay(STORAGE_STATUS_POLL_MS)
+            value = session.services.platform.storageStatus()
+        }
+    }
+    val cue = remember(session, storageStatus) {
+        DurabilityCueHost.viewOf(storageStatus) { controller.notifier.toast(SketchWebStorageStrings.Cue.TOAST_KEY, it) }
     }
     val largeScene = remember(session) { EditorLargeScene(controller, session.diagnostics.port, session.services) }
     val canvasAccess = remember(session, window) { EditorCanvasAccess(controller, window) }
