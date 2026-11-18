@@ -94,6 +94,20 @@ class ClassicWebFileSidePolicyTest {
     }
 
     @Test
+    fun gatedStore_should_LetTheRestoreFlipThrough_WhileTheProjectStillHoldsTheV2Sheet() = runTest {
+        val inner = ScriptedSidecarStore()
+        inner.files["project-model.json"] = "{}".encodeToByteArray()
+        inner.files["sheets/b.v2.json"] = "{}".encodeToByteArray()
+        inner.files["sheets/b.json"] = "{}".encodeToByteArray()
+        val gated = ClassicGatedSidecarStore(inner, gateActive = true) { ClassicFileSideSetting.Off }
+
+        // The flip names only the v1 file and the model: the restored sheet's v2 file is no longer in `files`.
+        val flip = gated.writeNow("p", mapOf("project-model.json" to "{\"flipped\":1}".encodeToByteArray(), "sheets/b.json" to ByteArray(1)))
+
+        assertEquals(SidecarWriteOutcome.Written, flip)
+    }
+
+    @Test
     fun gatedStore_should_PassAV2ProjectAndEveryProjectUnderOnOrOnDesktop() = runTest {
         val inner = ScriptedSidecarStore()
         inner.files["sheets/b.v2.json"] = "{}".encodeToByteArray()

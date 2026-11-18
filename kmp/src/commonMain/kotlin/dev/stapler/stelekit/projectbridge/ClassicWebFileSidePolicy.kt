@@ -84,9 +84,16 @@ class ClassicGatedSidecarStore(
         return if (closed() && read is SidecarRead.Present && !holdsV2Sheet(read.files.keys)) SidecarRead.Unavailable else read
     }
 
+    /**
+     * A write is a v2 project's when it names a v2 sheet (as a file or as an opaque one) or when the project holds one on disk
+     * right now: a Restore flip rewrites the model without the sheet it is restoring, and that write must still go through.
+     */
+    private suspend fun isV2ProjectWrite(slug: String, files: Map<String, ByteArray>, opaque: Map<String, String>): Boolean =
+        holdsV2Sheet(files.keys + opaque.keys) || (delegate.read(slug) as? SidecarRead.Present)?.let { holdsV2Sheet(it.files.keys) } == true
+
     override suspend fun write(slug: String, files: Map<String, ByteArray>, opaque: Map<String, String>): SidecarWriteOutcome =
-        if (closed() && !holdsV2Sheet(files.keys)) SidecarWriteOutcome.Unavailable else delegate.write(slug, files, opaque)
+        if (closed() && !isV2ProjectWrite(slug, files, opaque)) SidecarWriteOutcome.Unavailable else delegate.write(slug, files, opaque)
 
     override suspend fun writeNow(slug: String, files: Map<String, ByteArray>, opaque: Map<String, String>): SidecarWriteOutcome =
-        if (closed() && !holdsV2Sheet(files.keys)) SidecarWriteOutcome.Unavailable else delegate.writeNow(slug, files, opaque)
+        if (closed() && !isV2ProjectWrite(slug, files, opaque)) SidecarWriteOutcome.Unavailable else delegate.writeNow(slug, files, opaque)
 }
