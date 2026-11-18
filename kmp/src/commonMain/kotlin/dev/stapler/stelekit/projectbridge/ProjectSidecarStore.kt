@@ -52,20 +52,25 @@ sealed interface SidecarWriteOutcome {
 interface SidecarSheetFileStore {
     /**
      * Keeps the pre-conversion sheet [bytes] as `<slug>/backup/<sheetUuid>.v1.json` (temp+rename, then a read-back
-     * sha check). An existing backup is the original and is never overwritten. `backup/` is invisible to [read].
+     * sha check). An existing backup is never overwritten: different bytes (a sheet converted again after a restore and
+     * edits) become `<sheetUuid>.v1.<n>.json`, identical bytes reuse the existing file. `backup/` is invisible to [read].
      */
     suspend fun writeBackup(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String>
 
-    /** The original v1 sheet kept by [writeBackup]; null when absent, the uuid is unsafe or the platform cannot store it. */
+    /** The newest v1 sheet kept by [writeBackup]; null when absent, the uuid is unsafe or the platform cannot store it. */
     suspend fun readBackup(slug: String, sheetUuid: String): ByteArray?
 
     /**
      * Keeps the v2 sheet [bytes] a restore is about to replace as `<slug>/backup/<sheetUuid>.v2-before-restore.json`
-     * (temp+rename, read-back checked). Unlike [writeBackup] a later restore replaces it: one copy per sheet.
+     * (temp+rename, read-back checked). It is the only copy of that work, so a later restore with different bytes keeps it
+     * as `<sheetUuid>.v2-before-restore.<n>.json` instead of replacing it. Refused without the writer lease.
      */
     suspend fun writeV2BeforeRestore(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String>
 
-    /** Deletes every file in this project's `backup/` (the "Delete backups" action); returns how many were deleted. */
+    /**
+     * Deletes the v1 backups in this project's `backup/` (the "Delete backups" action) and returns how many were deleted. The
+     * `*.v2-before-restore*.json` copies stay: they are the only copy of new-editor work. Refused without the writer lease.
+     */
     suspend fun deleteBackups(slug: String): Either<DomainError, Int>
 
     /**
@@ -313,39 +318,36 @@ internal class SidecarSheetFiles(core: SidecarCore) : SidecarSheetFileStore {
     private val mutex = core.mutex
     private val gate = core.gate
     private val disk = core.disk
+    private val backups = SidecarBackupFiles(fs) { path, bytes -> disk.writeVerified(path, bytes) }
 
     override suspend fun writeBackup(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String> = mutex.withLock {
         val path = "${disk.dir(slug)}/${FileProjectSidecarStore.BACKUP_DIR}/$sheetUuid.v1.json"
         if (!gate.held()) return gate.refusal(path).left()
         if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
         if (!SAFE_SEGMENT.matches(sheetUuid)) return DomainError.FileSystemError.WriteFailed(path, "unsafe sheet uuid").left()
-        if (fs.fileExists(path)) return path.right()
-        disk.writeVerified(path, bytes)?.let { return it.left() }
-        path.right()
+        backups.keep(backupDir(slug), sheetUuid, SidecarBackupFiles.V1, bytes)
     }
 
     override suspend fun readBackup(slug: String, sheetUuid: String): ByteArray? = mutex.withLock {
-        if (disk.unavailable() || !SAFE_SEGMENT.matches(sheetUuid)) null else fs.readFileBytes("${disk.dir(slug)}/${FileProjectSidecarStore.BACKUP_DIR}/$sheetUuid.v1.json")
+        if (disk.unavailable() || !SAFE_SEGMENT.matches(sheetUuid)) null else backups.latest(backupDir(slug), sheetUuid, SidecarBackupFiles.V1)
     }
 
     override suspend fun writeV2BeforeRestore(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String> = mutex.withLock {
-        val path = "${disk.dir(slug)}/${FileProjectSidecarStore.BACKUP_DIR}/$sheetUuid.v2-before-restore.json"
+        val path = "${backupDir(slug)}/$sheetUuid.v2-before-restore.json"
+        if (!gate.held()) return gate.refusal(path).left()
         if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(path).left()
         if (!SAFE_SEGMENT.matches(sheetUuid)) return DomainError.FileSystemError.WriteFailed(path, "unsafe sheet uuid").left()
-        disk.writeVerified(path, bytes)?.let { return it.left() }
-        path.right()
+        backups.keep(backupDir(slug), sheetUuid, SidecarBackupFiles.V2_BEFORE_RESTORE, bytes)
     }
 
     override suspend fun deleteBackups(slug: String): Either<DomainError, Int> = mutex.withLock {
-        val dir = "${disk.dir(slug)}/${FileProjectSidecarStore.BACKUP_DIR}"
+        val dir = backupDir(slug)
+        if (!gate.held()) return gate.refusal(dir).left()
         if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(dir).left()
-        var deleted = 0
-        for (name in fs.listFiles(dir)) {
-            if (!fs.deleteFile("$dir/$name")) return DomainError.FileSystemError.WriteFailed("$dir/$name", "delete failed").left()
-            deleted++
-        }
-        deleted.right()
+        backups.deleteV1(dir)
     }
+
+    private fun backupDir(slug: String) = "${disk.dir(slug)}/${FileProjectSidecarStore.BACKUP_DIR}"
 
     override suspend fun writeSheetConflictCopy(slug: String, sheetUuid: String, bytes: ByteArray): Either<DomainError, String> = mutex.withLock {
         val path = "${disk.dir(slug)}/${FileProjectSidecarStore.CONFLICTS_DIR}/$sheetUuid.v2.conflict-${ContentHasher.sha256(bytes).take(FileProjectSidecarStore.HASH8)}.json"

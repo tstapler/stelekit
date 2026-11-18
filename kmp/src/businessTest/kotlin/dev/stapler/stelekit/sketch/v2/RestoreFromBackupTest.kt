@@ -171,15 +171,18 @@ class RestoreFromBackupTest {
     }
 
     @Test
-    fun aSecondRestoreAfterANewConversion_should_ReplaceTheKeptV2Copy() = runBlocking<Unit> {
+    fun aSecondRestoreAfterANewConversion_should_KeepTheSecondV2Copy_WithoutLosingTheFirst() = runBlocking<Unit> {
         val (d, _) = converted()
         assertIs<RestoreOutcome.Restored>(restorer(d).restore(f.slug, s1))
+        val firstKept = d.fs.readFileBytes(keptPath())!!
         assertIs<ConversionOutcome.Converted>(f.converter(d).convert(SketchTestSupport.P, s1))
         val secondV2 = d.fs.readFileBytes(v2Path())!!
 
         assertIs<RestoreOutcome.Restored>(restorer(d).restore(f.slug, s1))
 
-        assertContentEquals(secondV2, d.fs.readFileBytes(keptPath()))
+        assertContentEquals(firstKept, d.fs.readFileBytes(keptPath()), "the earlier kept copy is never replaced")
+        val kept = d.fs.allFilePaths().filter { it.contains("/backup/") && it.contains("v2-before-restore") }.map { d.fs.readFileBytes(it)!! }
+        assertTrue(kept.any { it.contentEquals(secondV2) }, "the second v2 is kept too")
     }
 
     @Test
@@ -192,8 +195,9 @@ class RestoreFromBackupTest {
 
         val deleted = d.store.deleteBackups(f.slug).getOrNull()
 
-        assertEquals(2, deleted)
-        assertEquals(0, d.store.retentionSize(f.slug).backupFiles)
+        assertEquals(1, deleted, "only the v1 backup goes")
+        assertEquals(1, d.store.retentionSize(f.slug).backupFiles, "the kept v2 copy stays")
+        assertTrue(d.fs.fileExists(keptPath()))
         assertFalse(d.fs.fileExists(backupPath()))
         assertIs<SidecarRead.Present>(d.store.read(f.slug))
         assertEquals(RestoreOutcome.NotConverted, restorer(d).restore(f.slug, s1))
@@ -208,9 +212,9 @@ class RestoreFromBackupTest {
         val size = backups.size()
         assertEquals(d.store.retentionSize(f.slug).backupFiles, size.backupFiles)
         assertEquals(2, size.backupFiles)
-        assertEquals(2, backups.delete().getOrNull())
+        assertEquals(1, backups.delete().getOrNull())
 
-        assertEquals(0, backups.size().backupFiles)
+        assertEquals(1, backups.size().backupFiles)
         assertEquals(0, GraphBackups { null }.size().backupFiles, "no store means nothing to count")
         assertEquals(0, GraphBackups { null }.delete().getOrNull())
         assertIs<SidecarRead.Present>(d.store.read(f.slug))

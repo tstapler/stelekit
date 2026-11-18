@@ -127,9 +127,10 @@ class SketchBackupRestore(
         val modelFiles = SidecarCodec.encode(flipped)
         val v1Path = SheetPaths.pathFor(sheet, SheetPaths.SCHEMA_V1)
 
-        disk[SheetPaths.pathFor(sheet, SheetPaths.SCHEMA_V2)]?.let { v2 ->
-            store.writeV2BeforeRestore(slug, sheet.value, v2).onLeft { return failed(RestoreFailure.Write, "keep v2") }
+        val kept = disk[SheetPaths.pathFor(sheet, SheetPaths.SCHEMA_V2)]?.let { v2 ->
+            store.writeV2BeforeRestore(slug, sheet.value, v2).fold({ return failed(RestoreFailure.Write, "keep v2") }, { it })
         }
+        val keptPath = kept?.let { "backup/${it.substringAfterLast('/')}" }
         crashPoint.after(RestoreStep.V2Kept)
 
         when (val staged = store.writeNow(slug, disk + (v1Path to modelFiles.getValue(v1Path)))) {
@@ -150,7 +151,7 @@ class SketchBackupRestore(
 
         val project = flipped.project
         val synced = project.copy(lastSyncedSidecarHash = SidecarCodec.bundleHash(modelFiles), baseRevision = project.modelRevision)
-        return finish(slug, sheet, flipped.copy(project = synced))
+        return finish(slug, sheet, flipped.copy(project = synced), keptPath)
     }
 
     /** A crash after the model write left the disk on v1 while the database row still says v2: only the last two steps remain. */
@@ -160,15 +161,15 @@ class SketchBackupRestore(
             fusionResults = local.fusionResults, sourceHash = local.sourceHash, lastDigestHash = local.lastDigestHash,
             baseRevision = onDisk.project.modelRevision, lastSyncedSidecarHash = SidecarCodec.bundleHash(disk),
         )
-        return finish(slug, sheet, onDisk.copy(project = adopted))
+        return finish(slug, sheet, onDisk.copy(project = adopted), null)
     }
 
     @OptIn(DirectRepositoryWrite::class)
-    private suspend fun finish(slug: String, sheet: SheetUuid, bundle: ProjectBundle): RestoreOutcome {
+    private suspend fun finish(slug: String, sheet: SheetUuid, bundle: ProjectBundle, keptPath: String?): RestoreOutcome {
         store.deleteV2Sheet(slug, sheet.value).onLeft { return failed(RestoreFailure.Write, "remove v2") }
         crashPoint.after(RestoreStep.V2Removed)
         write { repos.projects.replaceProjectContents(bundle.project.uuid, bundle) }.onLeft { return failed(RestoreFailure.Write, "database") }
-        return RestoreOutcome.Restored(sheet, keptCopyPath(sheet))
+        return RestoreOutcome.Restored(sheet, keptPath ?: keptCopyPath(sheet))
     }
 
     private suspend fun databaseSchema(onDisk: ProjectBundle, sheet: SheetUuid): Long? =

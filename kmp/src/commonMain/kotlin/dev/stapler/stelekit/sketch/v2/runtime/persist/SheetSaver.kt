@@ -224,6 +224,7 @@ class SheetSaver(
                 savedVersion = latest.value?.version ?: 0L
                 ports.diagnostics.resolve(BannerRowId.SaveConflict)
                 mutableState.value = SaveState.Saved
+                ports.store.pruneConflictCopies(target.slug, target.sheet.value, emptySet())
                 doc.right()
             },
         )
@@ -233,6 +234,7 @@ class SheetSaver(
     suspend fun keepMine() {
         ports.slugLock.withSlug(target.slug) { baseSha = persister.readDiskBytes()?.let(SheetSaveGuard::sha) }
         ports.diagnostics.resolve(BannerRowId.SaveConflict)
+        ports.store.pruneConflictCopies(target.slug, target.sheet.value, emptySet())
         mutableState.value = SaveState.Pending
         wake.trySend(true)
     }
