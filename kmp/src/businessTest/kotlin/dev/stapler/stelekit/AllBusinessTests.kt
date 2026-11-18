@@ -1151,6 +1151,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.RestoreFromBackupTest::class,
     dev.stapler.stelekit.sketch.v2.BehindSidecarWritersTest::class,
     dev.stapler.stelekit.sketch.v2.SheetSaverConflictEditsTest::class,
+    dev.stapler.stelekit.sketch.v2.NewSheetAndMissingFileTest::class,
     dev.stapler.stelekit.sketch.v2.RestoreBackupActionTest::class,
     dev.stapler.stelekit.sketch.v2.SketchyAvailabilityTest::class,
     dev.stapler.stelekit.sketch.v2.TechnicalDataConversionGoldenTest::class,

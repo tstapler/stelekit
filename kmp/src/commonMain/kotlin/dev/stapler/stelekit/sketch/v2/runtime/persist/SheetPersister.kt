@@ -41,9 +41,9 @@ internal class SheetPersister(private val target: SheetTarget, private val ports
     /** The bytes of this sheet's file on disk, or null when it is absent or the sidecar cannot be read. */
     suspend fun readDiskBytes(): ByteArray? = (ports.store.read(target.slug) as? SidecarRead.Present)?.files?.get(sheetPath)
 
-    suspend fun persist(encoded: Encoded, baseSha: String?): Persist = ports.slugLock.withSlug(target.slug) {
+    suspend fun persist(encoded: Encoded, baseSha: String?, newRow: SketchSheet? = null): Persist = ports.slugLock.withSlug(target.slug) {
         repeat(REPLAN_ATTEMPTS) {
-            when (val attempt = persistOnce(encoded, baseSha)) {
+            when (val attempt = persistOnce(encoded, baseSha, newRow)) {
                 null -> Unit
                 else -> return@withSlug attempt
             }
@@ -52,7 +52,7 @@ internal class SheetPersister(private val target: SheetTarget, private val ports
     }
 
     /** Null means a v2 sheet changed under the write and the pass must be redone. */
-    private suspend fun persistOnce(encoded: Encoded, baseSha: String?): Persist? {
+    private suspend fun persistOnce(encoded: Encoded, baseSha: String?, newRow: SketchSheet?): Persist? {
         val read = ports.store.read(target.slug)
         val files = when (read) {
             SidecarRead.Unavailable -> return Persist.Failed(SaveFailure.Unavailable)
@@ -65,8 +65,10 @@ internal class SheetPersister(private val target: SheetTarget, private val ports
         val loaded = ports.repos.projects.loadProject(target.projectUuid).getOrNull() ?: return Persist.Failed(SaveFailure.Write)
         // The model on disk moved past this device's last reconcile: a push from here would overwrite what a pull brought.
         if (SidecarBehindGuard.isBehind(loaded.project, files)) return Persist.Deferred
-        val local = LocalBundleLoader.load(ports.repos, loaded.project, files + (sheetPath to encoded.bytes)).getOrNull()
+        val stored = LocalBundleLoader.load(ports.repos, loaded.project, files + (sheetPath to encoded.bytes)).getOrNull()
             ?: return Persist.Failed(SaveFailure.Write)
+        // A sheet that is not in the database yet is added here, so its file and the model land before its row does.
+        val local = if (newRow != null && stored.sheets.none { it.uuid == target.sheet }) stored.copy(sheets = stored.sheets + newRow) else stored
         val row = local.sheets.firstOrNull { it.uuid == target.sheet } ?: return Persist.Failed(SaveFailure.Write)
         val updatedRow = row.copy(schemaVersion = SheetPaths.SCHEMA_V2, layers = encoded.layers)
         val bundle = local.copy(

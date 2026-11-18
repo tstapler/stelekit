@@ -269,13 +269,17 @@ class V2EditorOpener(
     }
 
     private fun editor(loaded: SheetLoad, target: OpenTarget, metrics: TextMetricsProvider, readOnlyReason: String?, lease: SheetLease?): EditorOpening {
+        // A v2 sheet whose file is absent (never opened as new: an unreferenced file on disk could be overwritten) shows read-only.
+        val missing = loaded is SheetLoad.Missing
+        val readOnly = if (missing) SketchReasonText.FILE_MISSING else readOnlyReason
+        val held = if (missing) null.also { lease?.release() } else lease
         val (doc, sha) = when (loaded) {
             is SheetLoad.Loaded -> loaded.doc to loaded.sha
             SheetLoad.Missing -> SketchDocumentV2(sheetUuid = target.sheet.value) to null
-            else -> return EditorOpening.Legacy.also { lease?.release() }
+            else -> return EditorOpening.Legacy.also { held?.release() }
         }
         val port = InMemoryDiagnosticsPort(SketchEditorStrings.Banners, deps.limits)
-        val saver = if (readOnlyReason == null) {
+        val saver = if (readOnly == null) {
             SheetSaver(
                 SheetTarget(target.slug, target.project, target.sheet, sha),
                 SheetSaverPorts(
@@ -305,15 +309,15 @@ class V2EditorOpener(
                 quality = deps.quality,
             ),
             context,
-            readOnly = readOnlyReason != null,
+            readOnly = readOnly != null,
             adoption = adoption,
         )
         val diagnostics = DiagnosticsHostState(port, controller.notices, deps.clockMillis)
-        readOnlyReason?.let { port.raise(BannerRowId.ReadOnly, it) }
+        readOnly?.let { port.raise(BannerRowId.ReadOnly, it) }
         val solverTarget = if (deps.keymap.isWeb) SolverTarget.WasmJs else SolverTarget.Jvm
-        val newSheet = if (readOnlyReason == null) newSheetCreator(controller, target) else null
+        val newSheet = if (readOnly == null) newSheetCreator(controller, target) else null
         val services = HostServices.of(deps.platform, { target.store.v2Storage() }, deps.limits, createSheet = newSheet) { SolverTierFacts.Recorded.tierOf(solverTarget) }
-        return EditorOpening.Editor(SketchEditorSession(controller, diagnostics, target.projectName, lease, target.slug, target.sheet, services))
+        return EditorOpening.Editor(SketchEditorSession(controller, diagnostics, target.projectName, held, target.slug, target.sheet, services))
     }
 }
 

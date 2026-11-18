@@ -42,6 +42,7 @@ object SketchReasonText {
     const val NEWER_SCHEMA = "Update SteleKit to view this sketch"
     const val BUILD_CAPPED = "Not available in this build yet"
     const val OTHER_TAB = "Edited in another tab."
+    const val FILE_MISSING = "This sketch's file is missing on this device. Sync again, or restore it from a backup or conflict copy."
     const val CHECKING_STORAGE = "Checking whether this browser can save new-editor sketches..."
     const val HAS_TECHNICAL_DATA = "This build does not upgrade sketches that have zones or dimensions."
     const val UPGRADE_UNAVAILABLE_PREFIX = "Can't upgrade this sketch: "
