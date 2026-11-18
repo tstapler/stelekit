@@ -205,6 +205,7 @@ class SheetConverter(
         val converted: SketchSheet,
         val v1Path: String,
         val v1Bytes: ByteArray,
+        val diskV1Sha: String?,
         val v2Path: String,
         val v2Bytes: ByteArray,
         val v2Sha: String,
@@ -228,7 +229,10 @@ class SheetConverter(
 
         val v1Path = SheetPaths.pathFor(row.uuid, SheetPaths.SCHEMA_V1)
         val v2Path = SheetPaths.pathFor(row.uuid, SheetPaths.SCHEMA_V2)
-        val v1Bytes = diskFiles?.get(v1Path) ?: SheetCodecV1.encode(row.uuid, sheetPrimitives)
+        // The backup is the scene the v2 file was lifted from (the database), which can be ahead of the disk's v1 file.
+        val v1Bytes = SheetCodecV1.encode(row.uuid, sheetPrimitives)
+        // The v1 file the flip must leave alone: the disk's own, or none when the disk does not hold this sheet yet.
+        val diskV1Sha = if (diskFiles == null) ContentHasher.sha256(v1Bytes) else diskFiles[v1Path]?.let { ContentHasher.sha256(it) }
         val converted = row.copy(schemaVersion = SheetPaths.SCHEMA_V2, layers = V2ToV1.projectScene(lifted).layers.map { it.encode() })
         val flipped = local.copy(
             sheets = local.sheets.map { if (it.uuid == row.uuid) converted else it },
@@ -237,7 +241,7 @@ class SheetConverter(
         )
         // Staging rewrites nothing the disk already holds: the unchanged bundle plus the new file.
         val base = diskFiles ?: SidecarCodec.encode(local)
-        return Plan(local, row, converted, v1Path, v1Bytes, v2Path, v2Bytes, ContentHasher.sha256(v2Bytes), base + (v2Path to v2Bytes), flipped, lifted.elementsInOrder.size).right()
+        return Plan(local, row, converted, v1Path, v1Bytes, diskV1Sha, v2Path, v2Bytes, ContentHasher.sha256(v2Bytes), base + (v2Path to v2Bytes), flipped, lifted.elementsInOrder.size).right()
     }
 
     private suspend fun execute(slug: String, p: Plan): ConversionOutcome {
@@ -260,7 +264,7 @@ class SheetConverter(
         val otherV2 = p.flipped.sheetPayloads.filterKeys { it != p.row.uuid }
             .mapNotNull { (uuid, payload) -> (payload as? SheetPayload.V2Opaque)?.let { SheetPaths.pathFor(uuid, SheetPaths.SCHEMA_V2) to it.sha256 } }.toMap()
         // The v1 file is opaque for this one write so the sweep leaves it: its removal is the separate step S5.
-        val protect = otherV2 + (p.v1Path to ContentHasher.sha256(p.v1Bytes)) + (p.v2Path to p.v2Sha)
+        val protect = otherV2 + listOfNotNull(p.diskV1Sha?.let { p.v1Path to it }) + (p.v2Path to p.v2Sha)
         when (val flip = store.writeNow(slug, modelFiles - protect.keys, protect)) {
             SidecarWriteOutcome.Written -> Unit
             else -> return stopped(flip, "flip")
