@@ -9,6 +9,7 @@ import arrow.core.raise.either
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.Layer
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
+import kotlin.math.max
 
 /**
  * Adds an imported scene to a sheet as ONE command, so one transaction commits it and one undo removes it (Story 5.1.2c).
@@ -38,8 +39,15 @@ data class ImportScene(
         for (layer in layers) {
             if (out.size >= limits.maxLayers) break
             if (out.any { it.id == layer.id }) continue
-            var name = layer.name.take(limits.maxNameChars)
-            while (name in names) name = (name.take(limits.maxNameChars - IMPORTED_SUFFIX.length) + IMPORTED_SUFFIX)
+            val wanted = layer.name.take(limits.maxNameChars)
+            var name = wanted
+            var attempt = 0
+            // Each attempt is a distinct string, so at most names.size + 1 attempts are needed: the loop always ends.
+            while (name in names) {
+                attempt++
+                val suffix = if (attempt == 1) IMPORTED_SUFFIX else "$IMPORTED_SUFFIX $attempt"
+                name = wanted.take(max(limits.maxNameChars - suffix.length, 0)) + suffix
+            }
             names += name
             out += layer.copy(name = name, order = next++)
         }

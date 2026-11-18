@@ -46,6 +46,10 @@ data class ElementPatch(val id: ElementId, val before: SceneElement?, val after:
  * What a committed transaction did, recorded as data so redo replays it verbatim (no command is re-run and no solver
  * is re-solved). Applying it checks that the document still holds each `before` value, so a stale patch is refused
  * with [CommandError.PatchConflict] instead of overwriting newer work.
+ *
+ * It covers elements, order, layers and constraints only, not `nameCounters` or `extras`: `HistoryV2` undoes and redoes by
+ * restoring whole document snapshots (`Committed.before` / `after`), never by replaying this patch, so those two travel with
+ * the snapshots (`HistoryNameCountersTest`). [forward] and [backward] keep the live document's values for them.
  */
 data class DocPatch(
     val elements: List<ElementPatch>,

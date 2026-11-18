@@ -86,16 +86,18 @@ object ContainerText {
         val inset = inset(container) ?: raise(CommandError.Unsupported(container.id.value, OPERATION))
         var height = box.height
         var layout: TextLayout? = null
+        var previousWidth = Double.NaN
         repeat(MAX_FIT_PASSES) {
             val wrapWidth = max(box.width * inset - PADDING * HALF, MIN_WRAP_WIDTH)
+            if (wrapWidth == previousWidth) return@repeat
+            previousWidth = wrapWidth
             val measured = when (val r = TextLayoutPolicy.forEdit(text, wrapWidth, style, metrics)) {
                 EditLayoutResult.FontNotLoaded -> raise(CommandError.FontNotLoaded)
                 is EditLayoutResult.Measured -> r.layout
             }
             layout = measured
             val needed = (measured.height + PADDING * HALF) / inset
-            if (needed <= height) return@repeat
-            height = needed
+            if (needed > height) height = needed
         }
         Fit(layout ?: raise(CommandError.FontNotLoaded), height)
     }

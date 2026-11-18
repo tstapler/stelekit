@@ -155,7 +155,9 @@ object SheetCodecV2 {
 
         var scene = SketchSceneV2.empty(limits).withLayers(layers)
         elements.forEachIndexed { i, json ->
-            val element = with(reader) { element(i, json) }
+            val parsed = with(reader) { element(i, json) }
+            // An element on a layer the sheet does not define is moved to the default layer (the same repair `reconcile` makes for other dangling references).
+            val element = if (scene.layer(parsed.base.layerId) == null) parsed.withBase(parsed.base.copy(layerId = LayerId.Default)) else parsed
             scene = scene.add(element).mapLeft { SheetError.DuplicateElement(i) }.bind()
         }
         // A constraint whose operand is not in the sheet is dropped, the same repair `reconcile` makes for other dangling references.

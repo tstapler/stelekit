@@ -7,6 +7,7 @@ package dev.stapler.stelekit.sketch.v2.commands
 import arrow.core.Either
 import arrow.core.raise.either
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
+import dev.stapler.stelekit.sketch.v2.scene.TextElement
 import dev.stapler.stelekit.sketch.v2.scene.Layer
 import dev.stapler.stelekit.sketch.v2.scene.LayerId
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
@@ -78,12 +79,13 @@ data class MoveLayer(val id: LayerId, val toIndex: Int) : Command {
     }
 }
 
-/** Moves [ids] to the layer [target], on top of it, keeping their relative paint order. */
+/** Moves [ids] and the text labels bound to them to the layer [target], on top of it, keeping their relative paint order. */
 data class MoveElementsToLayer(val ids: List<ElementId>, val target: LayerId) : Command {
     override fun apply(doc: SketchDocumentV2): Either<CommandError, Applied> = either {
         doc.scene.layerOrFail(target).bind()
-        val wanted = ids.toSet()
         ids.firstOrNull { it !in doc.scene }?.let { raise(CommandError.UnknownElement(it.value)) }
+        val listed = ids.toSet()
+        val wanted = listed + doc.scene.elementsInOrder.filter { it is TextElement && it.containerId in listed }.map { it.id }
         var out = doc.scene
         val changed = LinkedHashSet<ElementId>()
         var key = topKey(doc.scene, target)
@@ -102,6 +104,7 @@ data class DeleteLayer(val id: LayerId, val into: LayerId = LayerId.Default) : C
         if (id == LayerId.Default) raise(CommandError.DefaultLayerProtected)
         doc.scene.layerOrFail(id).bind()
         doc.scene.layerOrFail(into).bind()
+        if (into == id) raise(CommandError.Unsupported(id.value, "delete layer into itself"))
         val members = doc.scene.elementsInOrder.filter { it.base.layerId == id }.map { it.id }
         val moved = MoveElementsToLayer(members, into).apply(doc).bind()
         val scene = moved.doc.scene

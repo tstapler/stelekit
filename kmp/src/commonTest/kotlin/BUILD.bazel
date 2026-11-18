@@ -274,6 +274,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/AlignCommandsTest.kt",
         "dev/stapler/stelekit/sketch/v2/StaleConstraintRepairTest.kt",
         "dev/stapler/stelekit/sketch/v2/ReconcileScaleTest.kt",
+        "dev/stapler/stelekit/sketch/v2/ReviewFixEditsTest.kt",
         "dev/stapler/stelekit/sketch/v2/ObjectSnapTest.kt",
         "dev/stapler/stelekit/sketch/v2/ElementLibraryTest.kt",
         "dev/stapler/stelekit/sketch/v2/StylePanelModelTest.kt",
