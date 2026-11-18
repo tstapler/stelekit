@@ -5,9 +5,11 @@
 package dev.stapler.stelekit.sketch.v2.runtime.convert
 
 import arrow.core.Either
+import arrow.core.left
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.ProjectBundle
+import dev.stapler.stelekit.model.ProjectUuid
 import dev.stapler.stelekit.model.SheetPayload
 import dev.stapler.stelekit.model.SheetUuid
 import dev.stapler.stelekit.projectbridge.CorruptReason
@@ -56,7 +58,7 @@ sealed interface RestoreOutcome {
 }
 
 /** The steps of the protocol, each a crash boundary. */
-enum class RestoreStep { V2Kept, V1Staged, ModelFlipped, V2Removed }
+enum class RestoreStep { V2Kept, V1Staged, DatabaseReplaced, ModelFlipped, V2Removed }
 
 /** Test seam: called after each step completes; a test throws from it to simulate the process dying there. */
 fun interface RestoreCrashPoint {
@@ -74,14 +76,14 @@ fun interface RestoreCrashPoint {
  *
  * 1. the current v2 file is copied to `backup/<uuid>.v2-before-restore.json`;
  * 2. `sheets/<uuid>.json` is staged from `backup/<uuid>.v1.json` beside the unchanged bundle;
- * 3. one model write names the v1 file, its schema and its sha again;
- * 4. `sheets/<uuid>.v2.json` is deleted, the only remover of a schema-2 file;
- * 5. the database rows follow (`schema_version = 1`).
+ * 3. the database rows move to v1 first (`schema_version = 1`, the original primitives, the reconcile base unchanged), so a
+ *    reconcile after a crash sees a plain local edit and pushes it, and no v2 row ever lacks its referenced file;
+ * 4. one model write names the v1 file, its schema and its sha again, then the reconcile base moves;
+ * 5. `sheets/<uuid>.v2.json` is deleted, the only remover of a schema-2 file.
  *
- * A retry after a crash finishes from whatever the disk holds: a disk already on v1 while the database still says v2 only
- * runs steps 4 and 5. No sha of the original is stored anywhere, so a backup counts as missing when it does not decode as a
- * v1 sheet; the staged file is read back and sha-checked by the store's verified write. The sheet's layer list stays the one
- * conversion projected from the original primitives.
+ * A retry after a crash finishes from whatever the disk and database hold: a disk already on v1 only needs the base moved
+ * and the unreferenced v2 file removed. No sha of the original is stored anywhere, so a backup counts as missing when it does not decode as a
+ * v1 sheet; the staged file is read back and sha-checked by the store's verified write.
  */
 class SketchBackupRestore(
     private val repos: SketchRepositories,
@@ -107,22 +109,24 @@ class SketchBackupRestore(
         val diskRow = onDisk.sheets.firstOrNull { it.uuid == sheet } ?: return failed(RestoreFailure.NotFound, "sheet")
         if (diskRow.schemaVersion == SheetPaths.SCHEMA_V1) {
             val rowStillV2 = databaseSchema(onDisk, sheet) == SheetPaths.SCHEMA_V2
-            return if (rowStillV2) resumeFlipped(slug, sheet, onDisk, disk) else RestoreOutcome.NotConverted
+            return if (rowStillV2) resumeFlipped(slug, sheet, onDisk, disk) else finishInterrupted(slug, sheet)
         }
         val backup = store.readBackup(slug, sheet.value) ?: return RestoreOutcome.BackupMissing
         val primitives = runCatching { SheetCodecV1.decode(sheet, backup) }.getOrNull() ?: return RestoreOutcome.BackupMissing
         val project = repos.projects.loadProject(onDisk.project.uuid).getOrNull()?.project ?: return failed(RestoreFailure.NotFound, "project")
         val local = LocalBundleLoader.load(repos, project, disk).getOrNull() ?: return failed(RestoreFailure.Write, "local bundle")
-        if (local.sheets.firstOrNull { it.uuid == sheet }?.schemaVersion != SheetPaths.SCHEMA_V2) return RestoreOutcome.NotConverted
+        if (local.sheets.none { it.uuid == sheet }) return RestoreOutcome.NotConverted
         if (SidecarBehindGuard.isBehind(project, disk)) return RestoreOutcome.Deferred
+        // A run that died after the database step already holds the original primitives: they are replaced, not doubled.
         val flipped = local.copy(
             sheets = local.sheets.map { if (it.uuid == sheet) it.copy(schemaVersion = SheetPaths.SCHEMA_V1) else it },
-            primitives = local.primitives + primitives,
+            primitives = local.primitives.filter { it.sheetUuid != sheet } + primitives,
             sheetPayloads = local.sheetPayloads - sheet,
         )
         return execute(slug, sheet, disk, flipped)
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     private suspend fun execute(slug: String, sheet: SheetUuid, disk: Map<String, ByteArray>, flipped: ProjectBundle): RestoreOutcome {
         val modelFiles = SidecarCodec.encode(flipped)
         val v1Path = SheetPaths.pathFor(sheet, SheetPaths.SCHEMA_V1)
@@ -139,6 +143,10 @@ class SketchBackupRestore(
         }
         crashPoint.after(RestoreStep.V1Staged)
 
+        // The reconcile base stays on the disk's current hash until the model flips, so a crash here reads as a local edit to push.
+        write { repos.projects.replaceProjectContents(flipped.project.uuid, flipped) }.onLeft { return failed(RestoreFailure.Write, "database") }
+        crashPoint.after(RestoreStep.DatabaseReplaced)
+
         // Other v2 sheets are opaque for this write so it never rewrites them; this sheet's v2 file is unlisted, so never swept.
         val otherV2 = flipped.sheetPayloads.entries.mapNotNull { (uuid, payload) ->
             (payload as? SheetPayload.V2Opaque)?.let { SheetPaths.pathFor(uuid, SheetPaths.SCHEMA_V2) to it.sha256 }
@@ -149,12 +157,34 @@ class SketchBackupRestore(
         }
         crashPoint.after(RestoreStep.ModelFlipped)
 
-        val project = flipped.project
-        val synced = project.copy(lastSyncedSidecarHash = SidecarCodec.bundleHash(modelFiles), baseRevision = project.modelRevision)
-        return finish(slug, sheet, flipped.copy(project = synced), keptPath)
+        moveBase(flipped.project.uuid, SidecarCodec.bundleHash(modelFiles)).onLeft { return failed(RestoreFailure.Write, "project base") }
+        return removeV2(slug, sheet, keptPath)
     }
 
-    /** A crash after the model write left the disk on v1 while the database row still says v2: only the last two steps remain. */
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun moveBase(projectUuid: ProjectUuid, hash: String): Either<DomainError, Unit> {
+        val fresh = repos.projects.loadProject(projectUuid).getOrNull()?.project
+            ?: return DomainError.DatabaseError.ReadFailed("project").left()
+        return write { repos.projects.saveProject(fresh.copy(lastSyncedSidecarHash = hash, baseRevision = fresh.modelRevision)) }
+    }
+
+    private suspend fun removeV2(slug: String, sheet: SheetUuid, keptPath: String?): RestoreOutcome {
+        store.deleteV2Sheet(slug, sheet.value).onLeft { return failed(RestoreFailure.Write, "remove v2") }
+        crashPoint.after(RestoreStep.V2Removed)
+        return RestoreOutcome.Restored(sheet, keptPath ?: keptCopyPath(sheet))
+    }
+
+    /**
+     * The disk and the database are both on v1, so only an unreferenced v2 file can be left (a crash before the last step).
+     * It is kept (identical bytes reuse the existing copy) and removed; with no such file nothing is written.
+     */
+    private suspend fun finishInterrupted(slug: String, sheet: SheetUuid): RestoreOutcome {
+        val orphan = store.readV2SheetFile(slug, sheet.value) ?: return RestoreOutcome.NotConverted
+        val kept = store.writeV2BeforeRestore(slug, sheet.value, orphan).fold({ return failed(RestoreFailure.Write, "keep v2") }, { it })
+        return removeV2(slug, sheet, "backup/${kept.substringAfterLast('/')}")
+    }
+
+    /** A crash after the model write left the disk on v1 while the database row still says v2: only the last steps remain. */
     private suspend fun resumeFlipped(slug: String, sheet: SheetUuid, onDisk: ProjectBundle, disk: Map<String, ByteArray>): RestoreOutcome {
         val local = repos.projects.loadProject(onDisk.project.uuid).getOrNull()?.project ?: return failed(RestoreFailure.NotFound, "project")
         val adopted = onDisk.project.copy(
@@ -166,10 +196,8 @@ class SketchBackupRestore(
 
     @OptIn(DirectRepositoryWrite::class)
     private suspend fun finish(slug: String, sheet: SheetUuid, bundle: ProjectBundle, keptPath: String?): RestoreOutcome {
-        store.deleteV2Sheet(slug, sheet.value).onLeft { return failed(RestoreFailure.Write, "remove v2") }
-        crashPoint.after(RestoreStep.V2Removed)
         write { repos.projects.replaceProjectContents(bundle.project.uuid, bundle) }.onLeft { return failed(RestoreFailure.Write, "database") }
-        return RestoreOutcome.Restored(sheet, keptPath ?: keptCopyPath(sheet))
+        return removeV2(slug, sheet, keptPath)
     }
 
     private suspend fun databaseSchema(onDisk: ProjectBundle, sheet: SheetUuid): Long? =
