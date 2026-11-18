@@ -75,13 +75,13 @@ object ContainerText {
         scene.elementsInOrder.firstOrNull { it is TextElement && it.containerId == containerId } as TextElement?
 
     /** The wrapped text of one fit and the height the container needs to hold it. */
-    internal data class Fit(val layout: TextLayout, val containerHeight: Double)
+    data class Fit(val layout: TextLayout, val containerHeight: Double)
 
     /**
      * Wraps [text] to [container]'s width and returns the height the container needs, never less than its own. Repeats until
      * the wrap width and the height agree, at most [MAX_FIT_PASSES] times, so growing the container cannot loop.
      */
-    internal fun fit(container: SceneElement, text: String, style: TextStyle, metrics: TextMetricsProvider): Either<CommandError, Fit> = either {
+    fun fit(container: SceneElement, text: String, style: TextStyle, metrics: TextMetricsProvider): Either<CommandError, Fit> = either {
         val box = boxOf(container) ?: raise(CommandError.Unsupported(container.id.value, OPERATION))
         val inset = inset(container) ?: raise(CommandError.Unsupported(container.id.value, OPERATION))
         var height = box.height

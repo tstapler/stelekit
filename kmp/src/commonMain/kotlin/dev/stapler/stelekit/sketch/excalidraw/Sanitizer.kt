@@ -168,7 +168,7 @@ internal class ElementSanitizer(private val limits: SceneLimits) {
 }
 
 /** Whole-list repairs that need every element: duplicate ids and cyclic `frameId` chains, each linear in the element count. */
-internal object ElementSetRepair {
+object ElementSetRepair {
     suspend fun repair(elements: List<ExcalidrawElement>, issues: MutableList<ImportIssue>, budget: ParseBudget): List<ExcalidrawElement> =
         clearCycles(dedupe(elements, issues, budget), issues, budget)
 
