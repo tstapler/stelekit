@@ -15,6 +15,7 @@ import dev.stapler.stelekit.model.SketchProject
 import dev.stapler.stelekit.model.SketchSheet
 import dev.stapler.stelekit.projectbridge.LocalBundleLoader
 import dev.stapler.stelekit.projectbridge.SheetPaths
+import dev.stapler.stelekit.projectbridge.SidecarBehindGuard
 import dev.stapler.stelekit.projectbridge.SidecarCodec
 import dev.stapler.stelekit.projectbridge.SidecarRead
 import dev.stapler.stelekit.projectbridge.SidecarSlugLock
@@ -29,6 +30,7 @@ import dev.stapler.stelekit.sketch.v2.runtime.convert.ConversionPolicy
 import dev.stapler.stelekit.sketch.v2.runtime.telemetry.SketchLog
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
+import dev.stapler.stelekit.util.ContentHasher
 
 /** Why a split did not happen. In every case the source sheet is unchanged on disk. */
 enum class SplitFailure(val token: String) {
@@ -42,8 +44,11 @@ enum class SplitFailure(val token: String) {
     StorageUnavailable("storage-unavailable"),
     CorruptSidecar("corrupt-sidecar"),
 
-    /** A git sync is in flight; the next trigger retries. Nothing was changed. */
+    /** A git sync is in flight or a pull is not reconciled yet; the next trigger retries. Nothing was changed. */
     Deferred("deferred"),
+
+    /** The source sheet file on disk is not the bytes the editor loaded; nothing was changed. */
+    SourceChanged("source-changed"),
     Encode("encode"),
     Write("write"),
 }
@@ -103,11 +108,12 @@ class SheetSplitter(
         source: SketchDocumentV2,
         selected: Set<ElementId>,
         newSheet: SheetUuid,
+        sourceSha: String? = null,
     ): SplitOutcome {
         val plan = SplitPlanner.plan(source, selected, newSheet.value, limits).fold({ return refusal(it) }, { it })
         val loaded = repos.projects.loadProject(projectUuid).getOrNull() ?: return failed(SplitFailure.NotFound, "project")
         val slug = loaded.project.slug
-        return slugLock.withSlug(slug) { splitLocked(projectUuid, slug, sourceSheet, newSheet, plan) }
+        return slugLock.withSlug(slug) { splitLocked(projectUuid, slug, sourceSheet, newSheet, plan, sourceSha) }
             .also { log.migrateOutcome("split-${(it as? SplitOutcome.Failed)?.reason?.token ?: "done"}") }
     }
 
@@ -134,6 +140,7 @@ class SheetSplitter(
         val row = local.sheets.firstOrNull { it.uuid == anchor } ?: return failed(SplitFailure.NotFound, "sheet")
         if (row.schemaVersion != SheetPaths.SCHEMA_V2) return failed(SplitFailure.NotV2)
         if (ConversionPolicy.refusal(local, row, technicalDataEditable) != null) return failed(SplitFailure.HasTechnicalData)
+        if (disk != null && SidecarBehindGuard.isBehind(project, disk)) return failed(SplitFailure.Deferred)
 
         val doc = document.copy(sheetUuid = newSheet.value)
         val newBytes = SheetCodecV2.encode(doc, limits).getOrNull() ?: return failed(SplitFailure.Encode, "new sheet")
@@ -178,6 +185,7 @@ class SheetSplitter(
         sourceSheet: SheetUuid,
         newSheet: SheetUuid,
         plan: SplitPlan,
+        sourceSha: String?,
     ): SplitOutcome {
         val disk = when (val read = store.read(slug)) {
             SidecarRead.Unavailable -> return failed(SplitFailure.StorageUnavailable)
@@ -190,6 +198,9 @@ class SheetSplitter(
         val row = local.sheets.firstOrNull { it.uuid == sourceSheet } ?: return failed(SplitFailure.NotFound, "sheet")
         if (row.schemaVersion != SheetPaths.SCHEMA_V2) return failed(SplitFailure.NotV2)
         if (ConversionPolicy.refusal(local, row, technicalDataEditable) != null) return failed(SplitFailure.HasTechnicalData)
+        if (disk != null && SidecarBehindGuard.isBehind(project, disk)) return failed(SplitFailure.Deferred)
+        val diskSourceSha = disk?.get(SheetPaths.pathFor(sourceSheet, SheetPaths.SCHEMA_V2))?.let { ContentHasher.sha256(it) }
+        if (sourceSha != null && diskSourceSha != sourceSha) return failed(SplitFailure.SourceChanged)
 
         val sourceBytes = SheetCodecV2.encode(plan.sourceAfter, limits).getOrNull() ?: return failed(SplitFailure.Encode, "source")
         val newBytes = SheetCodecV2.encode(plan.newDocument, limits).getOrNull() ?: return failed(SplitFailure.Encode, "new sheet")

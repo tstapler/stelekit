@@ -113,7 +113,7 @@ object SketchMigrationStrings {
             ConversionFailure.Encode, ConversionFailure.Write -> "the new copy could not be saved"
             ConversionFailure.Verify -> "the new copy did not read back correctly"
             ConversionFailure.NotReady -> "upgrading isn't available in this build yet"
-            ConversionFailure.Deferred -> "a sync is running, so the upgrade was postponed"
+            ConversionFailure.Deferred -> "a sync is running or changes from another device are still being merged, so the upgrade was postponed"
         }
     }
 

@@ -19,6 +19,7 @@ import dev.stapler.stelekit.projectbridge.LocalBundleLoader
 import dev.stapler.stelekit.projectbridge.ProjectSidecarStore
 import dev.stapler.stelekit.projectbridge.SheetCodecV1
 import dev.stapler.stelekit.projectbridge.SheetPaths
+import dev.stapler.stelekit.projectbridge.SidecarBehindGuard
 import dev.stapler.stelekit.projectbridge.SidecarCodec
 import dev.stapler.stelekit.projectbridge.SidecarRead
 import dev.stapler.stelekit.projectbridge.SidecarSlugLock
@@ -63,7 +64,7 @@ enum class ConversionFailure(val token: String) {
     /** `ConversionReady` is false in this build: the conversion was not attempted and nothing was written. */
     NotReady("not-ready"),
 
-    /** A git sync was in flight, so the conversion stopped before writing anything it could not finish; retry later. */
+    /** A git sync was in flight, or a pull brought changes not yet reconciled here; nothing was written, retry later. */
     Deferred("deferred"),
 }
 
@@ -165,6 +166,8 @@ class SheetConverter(
 
         val plan = plan(local, row, diskFiles).fold({ return it }, { it })
         if (diskFiles != null && flippedOnDisk(diskFiles, plan)) return resumeFlipped(slug, plan, diskFiles)
+        // The flip writes the local model over the disk's: a pulled, unreconciled sidecar would be reverted.
+        if (diskFiles != null && SidecarBehindGuard.isBehind(project, diskFiles)) return ConversionOutcome.Deferred
         return execute(slug, plan)
     }
 

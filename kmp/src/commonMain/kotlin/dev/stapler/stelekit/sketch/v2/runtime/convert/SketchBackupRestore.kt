@@ -15,6 +15,7 @@ import dev.stapler.stelekit.projectbridge.LocalBundleLoader
 import dev.stapler.stelekit.projectbridge.ProjectSidecarStore
 import dev.stapler.stelekit.projectbridge.SheetCodecV1
 import dev.stapler.stelekit.projectbridge.SheetPaths
+import dev.stapler.stelekit.projectbridge.SidecarBehindGuard
 import dev.stapler.stelekit.projectbridge.SidecarCodec
 import dev.stapler.stelekit.projectbridge.SidecarRead
 import dev.stapler.stelekit.projectbridge.SidecarSlugLock
@@ -48,7 +49,7 @@ sealed interface RestoreOutcome {
     /** `backup/<uuid>.v1.json` is absent or is not a v1 sheet; nothing was changed. */
     data object BackupMissing : RestoreOutcome
 
-    /** A git sync is in flight; the partial state is crash-safe and the next attempt resumes. Nothing is parked. */
+    /** A git sync is in flight or a pull is not reconciled yet; nothing was changed and the next attempt resumes. Nothing is parked. */
     data object Deferred : RestoreOutcome
 
     data class Failed(val reason: RestoreFailure, val detail: String = "") : RestoreOutcome
@@ -113,6 +114,7 @@ class SketchBackupRestore(
         val project = repos.projects.loadProject(onDisk.project.uuid).getOrNull()?.project ?: return failed(RestoreFailure.NotFound, "project")
         val local = LocalBundleLoader.load(repos, project, disk).getOrNull() ?: return failed(RestoreFailure.Write, "local bundle")
         if (local.sheets.firstOrNull { it.uuid == sheet }?.schemaVersion != SheetPaths.SCHEMA_V2) return RestoreOutcome.NotConverted
+        if (SidecarBehindGuard.isBehind(project, disk)) return RestoreOutcome.Deferred
         val flipped = local.copy(
             sheets = local.sheets.map { if (it.uuid == sheet) it.copy(schemaVersion = SheetPaths.SCHEMA_V1) else it },
             primitives = local.primitives + primitives,

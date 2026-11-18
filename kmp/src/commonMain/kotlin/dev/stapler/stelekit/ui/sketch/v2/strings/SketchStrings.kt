@@ -296,7 +296,7 @@ object SketchStrings {
         const val BUILD_CAPPED = "Not available in this build yet"
         const val NOT_CONVERTED = "This sketch is already the original version. Nothing was changed."
         const val BACKUP_MISSING = "The original copy of this sketch was not found. Nothing was changed."
-        const val DEFERRED = "A sync is running. Nothing was changed; try again in a moment."
+        const val DEFERRED = "A sync is running, or changes from another device are still being merged. Nothing was changed; try again in a moment."
         const val FAILED = "Could not restore the original sketch. Your sketch was not lost."
         const val NONE = "none"
 

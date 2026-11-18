@@ -167,6 +167,7 @@ class SheetSaver(
     private val mutableState = MutableStateFlow<SaveState>(SaveState.Saved)
     private val sheetPath = SheetPaths.pathFor(target.sheet, SheetPaths.SCHEMA_V2)
     private val persister = SheetPersister(target, ports)
+    private val copies = ConflictCopyKeeper(target, ports, limits)
     private var baseSha: String? = target.loadedSha
     private var savedVersion = 0L
     private var backoffLevel = 0
@@ -180,7 +181,7 @@ class SheetSaver(
 
     init {
         scope.launch { runLoop() }
-        scope.launch { ports.externalChanges.collect { onExternalChange() } }
+        scope.launch { ports.externalChanges.collect { onExternalChangeGuarded() } }
         scope.launch { ports.lifecycle.hidden.collect { saveLatest() } }
     }
 
@@ -211,7 +212,9 @@ class SheetSaver(
      * Adopts the file on disk (the other device's version) and returns its scene for the editor to show. The in-memory
      * scene is discarded only after it was kept as a conflict copy, which [SaveState.Conflict] with a path guarantees.
      */
-    suspend fun reload(): Either<DomainError, SketchDocumentV2> = ports.slugLock.withSlug(target.slug) {
+    suspend fun reload(): Either<DomainError, SketchDocumentV2> = saveGate.withLock { ports.slugLock.withSlug(target.slug) {
+        val unsaved = latest.value?.takeIf { it.version != savedVersion }
+        if (unsaved != null) copies.keep(unsaved.version, unsaved.doc).onLeft { return@withSlug it.left() }
         val bytes = persister.readDiskBytes() ?: return@withSlug DomainError.FileSystemError.NotFound(sheetPath).left()
         SheetCodecV2.decode(bytes, limits).fold(
             { DomainError.FileSystemError.ReadFailed(sheetPath, "sheet not readable: ${it::class.simpleName}").left() },
@@ -224,7 +227,7 @@ class SheetSaver(
                 doc.right()
             },
         )
-    }
+    } }
 
     /** Keeps the in-memory scene: re-bases onto the file now on disk and writes over it. The other version stays in git history. */
     suspend fun keepMine() {
@@ -260,7 +263,9 @@ class SheetSaver(
 
     private suspend fun saveLatest() = saveGate.withLock {
         val snap = latest.value ?: return@withLock
-        if (snap.version == savedVersion || mutableState.value.blocksSaving) return@withLock
+        if (snap.version == savedVersion) return@withLock
+        if (mutableState.value is SaveState.Conflict) return@withLock keepWhileConflicted(snap)
+        if (mutableState.value.blocksSaving) return@withLock
         mutableState.value = SaveState.Saving
         try {
             saveSnapshot(snap)
@@ -269,6 +274,14 @@ class SheetSaver(
         } catch (t: Throwable) {
             fail(failureOf(t))
         }
+    }
+
+    /** Edits made after a conflict are never written over the other version; they go to a conflict copy so none is lost. */
+    private suspend fun keepWhileConflicted(snap: Submitted) {
+        copies.keep(snap.version, snap.doc).fold(
+            { ports.log.persistFailed("conflict-copy") },
+            { path -> if (path != null && mutableState.value is SaveState.Conflict) mutableState.value = SaveState.Conflict(path) },
+        )
     }
 
     private suspend fun saveSnapshot(snap: Submitted) {
@@ -280,7 +293,7 @@ class SheetSaver(
                 confirmPersisted(snap)
             }
             Persist.Deferred -> deferWrite()
-            is Persist.Conflict -> conflict(encoded, result.diskSha)
+            is Persist.Conflict -> conflict(snap.version, encoded, result.diskSha)
             is Persist.Failed -> fail(result.reason)
             Persist.LeaseLost -> {
                 // The store refused for lack of the writer lease: read-only, the debounce stops, the scene stays in memory.
@@ -349,16 +362,28 @@ class SheetSaver(
         fail(failureOf(t))
     }
 
-    private suspend fun conflict(encoded: Encoded, diskSha: String?) {
+    private suspend fun conflict(version: Long, encoded: Encoded, diskSha: String?) {
         ports.log.saveConflict(target.sheet.value)
         SheetSaveGuard.writeConflictCopy(ports.store, target.slug, target.sheet, encoded.bytes).fold(
             { fail(SaveFailure.Write) },
             { path ->
+                copies.noteKept(version)
                 mutableState.value = SaveState.Conflict(path)
                 ports.diagnostics.raise(BannerRowId.SaveConflict)
             },
         )
         if (diskSha == null) ports.log.persistFailed("file-missing")
+    }
+
+    /** One failed event must not end the collection: later pulls still need their Reload prompt. */
+    private suspend fun onExternalChangeGuarded() {
+        try {
+            onExternalChange()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            ports.log.persistFailed(failureOf(t).token)
+        }
     }
 
     /** The post-sync coordinator pulled this project: when the open sheet's file changed, prompt Reload without waiting for a save. */

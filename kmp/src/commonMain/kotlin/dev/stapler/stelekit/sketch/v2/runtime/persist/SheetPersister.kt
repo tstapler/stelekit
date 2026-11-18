@@ -11,6 +11,7 @@ import dev.stapler.stelekit.model.SketchProject
 import dev.stapler.stelekit.model.SketchSheet
 import dev.stapler.stelekit.projectbridge.LocalBundleLoader
 import dev.stapler.stelekit.projectbridge.SheetPaths
+import dev.stapler.stelekit.projectbridge.SidecarBehindGuard
 import dev.stapler.stelekit.projectbridge.SidecarCodec
 import dev.stapler.stelekit.projectbridge.SidecarRead
 import dev.stapler.stelekit.projectbridge.SidecarWriteOutcome
@@ -63,8 +64,7 @@ internal class SheetPersister(private val target: SheetTarget, private val ports
         if (check is BaseCheck.Changed) return Persist.Conflict(check.diskSha)
         val loaded = ports.repos.projects.loadProject(target.projectUuid).getOrNull() ?: return Persist.Failed(SaveFailure.Write)
         // The model on disk moved past this device's last reconcile: a push from here would overwrite what a pull brought.
-        val base = loaded.project.lastSyncedSidecarHash
-        if (base != null && files.isNotEmpty() && SidecarCodec.bundleHash(files) != base) return Persist.Deferred
+        if (SidecarBehindGuard.isBehind(loaded.project, files)) return Persist.Deferred
         val local = LocalBundleLoader.load(ports.repos, loaded.project, files + (sheetPath to encoded.bytes)).getOrNull()
             ?: return Persist.Failed(SaveFailure.Write)
         val row = local.sheets.firstOrNull { it.uuid == target.sheet } ?: return Persist.Failed(SaveFailure.Write)

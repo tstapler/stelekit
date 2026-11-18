@@ -213,7 +213,7 @@ class UxMigrationAcceptanceTest {
         val notReady = SketchMigrationStrings.Failure.reason(ConversionFailure.NotReady)
         val deferred = SketchMigrationStrings.Failure.reason(ConversionFailure.Deferred)
         assertEquals("Reason: upgrading isn't available in this build yet (not-ready)", notReady)
-        assertEquals("Reason: a sync is running, so the upgrade was postponed (deferred)", deferred)
+        assertEquals("Reason: a sync is running or changes from another device are still being merged, so the upgrade was postponed (deferred)", deferred)
         val write = SketchMigrationStrings.Failure.reason(ConversionFailure.Write)
         assertTrue(notReady != write && deferred != write, "neither reads as the generic write failure")
     }
