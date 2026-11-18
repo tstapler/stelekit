@@ -20,7 +20,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
+import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveFailure
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
@@ -91,7 +93,7 @@ class LeaveGuard(
         busy = true
         scope.launch {
             try {
-                if (leaveNeedsPrompt(flush())) {
+                if (leaveNeedsPrompt(flushOrFailed())) {
                     prompting = true
                 } else {
                     prompting = false
@@ -101,6 +103,15 @@ class LeaveGuard(
                 busy = false
             }
         }
+    }
+
+    /** A flush that threw left the edits unwritten: report it as a failed save so the user is asked, not ignored. */
+    private suspend fun flushOrFailed(): SaveState = try {
+        flush()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (t: Throwable) {
+        SaveState.Failed(SaveFailure.Unexpected)
     }
 
     /** Retry save: leaves when the retry wrote the sheet, stays in the prompt when it did not. */
