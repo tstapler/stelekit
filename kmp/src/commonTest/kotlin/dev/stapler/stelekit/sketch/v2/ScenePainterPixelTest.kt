@@ -19,7 +19,7 @@ import kotlin.test.assertTrue
 /**
  * Story 2.1.3, Tasks 2.1.3a and 2.1.3c: the painter draws the draw list with the right colours and places (a pixel
  * tolerance, not an exact hash, so JVM, wasmJs and Robolectric rasterisers may differ by anti-aliasing), culls by
- * viewport, and keeps its Compose paths while the draw list is unchanged. Runs on every target.
+ * viewport, and keeps its Compose paths while the draw list is unchanged. Runs on JVM and wasmJs; Android unit excludes it (no Robolectric in commonTest) and runs the fixture in ScenePainterAndroidTest.
  */
 class ScenePainterPixelTest {
     private fun at(px: IntArray, x: Int, y: Int) = px[y * ScenePainterFixture.WIDTH + x]

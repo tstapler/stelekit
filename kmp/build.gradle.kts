@@ -1680,6 +1680,12 @@ if (selectChangedTests) {
     }
 }
 
+// ScenePainterPixelTest renders offscreen ImageBitmaps, which on Android need Robolectric native graphics;
+// commonTest cannot carry @RunWith, so Android runs the same fixture via ScenePainterAndroidTest (androidUnitTest).
+tasks.withType<Test>().matching { it.name == "testDebugUnitTest" }.configureEach {
+    filter { excludeTestsMatching("dev.stapler.stelekit.sketch.v2.ScenePainterPixelTest") }
+}
+
 // Robolectric loads app classes through its own classloader; without these the JaCoCo agent
 // records nothing for them. Screens whose tests live in androidUnitTest are only measurable this way.
 tasks.withType<Test>().matching { it.name == "testDebugUnitTest" }.configureEach {
