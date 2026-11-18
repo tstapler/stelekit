@@ -229,9 +229,168 @@ class ParserFuzzTest {
             when {
                 a is Either.Right && b is Either.Right -> assertEquals(b.value, a.value, "input: $text")
                 a is Either.Left && b is Either.Left -> assertEquals(b.value.reason, a.value.reason, "input: $text")
+                // kotlinx accepts some inputs RFC 8259 forbids (see KOTLINX_MISSING_COMMA); refusing those is correct.
+                a is Either.Left && b is Either.Right && a.value.reason == ImportReason.MalformedJson && !StrictJson.isValid(text) -> Unit
                 else -> error("scanner $a, oracle $b, input: $text")
             }
         }
+    }
+
+    @Test
+    fun scanner_should_RefuseAMissingComma_That_KotlinxAccepts() = runTest {
+        // kotlinx reads `[[0]2],3]` as `[[0,2],3]`; RFC 8259 needs a comma after the inner array, so this is malformed.
+        assertTrue(!StrictJson.isValid(KOTLINX_MISSING_COMMA))
+        assertEquals(ImportReason.MalformedJson, (import(KOTLINX_MISSING_COMMA) as Either.Left).value.reason)
+        // Pins the divergence: once kotlinx rejects it too, the exemption in scanner_should_AgreeWithTheOracle can go.
+        assertTrue(ExcalidrawParser().parseWholeFile(KOTLINX_MISSING_COMMA.encodeToByteArray()) is Either.Right)
+    }
+
+    @Test
+    fun scanner_should_RefuseTheMinimisedFuzzFailure() = runTest {
+        // Shrunk from seed 2256917155336893162: a stray `2` after an inner points array inside an element.
+        val text = scene(listOf(element("line", "l1", extra = ""","points":[[0,0]2],[3,4]]""")))
+        assertEquals(ImportReason.MalformedJson, (import(text) as Either.Left).value.reason)
+        assertTrue(!StrictJson.isValid(text))
+    }
+
+    @Test
+    fun scanner_should_RefuseMalformedJson_That_ALaterDuplicateKeyReplaces() = runTest {
+        // Shrunk from fuzz seed 8: `"elements":ce":"..."` is malformed, but a later `"elements"` key replaced it.
+        val good = element("rectangle", "r1")
+        val cases = listOf(
+            """{"elements":ce":"x","elements":[$good]}""",
+            """{"a":{"b":},"a":1,"elements":[$good]}""",
+            """{"elements":[{"type":}],"elements":[$good]}""",
+            """{"files":{"f":{"id":}},"files":{},"elements":[$good]}""",
+            """{"files":{"f":{"id":"a"},"f":{"id":}},"elements":[$good]}""",
+        )
+        for (text in cases) {
+            val scanner = import(text)
+            val oracle = ExcalidrawParser().parseWholeFile(text.encodeToByteArray())
+            assertEquals(ImportReason.MalformedJson, (scanner as? Either.Left)?.value?.reason, "scanner $scanner on $text")
+            assertEquals(ImportReason.MalformedJson, (oracle as? Either.Left)?.value?.reason, "oracle $oracle on $text")
+        }
+        val valid = """{"a":1,"a":2,"elements":[],"elements":[$good]}"""
+        assertEquals(listOf("r1"), (import(valid) as Either.Right).value.scene.elements.map { it.id })
+    }
+
+    @Test
+    fun strictJson_should_FollowRfc8259() {
+        for (ok in listOf("""{"a":[1,[2],{}],"b":"é\n","c":-1.5e+3,"d":null}""", "{}", "[ ]")) assertTrue(StrictJson.isValid(ok), ok)
+        for (bad in listOf("""{"a":[1 2]}""", "[1,]", """{"a":1,}""", "{a:1}", "[01]", "[\"\u0001\"]", """["\x"]""", "[NaN]", "{} {}", "[[0]2]")) {
+            assertTrue(!StrictJson.isValid(bad), bad)
+        }
+    }
+
+    /** A strict RFC 8259 recognizer, independent of kotlinx, used to prove an input the scanner refuses really is malformed. */
+    private object StrictJson {
+        fun isValid(text: String): Boolean {
+            val p = Recognizer(text.removePrefix("﻿"))
+            return try {
+                p.ws()
+                p.value()
+                p.ws()
+                p.atEnd()
+            } catch (e: IllegalStateException) {
+                false
+            }
+        }
+
+        private class Recognizer(val s: String) {
+            var i = 0
+
+            fun atEnd() = i == s.length
+
+            fun ws() {
+                while (i < s.length && s[i] in " \t\r\n") i++
+            }
+
+            private fun need(c: Char) {
+                check(i < s.length && s[i] == c)
+                i++
+            }
+
+            private fun literal(word: String) {
+                check(s.startsWith(word, i))
+                i += word.length
+            }
+
+            fun value() {
+                check(i < s.length)
+                when (s[i]) {
+                    '{' -> container('{', '}') { string(); ws(); need(':'); ws(); value() }
+                    '[' -> container('[', ']') { value() }
+                    '"' -> string()
+                    't' -> literal("true")
+                    'f' -> literal("false")
+                    'n' -> literal("null")
+                    else -> number()
+                }
+            }
+
+            private fun container(open: Char, close: Char, member: () -> Unit) {
+                need(open)
+                ws()
+                if (i < s.length && s[i] == close) {
+                    i++
+                    return
+                }
+                while (true) {
+                    member()
+                    ws()
+                    check(i < s.length)
+                    if (s[i] == ',') {
+                        i++
+                        ws()
+                        continue
+                    }
+                    need(close)
+                    return
+                }
+            }
+
+            private fun string() {
+                need('"')
+                while (true) {
+                    check(i < s.length)
+                    val c = s[i++]
+                    check(c >= ' ')
+                    if (c == '"') return
+                    if (c == '\\') escape()
+                }
+            }
+
+            private fun escape() {
+                check(i < s.length)
+                val e = s[i++]
+                if (e == 'u') repeat(HEX_DIGITS) { check(i < s.length && s[i++].isHex()) } else check(e in "\"\\/bfnrt")
+            }
+
+            private fun Char.isHex() = this in '0'..'9' || this in 'a'..'f' || this in 'A'..'F'
+
+            private fun digits(): Int {
+                val start = i
+                while (i < s.length && s[i] in '0'..'9') i++
+                return i - start
+            }
+
+            private fun number() {
+                if (i < s.length && s[i] == '-') i++
+                check(i < s.length)
+                if (s[i] == '0') i++ else check(digits() > 0)
+                if (i < s.length && s[i] == '.') {
+                    i++
+                    check(digits() > 0)
+                }
+                if (i < s.length && (s[i] == 'e' || s[i] == 'E')) {
+                    i++
+                    if (i < s.length && (s[i] == '+' || s[i] == '-')) i++
+                    check(digits() > 0)
+                }
+            }
+        }
+
+        private const val HEX_DIGITS = 4
     }
 
     private companion object {
@@ -242,5 +401,6 @@ class ParserFuzzTest {
         const val MAX_OPS = 6
         const val MAX_TEXT = 40
         const val SMALL_IMPORT_CAP = 64L
+        const val KOTLINX_MISSING_COMMA = """{"a":[[0]2],3]}"""
     }
 }

@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.sketch.excalidraw
 
 import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 
@@ -86,8 +87,41 @@ class JsonSpanScanner(
             machine.feed(chunk, offset)
             offset += chunk.size
             budget.tick(chunk.size.toLong())
+            validateDisplaced(source, machine)
         }
-        return machine.finish()
+        val scan = machine.finish()
+        validateDisplaced(source, machine)
+        return scan
+    }
+
+    /**
+     * A duplicate key replaces the earlier member (last wins), so its spans are never decoded again; a whole-file
+     * decode still rejects them when malformed, so they are decoded here once and dropped.
+     */
+    private suspend fun validateDisplaced(source: ImportSource, machine: SpanMachine) {
+        for (member in machine.table.takeDisplaced()) {
+            val elements = if (member is Member.Elements) 1 else 0
+            for (span in spansOf(member)) validateSpan(source, span, elements)
+        }
+    }
+
+    private fun spansOf(member: Member): List<SpanRef> = when (member) {
+        is Member.Value -> listOf(member.span)
+        is Member.Elements -> member.spans
+        is Member.Files -> member.entries.flatMap { entry -> entry.members.map { it.second } }
+    }
+
+    private suspend fun validateSpan(source: ImportSource, ref: SpanRef, elements: Int) {
+        if (ref !is SpanRef.Ok) return
+        budget.tick(ref.range.length, elements)
+        val text = source.read(ref.range.start, ref.range.length.toInt()).decodeToString()
+        try {
+            decoder.decode(text)
+        } catch (e: SerializationException) {
+            malformed(e.message.orEmpty())
+        } catch (e: IllegalArgumentException) {
+            malformed(e.message.orEmpty())
+        }
     }
 
     companion object {
@@ -205,6 +239,28 @@ private class SpanCaps(private val limits: SceneLimits, private val scene: Boole
     }
 }
 
+/** The top-level members by key, plus the members a later duplicate key replaced (kept only until the scanner validates them). */
+private class MemberTable {
+    val members = LinkedHashMap<String, Member>()
+    private val displaced = ArrayList<Member>()
+
+    fun put(key: String, member: Member) {
+        members.put(key, member)?.let { displaced += it }
+    }
+
+    /** Records a files entry that a later entry with the same id replaced. */
+    fun displaceEntry(old: FileScan?) {
+        if (old != null) displaced += Member.Files(listOf(old))
+    }
+
+    fun takeDisplaced(): List<Member> {
+        if (displaced.isEmpty()) return emptyList()
+        val out = displaced.toList()
+        displaced.clear()
+        return out
+    }
+}
+
 /** The resumable automaton; see [JsonSpanScanner]. */
 private class SpanMachine(
     private val limits: SceneLimits,
@@ -212,7 +268,7 @@ private class SpanMachine(
     private val descendFiles: Boolean,
     private val decoder: SpanDecoder,
 ) {
-    private val members = LinkedHashMap<String, Member>()
+    val table = MemberTable()
 
     private val caps = SpanCaps(limits, descendFiles)
 
@@ -257,7 +313,7 @@ private class SpanMachine(
 
     fun finish(): SceneScan {
         if (state != S_DONE) malformed("unexpected end of input")
-        return SceneScan(members)
+        return SceneScan(table.members)
     }
 
     /** Returns false when the byte must be processed again in the new state (a scalar ended on a delimiter). */
@@ -381,13 +437,13 @@ private class SpanMachine(
         when (role) {
             ROLE_ROOT -> state = S_DONE
             ROLE_FILES -> {
-                members[JsonSpanScanner.FILES_KEY] = Member.Files(fileEntries.values.toList())
+                table.put(JsonSpanScanner.FILES_KEY, Member.Files(fileEntries.values.toList()))
                 state = S_OBJ_AFTER
             }
             ROLE_ENTRY -> {
                 val id = keys[top - 1] ?: ""
                 caps.checkEntry(fileEntries.size, id in fileEntries)
-                fileEntries[id] = FileScan(id, true, entryMembers, entryData, entryEscaped)
+                table.displaceEntry(fileEntries.put(id, FileScan(id, true, entryMembers, entryData, entryEscaped)))
                 state = S_OBJ_AFTER
             }
             else -> malformed("mismatched }")
@@ -396,7 +452,7 @@ private class SpanMachine(
 
     private fun closeArray() {
         if (roles[--top] != ROLE_ARRAY) malformed("mismatched ]")
-        members[keys[top - 1] ?: ""] = Member.Elements(arraySpans)
+        table.put(keys[top - 1] ?: "", Member.Elements(arraySpans))
         state = S_OBJ_AFTER
     }
 
@@ -474,7 +530,7 @@ private class SpanMachine(
             else -> {
                 val id = keys[top - 1] ?: ""
                 caps.checkEntry(fileEntries.size, id in fileEntries)
-                fileEntries[id] = FileScan(id, false, listOf("" to ref), null, false)
+                table.displaceEntry(fileEntries.put(id, FileScan(id, false, listOf("" to ref), null, false)))
             }
         }
         state = if (roles[top - 1] == ROLE_ARRAY) S_ARR_AFTER else S_OBJ_AFTER
@@ -486,7 +542,7 @@ private class SpanMachine(
             val cap = if (ref.reason == ImportReason.ImportTooDeep) limits.maxJsonDepth.toLong() else limits.maxImportSpanBytes
             throw ImportAbort(ImportError(ref.reason, "the top-level member \"${key.take(limits.maxNameChars)}\" is over the limit", cap))
         }
-        members[key] = Member.Value(ref)
+        table.put(key, Member.Value(ref))
     }
 
     private fun recordEntryMember(ref: SpanRef) {
