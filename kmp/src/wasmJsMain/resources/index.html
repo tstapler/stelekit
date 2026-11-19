@@ -36,7 +36,7 @@
                 });
                 if (!stale.length) return;
                 sessionStorage.setItem('staleCoiCleared', '1');
-                Promise.all(stale.map(function (r) { return r.unregister(); })).then(function () { location.reload(); });
+                Promise.all(stale.map(function (r) { return r.unregister(); })).then(function () { location.reload(); }).catch(function () {});
             }).catch(function () {});
         }
     } catch (e) {}
