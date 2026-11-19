@@ -15,6 +15,9 @@ import dev.stapler.stelekit.sketch.v2.text.FixedAdvanceTextMetricsProvider
 import dev.stapler.stelekit.sketch.v2.tools.ElementIdSource
 import dev.stapler.stelekit.sketch.v2.tools.PointerKind
 import dev.stapler.stelekit.sketch.v2.tools.StandardToolRegistry
+import dev.stapler.stelekit.sketch.v2.tools.ToolId
+import dev.stapler.stelekit.ui.sketch.v2.LivePreviewOps
+import dev.stapler.stelekit.sketch.v2.render.RenderStyle
 import dev.stapler.stelekit.sketch.v2.view.ScreenPx
 import dev.stapler.stelekit.ui.sketch.ModernPreviewEnvironment
 import dev.stapler.stelekit.ui.sketch.v2.EditorExtras
@@ -96,6 +99,30 @@ class SketchEditorInputWiringTest {
         rig.pen(PointerKind.Mouse)
 
         assertEquals(listOf(PointerKind.Touch, PointerKind.Mouse), seen)
+        rig.extras.close()
+        rig.controller.close()
+    }
+
+    @Test
+    fun fingerDrag_should_ShowALivePreviewFromTheFirstMove_When_ARectangleToolIsChosen() = runTest {
+        val rig = rig()
+        rig.controller.tools.chooseTool(ToolId.Rectangle)
+        rig.controller.tools.syncInput()
+        var t = 0L
+        fun touch(phase: RawPhase, x: Double, y: Double) = rig.controller.tools.onPointer(RawPointer(1, PointerKind.Touch, phase, ScreenPx(x, y), timestamp = t++))
+        touch(RawPhase.Down, 100.0, 100.0)
+        assertTrue(rig.controller.tools.preview == null, "a press alone draws nothing yet")
+        touch(RawPhase.Move, 140.0, 130.0)
+        val firstShown = rig.controller.tools.preview
+        assertTrue(firstShown != null, "the first move already shows the rectangle")
+        val metrics = FixedAdvanceTextMetricsProvider()
+        val firstOps = LivePreviewOps.build(metrics, firstShown.elements, RenderStyle.Clean)
+        touch(RawPhase.Move, 200.0, 190.0)
+        val grown = rig.controller.tools.preview
+        assertTrue(grown != null)
+        assertTrue(firstOps != LivePreviewOps.build(metrics, grown.elements, RenderStyle.Clean), "the drawn preview grows with the drag")
+        touch(RawPhase.Up, 140.0, 130.0)
+        assertEquals(1, rig.controller.doc.scene.elementsInOrder.size)
         rig.extras.close()
         rig.controller.close()
     }

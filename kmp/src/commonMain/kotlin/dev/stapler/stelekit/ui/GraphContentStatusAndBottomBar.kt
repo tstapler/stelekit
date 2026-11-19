@@ -108,8 +108,8 @@ internal fun GraphContentBottomBar(
     )
 }
 
-/** The editor's toolbar occupies the FAB's corner, so voice capture is unavailable there (OC-12). */
-internal fun shouldShowVoiceCaptureButton(screen: Screen): Boolean = screen !is Screen.AnnotationEditor
+/** Both editors' toolbars occupy the FAB's corner, so voice capture is unavailable there (OC-12). */
+internal fun shouldShowVoiceCaptureButton(screen: Screen): Boolean = screen !is Screen.AnnotationEditor && screen !is Screen.Sketch
 
 @Composable
 internal fun VoiceCaptureButtonSlot(screen: Screen, button: @Composable () -> Unit) {

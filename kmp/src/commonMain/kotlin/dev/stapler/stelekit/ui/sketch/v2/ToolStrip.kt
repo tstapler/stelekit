@@ -48,6 +48,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 
@@ -87,6 +88,10 @@ private val GLYPHS = mapOf(
     ToolId.Text to "T", ToolId.Image to "Img", ToolId.Frame to "▢", ToolId.Eraser to "⌫",
     ToolId.Point to "⌖", ToolId.Arc to "◠",
 )
+
+/** Glyph sizes: the default 14 sp read as specks in a 44 dp target on a phone; words and pairs ("Img") stay smaller so they fit on one line. */
+private const val GLYPH_SP = 22
+private const val WORD_GLYPH_SP = 16
 
 private class StripControls(val focus: Map<String, FocusRequester>, val state: SketchEditorState, val pointer: PointerClass)
 
@@ -279,7 +284,7 @@ private fun StripButton(
             },
         contentAlignment = Alignment.Center,
     ) {
-        Text(glyph, color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(glyph, fontSize = (if (glyph.length > 1) WORD_GLYPH_SP else GLYPH_SP).sp, maxLines = 1, softWrap = false, color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
