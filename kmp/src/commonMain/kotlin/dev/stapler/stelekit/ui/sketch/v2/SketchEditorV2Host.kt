@@ -149,7 +149,7 @@ fun SketchEditorV2Host(
     var singleKey by remember { mutableStateOf(true) }
     SideEffect { controller.tools.syncInput() }
     val config = SketchShellConfig(
-        model = remember(controller) { ToolStripModel(technicalSheet = false, keymapEnv = controller.keymap) },
+        model = remember(controller, controller.sheetKind) { ToolStripModel(technicalSheet = controller.sheetKind == dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical, keymapEnv = controller.keymap) },
         pointer = pointer,
         status = ToolStripStatus(controller.canUndo, controller.canRedo, state.selection.size),
         actions = ToolStripActions(onUndo = controller::undo, onRedo = controller::redo, onDelete = { controller.keys.run(KeyAction.Delete) }, onConstrain = { controller.overlay = EditorOverlay.ConstrainMenu }),

@@ -42,6 +42,12 @@ object SketchEngineStrings {
         const val SKETCHY = "Sketchy"
     }
 
+    object SheetKind {
+        const val TITLE = "Sheet type"
+        const val DIAGRAM = "Diagram"
+        const val TECHNICAL = "Technical (inches)"
+    }
+
     object SketchCopy {
         const val ACTION = "Copy to graph..."
         const val PICK_TITLE = "Copy sketch to which graph?"

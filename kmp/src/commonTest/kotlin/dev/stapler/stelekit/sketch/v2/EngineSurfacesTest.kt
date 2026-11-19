@@ -33,9 +33,11 @@ import dev.stapler.stelekit.ui.sketch.v2.EditorExtras
 import dev.stapler.stelekit.ui.sketch.v2.EditorPorts
 import dev.stapler.stelekit.ui.sketch.v2.HostServices
 import dev.stapler.stelekit.ui.sketch.v2.PainterResources
+import dev.stapler.stelekit.ui.sketch.v2.ToolStripModel
 import dev.stapler.stelekit.ui.sketch.v2.PointerAction
 import dev.stapler.stelekit.ui.sketch.v2.SelectionAction
 import dev.stapler.stelekit.ui.sketch.v2.SketchEditorController
+import dev.stapler.stelekit.ui.sketch.v2.setSheetKind
 import dev.stapler.stelekit.ui.sketch.v2.setSheetStyle
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -178,6 +180,28 @@ class EngineSurfacesTest {
         assertEquals(RenderStyle.Sketchy, controller.sheetStyle.renderStyle)
         controller.setSheetStyle(SheetStyleDefaults.Default)
         assertEquals(0, controller.defaultStyle.roughness)
+        controller.close()
+        extras.close()
+    }
+
+    @Test
+    fun aSheet_should_BeADiagramUntilMadeTechnical_AndTheTechnicalToolsAndInchDimensionsFollow() = runTest {
+        val (controller, extras) = rig()
+        assertEquals(dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Diagram, controller.sheetKind)
+        assertTrue(!extras.autoConstrain.enabled, "a diagram starts with auto-constrain off")
+        assertTrue(ToolStripModel(technicalSheet = false).stripTools.none { it.group?.technicalOnly == true })
+
+        controller.setSheetKind(dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical)
+
+        assertEquals(dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical, controller.sheetKind)
+        assertTrue(extras.autoConstrain.enabled, "a technical sheet starts with auto-constrain on")
+        assertTrue(ToolStripModel(technicalSheet = true).stripTools.any { it.group?.technicalOnly == true })
+        val written = dev.stapler.stelekit.sketch.v2.commands.SheetKindExtras.write(controller.doc.extras, controller.sheetKind)
+        assertEquals("technical", (written[dev.stapler.stelekit.sketch.v2.commands.SheetKindExtras.KEY] as kotlinx.serialization.json.JsonPrimitive).content)
+        controller.setSheetKind(dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Diagram)
+        controller.reloaded(controller.doc.copy(extras = written))
+        assertEquals(dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical, controller.sheetKind, "the choice rides in the sheet's extras")
+        assertTrue(dev.stapler.stelekit.sketch.v2.commands.SheetKindExtras.KEY !in dev.stapler.stelekit.sketch.v2.commands.SheetKindExtras.write(written, dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Diagram), "a diagram's file carries no kind key")
         controller.close()
         extras.close()
     }

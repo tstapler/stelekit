@@ -22,6 +22,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.sketch.v2.constraints.SheetKind
 import dev.stapler.stelekit.sketch.v2.render.RenderStyle
 import dev.stapler.stelekit.sketch.v2.render.SheetStyleDefaults
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchEngineStrings
@@ -35,6 +36,9 @@ object EngineTags {
     const val SHEET_STYLE = "sketch.engine.sheetstyle"
     const val SHEET_CLEAN = "sketch.engine.sheetstyle.clean"
     const val SHEET_SKETCHY = "sketch.engine.sheetstyle.sketchy"
+    const val SHEET_KIND = "sketch.engine.sheetkind"
+    const val SHEET_DIAGRAM = "sketch.engine.sheetkind.diagram"
+    const val SHEET_TECHNICAL = "sketch.engine.sheetkind.technical"
 }
 
 private const val TARGET_DP = 44
@@ -77,6 +81,17 @@ internal fun SheetStyleRow(controller: SketchEditorController, modifier: Modifie
         Text(SketchEngineStrings.SheetStyle.TITLE)
         StyleChoice(SketchEngineStrings.SheetStyle.CLEAN, EngineTags.SHEET_CLEAN, current == RenderStyle.Clean, !controller.readOnly) { controller.setSheetStyle(SheetStyleDefaults(RenderStyle.Clean)) }
         StyleChoice(SketchEngineStrings.SheetStyle.SKETCHY, EngineTags.SHEET_SKETCHY, current == RenderStyle.Sketchy, !controller.readOnly) { controller.setSheetStyle(SheetStyleDefaults(RenderStyle.Sketchy)) }
+    }
+}
+
+/** The Style tab's sheet-type row: a Diagram, or a Technical sheet with the constraint and dimension tools in inches. */
+@Composable
+internal fun SheetKindRow(controller: SketchEditorController, modifier: Modifier = Modifier) {
+    val current = controller.sheetKind
+    Row(modifier.padding(horizontal = 16.dp).testTag(EngineTags.SHEET_KIND), horizontalArrangement = Arrangement.spacedBy(GAP_DP.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(SketchEngineStrings.SheetKind.TITLE)
+        StyleChoice(SketchEngineStrings.SheetKind.DIAGRAM, EngineTags.SHEET_DIAGRAM, current == SheetKind.Diagram, !controller.readOnly) { controller.setSheetKind(SheetKind.Diagram) }
+        StyleChoice(SketchEngineStrings.SheetKind.TECHNICAL, EngineTags.SHEET_TECHNICAL, current == SheetKind.Technical, !controller.readOnly) { controller.setSheetKind(SheetKind.Technical) }
     }
 }
 

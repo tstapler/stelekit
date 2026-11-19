@@ -37,6 +37,7 @@ private fun SketchEditorController.selectedElements() = ui.selection.mapNotNull 
 @Composable
 private fun StyleTab(controller: SketchEditorController) {
     Column(Modifier.fillMaxWidth()) {
+        SheetKindRow(controller)
         SheetStyleRow(controller)
         StylePanelContent(controller)
     }
@@ -89,7 +90,7 @@ private fun ConstraintsTab(controller: SketchEditorController, extras: EditorExt
         input = ConstraintPanelInput(
             doc = controller.doc,
             analysis = controller.constraintState.analysis,
-            technical = false,
+            technical = controller.sheetKind == dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical,
             selection = controller.selectedElements(),
             tier = extras.tier,
             card = extras.dimension.card ?: controller.constraintState.card,

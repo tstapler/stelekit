@@ -86,8 +86,8 @@ class EditorExtras(
     /** Keyboard-only drawing (Crosshair mode) and the Esc of an armed picker; its Esc rows join [escRows]. */
     val access = EditorKeyboardAccess(controller)
 
-    val dimension = DimensionEditor(technical = false)
-    val autoConstrain = AutoConstrainState(SheetKind.Diagram)
+    val dimension = DimensionEditor { controller.sheetKind == SheetKind.Technical }
+    val autoConstrain = AutoConstrainState({ controller.sheetKind })
 
     var grid: Boolean by mutableStateOf(false)
         private set
@@ -172,7 +172,7 @@ class EditorExtras(
     // ---- dimension label editor
 
     private fun openDimensionDraft(draft: dev.stapler.stelekit.sketch.v2.constraints.Constraint): Boolean {
-        dimension.openNew(controller.doc, draft, ConstraintValueText.of(draft, technical = false).orEmpty())
+        dimension.openNew(controller.doc, draft, ConstraintValueText.of(draft, technical = controller.sheetKind == SheetKind.Technical).orEmpty())
         return dimension.state != DimensionEditState.Closed
     }
 
