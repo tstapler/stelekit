@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.116.0](https://github.com/tstapler/stelekit/compare/v0.115.1...v0.116.0) (2026-11-19)
+
+
+### Features
+
+* **sketch:** per-sheet Technical switch enables the constraint tools and inch dimensions ([#689](https://github.com/tstapler/stelekit/issues/689)) ([091d0c4](https://github.com/tstapler/stelekit/commit/091d0c45e00b96d4d50d07e5c932e32059f4a08a))
+
 ## [0.115.1](https://github.com/tstapler/stelekit/compare/v0.115.0...v0.115.1) (2026-11-19)
 
 
