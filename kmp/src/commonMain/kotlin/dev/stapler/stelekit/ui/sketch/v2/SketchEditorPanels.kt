@@ -23,7 +23,7 @@ internal fun SketchPanels(controller: SketchEditorController, tab: PanelTab, ext
     Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         when (tab) {
             PanelTab.Technical -> technical?.let { TechnicalTab(controller, it, Modifier.fillMaxWidth()) }
-            PanelTab.Style -> StyleTab(controller)
+            PanelTab.Style -> StyleTab(controller, extras)
             PanelTab.Layers -> LayersTab(controller)
             PanelTab.Constraints -> ConstraintsTab(controller, extras)
             PanelTab.Elements -> ElementsTab(controller)
@@ -35,9 +35,10 @@ internal fun SketchPanels(controller: SketchEditorController, tab: PanelTab, ext
 private fun SketchEditorController.selectedElements() = ui.selection.mapNotNull { doc.scene[ElementId(it)] }
 
 @Composable
-private fun StyleTab(controller: SketchEditorController) {
+private fun StyleTab(controller: SketchEditorController, extras: EditorExtras) {
     Column(Modifier.fillMaxWidth()) {
-        SheetKindRow(controller)
+        // An open dimension label was written in the old unit; it must not be committed in the new one.
+        SheetKindRow(controller, onChanged = extras.dimension::cancel)
         SheetStyleRow(controller)
         StylePanelContent(controller)
     }

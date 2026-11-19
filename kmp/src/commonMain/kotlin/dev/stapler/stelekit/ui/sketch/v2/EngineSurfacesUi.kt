@@ -86,12 +86,12 @@ internal fun SheetStyleRow(controller: SketchEditorController, modifier: Modifie
 
 /** The Style tab's sheet-type row: a Diagram, or a Technical sheet with the constraint and dimension tools in inches. */
 @Composable
-internal fun SheetKindRow(controller: SketchEditorController, modifier: Modifier = Modifier) {
+internal fun SheetKindRow(controller: SketchEditorController, modifier: Modifier = Modifier, onChanged: () -> Unit = {}) {
     val current = controller.sheetKind
     Row(modifier.padding(horizontal = 16.dp).testTag(EngineTags.SHEET_KIND), horizontalArrangement = Arrangement.spacedBy(GAP_DP.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(SketchEngineStrings.SheetKind.TITLE)
-        StyleChoice(SketchEngineStrings.SheetKind.DIAGRAM, EngineTags.SHEET_DIAGRAM, current == SheetKind.Diagram, !controller.readOnly) { controller.setSheetKind(SheetKind.Diagram) }
-        StyleChoice(SketchEngineStrings.SheetKind.TECHNICAL, EngineTags.SHEET_TECHNICAL, current == SheetKind.Technical, !controller.readOnly) { controller.setSheetKind(SheetKind.Technical) }
+        StyleChoice(SketchEngineStrings.SheetKind.DIAGRAM, EngineTags.SHEET_DIAGRAM, current == SheetKind.Diagram, !controller.readOnly) { onChanged(); controller.setSheetKind(SheetKind.Diagram) }
+        StyleChoice(SketchEngineStrings.SheetKind.TECHNICAL, EngineTags.SHEET_TECHNICAL, current == SheetKind.Technical, !controller.readOnly) { onChanged(); controller.setSheetKind(SheetKind.Technical) }
     }
 }
 

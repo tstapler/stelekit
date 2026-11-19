@@ -11,7 +11,7 @@ import kotlinx.serialization.json.contentOrNull
 
 /**
  * Where a sheet keeps its kind: one `extras` key, written only for a technical sheet so a diagram's file is unchanged.
- * Like the sheet style it is a sheet property, not an edit: not an undo step, saved with the next document.
+ * Only Diagram and Technical are stored; `Converted` is not persisted (nothing sets it yet). Like the sheet style it is a sheet property, not an edit: not an undo step, saved with the next document.
  */
 object SheetKindExtras {
     const val KEY = "sheetKind"
