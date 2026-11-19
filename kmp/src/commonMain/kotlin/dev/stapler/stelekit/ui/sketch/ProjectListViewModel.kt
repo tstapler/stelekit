@@ -85,6 +85,7 @@ class ProjectListViewModel(
     internal val drawings: DrawingAttachAction? = null,
     internal val sheets: AttachedSheetService? = null,
     private val newSketch: StandaloneSketchService? = null,
+    private val deleter: dev.stapler.stelekit.sketch.SketchDeleteService? = null,
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     internal val scope = CoroutineScope(
@@ -96,6 +97,7 @@ class ProjectListViewModel(
     val yamlAvailable: Boolean = yaml != null
     val drawingsAvailable: Boolean = drawings != null
     val sketchesAvailable: Boolean = newSketch != null
+    val deletionAvailable: Boolean = deleter != null
     internal val drawingSession = MutableStateFlow<DrawingSession?>(null)
     val importSession: StateFlow<DrawingSession?> = drawingSession
 
@@ -125,6 +127,14 @@ class ProjectListViewModel(
             val slug = ProjectSlugs.generateUnique({ it in taken }, random)
             val project = ProjectFactory.create(name, slug, ProjectFactory.newUuid(), clock())
             write { projects.saveProject(project) }.onLeft { setMessage("Could not create the project") }
+        }
+    }
+
+    /** Deletes [row]'s sketch and its files; the list follows the database, so the row disappears on success. */
+    fun deleteSketch(row: ProjectRow) {
+        val service = deleter ?: return setMessage("Deleting is not available here")
+        scope.launch {
+            service.delete(row.uuid, row.slug).onLeft { setMessage("Could not delete the sketch (${it.message})") }
         }
     }
 
@@ -298,6 +308,7 @@ fun projectListViewModelFor(
     drawings: DrawingAttachAction? = null,
     sheets: AttachedSheetService? = null,
     newSketch: StandaloneSketchService? = null,
+    deleter: dev.stapler.stelekit.sketch.SketchDeleteService? = null,
 ): ProjectListViewModel = ProjectListViewModel(
     projects = repositories.projects,
     graphId = graphId,
@@ -310,6 +321,7 @@ fun projectListViewModelFor(
     drawings = drawings,
     sheets = sheets,
     newSketch = newSketch,
+    deleter = deleter,
 )
 
 /** True when the graph has at least one project (the post-sync job's `hasConfiguredProject`). */

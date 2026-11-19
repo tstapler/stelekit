@@ -150,6 +150,13 @@ interface ProjectSidecarStore : SidecarSheetFileStore {
 
     /** File names directly under the project's `sheets/` directory, sorted; no file is opened. Empty when none or unavailable. */
     suspend fun listSheetFiles(slug: String): List<String> = emptyList()
+
+    /**
+     * Deletes every file of the project's directory (model, sheets, v1 and v2 backups, conflict copies, sources, preview) and any
+     * parked write, and returns how many files went. Root files go first, the model among them, so a half-finished delete is never
+     * importable; the empty folders stay (the reconciler skips a folder with no model). Refused without the writer lease.
+     */
+    suspend fun deleteProject(slug: String): Either<DomainError, Int> = 0.right()
 }
 
 /** [ProjectSidecarStore] over [FileSystem] with temp-and-rename writes; its own mutex, not `GraphWriteLock` (JSON, not markdown). */
@@ -292,7 +299,28 @@ class FileProjectSidecarStore private constructor(
         if (disk.unavailable()) emptyList() else fs.listFiles("${disk.dir(slug)}/${SidecarCodec.SHEETS_DIR}").sorted()
     }
 
+    override suspend fun deleteProject(slug: String): Either<DomainError, Int> = mutex.withLock {
+        val dir = disk.dir(slug)
+        if (!gate.held()) return gate.refusal(dir).left()
+        if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(dir).left()
+        if (!SAFE_SEGMENT.matches(slug)) return DomainError.FileSystemError.WriteFailed(dir, "unsafe project slug").left()
+        pending.remove(slug)
+        var deleted = 0
+        var failedPath: String? = null
+        fun sweep(path: String, depth: Int) {
+            for (name in fs.listFiles(path)) {
+                val file = "$path/$name"
+                if (fs.deleteFile(file)) deleted++ else if (failedPath == null) failedPath = file
+            }
+            if (depth < MAX_DELETE_DEPTH) for (child in fs.listDirectories(path)) sweep("$path/$child", depth + 1)
+        }
+        sweep(dir, 0)
+        failedPath?.let { return DomainError.FileSystemError.WriteFailed(it, "delete failed").left() }
+        deleted.right()
+    }
+
     companion object {
+        const val MAX_DELETE_DEPTH = 4
         const val ROOT_DIR = "assets/stelekit-sketch"
         const val IGNORE_RULE = "assets/stelekit-sketch/**/*.tmp"
         const val HASH8 = 8
