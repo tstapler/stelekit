@@ -9,6 +9,7 @@ import arrow.core.raise.either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.ProjectUuid
 import dev.stapler.stelekit.projectbridge.ProjectSidecarStore
+import dev.stapler.stelekit.projectbridge.SidecarSlugLock
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.SketchProjectRepository
 
@@ -22,10 +23,13 @@ class SketchDeleteService(
     private val projects: SketchProjectRepository,
     private val store: () -> ProjectSidecarStore?,
     private val write: suspend (suspend () -> Either<DomainError, Unit>) -> Either<DomainError, Unit>,
+    private val slugLock: SidecarSlugLock = SidecarSlugLock(),
 ) {
     @OptIn(DirectRepositoryWrite::class)
-    suspend fun delete(projectUuid: String, slug: String): Either<DomainError, Unit> = either {
-        store()?.deleteProject(slug)?.bind()
-        write { projects.deleteProject(ProjectUuid(projectUuid)) }.bind()
+    suspend fun delete(projectUuid: String, slug: String): Either<DomainError, Unit> = slugLock.withSlug(slug) {
+        either {
+            store()?.deleteProject(slug)?.bind()
+            write { projects.deleteProject(ProjectUuid(projectUuid)) }.bind()
+        }
     }
 }

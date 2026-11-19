@@ -506,6 +506,9 @@ class StelekitViewModel(
     /** The graph's sidecar store (null where unsupported); the Sketch screen's YAML picker writes through it. */
     fun projectSidecarStore(): dev.stapler.stelekit.projectbridge.ProjectSidecarStore? = projectBridgeDeps?.sidecarStore?.invoke()
 
+    /** The graph's shared per-slug sidecar lock; null where the project bridge is not wired. */
+    fun sidecarSlugLock(): dev.stapler.stelekit.projectbridge.SidecarSlugLock? = projectBridgeDeps?.slugLock
+
     /** Copies a sketch project to another graph; null where the project bridge is not wired. */
     fun sketchCopyHost(): dev.stapler.stelekit.projectbridge.SketchCopyHost? = projectBridgeDeps?.sketchCopy
 

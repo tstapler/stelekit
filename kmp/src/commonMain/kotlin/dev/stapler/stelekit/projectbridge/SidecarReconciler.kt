@@ -123,6 +123,8 @@ class SidecarReconciler(
      * ([SidecarWriteOutcome.StaleOpaque]) writes nothing and is re-planned from a fresh read.
      */
     suspend fun reconcile(project: SketchProject): ReconcileOutcome = slugLock.withSlug(project.slug) {
+        // A snapshot taken before a delete may still list the project; pushing it would bring its folder back.
+        if (repos.projects.loadProject(project.uuid).getOrNull() == null) return@withSlug ReconcileOutcome.Unchanged(project.slug)
         repeat(MAX_REPLANS) { attempt ->
             // A re-plan starts from the project as the other writer left it (its base hash moved with its write).
             val current = if (attempt == 0) project else repos.projects.loadProject(project.uuid).getOrNull()?.project ?: project

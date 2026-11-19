@@ -307,20 +307,21 @@ class FileProjectSidecarStore private constructor(
         pending.remove(slug)
         var deleted = 0
         var failedPath: String? = null
-        fun sweep(path: String, depth: Int) {
+        fun sweep(path: String) {
             for (name in fs.listFiles(path)) {
                 val file = "$path/$name"
                 if (fs.deleteFile(file)) deleted++ else if (failedPath == null) failedPath = file
             }
-            if (depth < MAX_DELETE_DEPTH) for (child in fs.listDirectories(path)) sweep("$path/$child", depth + 1)
         }
-        sweep(dir, 0)
+        // Only the folders the store itself creates: a link or foreign folder inside the project folder is never entered.
+        sweep(dir)
+        for (child in fs.listDirectories(dir)) if (child in PROJECT_SUBDIRS) sweep("$dir/$child")
         failedPath?.let { return DomainError.FileSystemError.WriteFailed(it, "delete failed").left() }
         deleted.right()
     }
 
     companion object {
-        const val MAX_DELETE_DEPTH = 4
+        private val PROJECT_SUBDIRS = setOf(SidecarCodec.SHEETS_DIR, BACKUP_DIR, CONFLICTS_DIR, "sources", "exports")
         const val ROOT_DIR = "assets/stelekit-sketch"
         const val IGNORE_RULE = "assets/stelekit-sketch/**/*.tmp"
         const val HASH8 = 8

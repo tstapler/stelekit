@@ -52,6 +52,8 @@ class ProjectBridgeDeps(
     val pngTags: suspend () -> List<PngCalibrationRecord> = { emptyList() },
     /** The graph's one [SheetLeaseRegistry], shared by the legacy editor, the v2 editor, the preview path and the importer. */
     val sheetLeases: SheetLeaseRegistry,
+    /** The graph's one per-slug lock: every sidecar writer (editor saves, reconcile, delete) holds it across its read-plan-write. */
+    val slugLock: SidecarSlugLock = SidecarSlugLock(),
     /** The synced-v2 discovery scan (Task 1.4.7n); non-null only where the verdict is Available and the classic file side is Off. */
     val syncedV2Discovery: () -> SyncedV2ProjectDiscovery? = { null },
     /** Waits until a saved sheet reaches storage; only the web root replaces the immediate default. */

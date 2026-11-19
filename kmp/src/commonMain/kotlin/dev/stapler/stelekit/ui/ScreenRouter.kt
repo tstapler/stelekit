@@ -441,6 +441,7 @@ internal fun ScreenRouter(
                                 repos.sketchRepositories.projects,
                                 viewModel::projectSidecarStore,
                                 { op -> repos.writeActor?.execute(op = op) ?: op() },
+                                viewModel.sidecarSlugLock() ?: dev.stapler.stelekit.projectbridge.SidecarSlugLock(),
                             ),
                         )
                     }
