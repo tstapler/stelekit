@@ -1,5 +1,7 @@
 package dev.stapler.stelekit.platform
 
+import arrow.core.Either
+import arrow.core.right
 import dev.stapler.stelekit.coroutines.GraphScopedSession
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.DirtyEntry
@@ -7,26 +9,100 @@ import dev.stapler.stelekit.git.model.DirtyOp
 import dev.stapler.stelekit.git.model.DirtySetMarker
 import dev.stapler.stelekit.git.model.PendingCommit
 import dev.stapler.stelekit.git.model.gitApiJson
+import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
 import dev.stapler.stelekit.sync.WasmSectionSyncService
 import dev.stapler.stelekit.util.UuidGenerator
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
 import kotlinx.coroutines.await
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.time.Clock
 
 actual class PlatformFileSystem actual constructor() : FileSystem {
     private val homeDir = "/stelekit"
     private val cache = mutableMapOf<String, String>()
     private val bytesCache = mutableMapOf<String, ByteArray>()
+
+    /** Non-live files of the sidecar root (D-143): listed by name, never read into memory by the preload. */
+    private val sidecarNamesOnly = mutableSetOf<String>()
+
+    /** How the last sidecar-root byte preload ended; [preloadState] is derived from it (Task 1.4.7j, D-124). */
+    internal var sidecarPreloadOutcome: SidecarPreloadOutcome = SidecarPreloadOutcome.Loaded(0L)
+        private set
+
+    // Task 1.4.7j (D-124, D-128, D-131): the availability facts the storage status is reduced from.
+    /** Time source of the status clock; a test replaces it. */
+    internal var nowMs: () -> Long = { Clock.System.now().toEpochMilliseconds() }
+
+    /** The cap on the summed size of the live sidecar files (D-131); a test lowers it instead of writing 128 MB. */
+    internal var maxPreloadBytes: Long = SceneLimits.Default.maxPreloadBytes
+    private var checkStartedMs: Long = nowMs()
+    private var probe: OpfsProbeResult? = null
+    private val _preloadState = MutableStateFlow<PreloadState>(PreloadState.NotStarted)
+    private val _storageStatus = MutableStateFlow<V2StorageStatus>(V2StorageStatus.Checking)
+    private var sweepJob: Job? = null
+
+    /** The state of the sidecar-root byte preload; the text preload of the other pages never holds it. */
+    val preloadState: StateFlow<PreloadState> = _preloadState.asStateFlow()
+
+    /** [storageStatus] as a flow, refreshed on every fact and at the 10 s and 60 s marks of the reducer. */
+    val storageStatusFlow: StateFlow<V2StorageStatus> = _storageStatus.asStateFlow()
+
+    /** Records the startup OPFS probe (Task 1.4.7m starts it once per page load); until then the verdict is `NotProbed`. */
+    fun recordProbe(result: OpfsProbeResult) {
+        probe = result
+        refreshStorageStatus()
+    }
+
+    private fun elapsedMs(): Long = nowMs() - checkStartedMs
+
+    private fun computeStorageStatus(): V2StorageStatus = V2StorageStatusReducer.reduce(
+        verdict = probe?.verdict ?: OpfsStorageVerdict.NotProbed,
+        preload = _preloadState.value,
+        elapsedMs = elapsedMs(),
+        sessionOnly = ephemeral,
+        privateSuspected = probe?.privateSuspected == true && !ephemeral,
+    )
+
+    private fun refreshStorageStatus() {
+        _storageStatus.value = computeStorageStatus()
+    }
+
+    private fun startCheck() {
+        checkStartedMs = nowMs()
+        _preloadState.value = PreloadState.Loading
+        refreshStorageStatus()
+        scope.launch {
+            delay(V2StorageStatusReducer.CHECK_TIMEOUT_MS)
+            refreshStorageStatus()
+            delay(V2StorageStatusReducer.LATE_OK_RECOVERY_MS)
+            refreshStorageStatus()
+        }
+    }
+
+    /** Ends the sidecar-root preload with [outcome]: it is kept, and [preloadState] and the status follow it. */
+    private fun finishSidecarPreload(outcome: SidecarPreloadOutcome) {
+        sidecarPreloadOutcome = outcome
+        val at = elapsedMs()
+        _preloadState.value = when (outcome) {
+            is SidecarPreloadOutcome.Loaded -> PreloadState.Ok(at)
+            is SidecarPreloadOutcome.TooLarge -> PreloadState.Failed(StorageReason.PreloadTooLarge, at)
+            is SidecarPreloadOutcome.Failed -> PreloadState.Failed(StorageReason.PreloadFailed, at)
+        }
+        refreshStorageStatus()
+    }
     private val blobUrlCache = mutableMapOf<String, String>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -59,14 +135,52 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     // completion (success or failure). HostDirectorySync.scheduleHostWriteThrough (Phase 4) will
     // await a path's entry here before enqueueing it for host write-through, closing the crash
     // window where a host push could otherwise race ahead of the edit actually landing in OPFS.
-    private val opfsWriteInFlight = mutableMapOf<String, Deferred<Unit>>()
+    //
+    // Story 1.4.7 (Task 1.4.7f, D-120): every OPFS operation goes through ONE ordered queue per path set; a path's tail
+    // is what [opfsWriteDeferredFor] returns, so the host write-through also waits for every earlier operation.
+    private val writeQueue = OpfsWriteQueue(scope) { pending -> jsSetUnpersistedWrites(pending) }
 
     /**
      * Task 1.7.1a: accessor for [path]'s currently in-flight OPFS-persisting write, if any.
      * Tested directly (Story 1.7.3) as well as exposed to [hostDirectorySync] via
      * [HostDirectorySync.CacheAccess.opfsWriteDeferredFor].
      */
-    fun opfsWriteDeferredFor(path: String): Deferred<Unit>? = opfsWriteInFlight[path]
+    fun opfsWriteDeferredFor(path: String): Deferred<Unit>? = writeQueue.tailOf(path)
+
+    private fun queueTextWrite(path: String, content: String) {
+        writeQueue.enqueue(listOf(path)) {
+            opfsWriteFile(path, content)
+            Unit.right()
+        }
+    }
+
+    private fun queueBytesWrite(path: String, data: ByteArray) {
+        writeQueue.enqueue(listOf(path)) { persistBytes(path, data) }
+    }
+
+    private fun queueDelete(path: String) {
+        writeQueue.enqueue(listOf(path)) {
+            opfsDeleteFile(path)
+            Unit.right()
+        }
+    }
+
+    /** `opfsWriteFileBytes` throws on failure; a quota rejection becomes the typed `StorageQuotaExceeded`. */
+    private suspend fun persistBytes(path: String, data: ByteArray): Either<DomainError, Unit> = try {
+        opfsWriteFileBytes(path, data.toJsArrayBuffer())
+        Unit.right()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        val message = e.message.orEmpty()
+        OpfsErrors.write(path, if (message.contains(OpfsErrors.QUOTA_EXCEEDED_NAME)) OpfsErrors.QUOTA_EXCEEDED_NAME else message.ifEmpty { "write failed" })
+    }
+
+    /** `move()` first; the verified copy only when the move failed for a reason other than quota (a missing `move()`). */
+    private suspend fun moveOrCopyVerify(from: String, to: String): Either<DomainError, Unit> {
+        val moved = opfsMoveFile(from, to)
+        return if (moved.isRight() || moved.leftOrNull() is DomainError.FileSystemError.StorageQuotaExceeded) moved else opfsCopyVerify(from, to)
+    }
 
     // ── Epic 1.6: HostDirectorySync composition (architecture-review.md Blocker 1 remediation) ─
     // Every Phase 2-7 host-directory-sync field/method lives on hostDirectorySync, never here.
@@ -99,12 +213,12 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         override fun keysUnder(opfsPath: String) =
             (cache.keys + bytesCache.keys).filter { it.startsWith("$opfsPath/") }.toSet()
         override fun writeOpfsMirror(path: String, content: String) {
-            scope.launch { opfsWriteFile(path, content) }
+            queueTextWrite(path, content)
         }
         override fun writeOpfsMirrorBytes(path: String, data: ByteArray) {
-            scope.launch { opfsWriteFileBytes(path, data.toJsArrayBuffer()) }
+            queueBytesWrite(path, data)
         }
-        override fun opfsWriteDeferredFor(path: String): Deferred<Unit>? = opfsWriteInFlight[path]
+        override fun opfsWriteDeferredFor(path: String): Deferred<Unit>? = writeQueue.tailOf(path)
     }
 
     // ── Epic 2.1 (web-host-sync-session-lifecycle): per-graph session, swapped wholesale ──────
@@ -189,7 +303,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 } catch (e: Throwable) {
                     break
                 }
-                val inFlightCount = opfsWriteInFlight.size
+                val inFlightCount = writeQueue.pendingPaths
                 if (inFlightCount > 0) {
                     println("[SteleKit] pagehide: $inFlightCount OPFS writes still in flight")
                 }
@@ -226,13 +340,89 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         sessionHolder.switchTo(OpfsGraphSlug(newGraphId)) { scope -> buildGraphSyncSession(OpfsGraphSlug(newGraphId), scope) }
         // Ephemeral graphs start empty by definition — there is nothing in OPFS to load (they're
         // never written there) and no dirty-set checkpoint to restore.
-        if (ephemeral) return
+        sidecarPreloadOutcome = SidecarPreloadOutcome.Loaded(0L)
+        startCheck()
+        if (ephemeral) {
+            finishSidecarPreload(SidecarPreloadOutcome.Loaded(0L))
+            return
+        }
+        // The sidecar root first and on its own: `Loading` covers only its byte preload (D-131), never the text preload.
+        preloadSidecarRoot(graphPath)
         try {
             loadOpfsDirectory(graphPath)
         } catch (e: Throwable) {
             println("[SteleKit] OPFS preload failed, starting with empty graph: ${e.message}")
         }
         restoreDirtySetMarker()
+    }
+
+    /** A missing sidecar root (`NotFoundError`) is `Loaded(0)`; any other failure to open it is `Failed`. */
+    private suspend fun preloadSidecarRoot(graphPath: String) {
+        val root = SidecarLiveSet.rootOf(graphPath)
+        val dir = try {
+            openDirectoryStrict(root)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            finishSidecarPreload(SidecarPreloadOutcome.Failed(e.message ?: "sidecar root unreadable"))
+            return
+        }
+        if (dir == null) {
+            finishSidecarPreload(SidecarPreloadOutcome.Loaded(0L))
+            return
+        }
+        loadSidecarRoot(dir, root, graphPath, ::finishSidecarPreload)
+        if (sidecarPreloadOutcome is SidecarPreloadOutcome.Loaded) sweepStaleTemps(graphPath, root)
+    }
+
+    /**
+     * Once per preload: removes stale temp files under [root] through [StaleTempSweeper.sweepTree], under the short-lived
+     * lock `stelekit-sketch-sweep:<graphId>` taken with `ifAvailable` (a tab that does not get it skips the sweep). The
+     * writer lease is never taken here (D-130); a temp younger than `MAX_AGE` may be another tab's live one.
+     */
+    private fun sweepStaleTemps(graphPath: String, root: String) {
+        val graphId = graphPath.removePrefix("$homeDir/").substringBefore("/")
+        sweepJob = scope.launch {
+            try {
+                WebLock.tryWithLock(sweepLockName(graphId)) { StaleTempSweeper(tempSweepView, TEMP_SUFFIX).sweepTree(root) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                println("[SteleKit] stale temp sweep failed: ${e.message}")
+            }
+        }
+    }
+
+    /** Waits for the sweep started by the last preload; for tests. */
+    internal suspend fun awaitSweep() {
+        sweepJob?.join()
+    }
+
+    /** The file system as the sweeper sees it: a stale temp is deleted as a temp (no dirty entry, no host delete). */
+    private val tempSweepView: FileSystem by lazy {
+        object : FileSystem by this@PlatformFileSystem {
+            override fun deleteFile(path: String): Boolean = deleteTempBytes(path)
+        }
+    }
+
+    private suspend fun openDirectoryStrict(path: String): JsAny? {
+        var dir: JsAny = getOpfsRoot()
+        for (part in path.removePrefix("/").split("/")) {
+            dir = try {
+                getDirectoryHandle(dir, part, false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                if (isNotFoundError(e)) return null
+                throw e
+            }
+        }
+        return dir
+    }
+
+    private fun isNotFoundError(e: Throwable): Boolean {
+        val message = e.message.orEmpty()
+        return message.contains("NotFoundError", ignoreCase = true) || message.contains("could not be found", ignoreCase = true)
     }
 
     /**
@@ -416,20 +606,27 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     }
 
     private suspend fun loadOpfsDirectory(graphPath: String) {
-        val root = getOpfsRoot()
-        val parts = graphPath.removePrefix("/").split("/")
-        var dir: JsAny = root
-        for (part in parts) {
-            dir = try {
-                getDirectoryHandle(dir, part, false)
-            } catch (e: Throwable) {
-                return
-            }
-        }
-        loadFilesRecursive(dir, graphPath)
+        val dir = openDirectory(graphPath) ?: return
+        loadFilesRecursive(dir, graphPath, graphPath)
     }
 
-    private suspend fun loadFilesRecursive(dirHandle: JsAny, currentPath: String) {
+    /** The directory handle at [path] under the OPFS root, or null when any segment is missing. */
+    private suspend fun openDirectory(path: String): JsAny? {
+        var dir: JsAny = getOpfsRoot()
+        for (part in path.removePrefix("/").split("/")) {
+            dir = try {
+                getDirectoryHandle(dir, part, false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                return null
+            }
+        }
+        return dir
+    }
+
+    private suspend fun loadFilesRecursive(dirHandle: JsAny, currentPath: String, graphPath: String) {
+        if (currentPath == SidecarLiveSet.rootOf(graphPath)) return // preloaded on its own by [preloadSidecarRoot]
         val entries = listOpfsEntries(dirHandle)
         for (entry in entries) {
             val name = getEntryName(entry)
@@ -444,9 +641,95 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                     if (content != null) cache[path] = content
                 }
             } else if (isDirectoryEntry(entry)) {
-                loadFilesRecursive(entry, path)
+                loadFilesRecursive(entry, path, graphPath)
             }
         }
+    }
+
+    /**
+     * The byte preload of the sidecar root (Task 1.4.7b, D-143): the live files are read into [cache] (lossless for the
+     * UTF-8 JSON) only when their summed size is within `SceneLimits.maxPreloadBytes`, read from `File.size` before any
+     * byte; every other file is listed by name. The result goes to [finish]: [finishSidecarPreload] for the first preload
+     * (it also moves [preloadState] and the status), [recordReloadOutcome] for a lease takeover's reload.
+     */
+    private suspend fun loadSidecarRoot(
+        rootHandle: JsAny,
+        rootPath: String,
+        graphPath: String,
+        finish: (SidecarPreloadOutcome) -> Unit,
+    ) {
+        val live = mutableListOf<Pair<String, JsAny>>()
+        try {
+            collectSidecarEntries(rootHandle, rootPath, graphPath, live)
+            var total = 0L
+            for ((_, entry) in live) total += fileSize(getOpfsFile(entry))
+            if (total > maxPreloadBytes) {
+                finish(SidecarPreloadOutcome.TooLarge(total))
+                return
+            }
+            var failure: String? = null
+            for ((path, entry) in live) {
+                val content = readOpfsFile(entry)
+                if (content == null) failure = "unreadable: $path" else cache[path] = content
+            }
+            finish(failure?.let(SidecarPreloadOutcome::Failed) ?: SidecarPreloadOutcome.Loaded(total))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            finish(SidecarPreloadOutcome.Failed(e.message ?: "preload failed"))
+        }
+    }
+
+    private suspend fun collectSidecarEntries(dirHandle: JsAny, currentPath: String, graphPath: String, live: MutableList<Pair<String, JsAny>>) {
+        for (entry in listOpfsEntries(dirHandle)) {
+            val name = getEntryName(entry)
+            if (isIgnoredHostEntryName(name)) continue
+            val path = "$currentPath/$name"
+            if (isFileEntry(entry)) {
+                if (SidecarLiveSet.isLive(graphPath, path)) {
+                    live.add(path to entry)
+                } else {
+                    sidecarNamesOnly.add(path)
+                    if (isImageFile(name)) readOpfsFileAsObjectUrl(entry)?.let { blobUrlCache[path] = it }
+                }
+            } else if (isDirectoryEntry(entry)) {
+                collectSidecarEntries(entry, path, graphPath, live)
+            }
+        }
+    }
+
+    /**
+     * Drops every cached entry of the current graph's sidecar root that has no write in flight and preloads it again, so a
+     * tab that just took over the writer lease never writes over a newer file from a stale cache (UX-142).
+     */
+    suspend fun reloadSidecarRoot() {
+        if (ephemeral) return
+        val graphPath = graphRootPath()
+        val root = SidecarLiveSet.rootOf(graphPath)
+        fun idle(path: String) = writeQueue.tailOf(path) == null
+        cache.keys.filter { SidecarLiveSet.isUnderRoot(graphPath, it) && idle(it) }.forEach(cache::remove)
+        bytesCache.keys.filter { SidecarLiveSet.isUnderRoot(graphPath, it) && idle(it) }.forEach(bytesCache::remove)
+        sidecarNamesOnly.removeAll { SidecarLiveSet.isUnderRoot(graphPath, it) }
+        sidecarPreloadOutcome = SidecarPreloadOutcome.Loaded(0L)
+        val dir = try {
+            openDirectory(root)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            recordReloadOutcome(SidecarPreloadOutcome.Failed(e.message ?: "reload failed"))
+            throw SidecarReloadFailed(e.message ?: "reload failed")
+        } ?: return
+        loadSidecarRoot(dir, root, graphPath, ::recordReloadOutcome)
+        if (sidecarPreloadOutcome !is SidecarPreloadOutcome.Loaded) throw SidecarReloadFailed(sidecarPreloadOutcome.toString())
+    }
+
+    /**
+     * A successful reload keeps [preloadState] as it was (a takeover is not a new availability check) unless it recovers a
+     * failed one; a failed or too-large reload empties the cache, so the status goes Unavailable and writes are refused.
+     */
+    private fun recordReloadOutcome(outcome: SidecarPreloadOutcome) {
+        if (outcome !is SidecarPreloadOutcome.Loaded || _preloadState.value is PreloadState.Failed) finishSidecarPreload(outcome)
+        else sidecarPreloadOutcome = outcome
     }
 
     private fun isImageFile(name: String): Boolean {
@@ -485,20 +768,44 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val rawUrl = "https://raw.githubusercontent.com/$owner/$repo/$branch/$repoRelative"
         val content = WasmSectionSyncService.githubFetch(rawUrl, token) ?: return null
         cache[path] = content
-        if (!ephemeral) scope.launch { opfsWriteFile(path, content) }
+        if (!ephemeral) queueTextWrite(path, content)
         return content
     }
-    actual override fun fileExists(path: String): Boolean = cache.containsKey(path) || blobUrlCache.containsKey(path)
+    actual override fun fileExists(path: String): Boolean =
+        cache.containsKey(path) || bytesCache.containsKey(path) || sidecarNamesOnly.contains(path) || blobUrlCache.containsKey(path)
+
+    private fun allKeys(): Sequence<String> = cache.keys.asSequence() + bytesCache.keys.asSequence() + sidecarNamesOnly.asSequence()
+
     actual override fun listFiles(path: String): List<String> =
-        cache.keys
+        allKeys()
             .filter { it.startsWith("$path/") && !it.removePrefix("$path/").contains('/') }
             .map { it.removePrefix("$path/") }
-    actual override fun listDirectories(path: String): List<String> =
-        cache.keys
+            .distinct()
+            .toList()
+    actual override fun listDirectories(path: String): List<String> {
+        val keys = allKeys().toList()
+        return keys
             .filter { it.startsWith("$path/") }
             .map { it.removePrefix("$path/").substringBefore('/') }
-            .filter { it.isNotEmpty() && cache.keys.any { k -> k.startsWith("$path/$it/") } }
+            .filter { it.isNotEmpty() && keys.any { k -> k.startsWith("$path/$it/") } }
             .distinct()
+    }
+
+    /** The cached bytes, or the UTF-8 bytes of the cached text; null when absent. Never throws. */
+    override fun readFileBytes(path: String): ByteArray? = getContentBytes(path)
+
+    /** At most [maxBytes] bytes; a cached String is cut to `min(maxBytes, length)` characters first (D-126). */
+    override fun readFilePrefix(path: String, maxBytes: Int): ByteArray? {
+        bytesCache[path]?.let { return if (it.size > maxBytes) it.copyOf(maxBytes) else it }
+        return cache[path]?.let { Utf8Prefix.of(it, maxBytes) }
+    }
+
+    /** A cache read where the file is held, otherwise one OPFS read that caches nothing (`backup/`, `conflicts/`, `sources/`). */
+    override suspend fun readFileBytesSuspend(path: String): ByteArray? {
+        getContentBytes(path)?.let { return it }
+        if (ephemeral) return null
+        return opfsReadSlice(path, Int.MAX_VALUE)
+    }
 
     // ponytail: single-threaded JS — pick and write always sequential, no race
     private var pendingDownloadMimeType: String = "application/octet-stream"
@@ -510,15 +817,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         }
         cache[path] = content
         recordDirty(path, DirtyOp.WRITE)
-        if (!ephemeral) {
-            opfsWriteInFlight[path] = scope.async {
-                try {
-                    opfsWriteFile(path, content)
-                } finally {
-                    opfsWriteInFlight.remove(path)
-                }
-            }
-        }
+        if (!ephemeral) queueTextWrite(path, content)
         // Epic 4.3 (Task 4.3.1a): the fourth independent effect (web-local-folder-livesync) —
         // one-line delegation; all coalescing/freshness-check/actual-write logic lives on
         // HostDirectorySync. No-op when no host directory is connected for this graph.
@@ -546,7 +845,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     fun applyRemoteContent(path: String, content: String): Boolean {
         if (path.startsWith(DOWNLOAD_PREFIX)) return false
         cache[path] = content
-        if (!ephemeral) scope.launch { opfsWriteFile(path, content) }
+        if (!ephemeral) queueTextWrite(path, content)
         return true
     }
 
@@ -557,18 +856,10 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      * `WasmMediaAttachmentService` for attachment uploads) — no OPFS-write logic duplicated here.
      */
     override fun writeFileBytes(path: String, data: ByteArray): Boolean {
-        if (path.startsWith(DOWNLOAD_PREFIX)) return false
+        if (path.startsWith(DOWNLOAD_PREFIX)) return downloadBytes(path.removePrefix(DOWNLOAD_PREFIX), data)
         bytesCache[path] = data
         recordDirty(path, DirtyOp.WRITE)
-        if (!ephemeral) {
-            opfsWriteInFlight[path] = scope.async {
-                try {
-                    opfsWriteFileBytes(path, data.toJsArrayBuffer())
-                } finally {
-                    opfsWriteInFlight.remove(path)
-                }
-            }
-        }
+        if (!ephemeral) queueBytesWrite(path, data)
         // Epic 4.3 (Task 4.3.1b): same one-line delegation as writeFile, for paranoid-mode bytes.
         if (hostDirectorySync.hostDirHandle != null) {
             hostDirectorySync.scheduleHostWriteThrough(path, HostWritePayload.Bytes(data))
@@ -582,13 +873,14 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     }
 
     actual override fun directoryExists(path: String): Boolean =
-        path == homeDir || cache.keys.any { it.startsWith("$path/") }
+        path == homeDir || allKeys().any { it.startsWith("$path/") }
     actual override fun createDirectory(path: String): Boolean = true
     actual override fun deleteFile(path: String): Boolean {
         cache.remove(path)
         bytesCache.remove(path)
+        sidecarNamesOnly.remove(path)
         recordDirty(path, DirtyOp.DELETE)
-        if (!ephemeral) scope.launch { opfsDeleteFile(path) }
+        if (!ephemeral) queueDelete(path)
         // Epic 4.3 (Task 4.3.1c): same one-line delegation, dispatches to flushHostWrite's
         // HostWritePayload.Delete branch (dirRemoveEntry against hostDirHandle).
         if (hostDirectorySync.hostDirHandle != null) {
@@ -608,18 +900,105 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      * [FileSystem] interface default's contract for a non-existent source.
      */
     override fun renameFile(from: String, to: String): Boolean {
-        val content = cache[from] ?: return false
-        cache[to] = content
+        val bytes = bytesCache[from]
+        val content = cache[from]
+        if (bytes == null && content == null) return false
+        // A sidecar temp swap (D-121): the target is the one dirty file and the host gets one write of its final bytes.
+        val finalBytes = bytes ?: content?.encodeToByteArray()
+        if (bytes != null) {
+            bytesCache[to] = bytes
+            cache.remove(to)
+            if (!ephemeral) writeQueue.enqueue(listOf(from, to)) { moveOrCopyVerify(from, to) }
+        } else if (content != null) {
+            cache[to] = content
+            bytesCache.remove(to)
+        }
         cache.remove(from)
-        if (hostDirectorySync.hostDirHandle != null) {
+        bytesCache.remove(from)
+        sidecarNamesOnly.remove(from)
+        val sidecarSwap = bytes != null || SidecarLiveSet.isUnderRoot(graphRootPath(), to)
+        if (sidecarSwap) {
+            dropDirty(from)
+            recordDirty(to, DirtyOp.WRITE)
+            if (hostDirectorySync.hostDirHandle != null && finalBytes != null) {
+                hostDirectorySync.scheduleHostWriteThrough(to, HostWritePayload.Bytes(finalBytes))
+            }
+        } else if (hostDirectorySync.hostDirHandle != null && content != null) {
             scope.launch { hostDirectorySync.renameHostFile(from, to, content) }
         }
         return true
     }
 
+    /** Forgets a path's dirty entry without recording a `DELETE`: a temp that never reached git or a host folder. */
+    private fun dropDirty(path: String) {
+        val repoRelative = path.removePrefix("/stelekit/").substringAfter("/")
+        val dirtySet = sessionHolder.current.gitWriteState.dirtySet
+        if (dirtySet.remove(repoRelative) != null) {
+            _dirtyFileCountFlow.value = dirtySet.size
+            scheduleMarkerWrite()
+        }
+    }
+
     actual override fun pickDirectory(): String? = null
     override val supportsNativeDirectoryPicker: Boolean get() = showDirectoryPickerSupported()
-    override val supportsTempRenameWrites: Boolean get() = false
+    // Task 1.4.7j: true only while the storage status is `Ready`, so a failed preload or an unavailable browser can never
+    // let the `NewSketchProject` predicate see "no sheets" and create a v2 sheet over unread data. The classic file side
+    // stays behind its own gate (Task 1.4.7o). Atomic replace is offered under the sidecar root only: a page write of
+    // the graph (`MarkdownTargetWriter`) keeps its plain write on the web.
+    override val supportsTempRenameWrites: Boolean get() = storageStatus.isReady
+    override fun supportsAtomicReplace(path: String): Boolean =
+        storageStatus.isReady && SidecarLiveSet.isUnderRoot(graphRootPath(), path)
+    override val classicFileSideNeedsOptIn: Boolean get() = true
+
+    // Story 1.4.7 (Task 1.4.7f): the durability and temp-write surface over [writeQueue]; the dirty-set and host
+    // semantics are Task 1.4.7g.
+
+    override suspend fun awaitDurable(path: String): Either<DomainError, Unit> = writeQueue.awaitDurable(path)
+
+    /** A temp file lives in the byte cache and OPFS only: not dirty, no host write-through. */
+    override fun writeTempBytes(path: String, data: ByteArray): Boolean {
+        bytesCache[path] = data
+        if (!ephemeral) queueBytesWrite(path, data)
+        return true
+    }
+
+    override fun deleteTempBytes(path: String): Boolean {
+        cache.remove(path)
+        bytesCache.remove(path)
+        sidecarNamesOnly.remove(path)
+        if (!ephemeral) queueDelete(path)
+        return true
+    }
+
+    /**
+     * Moves [from]'s bytes over [to] in the caches at once and queues the OPFS move behind both paths' tails (D-121). A
+     * `.json` file is kept as its decoded text (the preload's form) and every other file as bytes; the temp leaves both
+     * caches and the dirty set; [to] becomes dirty once and the host folder gets one write of the final bytes.
+     */
+    override fun replaceFileAtomically(from: String, to: String): Boolean {
+        val bytes = bytesCache[from] ?: cache[from]?.encodeToByteArray() ?: return false
+        val text = if (to.endsWith(".json")) bytes.decodeToString().takeIf { it.encodeToByteArray().contentEquals(bytes) } else null
+        if (text != null) {
+            cache[to] = text
+            bytesCache.remove(to)
+        } else {
+            bytesCache[to] = bytes
+            cache.remove(to)
+        }
+        bytesCache.remove(from)
+        cache.remove(from)
+        sidecarNamesOnly.remove(from)
+        sidecarNamesOnly.remove(to)
+        dropDirty(from)
+        recordDirty(to, DirtyOp.WRITE)
+        if (!ephemeral) writeQueue.enqueue(listOf(from, to)) { moveOrCopyVerify(from, to) }
+        if (hostDirectorySync.hostDirHandle != null) {
+            hostDirectorySync.scheduleHostWriteThrough(to, HostWritePayload.Bytes(bytes))
+        }
+        return true
+    }
+
+    override val storageStatus: V2StorageStatus get() = computeStorageStatus()
     override val supportsHostDirectoryLink: Boolean get() = showDirectoryPickerSupported()
 
     // Epic 2.3 (Story 2.3.1/2.3.2): OPFS is available in every browser (Chromium, Firefox,
@@ -718,11 +1097,11 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 // Copilot review: await any write already in flight for this path before
                 // deleting — otherwise a late write (queued before this relink started) can
                 // land after opfsDeleteFile() and silently recreate the "pruned" file.
-                opfsWriteInFlight[stalePath]?.await()
+                writeQueue.tailOf(stalePath)?.await()
                 cache.remove(stalePath)
                 bytesCache.remove(stalePath)
                 blobUrlCache.remove(stalePath)
-                scope.launch { opfsDeleteFile(stalePath) }
+                queueDelete(stalePath)
                 // Copilot review: also clear this path out of the git dirty set — its cache
                 // content is gone, so a stale dirty entry (e.g. a pending WRITE from before the
                 // relink) would otherwise make a later git-write flow try to read content that
@@ -781,7 +1160,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                     val content = readOpfsFile(entry)
                     if (content != null) {
                         cache[path] = content
-                        scope.launch { opfsWriteFile(path, content) }
+                        queueTextWrite(path, content)
                         imported.add(path)
                     } else {
                         println("[SteleKit] importUserDirToCache: failed to read '$path'")
@@ -793,6 +1172,43 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return imported
     }
     override suspend fun pickFileAsync(): String? = null
+
+    private var pickedPath: String? = null
+
+    /** The size of a picked file over [maxPickedBytes], whose bytes were never read. */
+    private val oversizePicks = mutableMapOf<String, Long>()
+
+    /** The largest file the picker reads into memory (`SceneLimits.maxImportBytes`); a test lowers it. */
+    internal var maxPickedBytes: Long = SceneLimits.Default.maxImportBytes
+
+    /**
+     * A browser file input (the sketch import, Story 5.1.5). The bytes are read in the browser and held in [bytesCache] under a
+     * synthetic path, which is returned so `readFileBytesSuspend` finds them; the next pick replaces them. The browser shows no path.
+     * UNVERIFIED in a real browser: the click comes from a coroutine, so it relies on the browser's transient user activation.
+     */
+    override suspend fun pickFileAsync(title: String, extensions: List<String>): String? {
+        val picked = pickBrowserFile(extensions.joinToString(",") { ".$it" }, maxPickedBytes.toDouble()).await<JsAny?>() ?: return null
+        val path = "$PICKED_PREFIX${pickedName(picked)}"
+        pickedPath?.let {
+            bytesCache.remove(it)
+            oversizePicks.remove(it)
+        }
+        // Like CanvasFileDrop: a file over the cap is never read; only its size is kept so the port refuses it for size.
+        val size = pickedSize(picked).toLong()
+        if (size > maxPickedBytes) oversizePicks[path] = size else bytesCache[path] = jsArrayBufferToByteArray(pickedBuffer(picked))
+        pickedPath = path
+        return path
+    }
+
+    override fun getFileSize(path: String): Long? = oversizePicks[path] ?: super.getFileSize(path)
+
+    @OptIn(ExperimentalEncodingApi::class)
+    private fun downloadBytes(filename: String, data: ByteArray): Boolean = try {
+        triggerBrowserBytesDownload(filename, Base64.encode(data), pendingDownloadMimeType)
+        true
+    } catch (e: Throwable) {
+        false
+    }
 
     /**
      * Epic 3.2 (Task 3.2.2a/d): delegates to [HostDirectorySync.onHostConflict]. Wired from
@@ -878,6 +1294,11 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     companion object {
         private const val DOWNLOAD_PREFIX = "/_wasm_dl_/"
+        private const val TEMP_SUFFIX = ".tmp"
+
+        /** The short-lived Web Lock of the once-per-preload temp sweep of [graphId] (D-130); never the writer lease. */
+        fun sweepLockName(graphId: String): String = "stelekit-sketch-sweep:$graphId"
+        private const val PICKED_PREFIX = "/_wasm_pick_/"
         var githubOwner: String = ""
         var githubRepo: String = ""
         var githubBranch: String = "main"
@@ -894,3 +1315,49 @@ private fun triggerBrowserTextDownload(filename: String, content: String, mimeTy
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
     })()""")
+
+private fun triggerBrowserBytesDownload(filename: String, base64: String, mimeType: String): Unit =
+    js("""(function() {
+        var binary = atob(base64);
+        var bytes = new Uint8Array(binary.length);
+        for (var i = 0; i < binary.length; i++) { bytes[i] = binary.charCodeAt(i); }
+        var blob = new Blob([bytes], { type: mimeType });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+    })()""")
+
+private fun pickBrowserFile(accept: String, maxBytes: Double): kotlin.js.Promise<JsAny?> =
+    js("""new Promise(function(resolve) {
+        var input = document.createElement('input');
+        input.type = 'file'; input.accept = accept; input.style.display = 'none';
+        input.addEventListener('change', function() {
+            var file = input.files && input.files[0];
+            document.body.removeChild(input);
+            if (!file) { resolve(null); return; }
+            if (file.size > maxBytes) { resolve({ name: file.name, size: file.size, buffer: null }); return; }
+            file.arrayBuffer().then(function(buffer) { resolve({ name: file.name, size: file.size, buffer: buffer }); }, function() { resolve(null); });
+        });
+        input.addEventListener('cancel', function() { document.body.removeChild(input); resolve(null); });
+        document.body.appendChild(input);
+        input.click();
+    })""")
+
+private fun pickedName(picked: JsAny): String = js("picked.name")
+
+private fun pickedSize(picked: JsAny): Double = js("picked.size")
+
+private fun pickedBuffer(picked: JsAny): JsAny = js("picked.buffer")
+
+/** How the sidecar-root byte preload ended (D-131, D-143); `preloadState` of Task 1.4.7j is derived from it. */
+internal sealed interface SidecarPreloadOutcome {
+    /** Every live file was read; [bytes] is their summed size. A missing sidecar root is `Loaded(0)`. */
+    data class Loaded(val bytes: Long) : SidecarPreloadOutcome
+
+    /** The live files sum to [bytes], over `SceneLimits.maxPreloadBytes`; nothing was read. */
+    data class TooLarge(val bytes: Long) : SidecarPreloadOutcome
+
+    data class Failed(val cause: String) : SidecarPreloadOutcome
+}

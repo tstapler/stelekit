@@ -9,6 +9,12 @@ import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.jobs.JobTracker
 import dev.stapler.stelekit.merge.TargetWriterRouter
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.sketch.v2.runtime.session.ClassicNoticeLedger
+import dev.stapler.stelekit.sketch.v2.runtime.session.ProjectAckStore
+import dev.stapler.stelekit.sketch.v2.runtime.session.SheetLeaseRegistry
+import dev.stapler.stelekit.sketch.v2.runtime.telemetry.QualitySignals
+import dev.stapler.stelekit.platform.BrowserPersistence
+import dev.stapler.stelekit.platform.UnsupportedBrowserPersistence
 import dev.stapler.stelekit.repository.SketchRepositories
 import kotlinx.coroutines.flow.Flow
 
@@ -44,4 +50,31 @@ class ProjectBridgeDeps(
     val fusionSetup: suspend () -> ProjectFusionSetup? = { null },
     /** The PNG sheets' calibration records for the graph's project (Story 4.5b); empty when none is tagged. */
     val pngTags: suspend () -> List<PngCalibrationRecord> = { emptyList() },
-)
+    /** The graph's one [SheetLeaseRegistry], shared by the legacy editor, the v2 editor, the preview path and the importer. */
+    val sheetLeases: SheetLeaseRegistry,
+    /** The synced-v2 discovery scan (Task 1.4.7n); non-null only where the verdict is Available and the classic file side is Off. */
+    val syncedV2Discovery: () -> SyncedV2ProjectDiscovery? = { null },
+    /** Waits until a saved sheet reaches storage; only the web root replaces the immediate default. */
+    val sketchDurability: SketchDurability = ImmediateSketchDurability,
+    /** The hidden-page flush request open savers collect; only the web root replaces the silent default. */
+    val pageLifecycle: PageLifecycle = NoPageLifecycle,
+    /** The device-local consent records of the migration UI (Task 6.2.0c); built once per root, null where no graph state exists. */
+    val acks: ProjectAckStore? = null,
+    val classicNotices: ClassicNoticeLedger? = null,
+    val quality: QualitySignals? = null,
+    val browserPersistence: BrowserPersistence = UnsupportedBrowserPersistence,
+    /** Whether a warning was confirmed in Settings this session (the first-write dialog then shows it by reference). */
+    val sessionConfirmation: SessionConfirmation = SessionConfirmation(),
+    /** Tells an open sketch editor that Settings changed the mode (UX-69). */
+    val engineChange: EngineChangeBus = EngineChangeBus(),
+    /** The platform root's palm, cancel, edge-exclusion and raw-pointer seams of the v2 canvas (Task 3.1.2h). */
+    val sketchInput: dev.stapler.stelekit.platform.SketchPlatformInput = dev.stapler.stelekit.platform.SketchPlatformInput.None,
+    /** Copies a sketch project to another graph from the Sketch screen; null where no router or no second graph can exist. */
+    val sketchCopy: SketchCopyHost? = null,
+) {
+    /** The `GraphManager.onGraphRemoved` cleanup of the per-graph consent records; a root composes it into its one handler slot. */
+    fun onGraphRemoved(graphId: String) {
+        acks?.removeGraph(graphId)
+        classicNotices?.removeGraph(graphId)
+    }
+}

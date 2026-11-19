@@ -9,6 +9,7 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.model.ProjectBundle
 import dev.stapler.stelekit.model.ProjectUuid
+import dev.stapler.stelekit.model.SheetPayload
 import dev.stapler.stelekit.model.SheetUuid
 import dev.stapler.stelekit.model.SketchDimension
 import dev.stapler.stelekit.model.SketchPrimitive
@@ -45,18 +46,44 @@ object SidecarCodec {
 
     private val pretty = Json { prettyPrint = true; prettyPrintIndent = "  " }
 
-    fun sheetPath(sheet: SheetUuid) = "$SHEETS_DIR/${sheet.value}.json"
+    fun sheetPath(sheet: SheetUuid) = SheetPaths.pathFor(sheet, SheetPaths.SCHEMA_V1)
 
     fun encode(bundle: ProjectBundle): Map<String, ByteArray> {
         val files = linkedMapOf<String, ByteArray>()
         val sheets = bundle.sheets.sortedWith(compareBy({ it.position }, { it.uuid.value }))
-        val byteSheets = sheets.associate { s ->
-            val prims = bundle.primitives.filter { it.sheetUuid == s.uuid }.sortedWith(compareBy({ it.z }, { it.uuid }))
-            s to render(sheetJson(s.uuid, prims))
-        }
-        byteSheets.forEach { (s, bytes) -> files[sheetPath(s.uuid)] = bytes }
+        val byteSheets = sheets.associateWith { s -> sheetBytes(bundle, s) }
+        byteSheets.forEach { (s, bytes) -> files[SheetPaths.pathFor(s.uuid, s.schemaVersion)] = bytes }
         files[MODEL_PATH] = render(modelJson(bundle, byteSheets))
         return files
+    }
+
+    /**
+     * The sheet file of [s]: a v1 sheet is encoded from its primitives, a v2 sheet's opaque bytes are written
+     * byte-for-byte. A v2 sheet without a [SheetPayload.V2Opaque] is a caller bug (the database holds no v2 content).
+     */
+    private fun sheetBytes(bundle: ProjectBundle, s: SketchSheet): ByteArray = when (s.schemaVersion) {
+        SheetPaths.SCHEMA_V1 -> {
+            val prims = (bundle.sheetPayloads[s.uuid] as? SheetPayload.V1)?.primitives
+                ?: bundle.primitives.filter { it.sheetUuid == s.uuid }
+            SheetCodecV1.encode(s.uuid, prims.sortedWith(compareBy({ it.z }, { it.uuid })))
+        }
+        SheetPaths.SCHEMA_V2 -> requireNotNull(bundle.sheetPayloads[s.uuid] as? SheetPayload.V2Opaque) {
+            "v2 sheet ${s.uuid.value} has no opaque payload"
+        }.bytes
+        else -> throw IllegalArgumentException("sheet ${s.uuid.value} has unsupported schema ${s.schemaVersion}")
+    }
+
+    /**
+     * The v2 sheet paths a model references (`schema` 2 refs) with the sha it names for each, or null when
+     * [modelBytes] is not a model. Lets a reader check v2 bytes against the model without decoding the bundle.
+     */
+    fun v2SheetShas(modelBytes: ByteArray): Map<String, String>? = try {
+        Json.parseToJsonElement(modelBytes.decodeToString()).jsonObject["sheets"]?.jsonArray.orEmpty()
+            .map { it.jsonObject }
+            .filter { it["schema"]?.takeIf { s -> s !is JsonNull }?.jsonPrimitive?.long == SheetPaths.SCHEMA_V2 }
+            .associate { o -> SheetPaths.pathFor(SheetUuid(o.str("uuid")), SheetPaths.SCHEMA_V2) to o.str("fileSha256") }
+    } catch (_: Exception) {
+        null
     }
 
     /**
@@ -108,6 +135,10 @@ object SidecarCodec {
         put("viewDirection", s.viewDirection)
         put("unit", s.unit)
         put("scaleSixteenthsPerUnit", s.scaleSixteenthsPerUnit)
+        if (s.schemaVersion != SheetPaths.SCHEMA_V1) {
+            put("schema", s.schemaVersion)
+            put("file", SheetPaths.pathFor(s.uuid, s.schemaVersion))
+        }
         put("layers", JsonArray(s.layers.map(::JsonPrimitive)))
         put("zones", s.zones)
         put("position", s.position)
@@ -134,24 +165,6 @@ object SidecarCodec {
     /** Exact, lossless text of the stored value (`379/10`); the numerator and denominator are authoritative. */
     private fun display(r: Rational) = if (r.den == 1L) "${r.num}" else "${r.num}/${r.den}"
 
-    private fun sheetJson(sheet: SheetUuid, prims: List<SketchPrimitive>) = buildJsonObject {
-        put("schema", SCHEMA)
-        put("sheetUuid", sheet.value)
-        put("primitives", JsonArray(prims.map { p ->
-            buildJsonObject {
-                put("uuid", p.uuid)
-                put("kind", p.kind)
-                put("x1", p.x1)
-                put("y1", p.y1)
-                put("x2", p.x2)
-                put("y2", p.y2)
-                put("name", p.name)
-                put("layer", p.layer)
-                put("z", p.z)
-            }
-        }))
-    }
-
     private fun decodeUnsafe(files: Map<String, ByteArray>): Either<CorruptReason, ProjectBundle> {
         val modelBytes = files[MODEL_PATH] ?: return CorruptReason.Truncated.left()
         val model = Json.parseToJsonElement(modelBytes.decodeToString()).jsonObject
@@ -168,10 +181,18 @@ object SidecarCodec {
         )
         val sheets = mutableListOf<SketchSheet>()
         val primitives = mutableListOf<SketchPrimitive>()
+        val payloads = linkedMapOf<SheetUuid, SheetPayload>()
         for (ref in model["sheets"]?.jsonArray.orEmpty()) {
             val o = ref.jsonObject
             val uuid = SheetUuid(o.str("uuid"))
-            val bytes = files[sheetPath(uuid)] ?: return CorruptReason.Truncated.left()
+            val schema = o["schema"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.long ?: SheetPaths.SCHEMA_V1
+            if (schema > SheetPaths.SCHEMA_V2) return CorruptReason.NewerSchema.left()
+            if (!SheetPaths.isSupportedSchema(schema)) return CorruptReason.InvalidJson.left()
+            val path = SheetPaths.pathFor(uuid, schema)
+            // No arbitrary path from git-synced input: a `file` that is not the rule's path is corrupt.
+            val named = o["file"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.content
+            if (named != null && named != path) return CorruptReason.InvalidJson.left()
+            val bytes = files[path] ?: return CorruptReason.Truncated.left()
             if (ContentHasher.sha256(bytes) != o.str("fileSha256")) return CorruptReason.Truncated.left()
             sheets += SketchSheet(
                 uuid = uuid, projectUuid = projectUuid, kind = o.str("kind"), viewDirection = o.str("viewDirection"),
@@ -179,14 +200,20 @@ object SidecarCodec {
                 sourceAssetUuid = o["sourceAssetUuid"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.contentOrNull,
                 layers = o["layers"]?.jsonArray.orEmpty().map { it.jsonPrimitive.content },
                 zones = o["zones"]?.jsonArray ?: JsonArray(emptyList()), position = o.num("position"),
+                schemaVersion = schema,
             )
-            val sheetObj = Json.parseToJsonElement(bytes.decodeToString()).jsonObject
-            for (p in sheetObj["primitives"]?.jsonArray.orEmpty()) {
-                val po = p.jsonObject
-                primitives += SketchPrimitive(
-                    uuid = po.str("uuid"), sheetUuid = uuid, kind = po.str("kind"), x1 = po.num("x1"), y1 = po.num("y1"),
-                    x2 = po.num("x2"), y2 = po.num("y2"), name = po.str("name"), layer = po.str("layer"), z = po.num("z"),
-                )
+            if (schema == SheetPaths.SCHEMA_V2) {
+                // v2 is carried, never interpreted here; the file must really be schema 2.
+                val fileSchema = SidecarClassifier.schemaOf(bytes)
+                when {
+                    fileSchema == SheetPaths.SCHEMA_V2 -> payloads[uuid] = SheetPayload.V2Opaque(bytes, ContentHasher.sha256(bytes))
+                    fileSchema != null && fileSchema > SheetPaths.SCHEMA_V2 -> return CorruptReason.NewerSchema.left()
+                    else -> return CorruptReason.InvalidJson.left()
+                }
+            } else {
+                // A v1-referenced file of any other schema is never read as an empty v1 sheet.
+                val codec = SheetCodecs.forBytes(bytes) ?: return CorruptReason.NewerSchema.left()
+                primitives += codec.decode(uuid, bytes)
             }
         }
         val dimensions = model["dimensions"]?.jsonArray.orEmpty().map { d ->
@@ -201,7 +228,7 @@ object SidecarCodec {
                 tolerance = Rational(o.num("toleranceNum"), o.num("toleranceDen")), locked = o["locked"]!!.jsonPrimitive.boolean,
             )
         }
-        return ProjectBundle(project, sheets, primitives, dimensions).right()
+        return ProjectBundle(project, sheets, primitives, dimensions, payloads).right()
     }
 
     private fun JsonObject.str(key: String): String = getValue(key).jsonPrimitive.content

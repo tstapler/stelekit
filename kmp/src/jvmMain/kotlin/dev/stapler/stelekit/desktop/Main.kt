@@ -41,6 +41,7 @@ import dev.stapler.stelekit.ui.StelekitAppCaptureDeps
 import dev.stapler.stelekit.ui.StelekitAppCoreServices
 import dev.stapler.stelekit.ui.StelekitAppDeps
 import dev.stapler.stelekit.ui.StelekitAppLifecycleHooks
+import dev.stapler.stelekit.ui.SketchStorageDefaults
 import dev.stapler.stelekit.ui.StelekitAppPlatformIntegrations
 import dev.stapler.stelekit.ui.components.warmMermaidEngine
 import dev.stapler.stelekit.ui.theme.setSystemDarkTheme
@@ -248,6 +249,8 @@ fun main(args: Array<String>) {
                         backgroundSyncSchedulerFactory = dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory.None,
                         backgroundTaskScheduler = taskScheduler,
                         taskRegistry = taskRegistry,
+                        sketchWriterLease = SketchStorageDefaults.writerLease(),
+                        browserPersistence = SketchStorageDefaults.browserPersistence(),
                         settings = settings,
                         platformCaps = dev.stapler.stelekit.platform.ml.jvmPlatformCaps(),
                         cryptoEngine = dev.stapler.stelekit.vault.JvmCryptoEngine(),

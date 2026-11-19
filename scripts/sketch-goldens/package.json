@@ -1,0 +1,11 @@
+{
+  "name": "sketch-goldens",
+  "private": true,
+  "description": "One-off generator for freehand/rough golden fixtures (Task 0.1.5b). Not run in CI.",
+  "type": "module",
+  "scripts": { "generate": "node generate.mjs" },
+  "dependencies": {
+    "perfect-freehand": "1.2.3",
+    "roughjs": "4.6.6"
+  }
+}

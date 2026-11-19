@@ -3929,6 +3929,7 @@ public class SteleDatabaseQueries(
       layer_json: String,
       zones_json: String,
       position: Long,
+      schema_version: Long,
     ) -> T,
   ): Query<T> = SelectSketchSheetsByProjectQuery(project_uuid, value) { cursor ->
     mapper(
@@ -3941,7 +3942,8 @@ public class SteleDatabaseQueries(
       cursor.getString(6),
       cursor.getString(7)!!,
       cursor.getString(8)!!,
-      cursor.getLong(9)!!
+      cursor.getLong(9)!!,
+      cursor.getLong(10)!!
     )
   }
 
@@ -5978,11 +5980,12 @@ public class SteleDatabaseQueries(
     layer_json: String,
     zones_json: String,
     position: Long,
+    schema_version: Long,
   ): Long {
     val result = driver.execute(-1_849_678_407, """
-        |INSERT OR REPLACE INTO sketch_sheets (uuid, project_uuid, kind, view_direction, unit, scale_sixteenths_per_unit, source_asset_uuid, layer_json, zones_json, position)
-        |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """.trimMargin(), 10) {
+        |INSERT OR REPLACE INTO sketch_sheets (uuid, project_uuid, kind, view_direction, unit, scale_sixteenths_per_unit, source_asset_uuid, layer_json, zones_json, position, schema_version)
+        |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """.trimMargin(), 11) {
           var parameterIndex = 0
           bindString(parameterIndex++, uuid)
           bindString(parameterIndex++, project_uuid)
@@ -5994,8 +5997,24 @@ public class SteleDatabaseQueries(
           bindString(parameterIndex++, layer_json)
           bindString(parameterIndex++, zones_json)
           bindLong(parameterIndex++, position)
+          bindLong(parameterIndex++, schema_version)
         }.await()
     notifyQueries(-1_849_678_407) { emit ->
+      emit("sketch_sheets")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun updateSketchSheetSchemaVersion(schema_version: Long, uuid: String): Long {
+    val result = driver.execute(1_299_201_230, """UPDATE sketch_sheets SET schema_version = ? WHERE uuid = ?""", 2) {
+          var parameterIndex = 0
+          bindLong(parameterIndex++, schema_version)
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(1_299_201_230) { emit ->
       emit("sketch_sheets")
     }
     return result
@@ -9141,7 +9160,7 @@ public class SteleDatabaseQueries(
       driver.removeListener("sketch_sheets", listener = listener)
     }
 
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-1_610_530_907, """SELECT sketch_sheets.uuid, sketch_sheets.project_uuid, sketch_sheets.kind, sketch_sheets.view_direction, sketch_sheets.unit, sketch_sheets.scale_sixteenths_per_unit, sketch_sheets.source_asset_uuid, sketch_sheets.layer_json, sketch_sheets.zones_json, sketch_sheets.position FROM sketch_sheets WHERE project_uuid = ? ORDER BY position, uuid LIMIT ?""", mapper, 2) {
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-1_610_530_907, """SELECT sketch_sheets.uuid, sketch_sheets.project_uuid, sketch_sheets.kind, sketch_sheets.view_direction, sketch_sheets.unit, sketch_sheets.scale_sixteenths_per_unit, sketch_sheets.source_asset_uuid, sketch_sheets.layer_json, sketch_sheets.zones_json, sketch_sheets.position, sketch_sheets.schema_version FROM sketch_sheets WHERE project_uuid = ? ORDER BY position, uuid LIMIT ?""", mapper, 2) {
       var parameterIndex = 0
       bindString(parameterIndex++, project_uuid)
       bindLong(parameterIndex++, value)

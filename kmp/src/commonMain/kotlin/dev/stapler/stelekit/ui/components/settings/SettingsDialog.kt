@@ -93,6 +93,7 @@ fun SettingsDialog(
     // Labs: null onHomeSketchToggle hides the category.
     homeSketchEnabled: Boolean = false,
     onHomeSketchToggle: ((Boolean) -> Unit)? = null,
+    sketchSection: (@Composable () -> Unit)? = null,
     // Section settings
     sectionManifest: SectionManifest? = null,
     sectionStates: Map<String, SectionState> = emptyMap(),
@@ -266,7 +267,7 @@ fun SettingsDialog(
                         )
                     }
                     SettingsCategory.LABS -> if (onHomeSketchToggle != null) {
-                        LabsSection(homeSketchEnabled, onHomeSketchToggle)
+                        LabsSection(homeSketchEnabled, onHomeSketchToggle, sketchSection = sketchSection)
                     }
                     SettingsCategory.DEVELOPER -> if (isDeveloperCategoryVisible(onLibsqlDriverToggle, onMcpServerToggle, onDeveloperModeToggle)) {
                         DeveloperSettings(

@@ -23,6 +23,14 @@ object WiringAudit {
         "MeasurementDeviceFactory",
         "WaybackMachineService",
         "CameraProvider",
+        "TextMetricsProvider",
+        "SketchWriterLease",
+        "BrowserPersistence",
+        "SketchDurability",
+        "PageLifecycle",
+        "PalmClassifier",
+        "PointerCancelDetector",
+        "EdgeGestureExclusion",
         "CameraLensCatalog",
     )
 

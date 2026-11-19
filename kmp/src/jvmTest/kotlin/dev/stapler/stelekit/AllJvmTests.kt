@@ -572,7 +572,16 @@ import org.junit.runners.Suite
     SqlDelightBlockRepositoryWarmPathTest::class,
     SqlDelightImageAnnotationRepositoryTest::class,
     SketchCanvasDrawTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.InputSpikeTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.PointerAdapterDesktopTest::class,
+    dev.stapler.stelekit.sketch.v2.TextMetricsDesktopEntryPointTest::class,
+    dev.stapler.stelekit.sketch.v2.SketchStorageDesktopEntryPointTest::class,
     dev.stapler.stelekit.ui.sketch.SketchPreviewRenderTest::class,
+    dev.stapler.stelekit.sketch.v2.SceneStructureBenchmark::class,
+    dev.stapler.stelekit.sketch.v2.SceneStructureBenchmarkGuard::class,
+    dev.stapler.stelekit.sketch.v2.baseline.CanvasReferenceBenchmark::class,
+    dev.stapler.stelekit.ui.sketch.v2.ScenePainterTest::class,
+    dev.stapler.stelekit.sketch.v2.PngExportTest::class,
     SqlDelightMeasurementAnnotationRepositoryTest::class,
     UpgradeResilienceTest::class,
     AnnotationExporterTest::class,
@@ -610,6 +619,7 @@ import org.junit.runners.Suite
     JvmFileSystemBaseWhitelistTest::class,
     OpenInBrowserJvmTest::class,
     ReplaceFileAtomicallyTest::class,
+    dev.stapler.stelekit.platform.FilePrefixReadTest::class,
     JvmCredentialStoreTest::class,
     DesktopFilePickerTest::class,
     AttachmentFileNamingTest::class,
@@ -723,6 +733,11 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.jobs.schedule.InProcessTaskSchedulerContractTest::class,
     dev.stapler.stelekit.jobs.schedule.InProcessTaskSchedulerTest::class,
     dev.stapler.stelekit.ui.settings.ScheduledSyncRadioKeyboardTest::class,
+    // Gradle-only sketch v2 classes (kmp/src/jvmTest/kotlin/BUILD.bazel excludes each: the commonTest fixtures they drive, or Compose
+    // Multiplatform's generated `Res`, are not on this target's classpath). They run under `./gradlew :kmp:jvmTest`; they are named here
+    // so TestRegistrationAuditTest can tell an exclusion from an unregistered class: ArchitectureScenarioTest, ToolsEndToEndTest,
+    // ParityV1SuiteTest, RenderedSliceScenarioTest, DeterminismSpikeJvmTest, LargeSceneDegradationTest, ComposeTextMetricsProviderTest, SketchExportRunnerPngTest
+    // and, for Task 6.2.1c, WiringV2DesktopEntryPointTest (it drives the commonTest V2EditorRig).
     dev.stapler.stelekit.calibration.RealPhotoHoldOutStudyTest::class,
 )
 class AllJvmTests

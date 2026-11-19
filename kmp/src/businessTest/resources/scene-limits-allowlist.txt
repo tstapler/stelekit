@@ -1,0 +1,5 @@
+# Non-cap numeric literals under sketch/v2, sketch/excalidraw, sketch/constraints, ui/sketch/v2 and projectbridge
+# that SceneLimitsGrepTest would otherwise flag. Format: <path under dev/stapler/stelekit/> :: <trimmed source line> => <reason>
+# May only shrink: a line that no longer matches a source fails the test (delete it); do not add caps here, add them to SceneLimits.
+projectbridge/LlmPayloadBuilder.kt :: private fun opaqueId(key: String) = "d-" + ContentHasher.sha256("dimension:$key").take(8) => hash-prefix length of an opaque id, not a cap
+projectbridge/LlmPayloadBuilder.kt :: val safe = if (refShape.matches(id)) id else ContentHasher.sha256("$prefix:$id").take(12) => hash-prefix length of an opaque id, not a cap

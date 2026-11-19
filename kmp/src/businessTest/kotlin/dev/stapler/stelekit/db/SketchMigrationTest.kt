@@ -91,7 +91,7 @@ class SketchMigrationTest {
         assertEquals(
             setOf(
                 "uuid", "project_uuid", "kind", "view_direction", "unit", "scale_sixteenths_per_unit",
-                "source_asset_uuid", "layer_json", "zones_json", "position",
+                "source_asset_uuid", "layer_json", "zones_json", "position", "schema_version",
             ),
             columns("sketch_sheets").keys,
         )

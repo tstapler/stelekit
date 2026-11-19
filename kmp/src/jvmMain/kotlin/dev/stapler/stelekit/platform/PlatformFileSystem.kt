@@ -28,6 +28,8 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
     companion object {
         /** Creates a [PlatformFileSystem] with [root] pre-registered in the security whitelist. */
         fun withRoot(root: String): PlatformFileSystem = PlatformFileSystem().also { it.registerGraphRoot(root) }
+
+        private const val SSH_KEY_TITLE = "Select SSH Key File"
     }
 
     actual override fun getDefaultGraphPath(): String = super.getDefaultGraphPath()
@@ -62,6 +64,8 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
         super<JvmFileSystemBase>.replaceFileAtomically(from, to)
 
     override fun readFileBytes(path: String): ByteArray? = super<JvmFileSystemBase>.readFileBytes(path)
+
+    override fun readFilePrefix(path: String, maxBytes: Int): ByteArray? = super<JvmFileSystemBase>.readFilePrefix(path, maxBytes)
 
     override fun getFileSize(path: String): Long? = super<JvmFileSystemBase>.getFileSize(path)
 
@@ -118,14 +122,23 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
         }
     }
 
-    override suspend fun pickFileAsync(): String? {
+    override suspend fun pickFileAsync(): String? =
+        if (java.awt.GraphicsEnvironment.isHeadless()) null else pickFileDialog(SSH_KEY_TITLE, emptyList())
+
+    /** The chosen file is whitelisted, as a picked graph folder is, so it can be read even outside the home directory. */
+    override suspend fun pickFileAsync(title: String, extensions: List<String>): String? {
         if (java.awt.GraphicsEnvironment.isHeadless()) return null
+        return pickFileDialog(title, extensions)?.also { registerGraphRoot(it) }
+    }
+
+    private suspend fun pickFileDialog(title: String, extensions: List<String>): String? {
         return withContext(Dispatchers.IO) {
             val isMacOS = System.getProperty("os.name", "").lowercase().contains("mac")
             if (isMacOS) {
                 val future = CompletableFuture<String?>()
                 SwingUtilities.invokeLater {
-                    val dialog = java.awt.FileDialog(null as java.awt.Frame?, "Select SSH Key File", java.awt.FileDialog.LOAD)
+                    val dialog = java.awt.FileDialog(null as java.awt.Frame?, title, java.awt.FileDialog.LOAD)
+                    if (extensions.isNotEmpty()) dialog.setFilenameFilter { _, name -> extensions.any { name.lowercase().endsWith(".$it") } }
                     dialog.isVisible = true
                     val dir = dialog.directory
                     val file = dialog.file
@@ -137,8 +150,9 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
                 SwingUtilities.invokeLater {
                     val chooser = JFileChooser().apply {
                         fileSelectionMode = JFileChooser.FILES_ONLY
-                        dialogTitle = "Select SSH Key File"
+                        dialogTitle = title
                         isMultiSelectionEnabled = false
+                        if (extensions.isNotEmpty()) fileFilter = extensionFilter(extensions)
                         restoreDefaultTabTraversal()
                     }
                     future.complete(
@@ -152,6 +166,12 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
         }
     }
 
+    private fun extensionFilter(extensions: List<String>): javax.swing.filechooser.FileFilter = object : javax.swing.filechooser.FileFilter() {
+        override fun accept(file: java.io.File): Boolean = file.isDirectory || extensions.any { file.name.lowercase().endsWith(".$it") }
+
+        override fun getDescription(): String = extensions.joinToString(", ") { ".$it" }
+    }
+
     override suspend fun pickSaveFileAsync(suggestedName: String, mimeType: String): String? {
         return withContext(Dispatchers.IO) {
             val future = CompletableFuture<String?>()
@@ -162,7 +182,7 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
                 val result = chooser.showSaveDialog(null)
                 future.complete(if (result == JFileChooser.APPROVE_OPTION) chooser.selectedFile.absolutePath else null)
             }
-            future.get()
+            future.get()?.also { registerGraphRoot(it) }
         }
     }
 }

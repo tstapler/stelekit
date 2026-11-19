@@ -231,4 +231,20 @@ object WebLock {
         }
         return HeldLock(handle)
     }
+
+    /**
+     * Non-blocking sibling of [acquireHeld] (Task 1.4.7i, D-123): attempts [lockName] with `ifAvailable: true` and returns a
+     * releasable [HeldLock], or `null` when another context holds it. Unlike [tryAcquireLeader] the lock can be released, so a
+     * tab can hand the sketch writer lease on when its graph stops being the ready graph.
+     */
+    suspend fun tryAcquireHeld(lockName: String): HeldLock? {
+        val handle = jsRequestLockHandleIfAvailable(lockName)
+        try {
+            if (jsHandleAcquiredPromiseOrNull(handle).await<JsAny?>() == null) return null
+        } catch (e: Throwable) {
+            releaseWebLockHandle(handle)
+            throw e
+        }
+        return HeldLock(handle)
+    }
 }

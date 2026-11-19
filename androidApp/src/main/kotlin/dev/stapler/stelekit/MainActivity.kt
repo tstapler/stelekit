@@ -374,11 +374,15 @@ class MainActivity : ComponentActivity() {
                     backgroundTaskScheduler, taskSettingsStore, app.taskRegistry,
                 )
                 val manager = app.graphManager
-                val handler: (dev.stapler.stelekit.model.GraphId) -> Unit =
-                    { id -> cleanup.onRemoved(dev.stapler.stelekit.jobs.schedule.TaskScope(id.value)) }
+                // The slot is single: keep a handler the project bridge already chained onto it.
+                val previous = manager?.onGraphRemoved ?: {}
+                val handler: (dev.stapler.stelekit.model.GraphId) -> Unit = { id ->
+                    previous(id)
+                    cleanup.onRemoved(dev.stapler.stelekit.jobs.schedule.TaskScope(id.value))
+                }
                 manager?.onGraphRemoved = handler
                 onDispose {
-                    if (manager?.onGraphRemoved === handler) manager.onGraphRemoved = {}
+                    if (manager?.onGraphRemoved === handler) manager.onGraphRemoved = previous
                     cleanup.close()
                 }
             }
@@ -558,6 +562,18 @@ class MainActivity : ComponentActivity() {
                         // The Application's registry is shared, never rebuilt here: kinds register only in onCreate.
                         backgroundTaskScheduler = backgroundTaskScheduler,
                         taskRegistry = app.taskRegistry,
+                        sketchWriterLease = dev.stapler.stelekit.ui.SketchStorageDefaults.writerLease(),
+                        browserPersistence = dev.stapler.stelekit.ui.SketchStorageDefaults.browserPersistence(),
+                        sketchInput = remember {
+                            dev.stapler.stelekit.platform.SketchPlatformInput(
+                                palm = dev.stapler.stelekit.platform.AndroidPalmClassifier,
+                                cancel = dev.stapler.stelekit.platform.AndroidPointerCancelDetector,
+                                edgeExclusion = dev.stapler.stelekit.platform.AndroidEdgeGestureExclusion(
+                                    window.decorView,
+                                    (dev.stapler.stelekit.ui.sketch.v2.EdgePanGeometry.EXPECTED_SPAN_DP * resources.displayMetrics.density).toInt(),
+                                ),
+                            )
+                        },
                         repoOpGate = app.repoOpGate,
                         backgroundSyncSchedulerFactory = BackgroundSyncSchedulerFactory(
                             minimumIntervalMinutes = WorkManagerSyncScheduler.MIN_PERIODIC_INTERVAL_MINUTES.toInt(),

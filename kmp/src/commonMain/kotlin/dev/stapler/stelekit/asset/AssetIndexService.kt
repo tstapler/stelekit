@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.yield
 
 /** Progress of the index walk: files found vs files processed (not the plugin drain's backlog). */
@@ -59,6 +61,7 @@ class AssetIndexService(
     // A cancelled run must not overwrite the progress of the run that replaced it.
     @kotlin.concurrent.Volatile
     private var runId = 0
+    private val walkLock = Mutex()
 
     private val _progress = MutableStateFlow<AssetIndexProgress>(AssetIndexProgress.Idle)
     val progress: StateFlow<AssetIndexProgress> = _progress.asStateFlow()
@@ -176,7 +179,10 @@ class AssetIndexService(
         _progress.value = AssetIndexProgress.Counting
         backfillJob = scope.launch {
             try {
-                backfillGraph(run, notesPath, writeActor, fileSystem)
+                // cancel() is cooperative: a replaced run may still be saving, and overlapping walks
+                // double-register. The FIFO mutex serialises all runs, so chained cancels stay safe
+                // (joining only the previous run is not transitive).
+                walkLock.withLock { backfillGraph(run, notesPath, writeActor, fileSystem) }
             } catch (e: CancellationException) {
                 publish(run, AssetIndexProgress.Idle)
                 throw e
@@ -190,7 +196,6 @@ class AssetIndexService(
     /** Cancels a backfill in flight; already-saved batches stay. */
     fun stopBackfill() {
         backfillJob?.cancel()
-        backfillJob = null
         runId++
         _progress.value = AssetIndexProgress.Idle
     }

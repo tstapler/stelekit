@@ -88,6 +88,9 @@ class DomainErrorTest {
             DomainError.MergeError.Retryable("channel closed"),
             DomainError.FileSystemError.AtomicWriteUnsupported("/path"),
             DomainError.FileSystemError.SymlinkRefused("/path"),
+            DomainError.FileSystemError.StorageQuotaExceeded("/path"),
+            DomainError.FileSystemError.WriterLeaseNotHeld("/path"),
+            DomainError.FileSystemError.SheetIsV2("s1"),
             DomainError.StorageError.VerificationFailed("/path", "hash mismatch"),
             DomainError.StorageError.SourceInFlight("sync in progress"),
             DomainError.StorageError.DestinationNotWritable("/path"),
@@ -110,6 +113,9 @@ class DomainErrorTest {
                 is DomainError.FileSystemError.DeleteFailed -> err.message
                 is DomainError.FileSystemError.AtomicWriteUnsupported -> err.message
                 is DomainError.FileSystemError.SymlinkRefused -> err.message
+                is DomainError.FileSystemError.StorageQuotaExceeded -> err.message
+                is DomainError.FileSystemError.WriterLeaseNotHeld -> err.message
+                is DomainError.FileSystemError.SheetIsV2 -> err.message
                 is DomainError.ParseError.EmptyFile -> err.message
                 is DomainError.ParseError.InvalidSyntax -> err.message
                 is DomainError.ParseError.MalformedMarkdown -> err.message
@@ -193,6 +199,20 @@ class DomainErrorTest {
             }
             assertTrue(msg.isNotEmpty(), "Expected non-empty message for $err")
         }
+    }
+
+    @Test
+    fun storageQuotaExceeded_should_HaveItsUiMessage() {
+        val err = DomainError.FileSystemError.StorageQuotaExceeded("/g/a.json")
+        assertEquals("Not enough browser storage to save", err.toUiMessage())
+        assertTrue("/g/a.json" in err.message)
+    }
+
+    @Test
+    fun writerLeaseNotHeld_should_HaveItsUiMessage() {
+        val err = DomainError.FileSystemError.WriterLeaseNotHeld("/g/a.json")
+        assertEquals("Another tab is editing these sketches", err.toUiMessage())
+        assertTrue("/g/a.json" in err.message)
     }
 
     @Test

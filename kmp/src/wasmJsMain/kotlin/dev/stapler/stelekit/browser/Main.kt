@@ -35,6 +35,7 @@ import dev.stapler.stelekit.ui.components.settings.ReconciliationUiState
 import kotlinx.browser.localStorage
 import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -42,30 +43,6 @@ import kotlinx.coroutines.launch
 private fun markSteleKitReady(): Unit = js("window.__stelekit_ready = true")
 private fun markGraphDialogCapable(capable: Boolean): Unit = js("window.__stelekit_native_graph_picker = capable")
 private fun markDriverBackend(backend: String): Unit = js("window.__stelekit_driver_backend = backend")
-
-/**
- * Replaces the `#loading` overlay's content with [message] and flags `window.__stelekit_boot_error`
- * so index.html's own 8-second auto-hide timeout leaves it visible — used when startup must abort
- * before `ComposeViewport` ever mounts (e.g. [GraphLockedElsewhereException]), since there is no
- * Compose UI/snackbar available yet to surface the error through.
- */
-private fun showBootError(message: String): Unit = js(
-    """
-    (function() {
-        window.__stelekit_boot_error = true;
-        var loading = document.getElementById('loading');
-        if (!loading) return;
-        loading.innerHTML = '';
-        var p = document.createElement('p');
-        p.style.fontSize = '15px';
-        p.style.maxWidth = '420px';
-        p.style.textAlign = 'center';
-        p.style.padding = '0 16px';
-        p.textContent = message;
-        loading.appendChild(p);
-    })()
-    """
-)
 
 // Story 5.1.3: `beforeunload` warning gated on PlatformFileSystem.dirtyFileCountFlow.
 //
@@ -160,6 +137,7 @@ private fun preventBrowserTabFocusTraversal(): Unit = js(
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
     preventBrowserTabFocusTraversal()
+    dev.stapler.stelekit.platform.WebCanvasDrop.host = dev.stapler.stelekit.platform.LazyCanvasFileDrop()
     val scope = MainScope()
 
     // One-shot startup sweep for an interrupted relocate's staging directory (Story 3.1.2), the
@@ -183,7 +161,7 @@ fun main() {
         // the normal one below — it skips OPFS, localStorage/PlatformSettings, and host-directory
         // sync entirely rather than threading an "ephemeral" flag through that whole sequence.
         if (window.location.search.contains("mode=ephemeral")) {
-            runEphemeralSession()
+            runEphemeralSession(scope)
             return@launch
         }
 
@@ -193,6 +171,12 @@ fun main() {
         val opfsGraphPath = "/stelekit/$graphId"
 
         val opfsFileSystem = PlatformFileSystem()
+
+        // Once per page load (Task 1.4.7m, D-137): the verdict the storage status waits for; never gates first paint.
+        dev.stapler.stelekit.platform.PageLoadProbe(
+            probe = { dev.stapler.stelekit.platform.OpfsCapability().probe() },
+            record = opfsFileSystem::recordProbe,
+        ).startOnce(scope)
 
         // Wire GitHub config before preload() so the lazy GitHub-fetch fallback in
         // PlatformFileSystem.readFileSuspend() has credentials available for returning
@@ -279,7 +263,7 @@ fun main() {
             // Do NOT fall back to the demo graph here — that would silently hide a real,
             // recoverable "open it in that other tab instead" situation from the user.
             println("[SteleKit] ${e.message}")
-            showBootError(e.message ?: "This graph is already open in another browser tab.")
+            showBootRefusal(driverLockName(graphId))
             return@launch
         } catch (e: Throwable) {
             println("[SteleKit] SQLite driver init failed, loading demo graph: ${e.message}")
@@ -366,6 +350,14 @@ fun main() {
                         backgroundSyncSchedulerFactory = dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory.None,
                         backgroundTaskScheduler = dev.stapler.stelekit.jobs.schedule.NoopTaskScheduler(),
                         taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry().also { it.registerGitSync() },
+                        sketchWriterLease = dev.stapler.stelekit.platform.WasmSketchWriterLease(
+                            readyGraphId = dev.stapler.stelekit.platform.readyGraphIdState(graphManager),
+                            reloadSidecarRoot = opfsFileSystem::reloadSidecarRoot,
+                        ),
+                        browserPersistence = dev.stapler.stelekit.platform.WasmBrowserPersistence(),
+                        sketchInput = dev.stapler.stelekit.platform.WebSketchPlatformInput.sketchInput(document.body!!),
+                        sketchDurability = dev.stapler.stelekit.projectbridge.FileSystemSketchDurability(fileSystem, graphRoot = { graphPath }),
+                        pageLifecycle = dev.stapler.stelekit.platform.WasmPageLifecycle(),
                         platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
                         // Demo-fallback mode has no persistent OPFS content to write attachments
                         // into (matches graphMoveQuiesceStrategy/hostLinkStep/insufficientSpaceCheck's
@@ -468,7 +460,7 @@ fun main() {
  * directory would reintroduce exactly the persistent side channel this mode exists to avoid.
  */
 @OptIn(ExperimentalComposeUiApi::class)
-private suspend fun runEphemeralSession() {
+private suspend fun runEphemeralSession(scope: CoroutineScope) {
     EphemeralSettingsMode.enable()
     // Direct, awaited suspend call — same boot-ordering requirement as the normal path above.
     // Not a real persistence step here (EphemeralSettingsMode.active is already true), just a
@@ -477,6 +469,10 @@ private suspend fun runEphemeralSession() {
 
     val fileSystem = PlatformFileSystem()
     fileSystem.markEphemeral()
+    dev.stapler.stelekit.platform.PageLoadProbe(
+        probe = { dev.stapler.stelekit.platform.OpfsCapability().probe() },
+        record = fileSystem::recordProbe,
+    ).startOnce(scope)
     val graphPath = "/stelekit/ephemeral"
     fileSystem.preload(graphPath)
 
@@ -517,7 +513,15 @@ private suspend fun runEphemeralSession() {
                     backgroundSyncSchedulerFactory = dev.stapler.stelekit.git.BackgroundSyncSchedulerFactory.None,
                     backgroundTaskScheduler = dev.stapler.stelekit.jobs.schedule.NoopTaskScheduler(),
                     taskRegistry = dev.stapler.stelekit.jobs.schedule.TaskRegistry().also { it.registerGitSync() },
-                        platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
+                    sketchWriterLease = dev.stapler.stelekit.platform.WasmSketchWriterLease(
+                        readyGraphId = dev.stapler.stelekit.platform.readyGraphIdState(graphManager),
+                        reloadSidecarRoot = fileSystem::reloadSidecarRoot,
+                    ),
+                    browserPersistence = dev.stapler.stelekit.platform.WasmBrowserPersistence(),
+                    sketchInput = dev.stapler.stelekit.platform.WebSketchPlatformInput.sketchInput(document.body!!),
+                    sketchDurability = dev.stapler.stelekit.projectbridge.FileSystemSketchDurability(fileSystem, graphRoot = { graphPath }),
+                    pageLifecycle = dev.stapler.stelekit.platform.WasmPageLifecycle(),
+                    platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
                     attachmentService = WasmMediaAttachmentService(fileSystem),
                     gitRepository = wasmGitRepository,
                     // graphMoveQuiesceStrategy/storageLocationResolver intentionally left null — an

@@ -38,8 +38,71 @@ kt_android_library(
             "**/RegistryEditorDialogsTest.kt",
             # Compose gesture/host tests for the flagged Sketch screen (Gradle-only, R-AU)
             "**/SketchCanvasGestureTest.kt",
+            # Compose host test for the sketch input spike (Gradle-only, no Compose plugin in this target)
+            "**/InputSpikeAndroidTest.kt",
+            # Compose host tests for the v2 pointer adapter and text overlay (Gradle-only, no Compose plugin in this target)
+            "**/PointerAdapterTest.kt",
+            "**/TextEditorTest.kt",
+            # Compose host test for the selection overlay and handle tiers (Gradle-only, no Compose plugin in this target)
+            "**/HandleLayoutTest.kt",
+            # Compose host tests for the v2 edge-pan strip and the diagnostics host (Gradle-only, no Compose plugin in this target)
+            "**/EdgePanStripTest.kt",
+            "**/DiagnosticsTest.kt",
+            # Compose host tests for the v2 touch help popup, non-drag transform panel, pan pad and sheet handle (Gradle-only, no Compose plugin in this target)
+            "**/TouchHelpTest.kt",
+            "**/NonDragTransformTest.kt",
+            # Compose host tests for the v2 discoverability, coach walkthrough and empty state (Gradle-only, no Compose plugin in this target)
+            "**/DiscoverabilityTest.kt",
+            "**/CoachWalkthroughTest.kt",
+            "**/EmptyStateTest.kt",
+            # Compose host test for the v2 solve progress indicator (Gradle-only, no Compose plugin in this target)
+            "**/SolveProgressIndicatorTest.kt",
+            # Compose host tests for the v2 go-to-element dialog, accessibility audit, walkthrough keyboard and loading states (Gradle-only, no Compose plugin in this target)
+            "**/GoToElementTest.kt",
+            "**/UxA11yAcceptanceTest.kt",
+            "**/WalkthroughKeyboardTest.kt",
+            "**/LoadingStatesTest.kt",
+            # Compose host tests for the v2 scene semantics and the technical-data panel (Gradle-only, no Compose plugin in this target)
+            "**/SceneSemanticsTest.kt",
+            "**/TechnicalDataPanelTest.kt",
+            # Compose host tests for the v2 constraint panel, glyph overlay, auto-constrain toggle, target picker and dimension editor (Gradle-only, no Compose plugin in this target)
+            "**/ConstraintPanelTest.kt",
+            "**/UxConstraintsAcceptanceTest.kt",
+            "**/ConstraintTargetPickerTest.kt",
+            "**/DimensionEditTest.kt",
+            # Compose host tests for the v2 layers panel, style panel and shortcuts sheet (Gradle-only, no Compose plugin in this target)
+            "**/LayersPanelTest.kt",
+            "**/StylePanelTest.kt",
+            "**/ShortcutsSheetTest.kt",
+            "**/ElementsPanelTest.kt",
+            # Compose host tests and commonTest-fixture pixel test for the v2 strip, shell and painter (Gradle-only)
+            # Compose host tests for the v2 chrome budget, action chip row, toast lane, top bar and capacity messages (Gradle-only, no Compose plugin in this target)
+            "**/ChromeBudgetTest.kt",
+            "**/ActionChipRowTest.kt",
+            "**/TopBarTest.kt",
+            "**/CapacityUxTest.kt",
+            "**/ToolStripTest.kt",
+            "**/AdaptiveStateSurvivalTest.kt",
+            "**/PanelTabsA11yTest.kt",
+            "**/SketchCanvasRecompositionTest.kt",
+            "**/ScenePainterAndroidTest.kt",
+            # Task 6.2.4a: the architecture scenario needs the commonTest fixtures; the UX acceptance test also composes the strip (Gradle-only)
+            "**/ArchitectureScenarioAndroidTest.kt",
+            "**/UxAuthoringAcceptanceTest.kt",
             "**/SketchScreenEntryPointTest.kt",
             "**/HomeSketchFlowEntryPointTest.kt",
+            # Composes the root text-metrics provider (Gradle-only, no Compose plugin here)
+            "**/TextMetricsAndroidEntryPointTest.kt",
+            # Composes the root store provider and needs the commonTest FakeFileSystem (Gradle-only, no Compose plugin here)
+            "**/SketchStorageAndroidEntryPointTest.kt",
+            # Composes the root store provider and needs the commonTest FakeFileSystem (Gradle-only, no Compose plugin here)
+            "**/SketchPlatformInputAndroidEntryPointTest.kt",
+            # Mounts the v2 editor host over the root's project bridge and the commonTest rig (Gradle-only, no Compose plugin or commonTest here)
+            "**/SketchEditorHostTest.kt",
+            "**/SketchEditorHostExtrasTest.kt",
+            "**/WiringV2AndroidEntryPointTest.kt",
+            # Mounts the v2 route and the sketch settings section over the commonTest rig (Gradle-only, no Compose plugin or commonTest here)
+            "**/V2EntryRouteTest.kt",
             "**/DimensionFieldTest.kt",
             "**/SketchSheetPanelsTest.kt",
             "**/SketchDeleteAndPreviewTest.kt",
@@ -77,6 +140,29 @@ kt_android_library(
             "**/RulerTickPanelTest.kt",
             # Compose host test for the PNG calibration step (Gradle-only, no Compose plugin here)
             "**/RasterTaggingPanelTest.kt",
+            # Spike 0.1.3e Robolectric pixel probe: needs commonTest DeterminismSpikeSupport (Gradle-only)
+            "**/AndroidPixelSpikeTest.kt",
+            # Compose host test for the leave-sketch prompt (Gradle-only, no Compose plugin in this target)
+            "**/LeaveSketchPromptTest.kt",
+            # Compose host test for the restore and delete-backups dialogs (Gradle-only, no Compose plugin in this target)
+            "**/RestoreBackupDialogTest.kt",
+            # Compose host test for the sketch v2 migration and enablement composables (Gradle-only, no Compose plugin in this target)
+            "**/MigrationUiTest.kt",
+            # Compose host test for the label dialog, sheet-style row and sketch copy flow (Gradle-only, no Compose plugin or commonTest in this target)
+            "**/EngineSurfacesUiTest.kt",
+            # Compose host test for the sketch copy result dialog (Gradle-only, no Compose plugin in this target)
+            "**/SketchCopyDialogTest.kt",
+            # Compose host test for the sketch embed dispatcher (Gradle-only, no Compose plugin or commonTest in this target)
+            "**/SketchRenderDispatcherTest.kt",
+            # Compose host tests for the sketch import and export dialogs and their success toasts (Gradle-only, no Compose plugin or commonTest in this target)
+            "**/ImportFlowTest.kt",
+            "**/ExportDialogTest.kt",
+            "**/SuccessFeedbackTest.kt",
+            # Mounts the v2 host over the commonTest rig for keyboard-only drawing and the Esc rows (Gradle-only, no Compose plugin or commonTest here)
+            "**/KeyboardAccessHostTest.kt",
+            # Tasks 6.2.4h/6.2.4f: mount the v2 host over the commonTest V2EditorRig (composeRule; not on this target's classpath) (Gradle-only)
+            "**/EscOrderIntegrationTest.kt",
+            "**/BracketPlateUxScenarioTest.kt",
             # Compose host tests for the sync status sheet/badge (Gradle-only; Density inline fails the Bazel backend)
             "**/SyncStatusSheetStatesTest.kt",
             "**/SyncStatusBadgeTest.kt",
@@ -118,6 +204,7 @@ kt_android_library(
         "//kmp/src/commonTest/kotlin:fake_file_system_android",
         "//kmp/src/commonTest/kotlin:observable_effect_android",
         "//kmp/src/commonTest/kotlin:scheduler_contract_fixtures_android",
+        "//kmp/src/commonTest/kotlin:sketch_chrome_fixture_android",
     ],
 )
 

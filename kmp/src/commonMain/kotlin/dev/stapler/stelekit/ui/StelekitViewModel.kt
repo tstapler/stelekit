@@ -97,6 +97,8 @@ import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import dev.stapler.stelekit.model.EffectiveNotesPath
+import dev.stapler.stelekit.ui.sketch.v2.migration.sketchSettingsPorts as bridgeSketchSettingsPorts
+import dev.stapler.stelekit.ui.sketch.v2.v2EditorDeps as bridgeV2EditorDeps
 
 sealed class IndexingState {
     object Idle : IndexingState()
@@ -503,6 +505,54 @@ class StelekitViewModel(
 
     /** The graph's sidecar store (null where unsupported); the Sketch screen's YAML picker writes through it. */
     fun projectSidecarStore(): dev.stapler.stelekit.projectbridge.ProjectSidecarStore? = projectBridgeDeps?.sidecarStore?.invoke()
+
+    /** Copies a sketch project to another graph; null where the project bridge is not wired. */
+    fun sketchCopyHost(): dev.stapler.stelekit.projectbridge.SketchCopyHost? = projectBridgeDeps?.sketchCopy
+
+    /**
+     * What the v2 sketch editor needs to open the project's sheet (Story 6.2.0b); null where the project bridge is not wired, so
+     * the classic editor opens as before. [touchPresent] selects the 44 dp touch floors.
+     */
+    fun v2EditorDeps(
+        repos: dev.stapler.stelekit.repository.SketchRepositories,
+        writeActor: dev.stapler.stelekit.db.DatabaseWriteActor?,
+        touchPresent: Boolean = false,
+    ): dev.stapler.stelekit.ui.sketch.v2.V2EditorDeps? {
+        val device = dev.stapler.stelekit.performance.getDeviceInfo()
+        val touchDevice = TOUCH_PLATFORM_NAMES.any { device.platform.contains(it, ignoreCase = true) }
+        val keymap = dev.stapler.stelekit.ui.sketch.v2.KeymapEnv(
+            isMac = device.osVersion.contains(MAC_OS_NAME, ignoreCase = true),
+            isWeb = device.platform.contains(WEB_PLATFORM_NAME, ignoreCase = true),
+        )
+        val platform = dev.stapler.stelekit.ui.sketch.v2.HostPlatform(
+            files = dev.stapler.stelekit.platform.FileSystemSketchFilePort(
+                fileSystem,
+                web = keymap.isWeb,
+                opensSavedFiles = !keymap.isWeb,
+                canPickFiles = !device.platform.contains(IOS_PLATFORM_NAME, ignoreCase = true),
+            ),
+            fileSystem = fileSystem,
+            notesDirectory = { _uiState.value.currentNotesPath?.directory() },
+            input = projectBridgeDeps?.sketchInput ?: dev.stapler.stelekit.platform.SketchPlatformInput.None,
+            edgeTarget = dev.stapler.stelekit.ui.sketch.v2.EdgeTarget.of(device.platform),
+            edgePan = dev.stapler.stelekit.sketch.v2.runtime.settings.EdgePanSettings(platformSettings),
+            storageStatus = { fileSystem.storageStatus },
+            fingerDrawing = dev.stapler.stelekit.sketch.v2.runtime.settings.FingerDrawingSettings(platformSettings),
+            canvasDrop = dev.stapler.stelekit.platform.WebCanvasDrop.host,
+        )
+        return projectBridgeDeps?.bridgeV2EditorDeps(
+            repos, writeActor, activeGraphIdProvider, keymap, touchPresent || touchDevice,
+            dev.stapler.stelekit.ui.sketch.v2.OnboardingSequencer(dev.stapler.stelekit.ui.sketch.v2.OnboardingCounters(platformSettings)),
+            platform,
+        )
+    }
+
+    /** The Settings > Sketches controls' ports (mode, signals, browser storage); null where the project bridge keeps no consent records. */
+    fun sketchSettingsPorts(): dev.stapler.stelekit.ui.sketch.v2.migration.SketchSettingsPorts? =
+        projectBridgeDeps?.bridgeSketchSettingsPorts(activeGraphIdProvider)
+
+    /** The graph's one sheet edit-lease registry; null where the project bridge is not wired. */
+    fun sheetLeaseRegistry(): dev.stapler.stelekit.sketch.v2.runtime.session.SheetLeaseRegistry? = projectBridgeDeps?.sheetLeases
 
     private val postSyncProjectCoordinator = projectBridgeDeps?.let {
         PostSyncProjectCoordinator(it, gitLastSyncAt, { activeGitSyncService.value?.syncState?.value }, activeGraphIdProvider, scope.coroutineContext)
@@ -2601,6 +2651,11 @@ class StelekitViewModel(
         sectionManagementCoordinator.setSectionQuickToggleVisible(visible)
 
     companion object {
+        private const val MAC_OS_NAME = "mac"
+        private const val WEB_PLATFORM_NAME = "browser"
+        private val TOUCH_PLATFORM_NAMES = listOf("android", "ios")
+        private const val IOS_PLATFORM_NAME = "ios"
+
         private const val CACHED_GRAPH_PATH_KEY = "cached_graph_path"
         private const val WIPE_WATCHDOG_INTERVAL_MS = 10_000L
         private const val MIN_MIDNIGHT_DELAY_MS = 1_000L

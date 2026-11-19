@@ -10,6 +10,8 @@ class MarkdownTargetWriterContractTest : TargetWriterContractSuite() {
     private class Harness : TargetHarness {
         private val root = "/graphs/b"
         private val fs = FakeRelocationFileSystem()
+        override val fileSystem get() = fs
+        override val graphRoot get() = root
         override val writer = MarkdownTargetWriter(
             fs,
             OffGraphTarget(GraphId("b"), EffectiveNotesPath(root), isActive = false),

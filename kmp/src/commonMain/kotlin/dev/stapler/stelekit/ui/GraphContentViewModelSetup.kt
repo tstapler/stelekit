@@ -18,9 +18,18 @@ import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.platform.AtomicFileWriter
+import dev.stapler.stelekit.projectbridge.ClassicFileSideSetting
+import dev.stapler.stelekit.projectbridge.ClassicGatedSidecarStore
+import dev.stapler.stelekit.projectbridge.SyncedV2ProjectDiscovery
+import dev.stapler.stelekit.projectbridge.WebFileSideVerdict
 import dev.stapler.stelekit.projectbridge.FileProjectSidecarStore
+import dev.stapler.stelekit.sketch.v2.runtime.session.ClassicNoticeLedger
+import dev.stapler.stelekit.sketch.v2.runtime.session.ProjectAckStore
+import dev.stapler.stelekit.sketch.v2.runtime.session.SheetLeaseRegistry
+import dev.stapler.stelekit.sketch.v2.runtime.telemetry.QualitySignals
 import dev.stapler.stelekit.projectbridge.LoaderPageSettleProbe
 import dev.stapler.stelekit.projectbridge.ProjectSidecarStore
+import dev.stapler.stelekit.projectbridge.SketchCopyHost
 import dev.stapler.stelekit.projectbridge.ProjectBridgeDeps
 import dev.stapler.stelekit.projectbridge.ProjectBridgeSettings
 import kotlinx.coroutines.flow.first
@@ -202,7 +211,7 @@ private fun buildViewModelDependencies(
  * Dormant until the `homeSketch` flag is on: the coordinator built from this reads the flag at trigger time.
  * [ProjectBridgeDeps.hasConfiguredProject] is true once the project list (Story 5.9a) has created a project.
  */
-private fun buildProjectBridgeDeps(
+internal fun buildProjectBridgeDeps(
     deps: GraphContentDeps,
     effectiveFileSystem: dev.stapler.stelekit.platform.FileSystem,
     graphIoStack: GraphContentGraphIoStack,
@@ -218,14 +227,20 @@ private fun buildProjectBridgeDeps(
     }
     // One store (and so one mutex) per graph path; symlink resolution is off here (no common canonicalize).
     var cachedStore: Pair<String, ProjectSidecarStore>? = null
+    val bridgeSettings = ProjectBridgeSettings(deps.platformSettings)
     val sidecarStore = {
         graphManager.getActiveGraphInfo()?.takeIf { !it.isDemo }?.effectiveNotesPath?.value?.let { root ->
-            cachedStore?.takeIf { it.first == root }?.second ?: FileProjectSidecarStore(
-                effectiveFileSystem, root, AtomicFileWriter(effectiveFileSystem, { it }, ".tmp"), isGitSyncBusy,
+            cachedStore?.takeIf { it.first == root }?.second ?: ClassicGatedSidecarStore(
+                FileProjectSidecarStore(
+                    effectiveFileSystem, root, AtomicFileWriter(effectiveFileSystem, { it }, ".tmp"),
+                    deps.platformIntegrations.sketchWriterLease, isGitSyncBusy,
+                ),
+                effectiveFileSystem.classicFileSideNeedsOptIn,
+                bridgeSettings::webClassicFileSide,
             ).also { cachedStore = root to it }
         }
     }
-    return ProjectBridgeDeps(
+    val bridge = ProjectBridgeDeps(
         routerProvider = deps.routerHolder::get,
         sketchRepositories = { deps.repos.sketchRepositories },
         sidecarStore = sidecarStore,
@@ -233,7 +248,7 @@ private fun buildProjectBridgeDeps(
         fileSystem = effectiveFileSystem,
         // GitSyncService keeps its busy counter private, so also read the published in-progress states.
         isGitSyncBusy = isGitSyncBusy,
-        settings = ProjectBridgeSettings(deps.platformSettings),
+        settings = bridgeSettings,
         jobTracker = deps.jobTracker,
         readyGraphIds = graphManager.readyGraph.map { it?.id?.value },
         hasConfiguredProject = { hasConfiguredProject(deps.repos.sketchRepositories) },
@@ -252,6 +267,29 @@ private fun buildProjectBridgeDeps(
         },
         fusionSetup = { loadFusionSetup(deps.repos.sketchRepositories) },
         pngTags = { readPngTags(deps.repos.sketchRepositories) },
+        sheetLeases = SheetLeaseRegistry(deps.platformIntegrations.sketchWriterLease),
+        syncedV2Discovery = {
+            val store = sidecarStore()
+            val gated = effectiveFileSystem.classicFileSideNeedsOptIn &&
+                bridgeSettings.webClassicFileSide() == ClassicFileSideSetting.Off &&
+                store != null && WebFileSideVerdict.of(store.storageStatus()) == WebFileSideVerdict.Available
+            if (gated && store != null) SyncedV2ProjectDiscovery(store) else null
+        },
+        sketchDurability = deps.platformIntegrations.sketchDurability,
+        pageLifecycle = deps.platformIntegrations.pageLifecycle,
+        acks = ProjectAckStore(deps.platformSettings) { graphManager.readyGraphId?.value },
+        classicNotices = ClassicNoticeLedger(deps.platformSettings),
+        quality = QualitySignals(deps.platformSettings),
+        browserPersistence = deps.platformIntegrations.browserPersistence,
+        sketchInput = deps.platformIntegrations.sketchInput,
+        sketchCopy = SketchCopyHost(
+            router = deps.routerHolder::get,
+            store = sidecarStore,
+            fileSystem = effectiveFileSystem,
+            graphRoot = { graphManager.getActiveGraphInfo()?.takeIf { !it.isDemo }?.effectiveNotesPath?.value },
+            registry = { graphManager.graphRegistry.value },
+            switchTo = { graphManager.switchGraph(it) },
+        ),
         pageSettleProbe = LoaderPageSettleProbe(
             isIndexOnlyStub = { page ->
                 deps.repos.pageRepository.getPageByName(page.pageName).first().getOrNull()?.isContentLoaded == false
@@ -263,4 +301,11 @@ private fun buildProjectBridgeDeps(
             },
         ),
     )
+    // GraphManager keeps ONE removal slot: chain onto whatever a root already installed (the cleanup is idempotent).
+    val previousHandler = graphManager.onGraphRemoved
+    graphManager.onGraphRemoved = { id ->
+        previousHandler(id)
+        bridge.onGraphRemoved(id.value)
+    }
+    return bridge
 }

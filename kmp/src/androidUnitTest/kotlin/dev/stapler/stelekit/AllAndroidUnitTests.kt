@@ -23,6 +23,7 @@ import dev.stapler.stelekit.jobs.schedule.PlatformSettingsColdPathTest
 import dev.stapler.stelekit.jobs.schedule.WorkManagerJitterSpikeTest
 import dev.stapler.stelekit.jobs.schedule.TaskRegistryBothRootsTest
 import dev.stapler.stelekit.jobs.schedule.TaskWorkerTest
+import dev.stapler.stelekit.platform.PlatformEdgeHostsTest
 import dev.stapler.stelekit.platform.ml.ModelDownloadEndToEndTest
 import dev.stapler.stelekit.platform.ml.ModelDownloadPresentationTest
 import dev.stapler.stelekit.platform.ml.ModelDownloadTaskTest
@@ -67,6 +68,7 @@ import org.junit.runners.Suite
 @RunWith(Suite::class)
 @Suite.SuiteClasses(
     WalConfiguredCallbackTest::class,
+    PlatformEdgeHostsTest::class,
     AndroidGraphMoveQuiesceStrategyTest::class,
     QuiesceRealFlushTest::class,
     WorkManagerJitterSpikeTest::class,
@@ -111,6 +113,7 @@ import org.junit.runners.Suite
     SafPermissionPersistenceTest::class,
     SafPermissionStateTransitionTest::class,
     ShadowFileCacheTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.UxOrganisationAcceptanceTest::class,
     UpgradePathTest::class,
     AndroidCredentialStoreCommitTest::class,
     AndroidCredentialStoreFailsLoudTest::class,
@@ -127,6 +130,8 @@ import org.junit.runners.Suite
     QrDecodeViewModelBackgroundingTest::class,
     MermaidWebViewBridgeTest::class,
     MermaidWebViewSettingsTest::class,
+    dev.stapler.stelekit.sketch.v2.AndroidCrashGuardTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.DeadEndWalkTest::class,
     // MermaidWebViewHostTest and MermaidWebViewSecurityDirectiveTest are deliberately NOT
     // registered here (unlike Gradle's testDebugUnitTest, which does run them): this repo's
     // Bazel android_local_test setup has two pre-existing gaps unrelated to Mermaid — (1) the
@@ -146,12 +151,46 @@ import org.junit.runners.Suite
     // GitSyncSchedulingEntryPointTest is excluded for the same reason (1): it drives
     // rememberGraphContentScheduledSyncControls through composeRule.setContent. Runs under Gradle.
     // TaskSchedulerAndroidEntryPointTest is excluded for the same reason (1).
+    // LayersPanelTest, StylePanelTest and ShortcutsSheetTest (sketch v2) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
+    // ElementsPanelTest (sketch v2, Story 3.5.7b) is excluded for the same reason (1) and composes @Composable lambdas (no Compose plugin in this target).
+    // PointerAdapterTest and TextEditorTest (sketch v2) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
+    // EdgePanStripTest and DiagnosticsTest (sketch v2, Tasks 3.1.2g and 3.6.4b) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
+    // HandleLayoutTest (sketch v2 selection overlay) is excluded for the same reason (1) and composes @Composable lambdas (no Compose plugin in this target).
+    // TouchHelpTest and NonDragTransformTest (sketch v2, Stories 3.6.7 and 3.6.3) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
+    // DiscoverabilityTest, CoachWalkthroughTest and EmptyStateTest (sketch v2, Stories 3.6.8 and 3.6.6) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
+    // SolveProgressIndicatorTest (sketch v2, Task 4.1.4b) is excluded for the same reason (1) and composes @Composable lambdas (no Compose plugin in this target).
+    // SceneSemanticsTest and TechnicalDataPanelTest (sketch v2, Stories 3.6.2 and 4.2.5) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
+    // ConstraintPanelTest and UxConstraintsAcceptanceTest (sketch v2, Stories 4.2.2 and 4.2.3) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
+    // ConstraintTargetPickerTest and DimensionEditTest (sketch v2, Tasks 4.2.6b, 4.2.7b and 4.2.7d) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
+    // PanelTabsA11yTest (sketch v2 review finding 6) is excluded for the same reason (1) and composes the shell (no Compose plugin in this target).
+    // ToolStripTest, AdaptiveStateSurvivalTest, SketchCanvasRecompositionTest and ScenePainterAndroidTest (sketch v2, Stories 3.1.3 and 2.1.3)
+    // are excluded for the same reason (1) and compose @Composable lambdas or need commonTest fixtures (no Compose plugin or commonTest in this target).
+    // ChromeBudgetTest, ActionChipRowTest, TopBarTest and CapacityUxTest (sketch v2, Stories 3.1.4 and 2.2.4) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
+    // TextMetricsAndroidEntryPointTest is excluded for the same reason (1) and composes a @Composable (no Compose plugin in this target).
+    // SketchStorageAndroidEntryPointTest (Task 1.4.3q) is excluded for the same reason (1), composes @Composable calls and needs the commonTest FakeFileSystem.
+    // SketchPlatformInputAndroidEntryPointTest (Task 3.1.2h) is excluded for the same reason (1), composes @Composable calls and needs the commonTest FakeFileSystem.
+    // LeaveSketchPromptTest is excluded for the same reason (1) and composes a @Composable (no Compose plugin in this target).
+    // RestoreBackupDialogTest (sketch backup restore, Tasks 6.2.6b and 6.2.6c) is excluded for the same reason (1) and composes @Composable lambdas (no Compose plugin in this target).
+    // MigrationUiTest (sketch v2 migration and enablement composables, Story 1.4.6) is excluded for the same reason (1) and composes @Composable lambdas (no Compose plugin in this target).
+    // EngineSurfacesUiTest (label dialog, sheet-style row and sketch copy flow, integration pass A) is excluded for the same reason (1), composes @Composable lambdas and needs the commonTest fixtures (no Compose plugin or commonTest in this target).
+    // SketchCopyDialogTest (sketch copy result dialog, Task 6.1.2c) is excluded for the same reason (1) and composes a @Composable (no Compose plugin in this target).
+    // SketchRenderDispatcherTest (sketch embed states, Story 6.1.1) is excluded for the same reason (1), composes @Composable lambdas and needs commonTest fixtures (no Compose plugin or commonTest in this target).
+    // ArchitectureScenarioAndroidTest and UxAuthoringAcceptanceTest (sketch v2 scenario and UX acceptance, Task 6.2.4a) are excluded for the same reason (1); they need the commonTest scenario fixtures and the latter composes @Composable lambdas (no Compose plugin or commonTest in this target).
+    // ImportFlowTest, ExportDialogTest and SuccessFeedbackTest (sketch import and export dialogs, Stories 5.1.5 and 5.2.3) are excluded for the same reason (1), compose @Composable lambdas and need commonTest fixtures (no Compose plugin or commonTest in this target).
+    // V2EntryRouteTest (sketch v2 creation and conversion route, Task 6.2.0c) is excluded for the same reasons as SketchEditorHostTest below.
+    // SketchEditorHostExtrasTest (sketch v2 editor host extras, Task 6.2.0d) is excluded for the same reason (1), composes @Composable lambdas and needs the commonTest rig (no Compose plugin or commonTest in this target).
+    // SketchEditorHostTest and WiringV2AndroidEntryPointTest (sketch v2 editor host, Story 6.2.0b) are excluded for the same reason (1), compose @Composable lambdas and need the commonTest rig (no Compose plugin or commonTest in this target).
+    // GoToElementTest, UxA11yAcceptanceTest, WalkthroughKeyboardTest and LoadingStatesTest (sketch v2, Stories 3.6.5, 3.6.6 and 3.6.8) are excluded for the same reason (1), compose @Composable lambdas (no Compose plugin in this target) and the first two sample native-graphics renders.
     //
     // BackgroundTasksSectionTest, TaskRunLogRowsTest and ModelDownloadUiTest (background-task scheduling UI)
     // are excluded for the same reason (1): they drive composables through ComposeContentTestRule.
     // They run under Gradle's testDebugUnitTest.
     // BackgroundTasksUxGapsTest, ScheduledSyncStatusActionsTest, TaskSettingsAccessibilityAndErrorsTest,
     // DepthEstimationPanelLiveRegionTest and ScheduledSyncControlsApplyTest are excluded for the same reason (1).
+    // AndroidPixelSpikeTest (Spike 0.1.3e) needs the commonTest DeterminismSpikeSupport and InputSpikeAndroidTest composes @Composable lambdas (no Compose plugin or commonTest in this target); both run under Gradle.
+    // EscOrderIntegrationTest and BracketPlateUxScenarioTest (sketch v2, Tasks 6.2.4h and 6.2.4f) mount the real host (composeRule, no Compose plugin in this target) over the commonTest rig; Gradle-only.
+    // KeyboardAccessHostTest (sketch v2, Task 3.6.3c and the host's accessibility mounts) mounts the real host over the commonTest rig (composeRule, no Compose plugin in this target); Gradle-only.
+    // Task 6.2.1c: WiringV2AndroidEntryPointTest (the root, the class seams of the plan-seam-classes block and the saver's durability) stays Gradle-only for the reasons named above; it is named here so TestRegistrationAuditTest can tell an exclusion from an unregistered class.
     // SyncStatusSheetStatesTest, SyncStatusBadgeTest and SyncStatusTextScaleTest (Task 1.7b) are excluded for the same reason (1).
     // MeasurementValueEditorTest, MeasurementValueEditorErrorStatesTest, ValueEditorTextScaleTest, ValueEditorSheetTest,
     // CalibrationPillTest, KnownDistancesSheetTest, ValueEditorScopeTest and AnnotationEditorValueHooksTest (E3 value editor,

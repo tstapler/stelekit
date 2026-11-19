@@ -4,6 +4,15 @@
 
 package dev.stapler.stelekit.ui
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalFontFamilyResolver
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import dev.stapler.stelekit.sketch.v2.text.TextMetricsProvider
+import dev.stapler.stelekit.ui.sketch.v2.ComposeTextMetricsProvider
+import dev.stapler.stelekit.ui.sketch.v2.rememberSketchFontState
 import dev.stapler.stelekit.performance.NoOpSpanRecorder
 import dev.stapler.stelekit.performance.SpanRecorder
 import dev.stapler.stelekit.platform.DefaultEncryptionManager
@@ -162,6 +171,17 @@ data class StelekitAppPlatformIntegrations(
      */
     val google: dev.stapler.stelekit.platform.google.GoogleIntegration? = null,
     val requestCameraPermission: (suspend () -> Boolean)? = null,
+    /** Single-writer lease for v2 sheet writes (D-146). No default on purpose: every host names its value. */
+    val sketchWriterLease: dev.stapler.stelekit.platform.SketchWriterLease,
+    /** Browser persistence request for v2 sheets (D-146). No default on purpose: every host names its value. */
+    val browserPersistence: dev.stapler.stelekit.platform.BrowserPersistence,
+    /** Waits until a sheet's files reach storage (D-119); only the web root replaces the immediate default (Task 1.4.7m). */
+    val sketchDurability: dev.stapler.stelekit.projectbridge.SketchDurability =
+        dev.stapler.stelekit.projectbridge.ImmediateSketchDurability,
+    /** The hidden-page flush request that open savers collect; only the web root replaces the silent default (Task 1.4.7m). */
+    val pageLifecycle: dev.stapler.stelekit.projectbridge.PageLifecycle = dev.stapler.stelekit.projectbridge.NoPageLifecycle,
+    /** The platform input seams of the v2 sketch canvas (palm, system cancel, edge exclusion, web raw pointers); nothing by default. */
+    val sketchInput: dev.stapler.stelekit.platform.SketchPlatformInput = dev.stapler.stelekit.platform.SketchPlatformInput.None,
     /** Downloads, clones and other work that finishes later; shown on the Background jobs screen. */
     val backgroundJobs: dev.stapler.stelekit.jobs.BackgroundJobRegistry = dev.stapler.stelekit.jobs.NoBackgroundJobs,
     /** Reads HTML from the system clipboard (bounded). Null disables rich-text paste; set on Desktop. */
@@ -367,3 +387,26 @@ data class GraphContentDeps(
     /** Per-graph asset index/move stack; set by [GraphContent] itself (see GraphContentAssetSetup.kt), null in hosts. */
     val assets: GraphContentAssetStack? = null,
 )
+
+/** The commonMain implementations every host passes for the two sketch storage ports until a platform swaps in its own (D-146). */
+object SketchStorageDefaults {
+    fun writerLease(): dev.stapler.stelekit.platform.SketchWriterLease =
+        dev.stapler.stelekit.platform.AlwaysHeldSketchWriterLease()
+
+    fun browserPersistence(): dev.stapler.stelekit.platform.BrowserPersistence =
+        dev.stapler.stelekit.platform.UnsupportedBrowserPersistence
+}
+
+/**
+ * Composition root of the sketch engine's text measurer (Task 2.1.2b): the one construction of
+ * [ComposeTextMetricsProvider]. The measurer uses density 1 and font scale 1, so one sp is one scene unit and
+ * measured widths do not depend on the display.
+ */
+@Composable
+fun rememberSketchTextMetricsProvider(): TextMetricsProvider {
+    val fonts = rememberSketchFontState()
+    val resolver = LocalFontFamilyResolver.current
+    return remember(resolver, fonts) {
+        ComposeTextMetricsProvider(TextMeasurer(resolver, Density(1f, 1f), LayoutDirection.Ltr), fonts)
+    }
+}

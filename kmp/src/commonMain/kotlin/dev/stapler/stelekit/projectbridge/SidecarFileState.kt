@@ -4,6 +4,8 @@
 
 package dev.stapler.stelekit.projectbridge
 
+import dev.stapler.stelekit.sketch.v2.codec.CanonicalJson
+import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -22,25 +24,52 @@ sealed interface SidecarFileState {
     data class Corrupt(val reason: CorruptReason) : SidecarFileState
 }
 
+/** The two JSON sidecar file kinds; each has its own newest readable schema (Story 1.1.1). */
+enum class SidecarFileKind(val maxSchema: Long) {
+    Model(1L),
+    Sheet(2L),
+}
+
 object SidecarClassifier {
+    @Deprecated("Per-kind limit: use SidecarFileKind.Model.maxSchema or SidecarFileKind.Sheet.maxSchema", ReplaceWith("SidecarFileKind.Model.maxSchema"))
     const val SUPPORTED_SCHEMA = 1L
     private val parser = Json
 
-    /** Classifies raw bytes of a JSON sidecar file; [bytes] null means the file does not exist. */
-    fun classifyJson(bytes: ByteArray?): SidecarFileState {
+    /**
+     * Classifies raw bytes of a JSON sidecar file of [kind]; [bytes] null means the file does not exist. [maxSchema]
+     * overrides the kind's limit so a test can simulate an older build (the previous max).
+     */
+    fun classifyJson(bytes: ByteArray?, kind: SidecarFileKind = SidecarFileKind.Model, maxSchema: Long = kind.maxSchema, limits: SceneLimits = SceneLimits.Default): SidecarFileState {
         if (bytes == null) return SidecarFileState.Absent
         val text = decode(bytes) ?: return SidecarFileState.Corrupt(CorruptReason.InvalidUtf8)
         if (hasConflictMarkers(text)) return SidecarFileState.Corrupt(CorruptReason.ConflictMarkers)
         if (text.isBlank()) return SidecarFileState.Corrupt(CorruptReason.Truncated)
+        if (!withinParseBounds(bytes, text, limits)) return SidecarFileState.Corrupt(CorruptReason.InvalidJson)
         val obj = try {
             parser.parseToJsonElement(text) as? JsonObject
         } catch (_: Exception) {
             return SidecarFileState.Corrupt(if (text.trimEnd().endsWith("}")) CorruptReason.InvalidJson else CorruptReason.Truncated)
         } ?: return SidecarFileState.Corrupt(CorruptReason.InvalidJson)
         val schema = obj["schema"]?.jsonPrimitive?.longOrNull ?: return SidecarFileState.Corrupt(CorruptReason.InvalidJson)
-        if (schema > SUPPORTED_SCHEMA) return SidecarFileState.Corrupt(CorruptReason.NewerSchema)
+        if (schema > maxSchema) return SidecarFileState.Corrupt(CorruptReason.NewerSchema)
         return SidecarFileState.Valid(bytes)
     }
+
+    /** The `schema` number of a parseable JSON object, or null when [bytes] is absent, unparseable or has none. */
+    fun schemaOf(bytes: ByteArray?, limits: SceneLimits = SceneLimits.Default): Long? {
+        if (bytes == null) return null
+        return try {
+            val text = bytes.decodeToString(throwOnInvalidSequence = true)
+            if (!withinParseBounds(bytes, text, limits)) return null
+            (parser.parseToJsonElement(text) as? JsonObject)?.get("schema")?.jsonPrimitive?.longOrNull
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** Size and nesting are checked before kotlinx recurses into the text, so hostile depth cannot overflow the stack. */
+    private fun withinParseBounds(bytes: ByteArray, text: String, limits: SceneLimits): Boolean =
+        bytes.size <= limits.maxSheetBytes && CanonicalJson.nestingDepth(text, limits.maxJsonDepth) <= limits.maxJsonDepth
 
     /** Classifies a text snapshot (`sources/yaml-*.yaml`): UTF-8 and conflict markers only. */
     fun classifyText(bytes: ByteArray?): SidecarFileState {

@@ -392,6 +392,21 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         } catch (e: Exception) { null }
     }
 
+    override fun readFilePrefix(path: String, maxBytes: Int): ByteArray? {
+        val n = maxBytes.coerceAtLeast(0)
+        if (!path.startsWith("saf://")) return legacyReadFilePrefix(path, n)
+        if (isDirectAccess()) {
+            val realPath = resolveToRealPath(path)
+            if (realPath != null) return legacyReadFilePrefix(realPath, n)
+        }
+        return try {
+            val docUri = parseDocumentUri(path)
+            context?.contentResolver?.openInputStream(docUri)?.use { it.readPrefix(n) }
+        } catch (e: Exception) { null }
+    }
+
+    private fun legacyReadFilePrefix(path: String, n: Int): ByteArray? = legacyReadFileBytes(path, prefixBytes = n)
+
     override fun writeFileBytes(path: String, data: ByteArray): Boolean {
         if (path.startsWith("content://")) {
             return try {
@@ -1192,7 +1207,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         }
     }
 
-    private fun legacyReadFileBytes(path: String): ByteArray? {
+    private fun legacyReadFileBytes(path: String, prefixBytes: Int? = null): ByteArray? {
         return try {
             val expandedPath = expandTilde(path)
             val canonicalPath = File(expandedPath).canonicalPath
@@ -1221,6 +1236,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             }
             val file = File(canonicalPath)
             if (!file.exists() || !file.isFile) return null
+            if (prefixBytes != null) return file.inputStream().use { it.readPrefix(prefixBytes) }
             if (file.length() > maxFileSize) return null
             file.readBytes()
         } catch (e: CancellationException) { throw e }
@@ -1390,3 +1406,17 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return canonicalPath
     }
 }
+
+/** Reads at most [n] bytes; `InputStream.readNBytes(int)` is API 33 and the app supports API 26, where it throws `NoSuchMethodError`. */
+private fun java.io.InputStream.readPrefix(n: Int): ByteArray {
+    val out = java.io.ByteArrayOutputStream(minOf(n, PREFIX_CHUNK))
+    val chunk = ByteArray(minOf(n, PREFIX_CHUNK))
+    while (out.size() < n) {
+        val read = read(chunk, 0, minOf(chunk.size, n - out.size()))
+        if (read < 0) break
+        out.write(chunk, 0, read)
+    }
+    return out.toByteArray()
+}
+
+private const val PREFIX_CHUNK = 8 * 1024

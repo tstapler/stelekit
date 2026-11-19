@@ -24,7 +24,7 @@ class SketchStubGatingTest {
         }, 0).value
 
         s.insertSketchProject("p1", "proj-0a1b2c", "n", 0, "{}", "{}", "h", "d", 1, 1, null)
-        s.insertSketchSheet("s1", "p1", "plan", "top", "in", 16, null, "[]", "[]", 0)
+        s.insertSketchSheet("s1", "p1", "plan", "top", "in", 16, null, "[]", "[]", 0, 1)
         s.insertSketchPrimitive("a", "s1", "line", 0, 0, 1, 1, "", "", 0)
         s.insertSketchPrimitive("b", "s1", "line", 0, 0, 1, 1, "", "", 1)
         s.insertSketchPrimitive("c", "s1", "line", 0, 0, 1, 1, "", "", 2)
@@ -45,7 +45,7 @@ class SketchStubGatingTest {
         assertEquals(0L, count("sketch_dimensions"))
         s.deleteSketchSheet("s1")
         assertEquals(0L, count("sketch_sheets"))
-        s.insertSketchSheet("s2", "p1", "plan", "top", "in", 16, null, "[]", "[]", 0)
+        s.insertSketchSheet("s2", "p1", "plan", "top", "in", 16, null, "[]", "[]", 0, 1)
         s.deleteSketchSheetsByProject("p1")
         assertEquals(0L, count("sketch_sheets"))
         s.deleteSketchProject("p1")

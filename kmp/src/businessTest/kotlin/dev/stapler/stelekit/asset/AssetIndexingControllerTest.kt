@@ -11,9 +11,13 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.InMemoryAssetRepository
 import dev.stapler.stelekit.service.AttachmentResult
 import dev.stapler.stelekit.wiring.FakeSettings
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -119,6 +123,51 @@ class AssetIndexingControllerTest {
         assertFalse(settings.getBoolean(key, true))
         assertFalse(c.isActive)
         c.close()
+    }
+
+    @Test
+    fun graphReadyThenFlip_replacedWalkNeverOverlaps_soNothingIsRegisteredTwice() = runBlocking {
+        repeat(100) {
+            val freshRepo = InMemoryAssetRepository()
+            val c = AssetIndexingController(FakeSettings(), AssetIndexService(freshRepo), toggleVisibleProvider = { true })
+            c.onGraphReady(notes, writeActor = null, fileSystem = fs)
+            c.setEnabled(true)
+            awaitFinished(c)
+            assertEquals(5L, freshRepo.countAssets().getOrNull())
+            c.close()
+        }
+    }
+
+    @Test
+    fun threeQuickStarts_newRunWaitsForEveryEarlierRun_soNoWalkOverlapsASavingRun() = runBlocking {
+        val inFlightSave = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val overlap = CompletableDeferred<Unit>()
+        val freshRepo = InMemoryAssetRepository()
+        // Models cancel() being cooperative: the first save cannot be interrupted until released.
+        val gated = object : AssetRepository by freshRepo {
+            @Volatile var firstSaveSeen = false
+            override suspend fun getIndexedFilePaths(filePaths: List<String>) =
+                freshRepo.getIndexedFilePaths(filePaths).also { if (firstSaveSeen && !release.isCompleted) overlap.complete(Unit) }
+            override suspend fun saveAsset(asset: AssetEntry) =
+                if (!firstSaveSeen) {
+                    firstSaveSeen = true
+                    inFlightSave.complete(Unit)
+                    withContext(NonCancellable) { release.await() }
+                    freshRepo.saveAsset(asset)
+                } else freshRepo.saveAsset(asset)
+        }
+        val service = AssetIndexService(gated)
+        service.startBackfill(notes, null, fs)
+        withTimeout(10_000) { inFlightSave.await() }
+        service.startBackfill(notes, null, fs)
+        service.startBackfill(notes, null, fs)
+        val overlapped = withTimeoutOrNull(300) { overlap.await() } != null
+        release.complete(Unit)
+        withTimeout(10_000) { service.progress.first { it is AssetIndexProgress.Finished } }
+        service.close()
+        assertFalse(overlapped, "a later run walked while the first run was still saving")
+        assertEquals(5L, freshRepo.countAssets().getOrNull())
     }
 
     @Test

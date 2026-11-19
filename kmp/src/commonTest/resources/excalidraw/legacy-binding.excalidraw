@@ -1,0 +1,130 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://excalidraw.com (hand-authored from types.ts v0.18.1)",
+  "elements": [
+    {
+      "id": "la",
+      "type": "rectangle",
+      "x": 0,
+      "y": 0,
+      "width": 120,
+      "height": 80,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "a3",
+      "roundness": null,
+      "seed": 1024,
+      "version": 1,
+      "versionNonce": 2024,
+      "isDeleted": false,
+      "boundElements": [
+        {
+          "id": "larr",
+          "type": "arrow"
+        }
+      ],
+      "updated": 1700000000000,
+      "link": null,
+      "locked": false
+    },
+    {
+      "id": "lb",
+      "type": "rectangle",
+      "x": 300,
+      "y": 0,
+      "width": 120,
+      "height": 80,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "a4",
+      "roundness": null,
+      "seed": 1025,
+      "version": 1,
+      "versionNonce": 2025,
+      "isDeleted": false,
+      "boundElements": [
+        {
+          "id": "larr",
+          "type": "arrow"
+        }
+      ],
+      "updated": 1700000000000,
+      "link": null,
+      "locked": false
+    },
+    {
+      "id": "larr",
+      "type": "arrow",
+      "x": 120,
+      "y": 40,
+      "width": 180,
+      "height": 0,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "a5",
+      "roundness": null,
+      "seed": 1026,
+      "version": 1,
+      "versionNonce": 2026,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1700000000000,
+      "link": null,
+      "locked": false,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          180,
+          0
+        ]
+      ],
+      "lastCommittedPoint": null,
+      "startBinding": {
+        "elementId": "la",
+        "focus": 0,
+        "gap": 4
+      },
+      "endBinding": {
+        "elementId": "lb",
+        "focus": -0.1,
+        "gap": 4
+      },
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "elbowed": false
+    }
+  ],
+  "appState": {
+    "gridSize": null,
+    "viewBackgroundColor": "#ffffff"
+  },
+  "files": {}
+}

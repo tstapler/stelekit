@@ -3,6 +3,7 @@ package dev.stapler.stelekit.merge
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.GraphId
+import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.runBlocking
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -32,6 +33,10 @@ interface TargetHarness {
     suspend fun blockUuids(key: PageKey): List<String>
 
     suspend fun close()
+
+    /** The target's file system and graph root, so a case can read back what a file-writing capability created. */
+    val fileSystem: FileSystem
+    val graphRoot: String
 }
 
 /**
@@ -308,5 +313,59 @@ abstract class TargetWriterContractSuite {
 
         assertIs<DomainError.MergeError.WriteRefused>((result as Either.Left).value)
         assertEquals(before, h.writer.fileHash(key).ok())
+    }
+
+    // Sketch bundle capability (Story 6.1.2): both writers create a whole sketch under a graph and never edit an existing file.
+
+    private val sketchModel = "{\"slug\":\"kitchen\"}".encodeToByteArray()
+
+    private fun bundle(slug: String = "kitchen", asset: ByteArray = byteArrayOf(1, 2, 3)) = SketchBundle(
+        slug,
+        mapOf("project-model.json" to sketchModel, "sheets/s1.v2.json" to "{\"schema\":2,\"slug\":\"$slug\"}".encodeToByteArray()),
+        listOf(SketchAsset("ab12.png", asset)),
+        emptyList(),
+    )
+
+    private fun TargetHarness.sketchPath(slug: String, rel: String) = "$graphRoot/assets/stelekit-sketch/$slug/$rel"
+
+    @Test
+    fun sketchBundle_should_BeCreatedOnce_And_NeverOverwriteAnExistingSlug() = runBlocking {
+        val h = harness()
+        val writer = assertIs<SketchBundleWriter>(h.writer)
+
+        val created = writer.writeSketchBundle(bundle()).ok()
+
+        assertEquals(SketchBundleOutcome.Created(assetsWritten = 1, assetsReused = 0), created)
+        assertTrue(h.fileSystem.readFileBytes(h.sketchPath("kitchen", "project-model.json"))!!.contentEquals(sketchModel))
+        assertTrue(h.fileSystem.readFileBytes("${h.graphRoot}/assets/ab12.png")!!.contentEquals(byteArrayOf(1, 2, 3)))
+
+        val again = writer.writeSketchBundle(bundle(asset = byteArrayOf(9))).ok()
+        assertEquals(SketchBundleOutcome.SlugExists("kitchen"), again)
+        assertTrue(h.fileSystem.readFileBytes("${h.graphRoot}/assets/ab12.png")!!.contentEquals(byteArrayOf(1, 2, 3)), "the existing image is never modified")
+    }
+
+    @Test
+    fun sketchBundle_should_ReuseAnIdenticalImage_And_RefuseADifferentOneWithoutWritingAnything() = runBlocking {
+        val h = harness()
+        val writer = assertIs<SketchBundleWriter>(h.writer)
+        writer.writeSketchBundle(bundle("first")).ok()
+
+        assertEquals(SketchBundleOutcome.Created(assetsWritten = 0, assetsReused = 1), writer.writeSketchBundle(bundle("second")).ok())
+
+        val conflict = writer.writeSketchBundle(bundle("third", asset = byteArrayOf(7)))
+        assertEquals(SketchBundleOutcome.AssetConflict("ab12.png"), conflict.ok())
+        assertTrue(!h.fileSystem.directoryExists("${h.graphRoot}/assets/stelekit-sketch/third"), "a refused copy leaves no partial bundle")
+    }
+
+    @Test
+    fun sketchBundle_should_RefuseAPathOutsideItsFolders() = runBlocking {
+        val h = harness()
+        val writer = assertIs<SketchBundleWriter>(h.writer)
+        val escape = SketchBundle("kitchen", mapOf("sheets/../escape.json" to byteArrayOf(1)), emptyList(), emptyList())
+
+        val result = writer.writeSketchBundle(escape)
+
+        assertIs<DomainError.MergeError.WriteRefused>((result as Either.Left).value)
+        assertTrue(!h.fileSystem.directoryExists("${h.graphRoot}/assets/stelekit-sketch/kitchen"))
     }
 }

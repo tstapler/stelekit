@@ -2,6 +2,7 @@ package dev.stapler.stelekit.ui.sketch
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -34,15 +35,23 @@ import dev.stapler.stelekit.sketch.sceneBounds
 val LocalSketchPreviewLoader = staticCompositionLocalOf<SketchPreviewLoader?> { null }
 
 const val SKETCH_PREVIEW_TAG = "sketch-preview"
+const val SKETCH_PREVIEW_NOT_SHOWN_TAG = "sketch-preview-not-shown"
 
 private const val PREVIEW_PADDING_DP = 12f
 private const val PREVIEW_STROKE_DP = 2f
 internal const val EMPTY_SKETCH_TEXT = "Empty sketch — tap to draw"
-internal const val MISSING_SKETCH_TEXT = "Sketch not on this device yet"
+internal const val MISSING_SKETCH_TEXT = "Sketch not found"
 
-/** A read-only drawing of the sketch behind [slug]; the caller makes it tappable. Reloads when that sketch is saved. */
+/** Opens the sketch list so the user can pick another sketch for an embed whose sketch is gone; null where there is no list. */
+@Suppress("CompositionLocalAllowlist") // set once by GraphContentActiveShell, next to LocalOpenSketchAction
+val LocalChooseSketchAction = staticCompositionLocalOf<(() -> Unit)?> { null }
+
+/**
+ * A read-only drawing of the sketch behind [slug]; the caller makes it tappable. Reloads when that sketch is saved.
+ * [actions] are what the missing-sketch and storage-unavailable states offer (UX-61, UX-135).
+ */
 @Composable
-fun SketchPreviewBlock(slug: String, modifier: Modifier = Modifier) {
+fun SketchPreviewBlock(slug: String, modifier: Modifier = Modifier, actions: SketchEmbedActions = SketchEmbedActions()) {
     val loader = LocalSketchPreviewLoader.current
     var reloadTick by remember(slug) { mutableIntStateOf(0) }
     if (loader != null) {
@@ -51,23 +60,40 @@ fun SketchPreviewBlock(slug: String, modifier: Modifier = Modifier) {
     val preview by produceState<SketchPreview?>(null, loader, slug, reloadTick) {
         value = loader?.load(slug) ?: SketchPreview.Missing
     }
-    SketchPreviewContent(preview, modifier.testTag(SKETCH_PREVIEW_TAG))
+    SketchPreviewContent(preview, modifier.testTag(SKETCH_PREVIEW_TAG), actions.copy(onChooseAnother = actions.onChooseAnother ?: LocalChooseSketchAction.current))
 }
 
 @Composable
-internal fun SketchPreviewContent(preview: SketchPreview?, modifier: Modifier = Modifier) {
-    when (preview) {
-        null -> Box(modifier.fillMaxWidth().heightIn(min = PLACEHOLDER_MIN_HEIGHT))
-        SketchPreview.Missing -> PreviewNote(MISSING_SKETCH_TEXT, modifier)
-        SketchPreview.Empty -> PreviewNote(EMPTY_SKETCH_TEXT, modifier)
-        is SketchPreview.Drawing -> DrawingPreview(preview, modifier)
+internal fun SketchPreviewContent(
+    preview: SketchPreview?,
+    modifier: Modifier = Modifier,
+    actions: SketchEmbedActions = SketchEmbedActions(),
+    modern: ModernPreviewEnvironment? = null,
+) {
+    SketchRenderDispatcher(preview, actions, modern, modifier)
+}
+
+@Composable
+internal fun ClassicPreviewContent(preview: SketchPreview.Drawing, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        DrawingPreview(preview)
+        if (preview.notShownCount > 0) {
+            Text(
+                notShownText(preview.notShownCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp).testTag(SKETCH_PREVIEW_NOT_SHOWN_TAG),
+            )
+        }
     }
 }
 
-private val PLACEHOLDER_MIN_HEIGHT = 64.dp
+internal fun notShownText(count: Int): String = if (count == 1) "1 element not shown in this preview" else "$count elements not shown in this preview"
+
+internal val PLACEHOLDER_MIN_HEIGHT = 64.dp
 
 @Composable
-private fun PreviewNote(text: String, modifier: Modifier = Modifier) {
+internal fun PreviewNote(text: String, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth().heightIn(min = PLACEHOLDER_MIN_HEIGHT), contentAlignment = Alignment.Center) {
         Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(12.dp))
     }

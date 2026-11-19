@@ -81,6 +81,7 @@ class YamlSnapshotImporter(
             SidecarWriteOutcome.Unavailable -> return YamlImportOutcome.StoreUnavailable
             SidecarWriteOutcome.Deferred -> return YamlImportOutcome.Deferred
             is SidecarWriteOutcome.Failed -> return YamlImportOutcome.Failed(written.error.message)
+            SidecarWriteOutcome.StaleOpaque -> return YamlImportOutcome.Failed("sidecar changed during the write")
         }
         val updated = project.copy(settings = YamlSourceEntry.with(project.settings, hash8), modelRevision = project.modelRevision + 1)
         return write { repositories.projects.saveProject(updated) }

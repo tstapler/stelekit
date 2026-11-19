@@ -9,7 +9,7 @@ val StoneMid = Color(0xFF504945)             // mid stone — bullets, indent gu
 val WornStone = Color(0xFFB8A994)            // worn stone — muted text, icons (>=4.5:1 on all dark surfaces)
 val SandText = Color(0xFFEBDBB2)             // warm sand — primary text
 val CreamText = Color(0xFFFBF1C7)            // warm cream — bright/heading text
-val PatinaAccent = Color(0xFF83A598)         // patina teal — links, primary accent
+val PatinaAccent = Color(0xFF89A99D)         // patina teal — links, primary accent (>=4.5:1 as text on the dark/stone panel)
 val OchreHighlight = Color(0xFFFABD2F)       // ochre — highlights, warnings
 val StoneRed = Color(0xFFFB4934)             // stone red — errors
 val StoneGreen = Color(0xFFB8BB26)           // stone green — success
@@ -22,7 +22,7 @@ val LimestoneSurface = Color(0xFFEDE8DC)     // limestone — sidebar, cards
 val PaleStone = Color(0xFFB8AFA0)            // pale stone — bullets, indent guides
 val AgedStone = Color(0xFF665D53)            // aged stone — muted text (>=4.5:1 on all light surfaces)
 val DarkStoneText = Color(0xFF3C3836)        // dark stone — primary text
-val DeepPatina = Color(0xFF458588)           // deep patina — links, primary accent
+val DeepPatina = Color(0xFF3B7174)           // deep patina — links, primary accent (>=4.5:1 as text on light surface/panel, white-on-primary)
 val AmberHighlight = Color(0xFFD79921)       // amber — highlights
 
 // === Shared constants ===

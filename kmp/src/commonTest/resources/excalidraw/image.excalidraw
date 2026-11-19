@@ -1,0 +1,97 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://excalidraw.com (hand-authored from types.ts v0.18.1)",
+  "elements": [
+    {
+      "id": "img1",
+      "type": "image",
+      "x": 0,
+      "y": 0,
+      "width": 200,
+      "height": 200,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "a9",
+      "roundness": null,
+      "seed": 1020,
+      "version": 1,
+      "versionNonce": 2020,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1700000000000,
+      "link": null,
+      "locked": false,
+      "fileId": "file1",
+      "status": "saved",
+      "scale": [
+        1,
+        1
+      ],
+      "crop": null
+    },
+    {
+      "id": "img2",
+      "type": "image",
+      "x": 240,
+      "y": 0,
+      "width": 200,
+      "height": 200,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "a0",
+      "roundness": null,
+      "seed": 1021,
+      "version": 1,
+      "versionNonce": 2021,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1700000000000,
+      "link": null,
+      "locked": false,
+      "fileId": "file1",
+      "status": "saved",
+      "scale": [
+        -1,
+        1
+      ],
+      "crop": {
+        "x": 0,
+        "y": 0,
+        "width": 1,
+        "height": 1,
+        "naturalWidth": 1,
+        "naturalHeight": 1
+      }
+    }
+  ],
+  "appState": {
+    "gridSize": null,
+    "viewBackgroundColor": "#ffffff"
+  },
+  "files": {
+    "file1": {
+      "mimeType": "image/png",
+      "id": "file1",
+      "dataURL": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "created": 1700000000000,
+      "lastRetrieved": 1700000000000
+    }
+  }
+}

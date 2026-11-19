@@ -9,4 +9,15 @@ BackgroundSyncScheduler  GitSyncSchedulingEntryPointTest  effect:periodic-work-e
 BackgroundTaskScheduler  TaskSchedulerAndroidEntryPointTest  effect:task-work-enqueued
 BackgroundTaskScheduler  TaskSchedulerDesktopEntryPointTest  effect:in-process-task-tick
 AssetPipelinePlugin  CloudStackEntryPointTest  effect:cloud-description-persisted
+TextMetricsProvider  TextMetricsAndroidEntryPointTest  effect:text-metrics-measured-android
+TextMetricsProvider  TextMetricsDesktopEntryPointTest  effect:text-metrics-measured-desktop
+SketchWriterLease  SketchStorageAndroidEntryPointTest  effect:sketch-writer-lease-held-android
+BrowserPersistence  SketchStorageAndroidEntryPointTest  effect:browser-persistence-unsupported-android
+SketchWriterLease  SketchStorageDesktopEntryPointTest  effect:sketch-writer-lease-held-desktop
+BrowserPersistence  SketchStorageDesktopEntryPointTest  effect:browser-persistence-unsupported-desktop
+SketchDurability  WiringV2AndroidEntryPointTest  effect:sketch-durability-consulted-android
+SketchDurability  WiringV2DesktopEntryPointTest  effect:sketch-durability-consulted-desktop
+PalmClassifier  SketchPlatformInputAndroidEntryPointTest  effect:palm-contact-rejected-android
+PointerCancelDetector  SketchPlatformInputAndroidEntryPointTest  effect:pointer-cancel-detected-android
+EdgeGestureExclusion  SketchPlatformInputAndroidEntryPointTest  effect:edge-exclusion-claimed-android
 CameraLensCatalog  CameraLensCatalogEntryPointTest  effect:camera-lens-list

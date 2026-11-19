@@ -14,4 +14,5 @@ public data class Sketch_sheets(
   public val layer_json: String,
   public val zones_json: String,
   public val position: Long,
+  public val schema_version: Long,
 )

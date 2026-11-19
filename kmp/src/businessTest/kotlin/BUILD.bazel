@@ -128,6 +128,20 @@ java_library(
     resource_strip_prefix = "kmp/src/businessTest/resources",
 )
 
+# Sketch-engine fixtures ("sketch/old-reader/..."); the strip prefix keeps the "sketch/" dir.
+java_library(
+    name = "sketch_data_as_resources",
+    resources = ["//kmp/src/businessTest/resources:sketch_data"],
+    resource_strip_prefix = "kmp/src/businessTest/resources",
+)
+
+# Excalidraw fixtures ("excalidraw/shapes-text.excalidraw", ...) from commonTest/resources.
+java_library(
+    name = "excalidraw_fixtures_as_resources",
+    resources = ["//kmp/src/commonTest/resources:excalidraw_fixtures"],
+    resource_strip_prefix = "kmp/src/commonTest/resources",
+)
+
 # The ReachabilityBaseline copy ("reachability-baseline.txt"); a second strip prefix, so a second library.
 java_library(
     name = "reachability_baseline_as_resource",
@@ -179,6 +193,8 @@ kt_jvm_test(
         ":wiring_androidapp_sources_as_resources",
         ":business_test_data_as_resources",
         ":home_sketch_data_as_resources",
+        ":sketch_data_as_resources",
+        ":excalidraw_fixtures_as_resources",
         ":reachability_baseline_as_resource",
         ":observable_effect",
     ],

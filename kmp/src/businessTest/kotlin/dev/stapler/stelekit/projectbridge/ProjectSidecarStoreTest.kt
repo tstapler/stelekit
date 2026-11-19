@@ -17,19 +17,19 @@ import kotlin.test.assertTrue
 class ProjectSidecarStoreTest {
     private val slug = "proj-0a1b2c"
     private val files = mapOf(
-        "project-model.json" to "{\"schema\":1}".encodeToByteArray(),
+        "project-model.json" to "{\"schema\":1,\"sheets\":[{\"uuid\":\"s1\"}]}".encodeToByteArray(),
         "sheets/s1.json" to "{\"schema\":1}".encodeToByteArray(),
     )
 
     @Test
-    fun write_should_AddTheTmpIgnoreRuleOnce() = runBlocking<Unit> {
+    fun write_should_AddTheTmpAndConflictsIgnoreRulesOnce() = runBlocking<Unit> {
         val fs = SidecarFs()
         fs.seed("$GRAPH/.gitignore", "*.db".encodeToByteArray())
         val store = newStore(fs)
         store.write(slug, files)
         store.write(slug, files + ("sheets/s2.json" to "{\"schema\":1}".encodeToByteArray()))
         val ignore = fs.readFile("$GRAPH/.gitignore")!!
-        assertEquals("*.db\nassets/stelekit-sketch/**/*.tmp\n", ignore)
+        assertEquals("*.db\nassets/stelekit-sketch/**/*.tmp\n${RetentionPolicy.CONFLICTS_IGNORE_RULE}\n", ignore)
     }
 
     @Test

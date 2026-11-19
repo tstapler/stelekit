@@ -11,7 +11,11 @@ import dev.stapler.stelekit.model.ProjectUuid
 import dev.stapler.stelekit.model.RevisionToken
 import dev.stapler.stelekit.model.SheetUuid
 import dev.stapler.stelekit.model.SketchSheet
+import dev.stapler.stelekit.projectbridge.SheetFileSchemaProbe
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
+import dev.stapler.stelekit.sketch.v2.runtime.session.LeaseHolder
+import dev.stapler.stelekit.sketch.v2.runtime.session.SheetLease
+import dev.stapler.stelekit.sketch.v2.runtime.session.SheetLeaseRegistry
 import dev.stapler.stelekit.repository.SketchRepositories
 import dev.stapler.stelekit.sketch.SheetProps
 import dev.stapler.stelekit.sketch.SketchCommand
@@ -91,10 +95,13 @@ class SketchViewModel(
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val onSaved: ((SketchDocument, String) -> Unit)? = null,
     private val onPersisted: ((slug: String) -> Unit)? = null,
+    private val leases: SheetLeaseRegistry? = null,
+    v2Probe: SheetFileSchemaProbe? = null,
     private val newId: () -> String = { UuidGenerator.generateV7() },
 ) : RememberObserver {
     private val logger = Logger("SketchViewModel")
-    private val store = SketchStore(repos, writeActor)
+    private val store = SketchStore(repos, writeActor, v2Probe)
+    private var lease: SheetLease? = null
     private val scope = CoroutineScope(
         SupervisorJob() + dispatcher +
             CoroutineExceptionHandler { _, t ->
@@ -253,10 +260,23 @@ class SketchViewModel(
             val outcome = either {
                 val uuid = project ?: store.findOrCreateProject(newId).bind().also { project = it }
                 val (loaded, first) = store.loadSheet(uuid, newId).bind()
+                claimLease(first.uuid).bind()
                 Triple(loaded, first, store.readAllPrimitives(first.uuid).bind())
             }
             outcome.fold(ifLeft = { fail(it.message) }, ifRight = { (loaded, first, stored) -> apply(loaded, first, stored) })
         }
+    }
+
+    /** Holds this sheet's edit lease while the editor is open; a sheet the v2 editor holds is refused and left untouched. */
+    private suspend fun claimLease(sheet: SheetUuid): Either<DomainError, Unit> {
+        val registry = leases ?: return Either.Right(Unit)
+        if (lease?.sheet == sheet) return Either.Right(Unit)
+        lease?.release()
+        lease = null
+        return registry.acquire(sheet, LeaseHolder.Legacy).fold(
+            { Either.Left(DomainError.ConflictError.ConcurrentWrite(sheet.value, "This sketch is open in the new editor")) },
+            { granted -> lease = granted; Either.Right(Unit) },
+        )
     }
 
     private fun apply(loaded: LoadedSketchProject, first: SketchSheet, stored: List<StoredPrimitive>) {
@@ -282,14 +302,15 @@ class SketchViewModel(
     /** Leaving the screen inside the autosave debounce must not drop the last edit: save it, then cancel. */
     override fun onForgotten() {
         if (_uiState.value.saveStatus != SaveStatus.PENDING) {
+            lease?.release()
             scope.cancel()
             return
         }
         saveJob?.cancel()
-        scope.launch { try { save() } finally { scope.cancel() } }
+        scope.launch { try { save() } finally { lease?.release(); scope.cancel() } }
     }
 
-    override fun onAbandoned() { scope.cancel() }
+    override fun onAbandoned() { lease?.release(); scope.cancel() }
 
     companion object {
         const val AUTOSAVE_DEBOUNCE_MS = 500L
@@ -330,7 +351,7 @@ private fun ZoneSet.toJson(): JsonArray = JsonArray(
     },
 )
 
-private fun ZoneSet.Companion.fromJson(array: JsonArray): ZoneSet = ZoneSet(
+internal fun ZoneSet.Companion.fromJson(array: JsonArray): ZoneSet = ZoneSet(
     array.mapNotNull { e ->
         val o = (e as? JsonObject) ?: return@mapNotNull null
         val key = o["key"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
@@ -345,4 +366,8 @@ fun sketchViewModelFor(
     projectUuid: String?,
     onSaved: ((SketchDocument, String) -> Unit)? = null,
     onPersisted: ((slug: String) -> Unit)? = null,
-): SketchViewModel = SketchViewModel(repos, projectUuid?.let(::ProjectUuid), writeActor, onSaved = onSaved, onPersisted = onPersisted)
+    leases: SheetLeaseRegistry? = null,
+    v2Probe: SheetFileSchemaProbe? = null,
+): SketchViewModel = SketchViewModel(
+    repos, projectUuid?.let(::ProjectUuid), writeActor, onSaved = onSaved, onPersisted = onPersisted, leases = leases, v2Probe = v2Probe,
+)

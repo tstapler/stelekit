@@ -1,0 +1,254 @@
+# User-visible string literals under ui/sketch/v2 that predate SketchStrings (Task 3.6.8d, UX-95). Format: <path under dev/stapler/stelekit/> :: <trimmed source line>
+# May only shrink: move a string into SketchStrings and delete its line; a line that no longer matches a source fails HardcodedStringAuditTest.
+ui/sketch/v2/ArrangeModel.kt :: BringForward("Bring forward", "bringForward", KeyAction.Arrange(ZOrderMove.Forward)),
+ui/sketch/v2/ArrangeModel.kt :: BringToFront("Bring to front", "bringToFront", KeyAction.Arrange(ZOrderMove.ToFront)),
+ui/sketch/v2/ArrangeModel.kt :: Group("Group", "group", KeyAction.Group),
+ui/sketch/v2/ArrangeModel.kt :: SendBackward("Send backward", "sendBackward", KeyAction.Arrange(ZOrderMove.Backward)),
+ui/sketch/v2/ArrangeModel.kt :: SendToBack("Send to back", "sendToBack", KeyAction.Arrange(ZOrderMove.ToBack)),
+ui/sketch/v2/ArrangeModel.kt :: Ungroup("Ungroup", "ungroup", KeyAction.Ungroup),
+ui/sketch/v2/ArrangeModel.kt :: const val ALL_LOCKED = "Locked elements cannot be changed"
+ui/sketch/v2/ArrangeModel.kt :: const val ALREADY_THERE = "Already there"
+ui/sketch/v2/ArrangeModel.kt :: const val NEEDS_TWO = "Select two or more elements"
+ui/sketch/v2/ArrangeModel.kt :: const val NOTHING_SELECTED = "Select an element first"
+ui/sketch/v2/ArrangeModel.kt :: const val NOT_GROUPED = "The selection is not grouped"
+ui/sketch/v2/ArrangeModel.kt :: disabledReason?.let { append(", disabled: ").append(it) }
+ui/sketch/v2/ArrangeModel.kt :: if (shortcut.isNotEmpty()) append(", shortcut ").append(shortcut)
+ui/sketch/v2/ComposeTextMetricsProvider.kt :: const val REFERENCE_LINE = "Ag"
+ui/sketch/v2/ElementStatsModel.kt :: const val NOT_A_NUMBER = "Not a number. Try 12.5"
+ui/sketch/v2/ElementStatsModel.kt :: val stats = ElementStats.of(element) ?: return CommitResult.Invalid("This element has no size")
+ui/sketch/v2/ElementStatsPanel.kt :: Text("Stats", style = MaterialTheme.typography.titleSmall)
+ui/sketch/v2/ElementStatsPanel.kt :: label = "Height",
+ui/sketch/v2/ElementStatsPanel.kt :: label = "Width",
+ui/sketch/v2/ElementsPanel.kt :: ) { Text("Rename") }
+ui/sketch/v2/ElementsPanel.kt :: ) { Text("Show layer") }
+ui/sketch/v2/ElementsPanel.kt :: ) { Text("Unlock") }
+ui/sketch/v2/ElementsPanel.kt :: .semantics { contentDescription = "Rename ${row.name}" },
+ui/sketch/v2/ElementsPanel.kt :: TextButton(onClick = ::commit) { Text("Save name") }
+ui/sketch/v2/ElementsPanel.kt :: TextButton(onClick = actions.stopRename) { Text("Cancel") }
+ui/sketch/v2/ElementsPanel.kt :: if (failure == null) actions.stopRename() else error = ElementsPanelModel.renameError(failure) ?: "Could not rename"
+ui/sketch/v2/ElementsPanel.kt :: label = { Text("Element name") },
+ui/sketch/v2/ElementsPanelModel.kt :: const val EMPTY = "Nothing on this sheet yet"
+ui/sketch/v2/ElementsPanelModel.kt :: const val HIDDEN_TEXT = "(hidden)"
+ui/sketch/v2/ElementsPanelModel.kt :: const val NAME_TAKEN = "An element with this name exists"
+ui/sketch/v2/ElementsPanelModel.kt :: const val TAB_LABEL = "Elements"
+ui/sketch/v2/ElementsPanelModel.kt :: is CommandError.NameTooLong -> "Names can have up to ${error.limit} characters"
+ui/sketch/v2/ElementsPanelModel.kt :: val description: String get() = "Layer ${layer.name}, $elementCount elements, ${if (expanded) "expanded" else "collapsed"}"
+ui/sketch/v2/HelpPopup.kt :: .semantics { role = Role.Button; contentDescription = "Help: ${entry.name}" }
+ui/sketch/v2/HelpPopup.kt :: Text("Close")
+ui/sketch/v2/HelpPopup.kt :: onLongClick(label = "Show help") { state.show(entry); true }
+ui/sketch/v2/KeyDispatcher.kt :: "bringForward" -> KeyAction.Arrange(ZOrderMove.Forward)
+ui/sketch/v2/KeyDispatcher.kt :: "bringToFront" -> KeyAction.Arrange(ZOrderMove.ToFront)
+ui/sketch/v2/KeyDispatcher.kt :: "nextRegion" -> KeyAction.NextRegion
+ui/sketch/v2/KeyDispatcher.kt :: "nudge", "nudgeFar", "pan", "panFar", "panAlways" -> arrow(key, Modifier.Shift in binding.modifiers, ctrlArrow, ctx)
+ui/sketch/v2/KeyDispatcher.kt :: "panHome" -> KeyAction.FitToContent
+ui/sketch/v2/KeyDispatcher.kt :: "panPage" -> KeyAction.PanPage(if (key == "PageUp") -1 else 1)
+ui/sketch/v2/KeyDispatcher.kt :: "previousRegion" -> KeyAction.PreviousRegion
+ui/sketch/v2/KeyDispatcher.kt :: "resetZoom" -> KeyAction.ResetZoom
+ui/sketch/v2/KeyDispatcher.kt :: "sendBackward" -> KeyAction.Arrange(ZOrderMove.Backward)
+ui/sketch/v2/KeyDispatcher.kt :: "sendToBack" -> KeyAction.Arrange(ZOrderMove.ToBack)
+ui/sketch/v2/KeyDispatcher.kt :: "shortcutsSheet" -> KeyAction.OpenShortcuts
+ui/sketch/v2/KeyDispatcher.kt :: "zoomIn" -> KeyAction.ZoomIn
+ui/sketch/v2/KeyDispatcher.kt :: "zoomOut" -> KeyAction.ZoomOut
+ui/sketch/v2/KeyDispatcher.kt :: "zoomToFit" -> KeyAction.ZoomToFit
+ui/sketch/v2/KeyDispatcher.kt :: private const val BACKSPACE = "Backspace"
+ui/sketch/v2/KeyDispatcher.kt :: val dx = when (key) { "ArrowLeft" -> -1; "ArrowRight" -> 1; else -> 0 }
+ui/sketch/v2/KeyDispatcher.kt :: val dy = when (key) { "ArrowUp" -> -1; "ArrowDown" -> 1; else -> 0 }
+ui/sketch/v2/KeyboardActions.kt :: const val NOTHING_TO_REDO = "Nothing to redo"
+ui/sketch/v2/KeyboardActions.kt :: const val NOTHING_TO_UNDO = "Nothing to undo"
+ui/sketch/v2/KeyboardActions.kt :: if (future.isEmpty()) NOTHING_TO_REDO to this else "Redid: ${future.first()}" to UndoAnnouncer(past + future.first(), future.drop(1))
+ui/sketch/v2/KeyboardActions.kt :: if (past.isEmpty()) NOTHING_TO_UNDO to this else "Undid: ${past.last()}" to UndoAnnouncer(past.dropLast(1), listOf(past.last()) + future)
+ui/sketch/v2/KeyboardActions.kt :: is AddElement -> "add ${ElementNames.kindWord(command.element).lowercase()}"
+ui/sketch/v2/KeyboardActions.kt :: is AddElements -> command.elements.singleOrNull()?.let { "add ${ElementNames.kindWord(it).lowercase()}" } ?: "add ${command.elements.size} elements"
+ui/sketch/v2/KeyboardActions.kt :: is AlignElements -> "align elements"
+ui/sketch/v2/KeyboardActions.kt :: is DeleteElements -> "delete ${first(command.ids)}"
+ui/sketch/v2/KeyboardActions.kt :: is DistributeElements -> "distribute elements"
+ui/sketch/v2/KeyboardActions.kt :: is DuplicateElements -> "duplicate ${first(command.ids)}"
+ui/sketch/v2/KeyboardActions.kt :: is GroupElements -> "group elements"
+ui/sketch/v2/KeyboardActions.kt :: is LockElements -> if (command.locked) "lock ${first(command.ids)}" else "unlock ${first(command.ids)}"
+ui/sketch/v2/KeyboardActions.kt :: is MoveElements -> "move ${first(command.ids)}"
+ui/sketch/v2/KeyboardActions.kt :: is PasteElements -> "paste elements"
+ui/sketch/v2/KeyboardActions.kt :: is ReorderElements -> "reorder ${first(command.ids)}"
+ui/sketch/v2/KeyboardActions.kt :: is ResizeElement -> "resize ${first(listOf(command.id))}"
+ui/sketch/v2/KeyboardActions.kt :: is RotateElement -> "rotate ${first(listOf(command.id))}"
+ui/sketch/v2/KeyboardActions.kt :: is StyleElements -> "change style"
+ui/sketch/v2/KeyboardActions.kt :: is UngroupElements -> "ungroup elements"
+ui/sketch/v2/KeyboardRegions.kt :: ActiveTool(10, "an active tool other than Select"),
+ui/sketch/v2/KeyboardRegions.kt :: ArmedPicker(5, "an armed constraint picker"),
+ui/sketch/v2/KeyboardRegions.kt :: Crosshair(7, "Crosshair mode"),
+ui/sketch/v2/KeyboardRegions.kt :: DialogOrSheet(1, "an open dialog or sheet"),
+ui/sketch/v2/KeyboardRegions.kt :: MenuOrFlyout(2, "an open menu, flyout, zoom menu, Pan pad or help popup"),
+ui/sketch/v2/KeyboardRegions.kt :: MidDraw(6, "a mid-draw preview"),
+ui/sketch/v2/KeyboardRegions.kt :: NewestToast(12, "the newest toast"),
+ui/sketch/v2/KeyboardRegions.kt :: NoticeAction(9, "a toast or banner action that has focus"),
+ui/sketch/v2/KeyboardRegions.kt :: Selection(11, "the selection"),
+ui/sketch/v2/KeyboardRegions.kt :: Solving(4, "\"Solving...\""),
+ui/sketch/v2/KeyboardRegions.kt :: TextOverlayOrDimensionField(3, "a text overlay or a dimension field"),
+ui/sketch/v2/KeyboardRegions.kt :: Walkthrough(8, "the first-run walkthrough"),
+ui/sketch/v2/KeymapSpec.kt :: "redo", KeymapGroup.Edit, "Redo",
+ui/sketch/v2/KeymapSpec.kt :: "undo", KeymapGroup.Edit, "Undo", listOf(KeyBinding("z", primary)),
+ui/sketch/v2/KeymapSpec.kt :: CONSTRAIN_ID, KeymapGroup.Constrain, "Constrain menu",
+ui/sketch/v2/KeymapSpec.kt :: GateItem("U11", "NVDA and JAWS quick keys checked against the owner's reader", GateStatus.Defaulted),
+ui/sketch/v2/KeymapSpec.kt :: GateItem("U12", "stylus eraser-end and barrel availability", GateStatus.Recorded),
+ui/sketch/v2/KeymapSpec.kt :: GateItem("U8", "shortcuts and tool lock checked against the live Excalidraw dialog", GateStatus.Defaulted),
+ui/sketch/v2/KeymapSpec.kt :: KeymapEntry("delete", KeymapGroup.Edit, "Delete", listOf(KeyBinding("Delete"))),
+ui/sketch/v2/KeymapSpec.kt :: KeymapEntry("escape", KeymapGroup.View, "Close, cancel or return to the canvas", listOf(KeyBinding("Escape"))),
+ui/sketch/v2/KeymapSpec.kt :: KeymapEntry("nextRegion", KeymapGroup.View, "Next region", listOf(KeyBinding("F6"))),
+ui/sketch/v2/KeymapSpec.kt :: KeymapEntry("nudge", KeymapGroup.Edit, "Nudge selection (Shift: 10 units)", ARROWS.map { KeyBinding(it) }),
+ui/sketch/v2/KeymapSpec.kt :: KeymapEntry("nudgeFar", KeymapGroup.Edit, "Nudge selection by 10 units", ARROWS.map { KeyBinding(it, setOf(Modifier.Shift)) }),
+ui/sketch/v2/KeymapSpec.kt :: KeymapEntry("pan", KeymapGroup.Pan, "Pan the view (nothing selected, or Hand tool)", ARROWS.map { KeyBinding(it) }),
+ui/sketch/v2/KeymapSpec.kt :: KeymapEntry("panAlways", KeymapGroup.Pan, "Pan the view with a selection", ARROWS.map { KeyBinding(it, primary) }),
+ui/sketch/v2/KeymapSpec.kt :: KeymapEntry("panFar", KeymapGroup.Pan, "Pan the view by 200 dp", ARROWS.map { KeyBinding(it, setOf(Modifier.Shift)) }),
+ui/sketch/v2/KeymapSpec.kt :: KeymapEntry("panHome", KeymapGroup.Pan, "Fit to content", listOf(KeyBinding("Home"))),
+ui/sketch/v2/KeymapSpec.kt :: KeymapEntry("panPage", KeymapGroup.Pan, "Pan one screen", listOf(KeyBinding("PageUp"), KeyBinding("PageDown"))),
+ui/sketch/v2/KeymapSpec.kt :: KeymapEntry("previousRegion", KeymapGroup.View, "Previous region", listOf(KeyBinding("F6", setOf(Modifier.Shift)))),
+ui/sketch/v2/KeymapSpec.kt :: KeymapEntry("shortcutsSheet", KeymapGroup.View, "Shortcuts", listOf(KeyBinding("?"))),
+ui/sketch/v2/KeymapSpec.kt :: KeymapEntry("snap", KeymapGroup.View, "Snap", listOf(KeyBinding("s", setOf(Modifier.Alt)))),
+ui/sketch/v2/KeymapSpec.kt :: KeymapEntry("zoomToFit", KeymapGroup.View, "Zoom to fit", listOf(KeyBinding("1", setOf(Modifier.Shift)))),
+ui/sketch/v2/KeymapSpec.kt :: KeymapEntry(TOOL_LOCK_ID, KeymapGroup.Tools, "Tool lock", listOf(KeyBinding("q", singleKey = true))),
+ui/sketch/v2/KeymapSpec.kt :: Modifier.Alt -> "Alt"
+ui/sketch/v2/KeymapSpec.kt :: Modifier.Shift -> "Shift"
+ui/sketch/v2/KeymapSpec.kt :: bracket("bringForward", "Bring forward", "]", PhysicalKey.BracketRight, primary),
+ui/sketch/v2/KeymapSpec.kt :: bracket("bringToFront", "Bring to front", "]", PhysicalKey.BracketRight, primaryShift),
+ui/sketch/v2/KeymapSpec.kt :: bracket("sendBackward", "Send backward", "[", PhysicalKey.BracketLeft, primary),
+ui/sketch/v2/KeymapSpec.kt :: bracket("sendToBack", "Send to back", "[", PhysicalKey.BracketLeft, primaryShift),
+ui/sketch/v2/KeymapSpec.kt :: chord("copy", KeymapGroup.Edit, "Copy", "c"),
+ui/sketch/v2/KeymapSpec.kt :: chord("cut", KeymapGroup.Edit, "Cut", "x"),
+ui/sketch/v2/KeymapSpec.kt :: chord("duplicate", KeymapGroup.Edit, "Duplicate", "d"),
+ui/sketch/v2/KeymapSpec.kt :: chord("grid", KeymapGroup.View, "Grid", "'"),
+ui/sketch/v2/KeymapSpec.kt :: chord("group", KeymapGroup.Arrange, "Group", "g"),
+ui/sketch/v2/KeymapSpec.kt :: chord("paste", KeymapGroup.Edit, "Paste", "v"),
+ui/sketch/v2/KeymapSpec.kt :: chord("resetZoom", KeymapGroup.View, "Reset zoom", "0"),
+ui/sketch/v2/KeymapSpec.kt :: chord("ungroup", KeymapGroup.Arrange, "Ungroup", "g", primaryShift),
+ui/sketch/v2/KeymapSpec.kt :: chord("zoomIn", KeymapGroup.View, "Zoom in", "+"),
+ui/sketch/v2/KeymapSpec.kt :: chord("zoomOut", KeymapGroup.View, "Zoom out", "-"),
+ui/sketch/v2/KeymapSpec.kt :: const val FOOTNOTE_DEFAULTED = "not verified against the live Excalidraw dialog or your screen reader"
+ui/sketch/v2/KeymapSpec.kt :: const val TOOL_LOCK_ID = "toolLock"
+ui/sketch/v2/KeymapSpec.kt :: excalidraw = "laser pointer (v0.18.1 HelpDialog.tsx)",
+ui/sketch/v2/KeymapSpec.kt :: here = "Constrain menu (D-8); the laser tool is out of scope, so no behaviour clashes",
+ui/sketch/v2/KeymapSpec.kt :: private val ARROWS = listOf("ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight")
+ui/sketch/v2/KeymapSpec.kt :: val primaryName = if (env.isMac) "Cmd" else "Ctrl"
+ui/sketch/v2/LargeSceneDegradation.kt :: const val DETAILS = "Sketchy style is off, shadows are skipped, live constraint glyphs are hidden. Your drawing is unchanged."
+ui/sketch/v2/LargeSceneDegradation.kt :: const val REENABLE_LABEL = "Re-enable effects (may be slow)"
+ui/sketch/v2/LayersPanel.kt :: ) { Text("Delete") }
+ui/sketch/v2/LayersPanel.kt :: ) { Text("Down") }
+ui/sketch/v2/LayersPanel.kt :: ) { Text("Rename") }
+ui/sketch/v2/LayersPanel.kt :: ) { Text("Up") }
+ui/sketch/v2/LayersPanel.kt :: .semantics { contentDescription = label; stateDescription = if (on) "On" else "Off" },
+ui/sketch/v2/LayersPanel.kt :: SwitchCell(LayersPanelTags.locked(id), row.lockLabel, row.layer.locked, if (row.layer.locked) "Unlock" else "Lock") {
+ui/sketch/v2/LayersPanel.kt :: SwitchCell(LayersPanelTags.visible(id), row.visibilityLabel, row.layer.visible, if (row.layer.visible) "Hide" else "Show") {
+ui/sketch/v2/LayersPanel.kt :: Text("Opacity ($name)")
+ui/sketch/v2/LayersPanel.kt :: TextButton(onClick = onCancel) { Text("Cancel") }
+ui/sketch/v2/LayersPanel.kt :: TextButton(onClick = { onDone(text) }) { Text("Save name") }
+ui/sketch/v2/LayersPanel.kt :: const val DELETE_ALL = "sketch.layers.dialog.deleteAll"
+ui/sketch/v2/LayersPanel.kt :: contentDescription = row.deleteDisabledReason?.let { "Delete layer ${row.layer.name}, disabled: $it" } ?: "Delete layer ${row.layer.name}"
+ui/sketch/v2/LayersPanel.kt :: if (failure == null) renaming = null else renameError = LayersPanelModel.errorText(failure) ?: "Could not rename"
+ui/sketch/v2/LayersPanel.kt :: if (row.active) Text("Active", style = MaterialTheme.typography.labelSmall)
+ui/sketch/v2/LayersPanel.kt :: label = { Text("Layer name") },
+ui/sketch/v2/LayersPanel.kt :: text = { Text("This can be undone.") },
+ui/sketch/v2/LayersPanelModel.kt :: const val BASE_NOT_DELETABLE = "The base layer cannot be deleted"
+ui/sketch/v2/LayersPanelModel.kt :: const val CANCEL_LABEL = "Cancel"
+ui/sketch/v2/LayersPanelModel.kt :: const val DELETE_ALL_LABEL = "Delete layer and elements"
+ui/sketch/v2/LayersPanelModel.kt :: const val MOVE_LABEL = "Move elements to Base then delete"
+ui/sketch/v2/LayersPanelModel.kt :: const val PANEL_TITLE = "Layers"
+ui/sketch/v2/LayersPanelModel.kt :: const val RENAME_COLLISION = "A layer with this name exists"
+ui/sketch/v2/LayersPanelModel.kt :: fun skippedDetails(count: Int): String = "$count locked ${if (count == 1) "element was" else "elements were"} not changed"
+ui/sketch/v2/LayersPanelModel.kt :: fun switchLayer(target: Layer) = LayerNoticeAction("Switch layer", "Active layer: ${target.name}", null, target.id)
+ui/sketch/v2/LayersPanelModel.kt :: fun unlock(layer: Layer) = LayerNoticeAction("Unlock", "Layer ${layer.name} unlocked", SetLayerLocked(layer.id, false), null)
+ui/sketch/v2/LayersPanelModel.kt :: is CommandError.NameTooLong -> "Names can have up to ${error.limit} characters"
+ui/sketch/v2/LayersPanelModel.kt :: is CommandError.TooManyLayers -> "A sheet can have up to ${error.limit} layers"
+ui/sketch/v2/LayersPanelModel.kt :: return "Layer $n"
+ui/sketch/v2/LayersPanelModel.kt :: return LayerNoticeAction("Unlock all", "Unlocked $noun", LockElements(skipped, false), null)
+ui/sketch/v2/LayersPanelModel.kt :: return SelectionOutcome(selection - dropped.toSet(), "Selection cleared: layer $name hidden ($noun deselected)")
+ui/sketch/v2/LayersPanelModel.kt :: val lockLabel: String get() = "Layer ${layer.name}, ${if (layer.locked) "locked" else "unlocked"}"
+ui/sketch/v2/LayersPanelModel.kt :: val noun = if (dropped.size == 1) "1 element" else "${dropped.size} elements"
+ui/sketch/v2/LayersPanelModel.kt :: val noun = if (skipped.size == 1) "1 locked element" else "${skipped.size} locked elements"
+ui/sketch/v2/LayersPanelModel.kt :: val title: String get() = "Delete layer '${layer.name}' and its $elementCount elements?"
+ui/sketch/v2/LayersPanelModel.kt :: val visibilityLabel: String get() = "Layer ${layer.name}, ${if (layer.visible) "visible" else "hidden"}"
+ui/sketch/v2/LayersPanelModel.kt :: while ("Layer $n" in used) n++
+ui/sketch/v2/NameTagsModel.kt :: val description: String get() = "$count element names here, zoom in to read them"
+ui/sketch/v2/PanPad.kt :: ) { Text("Pan") }
+ui/sketch/v2/PanPad.kt :: .semantics { role = Role.Button; contentDescription = if (open) "Close pan pad" else "Pan"; onClick { onToggle(); true } }
+ui/sketch/v2/PanPad.kt :: Down(0, 1, "Pan down"),
+ui/sketch/v2/PanPad.kt :: Left(-1, 0, "Pan left"),
+ui/sketch/v2/PanPad.kt :: PadCell(PanTags.FIT, "Fit", "Fit", onFit, null)
+ui/sketch/v2/PanPad.kt :: Right(1, 0, "Pan right"),
+ui/sketch/v2/PanPad.kt :: Up(0, -1, "Pan up"),
+ui/sketch/v2/PanelSheetHandle.kt :: .semantics { role = Role.Button; contentDescription = "Panel size"; stateDescription = SheetSizing.describe(size) }
+ui/sketch/v2/PanelSheetHandle.kt :: fun describe(size: SheetSize): String = if (size == SheetSize.Half) "half height" else "full height"
+ui/sketch/v2/PanelSheetHandle.kt :: fun toggleLabel(size: SheetSize): String = if (size == SheetSize.Half) "Expand" else "Collapse"
+ui/sketch/v2/SelectionOverlay.kt :: Handle.E -> "Resize handle, right"
+ui/sketch/v2/SelectionOverlay.kt :: Handle.N -> "Resize handle, top"
+ui/sketch/v2/SelectionOverlay.kt :: Handle.NE -> "Resize handle, top right"
+ui/sketch/v2/SelectionOverlay.kt :: Handle.NW -> "Resize handle, top left"
+ui/sketch/v2/SelectionOverlay.kt :: Handle.Rotate -> "Rotation handle"
+ui/sketch/v2/SelectionOverlay.kt :: Handle.S -> "Resize handle, bottom"
+ui/sketch/v2/SelectionOverlay.kt :: Handle.SE -> "Resize handle, bottom right"
+ui/sketch/v2/SelectionOverlay.kt :: Handle.SW -> "Resize handle, bottom left"
+ui/sketch/v2/SelectionOverlay.kt :: Handle.W -> "Resize handle, left"
+ui/sketch/v2/SelectionOverlay.kt :: Move("Move"), Resize("Resize"), Rotate("Rotate"), FlipHorizontal("Flip horizontal"), FlipVertical("Flip vertical"),
+ui/sketch/v2/SelectionOverlay.kt :: const val HANDLES_HINT = "Zoom in to use handles"
+ui/sketch/v2/ShortcutsSheet.kt :: Key.Delete to "Delete", Key.Backspace to "Backspace", Key.Escape to "Escape", Key.F6 to "F6",
+ui/sketch/v2/ShortcutsSheet.kt :: Key.DirectionUp to "ArrowUp", Key.DirectionDown to "ArrowDown", Key.DirectionLeft to "ArrowLeft", Key.DirectionRight to "ArrowRight",
+ui/sketch/v2/ShortcutsSheet.kt :: Key.PageUp to "PageUp", Key.PageDown to "PageDown", Key.MoveHome to "Home",
+ui/sketch/v2/ShortcutsSheet.kt :: contentDescription = "${row.label}: ${row.keys.joinToString(", ")}"
+ui/sketch/v2/ShortcutsSheetModel.kt :: const val ARRANGE = "Arrange"
+ui/sketch/v2/ShortcutsSheetModel.kt :: const val COLLISION_NOTE = "In browse mode NVDA and JAWS reserve the letters H, F, E, T, L and D, which are also our tool letters; the shortcuts work in focus mode."
+ui/sketch/v2/ShortcutsSheetModel.kt :: const val CONSTRAINTS = "Constraints"
+ui/sketch/v2/ShortcutsSheetModel.kt :: const val DETAILS = "Single-key tool shortcuts are off."
+ui/sketch/v2/ShortcutsSheetModel.kt :: const val EDIT = "Edit"
+ui/sketch/v2/ShortcutsSheetModel.kt :: const val REGION_NOTE = "F6 and Shift+F6 move between the regions of the editor without stepping through every element; Esc returns focus to the canvas."
+ui/sketch/v2/ShortcutsSheetModel.kt :: const val SETTING_LABEL = "Single-key shortcuts"
+ui/sketch/v2/ShortcutsSheetModel.kt :: const val TITLE = "Keyboard shortcuts"
+ui/sketch/v2/ShortcutsSheetModel.kt :: const val TOOLS = "Tools"
+ui/sketch/v2/ShortcutsSheetModel.kt :: const val VIEW = "View"
+ui/sketch/v2/SketchFontResources.kt :: logger.warn("bundled sketch fonts did not load: ${e::class.simpleName}")
+ui/sketch/v2/SketchScreenV2.kt :: ClusterButton("sketch.zoomin", "Zoom in", "+", target, act { state.viewport = state.viewport.zoomBy(centre, ZOOM_STEP_IN) })
+ui/sketch/v2/SketchScreenV2.kt :: ClusterButton("sketch.zoomlevel", "Zoom ${(state.viewport.zoom * PERCENT).toInt()}%", "${(state.viewport.zoom * PERCENT).toInt()}%", target, act { state.viewport = state.viewport.zoomTo(centre, 1.0) })
+ui/sketch/v2/SketchScreenV2.kt :: ClusterButton("sketch.zoomout", "Zoom out", "−", target, act { state.viewport = state.viewport.zoomBy(centre, ZOOM_STEP_OUT) })
+ui/sketch/v2/SketchScreenV2.kt :: text = { Text("Constrain (K)") },
+ui/sketch/v2/SketchScreenV2.kt :: text = { Text("More tools: ${tool.label}  ${tool.shortcut}") },
+ui/sketch/v2/SketchScreenV2.kt :: text = { Text("Pan arrows") },
+ui/sketch/v2/StylePanel.kt :: ChoiceRow("Edges", EdgesChoice.entries.map { it to it.label }, model.edges) { send(StyleActions.edges(it)) }
+ui/sketch/v2/StylePanel.kt :: ChoiceRow("Fill style", FillStyle.entries.map { it to it.name }, model.fillStyle) { send(StyleActions.fillStyle(it)) }
+ui/sketch/v2/StylePanel.kt :: ChoiceRow("Font", FontChoice.entries.map { it to it.label }, family.asChoice { FontChoice.of(it) }) { onCommand(StyleActions.font(ids, it)) }
+ui/sketch/v2/StylePanel.kt :: ChoiceRow("Sloppiness", SloppinessChoice.entries.map { it to it.label }, model.sloppiness) { send(StyleActions.sloppiness(it)) }
+ui/sketch/v2/StylePanel.kt :: ChoiceRow("Stroke style", StrokeStyle.entries.map { it to it.name }, model.strokeStyle) { send(StyleActions.strokeStyle(it)) }
+ui/sketch/v2/StylePanel.kt :: ChoiceRow("Stroke width", StrokeWidthChoice.entries.map { it to it.label }, model.strokeWidth.asChoice { StrokeWidthChoice.of(it) }, enabled = widthReason == null) { send(StyleActions.strokeWidth(it)) }
+ui/sketch/v2/StylePanel.kt :: SwatchRow("Fill", ColorPalette.background, model.backgroundColor) { send(StyleActions.backgroundColor(it)) }
+ui/sketch/v2/StylePanel.kt :: SwatchRow("Stroke", ColorPalette.stroke, model.strokeColor) { send(StyleActions.strokeColor(it)) }
+ui/sketch/v2/StylePanel.kt :: Text("Opacity", Modifier.widthIn(min = 72.dp))
+ui/sketch/v2/StylePanel.kt :: if (opacity is StyleValue.Mixed) MixedChip("Opacity")
+ui/sketch/v2/StylePanel.kt :: model.fontSize?.let { size -> ChoiceRow("Font size", FontSizeChoice.entries.map { it to it.label }, size.asChoice { FontSizeChoice.of(it) }) { onCommand(StyleActions.fontSize(ids, it)) } }
+ui/sketch/v2/StylePanelModel.kt :: Clean("Clean", 0), Sketchy("Sketchy", 1);
+ui/sketch/v2/StylePanelModel.kt :: HandDrawn("Hand-drawn", 1), Normal("Normal", 2), Code("Code", 3);
+ui/sketch/v2/StylePanelModel.kt :: NamedColor("#1971c2", "Blue 700"), NamedColor("#f08c00", "Orange 600"),
+ui/sketch/v2/StylePanelModel.kt :: NamedColor("#1e1e1e", "Black"), NamedColor("#e03131", "Red 600"), NamedColor("#2f9e44", "Green 700"),
+ui/sketch/v2/StylePanelModel.kt :: NamedColor("#a5d8ff", "Blue 100"), NamedColor("#ffec99", "Yellow 100"),
+ui/sketch/v2/StylePanelModel.kt :: NamedColor(TRANSPARENT, "Transparent"), NamedColor("#ffc9c9", "Red 100"), NamedColor("#b2f2bb", "Green 100"),
+ui/sketch/v2/StylePanelModel.kt :: S("S", 16.0), M("M", 20.0), L("L", 28.0), XL("XL", 36.0);
+ui/sketch/v2/StylePanelModel.kt :: StylePanelModel("Defaults for ${tool.name}", false, emptyList(), defaults, scene.layers)
+ui/sketch/v2/StylePanelModel.kt :: StylePanelModel("Selection (${selection.size})", true, selection, defaults, scene.layers)
+ui/sketch/v2/StylePanelModel.kt :: Thin("Thin", 1.0), Bold("Bold", 2.0), ExtraBold("Extra bold", 4.0);
+ui/sketch/v2/StylePanelModel.kt :: enum class EdgesChoice(val label: String) { Sharp("Sharp"), Round("Round") }
+ui/sketch/v2/StylePanelModel.kt :: fun nameOf(css: String): String = byCss[css.lowercase()] ?: "Custom $css"
+ui/sketch/v2/StylePanelModel.kt :: if (editsSelection && elements.isNotEmpty() && elements.all { it is ImageElement }) "Stroke width does not apply to images" else null
+ui/sketch/v2/StylePanelModel.kt :: return "Effective ${own * layerPercent / PERCENT}% (layer $layerPercent%)"
+ui/sketch/v2/TextEditorOverlay.kt :: const val DONE = "Done"
+ui/sketch/v2/TextEditorOverlay.kt :: const val KEYBOARD = "Esc to finish"
+ui/sketch/v2/TextEditorOverlay.kt :: const val OK = "OK"
+ui/sketch/v2/TextEditorOverlay.kt :: const val TOUCH = "Tap Done or tap outside to finish"
+ui/sketch/v2/ToolStrip.kt :: StripButton(c, "delete", StripTags.DELETE, if (none) "Delete, unavailable: nothing selected" else "Delete", "🗑", size, selected = false, enabled = !none, onClick = actions.onDelete)
+ui/sketch/v2/ToolStrip.kt :: StripButton(c, "redo", StripTags.REDO, "Redo", "↷", size, selected = false, enabled = status.canRedo, onClick = actions.onRedo)
+ui/sketch/v2/ToolStrip.kt :: StripButton(c, "undo", StripTags.UNDO, "Undo", "↶", size, selected = false, enabled = status.canUndo, onClick = actions.onUndo)
+ui/sketch/v2/ToolStrip.kt :: ToolId.Text to "T", ToolId.Image to "Img", ToolId.Frame to "▢", ToolId.Eraser to "⌫",
+ui/sketch/v2/ToolStrip.kt :: c, "toollock", StripTags.TOOL_LOCK, if (on) "Tool lock on" else "Tool lock off", if (on) "🔒" else "🔓",
+ui/sketch/v2/ToolStrip.kt :: val label = if (selected) "Constrain (K)" else "Constrain, unavailable: Select an element to constrain"
+ui/sketch/v2/ToolStripModel.kt :: Geometry("Geometry", listOf(ToolId.Point, ToolId.Arc), true),
+ui/sketch/v2/ToolStripModel.kt :: Lines("Lines", listOf(ToolId.Arrow, ToolId.Line, ToolId.Freedraw), false),
+ui/sketch/v2/ToolStripModel.kt :: ReadOnly -> "read-only sketch"
+ui/sketch/v2/ToolStripModel.kt :: Shapes("Shapes", listOf(ToolId.Rectangle, ToolId.Diamond, ToolId.Ellipse), false),
+ui/sketch/v2/ToolStripModel.kt :: if (block == null) "${tool.label} (${tool.shortcut})" else "${tool.label}, unavailable: ${block.reason()}"
+ui/sketch/v2/ToolStripModel.kt :: is LayerLocked -> "locked layer: $layerName"
+ui/sketch/v2/WebInputSpikeProbe.kt :: js("(function() { handle.names.forEach(function(n) { host.removeEventListener(n, handle.fn); }); })()")
+ui/sketch/v2/WebInputSpikeProbe.kt :: js("(function() { host.style.touchAction = 'none'; host.style.overscrollBehavior = 'none'; })()")
+ui/sketch/v2/WebInputSpikeProbe.kt :: js("window.getComputedStyle(host).getPropertyValue(property)")

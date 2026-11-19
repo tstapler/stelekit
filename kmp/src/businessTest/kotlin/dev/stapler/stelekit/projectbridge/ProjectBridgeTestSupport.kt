@@ -82,6 +82,9 @@ internal fun bridgeDeps(
     boundSources = boundSources,
     yamlSnapshot = yamlSnapshot,
     fusionSetup = fusionSetup,
+    sheetLeases = dev.stapler.stelekit.sketch.v2.runtime.session.SheetLeaseRegistry(
+        dev.stapler.stelekit.platform.AlwaysHeldSketchWriterLease(),
+    ),
 )
 
 internal const val BRIDGE_GRAPH = "graph-a"

@@ -442,6 +442,7 @@ internal fun ScreenRouter(
                     dev.stapler.stelekit.ui.sketch.ProjectListScreen(
                         projectListViewModel,
                         onOpenProject = { viewModel.navigateTo(Screen.Sketch(it)) },
+                        sketchCopy = viewModel.sketchCopyHost(),
                         registryEditor = {
                             dev.stapler.stelekit.ui.sketch.RegistryEditorViewModel(
                                 repos.sketchRepositories.projects,
@@ -456,14 +457,26 @@ internal fun ScreenRouter(
                         dev.stapler.stelekit.ui.sketch.sketchExporterFor(fileSystem, graphPath)
                     }
                     val previewLoader = dev.stapler.stelekit.ui.sketch.LocalSketchPreviewLoader.current
-                    val sketchViewModel = remember(currentScreen.projectUuid, sketchExporter, previewLoader) {
-                        dev.stapler.stelekit.ui.sketch.sketchViewModelFor(
-                            repos.sketchRepositories, repos.writeActor, currentScreen.projectUuid,
-                            onSaved = sketchExporter?.let { exporter -> { doc, slug -> exporter.exportPreview(doc, slug) } },
-                            onPersisted = previewLoader?.let { loader -> { slug -> loader.notifySaved(slug) } },
-                        )
+                    val v2Deps = remember(repos, viewModel) { viewModel.v2EditorDeps(repos.sketchRepositories, repos.writeActor) }
+                    val legacyFlush = remember { dev.stapler.stelekit.ui.sketch.v2.LegacyFlushHandle() }
+                    dev.stapler.stelekit.ui.sketch.v2.SketchEditorV2Route(
+                        deps = v2Deps,
+                        projectUuid = currentScreen.projectUuid?.let { dev.stapler.stelekit.model.ProjectUuid(it) },
+                        onBack = { viewModel.goBack() },
+                        legacyFlush = legacyFlush,
+                    ) {
+                        val sketchViewModel = remember(currentScreen.projectUuid, sketchExporter, previewLoader) {
+                            dev.stapler.stelekit.ui.sketch.sketchViewModelFor(
+                                repos.sketchRepositories, repos.writeActor, currentScreen.projectUuid,
+                                onSaved = sketchExporter?.let { exporter -> { doc, slug -> exporter.exportPreview(doc, slug) } },
+                                onPersisted = previewLoader?.let { loader -> { slug -> loader.notifySaved(slug) } },
+                                leases = viewModel.sheetLeaseRegistry(),
+                                v2Probe = viewModel.projectSidecarStore()?.let { dev.stapler.stelekit.projectbridge.SheetFileSchemaProbe(it) },
+                            )
+                        }
+                        SideEffect { legacyFlush.flush = { sketchViewModel.flush() } }
+                        dev.stapler.stelekit.ui.sketch.SketchScreen(viewModel = sketchViewModel, onNavigateBack = { viewModel.goBack() }, exporter = sketchExporter)
                     }
-                    dev.stapler.stelekit.ui.sketch.SketchScreen(viewModel = sketchViewModel, onNavigateBack = { viewModel.goBack() }, exporter = sketchExporter)
                 }
             }
 

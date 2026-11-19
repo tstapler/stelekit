@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.model
 
 import dev.stapler.stelekit.units.Rational
+import dev.stapler.stelekit.util.ContentHasher
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlin.jvm.JvmInline
@@ -41,6 +42,8 @@ data class SketchSheet(
     val layers: List<String> = emptyList(),
     val zones: JsonArray = JsonArray(emptyList()),
     val position: Long = 0,
+    /** DB mirror of the sheet file's schema (1 or 2); the file wins, see ADR-001. Copy it, never rebuild it. */
+    val schemaVersion: Long = 1,
 )
 
 /** Coordinates are sixteenths of the sheet unit. */
@@ -82,10 +85,33 @@ data class RevisionToken(val projectUuid: ProjectUuid, val value: Long)
 
 data class LoadedSketchProject(val project: SketchProject, val token: RevisionToken)
 
-/** Everything `replaceProjectContents` rebuilds in one transaction. */
+/**
+ * What a sheet's file holds as far as the bundle pipeline is concerned. A v1 sheet is its [primitives]; a v2 sheet is
+ * opaque bytes the pipeline carries unchanged (interpretation belongs to the v2 editor's codec, never to the bundle).
+ */
+sealed interface SheetPayload {
+    data class V1(val primitives: List<SketchPrimitive>) : SheetPayload
+
+    class V2Opaque(val bytes: ByteArray, val sha256: String) : SheetPayload {
+        override fun equals(other: Any?) = other is V2Opaque && sha256 == other.sha256 && bytes.contentEquals(other.bytes)
+        override fun hashCode() = sha256.hashCode()
+        override fun toString() = "V2Opaque(sha256=$sha256, ${bytes.size} bytes)"
+
+        companion object {
+            fun of(bytes: ByteArray) = V2Opaque(bytes, ContentHasher.sha256(bytes))
+        }
+    }
+}
+
+/**
+ * Everything `replaceProjectContents` rebuilds in one transaction. [primitives] holds v1 sheets' primitives only.
+ * [sheetPayloads] holds the opaque bytes of every sheet whose `schemaVersion` is 2 (the database keeps no v2
+ * content); a v1 sheet needs no entry, an explicit [SheetPayload.V1] entry overrides [primitives] for that sheet.
+ */
 data class ProjectBundle(
     val project: SketchProject,
     val sheets: List<SketchSheet>,
     val primitives: List<SketchPrimitive>,
     val dimensions: List<SketchDimension>,
+    val sheetPayloads: Map<SheetUuid, SheetPayload> = emptyMap(),
 )

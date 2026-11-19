@@ -48,6 +48,27 @@ kt_jvm_test(
             "dev/stapler/stelekit/ui/components/MermaidRendererFallbackTest.kt",
             "dev/stapler/stelekit/ui/components/MermaidRendererSmokeTest.kt",
             "dev/stapler/stelekit/ui/components/MermaidSecurityDirectiveTest.kt",
+            # Spike 0.1.3b/c pixel probe: needs commonTest DeterminismSpikeSupport (not on this target's classpath); Gradle-only
+            "**/DeterminismSpikeJvmTest.kt",
+            # Story 2.2.3 pixel check: needs commonTest Architecture15Pixels/Golden (not on this target's classpath); Gradle-only
+            "**/LargeSceneDegradationTest.kt",
+            # Story 6.2.2 budget gate: needs commonTest SolverCorpus/FixedAdvanceTextMetricsProvider (not on this target's classpath)
+            # and reads benchmarks/budgets/sketch-engine-budgets.json; Gradle-only, run by the `sketch-engine-budgets` CI job.
+            "**/SketchEngineBenchmark.kt",
+            # Task 6.2.4g: reuses businessTest SaverRig/MixedProjectFixtures (not on this target's classpath); Gradle-only.
+            "**/RenderedSliceScenarioTest.kt",
+            # Task 6.2.4a: the scripted architecture diagram and the end-to-end tool run use commonTest ArchitectureScenario/Golden (not on this target's classpath); Gradle-only.
+            "**/ArchitectureScenarioTest.kt",
+            "**/ToolsEndToEndTest.kt",
+            # Task 6.2.4b: drives ScenarioEditor (commonTest) and SketchTestSupport (businessTest), neither on this target's classpath; Gradle-only.
+            "**/ParityV1SuiteTest.kt",
+            # Story 6.2.0b: drives the commonTest V2EditorRig (not on this target's classpath); Gradle-only.
+            "**/WiringV2DesktopEntryPointTest.kt",
+            # Task 5.2.3: drives the commonTest FixedAdvanceTextMetricsProvider (not on this target's classpath); Gradle-only.
+            "**/SketchExportRunnerPngTest.kt",
+            # Reads the bundled fonts through Compose Multiplatform's generated `Res`, which Bazel does not generate (commonMain
+            # uses bazel_stubs/SketchFontResources.kt instead); Gradle-only. Also skipped by AllJvmTestsCompletenessTest.
+            "dev/stapler/stelekit/ui/sketch/v2/ComposeTextMetricsProviderTest.kt",
         ],
     ),
     associates = ["//kmp/src/jvmMain/kotlin:jvm_main_lib"],
@@ -100,6 +121,7 @@ kt_jvm_test(
         "//kmp/src/commonTest/kotlin:merge_fixtures",
         "//kmp/src/commonTest/kotlin:observable_effect_jvm",
         "//kmp/src/commonTest/kotlin:scheduler_contract_fixtures_jvm",
+        "//kmp/src/commonTest/kotlin:sketch_chrome_fixture",
         ":graph_content_wiring_test_sources_as_resources",
         "@maven//:com_google_zxing_core",
         "@maven//:io_ktor_ktor_client_mock_jvm",

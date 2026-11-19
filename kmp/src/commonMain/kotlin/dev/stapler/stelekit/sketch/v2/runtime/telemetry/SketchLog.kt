@@ -1,0 +1,122 @@
+// Copyright (c) 2026 Tyler Stapler
+// SPDX-License-Identifier: Elastic-2.0
+// https://www.elastic.co/licensing/elastic-license
+
+package dev.stapler.stelekit.sketch.v2.runtime.telemetry
+
+import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
+
+/** Receives one finished `sketch.*` line. */
+fun interface SketchLogSink {
+    fun emit(line: String)
+}
+
+/**
+ * The only way the sketch engine writes a `sketch.*` log line (plan Story 6.2.3). Every parameter is an id, a
+ * token or a count, never element text: a value that is not `[A-Za-z0-9_.-]` up to the id length cap becomes
+ * `?`, so a label, a file name or any user text passed by mistake cannot reach the log. There is deliberately no
+ * function for pointer or drag events: pointer-move paths must not log (UX-70, UX-73).
+ * `sketch.adoption` and `sketch.quality` (Task 6.2.3b) are counts only, emitted once per session end by
+ * [QualitySignals.endSession]; with [signals] set, a save conflict and a finished solve also feed the local counters.
+ */
+class SketchLog(
+    private val sink: SketchLogSink = LoggerSink,
+    private val limits: SceneLimits = SceneLimits.Default,
+    private val signals: QualitySignals? = null,
+) {
+    private var lastTool: String? = null
+
+    /** Emitted when the active tool changes; re-selecting the active tool logs nothing. */
+    fun toolActivated(toolId: String) {
+        val tool = clean(toolId)
+        if (tool == lastTool) return
+        lastTool = tool
+        emit("sketch.tool.activated", "tool" to tool)
+    }
+
+    fun solveFailed(kind: String, constraintIds: List<String>) =
+        emit("sketch.solve.failed", "kind" to clean(kind), "ids" to ids(constraintIds))
+
+    fun importFailed(reason: String) = emit("sketch.import.failed", "reason" to clean(reason))
+
+    fun importSummary(imported: Int, skipped: Int) =
+        emit("sketch.import.summary", "imported" to count(imported.toLong()), "skipped" to count(skipped.toLong()))
+
+    fun migrateOutcome(outcome: String) = emit("sketch.migrate.outcome", "outcome" to clean(outcome))
+
+    fun persistFailed(reason: String) = emit("sketch.persist.failed", "reason" to clean(reason))
+
+    fun sheetRejected(reason: String) = emit("sketch.sheet.rejected", "reason" to clean(reason))
+
+    fun saveConflict(sheetId: String) {
+        signals?.recordConflict()
+        emit("sketch.save.conflict", "sheet" to clean(sheetId))
+    }
+
+    /** A solve ended committed: it feeds the local counters and logs nothing (one line per session end, not per solve). */
+    fun solveCommitted() {
+        signals?.recordSolve()
+    }
+
+    /** A solve stopped above the residual bar (`NoConvergence`); counted, not logged here ([solveFailed] logs the failure). */
+    fun solveNoConvergence() {
+        signals?.recordNoConvergence()
+    }
+
+    /** `sketch.adoption`: sheets authored in-app (metric 8's numerator) and, apart, `.excalidraw` files imported. */
+    internal fun adoption(authored: Long, imported: Long) =
+        emit("sketch.adoption", "authored" to count(authored), "imported" to count(imported))
+
+    /** `sketch.quality`: the flag-exit counters, counts only. */
+    internal fun quality(v2Sessions: Long, crashes: Long, solves: Long, noConvergence: Long, conflicts: Long) = emit(
+        "sketch.quality",
+        "v2Sessions" to count(v2Sessions), "crashes" to count(crashes), "solves" to count(solves),
+        "noConvergence" to count(noConvergence), "conflicts" to count(conflicts),
+    )
+
+    /**
+     * The one line of a user-visible error state (UX-71): its fixed name from [SketchErrorState.logName] and its reason token,
+     * plus constraint ids for a solve failure. Ids and tokens only, never element text.
+     */
+    fun errorState(state: SketchErrorState, constraintIds: List<String> = emptyList()) {
+        if (state == SketchErrorState.SaveConflict) signals?.recordConflict()
+        if (constraintIds.isEmpty()) {
+            emit(state.logName, "reason" to state.reasonCode)
+        } else {
+            emit(state.logName, "reason" to state.reasonCode, "ids" to ids(constraintIds))
+        }
+    }
+
+    /** A notice or banner row reached the screen; [key] is its fixed id (`AddedConstraint`), never its text. */
+    fun noticeShown(key: String) = emit("sketch.notice.shown", "key" to clean(key))
+
+    /** An onboarding item became visible; [item] is the `OnboardingItem` name. */
+    fun onboardingShown(item: String) = emit("sketch.onboarding.shown", "item" to clean(item))
+
+    private fun emit(name: String, vararg fields: Pair<String, String>) {
+        sink.emit(buildString {
+            append(name)
+            for ((key, value) in fields) append(' ').append(key).append('=').append(value)
+        })
+    }
+
+    private fun ids(values: List<String>): String {
+        if (values.isEmpty()) return "-"
+        val shown = values.take(limits.maxConstraints).joinToString(",") { clean(it) }
+        val omitted = values.size - limits.maxConstraints
+        return if (omitted > 0) "$shown,+$omitted" else shown
+    }
+
+    private fun count(value: Long): String = value.coerceAtLeast(0).toString()
+
+    private fun clean(value: String): String =
+        if (value.isNotEmpty() && value.length <= limits.maxLayerIdChars && value.all(Char::isTokenChar)) value else "?"
+
+    private object LoggerSink : SketchLogSink {
+        private val logger = Logger("sketch")
+        override fun emit(line: String) = logger.info(line)
+    }
+}
+
+private fun Char.isTokenChar(): Boolean = this in 'a'..'z' || this in 'A'..'Z' || this in '0'..'9' || this == '_' || this == '.' || this == '-'

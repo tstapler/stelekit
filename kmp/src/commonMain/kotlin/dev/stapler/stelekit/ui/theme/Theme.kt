@@ -104,6 +104,9 @@ private val StoneExtendedColors = StelekitExtendedColors(
     onWarning = OnWarningDark,
 )
 
+/** The static colour schemes by name, for the accessibility audit (`UxA11yAcceptanceTest`): what the editor renders in. */
+fun stelekitStaticSchemes(): Map<String, ColorScheme> = mapOf("light" to LightColorScheme, "dark" to DarkColorScheme, "stone" to StoneColorScheme)
+
 enum class StelekitThemeMode {
     LIGHT, DARK, SYSTEM, STONE, DYNAMIC
 }

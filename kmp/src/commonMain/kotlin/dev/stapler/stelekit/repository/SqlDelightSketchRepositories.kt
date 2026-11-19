@@ -76,6 +76,7 @@ private fun Sketch_sheets.toModel() = SketchSheet(
     uuid = SheetUuid(uuid), projectUuid = ProjectUuid(project_uuid), kind = kind, viewDirection = view_direction,
     unit = unit, scaleSixteenthsPerUnit = scale_sixteenths_per_unit, sourceAssetUuid = source_asset_uuid,
     layers = parseStrings(layer_json), zones = parseArray(zones_json), position = position,
+    schemaVersion = schema_version,
 )
 
 private fun Sketch_primitives.toModel() = SketchPrimitive(
@@ -99,6 +100,7 @@ private suspend fun SteleDatabaseQueries.put(p: SketchProject) = insertSketchPro
 private suspend fun SteleDatabaseQueries.put(s: SketchSheet) = insertSketchSheet(
     s.uuid.value, s.projectUuid.value, s.kind, s.viewDirection, s.unit, s.scaleSixteenthsPerUnit, s.sourceAssetUuid,
     sketchJson.encodeToString(ListSerializer(String.serializer()), s.layers), s.zones.toString(), s.position,
+    s.schemaVersion,
 )
 
 private suspend fun SteleDatabaseQueries.put(p: SketchPrimitive) =
