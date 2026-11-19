@@ -38,7 +38,7 @@ private fun SketchEditorController.selectedElements() = ui.selection.mapNotNull 
 private fun StyleTab(controller: SketchEditorController, extras: EditorExtras) {
     Column(Modifier.fillMaxWidth()) {
         // An open dimension label was written in the old unit; it must not be committed in the new one.
-        SheetKindRow(controller, onChanged = extras.dimension::cancel)
+        SheetKindRow(controller, onChange = extras.dimension::cancel)
         SheetStyleRow(controller)
         StylePanelContent(controller)
     }
