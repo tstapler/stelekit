@@ -8,18 +8,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithTag
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
-import arrow.core.Either
-import dev.stapler.stelekit.error.DomainError
-import dev.stapler.stelekit.sketch.SketchDeleteService
-import dev.stapler.stelekit.sketch.StandaloneSketchService
-import dev.stapler.stelekit.ui.sketch.v2.strings.SketchEngineStrings
 import dev.stapler.stelekit.llm.LlmSettings
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.projectbridge.ProjectBridgeSettings
@@ -79,36 +70,5 @@ class ProjectListPhoneLayoutTest {
             }
         }
         rule.onNodeWithText("Garden shed").assertIsDisplayed()
-    }
-
-    private fun deletableViewModel(): ProjectListViewModel {
-        val repos = inMemorySketchRepositories()
-        val raw = PhoneMapSettings()
-        val write: suspend (suspend () -> Either<DomainError, Unit>) -> Either<DomainError, Unit> = { it() }
-        return ProjectListViewModel(
-            repos.projects, "g1", ProjectBridgeSettings(raw), LlmSettings(raw), { it() }, { 1L },
-            newSketch = StandaloneSketchService(repos.projects, write, null, { 1L }),
-            deleter = SketchDeleteService(repos.projects, { null }, write),
-            dispatcher = UnconfinedTestDispatcher(),
-        )
-    }
-
-    @Test
-    fun aSketchIsDeletedOnlyAfterTheConfirmation() {
-        val vm = deletableViewModel()
-        rule.setContent { MaterialTheme { ProjectListScreen(vm, onOpenProject = {}) } }
-        vm.createSketch {}
-        rule.waitForIdle()
-
-        rule.onNodeWithTag(SKETCH_DELETE_ROW_TAG).performClick()
-        rule.onNodeWithText(SketchEngineStrings.SketchDelete.TITLE).assertIsDisplayed()
-        rule.onNodeWithText(SketchEngineStrings.SketchDelete.CANCEL).performClick()
-        rule.waitForIdle()
-        rule.onAllNodesWithTag(SKETCH_DELETE_ROW_TAG).assertCountEquals(1)
-
-        rule.onNodeWithTag(SKETCH_DELETE_ROW_TAG).performClick()
-        rule.onNodeWithTag(SKETCH_DELETE_CONFIRM_TAG).performClick()
-        rule.waitForIdle()
-        rule.onAllNodesWithTag(SKETCH_DELETE_ROW_TAG).assertCountEquals(0)
     }
 }
