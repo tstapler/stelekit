@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.115.1](https://github.com/tstapler/stelekit/compare/v0.115.0...v0.115.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **sketch:** live shape preview follows the drag, larger toolbar glyphs, mic hidden on sketch screen ([#687](https://github.com/tstapler/stelekit/issues/687)) ([a9eee61](https://github.com/tstapler/stelekit/commit/a9eee6142d6ad2c954444f3f7e62cca73a1414a9))
+
 ## [0.115.0](https://github.com/tstapler/stelekit/compare/v0.114.0...v0.115.0) (2026-11-19)
 
 
