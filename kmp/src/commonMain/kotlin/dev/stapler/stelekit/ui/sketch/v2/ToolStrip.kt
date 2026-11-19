@@ -89,8 +89,9 @@ private val GLYPHS = mapOf(
     ToolId.Point to "⌖", ToolId.Arc to "◠",
 )
 
-/** Glyph size: the default 14 sp read as specks inside a 44 dp touch target on a phone. */
+/** Glyph sizes: the default 14 sp read as specks in a 44 dp target on a phone; words and pairs ("Img") stay smaller so they fit on one line. */
 private const val GLYPH_SP = 22
+private const val WORD_GLYPH_SP = 16
 
 private class StripControls(val focus: Map<String, FocusRequester>, val state: SketchEditorState, val pointer: PointerClass)
 
@@ -283,7 +284,7 @@ private fun StripButton(
             },
         contentAlignment = Alignment.Center,
     ) {
-        Text(glyph, fontSize = GLYPH_SP.sp, color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(glyph, fontSize = (if (glyph.length > 1) WORD_GLYPH_SP else GLYPH_SP).sp, maxLines = 1, softWrap = false, color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
