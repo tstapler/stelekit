@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.115.0](https://github.com/tstapler/stelekit/compare/v0.114.0...v0.115.0) (2026-11-19)
+
+
+### Features
+
+* **sketch:** v2 sketch engine with Excalidraw interchange and 2D constraints ([#685](https://github.com/tstapler/stelekit/issues/685)) ([793b6a0](https://github.com/tstapler/stelekit/commit/793b6a006d0947f2e58bd292cca294244af6d8d4))
+
 ## [0.114.0](https://github.com/tstapler/stelekit/compare/v0.113.3...v0.114.0) (2026-11-16)
 
 
