@@ -130,6 +130,9 @@ class SketchEditorController(
     /** The sheet's style (Clean unless the sheet is Sketchy, OD-5). */
     val sheetStyle: SheetStyleDefaults get() = creation.sheetStyle
 
+    /** Diagram or technical sheet; technical turns on the constraint tools and inch dimensions. */
+    val sheetKind: dev.stapler.stelekit.sketch.v2.constraints.SheetKind get() = creation.sheetKind
+
     var overlay: EditorOverlay? by mutableStateOf(null)
 
     /** Keys the host-level surfaces own (clipboard, grid, snap); asked after the view keys. */

@@ -39,10 +39,13 @@ object AutoConstrainTags {
  * touch user with no Ctrl key can still draw a shape that is not constrained.
  */
 class AutoConstrainState(
-    val kind: SheetKind,
+    private val kindNow: () -> SheetKind,
     stored: Boolean? = null,
     private val onStored: (Boolean) -> Unit = {},
 ) {
+    constructor(kind: SheetKind, stored: Boolean? = null, onStored: (Boolean) -> Unit = {}) : this({ kind }, stored, onStored)
+
+    val kind: SheetKind get() = kindNow()
     private var storedChoice by mutableStateOf(stored)
     private var freeDrawNext by mutableStateOf(false)
 

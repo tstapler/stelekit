@@ -87,7 +87,11 @@ sealed interface DimensionEditState {
  * typed value commits through the same [SolveRunner] path as every edit, so the new value and the solver-moved geometry are ONE
  * undo step, and a value the solver refuses leaves the document untouched. Esc cancels and commits nothing.
  */
-class DimensionEditor(private val technical: Boolean) {
+class DimensionEditor(private val technicalNow: () -> Boolean) {
+    constructor(technical: Boolean) : this({ technical })
+
+    private val technical: Boolean get() = technicalNow()
+
     var state: DimensionEditState by mutableStateOf(DimensionEditState.Closed)
         private set
 

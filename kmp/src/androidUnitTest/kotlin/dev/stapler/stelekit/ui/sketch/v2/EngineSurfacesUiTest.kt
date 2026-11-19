@@ -17,6 +17,12 @@ import dev.stapler.stelekit.projectbridge.SketchCopyHost
 import dev.stapler.stelekit.sketch.v2.commands.AddElements
 import dev.stapler.stelekit.sketch.v2.commands.ContainerText
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
+import dev.stapler.stelekit.sketch.v2.constraints.Constraint
+import dev.stapler.stelekit.sketch.v2.constraints.ConstraintId
+import dev.stapler.stelekit.sketch.v2.constraints.ConstraintKind
+import dev.stapler.stelekit.sketch.v2.constraints.ConstraintTarget
+import dev.stapler.stelekit.sketch.v2.constraints.SheetKind
+import dev.stapler.stelekit.sketch.v2.constraints.TargetPart
 import dev.stapler.stelekit.sketch.v2.render.RenderStyle
 import dev.stapler.stelekit.sketch.v2.scene.ElementBase
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
@@ -87,6 +93,48 @@ class EngineSurfacesUiTest {
         rule.waitForIdle()
 
         assertEquals(RenderStyle.Sketchy, controller.sheetStyle.renderStyle)
+        controller.close()
+        extras.close()
+    }
+
+    @Test
+    fun sheetKindRow_should_MakeTheSheetTechnicalOnTap_AndTellTheCallerFirst() {
+        val (controller, extras) = rig()
+        var told = 0
+        rule.setContent { SheetKindRow(controller, onChange = { told++ }) }
+        assertEquals(SheetKind.Diagram, controller.sheetKind)
+
+        rule.onNodeWithTag(EngineTags.SHEET_TECHNICAL).performClick()
+        rule.waitForIdle()
+
+        assertEquals(SheetKind.Technical, controller.sheetKind)
+        assertEquals(1, told)
+        controller.close()
+        extras.close()
+    }
+
+    @Test
+    fun theStyleTab_should_OfferTheSheetTypeAndCloseAnOpenDimensionLabelWhenItChanges() {
+        val (controller, extras) = rig()
+        rule.setContent { SketchPanels(controller, PanelTab.Style, extras) }
+        extras.dimension.openNew(controller.doc, Constraint(ConstraintId("d"), ConstraintKind.Distance, listOf(ConstraintTarget(ElementId("r1"), TargetPart.Whole)), 48.0), "48")
+        assertEquals(true, extras.dimension.state != DimensionEditState.Closed)
+
+        rule.onNodeWithTag(EngineTags.SHEET_TECHNICAL).performClick()
+        rule.waitForIdle()
+
+        assertEquals(SheetKind.Technical, controller.sheetKind)
+        assertEquals(DimensionEditState.Closed, extras.dimension.state)
+        controller.close()
+        extras.close()
+    }
+
+    @Test
+    fun theConstraintsTab_should_ComposeOnATechnicalSheet() {
+        val (controller, extras) = rig()
+        controller.setSheetKind(SheetKind.Technical)
+        rule.setContent { SketchPanels(controller, PanelTab.Constraints, extras) }
+        rule.waitForIdle()
         controller.close()
         extras.close()
     }

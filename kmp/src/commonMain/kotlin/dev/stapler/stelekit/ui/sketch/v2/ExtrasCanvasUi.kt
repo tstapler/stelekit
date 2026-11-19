@@ -68,7 +68,7 @@ private fun GlyphOverlay(controller: SketchEditorController, extras: EditorExtra
     ConstraintGlyphOverlay(
         doc = doc,
         layout = layout,
-        technical = false,
+        technical = controller.sheetKind == dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical,
         onSelect = { id -> selectGlyph(controller, id) },
         onEdit = extras::editDimension,
     )
