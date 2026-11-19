@@ -356,6 +356,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/SketchEditorControllerTest.kt",
         "dev/stapler/stelekit/sketch/v2/SketchEditorThreadingTest.kt",
         "dev/stapler/stelekit/sketch/v2/SketchEditorInputWiringTest.kt",
+        "dev/stapler/stelekit/sketch/v2/LivePreviewOpsTest.kt",
         "dev/stapler/stelekit/sketch/v2/SketchEditorLeaveTest.kt",
         "dev/stapler/stelekit/sketch/v2/SketchEditorSolveRaceTest.kt",
         "dev/stapler/stelekit/sketch/v2/SketchEditorCloseRaceTest.kt",

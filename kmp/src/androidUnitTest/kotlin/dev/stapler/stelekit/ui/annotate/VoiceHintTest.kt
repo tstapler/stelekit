@@ -57,8 +57,9 @@ class VoiceHintTest {
     }
 
     @Test
-    fun micFabIsHiddenOnlyInTheAnnotationEditor() {
+    fun micFabIsHiddenInTheAnnotationAndSketchEditors() {
         assertFalse(shouldShowVoiceCaptureButton(editor))
+        assertFalse(shouldShowVoiceCaptureButton(Screen.Sketch()), "the sketch toolbar sits where the mic FAB floats")
         assertTrue(shouldShowVoiceCaptureButton(Screen.Journals))
     }
 

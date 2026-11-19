@@ -47,8 +47,6 @@ import dev.stapler.stelekit.sketch.v2.render.RenderStyle
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
-import dev.stapler.stelekit.sketch.v2.scene.SceneElement
-import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
 import dev.stapler.stelekit.sketch.v2.tools.SelectTool
 import dev.stapler.stelekit.sketch.v2.tools.ToolContext
 import dev.stapler.stelekit.sketch.v2.tools.PointerKind
@@ -305,7 +303,6 @@ private fun BoxScope.SketchCanvasContent(
     val state = controller.ui
     val fontStatus = environment.metrics.fontStatus
     val builder = remember(environment) { DrawListBuilder(environment.metrics) }
-    val previewBuilder = remember(environment) { DrawListBuilder(environment.metrics) }
     val painter = remember(environment) { ScenePainter(resources = environment.resources) }
     val layer = remember { StaticLayerHandle() }
     val style = degradation.effectiveStyle(RenderStyle.Sketchy)
@@ -313,7 +310,7 @@ private fun BoxScope.SketchCanvasContent(
     SideEffect { layer.set(ops, controller.spatialIndex) }
     val shown = controller.tools.preview ?: extras.access.preview
     val liveOps = remember(shown, fontStatus, style) {
-        shown?.let { preview -> previewBuilder.build(sceneOf(preview.elements), style) }.orEmpty()
+        shown?.let { preview -> LivePreviewOps.build(environment.metrics, preview.elements, style) }.orEmpty()
     }
     val pxPerDp = LocalDensity.current.density.toDouble()
     SideEffect { controller.view.pxPerDp = pxPerDp }
@@ -334,8 +331,6 @@ private fun BoxScope.SketchCanvasContent(
         TextEditorOverlay(session, state.viewport, hasHardwareKeyboard = pointer != PointerClass.TouchOrPen, onCommit = controller.tools::commitText)
     }
 }
-
-private fun sceneOf(elements: List<SceneElement>): SketchSceneV2 = elements.fold(SketchSceneV2.empty()) { scene, e -> scene.add(e).getOrNull() ?: scene }
 
 @Composable
 private fun SelectionVisuals(controller: SketchEditorController) {
