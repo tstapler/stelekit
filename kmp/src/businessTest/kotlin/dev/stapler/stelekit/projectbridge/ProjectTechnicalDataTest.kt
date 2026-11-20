@@ -128,6 +128,18 @@ class ProjectTechnicalDataTest {
     }
 
     @Test
+    fun revertingAnEdit_should_BeSaved_AfterTheFirstSave() = runBlocking<Unit> {
+        val f = fixture()
+        val original = assertNotNull(f.source.load())
+        val changed = (TechnicalData.withDimensionValue(original, "width", Rational(48)) as arrow.core.Either.Right).value
+        assertTrue(f.source.save(changed))
+
+        assertTrue(f.source.save(original))
+
+        assertEquals(Rational(32), assertNotNull(f.source.load()).dimensions.single().value)
+    }
+
+    @Test
     fun savingAnUnchangedBundle_should_SucceedWithoutWritingFiles() = runBlocking<Unit> {
         val f = fixture()
         val loaded = assertNotNull(f.source.load())

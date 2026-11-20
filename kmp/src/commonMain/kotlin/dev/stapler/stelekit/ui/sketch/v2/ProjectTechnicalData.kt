@@ -45,7 +45,7 @@ class ProjectTechnicalData(
         val (files, local) = current() ?: return@withSlug false
         if (SidecarBehindGuard.isBehind(local.project, files)) return@withSlug false
         val merged = graft(local, base = loaded ?: local, edited = bundle)
-        merged == local || persist(local, merged)
+        (merged == local || persist(local, merged)).also { saved -> if (saved) loaded = bundle }
     }
 
     /** The files on disk and the bundle built from them and the database, or null when either cannot be read. */
