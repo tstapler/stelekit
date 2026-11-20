@@ -67,13 +67,39 @@ test("kmp.js comes from the network and refreshes the cache, not the stale cache
     assert.equal(await w.store.get(`${ORIGIN}/app/kmp.js`).text(), "new kmp 1111111111111111aaaa.wasm");
 });
 
-test("a new kmp.js drops cached wasm it no longer names and keeps the ones it does", async () => {
+test("a new kmp.js drops cached wasm it no longer names once the wasm it does name is cached", async () => {
     const w = makeWorker({ network: () => ok("loads 1111111111111111aaaa.wasm") });
     seed(w, `${ORIGIN}/app/1111111111111111aaaa.wasm`, "keep");
     seed(w, `${ORIGIN}/app/2222222222222222bbbb.wasm`, "stale");
     seed(w, `${ORIGIN}/app/icon.png`, "png");
     await w.request(`${ORIGIN}/app/kmp.js`);
     assert.deepEqual([...w.store.keys()].sort(), [`${ORIGIN}/app/1111111111111111aaaa.wasm`, `${ORIGIN}/app/icon.png`, `${ORIGIN}/app/kmp.js`].sort());
+});
+
+test("old wasm survives a kmp.js refresh until the new wasm is cached, then is pruned", async () => {
+    const w = makeWorker({ network: (url) => ok(url.endsWith("kmp.js") ? "loads 1111111111111111aaaa.wasm" : "new wasm bytes") });
+    seed(w, `${ORIGIN}/app/2222222222222222bbbb.wasm`, "old wasm");
+    await w.request(`${ORIGIN}/app/kmp.js`);
+    assert.ok(w.store.has(`${ORIGIN}/app/2222222222222222bbbb.wasm`), "old wasm dropped before the new one was cached");
+    await w.request(`${ORIGIN}/app/1111111111111111aaaa.wasm`);
+    assert.ok(!w.store.has(`${ORIGIN}/app/2222222222222222bbbb.wasm`));
+    assert.ok(w.store.has(`${ORIGIN}/app/1111111111111111aaaa.wasm`));
+});
+
+test("a script answered with HTML, an empty kmp.js, or a 206 never replaces the cached copy", async () => {
+    const html = makeWorker({ network: () => Promise.resolve(new Response("<html>oops</html>", { status: 200, headers: { "content-type": "text/html" } })) });
+    seed(html, `${ORIGIN}/app/sqlite-stelekit-worker.js`, "good worker");
+    assert.equal((await html.request(`${ORIGIN}/app/sqlite-stelekit-worker.js`)).body, "good worker");
+    assert.equal(await html.store.get(`${ORIGIN}/app/sqlite-stelekit-worker.js`).text(), "good worker");
+
+    const empty = makeWorker({ network: () => ok("") });
+    seed(empty, `${ORIGIN}/app/kmp.js`, "good kmp");
+    assert.equal((await empty.request(`${ORIGIN}/app/kmp.js`)).body, "good kmp");
+
+    const partial = makeWorker({ network: () => Promise.resolve(new Response("part", { status: 206 })) });
+    seed(partial, `${ORIGIN}/app/kmp.js`, "good kmp");
+    assert.equal((await partial.request(`${ORIGIN}/app/kmp.js`)).body, "good kmp");
+    assert.equal(await partial.store.get(`${ORIGIN}/app/kmp.js`).text(), "good kmp");
 });
 
 test("a placeholder document is not served over, or cached over, the cached app shell", async () => {

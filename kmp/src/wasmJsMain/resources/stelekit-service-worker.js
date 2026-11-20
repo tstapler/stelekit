@@ -68,11 +68,19 @@ if (typeof window === "undefined") {
         });
     }
 
-    // Drop cached wasm files the freshly fetched kmp.js no longer names, so deploys don't pile up 5 MB each.
-    async function pruneUnreferencedWasm(cache, kmpJsText) {
-        const wanted = new Set(kmpJsText.match(/[0-9a-f]{16,}\.wasm/g) || []);
-        if (wanted.size === 0) return;
-        for (const key of await cache.keys()) {
+    // Drop cached wasm the cached kmp.js no longer names, so deploys don't pile up 5 MB each. Runs only once every
+    // wasm it does name is cached, so an interrupted download can't leave an offline shell with nothing to load.
+    async function pruneUnreferencedWasm(cache) {
+        const keys = await cache.keys();
+        const kmpKey = keys.find((k) => /\/kmp\.js$/.test(new URL(k.url).pathname));
+        const kmp = kmpKey && (await cache.match(kmpKey));
+        if (!kmp) return;
+        const wanted = new Set((await kmp.text()).match(/[0-9a-f]{16,}\.wasm/g) || []);
+        const cachedNames = new Set(
+            keys.map((k) => new URL(k.url).pathname).filter((path) => HASHED_WASM.test(path)).map((path) => path.slice(path.lastIndexOf("/") + 1))
+        );
+        if (wanted.size === 0 || [...wanted].some((name) => !cachedNames.has(name))) return;
+        for (const key of keys) {
             const path = new URL(key.url).pathname;
             if (HASHED_WASM.test(path) && !wanted.has(path.slice(path.lastIndexOf("/") + 1))) {
                 await cache.delete(key);
@@ -86,17 +94,16 @@ if (typeof window === "undefined") {
         const response = await fetch(request);
         if (response.status === 0) return { patched: response, trusted: false, stored: Promise.resolve() };
         const patched = patchIsolationHeaders(response);
-        let trusted = response.ok;
-        let text = null;
+        // Only a full 200: a 206 partial can't be cached, and a non-document served as HTML is a placeholder or error page.
+        let trusted = response.status === 200;
+        if (trusted && !isDocument && /text\/html/i.test(response.headers.get("content-type") || "")) trusted = false;
         if (trusted && (isDocument || /\/kmp\.js$/.test(new URL(request.url).pathname))) {
-            text = await patched.clone().text();
-            if (isDocument && !looksLikeAppShell(text)) trusted = false;
+            const text = await patched.clone().text();
+            if (text.length === 0 || (isDocument && !looksLikeAppShell(text))) trusted = false;
         }
         let stored = Promise.resolve();
         if (trusted) {
-            stored = cache.put(cacheKey, patched.clone()).then(() =>
-                text !== null && !isDocument ? pruneUnreferencedWasm(cache, text) : undefined
-            );
+            stored = cache.put(cacheKey, patched.clone()).then(() => (isDocument ? undefined : pruneUnreferencedWasm(cache)));
         }
         return { patched, trusted, stored };
     }
