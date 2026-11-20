@@ -16,7 +16,7 @@ kt_kotlinc_options(
     name = "kmp_jvm_kotlinc_opts",
     jvm_target = "21",
     x_multi_platform = True,
-    x_optin = ["kotlin.time.ExperimentalTime"],
+    x_optin = ["kotlin.time.ExperimentalTime", "kotlinx.coroutines.ExperimentalCoroutinesApi"],
     visibility = ["//visibility:public"],
 )
 
@@ -26,7 +26,7 @@ kt_kotlinc_options(
 kt_kotlinc_options(
     name = "kmp_android_kotlinc_opts",
     x_multi_platform = True,
-    x_optin = ["kotlin.time.ExperimentalTime"],
+    x_optin = ["kotlin.time.ExperimentalTime", "kotlinx.coroutines.ExperimentalCoroutinesApi"],
     visibility = ["//visibility:public"],
 )
 
