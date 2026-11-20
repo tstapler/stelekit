@@ -437,6 +437,12 @@ internal fun ScreenRouter(
                                 dev.stapler.stelekit.ui.sketch.sketchExporterFor(fileSystem, appState.currentGraphPath.orEmpty()),
                                 { kotlin.time.Clock.System.now().toEpochMilliseconds() },
                             ),
+                            deleter = dev.stapler.stelekit.sketch.SketchDeleteService(
+                                repos.sketchRepositories.projects,
+                                viewModel::projectSidecarStore,
+                                { op -> repos.writeActor?.execute(op = op) ?: op() },
+                                viewModel.sidecarSlugLock() ?: dev.stapler.stelekit.projectbridge.SidecarSlugLock(),
+                            ),
                         )
                     }
                     dev.stapler.stelekit.ui.sketch.ProjectListScreen(

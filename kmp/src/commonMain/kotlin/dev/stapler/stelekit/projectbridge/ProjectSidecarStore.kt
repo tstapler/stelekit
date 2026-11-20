@@ -150,6 +150,13 @@ interface ProjectSidecarStore : SidecarSheetFileStore {
 
     /** File names directly under the project's `sheets/` directory, sorted; no file is opened. Empty when none or unavailable. */
     suspend fun listSheetFiles(slug: String): List<String> = emptyList()
+
+    /**
+     * Deletes every file of the project's directory (model, sheets, v1 and v2 backups, conflict copies, sources, preview) and any
+     * parked write, and returns how many files went. Root files go first, the model among them, so a half-finished delete is never
+     * importable; the empty folders stay (the reconciler skips a folder with no model). Refused without the writer lease.
+     */
+    suspend fun deleteProject(slug: String): Either<DomainError, Int> = 0.right()
 }
 
 /** [ProjectSidecarStore] over [FileSystem] with temp-and-rename writes; its own mutex, not `GraphWriteLock` (JSON, not markdown). */
@@ -292,7 +299,29 @@ class FileProjectSidecarStore private constructor(
         if (disk.unavailable()) emptyList() else fs.listFiles("${disk.dir(slug)}/${SidecarCodec.SHEETS_DIR}").sorted()
     }
 
+    override suspend fun deleteProject(slug: String): Either<DomainError, Int> = mutex.withLock {
+        val dir = disk.dir(slug)
+        if (!gate.held()) return gate.refusal(dir).left()
+        if (disk.unavailable()) return DomainError.FileSystemError.AtomicWriteUnsupported(dir).left()
+        if (!SAFE_SEGMENT.matches(slug)) return DomainError.FileSystemError.WriteFailed(dir, "unsafe project slug").left()
+        pending.remove(slug)
+        var deleted = 0
+        var failedPath: String? = null
+        fun sweep(path: String) {
+            for (name in fs.listFiles(path)) {
+                val file = "$path/$name"
+                if (fs.deleteFile(file)) deleted++ else if (failedPath == null) failedPath = file
+            }
+        }
+        // Only the folders the store itself creates: a link or foreign folder inside the project folder is never entered.
+        sweep(dir)
+        for (child in fs.listDirectories(dir)) if (child in PROJECT_SUBDIRS) sweep("$dir/$child")
+        failedPath?.let { return DomainError.FileSystemError.WriteFailed(it, "delete failed").left() }
+        deleted.right()
+    }
+
     companion object {
+        private val PROJECT_SUBDIRS = setOf(SidecarCodec.SHEETS_DIR, BACKUP_DIR, CONFLICTS_DIR, "sources", "exports")
         const val ROOT_DIR = "assets/stelekit-sketch"
         const val IGNORE_RULE = "assets/stelekit-sketch/**/*.tmp"
         const val HASH8 = 8

@@ -102,7 +102,7 @@ class PostSyncProjectJob(
         val repos = deps.sketchRepositories() ?: return null
         val store = deps.sidecarStore() ?: return null
         return try {
-            SidecarReconciler(repos, store, deps.writeActor(), v2Discovery = deps.syncedV2Discovery()).reconcileAll()
+            SidecarReconciler(repos, store, deps.writeActor(), deps.slugLock, v2Discovery = deps.syncedV2Discovery()).reconcileAll()
         } catch (e: CancellationException) {
             throw e
         } catch (_: Throwable) {

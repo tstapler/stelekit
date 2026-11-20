@@ -344,6 +344,7 @@ fun ProjectBridgeDeps.v2EditorDeps(
     repos = repos,
     store = sidecarStore,
     leases = sheetLeases,
+    slugLock = slugLock,
     settings = settings,
     graphId = graphId,
     writeActor = writeActor,

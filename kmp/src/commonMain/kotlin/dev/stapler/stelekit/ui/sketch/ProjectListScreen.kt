@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.projectbridge.SketchCopyHost
 import dev.stapler.stelekit.ui.components.typedItems
@@ -51,12 +52,17 @@ fun ProjectListScreen(
         return
     }
     var copying by remember { mutableStateOf<ProjectRow?>(null) }
+    var deleting by remember { mutableStateOf<ProjectRow?>(null) }
+    deleting?.let { row ->
+        DeleteSketchDialog(onConfirm = { viewModel.deleteSketch(row); deleting = null }, onDismiss = { deleting = null })
+    }
     val copyHost = sketchCopy
     if (copyHost != null) copying?.let { row -> SketchCopyFlow(copyHost, row) { copying = null } }
     ProjectListContent(
         state = state,
         onCreate = viewModel::createProject,
         onCopySketch = if (copyHost?.available() == true) ({ copying = it }) else null,
+        onDeleteSketch = if (viewModel.deletionAvailable) ({ deleting = it }) else null,
         onNewSketch = if (viewModel.sketchesAvailable) ({ viewModel.createSketch(onOpenProject) }) else null,
         onDismissMessage = viewModel::dismissMessage,
         onOpen = onOpenProject,
@@ -98,6 +104,7 @@ internal fun ProjectListContent(
     modifier: Modifier = Modifier,
     onNewSketch: (() -> Unit)? = null,
     onCopySketch: ((ProjectRow) -> Unit)? = null,
+    onDeleteSketch: ((ProjectRow) -> Unit)? = null,
 ) {
     var creating by remember { mutableStateOf(false) }
     // One scrolling list: on a phone the settings panel is taller than the screen, so a fixed column would squeeze the rows to nothing.
@@ -106,7 +113,7 @@ internal fun ProjectListContent(
         if (state.sketches.isNotEmpty()) {
             item { Text("Recent sketches", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp)) }
             typedItems(state.sketches, key = { it.uuid }) {
-                SketchRow(it, onOpen, onCopySketch)
+                SketchRow(it, onOpen, onCopySketch, onDeleteSketch)
             }
         }
         item { ProjectsHeader(isEmpty = state.projects.isEmpty(), onNewProject = { creating = true }) }
@@ -166,9 +173,25 @@ private fun NewProjectDialog(onCreate: (String) -> Unit, onDismiss: () -> Unit) 
 
 /** One recent sketch: tap to open; "Copy to graph..." sits beside it where a router and a second graph exist. */
 @Composable
-private fun SketchRow(row: ProjectRow, onOpen: (String) -> Unit, onCopySketch: ((ProjectRow) -> Unit)?) {
+internal fun SketchRow(row: ProjectRow, onOpen: (String) -> Unit, onCopySketch: ((ProjectRow) -> Unit)?, onDeleteSketch: ((ProjectRow) -> Unit)? = null) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text("Sketch ${row.slug.removePrefix("proj-")}", modifier = Modifier.weight(1f).clickable { onOpen(row.uuid) }.padding(16.dp))
         if (onCopySketch != null) TextButton(onClick = { onCopySketch(row) }) { Text(SketchEngineStrings.SketchCopy.ACTION) }
+        if (onDeleteSketch != null) TextButton(onClick = { onDeleteSketch(row) }, modifier = Modifier.testTag(SKETCH_DELETE_ROW_TAG)) { Text(SketchEngineStrings.SketchDelete.ACTION) }
     }
+}
+
+const val SKETCH_DELETE_ROW_TAG = "sketch-row-delete"
+const val SKETCH_DELETE_CONFIRM_TAG = "sketch-delete-confirm"
+
+/** Asks before a sketch and its files go: the delete is not undoable. */
+@Composable
+internal fun DeleteSketchDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(SketchEngineStrings.SketchDelete.TITLE) },
+        text = { Text(SketchEngineStrings.SketchDelete.BODY) },
+        confirmButton = { TextButton(onClick = onConfirm, modifier = Modifier.testTag(SKETCH_DELETE_CONFIRM_TAG)) { Text(SketchEngineStrings.SketchDelete.CONFIRM) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(SketchEngineStrings.SketchDelete.CANCEL) } },
+    )
 }

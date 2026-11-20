@@ -48,6 +48,14 @@ object SketchEngineStrings {
         const val TECHNICAL = "Technical (inches)"
     }
 
+    object SketchDelete {
+        const val ACTION = "Delete"
+        const val TITLE = "Delete this sketch?"
+        const val BODY = "The sketch, its backups and its saved copies are removed from this graph. A journal that shows it will lose the picture. This cannot be undone."
+        const val CONFIRM = "Delete sketch"
+        const val CANCEL = "Cancel"
+    }
+
     object SketchCopy {
         const val ACTION = "Copy to graph..."
         const val PICK_TITLE = "Copy sketch to which graph?"
