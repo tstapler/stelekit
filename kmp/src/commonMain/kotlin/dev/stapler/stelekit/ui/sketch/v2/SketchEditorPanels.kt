@@ -41,6 +41,15 @@ private fun StyleTab(controller: SketchEditorController, extras: EditorExtras) {
         SheetKindRow(controller, onChange = extras.dimension::cancel)
         SheetStyleRow(controller)
         StylePanelContent(controller)
+        // Position, size and angle of the one selected element; several elements have no single size to show.
+        controller.selectedElements().singleOrNull()?.let { element ->
+            ElementStatsPanel(
+                element = element,
+                technical = controller.sheetKind == dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical,
+                onCommand = { controller.submit(it) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 
