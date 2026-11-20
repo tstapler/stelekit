@@ -5,6 +5,10 @@
 package dev.stapler.stelekit.projectbridge
 
 import dev.stapler.stelekit.model.ProjectBundle
+import dev.stapler.stelekit.sketch.v2.codec.SheetCodecV2
+import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
+import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
+import dev.stapler.stelekit.model.SheetPayload
 import dev.stapler.stelekit.model.SheetUuid
 import dev.stapler.stelekit.model.SketchDimension
 import dev.stapler.stelekit.model.SketchSheet
@@ -15,6 +19,7 @@ import dev.stapler.stelekit.ui.sketch.v2.ProjectTechnicalData
 import dev.stapler.stelekit.units.Rational
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -67,6 +72,59 @@ class ProjectTechnicalDataTest {
         assertFalse(f.source.save(edited))
 
         assertEquals(Rational(32), assertNotNull(f.source.load()).dimensions.single().value)
+    }
+
+    @Test
+    fun saving_should_WriteAnAddedZoneToTheFilesAndTheDatabase() = runBlocking<Unit> {
+        val f = fixture()
+        val loaded = assertNotNull(f.source.load())
+        val edited = (TechnicalData.withZoneAdded(loaded, sheet, "front") as arrow.core.Either.Right).value
+
+        assertTrue(f.source.save(edited))
+
+        assertEquals(1, TechnicalData.zones(assertNotNull(f.source.load()), sheet).size)
+        val read = assertIs<SidecarRead.Present>(f.store.read(slug))
+        assertEquals(1, TechnicalData.zones(SidecarCodec.decode(read.files).getOrNull()!!, sheet).size)
+    }
+
+    @Test
+    fun saving_should_KeepEveryV2SheetFileOfTheProject() = runBlocking<Unit> {
+        val f = fixture()
+        val v2 = SheetUuid("s2")
+        val bytes = SheetCodecV2.encode(SketchDocumentV2(sheetUuid = "s2"), SceneLimits.Default).getOrNull()!!
+        val row = SketchSheet(v2, f.bundle.project.uuid, "plan", "top", "in", 16, schemaVersion = SheetPaths.SCHEMA_V2)
+        val seeded = f.bundle.copy(sheets = f.bundle.sheets + row, sheetPayloads = mapOf(v2 to SheetPayload.V2Opaque.of(bytes)))
+        @OptIn(DirectRepositoryWrite::class)
+        f.repos.projects.replaceProjectContents(seeded.project.uuid, seeded)
+        val path = SheetPaths.pathFor(v2, SheetPaths.SCHEMA_V2)
+        val opaque = mapOf(path to (seeded.sheetPayloads.getValue(v2) as SheetPayload.V2Opaque).sha256)
+        val staged = f.store.writeNow(slug, mapOf(path to bytes))
+        val flipped = f.store.writeNow(slug, SidecarCodec.encode(seeded) - opaque.keys, opaque)
+        assertEquals(SidecarWriteOutcome.Written, staged, "staged")
+        assertEquals(SidecarWriteOutcome.Written, flipped, "flipped")
+        assertIs<SidecarRead.Present>(f.store.read(slug), f.store.read(slug).toString())
+        val edited = (TechnicalData.withDimensionValue(assertNotNull(f.source.load()), "width", Rational(48)) as arrow.core.Either.Right).value
+
+        assertTrue(f.source.save(edited))
+
+        val read = assertIs<SidecarRead.Present>(f.store.read(slug))
+        assertContentEquals(bytes, read.files[path], "the v2 sheet file survives a technical-data save")
+    }
+
+    @Test
+    fun aStalePanel_should_NotUndoADimensionChangedMeanwhile() = runBlocking<Unit> {
+        val f = fixture()
+        val stale = assertNotNull(f.source.load())
+        val other = ProjectTechnicalData(f.repos, f.store, SidecarSlugLock(), null, slug, f.bundle.project.uuid, sheet)
+        val moved = (TechnicalData.withDimensionValue(assertNotNull(other.load()), "width", Rational(48)) as arrow.core.Either.Right).value
+        assertTrue(other.save(moved))
+
+        val zoned = (TechnicalData.withZoneAdded(stale, sheet, "front") as arrow.core.Either.Right).value
+        assertTrue(f.source.save(zoned))
+
+        val now = assertNotNull(f.source.load())
+        assertEquals(Rational(48), now.dimensions.single().value, "the dimension another save changed is kept")
+        assertEquals(1, TechnicalData.zones(now, sheet).size)
     }
 
     @Test

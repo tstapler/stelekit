@@ -5,6 +5,7 @@ package dev.stapler.stelekit.ui.sketch.v2
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import dev.stapler.stelekit.model.ProjectBundle
 import dev.stapler.stelekit.model.SketchDimension
@@ -64,6 +65,7 @@ class TechnicalTabHostTest {
         rule.waitForIdle()
 
         rule.onNodeWithTag(TechnicalDataTags.PANEL).assertExists()
+        rule.onNodeWithText("width", substring = true).assertExists()
     }
 
     @Test
