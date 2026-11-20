@@ -8,27 +8,20 @@
  *    coi-serviceworker v0.1.7 (github.com/gzuidhof/coi-serviceworker, MIT).
  *    GitHub Pages does not set COOP/COEP headers, and the WASM app needs
  *    cross-origin isolation for SharedArrayBuffer.
- * 2. Stale-while-revalidate offline caching, for PWA installability and
- *    offline durability (the app is local-first — user data lives in OPFS,
- *    not in this cache — this only covers the static app shell:
- *    JS/WASM/HTML/icons).
+ * 2. Offline caching of the static app shell (JS/WASM/HTML/icons) for PWA installability
+ *    and offline durability. User data lives in OPFS, not in this cache.
  *
- *    Deliberately NOT network-first: a bad deploy (e.g. the site's "coming
- *    soon" placeholder silently shipping to /app/ instead of the real app —
- *    see the pages.yml incident this guards against) is still a valid 200
- *    response. Network-first would serve it to an already-visiting user
- *    immediately and overwrite their working cache with it. Serving cache
- *    first means an existing user keeps the last-known-good app even while
- *    a bad deploy is live; the background revalidation additionally refuses
- *    to overwrite a cached document with one that doesn't pass
- *    looksLikeAppShell() (see looks-like-app-shell.js), so a bad deploy
- *    can't poison the cache for later visits either.
- *
- * ponytail: one unversioned cache name. Every validated successful fetch
- * refreshes the cache, so there's no accumulating staleness to version away.
- * Bump CACHE_NAME manually if that assumption ever needs revisiting.
+ *    Content-hashed wasm files are immutable, so they are served cache-first. Everything
+ *    else is network-first: a cache-first kmp.js outlives the wasm file it names (each
+ *    deploy deletes the old one), which 404s and blanks the page. A network response only
+ *    wins if it is ok and, for documents, passes looksLikeAppShell() (see
+ *    looks-like-app-shell.js); otherwise the cached copy is served, so a bad deploy (e.g.
+ *    the "coming soon" placeholder, still a 200) neither reaches nor poisons a returning user.
  */
 const CACHE_NAME = "stelekit-app-shell-v1";
+const HASHED_WASM = /\/[0-9a-f]{16,}\.wasm$/;
+// A slow network must not hold a returning user's cached shell hostage; the fetch keeps going and refreshes the cache.
+const NETWORK_WAIT_MS = 6000;
 
 let coepCredentialless = false;
 
@@ -75,22 +68,44 @@ if (typeof window === "undefined") {
         });
     }
 
-    // Background revalidation: fetch a fresh copy and update the cache for next
-    // time, but only if it's safe to trust — see looksLikeAppShell() above.
-    // Errors here (offline, network blip) are swallowed: there's nothing to do
-    // but keep serving whatever is already cached.
-    async function revalidate(request, cacheKey, cache, isDocument) {
-        try {
-            const response = await fetch(request);
-            if (response.status === 0 || !response.ok) return;
-            const patched = patchIsolationHeaders(response);
-            if (isDocument && !looksLikeAppShell(await patched.clone().text())) {
-                return;
+    // Drop cached wasm the cached kmp.js no longer names, so deploys don't pile up 5 MB each. Runs only once every
+    // wasm it does name is cached, so an interrupted download can't leave an offline shell with nothing to load.
+    async function pruneUnreferencedWasm(cache) {
+        const keys = await cache.keys();
+        const kmpKey = keys.find((k) => /\/kmp\.js$/.test(new URL(k.url).pathname));
+        const kmp = kmpKey && (await cache.match(kmpKey));
+        if (!kmp) return;
+        const wanted = new Set((await kmp.text()).match(/[0-9a-f]{16,}\.wasm/g) || []);
+        const cachedNames = new Set(
+            keys.map((k) => new URL(k.url).pathname).filter((path) => HASHED_WASM.test(path)).map((path) => path.slice(path.lastIndexOf("/") + 1))
+        );
+        if (wanted.size === 0 || [...wanted].some((name) => !cachedNames.has(name))) return;
+        for (const key of keys) {
+            const path = new URL(key.url).pathname;
+            if (HASHED_WASM.test(path) && !wanted.has(path.slice(path.lastIndexOf("/") + 1))) {
+                await cache.delete(key);
             }
-            await cache.put(cacheKey, patched);
-        } catch (e) {
-            // offline or network error — nothing to do, keep serving cache
         }
+    }
+
+    // Fetches from the network. `trusted` means safe to cache and to prefer over a cached copy; `stored`
+    // settles when the cache write is done and must not delay the response, or wasm streaming would stall.
+    async function fetchShell(request, cacheKey, cache, isDocument) {
+        const response = await fetch(request);
+        if (response.status === 0) return { patched: response, trusted: false, stored: Promise.resolve() };
+        const patched = patchIsolationHeaders(response);
+        // Only a full 200: a 206 partial can't be cached, and a non-document served as HTML is a placeholder or error page.
+        let trusted = response.status === 200;
+        if (trusted && !isDocument && /text\/html/i.test(response.headers.get("content-type") || "")) trusted = false;
+        if (trusted && (isDocument || /\/kmp\.js$/.test(new URL(request.url).pathname))) {
+            const text = await patched.clone().text();
+            if (text.length === 0 || (isDocument && !looksLikeAppShell(text))) trusted = false;
+        }
+        let stored = Promise.resolve();
+        if (trusted) {
+            stored = cache.put(cacheKey, patched.clone()).then(() => (isDocument ? undefined : pruneUnreferencedWasm(cache)));
+        }
+        return { patched, trusted, stored };
     }
 
     self.addEventListener("fetch", (event) => {
@@ -99,42 +114,35 @@ if (typeof window === "undefined") {
             return;
         }
 
-        // Only same-origin GETs are cached — POST/cross-origin responses can't
-        // be cached and don't need an offline fallback here.
         const cacheable = r.method === "GET" && new URL(r.url).origin === self.location.origin;
         const isDocument = cacheable && (r.mode === "navigate" || r.destination === "document");
-
         const request = coepCredentialless && r.mode === "no-cors" ? new Request(r, { credentials: "omit" }) : r;
 
         event.respondWith(
             (async () => {
-                const cache = cacheable ? await caches.open(CACHE_NAME) : null;
-                const cached = cache ? await cache.match(r) : null;
+                if (!cacheable) {
+                    const response = await fetch(request);
+                    return response.status === 0 ? response : patchIsolationHeaders(response);
+                }
+                const cache = await caches.open(CACHE_NAME);
+                const cached = await cache.match(r);
 
-                if (cached) {
-                    // Stale-while-revalidate: serve the known-good cached copy
-                    // immediately, refresh it in the background. An existing user
-                    // stays on a working app even if the current deploy is broken
-                    // or momentarily unreachable.
-                    event.waitUntil(revalidate(request, r, cache, isDocument));
+                if (cached && HASHED_WASM.test(new URL(r.url).pathname)) {
                     return cached;
                 }
 
-                // Nothing cached yet — must go to the network; there's no
-                // known-good fallback to protect the user with on a first visit.
-                const response = await fetch(request);
-                if (response.status === 0) {
-                    return response;
+                const network = fetchShell(request, r, cache, isDocument);
+                if (!cached) {
+                    const n = await network;
+                    event.waitUntil(n.stored.catch(() => {}));
+                    return n.patched;
                 }
-                const patched = patchIsolationHeaders(response);
-                if (cacheable && response.ok) {
-                    const toCache = patched.clone();
-                    if (!isDocument || looksLikeAppShell(await toCache.clone().text())) {
-                        cache.put(r, toCache);
-                    }
-                }
-                return patched;
-            })().catch((e) => (cacheable ? caches.match(r).then((c) => c || Promise.reject(e)) : Promise.reject(e)))
+                // A failed or slow network falls back to the cached copy; the fetch still finishes refreshing the cache.
+                event.waitUntil(network.then((n) => n.stored, () => {}).catch(() => {}));
+                const preferred = network.then((n) => (n.trusted ? n.patched : cached), () => cached);
+                const timeout = new Promise((resolve) => setTimeout(() => resolve(cached), NETWORK_WAIT_MS));
+                return Promise.race([preferred, timeout]);
+            })()
         );
     });
 } else {
