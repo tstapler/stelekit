@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.117.0](https://github.com/tstapler/stelekit/compare/v0.116.0...v0.117.0) (2026-11-20)
+
+
+### Features
+
+* **sketch:** delete a sketch from the Sketches list, with its files ([#691](https://github.com/tstapler/stelekit/issues/691)) ([e455616](https://github.com/tstapler/stelekit/commit/e4556160682a3935c6ce7d77467ff1bf195d1e12))
+
+
+### Bug Fixes
+
+* **web:** remove stale retired coi-serviceworker that blanks the app ([#692](https://github.com/tstapler/stelekit/issues/692)) ([2ce97b6](https://github.com/tstapler/stelekit/commit/2ce97b6b261df29c74674eec0e9045274e9910f1))
+
 ## [0.116.0](https://github.com/tstapler/stelekit/compare/v0.115.1...v0.116.0) (2026-11-19)
 
 
