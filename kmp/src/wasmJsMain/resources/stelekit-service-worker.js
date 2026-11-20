@@ -30,16 +30,8 @@ if (typeof window === "undefined") {
     importScripts("looks-like-app-shell.js");
 
     self.addEventListener("install", () => self.skipWaiting());
-    // Bug fix: `activate` only fires on first install or a genuine version update — never for
-    // an already-active worker. Previously this just called clients.claim(), leaving the old
-    // CACHE_NAME entries in place. The page-side reload-on-updatefound logic below then
-    // immediately re-fetched kmp.js/the wasm chunks — but stale-while-revalidate serves a
-    // cache hit unconditionally and only refreshes the cache *after* responding, so that reload
-    // still ran the outgoing version once more; only the *next* reload (whenever the user
-    // happened to cause one) would see the fix. Clearing CACHE_NAME here means that reload's
-    // fetches are guaranteed cache misses, hitting network fresh — still protected by the same
-    // looksLikeAppShell() validation the "nothing cached yet" branch already applies.
-    self.addEventListener("activate", (event) => event.waitUntil(caches.delete(CACHE_NAME).then(() => self.clients.claim())));
+    // Network-first refreshes mutable assets; keep the offline shell across worker updates.
+    self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 
     self.addEventListener("message", (ev) => {
         if (!ev.data) {
@@ -102,7 +94,7 @@ if (typeof window === "undefined") {
             if (text.length === 0 || (isDocument && !looksLikeAppShell(text))) trusted = false;
         }
         let stored = Promise.resolve();
-        if (trusted) {
+        if (trusted && cache) {
             stored = cache.put(cacheKey, patched.clone()).then(() => (isDocument ? undefined : pruneUnreferencedWasm(cache)));
         }
         return { patched, trusted, stored };
@@ -124,8 +116,15 @@ if (typeof window === "undefined") {
                     const response = await fetch(request);
                     return response.status === 0 ? response : patchIsolationHeaders(response);
                 }
-                const cache = await caches.open(CACHE_NAME);
-                const cached = await cache.match(r);
+                // CacheStorage can be unavailable even when the network works.
+                let cache = null;
+                let cached = null;
+                try {
+                    cache = await caches.open(CACHE_NAME);
+                    cached = await cache.match(r);
+                } catch (e) {
+                    cache = null;
+                }
 
                 if (cached && HASHED_WASM.test(new URL(r.url).pathname)) {
                     return cached;
@@ -142,7 +141,7 @@ if (typeof window === "undefined") {
                 const preferred = network.then((n) => (n.trusted ? n.patched : cached), () => cached);
                 const timeout = new Promise((resolve) => setTimeout(() => resolve(cached), NETWORK_WAIT_MS));
                 return Promise.race([preferred, timeout]);
-            })()
+            })().then((response) => response.status === 0 ? response : patchIsolationHeaders(response))
         );
     });
 } else {

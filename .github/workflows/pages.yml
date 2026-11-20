@@ -207,9 +207,15 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: site/package-lock.json
-      - name: Test service worker cache-validation logic
+      - name: Test service worker cache validation and isolation headers
         run: node --test looks-like-app-shell.test.js stelekit-service-worker.test.js
         working-directory: kmp/src/wasmJsMain/resources
+      - name: Install browser regression dependencies
+        run: npm ci && npx playwright install --with-deps chromium
+        working-directory: e2e
+      - name: Test headerless-origin offline startup
+        run: npx playwright test tests/startup-cache.spec.ts
+        working-directory: e2e
       - name: Install site dependencies
         run: npm ci
         working-directory: site

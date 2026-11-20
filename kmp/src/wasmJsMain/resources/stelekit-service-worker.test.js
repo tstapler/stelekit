@@ -10,7 +10,7 @@ const ORIGIN = "https://example.test";
 const SHELL = '<html><script src="kmp.js"></script></html>';
 const PLACEHOLDER = "<html>coming soon</html>";
 
-function makeWorker({ network, instantTimeout = false }) {
+function makeWorker({ network, instantTimeout = false, cacheFailure = null }) {
     const store = new Map();
     const cacheApi = {
         match: async (r) => store.get(typeof r === "string" ? r : r.url)?.clone(),
@@ -23,7 +23,7 @@ function makeWorker({ network, instantTimeout = false }) {
     const context = {
         self: { location: { origin: ORIGIN }, addEventListener: (t, f) => (listeners[t] = f), registration: {}, clients: {} },
         importScripts: () => {},
-        caches: { open: async () => cacheApi, delete: async () => true },
+        caches: { open: async () => { if (cacheFailure) throw cacheFailure; return cacheApi; }, delete: async () => true },
         fetch: (req) => {
             fetched.push(req.url);
             return network(req.url);
@@ -46,13 +46,58 @@ function makeWorker({ network, instantTimeout = false }) {
         const res = await responded;
         const body = await res.text();
         if (settle) await Promise.allSettled(waits);
-        return { body, status: res.status };
+        return { body, status: res.status, headers: res.headers };
     }
-    return { store, request, fetched };
+    return { store, request, fetched, listeners, context };
 }
+
+test("worker activation preserves the offline shell", async () => {
+    const w = makeWorker({ network: () => Promise.reject(new TypeError("offline")) });
+    seed(w, `${ORIGIN}/app/`, SHELL);
+    let deleted = false;
+    let claimed = false;
+    // Make deletion observable instead of relying on the mock's no-op implementation.
+    w.context.caches.delete = async () => { deleted = true; w.store.clear(); };
+    w.context.self.clients.claim = async () => { claimed = true; };
+    let activation;
+    w.listeners.activate({ waitUntil: (value) => { activation = value; } });
+    await activation;
+    assert.equal(deleted, false);
+    assert.equal(claimed, true);
+    assert.equal((await w.request(`${ORIGIN}/app/`, { navigate: true })).body, SHELL);
+});
 
 const ok = (body) => Promise.resolve(new Response(body, { status: 200 }));
 const seed = (w, url, body) => w.store.set(url, new Response(body));
+
+for (const credentialless of [false, true]) {
+    for (const scenario of ["offline", "invalid", "slow", "immutable"]) {
+        test(`cached ${scenario} response repairs isolation headers (credentialless=${credentialless})`, async () => {
+            const w = makeWorker({
+                network: () => scenario === "slow" ? new Promise(() => {}) : scenario === "invalid" ?
+                    Promise.resolve(new Response("not found", { status: 404 })) : Promise.reject(new TypeError("offline")),
+                instantTimeout: scenario === "slow",
+            });
+            w.listeners.message({ data: { type: "coepCredentialless", value: credentialless } });
+            const url = `${ORIGIN}/app/${scenario === "immutable" ? "0123456789abcdef.wasm" : "sqlite-stelekit-worker.js"}`;
+            w.store.set(url, new Response("cached bytes", { headers: {
+                "Cross-Origin-Embedder-Policy": credentialless ? "require-corp" : "credentialless",
+            } }));
+            const response = await w.request(url, { settle: scenario !== "slow" });
+            assert.equal(response.headers.get("Cross-Origin-Embedder-Policy"), credentialless ? "credentialless" : "require-corp");
+            assert.equal(response.headers.get("Cross-Origin-Opener-Policy"), "same-origin");
+            assert.equal(response.body, "cached bytes");
+        });
+    }
+}
+
+test("CacheStorage failure does not prevent online startup or isolation headers", async () => {
+    const w = makeWorker({ network: () => ok("fresh worker"), cacheFailure: new Error("storage disabled") });
+    const response = await w.request(`${ORIGIN}/app/sqlite-stelekit-worker.js`);
+    assert.equal(response.body, "fresh worker");
+    assert.equal(response.headers.get("Cross-Origin-Embedder-Policy"), "require-corp");
+});
+
 
 test("a cached content-hashed wasm is served without touching the network", async () => {
     const w = makeWorker({ network: () => assert.fail("network used") });
