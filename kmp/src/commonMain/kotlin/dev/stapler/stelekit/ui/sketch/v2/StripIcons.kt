@@ -25,7 +25,7 @@ import dev.stapler.stelekit.sketch.v2.tools.ToolId
  * What a strip button shows. Drawn, not typed: the old text glyphs made Select and Arrow two near-identical diagonal arrows and
  * rendered as emoji or tofu on some fonts. Each icon is drawn on a 24 x 24 grid and has its own silhouette.
  */
-internal enum class StripIcon {
+enum class StripIcon {
     Select, Hand, Rectangle, Diamond, Ellipse, Arrow, Line, Freedraw, Text, Image, Frame, Eraser, Point, Arc,
     Undo, Redo, Delete, Constrain, LockClosed, LockOpen, More,
     ;
@@ -56,10 +56,11 @@ private const val STROKE = 2f
 
 @Composable
 internal fun StripIconView(icon: StripIcon, color: Color, modifier: Modifier = Modifier) {
-    Canvas(modifier.size(ICON_DP.dp)) { drawIcon(icon, color, size.width / GRID) }
+    Canvas(modifier.size(ICON_DP.dp)) { drawStripIcon(icon, color, size.width / GRID) }
 }
 
-private fun DrawScope.drawIcon(icon: StripIcon, color: Color, u: Float) {
+/** Draws [icon] on a 24-unit grid scaled by [u] pixels per unit. */
+fun DrawScope.drawStripIcon(icon: StripIcon, color: Color, u: Float) {
     val line = Stroke(STROKE * u, cap = StrokeCap.Round, join = StrokeJoin.Round)
     fun p(x: Float, y: Float) = Offset(x * u, y * u)
     fun poly(vararg pts: Pair<Float, Float>, close: Boolean = false, fill: Boolean = false) {

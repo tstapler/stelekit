@@ -95,7 +95,7 @@ class HostServices(
             limits: SceneLimits,
             createSheet: (suspend (SketchDocumentV2) -> Either<String, Unit>)? = null,
             tier: () -> SolverTier = { SolverTierFacts.Recorded.tierOf(SolverTarget.Jvm) },
-            technical: TechnicalDataSource? = null,
+            technical: TechnicalDataSource?,
         ): HostServices {
             val notes = platform.notesDirectory()
             val fs = platform.fileSystem

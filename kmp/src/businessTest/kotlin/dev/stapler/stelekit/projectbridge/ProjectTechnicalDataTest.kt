@@ -140,6 +140,17 @@ class ProjectTechnicalDataTest {
     }
 
     @Test
+    fun aCorruptSidecar_should_GiveNoBundleAndRefuseASave() = runBlocking<Unit> {
+        val f = fixture()
+        val loaded = assertNotNull(f.source.load())
+        f.store.writeNow(slug, mapOf(SidecarCodec.MODEL_PATH to "{not json".encodeToByteArray()))
+        assertIs<SidecarRead.Corrupt>(f.store.read(slug))
+
+        assertEquals(null, f.source.load())
+        assertFalse(f.source.save(loaded))
+    }
+
+    @Test
     fun savingAnUnchangedBundle_should_SucceedWithoutWritingFiles() = runBlocking<Unit> {
         val f = fixture()
         val loaded = assertNotNull(f.source.load())

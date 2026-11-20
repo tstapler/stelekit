@@ -269,6 +269,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/ScenePainterPixelTest.kt",
         "dev/stapler/stelekit/sketch/v2/ScenePainterFixture.kt",
         "dev/stapler/stelekit/sketch/v2/ToolStripModelTest.kt",
+        "dev/stapler/stelekit/ui/sketch/v2/StripIconDrawTest.kt",
         "dev/stapler/stelekit/sketch/v2/FreehandGolden.kt",
         "dev/stapler/stelekit/sketch/v2/FreehandGoldenTest.kt",
         "dev/stapler/stelekit/sketch/v2/DrawListJson.kt",
