@@ -237,12 +237,11 @@ ui/sketch/v2/TextEditorOverlay.kt :: const val DONE = "Done"
 ui/sketch/v2/TextEditorOverlay.kt :: const val KEYBOARD = "Esc to finish"
 ui/sketch/v2/TextEditorOverlay.kt :: const val OK = "OK"
 ui/sketch/v2/TextEditorOverlay.kt :: const val TOUCH = "Tap Done or tap outside to finish"
-ui/sketch/v2/ToolStrip.kt :: StripButton(c, "delete", StripTags.DELETE, if (none) "Delete, unavailable: nothing selected" else "Delete", "🗑", size, selected = false, enabled = !none, onClick = actions.onDelete)
-ui/sketch/v2/ToolStrip.kt :: StripButton(c, "redo", StripTags.REDO, "Redo", "↷", size, selected = false, enabled = status.canRedo, onClick = actions.onRedo)
-ui/sketch/v2/ToolStrip.kt :: StripButton(c, "undo", StripTags.UNDO, "Undo", "↶", size, selected = false, enabled = status.canUndo, onClick = actions.onUndo)
-ui/sketch/v2/ToolStrip.kt :: ToolId.Text to "T", ToolId.Image to "Img", ToolId.Frame to "▢", ToolId.Eraser to "⌫",
-ui/sketch/v2/ToolStrip.kt :: c, "toollock", StripTags.TOOL_LOCK, if (on) "Tool lock on" else "Tool lock off", if (on) "🔒" else "🔓",
 ui/sketch/v2/ToolStrip.kt :: val label = if (selected) "Constrain (K)" else "Constrain, unavailable: Select an element to constrain"
+ui/sketch/v2/ToolStrip.kt :: StripButton(c, "undo", StripTags.UNDO, "Undo", StripIcon.Undo, size, selected = false, enabled = status.canUndo, onClick = actions.onUndo)
+ui/sketch/v2/ToolStrip.kt :: StripButton(c, "redo", StripTags.REDO, "Redo", StripIcon.Redo, size, selected = false, enabled = status.canRedo, onClick = actions.onRedo)
+ui/sketch/v2/ToolStrip.kt :: StripButton(c, "delete", StripTags.DELETE, if (none) "Delete, unavailable: nothing selected" else "Delete", StripIcon.Delete, size, selected = false, enabled = !none, onClick = actions.onDelete)
+ui/sketch/v2/ToolStrip.kt :: c, "toollock", StripTags.TOOL_LOCK, if (on) "Tool lock on" else "Tool lock off", if (on) StripIcon.LockClosed else StripIcon.LockOpen,
 ui/sketch/v2/ToolStripModel.kt :: Geometry("Geometry", listOf(ToolId.Point, ToolId.Arc), true),
 ui/sketch/v2/ToolStripModel.kt :: Lines("Lines", listOf(ToolId.Arrow, ToolId.Line, ToolId.Freedraw), false),
 ui/sketch/v2/ToolStripModel.kt :: ReadOnly -> "read-only sketch"

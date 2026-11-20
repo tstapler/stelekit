@@ -5,7 +5,6 @@
 package dev.stapler.stelekit.ui.sketch.v2
 
 import arrow.core.Either
-import arrow.core.left
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.ProjectBundle
@@ -80,10 +79,12 @@ class ProjectTechnicalData(
         }.toMap()
         if (store.writeNow(slug, modelFiles - others.keys, others) != SidecarWriteOutcome.Written) return false
         for (row in merged.dimensions.filter { it !in local.dimensions }) {
-            if (write { repos.dimensions.saveDimension(row, tokenOf() ?: return@write DomainError.DatabaseError.WriteFailed("project gone").left()) }.isLeft()) return false
+            val token = tokenOf() ?: return false
+            if (write { repos.dimensions.saveDimension(row, token) }.isLeft()) return false
         }
         for (row in merged.sheets.filter { it !in local.sheets }) {
-            if (write { repos.sheets.saveSheet(row, tokenOf() ?: return@write DomainError.DatabaseError.WriteFailed("project gone").left()) }.isLeft()) return false
+            val token = tokenOf() ?: return false
+            if (write { repos.sheets.saveSheet(row, token) }.isLeft()) return false
         }
         val fresh = repos.projects.loadProject(project).getOrNull()?.project ?: return false
         val hash = SidecarCodec.bundleHash(modelFiles)

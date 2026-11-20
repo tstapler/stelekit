@@ -48,7 +48,6 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 
@@ -82,16 +81,6 @@ object StripTags {
     fun groupItem(group: StripGroup, id: ToolId) = "sketch.group.${group.name.lowercase()}.item.${id.name.lowercase()}"
 }
 
-private val GLYPHS = mapOf(
-    ToolId.Select to "↖", ToolId.Hand to "✋", ToolId.Rectangle to "▭", ToolId.Diamond to "◇",
-    ToolId.Ellipse to "◯", ToolId.Arrow to "↗", ToolId.Line to "╱", ToolId.Freedraw to "✎",
-    ToolId.Text to "T", ToolId.Image to "Img", ToolId.Frame to "▢", ToolId.Eraser to "⌫",
-    ToolId.Point to "⌖", ToolId.Arc to "◠",
-)
-
-/** Glyph sizes: the default 14 sp read as specks in a 44 dp target on a phone; words and pairs ("Img") stay smaller so they fit on one line. */
-private const val GLYPH_SP = 22
-private const val WORD_GLYPH_SP = 16
 
 private class StripControls(val focus: Map<String, FocusRequester>, val state: SketchEditorState, val pointer: PointerClass)
 
@@ -149,10 +138,10 @@ private fun PinnedTrio(c: StripControls, status: ToolStripStatus, actions: ToolS
     val size = TouchTargetFloor.pinnedDp()
     val none = status.selectionCount == 0
     StripAxis(vertical) {
-        StripButton(c, "undo", StripTags.UNDO, "Undo", "↶", size, selected = false, enabled = status.canUndo, onClick = actions.onUndo)
-        StripButton(c, "redo", StripTags.REDO, "Redo", "↷", size, selected = false, enabled = status.canRedo, onClick = actions.onRedo)
+        StripButton(c, "undo", StripTags.UNDO, "Undo", StripIcon.Undo, size, selected = false, enabled = status.canUndo, onClick = actions.onUndo)
+        StripButton(c, "redo", StripTags.REDO, "Redo", StripIcon.Redo, size, selected = false, enabled = status.canRedo, onClick = actions.onRedo)
         Spacer(Modifier.size(if (vertical) 0.dp else TouchTargetFloor.DELETE_GAP_DP.dp, if (vertical) TouchTargetFloor.DELETE_GAP_DP.dp else 0.dp))
-        StripButton(c, "delete", StripTags.DELETE, if (none) "Delete, unavailable: nothing selected" else "Delete", "🗑", size, selected = false, enabled = !none, onClick = actions.onDelete)
+        StripButton(c, "delete", StripTags.DELETE, if (none) "Delete, unavailable: nothing selected" else "Delete", StripIcon.Delete, size, selected = false, enabled = !none, onClick = actions.onDelete)
     }
 }
 
@@ -174,7 +163,7 @@ private fun ToolButtons(model: ToolStripModel, c: StripControls, status: ToolStr
 @Composable
 private fun ToolButton(model: ToolStripModel, tool: StripTool, c: StripControls, status: ToolStripStatus) {
     StripButton(
-        c, tool.key, StripTags.tool(tool.id), model.description(tool, status.block), GLYPHS.getValue(tool.id), TouchTargetFloor.TOUCH_DP,
+        c, tool.key, StripTags.tool(tool.id), model.description(tool, status.block), StripIcon.of(tool.id), TouchTargetFloor.TOUCH_DP,
         selected = c.state.activeTool == tool.id, enabled = true,
         onClick = { if (status.block == null) c.state.chooseTool(tool.id) },
     )
@@ -199,14 +188,14 @@ private fun SplitGroup(model: ToolStripModel, group: StripGroup, c: StripControl
     }
     val body = @Composable {
         StripButton(
-            c, mainKey, StripTags.groupMain(group), model.description(tool, status.block), GLYPHS.getValue(last), TouchTargetFloor.TOUCH_DP,
+            c, mainKey, StripTags.groupMain(group), model.description(tool, status.block), StripIcon.of(last), TouchTargetFloor.TOUCH_DP,
             selected = c.state.activeTool in group.tools, enabled = true,
             onClick = { if (status.block == null) c.state.chooseTool(last) },
             opensFlyout = { open = true },
         )
         Box {
             StripButton(
-                c, "group.${group.name}.flyout", StripTags.groupFlyoutTarget(group), SketchStrings.Strip.flyoutDescription(group.label), "▾", TouchTargetFloor.TOUCH_DP,
+                c, "group.${group.name}.flyout", StripTags.groupFlyoutTarget(group), SketchStrings.Strip.flyoutDescription(group.label), StripIcon.More, TouchTargetFloor.TOUCH_DP,
                 selected = open, enabled = true, onClick = { open = true },
             )
             DropdownMenu(expanded = open, onDismissRequest = { open = false }, modifier = Modifier.testTag(StripTags.groupFlyoutTarget(group) + ".menu")) {
@@ -231,14 +220,14 @@ private fun ConstrainButton(model: ToolStripModel, c: StripControls, status: Too
     // Never absent on technical sheets; on a diagram sheet it appears when something is selected (UX-118).
     if (!selected && !model.technicalSheet) return
     val label = if (selected) "Constrain (K)" else "Constrain, unavailable: Select an element to constrain"
-    StripButton(c, "constrain", StripTags.CONSTRAIN, label, "⌖↔", TouchTargetFloor.TOUCH_DP, selected = false, enabled = selected, onClick = actions.onConstrain)
+    StripButton(c, "constrain", StripTags.CONSTRAIN, label, StripIcon.Constrain, TouchTargetFloor.TOUCH_DP, selected = false, enabled = selected, onClick = actions.onConstrain)
 }
 
 @Composable
 private fun ToolLockButton(c: StripControls) {
     val on = c.state.toolLock
     StripButton(
-        c, "toollock", StripTags.TOOL_LOCK, if (on) "Tool lock on" else "Tool lock off", if (on) "🔒" else "🔓",
+        c, "toollock", StripTags.TOOL_LOCK, if (on) "Tool lock on" else "Tool lock off", if (on) StripIcon.LockClosed else StripIcon.LockOpen,
         TouchTargetFloor.TOUCH_DP, selected = on, enabled = true, onClick = { c.state.toolLock = !c.state.toolLock },
     )
 }
@@ -251,7 +240,7 @@ private fun ToolLockButton(c: StripControls) {
  */
 @Composable
 private fun StripButton(
-    c: StripControls, key: String, tag: String, description: String, glyph: String, sizeDp: Int,
+    c: StripControls, key: String, tag: String, description: String, icon: StripIcon, sizeDp: Int,
     selected: Boolean, enabled: Boolean, onClick: () -> Unit, opensFlyout: (() -> Unit)? = null,
 ) {
     val hit = maxOf(sizeDp, TouchTargetFloor.floorDp(c.pointer))
@@ -284,7 +273,7 @@ private fun StripButton(
             },
         contentAlignment = Alignment.Center,
     ) {
-        Text(glyph, fontSize = (if (glyph.length > 1) WORD_GLYPH_SP else GLYPH_SP).sp, maxLines = 1, softWrap = false, color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+        StripIconView(icon, if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
