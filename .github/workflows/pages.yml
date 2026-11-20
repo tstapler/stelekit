@@ -211,11 +211,18 @@ jobs:
         run: node --test looks-like-app-shell.test.js stelekit-service-worker.test.js
         working-directory: kmp/src/wasmJsMain/resources
       - name: Install browser regression dependencies
-        run: npm ci && npx playwright install --with-deps chromium
+        run: npm ci
         working-directory: e2e
       - name: Test headerless-origin offline startup
-        run: npx playwright test tests/startup-cache.spec.ts
-        working-directory: e2e
+        # Match the locked client to its bundled browsers without depending on the host distro.
+        run: |
+          version=$(node -p 'require("./e2e/package-lock.json").packages["node_modules/@playwright/test"].version')
+          docker run --rm --init --shm-size=1g \
+            --env CI=true \
+            --mount "type=bind,source=$PWD,target=/workspace,readonly" \
+            --workdir /workspace/e2e \
+            "mcr.microsoft.com/playwright:v${version}" \
+            node node_modules/@playwright/test/cli.js test --config=playwright.startup.config.ts --output=/tmp/test-results
       - name: Install site dependencies
         run: npm ci
         working-directory: site
