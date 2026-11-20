@@ -20,6 +20,10 @@
             overflow-y: auto;
         }
         #loading.hidden { display: none; }
+        #loading .bar { width: 16rem; max-width: 80vw; height: 4px; background: #333; border-radius: 2px; overflow: hidden; margin: 12px 0 14px; }
+        #loading .bar i { display: block; width: 40%; height: 100%; background: #2f6fd6; border-radius: 2px; animation: stele-slide 1.4s ease-in-out infinite; }
+        @keyframes stele-slide { 0% { transform: translateX(-110%); } 100% { transform: translateX(260%); } }
+        @media (prefers-reduced-motion: reduce) { #loading .bar i { animation: none; width: 100%; opacity: .5; } }
     </style>
     <!-- Patches COOP/COEP headers for SharedArrayBuffer on hosts that don't set them (e.g. GitHub Pages),
          and caches the app shell for offline use / PWA installability (see stelekit-service-worker.js).
@@ -45,21 +49,39 @@
 </head>
 <body>
     <div id="loading">
-        <p style="font-size: 18px; margin-bottom: 8px;">Loading SteleKit…</p>
-        <p style="font-size: 13px; color: #888; margin-bottom: 4px;">Requires Chrome 119+, Firefox 120+, or Safari 18.2+</p>
-        <p style="font-size: 12px; color: #666;">This page may refresh once on first load — this is expected.</p>
+        <p style="font-size: 18px;">Loading SteleKit…</p>
+        <div class="bar" role="progressbar" aria-label="Loading SteleKit"><i></i></div>
+        <p id="loading-status" aria-live="off" style="font-size: 13px; color: #aaa; margin-bottom: 4px;">Starting…</p>
+        <p style="font-size: 12px; color: #666;">Requires Chrome 119+, Firefox 120+, or Safari 18.2+. The page may refresh once on first load.</p>
     </div>
     <script src="kmp.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            setTimeout(function() {
-                var loading = document.getElementById('loading');
-                // A boot error (e.g. graph locked by another tab) replaces this overlay's content
-                // and must stay visible — ComposeViewport never mounts in that case, so hiding it
-                // would leave a blank page instead of the error message.
-                if (loading && !window.__stelekit_boot_error) loading.classList.add('hidden');
-            }, 8000);
-        });
+        // The overlay stays until Compose mounts its canvas (a boot error keeps it too, see BootRefusal.kt);
+        // a fixed timeout used to hide it mid-download and leave a blank page on slow connections.
+        (function () {
+            var loading = document.getElementById('loading');
+            var status = document.getElementById('loading-status');
+            var t0 = Date.now();
+            function say(text) { if (status && !window.__stelekit_boot_error) status.textContent = text; }
+            var tick = setInterval(function () {
+                if (window.__stelekit_boot_error) { clearInterval(tick); return; }
+                var s = Math.round((Date.now() - t0) / 1000);
+                var wasm = performance.getEntriesByType('resource').filter(function (e) { return /\.wasm$/.test(e.name); });
+                var done = wasm.filter(function (e) { return e.responseEnd > 0; }).length;
+                var msg = done ? 'Downloaded ' + done + ' of ~2 app files' : 'Downloading the app (about 8 MB)';
+                if (s > 20) msg += ' — slow connection, still going';
+                if (s > 90) msg += '. It is cached after this, so later loads are fast';
+                say(msg + ' · ' + s + 's');
+            }, 1000);
+            // Compose attaches its canvas inside document.body's shadow root, so a plain body query never finds it.
+            function hasCanvas() { return !!(document.body.shadowRoot && document.body.shadowRoot.querySelector('canvas')); }
+            var watch = setInterval(function () {
+                if (!hasCanvas()) return;
+                clearInterval(watch);
+                clearInterval(tick);
+                setTimeout(function () { if (loading && !window.__stelekit_boot_error) loading.classList.add('hidden'); }, 300);
+            }, 250);
+        })();
     </script>
 </body>
 </html>
