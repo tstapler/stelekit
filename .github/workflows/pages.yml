@@ -208,7 +208,7 @@ jobs:
           cache: npm
           cache-dependency-path: site/package-lock.json
       - name: Test service worker cache-validation logic
-        run: node --test looks-like-app-shell.test.js
+        run: node --test looks-like-app-shell.test.js stelekit-service-worker.test.js
         working-directory: kmp/src/wasmJsMain/resources
       - name: Install site dependencies
         run: npm ci
