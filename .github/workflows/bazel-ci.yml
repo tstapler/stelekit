@@ -70,7 +70,7 @@ jobs:
           timeout_minutes: 12
           max_attempts: 2
           retry_wait_seconds: 30
-          command: set -o pipefail; bazel build //kmp:desktop_app --config=remote-cache 2>&1 | sed -u '/Download from .* 404 Not Found/d' | tee "$RUNNER_TEMP/bazel-jvm-build.log"
+          command: set -o pipefail; bazel build //kmp:desktop_app --config=remote-cache 2>&1 | sed -u /Download.from.*404.Not.Found/d | tee "$RUNNER_TEMP/bazel-jvm-build.log"
 
       - name: Run JVM tests
         # --flaky_test_attempts=3: same real-GraalJS timing flake as the
@@ -92,7 +92,7 @@ jobs:
               --flaky_test_attempts=3 \
               --sandbox_add_mount_pair=/tmp/.X11-unix \
               --test_env=DISPLAY \
-              --test_env=XAUTHORITY 2>&1 | sed -u '/Download from .* 404 Not Found/d' | tee "$RUNNER_TEMP/bazel-jvm-test.log"
+              --test_env=XAUTHORITY 2>&1 | sed -u /Download.from.*404.Not.Found/d | tee "$RUNNER_TEMP/bazel-jvm-test.log"
 
       # --test_output=errors drops a failing target's output once it exceeds
       # Bazel's 1 MiB stdout cap, so the raw test.xml/test.log are the
@@ -156,7 +156,7 @@ jobs:
             bazel test //kmp:business_tests \
               --config=remote-cache \
               --test_env=LFS_DIFFERENTIAL_REQUIRED=true \
-              --test_output=errors 2>&1 | sed -u '/Download from .* 404 Not Found/d' | tee "$RUNNER_TEMP/bazel-business-test.log"
+              --test_output=errors 2>&1 | sed -u /Download.from.*404.Not.Found/d | tee "$RUNNER_TEMP/bazel-business-test.log"
 
       - name: Collect business test logs
         if: always()
@@ -238,7 +238,7 @@ jobs:
           # The wrapper logs memory to the job log (survives a killed runner) and writes ci-mem-head/metrics.json.
           command: |
             mem-sampler --out ci-mem-head/metrics.json --label android-build -- \
-              bash -c 'set -o pipefail; bazel build //kmp:android_app --config=android --config=remote-cache 2>&1 | sed -u '/Download from .* 404 Not Found/d' | tee "$RUNNER_TEMP/bazel-android-build.log"'
+              bash -c 'set -o pipefail; bazel build //kmp:android_app --config=android --config=remote-cache 2>&1 | sed -u /Download.from.*404.Not.Found/d | tee "$RUNNER_TEMP/bazel-android-build.log"'
 
       # Main saves its numbers; PRs diff against the latest main run. Advisory only.
       - name: Report CI memory
@@ -318,7 +318,7 @@ jobs:
               --config=android \
               --config=remote-cache \
               --test_output=errors \
-              --experimental_ui_max_stdouterr_bytes=4194304 2>&1 | sed -u '/Download from .* 404 Not Found/d' | tee "$RUNNER_TEMP/bazel-android-tests.log"
+              --experimental_ui_max_stdouterr_bytes=4194304 2>&1 | sed -u /Download.from.*404.Not.Found/d | tee "$RUNNER_TEMP/bazel-android-tests.log"
 
       - name: Collect Android unit test logs
         if: always()
@@ -391,7 +391,7 @@ jobs:
           timeout_minutes: 22
           max_attempts: 2
           retry_wait_seconds: 30
-          command: set -o pipefail; bazel build //kmp:web_app --config=remote-cache 2>&1 | sed -u '/Download from .* 404 Not Found/d' | tee "$RUNNER_TEMP/bazel-web-build.log"
+          command: set -o pipefail; bazel build //kmp:web_app --config=remote-cache 2>&1 | sed -u /Download.from.*404.Not.Found/d | tee "$RUNNER_TEMP/bazel-web-build.log"
 
       - name: Save Gradle home
         if: success() && github.event_name != 'pull_request'
