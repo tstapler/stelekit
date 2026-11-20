@@ -1035,6 +1035,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.ExcalidrawFillTest::class,
     dev.stapler.stelekit.sketch.v2.ScenePainterPixelTest::class,
     dev.stapler.stelekit.sketch.v2.ToolStripModelTest::class,
+    dev.stapler.stelekit.sketch.v2.ElementStatsGeometryTest::class,
     dev.stapler.stelekit.sketch.v2.FreehandGoldenTest::class,
     dev.stapler.stelekit.sketch.v2.tools.ToolCancelTest::class,
     dev.stapler.stelekit.sketch.v2.tools.ToolInventoryCompletenessTest::class,

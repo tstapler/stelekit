@@ -58,6 +58,19 @@ class ElementStatsHostTest {
     }
 
     @Test
+    fun sizeSection_should_ShowLockedInsteadOfFields_When_TheElementIsLocked() {
+        val session = mount()
+        rule.runOnUiThread {
+            session.controller.submit(dev.stapler.stelekit.sketch.v2.commands.LockElements(listOf(ElementId("r1")), true))
+            session.controller.tools.select(listOf(ElementId("r1")))
+        }
+        rule.waitForIdle()
+
+        rule.onNodeWithTag(StylePanelTags.STATS_PREFIX + "locked").assertExists()
+        rule.onNodeWithTag(StylePanelTags.STATS_PREFIX + "x").assertDoesNotExist()
+    }
+
+    @Test
     fun sizeSection_should_BeAbsent_When_NothingIsSelected() {
         mount()
 

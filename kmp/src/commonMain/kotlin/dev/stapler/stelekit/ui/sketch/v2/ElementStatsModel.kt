@@ -19,15 +19,19 @@ data class ElementStats(val x: Double, val y: Double, val width: Double, val hei
     companion object {
         private const val HALF_TURN_DEGREES = 180.0
 
-        /** Null for an element with no extent (an empty line). The angle is 0 for a kind that cannot rotate. */
+        /**
+         * Null for an element with no extent (an empty line). A box or ellipse reports its own unrotated box, the one
+         * [ResizeElement] writes, so a rotated element's width and height are not its rotated bounds. The angle is 0 for a kind that cannot rotate.
+         */
         fun of(element: SceneElement): ElementStats? {
-            val b = SceneBounds.of(element) ?: return null
-            val angle = when (element) {
-                is BoxElement -> element.angle
-                is EllipseElement -> element.angle
-                else -> 0.0
+            val own = when (element) {
+                is BoxElement -> listOf(element.x.value, element.y.value, element.width.value, element.height.value, element.angle)
+                is EllipseElement -> listOf(element.cx.value - element.rx.value, element.cy.value - element.ry.value, 2 * element.rx.value, 2 * element.ry.value, element.angle)
+                else -> null
             }
-            return ElementStats(b.minX, b.minY, b.width, b.height, angle * HALF_TURN_DEGREES / PI)
+            if (own != null) return ElementStats(own[0], own[1], own[2], own[3], own[4] * HALF_TURN_DEGREES / PI)
+            val b = SceneBounds.of(element) ?: return null
+            return ElementStats(b.minX, b.minY, b.width, b.height, 0.0)
         }
 
         fun radians(degrees: Double): Double = degrees * PI / HALF_TURN_DEGREES
