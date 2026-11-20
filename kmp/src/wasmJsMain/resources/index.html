@@ -24,6 +24,23 @@
     <!-- Patches COOP/COEP headers for SharedArrayBuffer on hosts that don't set them (e.g. GitHub Pages),
          and caches the app shell for offline use / PWA installability (see stelekit-service-worker.js).
          Skip when the server already provides cross-origin isolation to avoid service-worker cache churn. -->
+    <!-- A browser that registered the retired coi-serviceworker.min.js keeps the page cross-origin isolated, so the
+         guard below never registers the current worker. Drop that registration and reload once (sessionStorage-guarded). -->
+    <script>
+    try {
+        if (navigator.serviceWorker && !sessionStorage.getItem('staleCoiCleared')) {
+            navigator.serviceWorker.getRegistrations().then(function (regs) {
+                var stale = regs.filter(function (r) {
+                    var w = r.active || r.waiting || r.installing;
+                    return w && /coi-serviceworker\.min\.js$/.test(w.scriptURL);
+                });
+                if (!stale.length) return;
+                sessionStorage.setItem('staleCoiCleared', '1');
+                Promise.all(stale.map(function (r) { return r.unregister(); })).then(function () { location.reload(); }).catch(function () {});
+            }).catch(function () {});
+        }
+    } catch (e) {}
+    </script>
     <script>if (!crossOriginIsolated) document.write('<scr' + 'ipt src="stelekit-service-worker.js"><\/scr' + 'ipt>');</script>
 </head>
 <body>
