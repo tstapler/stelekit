@@ -1206,6 +1206,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.projectbridge.ProjectSidecarStoreTest::class,
     dev.stapler.stelekit.projectbridge.SidecarOldReaderSchemaGateTest::class,
     dev.stapler.stelekit.projectbridge.SidecarBackupAndStagingTest::class,
+    dev.stapler.stelekit.projectbridge.ProjectTechnicalDataTest::class,
     dev.stapler.stelekit.projectbridge.SheetCodecDispatchTest::class,
     dev.stapler.stelekit.projectbridge.SidecarRetentionPolicyTest::class,
     dev.stapler.stelekit.projectbridge.BundleV2PassthroughTest::class,

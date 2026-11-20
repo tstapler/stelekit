@@ -95,12 +95,13 @@ class HostServices(
             limits: SceneLimits,
             createSheet: (suspend (SketchDocumentV2) -> Either<String, Unit>)? = null,
             tier: () -> SolverTier = { SolverTierFacts.Recorded.tierOf(SolverTarget.Jvm) },
+            technical: TechnicalDataSource? = null,
         ): HostServices {
             val notes = platform.notesDirectory()
             val fs = platform.fileSystem
             val images = if (notes != null && fs != null) ImageAssetStore(fs, assetsDirectory(notes), limits) else null
             val library = if (notes != null && fs != null) FileLibraryStorage(fs, libraryPath(notes)) else InMemoryLibraryStorage()
-            return HostServices(platform.files, images, storage, library, tier, createSheet = createSheet, limits = limits, platform = platform)
+            return HostServices(platform.files, images, storage, library, tier, createSheet = createSheet, limits = limits, platform = platform, technical = technical)
         }
     }
 }
