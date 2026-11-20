@@ -24,9 +24,9 @@ jobs:
           RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
-          # Signatures seen on real runs: setup-bazel's release lookup, a stale apt index, runner teardown, a Maven registry download that
-          # failed during a Bazel repository fetch (not a missing artifact: those are 404 warnings, which Bazel falls through).
-          infra='Unable to find Bazelisk version|E: Failed to fetch|E: Unable to fetch some archives|The runner has received a shutdown signal|The hosted runner lost communication|java.io.IOException: Error downloading \[https://(repo1.maven.org|maven.google.com|jitpack.io|maven-central.storage-download.googleapis.com)'
+          # Signatures seen on real runs: setup-bazel's release lookup, a stale apt index, runner teardown, a Maven registry download (or a
+          # Coursier artifact fetch) that failed during a Bazel repository fetch (not a missing artifact: those are 404 warnings, which Bazel falls through).
+          infra='Unable to find Bazelisk version|E: Failed to fetch|E: Unable to fetch some archives|The runner has received a shutdown signal|The hosted runner lost communication|java.io.IOException: Error downloading \[https://(repo1.maven.org|maven.google.com|jitpack.io|maven-central.storage-download.googleapis.com)|Error while fetching artifact with coursier'
 
           failed=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?filter=latest&per_page=100" \
             --jq '.jobs[] | select(.conclusion == "failure") | [.id, .name, ([.steps[] | select(.conclusion == "failure")] | length)] | @tsv')
