@@ -10,12 +10,9 @@ import dev.stapler.stelekit.sketch.v2.index.ElementBounds
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
 import dev.stapler.stelekit.sketch.v2.scene.BoxElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
-import dev.stapler.stelekit.sketch.v2.hit.PartHitTester
-import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.EllipseElement
 import dev.stapler.stelekit.sketch.v2.scene.LineElement
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
-import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
 import kotlin.math.abs
@@ -89,26 +86,6 @@ class SelectTool(
         val index = line.points.indices.minByOrNull { hypot(line.points[it].x.value - point.x.value, line.points[it].y.value - point.y.value) } ?: return null
         val d = hypot(line.points[index].x.value - point.x.value, line.points[index].y.value - point.y.value)
         return if (d <= tolerance) line to index else null
-    }
-
-    /** The point of another element (or another vertex of [line]) within [tolerance] of [to], nearest first; null when none is. */
-    private fun snapTarget(to: ScenePoint, line: LineElement, skip: Int, tolerance: Double, ctx: ToolContext): ScenePoint? {
-        val area = Bounds.around(to.x.value, to.y.value, tolerance)
-        val near = ctx.spatialIndex?.query(area)?.mapNotNull { ctx.scene[it] } ?: ctx.scene.elementsInOrder
-        val hidden = ctx.scene.layers.filter { !it.visible }.map { it.id }.toSet()
-        return near.filter { it.base.layerId !in hidden }
-            .flatMap { e -> snapPointsOf(e).filterIndexed { i, _ -> e.id != line.id || i != skip } }
-            .minByOrNull { hypot(it.x.value - to.x.value, it.y.value - to.y.value) }
-            ?.takeIf { hypot(it.x.value - to.x.value, it.y.value - to.y.value) <= tolerance }
-    }
-
-    private fun snapPointsOf(e: SceneElement): List<ScenePoint> = when (e) {
-        is LineElement -> e.points
-        is ArrowElement -> e.points
-        is PointElement -> listOf(ScenePoint(e.x, e.y))
-        is RectElement -> PartHitTester.cornersOf(e).map { (x, y) -> ScenePoint(unitOrZero(x), unitOrZero(y)) }
-        is EllipseElement -> listOf(ScenePoint(e.cx, e.cy))
-        else -> emptyList()
     }
 
     // ---- host verbs (keyboard, selection bar) ----------------------------------------------------------------------
@@ -289,7 +266,7 @@ class SelectTool(
             )
             val touch = owner.touchPresent || event.pointerKind != PointerKind.Mouse
             val previous = line.points.getOrNull(index - 1)
-            val to = owner.snapTarget(raw, line, index, owner.vertexTolerance(ctx, touch), ctx)
+            val to = VertexSnap.nearest(raw, line, index, owner.vertexTolerance(ctx, touch), ctx)
                 ?: if (event.modifiers.shift && previous != null) AngleSnap.snap(previous, raw) else raw
             return line.points.toMutableList().also { it[index] = to }
         }
