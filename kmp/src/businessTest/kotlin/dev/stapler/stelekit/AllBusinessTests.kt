@@ -1070,6 +1070,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.tools.ShapeToolsTest::class,
     dev.stapler.stelekit.ui.sketch.v2.NoticeQueueTest::class,
     dev.stapler.stelekit.ui.sketch.v2.OnboardingPolicyTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.guide.TourControllerTest::class,
     dev.stapler.stelekit.ui.sketch.v2.OnboardingSequencerTest::class,
     dev.stapler.stelekit.ui.sketch.v2.NonDragTransformModeTest::class,
     dev.stapler.stelekit.ui.sketch.v2.NonDragPickModesTest::class,
