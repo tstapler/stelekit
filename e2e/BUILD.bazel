@@ -1,0 +1,12 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+# Playwright suite against //kmp:web_app. Network + browsers + Gradle build => local + manual:
+# `bazel test //e2e:functional`.
+sh_test(
+    name = "functional",
+    srcs = ["run_e2e.sh"],
+    args = ["$(rootpath //third_party/bun:bun)", "$(rootpath //kmp:web_app)"],
+    data = ["//third_party/bun:bun", "//kmp:web_app", "//:MODULE.bazel"],
+    tags = ["local", "manual", "requires-network", "web"],
+    timeout = "long",
+)

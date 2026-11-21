@@ -202,21 +202,17 @@ jobs:
             echo "Download succeeded but repo/ missing; fdroid content will be absent"
 
       - uses: actions/configure-pages@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: site/package-lock.json
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - name: Test service worker cache validation and isolation headers
-        run: node --test looks-like-app-shell.test.js stelekit-service-worker.test.js
+        run: bun test looks-like-app-shell.test.js stelekit-service-worker.test.js
         working-directory: kmp/src/wasmJsMain/resources
       - name: Install browser regression dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
         working-directory: e2e
       - name: Test headerless-origin offline startup
         # Match the locked client to its bundled browsers without depending on the host distro.
         run: |
-          version=$(node -p 'require("./e2e/package-lock.json").packages["node_modules/@playwright/test"].version')
+          version=$(bun -e 'console.log(require("./e2e/node_modules/@playwright/test/package.json").version)')
           docker run --rm --init --shm-size=1g \
             --env CI=true \
             --mount "type=bind,source=$PWD,target=/workspace,readonly" \
@@ -224,10 +220,10 @@ jobs:
             "mcr.microsoft.com/playwright:v${version}" \
             node node_modules/@playwright/test/cli.js test --config=playwright.startup.config.ts --output=/tmp/test-results
       - name: Install site dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
         working-directory: site
       - name: Build Astro site
-        run: npm run build
+        run: bun run build
         working-directory: site
         env:
           # True when demo files are present from either current run or fallback

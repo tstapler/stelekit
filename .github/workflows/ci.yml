@@ -444,9 +444,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
 
-      - name: Node tests (budget checker, calibration, benchdiff export, privacy gate)
-        run: node --test scripts/bench-budget-check.test.js scripts/bench-budget-calibrate.test.js scripts/benchdiff-export.test.js scripts/check-artifact-privacy.test.js
+      - name: Bun tests (budget checker, calibration, benchdiff export, privacy gate)
+        run: bun test scripts/bench-budget-check.test.js scripts/bench-budget-calibrate.test.js scripts/benchdiff-export.test.js scripts/check-artifact-privacy.test.js
 
       - name: Python summarizer tests
         run: python3 scripts/android-benchmark-summarize_test.py
@@ -455,7 +456,7 @@ jobs:
         run: python3 scripts/ci/release_proof_test.py
 
       - name: Budgets file matches the probe catalog
-        run: node scripts/bench-budget-check.js --validate
+        run: bun scripts/bench-budget-check.js --validate
 
       - name: No mutation flags in production sources
         run: scripts/check-no-mutations-in-main.sh
@@ -573,27 +574,23 @@ jobs:
       - name: Build wasmJs production distribution
         run: ./gradlew :kmp:wasmJsBrowserDistribution --no-daemon --build-cache -PenableJs=true
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'npm'
-          cache-dependency-path: e2e/package-lock.json
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
 
       - name: Install e2e deps
         working-directory: e2e
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Install Playwright browsers
         working-directory: e2e
-        run: npx playwright install --with-deps chromium
+        run: bunx playwright install --with-deps chromium
 
       - name: Run Playwright functional suite
         # benchmark.spec.ts is intentionally excluded — its timing assertions are
         # tuned for local hardware and are too flaky on shared CI runners to gate
-        # PRs on. Run it manually (npm test -- tests/benchmark.spec.ts) when
+        # PRs on. Run it manually (bun run test tests/benchmark.spec.ts) when
         # investigating a perf regression.
         working-directory: e2e
-        run: npx playwright test tests/demo.spec.ts
+        run: bunx playwright test tests/demo.spec.ts
 
       - name: Upload Playwright report
         if: failure()

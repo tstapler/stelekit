@@ -1,0 +1,18 @@
+# Pinned Bun binary, selected by host platform (repos declared in //:MODULE.bazel).
+config_setting(name = "linux_x64", constraint_values = ["@platforms//os:linux", "@platforms//cpu:x86_64"])
+config_setting(name = "linux_arm64", constraint_values = ["@platforms//os:linux", "@platforms//cpu:aarch64"])
+config_setting(name = "macos_x64", constraint_values = ["@platforms//os:macos", "@platforms//cpu:x86_64"])
+config_setting(name = "macos_arm64", constraint_values = ["@platforms//os:macos", "@platforms//cpu:aarch64"])
+
+alias(
+    name = "bun",
+    actual = select({
+        ":linux_x64": "@bun_linux_x64//:bun",
+        ":linux_arm64": "@bun_linux_aarch64//:bun",
+        ":macos_x64": "@bun_darwin_x64//:bun",
+        ":macos_arm64": "@bun_darwin_aarch64//:bun",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+exports_files(["run_bun.sh", "run_bun_staged.sh"], visibility = ["//visibility:public"])
