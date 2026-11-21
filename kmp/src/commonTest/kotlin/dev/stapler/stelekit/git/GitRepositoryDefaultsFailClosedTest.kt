@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.git
 
 import arrow.core.Either
+import dev.stapler.stelekit.error.SyncOrigin
 import dev.stapler.stelekit.git.testsupport.StubGitRepository
 import dev.stapler.stelekit.git.testsupport.sampleConfig
 import kotlinx.coroutines.test.runTest

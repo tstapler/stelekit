@@ -7,6 +7,7 @@ import arrow.core.Either
 import arrow.core.right
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.error.SyncOrigin
 import dev.stapler.stelekit.git.merge.MergePolicy
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.ConflictHunk

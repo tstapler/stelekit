@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.git
 
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.error.SyncOrigin
 import dev.stapler.stelekit.git.model.SyncState
 import kotlin.test.Test
 import kotlin.test.assertEquals

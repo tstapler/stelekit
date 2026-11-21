@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.git
 
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.error.SyncOrigin
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

@@ -14,7 +14,7 @@ import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitTransportRetryState
 import dev.stapler.stelekit.git.RepoOpGate
-import dev.stapler.stelekit.git.SyncOrigin
+import dev.stapler.stelekit.error.SyncOrigin
 import dev.stapler.stelekit.git.withExclusiveLease
 import dev.stapler.stelekit.llm.LlmCredentialStore
 import dev.stapler.stelekit.llm.LlmProviderRegistry

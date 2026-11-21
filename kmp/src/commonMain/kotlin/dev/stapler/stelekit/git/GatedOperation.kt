@@ -6,6 +6,7 @@ package dev.stapler.stelekit.git
 import arrow.core.Either
 import arrow.core.left
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.error.SyncOrigin
 
 /**
  * Runs [block] as the single holder of [key] for callers outside [GitSyncService] (setup test, clone): a held key

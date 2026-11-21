@@ -20,6 +20,7 @@ import arrow.core.left
 import arrow.core.right
 import com.google.common.util.concurrent.ListenableFuture
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.error.SyncOrigin
 import dev.stapler.stelekit.git.testsupport.cloningStub
 import kotlinx.coroutines.runBlocking
 import org.junit.Test

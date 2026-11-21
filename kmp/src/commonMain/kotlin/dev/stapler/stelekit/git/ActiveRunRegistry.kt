@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.error.SyncOrigin
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
