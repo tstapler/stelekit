@@ -48,7 +48,10 @@ import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.LineElement
+import dev.stapler.stelekit.ui.sketch.v2.guide.GuideActions
 import dev.stapler.stelekit.ui.sketch.v2.guide.GuideContent
+import dev.stapler.stelekit.ui.sketch.v2.guide.HelpSearchDialog
+import dev.stapler.stelekit.ui.sketch.v2.guide.SearchAction
 import dev.stapler.stelekit.ui.sketch.v2.guide.GuideFeatures
 import dev.stapler.stelekit.ui.sketch.v2.guide.TourController
 import dev.stapler.stelekit.sketch.v2.tools.SelectTool
@@ -208,6 +211,7 @@ fun SketchEditorV2Host(
         canvasModifier = remember(canvasAccess) { canvasRegionKeysOf(canvasAccess) },
         onRegions = { canvasAccess.regions = it },
         tours = tours,
+        onHelp = { controller.overlay = EditorOverlay.HelpSearch },
     )
     DiagnosticsHost(session.diagnostics, modifier.testTag(HostTags.ROOT)) {
         SketchScreenV2(
@@ -224,7 +228,7 @@ fun SketchEditorV2Host(
                 largeScene.hardCap?.let { HardCapNotice(it, largeScene::answer, Modifier.align(Alignment.TopCenter)) }
             },
         )
-        HostOverlays(controller, extras, singleKey) { singleKey = it }
+        HostOverlays(controller, extras, tours, singleKey) { singleKey = it }
         if (leave.prompting) {
             LeaveSketchPrompt(
                 onRetry = leave::retry,
@@ -392,7 +396,7 @@ private fun Modifier.wheelInput(controller: SketchEditorController): Modifier = 
 }
 
 @Composable
-private fun HostOverlays(controller: SketchEditorController, extras: EditorExtras, singleKey: Boolean, onSingleKey: (Boolean) -> Unit) {
+private fun HostOverlays(controller: SketchEditorController, extras: EditorExtras, tours: TourController?, singleKey: Boolean, onSingleKey: (Boolean) -> Unit) {
     ExtrasDialogs(extras)
     when (controller.overlay) {
         EditorOverlay.Shortcuts -> ShortcutsSheet(
@@ -409,6 +413,7 @@ private fun HostOverlays(controller: SketchEditorController, extras: EditorExtra
             onDismiss = { controller.overlay = null },
         )
         EditorOverlay.ConstrainMenu -> ConstrainMenuDialog(controller, extras)
+        EditorOverlay.HelpSearch -> GuideDialog(controller, extras, tours)
         null -> Unit
     }
 }
@@ -447,4 +452,46 @@ private fun TourTriggers(tours: TourController?, controller: SketchEditorControl
         }
     }
     LaunchedEffect(selectedLine) { if (selectedLine) tours.onFeatureFirstUse(GuideFeatures.POINT_DRAG) }
+}
+
+/** Help and search: the tools this sheet offers and the actions this host can run. */
+@Composable
+private fun GuideDialog(controller: SketchEditorController, extras: EditorExtras, tours: TourController?) {
+    val tools = remember(controller.sheetKind) { ToolStripModel(technicalSheet = controller.sheetKind == dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical, keymapEnv = controller.keymap).tools.map { it.id } }
+    val actions = buildList {
+        addAll(listOf(GuideActions.UNDO, GuideActions.REDO, GuideActions.DELETE, GuideActions.SHORTCUTS, GuideActions.GO_TO_ELEMENT, GuideActions.FIT, GuideActions.GRID, GuideActions.SNAP))
+        if (extras.constraintsAvailable) add(GuideActions.CONSTRAIN)
+        if (extras.exportAvailable) add(GuideActions.EXPORT)
+        if (extras.importDisabledReason == null) add(GuideActions.IMPORT)
+    }
+    HelpSearchDialog(
+        tours = tours,
+        tools = tools,
+        actions = actions,
+        onRun = { action ->
+            controller.overlay = null
+            runGuideAction(controller, extras, action)
+        },
+        onDismiss = { controller.overlay = null },
+    )
+}
+
+private fun runGuideAction(controller: SketchEditorController, extras: EditorExtras, action: SearchAction) {
+    when (action) {
+        is SearchAction.UseTool -> controller.tools.chooseTool(action.tool)
+        is SearchAction.OpenTopic -> Unit
+        is SearchAction.Run -> when (action.action) {
+            GuideActions.UNDO -> controller.undo()
+            GuideActions.REDO -> controller.redo()
+            GuideActions.DELETE -> controller.keys.run(KeyAction.Delete)
+            GuideActions.CONSTRAIN -> controller.overlay = EditorOverlay.ConstrainMenu
+            GuideActions.SHORTCUTS -> controller.overlay = EditorOverlay.Shortcuts
+            GuideActions.GO_TO_ELEMENT -> controller.overlay = EditorOverlay.GoToElement
+            GuideActions.FIT -> controller.ui.viewport = controller.view.fit()
+            GuideActions.GRID -> extras.toggleGrid()
+            GuideActions.SNAP -> extras.toggleSnap()
+            GuideActions.EXPORT -> extras.exporter.open()
+            GuideActions.IMPORT -> extras.importer.chooseFile()
+        }
+    }
 }

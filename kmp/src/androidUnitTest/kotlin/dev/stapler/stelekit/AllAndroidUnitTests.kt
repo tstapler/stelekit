@@ -160,6 +160,7 @@ import org.junit.runners.Suite
     // DiscoverabilityTest, CoachWalkthroughTest and EmptyStateTest (sketch v2, Stories 3.6.8 and 3.6.6) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
     // SolveProgressIndicatorTest (sketch v2, Task 4.1.4b) is excluded for the same reason (1) and composes @Composable lambdas (no Compose plugin in this target).
     // SceneSemanticsTest and TechnicalDataPanelTest (sketch v2, Stories 3.6.2 and 4.2.5) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
+    // HelpSearchDialogTest (sketch v2 Help and search) is excluded for the same reason (1) and composes @Composable lambdas (no Compose plugin in this target).
     // ConstraintPanelTest and UxConstraintsAcceptanceTest (sketch v2, Stories 4.2.2 and 4.2.3) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
     // ConstraintTargetPickerTest and DimensionEditTest (sketch v2, Tasks 4.2.6b, 4.2.7b and 4.2.7d) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
     // PanelTabsA11yTest (sketch v2 review finding 6) is excluded for the same reason (1) and composes the shell (no Compose plugin in this target).

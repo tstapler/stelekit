@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.ui.sketch.v2.guide
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -64,7 +65,7 @@ class TourController(private val registry: TourRegistry, private val progress: T
     var active: Tour? by mutableStateOf(null)
         private set
 
-    var stepIndex: Int by mutableStateOf(0)
+    var stepIndex: Int by mutableIntStateOf(0)
         private set
 
     /** Where each region sits in root pixels; reported by the shell's layout. */

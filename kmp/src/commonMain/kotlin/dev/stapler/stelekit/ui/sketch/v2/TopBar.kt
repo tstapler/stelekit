@@ -39,6 +39,7 @@ object TopBarTags {
     const val BACK = "sketch.topbar.back"
     const val NAME = "sketch.topbar.name"
     const val SAVE = "sketch.topbar.save"
+    const val HELP = "sketch.topbar.help"
 }
 
 /** Everything the top bar shows (Story 3.1.4d): the tier comes from `ChromeBudget.topBar`, so this composable decides nothing about fit. */
@@ -56,6 +57,8 @@ class TopBarActions(
     val onBack: (() -> Unit)? = null,
     val onFingerToggle: () -> Unit = {},
     val onSelectionAction: (SelectionAction) -> Unit = {},
+    /** Opens Help and search; null hides the button. */
+    val onHelp: (() -> Unit)? = null,
 )
 
 /**
@@ -94,6 +97,13 @@ fun TopBar(
             overflow = TextOverflow.Ellipsis,
         )
         FingerChip(content, actions)
+        actions.onHelp?.let { help ->
+            Box(
+                Modifier.size(ChromeBudget.BACK_DP.dp).testTag(TopBarTags.HELP).clickable(onClick = help)
+                    .semantics { contentDescription = SketchStrings.TopBar.HELP; role = Role.Button },
+                contentAlignment = Alignment.Center,
+            ) { Text(HELP_GLYPH) }
+        }
         SaveStatusButton(content.plan, content.saveStatus)
         if (content.plan.selection == SelectionMenuPlace.InBar) {
             SelectionMenuButton(content.selectionCount, content.selectionItems, actions.onSelectionAction)
@@ -187,3 +197,4 @@ private fun saveGlyph(status: SaveStatus): String = when (status) {
 
 private const val BACK_GLYPH = "←"
 private const val OVERFLOW_GLYPH = "⋮"
+private const val HELP_GLYPH = "?"

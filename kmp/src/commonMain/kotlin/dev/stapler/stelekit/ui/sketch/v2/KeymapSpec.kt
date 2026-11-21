@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.ui.sketch.v2
 
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchGoToStrings
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchGuideStrings
 
 /**
  * The single data table the key dispatcher (Task 3.6.1a) and the shortcuts sheet (Task 3.6.1b) both read.
@@ -118,6 +119,7 @@ object KeymapSpec {
     const val TOOL_LOCK_ID = "toolLock"
     const val CONSTRAIN_ID = "constrain"
     const val GO_TO_ELEMENT_ID = "go-to-element"
+    const val HELP_SEARCH_ID = "help-search"
 
     val others: List<KeymapEntry> = listOf(
         KeymapEntry(TOOL_LOCK_ID, KeymapGroup.Tools, "Tool lock", listOf(KeyBinding("q", singleKey = true))),
@@ -152,6 +154,10 @@ object KeymapSpec {
         KeymapEntry("snap", KeymapGroup.View, "Snap", listOf(KeyBinding("s", setOf(Modifier.Alt)))),
         KeymapEntry("shortcutsSheet", KeymapGroup.View, "Shortcuts", listOf(KeyBinding("?"))),
         chord(GO_TO_ELEMENT_ID, KeymapGroup.View, SketchGoToStrings.TITLE, "f", primaryShift),
+        KeymapEntry(
+            HELP_SEARCH_ID, KeymapGroup.View, SketchGuideStrings.Search.TITLE,
+            listOf(KeyBinding("/", primary)),
+        ),
         KeymapEntry("nextRegion", KeymapGroup.View, "Next region", listOf(KeyBinding("F6"))),
         KeymapEntry("previousRegion", KeymapGroup.View, "Previous region", listOf(KeyBinding("F6", setOf(Modifier.Shift)))),
         KeymapEntry("escape", KeymapGroup.View, "Close, cancel or return to the canvas", listOf(KeyBinding("Escape"))),

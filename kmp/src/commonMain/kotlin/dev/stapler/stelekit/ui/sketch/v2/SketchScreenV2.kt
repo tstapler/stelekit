@@ -145,6 +145,8 @@ data class SketchShellConfig(
     val onRegions: (RegionFocus) -> Unit = {},
     /** The feature tours; null shows none. */
     val tours: TourController? = null,
+    /** Opens Help and search from the top bar and the menu; null hides both. */
+    val onHelp: (() -> Unit)? = null,
 )
 
 object ShellTags {
@@ -160,6 +162,7 @@ object ShellTags {
     const val OVERFLOW_PAN = "sketch.overflow.pan"
     const val OVERFLOW_SHORTCUTS = "sketch.overflow.shortcuts"
     const val OVERFLOW_TIPS = "sketch.overflow.tips"
+    const val OVERFLOW_HELP = "sketch.overflow.help"
     const val OVERFLOW_IMPORT = "sketch.overflow.import"
     const val OVERFLOW_EXPORT = "sketch.overflow.export"
     const val OVERFLOW_RESTORE = "sketch.overflow.restore"
@@ -336,6 +339,7 @@ private fun ShellTopBar(state: SketchEditorState, config: SketchShellConfig, foc
                 config.onFingerDrawingChosen(state.fingerDrawing)
             },
             onSelectionAction = config.onSelectionAction,
+            onHelp = config.onHelp,
         ),
         Modifier.padding(horizontal = 16.dp),
         Modifier.anchorFor(state, WalkthroughStep.Shortcuts).tourAnchored(config, TabStop.TopBar)
@@ -372,6 +376,13 @@ private fun OverflowItems(state: SketchEditorState, config: SketchShellConfig, g
                 text = { Text(SketchGoToStrings.MENU_ITEM) },
                 onClick = { close(); onGoTo() },
                 modifier = Modifier.testTag(ShellTags.OVERFLOW_GO_TO),
+            )
+        }
+        config.onHelp?.let { onHelp ->
+            DropdownMenuItem(
+                text = { Text(SketchStrings.TopBar.HELP) },
+                onClick = { close(); onHelp() },
+                modifier = Modifier.testTag(ShellTags.OVERFLOW_HELP),
             )
         }
         DropdownMenuItem(
