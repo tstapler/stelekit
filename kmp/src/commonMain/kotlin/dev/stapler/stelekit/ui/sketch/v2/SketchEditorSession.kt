@@ -319,7 +319,15 @@ class V2EditorOpener(
         readOnly?.let { port.raise(BannerRowId.ReadOnly, it) }
         val solverTarget = if (deps.keymap.isWeb) SolverTarget.WasmJs else SolverTarget.Jvm
         val newSheet = if (readOnly == null) newSheetCreator(controller, target) else null
-        val services = HostServices.of(deps.platform, { target.store.v2Storage() }, deps.limits, createSheet = newSheet) { SolverTierFacts.Recorded.tierOf(solverTarget) }
+        val technical = if (readOnly == null) {
+            ProjectTechnicalData(deps.repos, target.store, deps.slugLock, deps.writeActor, target.slug, target.project, target.sheet)
+        } else {
+            null
+        }
+        val services = HostServices.of(
+            deps.platform, { target.store.v2Storage() }, deps.limits, createSheet = newSheet, tier = { SolverTierFacts.Recorded.tierOf(solverTarget) },
+            technical = technical,
+        )
         return EditorOpening.Editor(SketchEditorSession(controller, diagnostics, target.projectName, held, target.slug, target.sheet, services))
     }
 }

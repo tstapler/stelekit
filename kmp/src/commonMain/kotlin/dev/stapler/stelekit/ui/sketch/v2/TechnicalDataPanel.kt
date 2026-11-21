@@ -7,8 +7,6 @@ package dev.stapler.stelekit.ui.sketch.v2
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -65,7 +63,7 @@ data class TechnicalDataView(val dimensions: List<DimensionRow>, val zones: Zone
 /**
  * Named dimensions and zones of a converted sheet, edited with the v1 components ([DimensionField], [ZonePanel]). Each commit
  * is ONE model write: [onBundleChange] gets the bundle with only the edited zone or dimension changed, and the host
- * saves it through its usual autosave. A refused edit (unknown or locked) changes nothing.
+ * saves it through its usual autosave. A refused edit (unknown or locked) changes nothing. The caller scrolls it (the editor panel does).
  */
 @Composable
 fun TechnicalDataPanel(
@@ -76,7 +74,7 @@ fun TechnicalDataPanel(
 ) {
     val view = remember(bundle, sheet) { TechnicalDataView.of(bundle, sheet) }
     fun apply(edit: Either<TechnicalEditError, ProjectBundle>) = edit.onRight { if (it != bundle) onBundleChange(it) }
-    Column(modifier.verticalScroll(rememberScrollState()).padding(8.dp).testTag(TechnicalDataTags.PANEL), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier.padding(8.dp).testTag(TechnicalDataTags.PANEL), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(SketchStrings.TechnicalData.HEADING, style = MaterialTheme.typography.titleSmall)
         Text(SketchStrings.TechnicalData.DIMENSIONS_HEADING, style = MaterialTheme.typography.labelLarge)
         if (view.dimensions.isEmpty()) Text(SketchStrings.TechnicalData.NO_DIMENSIONS)
