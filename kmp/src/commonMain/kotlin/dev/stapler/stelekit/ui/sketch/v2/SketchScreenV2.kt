@@ -143,6 +143,9 @@ data class SketchShellConfig(
     val canvasModifier: Modifier = Modifier,
     /** Told once the shell has its regions, so the host can move focus between them. */
     val onRegions: (RegionFocus) -> Unit = {},
+    /** The sheet type, when it can be switched from the menu (a diagram or technical sheet that is not read-only); null hides the switch. */
+    val sheetKind: dev.stapler.stelekit.sketch.v2.constraints.SheetKind? = null,
+    val onSheetKind: ((dev.stapler.stelekit.sketch.v2.constraints.SheetKind) -> Unit)? = null,
     /** The feature tours; null shows none. */
     val tours: TourController? = null,
     /** Opens Help and search from the top bar and the menu; null hides both. */
@@ -160,6 +163,11 @@ object ShellTags {
     const val TOOL_LOCK_CHIP = "sketch.chip.toollock"
     const val VIEW_CLUSTER = "sketch.viewcluster"
     const val OVERFLOW_PAN = "sketch.overflow.pan"
+    const val OVERFLOW_PANEL_STYLE = "sketch.overflow.panel.style"
+    const val OVERFLOW_PANEL_ELEMENTS = "sketch.overflow.panel.elements"
+    const val OVERFLOW_PANEL_TECHNICAL = "sketch.overflow.panel.technical"
+    const val OVERFLOW_MAKE_TECHNICAL = "sketch.overflow.make.technical"
+    const val OVERFLOW_MAKE_DIAGRAM = "sketch.overflow.make.diagram"
     const val OVERFLOW_SHORTCUTS = "sketch.overflow.shortcuts"
     const val OVERFLOW_TIPS = "sketch.overflow.tips"
     const val OVERFLOW_HELP = "sketch.overflow.help"
@@ -350,9 +358,40 @@ private fun ShellTopBar(state: SketchEditorState, config: SketchShellConfig, foc
     ) { close -> OverflowItems(state, config, grouped, close) }
 }
 
+/** Opens a side panel tab or switches the sheet type; a phone's panels have no other entry. */
+@Composable
+private fun PanelMenuItems(state: SketchEditorState, config: SketchShellConfig, close: () -> Unit) {
+    fun open(tab: PanelTab) { close(); state.panelTab = tab }
+    Column {
+        DropdownMenuItem(text = { Text(SketchStrings.PanelMenu.STYLE) }, onClick = { open(PanelTab.Style) }, modifier = Modifier.testTag(ShellTags.OVERFLOW_PANEL_STYLE))
+        DropdownMenuItem(text = { Text(SketchStrings.PanelMenu.ELEMENTS) }, onClick = { open(PanelTab.Elements) }, modifier = Modifier.testTag(ShellTags.OVERFLOW_PANEL_ELEMENTS))
+        if (config.hasMultipleLayers) {
+            DropdownMenuItem(text = { Text(SketchStrings.PanelMenu.LAYERS) }, onClick = { open(PanelTab.Layers) })
+        }
+        if (config.technicalPanel) {
+            DropdownMenuItem(text = { Text(SketchStrings.PanelMenu.TECHNICAL) }, onClick = { open(PanelTab.Technical) }, modifier = Modifier.testTag(ShellTags.OVERFLOW_PANEL_TECHNICAL))
+        }
+        val switch = config.onSheetKind
+        when (config.sheetKind) {
+            dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Diagram -> if (switch != null) DropdownMenuItem(
+                text = { Text(SketchStrings.PanelMenu.MAKE_TECHNICAL) },
+                onClick = { close(); switch(dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical); state.panelTab = PanelTab.Technical },
+                modifier = Modifier.testTag(ShellTags.OVERFLOW_MAKE_TECHNICAL),
+            )
+            dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical -> if (switch != null) DropdownMenuItem(
+                text = { Text(SketchStrings.PanelMenu.MAKE_DIAGRAM) },
+                onClick = { close(); switch(dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Diagram) },
+                modifier = Modifier.testTag(ShellTags.OVERFLOW_MAKE_DIAGRAM),
+            )
+            else -> Unit
+        }
+    }
+}
+
 @Composable
 private fun OverflowItems(state: SketchEditorState, config: SketchShellConfig, grouped: Boolean, close: () -> Unit) {
     Column {
+        PanelMenuItems(state, config, close)
         if (config.constraintsAvailable) {
             DropdownMenuItem(
                 text = { Text("Constrain (K)") },

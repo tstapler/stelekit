@@ -46,17 +46,17 @@ class HitTester(private val scene: SketchSceneV2, private val index: SpatialInde
     private val arrayIndex: Map<ElementId, Int> by lazy { scene.order.withIndex().associate { it.value to it.index } }
 
     /** The topmost element hit at [point], or null. */
-    fun hit(point: ScenePoint, zoom: Double): ElementId? = hitAll(point, zoom).firstOrNull()
+    fun hit(point: ScenePoint, zoom: Double, tolerancePx: Double = HIT_TOLERANCE_PX): ElementId? = hitAll(point, zoom, tolerancePx).firstOrNull()
 
     /** Every element hit at [point], topmost first; an unusable zoom hits nothing. */
-    fun hitAll(point: ScenePoint, zoom: Double): List<ElementId> = hitWhere(point, zoom, locked = false)
+    fun hitAll(point: ScenePoint, zoom: Double, tolerancePx: Double = HIT_TOLERANCE_PX): List<ElementId> = hitWhere(point, zoom, locked = false, tolerancePx)
 
     /** The visible elements under [point] that [hitAll] skips because they, or their layer, are locked; topmost first (UX-101 counts them). */
-    fun hitLocked(point: ScenePoint, zoom: Double): List<ElementId> = hitWhere(point, zoom, locked = true)
+    fun hitLocked(point: ScenePoint, zoom: Double, tolerancePx: Double = HIT_TOLERANCE_PX): List<ElementId> = hitWhere(point, zoom, locked = true, tolerancePx)
 
-    private fun hitWhere(point: ScenePoint, zoom: Double, locked: Boolean): List<ElementId> {
-        if (!zoom.isFinite() || zoom <= 0.0) return emptyList()
-        val tolerance = HIT_TOLERANCE_PX / zoom
+    private fun hitWhere(point: ScenePoint, zoom: Double, locked: Boolean, tolerancePx: Double): List<ElementId> {
+        if (!usable(zoom) || !usable(tolerancePx)) return emptyList()
+        val tolerance = tolerancePx / zoom
         val px = point.x.value
         val py = point.y.value
         val layers = scene.layers.associateBy { it.id }
@@ -68,6 +68,8 @@ class HitTester(private val scene: SketchSceneV2, private val index: SpatialInde
                 .thenByDescending { arrayIndex.getValue(it.id) })
             .map { it.id }
     }
+
+    private fun usable(v: Double): Boolean = v.isFinite() && v > 0.0
 
     private fun isVisible(e: SceneElement, layers: Map<LayerId, Layer>): Boolean = (layers[e.base.layerId] ?: Layer.DefaultLayer).visible
 

@@ -567,6 +567,22 @@ profiling, SLO alerts). Test source sets:
   `businessTest` or `jvmTest` next to the mechanism they guard — see the existing examples
   referenced throughout this file's architecture sections above.
 
+### UI work: look at it on a phone and on the web before calling it done
+
+Reading Compose code is not seeing it. For any change under `ui/` (the sketch editor especially), render it at phone size and **open the PNG** (`Read` shows images) before claiming the layout works, then check the web build. A phone-only bug that desktop never shows has already cost a release: touch targets were sized in screen pixels instead of dp.
+
+- **Phone render (headless, no display, no device).** A Robolectric + Roborazzi test in `androidUnitTest` mounts the real host at a phone size and captures PNGs. The reference is `ui/sketch/v2/PhoneMenuEntryTest.kt`:
+  `@RunWith(RobolectricTestRunner::class)`, `@GraphicsMode(GraphicsMode.Mode.NATIVE)`, `@Config(sdk = [29], qualifiers = "w360dp-h780dp-xxhdpi")`, then `rule.onRoot().captureRoboImage("build/outputs/roborazzi/<name>.png")` after each step (open the menu, switch the tab). **Without `GraphicsMode.NATIVE` the image is a semantic-tree debug dump, not pixels.**
+  ```bash
+  export ANDROID_HOME=$HOME/Android/Sdk   # worktrees have no local.properties
+  ./gradlew :kmp:testDebugUnitTest --tests "dev.stapler.stelekit.ui.sketch.v2.PhoneMenuEntryTest" -Proborazzi.test.record=true
+  # images: kmp/build/outputs/roborazzi/*.png
+  ```
+  Register a new Robolectric class like the other host tests (named in the `AllAndroidUnitTests.kt` exclusion comment, excluded in `androidUnitTest/kotlin/BUILD.bazel`).
+- **Touch behaviour needs the emulator.** The headless render shows layout, not hit areas or gestures. Use the `Pixel_Fold` AVD (see "Android debugging"). Tool code must size touch targets in dp: `ToolContext.pxPerDp` carries the density, and hit tolerances come from `ToolContext.hitTolerancePx(touch)`, never a bare pixel constant.
+- **Web.** `./gradlew :kmp:wasmJsBrowserDevelopmentRun -PenableJs=true` serves the app; open it with the Chrome tools, resize the window to a phone width (about 390 px) and to desktop width, and screenshot both. `./gradlew :kmp:wasmJsBrowserTest` runs the browser tests. Desktop: `./gradlew run` (or the `stelekit-ui` skill).
+- Check at least: the narrow phone width, a long label or title, the large-font setting, and that every tool and panel is reachable without a keyboard.
+
 ## Release Process
 
 Releases are managed by [Release Please](https://github.com/googleapis/release-please) (`.github/workflows/release.yml`), driven by Conventional Commits on `main`. There is no manual version bump — `version.txt` and `CHANGELOG.md` are only ever edited by the bot.

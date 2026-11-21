@@ -207,6 +207,8 @@ fun SketchEditorV2Host(
         onGrid = extras::toggleGrid,
         onSnap = extras::toggleSnap,
         restore = restore,
+        sheetKind = controller.sheetKind.takeIf { it != dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Converted && !controller.readOnly },
+        onSheetKind = { controller.setSheetKind(it) },
         technicalPanel = technical != null && controller.sheetKind == dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical,
         canvasModifier = remember(canvasAccess) { canvasRegionKeysOf(canvasAccess) },
         onRegions = { canvasAccess.regions = it },
@@ -349,7 +351,7 @@ private fun SelectionVisuals(controller: SketchEditorController) {
     val ids = state.selection
     if (ids.isEmpty() || state.activeTool != ToolId.Select) return
     val ctx = remember(controller.revision, state.viewport.zoom, ids) {
-        ToolContext(controller.doc.scene, state.viewport.zoom, controller.defaultStyle, controller.ids, controller.spatialIndex)
+        ToolContext(controller.doc.scene, state.viewport.zoom, controller.defaultStyle, controller.ids, controller.spatialIndex, controller.view.pxPerDp)
     }
     val select = remember(ids, controller.revision) { SelectTool(ids.map(::ElementId), controller.touchPresent) }
     SelectionOverlay(select.selectionFrame(ctx), select.handleLayout(ctx), state.viewport)

@@ -45,12 +45,11 @@ class SelectTool(
     override val selection: List<ElementId> = emptyList(),
     private val touchPresent: Boolean = false,
     private val altDragDuplicates: Boolean = true,
-    private val pxPerDp: Double = 1.0,
 ) : Tool, SelectionAware {
     override val id: ToolId = ToolId.Select
     override val marquee: Box? get() = null
 
-    private fun withSelection(ids: List<ElementId>) = SelectTool(ids, touchPresent, altDragDuplicates, pxPerDp)
+    private fun withSelection(ids: List<ElementId>) = SelectTool(ids, touchPresent, altDragDuplicates)
 
     // ---- overlay queries -------------------------------------------------------------------------------------------
 
@@ -72,12 +71,12 @@ class SelectTool(
     /** The handles to draw and hit-test; empty tier [HandleTier.None] when the selection is too small on screen. */
     fun handleLayout(ctx: ToolContext, touch: Boolean = touchPresent): HandleLayout? {
         val f = selectionFrame(ctx) ?: return null
-        val floorPx = TouchFloor.dp(touch) * pxPerDp
+        val floorPx = TouchFloor.dp(touch) * ctx.pxPerDp
         return HandleLayout.compute(f.box.cx, f.box.cy, f.box.width, f.box.height, f.angle, ctx.zoom, floorPx, f.rotatable)
     }
 
     /** Half the touch floor (22 dp touch, 12 dp mouse), in scene units: how far from a vertex a press still grabs it. */
-    private fun vertexTolerance(ctx: ToolContext, touch: Boolean): Double = TouchFloor.dp(touch) / 2.0 * pxPerDp / ctx.zoom
+    private fun vertexTolerance(ctx: ToolContext, touch: Boolean): Double = TouchFloor.dp(touch) / 2.0 * ctx.pxPerDp / ctx.zoom
 
     /** The vertex of the single selected line that [point] is within reach of, nearest first; vertices win over the box handles they overlap. */
     private fun vertexUnder(point: ScenePoint, ctx: ToolContext, touch: Boolean): Pair<LineElement, Int>? {
@@ -134,7 +133,7 @@ class SelectTool(
         }
         val handle = handleLayout(ctx, touch)?.hit(event.point.x.value, event.point.y.value)
         if (handle != null) return ToolResult(next = Transforming(this, event.pointerId, handle, event.point, ctx))
-        val hit = ctx.hitTester.hit(event.point, ctx.zoom)
+        val hit = ctx.hitTester.hit(event.point, ctx.zoom, ctx.hitTolerancePx(touch))
         if (hit == null) return ToolResult(next = Marquee(this, event.pointerId, event.point, if (event.modifiers.shift) selection else emptyList()))
         val group = groupOf(hit, ctx)
         val next = when {

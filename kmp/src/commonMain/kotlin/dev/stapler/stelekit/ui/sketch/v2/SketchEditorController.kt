@@ -201,7 +201,7 @@ class SketchEditorController(
         if (!readOnly) ports.quality?.beginSession()
     }
 
-    private fun toolContext() = ToolContext(history.present.scene, ui.viewport.zoom, defaultStyle, ports.ids, index)
+    private fun toolContext(): ToolContext = ToolContext(history.present.scene, ui.viewport.zoom, defaultStyle, ports.ids, index, view.pxPerDp)
 
     /** A fresh idle tool for [id], for the keyboard path (Crosshair mode) that runs a tool beside the pointer's. */
     internal val newTool: (ToolId) -> Tool? = { id -> ports.tools.create(id) }
