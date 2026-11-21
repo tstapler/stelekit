@@ -282,6 +282,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/tools/ImageToolTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/ToolSceneSupport.kt",
         "dev/stapler/stelekit/sketch/v2/tools/SelectToolTest.kt",
+        "dev/stapler/stelekit/sketch/v2/tools/SelectVertexDragTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/EraserFrameToolTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/PointArcToolsTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/FreedrawToolTest.kt",
