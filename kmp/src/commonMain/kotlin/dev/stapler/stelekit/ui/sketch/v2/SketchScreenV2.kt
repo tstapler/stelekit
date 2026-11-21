@@ -541,7 +541,8 @@ private fun PanelHostContent(state: SketchEditorState, config: SketchShellConfig
     val tabs = PanelTab.entries.filter {
         (it != PanelTab.Layers || config.hasMultipleLayers) && (it != PanelTab.Constraints || config.constraintsAvailable) && (it != PanelTab.Technical || config.technicalPanel)
     }
-    val open = state.panelTab ?: PanelTab.Style
+    // A tab that left the list (the sheet turned into a diagram) falls back to Style instead of leaving its panel orphaned.
+    val open = (state.panelTab ?: PanelTab.Style).takeIf { it in tabs } ?: PanelTab.Style
     val shape = when (host) {
         PanelHost.BottomSheet -> Modifier.fillMaxWidth().height(if (state.sheetSize == SheetSize.Full) (windowHeightDp * FULL_SHEET_SHARE).dp else PANEL_SHEET_HEIGHT)
         PanelHost.SideSheet, PanelHost.PersistentPane -> Modifier.fillMaxHeight().width(PANE_WIDTH)

@@ -1686,6 +1686,7 @@ if (selectChangedTests) {
 // commonTest cannot carry @RunWith, so Android runs the same fixture via ScenePainterAndroidTest (androidUnitTest).
 tasks.withType<Test>().matching { it.name == "testDebugUnitTest" }.configureEach {
     filter { excludeTestsMatching("dev.stapler.stelekit.sketch.v2.ScenePainterPixelTest") }
+    filter { excludeTestsMatching("dev.stapler.stelekit.ui.sketch.v2.StripIconDrawTest") }
 }
 
 // Robolectric loads app classes through its own classloader; without these the JaCoCo agent
