@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.118.0](https://github.com/tstapler/stelekit/compare/v0.117.0...v0.118.0) (2026-11-21)
+
+
+### Features
+
+* **sketch:** drag a single vertex of the selected line on touch ([#703](https://github.com/tstapler/stelekit/issues/703)) ([af79919](https://github.com/tstapler/stelekit/commit/af79919d2ca9071bbd6deec37706b10d9471d933))
+* **sketch:** element size fields in the Style tab ([#701](https://github.com/tstapler/stelekit/issues/701)) ([be5d877](https://github.com/tstapler/stelekit/commit/be5d8773be228ee39626c699cf67bdf71ee931e7))
+* **sketch:** mount the Technical data tab and draw the tool strip icons ([#696](https://github.com/tstapler/stelekit/issues/696)) ([d93de68](https://github.com/tstapler/stelekit/commit/d93de6874fe3cd1f4d172e07ca5f3076654107d2))
+* **web:** ?diag on-screen load diagnostics ([#702](https://github.com/tstapler/stelekit/issues/702)) ([edae995](https://github.com/tstapler/stelekit/commit/edae9954b25c91ff899a3202407e6e84f2e9c634))
+
+
+### Bug Fixes
+
+* **ci:** isolate startup browser check from host runner ([9bd289d](https://github.com/tstapler/stelekit/commit/9bd289df6aa08f764ac954257aff2d732d6450bb))
+* **web:** keep the loading overlay until the app mounts, with progress ([#694](https://github.com/tstapler/stelekit/issues/694)) ([e199402](https://github.com/tstapler/stelekit/commit/e19940202147feb6d75b4af6693c76bca2b31813))
+* **web:** network-first app shell so a deploy can't strand returning users ([#700](https://github.com/tstapler/stelekit/issues/700)) ([20a2317](https://github.com/tstapler/stelekit/commit/20a23172eecf9401021aa5481b3df25f3f83b343))
+* **web:** preserve isolation headers and harden cached startup ([282395d](https://github.com/tstapler/stelekit/commit/282395d67d4105b3101860b65a8ab84fdf875d76))
+
 ## [0.117.0](https://github.com/tstapler/stelekit/compare/v0.116.0...v0.117.0) (2026-11-20)
 
 
