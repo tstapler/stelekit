@@ -262,17 +262,17 @@ fun CoachWalkthroughOverlay(state: WalkthroughState, driver: WalkthroughDriver, 
     }
 }
 
-private fun LayoutCoordinates.rootRect(): PlaceRect {
+internal fun LayoutCoordinates.rootRect(): PlaceRect {
     val at = positionInRoot()
     return PlaceRect(at.x, at.y, at.x + size.width, at.y + size.height)
 }
 
-private fun placed(anchor: PlaceRect, width: Float, height: Float, container: PlaceRect, direction: LayoutDirection): Pair<Float, Float> =
+internal fun placed(anchor: PlaceRect, width: Float, height: Float, container: PlaceRect, direction: LayoutDirection): Pair<Float, Float> =
     PopoverPlacement.origin(PopoverPlacement.side(anchor, width, height, container), anchor, width, height, container, direction)
 
 /** A two-tone ring: a focus-coloured 2 dp line inside a contrasting 1 dp halo, so it reads on any surround. */
 @Composable
-private fun HighlightRing(anchor: PlaceRect) {
+internal fun HighlightRing(anchor: PlaceRect) {
     val density = LocalDensity.current
     val inner = MaterialTheme.colorScheme.primary
     val halo = MaterialTheme.colorScheme.surface

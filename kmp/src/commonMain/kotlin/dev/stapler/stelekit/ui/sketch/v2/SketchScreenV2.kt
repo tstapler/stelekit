@@ -65,6 +65,9 @@ import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
 import dev.stapler.stelekit.ui.sketch.CuePlacement
 import dev.stapler.stelekit.ui.sketch.DurabilityCue
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
+import dev.stapler.stelekit.ui.sketch.v2.guide.TourController
+import dev.stapler.stelekit.ui.sketch.v2.guide.TourOverlay
+import dev.stapler.stelekit.ui.sketch.v2.guide.tourAnchor
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchGoToStrings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchHostStrings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchImportExportStrings
@@ -140,6 +143,10 @@ data class SketchShellConfig(
     val canvasModifier: Modifier = Modifier,
     /** Told once the shell has its regions, so the host can move focus between them. */
     val onRegions: (RegionFocus) -> Unit = {},
+    /** The feature tours; null shows none. */
+    val tours: TourController? = null,
+    /** Opens Help and search from the top bar and the menu; null hides both. */
+    val onHelp: (() -> Unit)? = null,
 )
 
 object ShellTags {
@@ -155,6 +162,7 @@ object ShellTags {
     const val OVERFLOW_PAN = "sketch.overflow.pan"
     const val OVERFLOW_SHORTCUTS = "sketch.overflow.shortcuts"
     const val OVERFLOW_TIPS = "sketch.overflow.tips"
+    const val OVERFLOW_HELP = "sketch.overflow.help"
     const val OVERFLOW_IMPORT = "sketch.overflow.import"
     const val OVERFLOW_EXPORT = "sketch.overflow.export"
     const val OVERFLOW_RESTORE = "sketch.overflow.restore"
@@ -225,7 +233,7 @@ private fun SketchShell(
         WalkthroughDriver({ state.lastInput }, { grouped }, focus::restore, regions) { ShellEscape.walkthroughActs(state, config.escRows()) }
     }
     val strip: @Composable (Modifier) -> Unit = { m ->
-        val anchored = m.anchorFor(state, WalkthroughStep.Tools).region(regions, TabStop.ToolStrip, exitToPopover(state, WalkthroughStep.Tools))
+        val anchored = m.anchorFor(state, WalkthroughStep.Tools).tourAnchored(config, TabStop.ToolStrip).region(regions, TabStop.ToolStrip, exitToPopover(state, WalkthroughStep.Tools))
         ToolStrip(config.model, state, layout.placement, extent, config.pointer, config.status, config.actions, anchored)
     }
     val panelContent: @Composable () -> Unit = { PanelHostContent(state, config, layout.panels, window.height, panel) }
@@ -237,7 +245,7 @@ private fun SketchShell(
                 Column(Modifier.fillMaxSize()) {
                     ShellTopBar(state, config, focus, grouped, window, regions)
                     BannerSlot(state, config, focus, grouped)
-                    CanvasArea(state, config, focus, regions, Modifier.weight(1f), hintShown, cue, canvas)
+                    CanvasArea(state, config, focus, regions, Modifier.weight(1f).tourAnchored(config, TabStop.Canvas), hintShown, cue, canvas)
                     if (state.panelTab != null) panelContent()
                     strip(Modifier.fillMaxWidth())
                 }
@@ -247,13 +255,14 @@ private fun SketchShell(
                     Column(Modifier.weight(1f)) {
                         ShellTopBar(state, config, focus, grouped, window, regions)
                         BannerSlot(state, config, focus, grouped)
-                        CanvasArea(state, config, focus, regions, Modifier.weight(1f), hintShown, cue, canvas)
+                        CanvasArea(state, config, focus, regions, Modifier.weight(1f).tourAnchored(config, TabStop.Canvas), hintShown, cue, canvas)
                     }
                     if (layout.panels == PanelHost.PersistentPane || state.panelTab != null) panelContent()
                 }
             }
         }
         CoachWalkthroughOverlay(state.walkthrough, driver)
+        config.tours?.let { TourOverlay(it) }
     }
 }
 
@@ -262,6 +271,9 @@ private fun SketchShell(
 private fun exitToPopover(state: SketchEditorState, step: WalkthroughStep): (FocusDirection) -> FocusRequester = { direction ->
     if (direction == FocusDirection.Next && state.walkthrough.step == step) state.walkthrough.popoverFocus else FocusRequester.Default
 }
+
+/** Reports where [stop] sits to the feature tours, when the host runs them. */
+private fun Modifier.tourAnchored(config: SketchShellConfig, stop: TabStop): Modifier = config.tours?.let { tourAnchor(it, stop) } ?: this
 
 /** Reports where the strip, the view cluster or the overflow button sit, so the walkthrough can point at them. */
 private fun Modifier.anchorFor(state: SketchEditorState, step: WalkthroughStep): Modifier = onGloballyPositioned {
@@ -327,9 +339,10 @@ private fun ShellTopBar(state: SketchEditorState, config: SketchShellConfig, foc
                 config.onFingerDrawingChosen(state.fingerDrawing)
             },
             onSelectionAction = config.onSelectionAction,
+            onHelp = config.onHelp,
         ),
         Modifier.padding(horizontal = 16.dp),
-        Modifier.anchorFor(state, WalkthroughStep.Shortcuts)
+        Modifier.anchorFor(state, WalkthroughStep.Shortcuts).tourAnchored(config, TabStop.TopBar)
             .focusProperties { next = if (state.walkthrough.step == WalkthroughStep.Shortcuts) state.walkthrough.popoverFocus else FocusRequester.Default }
             .focusRequester(focus.overflow)
             .mark(regions, TabStop.TopBar),
@@ -363,6 +376,13 @@ private fun OverflowItems(state: SketchEditorState, config: SketchShellConfig, g
                 text = { Text(SketchGoToStrings.MENU_ITEM) },
                 onClick = { close(); onGoTo() },
                 modifier = Modifier.testTag(ShellTags.OVERFLOW_GO_TO),
+            )
+        }
+        config.onHelp?.let { onHelp ->
+            DropdownMenuItem(
+                text = { Text(SketchStrings.TopBar.HELP) },
+                onClick = { close(); onHelp() },
+                modifier = Modifier.testTag(ShellTags.OVERFLOW_HELP),
             )
         }
         DropdownMenuItem(
@@ -547,7 +567,7 @@ private fun PanelHostContent(state: SketchEditorState, config: SketchShellConfig
         PanelHost.BottomSheet -> Modifier.fillMaxWidth().height(if (state.sheetSize == SheetSize.Full) (windowHeightDp * FULL_SHEET_SHARE).dp else PANEL_SHEET_HEIGHT)
         PanelHost.SideSheet, PanelHost.PersistentPane -> Modifier.fillMaxHeight().width(PANE_WIDTH)
     }
-    Column(shape.testTag(ShellTags.PANEL).background(MaterialTheme.colorScheme.surfaceVariant)) {
+    Column(shape.tourAnchored(config, TabStop.SidePane).testTag(ShellTags.PANEL).background(MaterialTheme.colorScheme.surfaceVariant)) {
         if (host == PanelHost.BottomSheet) PanelSheetHeader(state.sheetSize, { state.sheetSize = it }, { state.panelTab = null })
         Row(Modifier.fillMaxWidth().selectableGroup().semantics { contentDescription = SketchStrings.PanelTabs.LIST }) {
             for (tab in tabs) {

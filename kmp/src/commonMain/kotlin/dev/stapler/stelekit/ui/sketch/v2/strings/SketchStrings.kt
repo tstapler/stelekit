@@ -338,6 +338,7 @@ object SketchStrings {
     /** The top bar (Story 3.1.4d, UX-80): the Finger drawing chip at both tiers and the save status. */
     object TopBar {
         const val BACK = "Back"
+        const val HELP = "Help and search"
         const val FINGER_ON = "Finger: On"
         const val FINGER_OFF = "Finger: Off"
         const val FINGER_ON_SHORT = "On"

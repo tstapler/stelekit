@@ -26,6 +26,7 @@ import dev.stapler.stelekit.sketch.v2.runtime.image.ImageAssetStore
 import dev.stapler.stelekit.sketch.v2.runtime.settings.EdgePanSettings
 import dev.stapler.stelekit.sketch.v2.runtime.settings.FingerDrawingSettings
 import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
+import dev.stapler.stelekit.ui.sketch.v2.guide.TourProgress
 
 /**
  * What the platform root hands the v2 editor besides the project bridge (Task 6.2.0d): the file seam of Import and Export, the file
@@ -49,6 +50,8 @@ class HostPlatform(
     val canvasDrop: CanvasFileDropHost? = null,
     /** The Finger drawing setting and the per-device stylus flag; null leaves Finger drawing off and shows no hint. */
     val fingerDrawing: FingerDrawingSettings? = null,
+    /** What the user has already been shown of the feature tours; null shows no tours. */
+    val tourProgress: TourProgress? = null,
 )
 
 /**

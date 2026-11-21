@@ -75,6 +75,7 @@ class EditorKeys(
             action == KeyAction.Escape -> true.also { effects.escape() }
             action == KeyAction.OpenShortcuts -> true.also { effects.open(EditorOverlay.Shortcuts) }
             action == KeyAction.OpenGoToElement -> true.also { effects.open(EditorOverlay.GoToElement) }
+            action == KeyAction.OpenHelpSearch -> true.also { effects.open(EditorOverlay.HelpSearch) }
             action == KeyAction.OpenConstrainMenu -> true.also { effects.open(EditorOverlay.ConstrainMenu) }
             command != null -> true.also { effects.submit(command) }
             action is KeyAction.Delete || action is KeyAction.Nudge || action is KeyAction.Arrange -> true.also { effects.lockedSkipped(edit.skippedLocked.size) }
