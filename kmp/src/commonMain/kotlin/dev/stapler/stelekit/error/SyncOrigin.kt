@@ -5,7 +5,7 @@ package dev.stapler.stelekit.error
 
 /**
  * Who started a repository operation. Used for logging, the run-in-flight info and rerun bookkeeping only;
- * consent and guard semantics stay on [SyncTrigger] (ADR-001 decision 1).
+ * consent and guard semantics stay on `SyncTrigger` (ADR-001 decision 1).
  */
 enum class SyncOrigin {
     UiPress,
