@@ -92,6 +92,9 @@ build --noshow_loading_progress
 # ── CI profile ────────────────────────────────────────────────────────────────
 build:ci --color=no
 build:ci --curses=no
+# Third-party C++ (protobuf, built for the exec config) emits hundreds of warnings per run that are not ours to fix.
+build:ci --per_file_copt=external/.*@-w
+build:ci --host_per_file_copt=external/.*@-w
 # Retry transient network errors (e.g. 503 from android.googlesource.com) up to 5 times
 # before failing a repository fetch. Default is 2; 5 covers most GCS/Gerrit blips.
 build:ci --experimental_repository_downloader_retries=5
