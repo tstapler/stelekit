@@ -271,3 +271,11 @@ The merge core is pure and runs on every target from `commonTest`. Properties us
 - `MergeRoundTripPropertyTest`: render, re-parse and splice keep uuids, content, properties, nesting and positional uuids of unlabeled blocks.
 - `CopyEditRecopyPropertyTest` (businessTest, `checkAll(50)`): the same invariants through the real `ActiveTargetWriter`, `GraphWriter`, `GraphLoader` and editor save.
 - `RoundTripGuardPassRateRegressionTest` (jvmTest) and the env-gated `RoundTripGuardRealGraphTest` (`SPIKE_GRAPH_PATH=/path/to/graph`) measure the splice guard pass rate.
+
+## 10. Phone-size and web screenshots (UI work)
+
+Look at UI changes before calling them done. The full rules are in `CLAUDE.md` ("UI work: look at it on a phone and on the web"); the short version:
+
+1. **Phone-size render, headless.** Copy `kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/sketch/v2/PhoneMenuEntryTest.kt`. It needs `@GraphicsMode(GraphicsMode.Mode.NATIVE)` (otherwise Roborazzi writes a semantic-tree debug image) and a phone `@Config(qualifiers = "w360dp-h780dp-xxhdpi")`. Run `ANDROID_HOME=$HOME/Android/Sdk ./gradlew :kmp:testDebugUnitTest --tests "<class>" -Proborazzi.test.record=true` and open `kmp/build/outputs/roborazzi/*.png`.
+2. **Touch targets and gestures** cannot be judged from a render: use the `Pixel_Fold` emulator, and size targets with `ToolContext.pxPerDp`.
+3. **Web:** `./gradlew :kmp:wasmJsBrowserDevelopmentRun -PenableJs=true`, then check a phone-width and a desktop-width window.

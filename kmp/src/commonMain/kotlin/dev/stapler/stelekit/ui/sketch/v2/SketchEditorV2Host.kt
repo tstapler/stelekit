@@ -207,6 +207,8 @@ fun SketchEditorV2Host(
         onGrid = extras::toggleGrid,
         onSnap = extras::toggleSnap,
         restore = restore,
+        sheetKind = controller.sheetKind.takeIf { it != dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Converted && !controller.readOnly },
+        onSheetKind = { controller.setSheetKind(it) },
         technicalPanel = technical != null && controller.sheetKind == dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical,
         canvasModifier = remember(canvasAccess) { canvasRegionKeysOf(canvasAccess) },
         onRegions = { canvasAccess.regions = it },
