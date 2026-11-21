@@ -471,6 +471,8 @@ composeCompiler {
 // sqlite3-opfs-async-proxy.js is required by installOpfsSAHPoolVfs.
 if (project.findProperty("enableJs") == "true") {
     afterEvaluate {
+        // Bazel BUILD files live beside the web resources; they must not be shipped (or collide) in the dist.
+        tasks.named<ProcessResources>("wasmJsProcessResources") { exclude("**/BUILD.bazel") }
         tasks.named("wasmJsBrowserDistribution") {
             notCompatibleWithConfigurationCache("copies sqlite-wasm files using project.file() and project.copy() APIs")
             doLast {
