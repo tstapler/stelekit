@@ -124,7 +124,8 @@ fun SelectionOverlay(
         }
         val small = layout != null && (layout.needsTransformMenu || layout.tier == HandleTier.Compact)
         if (small && minOf(frame.box.width, frame.box.height) > 0.0) {
-            HandlesChip(onZoomToSelection, Modifier.align(Alignment.BottomCenter).padding(bottom = CHIP_BOTTOM))
+            // At the end, above the view cluster: the start side is where the host's action chips (Free draw, Tool lock) sit.
+            HandlesChip(onZoomToSelection, Modifier.align(Alignment.BottomEnd).padding(end = CHIP_END, bottom = CHIP_BOTTOM))
         }
     }
 }
@@ -150,6 +151,7 @@ private fun HandlesChip(onZoom: (() -> Unit)?, modifier: Modifier = Modifier) {
 private val CHIP_BOTTOM = 60.dp
 private val CHIP_RADIUS = 24.dp
 private val CHIP_PAD = 16.dp
+private val CHIP_END = 16.dp
 
 private fun point(x: Double, y: Double) = ScenePoint(SceneUnit.of(x).getOrNull() ?: SceneUnit.ZERO, SceneUnit.of(y).getOrNull() ?: SceneUnit.ZERO)
 

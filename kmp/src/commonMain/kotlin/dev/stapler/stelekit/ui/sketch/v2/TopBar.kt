@@ -159,7 +159,7 @@ private fun FingerChip(content: TopBarContent, actions: TopBarActions) {
             }
             .then(if (content.fingerOn) look.background(scheme.primaryContainer) else look.border(1.dp, scheme.outlineVariant, RoundedCornerShape(CHIP_RADIUS))),
         contentAlignment = Alignment.Center,
-    ) { Text(label, maxLines = 1, color = if (content.fingerOn) scheme.onPrimaryContainer else scheme.onSurface) }
+    ) { Text(label, maxLines = 1, style = MaterialTheme.typography.labelLarge, color = if (content.fingerOn) scheme.onPrimaryContainer else scheme.onSurface) }
 }
 
 @Composable

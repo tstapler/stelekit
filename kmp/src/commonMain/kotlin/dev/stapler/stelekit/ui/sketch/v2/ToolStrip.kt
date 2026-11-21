@@ -107,6 +107,7 @@ private object StripLook {
     val FADE: Dp = 28.dp
     val CHEVRON: Dp = 5.dp
     val CHEVRON_STROKE: Dp = 2.dp
+    const val CHEVRON_DISC_ALPHA = 0.9f
     val PILL_INSET: Dp = 4.dp
     val PILL_RADIUS: Dp = 14.dp
     val CARET: Dp = 16.dp
@@ -172,6 +173,9 @@ internal fun Modifier.scrollEdgeFade(scroll: ScrollState, vertical: Boolean, col
     fun chevron(tip: Float, toward: Float) {
         val back = tip - toward * reach
         val mid = across / 2f
+        // A soft disc behind the chevron keeps it from reading as part of the label or icon it sits beside.
+        val centre = tip - toward * reach / 2f
+        drawCircle(color.copy(alpha = StripLook.CHEVRON_DISC_ALPHA), reach * 2f, if (vertical) Offset(mid, centre) else Offset(centre, mid))
         val path = Path().apply {
             if (vertical) { moveTo(mid - reach, back); lineTo(mid, tip); lineTo(mid + reach, back) }
             else { moveTo(back, mid - reach); lineTo(tip, mid); lineTo(back, mid + reach) }

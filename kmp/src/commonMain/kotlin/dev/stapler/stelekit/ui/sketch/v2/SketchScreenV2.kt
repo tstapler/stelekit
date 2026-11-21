@@ -12,6 +12,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.toggleableState
@@ -733,12 +736,12 @@ private fun PanelTabButton(tab: PanelTab, open: Boolean, onSelect: () -> Unit) {
     val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
     LaunchedEffect(open) { if (open) runCatching { bring.bringIntoView() } }
     Box(
-        Modifier.testTag(ShellTags.tab(tab)).bringIntoViewRequester(bring).defaultMinSize(minWidth = TAB_MIN_WIDTH, minHeight = TAB_HEIGHT).selectable(selected = open, role = Role.Tab, onClick = onSelect),
+        Modifier.testTag(ShellTags.tab(tab)).bringIntoViewRequester(bring).defaultMinSize(minWidth = TAB_MIN_WIDTH, minHeight = TAB_HEIGHT).selectable(selected = open, role = Role.Tab, onClick = onSelect)
+            .drawBehind { if (open) drawRect(scheme.primary, Offset(0f, size.height - TAB_UNDERLINE.toPx()), Size(size.width, TAB_UNDERLINE.toPx())) },
         contentAlignment = Alignment.Center,
     ) {
-        // The padding is on the label, inside the target, so the whole padded tab is the press area.
+        // The padding is on the label, inside the target, so the whole padded tab is the press area; the open tab is underlined, not only recoloured.
         Text(tabLabel(tab), Modifier.padding(horizontal = TAB_PAD), color = if (open) scheme.primary else scheme.onSurface, style = MaterialTheme.typography.titleSmall, maxLines = 1)
-        if (open) Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(TAB_UNDERLINE).background(scheme.primary))
     }
 }
 
