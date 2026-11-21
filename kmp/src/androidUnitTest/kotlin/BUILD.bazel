@@ -35,6 +35,7 @@ kt_android_library(
             "**/TechnicalTabHostTest.kt",
             "**/StripIconsTest.kt",
             "**/SketchEmbedUiTest.kt",
+            "**/ElementStatsHostTest.kt",
             "**/SourcePagePickerTest.kt",
             "**/DrawingAttachUiTest.kt",
             "**/RegistryEditorScreenTest.kt",

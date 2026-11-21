@@ -28,6 +28,7 @@ import dev.stapler.stelekit.sketch.v2.commands.Command
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.ui.sketch.DimensionField
 import dev.stapler.stelekit.ui.sketch.lengthTextOf
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 import dev.stapler.stelekit.units.Inches
 
 
@@ -47,9 +48,14 @@ fun ElementStatsPanel(
     val stats = ElementStats.of(element) ?: return
     Column(modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Stats", style = MaterialTheme.typography.titleSmall)
+        // Commands do not enforce the lock (ElementCommands), so the panel must: a locked element is shown, not edited.
+        if (element.base.locked) {
+            Text(SketchStrings.NonDrag.LOCKED, Modifier.testTag(StylePanelTags.STATS_PREFIX + "locked"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            return@Column
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            StatNumber("x", StatField.X, stats.x, element, onCommand)
-            StatNumber("y", StatField.Y, stats.y, element, onCommand)
+            StatNumber("x", StatField.X, stats.x, element, onCommand, caption = if (technical) "x (1/16\")" else "x")
+            StatNumber("y", StatField.Y, stats.y, element, onCommand, caption = if (technical) "y (1/16\")" else "y")
         }
         if (technical) {
             DimensionField(
@@ -80,7 +86,7 @@ private fun sizeCommand(element: SceneElement, stats: ElementStats, widthUnits: 
 }
 
 @Composable
-private fun StatNumber(label: String, field: StatField, value: Double, element: SceneElement, onCommand: (Command) -> Unit) {
+private fun StatNumber(label: String, field: StatField, value: Double, element: SceneElement, onCommand: (Command) -> Unit, caption: String = label) {
     val shown = formatStat(value)
     var text by remember(element.id, element.base.version, shown) { mutableStateOf(shown) }
     var error by remember(element.id, element.base.version, shown) { mutableStateOf<String?>(null) }
@@ -93,7 +99,7 @@ private fun StatNumber(label: String, field: StatField, value: Double, element: 
     OutlinedTextField(
         value = text,
         onValueChange = { text = it; error = null },
-        label = { Text(label) },
+        label = { Text(caption) },
         singleLine = true,
         isError = error != null,
         supportingText = { error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag(StylePanelTags.STATS_PREFIX + label + ".error")) } },
