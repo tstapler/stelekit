@@ -54,6 +54,58 @@
         <p id="loading-status" aria-live="off" style="font-size: 13px; color: #aaa; margin-bottom: 4px;">Starting…</p>
         <p style="font-size: 12px; color: #666;">Requires Chrome 119+, Firefox 120+, or Safari 18.2+. The page may refresh once on first load.</p>
     </div>
+    <script>
+        // ?diag: on-screen load diagnostics for slow-download reports. Inert without the query; sends nothing anywhere.
+        (function () {
+            if (!/[?&]diag(=|&|$)/.test(location.search)) return;
+            var t0 = performance.now(), live = {}, maxLag = 0, longTasks = 0, last = performance.now();
+            var origFetch = window.fetch;
+            window.fetch = function () {
+                var p = origFetch.apply(this, arguments);
+                var u = String(arguments[0] && arguments[0].url || arguments[0]);
+                if (!/\.(wasm|m?js)(\?|$)/.test(u)) return p;
+                var rec = live[u] = { start: performance.now(), first: 0, bytes: 0, done: 0, status: 0 };
+                return p.then(function (res) {
+                    rec.status = res.status;
+                    try {
+                        var reader = res.clone().body.getReader();
+                        (function pump() {
+                            reader.read().then(function (r) {
+                                if (r.done) { rec.done = performance.now(); return; }
+                                if (!rec.first) rec.first = performance.now();
+                                rec.bytes += r.value.length;
+                                pump();
+                            }).catch(function () { rec.done = -1; });
+                        })();
+                    } catch (e) {}
+                    return res;
+                }, function (e) { rec.done = -1; throw e; });
+            };
+            try { new PerformanceObserver(function (l) { longTasks += l.getEntries().length; }).observe({ entryTypes: ['longtask'] }); } catch (e) {}
+            setInterval(function () { var n = performance.now(); maxLag = Math.max(maxLag, n - last - 250); last = n; }, 250);
+            var box = document.createElement('pre');
+            box.style.cssText = 'position:fixed;left:0;right:0;bottom:0;max-height:55vh;overflow:auto;margin:0;padding:8px 10px;z-index:99999;background:rgba(0,0,0,.88);color:#9f9;font:11px/1.35 monospace;white-space:pre-wrap;';
+            function name(u) { return u.split('/').pop().slice(0, 28); }
+            function render() {
+                var c = navigator.connection || {}, nav = performance.getEntriesByType('navigation')[0] || {};
+                var L = ['SteleKit load diagnostics (?diag) - screenshot this',
+                    't=' + ((performance.now() - t0) / 1000).toFixed(1) + 's  isolated=' + window.crossOriginIsolated + '  sw=' + (navigator.serviceWorker && navigator.serviceWorker.controller ? 'controlled' : 'none'),
+                    'conn type=' + (c.effectiveType || '?') + ' downlink=' + (c.downlink || '?') + 'Mbps rtt=' + (c.rtt || '?') + 'ms saveData=' + (c.saveData || false) + '  cores=' + (navigator.hardwareConcurrency || '?') + ' mem=' + (navigator.deviceMemory || '?') + 'GB',
+                    'main-thread max stall (incl. startup)=' + Math.round(maxLag) + 'ms  longtasks=' + longTasks + '  doc proto=' + (nav.nextHopProtocol || '?'),
+                    '-- in-flight/finished (decoded bytes, so larger than the wire size) --'];
+                Object.keys(live).forEach(function (u) {
+                    var r = live[u], end = r.done > 0 ? r.done : performance.now(), ms = r.first ? end - r.first : 0;
+                    L.push(name(u) + ' ' + r.status + ' ' + (r.bytes / 1024).toFixed(0) + 'kB ' + (r.done > 0 ? 'done' : r.done < 0 ? 'FAILED' : 'loading') + ' ttfb=' + (r.first ? Math.round(r.first - r.start) : '-') + 'ms rate=' + (ms ? (r.bytes / 1024 / (ms / 1000)).toFixed(0) : '-') + 'kB/s');
+                });
+                L.push('-- resource timing (proto, wire kB, ms) --');
+                performance.getEntriesByType('resource').filter(function (e) { return e.encodedBodySize > 20000 || e.responseStatus >= 400; }).forEach(function (e) {
+                    L.push(name(e.name) + ' ' + (e.nextHopProtocol || '?') + ' ' + (e.transferSize / 1024).toFixed(0) + '/' + (e.encodedBodySize / 1024).toFixed(0) + 'kB ' + Math.round(e.duration) + 'ms st=' + (e.responseStatus || '?') + ' sw=' + (e.workerStart > 0));
+                });
+                box.textContent = L.join('\n');
+            }
+            document.addEventListener('DOMContentLoaded', function () { document.body.appendChild(box); render(); setInterval(render, 1000); });
+        })();
+    </script>
     <script src="kmp.js"></script>
     <script>
         // The overlay stays until Compose mounts its canvas (a boot error keeps it too, see BootRefusal.kt);
