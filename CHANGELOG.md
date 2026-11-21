@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.119.0](https://github.com/tstapler/stelekit/compare/v0.118.0...v0.119.0) (2026-11-21)
+
+
+### Features
+
+* **sketch:** feature tours, Help and search for the editor ([#704](https://github.com/tstapler/stelekit/issues/704)) ([5161bc3](https://github.com/tstapler/stelekit/commit/5161bc3f6f0339b2fa30cbae417ad05d58d425cc))
+
 ## [0.118.0](https://github.com/tstapler/stelekit/compare/v0.117.0...v0.118.0) (2026-11-21)
 
 
