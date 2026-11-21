@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -88,33 +89,35 @@ fun TopBar(
                 Modifier.size(ChromeBudget.BACK_DP.dp).testTag(TopBarTags.BACK).clickable(onClick = back)
                     .semantics { contentDescription = SketchStrings.TopBar.BACK; role = Role.Button },
                 contentAlignment = Alignment.Center,
-            ) { Text(BACK_GLYPH) }
+            ) { StripIconView(StripIcon.Back, MaterialTheme.colorScheme.onSurface) }
         }
         Text(
             content.title,
             Modifier.weight(1f).testTag(TopBarTags.NAME).semantics { contentDescription = content.title },
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.titleMedium,
         )
         FingerChip(content, actions)
-        actions.onHelp?.let { help ->
+        // The budget has no column for Help, so the bar shows it only when the name keeps its minimum without it; the menu always lists it.
+        actions.onHelp?.takeIf { content.plan.nameDp >= ChromeBudget.NAME_MIN_DP + ChromeBudget.BACK_DP }?.let { help ->
             Box(
                 Modifier.size(ChromeBudget.BACK_DP.dp).testTag(TopBarTags.HELP).clickable(onClick = help)
                     .semantics { contentDescription = SketchStrings.TopBar.HELP; role = Role.Button },
                 contentAlignment = Alignment.Center,
-            ) { Text(HELP_GLYPH) }
+            ) { StripIconView(StripIcon.Help, MaterialTheme.colorScheme.onSurface) }
         }
         SaveStatusButton(content.plan, content.saveStatus)
         if (content.plan.selection == SelectionMenuPlace.InBar) {
             SelectionMenuButton(content.selectionCount, content.selectionItems, actions.onSelectionAction)
         }
         Box {
-            Text(
-                OVERFLOW_GLYPH,
+            Box(
                 Modifier.testTag(ShellTags.OVERFLOW).size(ChromeBudget.OVERFLOW_DP.dp).then(overflowModifier)
                     .clickable { onOverflowOpen(); menu = true }
-                    .semantics { contentDescription = SketchStrings.Chrome.MORE_OPTIONS },
-            )
+                    .semantics { contentDescription = SketchStrings.Chrome.MORE_OPTIONS; role = Role.Button },
+                contentAlignment = Alignment.Center,
+            ) { StripIconView(StripIcon.Overflow, MaterialTheme.colorScheme.onSurface) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 overflowMenu { menu = false }
                 if (content.plan.selection == SelectionMenuPlace.InOverflow) {
@@ -157,7 +160,27 @@ private fun SaveStatusButton(plan: TopBarPlan, status: SaveStatus) {
     Box(
         Modifier.testTag(TopBarTags.SAVE).size(width = width.dp, height = ChromeBudget.SAVE_SHORT_DP.dp).semantics { contentDescription = full },
         contentAlignment = Alignment.Center,
-    ) { Text(if (glyphOnly) saveGlyph(status) else saveShortText(status), maxLines = 1) }
+    ) {
+        // An icon carries the state at a glance; the word is added only where the budget allows it.
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(SAVE_GAP)) {
+            StripIconView(saveIcon(status), saveColor(status), size = SAVE_ICON)
+            if (!glyphOnly && width > ChromeBudget.SAVE_SHORT_DP) Text(saveShortText(status), maxLines = 1, style = MaterialTheme.typography.labelMedium)
+        }
+    }
+}
+
+private fun saveIcon(status: SaveStatus): StripIcon = when (status) {
+    SaveStatus.Saved -> StripIcon.SaveOk
+    SaveStatus.Saving -> StripIcon.SaveBusy
+    SaveStatus.Unsaved -> StripIcon.SaveDirty
+    SaveStatus.Failed -> StripIcon.SaveFail
+}
+
+@Composable
+private fun saveColor(status: SaveStatus) = when (status) {
+    SaveStatus.Failed -> MaterialTheme.colorScheme.error
+    SaveStatus.Unsaved -> MaterialTheme.colorScheme.tertiary
+    else -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
 @Composable
@@ -188,13 +211,5 @@ private fun saveFullText(status: SaveStatus): String = when (status) {
     SaveStatus.Failed -> SketchStrings.TopBar.FAILED_FULL
 }
 
-private fun saveGlyph(status: SaveStatus): String = when (status) {
-    SaveStatus.Saved -> "✓"
-    SaveStatus.Saving -> "…"
-    SaveStatus.Unsaved -> "●"
-    SaveStatus.Failed -> "!"
-}
-
-private const val BACK_GLYPH = "←"
-private const val OVERFLOW_GLYPH = "⋮"
-private const val HELP_GLYPH = "?"
+private val SAVE_GAP = 4.dp
+private val SAVE_ICON = 18.dp

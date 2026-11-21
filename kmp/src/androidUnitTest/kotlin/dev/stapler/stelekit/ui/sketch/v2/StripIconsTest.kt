@@ -30,10 +30,16 @@ class StripIconsTest {
     fun everyIcon_should_Draw() {
         rule.setContent {
             Column {
-                StripIcon.entries.forEach { StripIconView(it, Color.Black, Modifier.testTag("icon.${it.name}")) }
+                StripIcon.entries.chunked(ICONS_PER_ROW).forEach { row ->
+                    androidx.compose.foundation.layout.Row { row.forEach { StripIconView(it, Color.Black, Modifier.testTag("icon.${it.name}")) } }
+                }
             }
         }
         StripIcon.entries.forEach { rule.onNodeWithTag("icon.${it.name}").assertIsDisplayed() }
+    }
+
+    private companion object {
+        const val ICONS_PER_ROW = 8
     }
 
     @Test

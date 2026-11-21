@@ -423,10 +423,6 @@ object SketchStrings {
     /** The panel's tab names (ux.md section 17): the tab list is a group of selectable tabs, each named in words. */
     /** The overflow entries that open the side panels and switch the sheet type; a phone has no other way to reach them. */
     object PanelMenu {
-        const val STYLE = "Style and size"
-        const val ELEMENTS = "Elements"
-        const val LAYERS = "Layers"
-        const val TECHNICAL = "Technical data (dimensions)"
         const val MAKE_TECHNICAL = "Make this a technical sheet"
         const val MAKE_DIAGRAM = "Make this a diagram sheet"
     }

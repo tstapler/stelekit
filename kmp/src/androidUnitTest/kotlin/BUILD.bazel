@@ -34,6 +34,8 @@ kt_android_library(
             "**/ProjectListDeleteTest.kt",
             "**/TechnicalTabHostTest.kt",
             "**/PhoneMenuEntryTest.kt",
+            "**/MobileChromeRenderTest.kt",
+            "**/ControlHelpPopupTest.kt",
             "**/StripIconsTest.kt",
             "**/SketchEmbedUiTest.kt",
             "**/ElementStatsHostTest.kt",
