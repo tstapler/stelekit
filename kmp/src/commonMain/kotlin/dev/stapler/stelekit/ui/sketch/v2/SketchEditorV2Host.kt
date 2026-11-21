@@ -349,7 +349,7 @@ private fun SelectionVisuals(controller: SketchEditorController) {
     val ids = state.selection
     if (ids.isEmpty() || state.activeTool != ToolId.Select) return
     val ctx = remember(controller.revision, state.viewport.zoom, ids) {
-        ToolContext(controller.doc.scene, state.viewport.zoom, controller.defaultStyle, controller.ids, controller.spatialIndex)
+        ToolContext(controller.doc.scene, state.viewport.zoom, controller.defaultStyle, controller.ids, controller.spatialIndex, controller.view.pxPerDp)
     }
     val select = remember(ids, controller.revision) { SelectTool(ids.map(::ElementId), controller.touchPresent) }
     SelectionOverlay(select.selectionFrame(ctx), select.handleLayout(ctx), state.viewport)

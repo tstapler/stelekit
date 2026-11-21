@@ -61,7 +61,7 @@ class ToolSession(
     private var overrideTool: Tool? = null
 
     init {
-        adapter.isEmptyCanvas = { px -> context().hitTester.hit(ui.viewport.toScene(px), ui.viewport.zoom) == null }
+        adapter.isEmptyCanvas = { px -> context().let { it.hitTester.hit(ui.viewport.toScene(px), ui.viewport.zoom, it.hitTolerancePx(ports.touchPresent)) } == null }
         configureAdapter()
     }
 
@@ -197,7 +197,7 @@ class ToolSession(
     /** Marks the second quick press of the Select tool as a double click (the platform events carry no count); null when the host took the press. */
     private fun counted(event: InputEvent): InputEvent? {
         if (event.type != InputType.Down || tool !is SelectionAware) return event
-        val hit = context().hitTester.hit(event.point, ui.viewport.zoom) ?: interiorAt(event.point)
+        val hit = context().let { it.hitTester.hit(event.point, ui.viewport.zoom, it.hitTolerancePx(ports.touchPresent)) } ?: interiorAt(event.point)
         if (!doubleClicks.press(event, hit)) return event
         return if (hit != null && onDoubleClick?.invoke(hit) == true) null else event.copy(clickCount = 2)
     }

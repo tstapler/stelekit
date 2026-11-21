@@ -121,7 +121,7 @@ class EditorKeyboardAccess(private val controller: SketchEditorController) {
     )
 
     private fun toolContext() =
-        ToolContext(controller.doc.scene, controller.ui.viewport.zoom, controller.defaultStyle, controller.ids, controller.spatialIndex)
+        ToolContext(controller.doc.scene, controller.ui.viewport.zoom, controller.defaultStyle, controller.ids, controller.spatialIndex, controller.view.pxPerDp)
 
     private fun commit(command: ToolCommand) {
         controller.commitToolCommand(command)
