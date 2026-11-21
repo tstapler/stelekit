@@ -47,6 +47,10 @@ import dev.stapler.stelekit.sketch.v2.render.RenderStyle
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
+import dev.stapler.stelekit.sketch.v2.scene.LineElement
+import dev.stapler.stelekit.ui.sketch.v2.guide.GuideContent
+import dev.stapler.stelekit.ui.sketch.v2.guide.GuideFeatures
+import dev.stapler.stelekit.ui.sketch.v2.guide.TourController
 import dev.stapler.stelekit.sketch.v2.tools.SelectTool
 import dev.stapler.stelekit.sketch.v2.tools.ToolContext
 import dev.stapler.stelekit.sketch.v2.tools.PointerKind
@@ -111,6 +115,8 @@ fun SketchEditorV2Host(
     val hint = remember(session) { SingleKeyHintProducer(session.diagnostics.port, controller.keymap.isWeb) }
     val technical = remember(session) { session.services.technical?.let { source -> session.sheet?.let { TechnicalPanelState(source, it) } } }
     SideEffect { controller.keys.hint = hint }
+    val tours = remember(session) { session.services.platform.tourProgress?.let { TourController(GuideContent.registry(), it) } }
+    TourTriggers(tours, controller)
     LaunchedEffect(controller.revision) { largeScene.refresh() }
     DisposableEffect(extras) { onDispose { extras.close() } }
     val latestBack by rememberUpdatedState(onBack)
@@ -201,6 +207,7 @@ fun SketchEditorV2Host(
         technicalPanel = technical != null,
         canvasModifier = remember(canvasAccess) { canvasRegionKeysOf(canvasAccess) },
         onRegions = { canvasAccess.regions = it },
+        tours = tours,
     )
     DiagnosticsHost(session.diagnostics, modifier.testTag(HostTags.ROOT)) {
         SketchScreenV2(
@@ -423,3 +430,21 @@ fun SketchEditorLoading(modifier: Modifier = Modifier) {
 
 internal fun SketchEditorController.boundsOfSelection(): SceneBounds? =
     SceneBounds.of(ui.selection.mapNotNull { doc.scene[ElementId(it)] })
+
+/** Starts a feature's tour the first time the user reaches it: a constraint tool or panel, the Technical tab, or a selected line. */
+@Composable
+private fun TourTriggers(tours: TourController?, controller: SketchEditorController) {
+    if (tours == null) return
+    val state = controller.ui
+    val selectedLine = state.selection.singleOrNull()?.let { controller.doc.scene[ElementId(it)] } is LineElement
+    LaunchedEffect(state.activeTool) { GuideFeatures.ofTool(state.activeTool)?.let(tours::onFeatureFirstUse) }
+    LaunchedEffect(controller.overlay) { if (controller.overlay == EditorOverlay.ConstrainMenu) tours.onFeatureFirstUse(GuideFeatures.CONSTRAINTS) }
+    LaunchedEffect(state.panelTab) {
+        when (state.panelTab) {
+            PanelTab.Constraints -> tours.onFeatureFirstUse(GuideFeatures.CONSTRAINTS)
+            PanelTab.Technical -> tours.onFeatureFirstUse(GuideFeatures.TECHNICAL_TAB)
+            else -> Unit
+        }
+    }
+    LaunchedEffect(selectedLine) { if (selectedLine) tours.onFeatureFirstUse(GuideFeatures.POINT_DRAG) }
+}

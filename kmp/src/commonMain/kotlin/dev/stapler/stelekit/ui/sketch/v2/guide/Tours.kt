@@ -51,7 +51,7 @@ class TourProgress(private val settings: Settings) {
 
     companion object {
         const val SEEN_PREFIX = "sketch.tour.seen."
-        const val AUTO_OFF_KEY = "sketch.tour.autoOff"
+        const val AUTO_OFF_KEY = "sketch.tour.auto-off"
     }
 }
 
