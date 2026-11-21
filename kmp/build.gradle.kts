@@ -27,6 +27,8 @@ kotlin {
 
     compilerOptions {
         freeCompilerArgs.add("-opt-in=kotlin.time.ExperimentalTime")
+        // Tests drive virtual time with advanceUntilIdle()/runCurrent(); one opt-in replaces ~150 per-build warnings.
+        freeCompilerArgs.add("-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi")
         freeCompilerArgs.add("-Xexpect-actual-classes")
     }
 
