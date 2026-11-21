@@ -6,6 +6,7 @@ package dev.stapler.stelekit.ui.sketch.v2
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import dev.stapler.stelekit.sketch.v2.V2EditorRig
 import dev.stapler.stelekit.sketch.v2.commands.AddElement
@@ -58,6 +59,19 @@ class CanvasPressHostTest {
         rule.onNodeWithTag(ShellTags.CANVAS).performTouchInput { down(Offset(100f, 60f)); up() }
         rule.waitForIdle()
         assertEquals(setOf("r1"), session.controller.ui.selection)
+    }
+
+    @Test
+    fun zoomToSelection_should_EnlargeASmallSelection_SoItsHandlesAreEasyToHit() {
+        val session = mount(filledRectEl("r1", 40, 40, 40, 30))
+        rule.runOnUiThread { session.controller.tools.select(listOf(ElementId("r1"))) }
+        rule.waitForIdle()
+        val before = session.controller.ui.viewport.zoom
+
+        rule.onNodeWithTag("handles-hint").performClick()
+        rule.waitForIdle()
+
+        assertTrue(session.controller.ui.viewport.zoom > before, "zoom stayed at $before")
     }
 
     @Test
