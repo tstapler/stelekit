@@ -33,6 +33,7 @@ kt_android_library(
             "**/ProjectListPhoneLayoutTest.kt",
             "**/ProjectListDeleteTest.kt",
             "**/SketchEmbedUiTest.kt",
+            "**/ElementStatsHostTest.kt",
             "**/SourcePagePickerTest.kt",
             "**/DrawingAttachUiTest.kt",
             "**/RegistryEditorScreenTest.kt",
