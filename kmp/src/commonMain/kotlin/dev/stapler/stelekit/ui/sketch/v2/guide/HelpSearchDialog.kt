@@ -76,6 +76,22 @@ fun HelpSearchDialog(
     startTopic: String? = null,
     autoFocus: Boolean = true,
 ) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        HelpSearchContent(tours, tools, actions, onRun, onDismiss, startTopic, autoFocus)
+    }
+}
+
+/** The dialog's body without its window, so it can be composed and tested on its own. */
+@Composable
+internal fun HelpSearchContent(
+    tours: TourController?,
+    tools: Collection<ToolId>,
+    actions: Collection<String>,
+    onRun: (SearchAction) -> Unit,
+    onDismiss: () -> Unit,
+    startTopic: String? = null,
+    autoFocus: Boolean = true,
+) {
     var query by remember { mutableStateOf("") }
     var topicId by remember { mutableStateOf(startTopic) }
     val entries = remember(tools, actions) { GuideSearch.entries(tools, actions) }
@@ -84,18 +100,16 @@ fun HelpSearchDialog(
     val pick: (SearchAction) -> Unit = { action ->
         if (action is SearchAction.OpenTopic) topicId = action.topicId else onRun(action)
     }
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(
-            Modifier.fillMaxWidth().widthIn(max = DIALOG_MAX).padding(16.dp).testTag(HelpSearchTags.DIALOG),
-            shape = MaterialTheme.shapes.extraLarge,
-            tonalElevation = 6.dp,
-        ) {
-            Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(if (topic != null) topic.title else SketchGuideStrings.Help.TITLE, style = MaterialTheme.typography.headlineSmall)
-                if (topic != null) TopicBody(topic, tours, onBack = { topicId = null }, onReplay = { tours?.replay(it); onDismiss() })
-                else SearchBody(query, { query = it }, results, tours, autoFocus, { results.firstOrNull()?.let { pick(it.action) } }, pick)
-                TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End).defaultMinSize(minHeight = ROW).testTag(HelpSearchTags.CLOSE)) { Text(SketchGuideStrings.Help.CLOSE) }
-            }
+    Surface(
+        Modifier.fillMaxWidth().widthIn(max = DIALOG_MAX).padding(16.dp).testTag(HelpSearchTags.DIALOG),
+        shape = MaterialTheme.shapes.extraLarge,
+        tonalElevation = 6.dp,
+    ) {
+        Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(if (topic != null) topic.title else SketchGuideStrings.Help.TITLE, style = MaterialTheme.typography.headlineSmall)
+            if (topic != null) TopicBody(topic, tours, onBack = { topicId = null }, onReplay = { tours?.replay(it); onDismiss() })
+            else SearchBody(query, { query = it }, results, tours, autoFocus, { results.firstOrNull()?.let { pick(it.action) } }, pick)
+            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End).defaultMinSize(minHeight = ROW).testTag(HelpSearchTags.CLOSE)) { Text(SketchGuideStrings.Help.CLOSE) }
         }
     }
 }

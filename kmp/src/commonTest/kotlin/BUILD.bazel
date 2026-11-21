@@ -316,6 +316,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/ui/sketch/v2/guide/TourControllerTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/guide/GuideContentTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/guide/GuideSearchTest.kt",
+        "dev/stapler/stelekit/ui/sketch/v2/guide/GuideModelsTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/OnboardingSequencerTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/NonDragTransformModeTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/NonDragPickModesTest.kt",

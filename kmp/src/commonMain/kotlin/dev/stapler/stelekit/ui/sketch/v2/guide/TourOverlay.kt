@@ -48,7 +48,6 @@ import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.ui.sketch.v2.HighlightRing
 import dev.stapler.stelekit.ui.sketch.v2.PlaceRect
 import dev.stapler.stelekit.ui.sketch.v2.TabStop
-import dev.stapler.stelekit.ui.sketch.v2.placed
 import dev.stapler.stelekit.ui.sketch.v2.rootRect
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchGuideStrings
 import kotlin.math.roundToInt
@@ -76,25 +75,24 @@ private val ELEVATION = 6.dp
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun TourOverlay(controller: TourController, modifier: Modifier = Modifier) {
-    val tour = controller.active ?: return
+    val view = TourPresentation.of(controller) ?: return
     val step = controller.step ?: return
     var origin by remember { mutableStateOf(PlaceRect(0f, 0f, 0f, 0f)) }
     val direction = LocalLayoutDirection.current
     Box(modifier.fillMaxSize().onGloballyPositioned { origin = it.rootRect() }) {
-        val anchor = step.anchor?.let { controller.anchors[it] }?.let { PlaceRect(it.left - origin.left, it.top - origin.top, it.right - origin.left, it.bottom - origin.top) }
+        val anchor = TourPlacement.relative(step.anchor?.let { controller.anchors[it] }, origin)
         if (anchor != null) HighlightRing(anchor)
         val container = PlaceRect(0f, 0f, origin.width, origin.height)
         val primary = remember { FocusRequester() }
-        LaunchedEffect(tour.id, controller.stepIndex) { runCatching { primary.requestFocus() } }
-        TourPopover(controller, tour, step, anchor, container, direction, primary)
+        LaunchedEffect(view.tourTitle, controller.stepIndex) { runCatching { primary.requestFocus() } }
+        TourPopover(controller, view, anchor, container, direction, primary)
     }
 }
 
 @Composable
 private fun TourPopover(
     controller: TourController,
-    tour: Tour,
-    step: TourStep,
+    view: TourPresentation,
     anchor: PlaceRect?,
     container: PlaceRect,
     direction: LayoutDirection,
@@ -106,39 +104,38 @@ private fun TourPopover(
                 val placeable = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
                 val w = placeable.width.toFloat()
                 val h = placeable.height.toFloat()
-                val spot = if (anchor != null) placed(anchor, w, h, container, direction) else ((container.width - w) / 2f) to ((container.height - h) / 2f)
+                val spot = TourPlacement.spot(anchor, w, h, container, direction)
                 layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(IntOffset(spot.first.roundToInt(), spot.second.roundToInt())) }
             }
             .widthIn(max = POPOVER_WIDTH)
             .testTag(TourTags.POPOVER)
             .onPreviewKeyEvent { e -> (e.type == KeyEventType.KeyDown && e.key == Key.Escape).also { if (it) controller.finish() } }
-            .semantics { paneTitle = tour.title },
+            .semantics { paneTitle = view.tourTitle },
         color = MaterialTheme.colorScheme.inverseSurface,
         contentColor = MaterialTheme.colorScheme.inverseOnSurface,
         shape = MaterialTheme.shapes.medium,
         shadowElevation = ELEVATION,
     ) {
         Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            val indicator = SketchGuideStrings.indicator(controller.stepIndex + 1, tour.steps.size)
-            Text(indicator, Modifier.testTag(TourTags.INDICATOR), style = MaterialTheme.typography.labelMedium)
-            Text(step.title, Modifier.testTag(TourTags.TITLE), style = MaterialTheme.typography.titleSmall)
+            Text(view.indicator, Modifier.testTag(TourTags.INDICATOR), style = MaterialTheme.typography.labelMedium)
+            Text(view.title, Modifier.testTag(TourTags.TITLE), style = MaterialTheme.typography.titleSmall)
             Text(
-                step.body,
-                Modifier.testTag(TourTags.BODY).semantics { liveRegion = LiveRegionMode.Polite; contentDescription = "$indicator. ${step.title}. ${step.body}" },
+                view.body,
+                Modifier.testTag(TourTags.BODY).semantics { liveRegion = LiveRegionMode.Polite; contentDescription = view.announcement },
                 style = MaterialTheme.typography.bodyMedium,
             )
-            TourButtons(controller, primary)
+            TourButtons(controller, view, primary)
         }
     }
 }
 
 @Composable
-private fun TourButtons(controller: TourController, primary: FocusRequester) {
+private fun TourButtons(controller: TourController, view: TourPresentation, primary: FocusRequester) {
     val min = Modifier.defaultMinSize(minWidth = TARGET, minHeight = TARGET)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.Center) {
-        TextButton(onClick = controller::back, enabled = controller.stepIndex > 0, modifier = min.testTag(TourTags.BACK)) { Text(SketchGuideStrings.BACK) }
-        TextButton(onClick = controller::next, modifier = min.focusRequester(primary).testTag(if (controller.isLast) TourTags.DONE else TourTags.NEXT)) {
-            Text(if (controller.isLast) SketchGuideStrings.DONE else SketchGuideStrings.NEXT)
+        TextButton(onClick = controller::back, enabled = view.canGoBack, modifier = min.testTag(TourTags.BACK)) { Text(SketchGuideStrings.BACK) }
+        TextButton(onClick = controller::next, modifier = min.focusRequester(primary).testTag(if (view.last) TourTags.DONE else TourTags.NEXT)) {
+            Text(if (view.last) SketchGuideStrings.DONE else SketchGuideStrings.NEXT)
         }
         TextButton(onClick = controller::finish, modifier = min.testTag(TourTags.SKIP)) { Text(SketchGuideStrings.SKIP) }
         TextButton(onClick = controller::skipAll, modifier = min.testTag(TourTags.SKIP_ALL)) { Text(SketchGuideStrings.DONT_SHOW) }

@@ -346,6 +346,7 @@ import dev.stapler.stelekit.transfer.AirGapGuardTest
 import dev.stapler.stelekit.git.PatLeakageAuditTest
 import dev.stapler.stelekit.ui.StelekitViewModelShareExportTest
 import dev.stapler.stelekit.capture.CapturePopupWindowTest
+import dev.stapler.stelekit.ui.sketch.v2.guide.GuideUiTest
 import dev.stapler.stelekit.capture.CapturePopupWindowUxTest
 import dev.stapler.stelekit.wiring.DesktopWiredAppFixtureTest
 import dev.stapler.stelekit.wiring.GitSyncServiceRegistryBalanceTest
@@ -716,6 +717,7 @@ import org.junit.runners.Suite
     PatLeakageAuditTest::class,
     StelekitViewModelShareExportTest::class,
     CapturePopupWindowTest::class,
+    GuideUiTest::class,
     CapturePopupWindowUxTest::class,
     AutocompleteMenuTest::class,
     LogDashboardTest::class,

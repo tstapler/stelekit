@@ -48,11 +48,11 @@ import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.LineElement
-import dev.stapler.stelekit.ui.sketch.v2.guide.GuideActions
+import dev.stapler.stelekit.ui.sketch.v2.guide.GuideEffects
+import dev.stapler.stelekit.ui.sketch.v2.guide.GuideRunner
+import dev.stapler.stelekit.ui.sketch.v2.guide.TourTriggers
 import dev.stapler.stelekit.ui.sketch.v2.guide.GuideContent
 import dev.stapler.stelekit.ui.sketch.v2.guide.HelpSearchDialog
-import dev.stapler.stelekit.ui.sketch.v2.guide.SearchAction
-import dev.stapler.stelekit.ui.sketch.v2.guide.GuideFeatures
 import dev.stapler.stelekit.ui.sketch.v2.guide.TourController
 import dev.stapler.stelekit.sketch.v2.tools.SelectTool
 import dev.stapler.stelekit.sketch.v2.tools.ToolContext
@@ -119,7 +119,7 @@ fun SketchEditorV2Host(
     val technical = remember(session) { session.services.technical?.let { source -> session.sheet?.let { TechnicalPanelState(source, it) } } }
     SideEffect { controller.keys.hint = hint }
     val tours = remember(session) { session.services.platform.tourProgress?.let { TourController(GuideContent.registry(), it) } }
-    TourTriggers(tours, controller)
+    TourTriggers(tours, controller.ui.activeTool, controller.overlay == EditorOverlay.ConstrainMenu, controller.ui.panelTab, controller.ui.selection.singleOrNull()?.let { controller.doc.scene[ElementId(it)] } is LineElement)
     LaunchedEffect(controller.revision) { largeScene.refresh() }
     DisposableEffect(extras) { onDispose { extras.close() } }
     val latestBack by rememberUpdatedState(onBack)
@@ -436,62 +436,34 @@ fun SketchEditorLoading(modifier: Modifier = Modifier) {
 internal fun SketchEditorController.boundsOfSelection(): SceneBounds? =
     SceneBounds.of(ui.selection.mapNotNull { doc.scene[ElementId(it)] })
 
-/** Starts a feature's tour the first time the user reaches it: a constraint tool or panel, the Technical tab, or a selected line. */
-@Composable
-private fun TourTriggers(tours: TourController?, controller: SketchEditorController) {
-    if (tours == null) return
-    val state = controller.ui
-    val selectedLine = state.selection.singleOrNull()?.let { controller.doc.scene[ElementId(it)] } is LineElement
-    LaunchedEffect(state.activeTool) { GuideFeatures.ofTool(state.activeTool)?.let(tours::onFeatureFirstUse) }
-    LaunchedEffect(controller.overlay) { if (controller.overlay == EditorOverlay.ConstrainMenu) tours.onFeatureFirstUse(GuideFeatures.CONSTRAINTS) }
-    LaunchedEffect(state.panelTab) {
-        when (state.panelTab) {
-            PanelTab.Constraints -> tours.onFeatureFirstUse(GuideFeatures.CONSTRAINTS)
-            PanelTab.Technical -> tours.onFeatureFirstUse(GuideFeatures.TECHNICAL_TAB)
-            else -> Unit
-        }
-    }
-    LaunchedEffect(selectedLine) { if (selectedLine) tours.onFeatureFirstUse(GuideFeatures.POINT_DRAG) }
-}
-
 /** Help and search: the tools this sheet offers and the actions this host can run. */
 @Composable
 private fun GuideDialog(controller: SketchEditorController, extras: EditorExtras, tours: TourController?) {
     val tools = remember(controller.sheetKind) { ToolStripModel(technicalSheet = controller.sheetKind == dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical, keymapEnv = controller.keymap).tools.map { it.id } }
-    val actions = buildList {
-        addAll(listOf(GuideActions.UNDO, GuideActions.REDO, GuideActions.DELETE, GuideActions.SHORTCUTS, GuideActions.GO_TO_ELEMENT, GuideActions.FIT, GuideActions.GRID, GuideActions.SNAP))
-        if (extras.constraintsAvailable) add(GuideActions.CONSTRAIN)
-        if (extras.exportAvailable) add(GuideActions.EXPORT)
-        if (extras.importDisabledReason == null) add(GuideActions.IMPORT)
-    }
+    val actions = GuideRunner.offered(extras.constraintsAvailable, extras.exportAvailable, extras.importDisabledReason == null)
     HelpSearchDialog(
         tours = tours,
         tools = tools,
         actions = actions,
         onRun = { action ->
             controller.overlay = null
-            runGuideAction(controller, extras, action)
+            GuideRunner.run(action, editorGuideEffects(controller, extras))
         },
         onDismiss = { controller.overlay = null },
     )
 }
 
-private fun runGuideAction(controller: SketchEditorController, extras: EditorExtras, action: SearchAction) {
-    when (action) {
-        is SearchAction.UseTool -> controller.tools.chooseTool(action.tool)
-        is SearchAction.OpenTopic -> Unit
-        is SearchAction.Run -> when (action.action) {
-            GuideActions.UNDO -> controller.undo()
-            GuideActions.REDO -> controller.redo()
-            GuideActions.DELETE -> controller.keys.run(KeyAction.Delete)
-            GuideActions.CONSTRAIN -> controller.overlay = EditorOverlay.ConstrainMenu
-            GuideActions.SHORTCUTS -> controller.overlay = EditorOverlay.Shortcuts
-            GuideActions.GO_TO_ELEMENT -> controller.overlay = EditorOverlay.GoToElement
-            GuideActions.FIT -> controller.ui.viewport = controller.view.fit()
-            GuideActions.GRID -> extras.toggleGrid()
-            GuideActions.SNAP -> extras.toggleSnap()
-            GuideActions.EXPORT -> extras.exporter.open()
-            GuideActions.IMPORT -> extras.importer.chooseFile()
-        }
-    }
+private fun editorGuideEffects(controller: SketchEditorController, extras: EditorExtras) = object : GuideEffects {
+    override fun undo() = controller.undo()
+    override fun redo() = controller.redo()
+    override fun delete() { controller.keys.run(KeyAction.Delete) }
+    override fun constrain() { controller.overlay = EditorOverlay.ConstrainMenu }
+    override fun shortcuts() { controller.overlay = EditorOverlay.Shortcuts }
+    override fun goToElement() { controller.overlay = EditorOverlay.GoToElement }
+    override fun fit() { controller.ui.viewport = controller.view.fit() }
+    override fun grid() = extras.toggleGrid()
+    override fun snap() = extras.toggleSnap()
+    override fun export() = extras.exporter.open()
+    override fun import() { extras.importer.chooseFile() }
+    override fun useTool(tool: ToolId) = controller.tools.chooseTool(tool)
 }
