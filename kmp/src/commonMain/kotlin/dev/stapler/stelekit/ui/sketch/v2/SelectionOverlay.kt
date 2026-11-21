@@ -5,6 +5,9 @@
 package dev.stapler.stelekit.ui.sketch.v2
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -16,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -38,6 +42,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
 import dev.stapler.stelekit.sketch.v2.scene.SceneUnit
+import dev.stapler.stelekit.sketch.v2.tools.HandleTier
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchChromeStrings
 import dev.stapler.stelekit.sketch.v2.tools.Handle
 import dev.stapler.stelekit.sketch.v2.tools.HandleLayout
 import dev.stapler.stelekit.sketch.v2.tools.SelectionFrame
@@ -78,6 +84,8 @@ fun SelectionOverlay(
     viewport: SketchViewport,
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.primary,
+    onZoomToSelection: (() -> Unit)? = null,
+    vertices: List<ScenePoint> = emptyList(),
 ) {
     if (frame == null) return
     val density = LocalDensity.current
@@ -88,6 +96,13 @@ fun SelectionOverlay(
             val pivot = Offset((topLeft.x + size.width / 2.0).toFloat(), (topLeft.y + size.height / 2.0).toFloat())
             rotate((frame.angle * DEGREES_PER_RADIAN_NUMERATOR / PI).toFloat(), pivot) {
                 drawRect(color, Offset(topLeft.x.toFloat(), topLeft.y.toFloat()), size, style = Stroke(width = OUTLINE_DP.dp.toPx()))
+            }
+            // A selected line's vertices are round grab points (a press on one drags only that point), unlike the square box handles.
+            vertices.forEach { v ->
+                val c = viewport.toScreen(v)
+                val r = VERTEX_DP.dp.toPx()
+                drawCircle(Color.White, r, Offset(c.x.toFloat(), c.y.toFloat()))
+                drawCircle(color, r, Offset(c.x.toFloat(), c.y.toFloat()), style = Stroke(width = OUTLINE_DP.dp.toPx() * 1.5f))
             }
             layout?.handles?.forEach { h ->
                 val c = viewport.toScreen(h.centre)
@@ -107,11 +122,34 @@ fun SelectionOverlay(
                     .semantics { contentDescription = handleLabel(h.handle) },
             )
         }
-        if (layout?.needsTransformMenu == true) {
-            Text(HANDLES_HINT, Modifier.align(Alignment.TopCenter).padding(top = 4.dp).testTag("handles-hint"), style = MaterialTheme.typography.labelMedium)
+        val small = layout != null && (layout.needsTransformMenu || layout.tier == HandleTier.Compact)
+        if (small && minOf(frame.box.width, frame.box.height) > 0.0) {
+            HandlesChip(onZoomToSelection, Modifier.align(Alignment.BottomCenter).padding(bottom = CHIP_BOTTOM))
         }
     }
 }
+
+/**
+ * The one notice for a selection too small to resize comfortably: with [onZoom] it is a "Zoom to selection" action chip (the
+ * corners still work, this makes them easy), without it the old plain line. It sits at the bottom, clear of the hint and the name tags.
+ */
+@Composable
+private fun HandlesChip(onZoom: (() -> Unit)?, modifier: Modifier = Modifier) {
+    val label = if (onZoom != null) SketchChromeStrings.ZOOM_TO_SELECTION else HANDLES_HINT
+    Surface(
+        modifier.testTag("handles-hint").defaultMinSize(minHeight = BAR_BUTTON_DP.dp).clip(RoundedCornerShape(CHIP_RADIUS))
+            .then(if (onZoom != null) Modifier.clickable(onClick = onZoom) else Modifier),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shape = RoundedCornerShape(CHIP_RADIUS),
+    ) {
+        Box(Modifier.padding(horizontal = CHIP_PAD), contentAlignment = Alignment.Center) { Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1) }
+    }
+}
+
+private val CHIP_BOTTOM = 60.dp
+private val CHIP_RADIUS = 24.dp
+private val CHIP_PAD = 16.dp
 
 private fun point(x: Double, y: Double) = ScenePoint(SceneUnit.of(x).getOrNull() ?: SceneUnit.ZERO, SceneUnit.of(y).getOrNull() ?: SceneUnit.ZERO)
 
@@ -153,4 +191,5 @@ fun SelectionBar(
 private const val DEGREES_PER_RADIAN_NUMERATOR = 180.0
 private const val OUTLINE_DP = 1.5f
 private const val HANDLE_VISIBLE_DP = 8f
+private const val VERTEX_DP = 6f
 private const val BAR_BUTTON_DP = 48

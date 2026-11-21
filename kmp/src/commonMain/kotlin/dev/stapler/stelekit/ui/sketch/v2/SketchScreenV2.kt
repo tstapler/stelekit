@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.heading
@@ -572,7 +573,7 @@ private fun CanvasArea(
         canvas()
         if (config.banner?.emptyStateVisible == true) EmptyState(config.emptyActions, Modifier.align(Alignment.Center))
         Column(Modifier.align(Alignment.TopStart).padding(8.dp)) {
-            if (hintShown) Text(cueHint(cue, hintLine(state, config.pointer), canvasPx.width / density.density), Modifier.testTag(ShellTags.HINT), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (hintShown && (state.selection.isEmpty() || cue != null)) Text(cueHint(cue, hintLine(state, config.pointer), canvasPx.width / density.density), Modifier.testTag(ShellTags.HINT), color = MaterialTheme.colorScheme.onSurfaceVariant)
             config.toasts?.let { ToastLaneOverlay(it, canvasPx.height / density.density) }
         }
         ActionChipRow(
@@ -581,7 +582,8 @@ private fun CanvasArea(
                 if (state.toolLock) ActionChip(ShellTags.TOOL_LOCK_CHIP, SketchStrings.Chrome.TOOL_LOCK_CHIP) { state.toolLock = false } else null,
                 config.autoConstrain?.takeIf { config.constraintsAvailable }?.let(AutoConstrainChips::freeDraw),
             ) + config.extraChips,
-            Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 8.dp),
+            // On a narrow canvas the chips and the view cluster cannot share the bottom row, so the chips sit on the row above it.
+            Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = if (canvasPx.width / density.density < CHIPS_BESIDE_CLUSTER_MIN_DP) CHIPS_RAISED else 8.dp),
         )
         // The popup sits beside the control it explains: above the dock when the strip is at the bottom, at the top otherwise.
         if (helpNearStrip) HelpPopupHost(state.help, Modifier.align(Alignment.BottomCenter).padding(bottom = HELP_ABOVE_CLUSTER))
@@ -629,7 +631,7 @@ internal fun hintLine(state: SketchEditorState, pointer: PointerClass = PointerC
 /** Zoom out, zoom level, zoom in, grid and snap; every target is at least the floor of the pointer class. */
 @Composable
 private fun ViewCluster(state: SketchEditorState, config: SketchShellConfig, modifier: Modifier = Modifier) {
-    val target = 44.dp
+    val target = ChromeBudget.TOOL_TARGET_DP.dp
     var localGrid by remember { mutableStateOf(false) }
     var localSnap by remember { mutableStateOf(false) }
     val grid = if (config.onGrid != null) config.grid else localGrid
@@ -690,7 +692,9 @@ private val CLUSTER_RADIUS = 16.dp
 private val CLUSTER_INSET = 4.dp
 private val CLUSTER_ICON = 22.dp
 private val CLUSTER_LABEL_PAD = 6.dp
-private val HELP_ABOVE_CLUSTER = 64.dp
+private val HELP_ABOVE_CLUSTER = 112.dp
+private val CHIPS_RAISED = 64.dp
+private const val CHIPS_BESIDE_CLUSTER_MIN_DP = 420f
 private const val CLUSTER_ALPHA = 0.92f
 
 private val centre = dev.stapler.stelekit.sketch.v2.view.ScreenPx(0.0, 0.0)
@@ -712,26 +716,34 @@ private fun PanelHostContent(state: SketchEditorState, config: SketchShellConfig
     Column(shape.tourAnchored(config, TabStop.SidePane).testTag(ShellTags.PANEL).background(MaterialTheme.colorScheme.surfaceVariant)) {
         if (host == PanelHost.BottomSheet) PanelSheetHeader(state.sheetSize, { state.sheetSize = it }, { state.panelTab = null })
         // The tabs scroll sideways when they do not fit, each is a 48 dp target with room around its label, and the open one is underlined.
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup().semantics { contentDescription = SketchStrings.PanelTabs.LIST }) {
+        val tabScroll = rememberScrollState()
+        val surface = MaterialTheme.colorScheme.surfaceVariant
+        Row(Modifier.fillMaxWidth().scrollEdgeFade(tabScroll, false, surface, MaterialTheme.colorScheme.onSurfaceVariant).horizontalScroll(tabScroll).selectableGroup().semantics { contentDescription = SketchStrings.PanelTabs.LIST }) {
             for (tab in tabs) PanelTabButton(tab, tab == open) { state.panelTab = tab }
         }
         panel(open)
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun PanelTabButton(tab: PanelTab, open: Boolean, onSelect: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
+    // The open tab is scrolled into view, so opening "Technical" from the menu never leaves it off the edge with no tab shown as open.
+    val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    LaunchedEffect(open) { if (open) runCatching { bring.bringIntoView() } }
     Box(
-        Modifier.testTag(ShellTags.tab(tab)).height(TAB_HEIGHT).selectable(selected = open, role = Role.Tab, onClick = onSelect).padding(horizontal = TAB_PAD),
+        Modifier.testTag(ShellTags.tab(tab)).bringIntoViewRequester(bring).defaultMinSize(minWidth = TAB_MIN_WIDTH, minHeight = TAB_HEIGHT).selectable(selected = open, role = Role.Tab, onClick = onSelect),
         contentAlignment = Alignment.Center,
     ) {
-        Text(tabLabel(tab), color = if (open) scheme.primary else scheme.onSurface, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+        // The padding is on the label, inside the target, so the whole padded tab is the press area.
+        Text(tabLabel(tab), Modifier.padding(horizontal = TAB_PAD), color = if (open) scheme.primary else scheme.onSurface, style = MaterialTheme.typography.titleSmall, maxLines = 1)
         if (open) Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(TAB_UNDERLINE).background(scheme.primary))
     }
 }
 
 private val TAB_HEIGHT = 48.dp
+private val TAB_MIN_WIDTH = 64.dp
 private val TAB_PAD = 16.dp
 private val TAB_UNDERLINE = 3.dp
 

@@ -354,7 +354,7 @@ private fun SelectionVisuals(controller: SketchEditorController) {
         ToolContext(controller.doc.scene, state.viewport.zoom, controller.defaultStyle, controller.ids, controller.spatialIndex, controller.view.pxPerDp)
     }
     val select = remember(ids, controller.revision) { SelectTool(ids.map(::ElementId), controller.touchPresent) }
-    SelectionOverlay(select.selectionFrame(ctx), select.handleLayout(ctx), state.viewport)
+    SelectionOverlay(select.selectionFrame(ctx), select.handleLayout(ctx), state.viewport, onZoomToSelection = controller.view::zoomToSelection, vertices = select.vertexPoints(ctx))
 }
 
 @Composable

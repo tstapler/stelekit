@@ -68,11 +68,14 @@ class SelectTool(
         return SelectionFrame(Box(joint.minX, joint.minY, joint.maxX - joint.minX, joint.maxY - joint.minY), 0.0, rotatable)
     }
 
-    /** The handles to draw and hit-test; empty tier [HandleTier.None] when the selection is too small on screen. */
+    /** The handles to draw and hit-test: floor-sized ones where they fit, else the four compact corners ([HandleLayout.compact]). */
     fun handleLayout(ctx: ToolContext, touch: Boolean = touchPresent): HandleLayout? {
         val f = selectionFrame(ctx) ?: return null
         val floorPx = TouchFloor.dp(touch) * ctx.pxPerDp
-        return HandleLayout.compute(f.box.cx, f.box.cy, f.box.width, f.box.height, f.angle, ctx.zoom, floorPx, f.rotatable)
+        val sized = HandleLayout.compute(f.box.cx, f.box.cy, f.box.width, f.box.height, f.angle, ctx.zoom, floorPx, f.rotatable)
+        // On touch, a selection too small for floor-sized handles still gets its four corners, so a finger can resize it without
+        // moving it. A mouse keeps the plain rule (no handles below the smallest tier): it can aim, or zoom.
+        return if (sized.tier == HandleTier.None && touch) HandleLayout.compact(f.box.cx, f.box.cy, f.box.width, f.box.height, f.angle, ctx.zoom, floorPx) else sized
     }
 
     /** Half the touch floor (22 dp touch, 12 dp mouse), in scene units: how far from a vertex a press still grabs it. */
@@ -86,6 +89,9 @@ class SelectTool(
         val d = hypot(line.points[index].x.value - point.x.value, line.points[index].y.value - point.y.value)
         return if (d <= tolerance) line to index else null
     }
+
+    /** The vertices of the single selected line: the overlay draws each as a grab point, since a press on one drags just that point. */
+    fun vertexPoints(ctx: ToolContext): List<ScenePoint> = (editable(ctx).singleOrNull() as? LineElement)?.points.orEmpty()
 
     // ---- host verbs (keyboard, selection bar) ----------------------------------------------------------------------
 

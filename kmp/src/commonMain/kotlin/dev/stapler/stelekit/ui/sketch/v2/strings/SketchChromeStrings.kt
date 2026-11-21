@@ -28,6 +28,7 @@ object SketchChromeStrings {
         ToolId.Arc -> "Drag to draw a circular arc for constraints."
     }
 
+    const val ZOOM_TO_SELECTION = "Zoom to selection"
     const val UNDO = "Undo"
     const val REDO = "Redo"
     const val DELETE = "Delete"

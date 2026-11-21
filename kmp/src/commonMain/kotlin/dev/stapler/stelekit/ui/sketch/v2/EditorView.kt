@@ -29,6 +29,12 @@ class EditorView(
     /** The view that shows the whole scene, or the current one for an empty scene. */
     fun fit(): SketchViewport = ui.viewport.fit(SceneBounds.of(doc().scene.elementsInOrder.asIterable()), canvasSize.x, canvasSize.y, FIT_PADDING_PX)
 
+    /** Zooms and pans so the selection fills the view with room around it ("Zoom to selection"); it does nothing for an empty selection. */
+    fun zoomToSelection() {
+        val bounds = SceneBounds.of(ui.selection.mapNotNull { doc().scene[ElementId(it)] }.asIterable()) ?: return
+        ui.viewport = ui.viewport.fit(bounds, canvasSize.x, canvasSize.y, SELECTION_PADDING_PX)
+    }
+
     /** Runs a view key; false for a key that is not a view key. */
     fun apply(action: KeyAction): Boolean {
         val canvas = CanvasSize(canvasSize.x, canvasSize.y, pxPerDp)
@@ -71,5 +77,6 @@ class EditorView(
         const val ZOOM_IN = 1.25
         const val ZOOM_OUT = 0.8
         const val FIT_PADDING_PX = 24.0
+        const val SELECTION_PADDING_PX = 120.0
     }
 }

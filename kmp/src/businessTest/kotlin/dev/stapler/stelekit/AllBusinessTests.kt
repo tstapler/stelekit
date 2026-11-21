@@ -1047,6 +1047,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.tools.SelectToolTest::class,
     dev.stapler.stelekit.sketch.v2.tools.SelectVertexDragTest::class,
     dev.stapler.stelekit.sketch.v2.tools.SelectTouchReachTest::class,
+    dev.stapler.stelekit.sketch.v2.tools.SmallShapeResizeTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.NoticeReplaceTest::class,
     dev.stapler.stelekit.sketch.v2.tools.EraserFrameToolTest::class,
     dev.stapler.stelekit.sketch.v2.tools.PointArcToolsTest::class,
     dev.stapler.stelekit.sketch.v2.tools.FreedrawToolTest::class,

@@ -4,8 +4,13 @@
 
 package dev.stapler.stelekit.ui.sketch.v2
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -139,6 +144,10 @@ private fun FingerChip(content: TopBarContent, actions: TopBarActions) {
     }
     val state = if (content.fingerOn) SketchStrings.TopBar.STATE_ON else SketchStrings.TopBar.STATE_OFF
     val width = if (short) ChromeBudget.FINGER_SHORT_DP else ChromeBudget.FINGER_FULL_DP
+    // A toggle looks like one: outlined when off, filled when on, and clear of the title beside it. The look is applied after the
+    // press target (so the target keeps its full size) and the text stays the box's direct child.
+    val scheme = MaterialTheme.colorScheme
+    val look = Modifier.padding(horizontal = CHIP_INSET, vertical = CHIP_VERTICAL).clip(RoundedCornerShape(CHIP_RADIUS))
     Box(
         Modifier.testTag(ShellTags.FINGER_CHIP)
             .size(width = width.dp, height = TouchTargetFloor.floorDp(content.pointer).dp.coerceAtLeast(ChromeBudget.BACK_DP.dp))
@@ -147,9 +156,10 @@ private fun FingerChip(content: TopBarContent, actions: TopBarActions) {
                 contentDescription = SketchStrings.TopBar.FINGER_SEMANTICS
                 stateDescription = state
                 role = Role.Switch
-            },
+            }
+            .then(if (content.fingerOn) look.background(scheme.primaryContainer) else look.border(1.dp, scheme.outlineVariant, RoundedCornerShape(CHIP_RADIUS))),
         contentAlignment = Alignment.Center,
-    ) { Text(label, maxLines = 1) }
+    ) { Text(label, maxLines = 1, color = if (content.fingerOn) scheme.onPrimaryContainer else scheme.onSurface) }
 }
 
 @Composable
@@ -212,4 +222,7 @@ private fun saveFullText(status: SaveStatus): String = when (status) {
 }
 
 private val SAVE_GAP = 4.dp
+private val CHIP_INSET = 2.dp
+private val CHIP_VERTICAL = 8.dp
+private val CHIP_RADIUS = 16.dp
 private val SAVE_ICON = 18.dp

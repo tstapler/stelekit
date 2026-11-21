@@ -161,7 +161,7 @@ fun ToolStrip(
 }
 
 /** Fades the edge of a scrolling strip that still has content behind it, so a strip that scrolls always looks like it does. */
-private fun Modifier.scrollEdgeFade(scroll: ScrollState, vertical: Boolean, color: Color, ink: Color): Modifier = drawWithContent {
+internal fun Modifier.scrollEdgeFade(scroll: ScrollState, vertical: Boolean, color: Color, ink: Color): Modifier = drawWithContent {
     drawContent()
     val fade = StripLook.FADE.toPx().coerceAtMost((if (vertical) size.height else size.width) / 2f)
     val clear = color.copy(alpha = 0f)
