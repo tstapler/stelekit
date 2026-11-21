@@ -11,6 +11,7 @@ import dev.stapler.stelekit.sketch.v2.scene.ArcElement
 import dev.stapler.stelekit.sketch.v2.scene.BoxElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.EllipseElement
+import dev.stapler.stelekit.sketch.v2.scene.LineElement
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
@@ -75,6 +76,18 @@ class SelectTool(
         return HandleLayout.compute(f.box.cx, f.box.cy, f.box.width, f.box.height, f.angle, ctx.zoom, floorPx, f.rotatable)
     }
 
+    /** Half the touch floor (22 dp touch, 12 dp mouse), in scene units: how far from a vertex a press still grabs it. */
+    private fun vertexTolerance(ctx: ToolContext, touch: Boolean): Double = TouchFloor.dp(touch) / 2.0 * pxPerDp / ctx.zoom
+
+    /** The vertex of the single selected line that [point] is within reach of, nearest first; vertices win over the box handles they overlap. */
+    private fun vertexUnder(point: ScenePoint, ctx: ToolContext, touch: Boolean): Pair<LineElement, Int>? {
+        val line = editable(ctx).singleOrNull() as? LineElement ?: return null
+        val tolerance = vertexTolerance(ctx, touch)
+        val index = line.points.indices.minByOrNull { hypot(line.points[it].x.value - point.x.value, line.points[it].y.value - point.y.value) } ?: return null
+        val d = hypot(line.points[index].x.value - point.x.value, line.points[index].y.value - point.y.value)
+        return if (d <= tolerance) line to index else null
+    }
+
     // ---- host verbs (keyboard, selection bar) ----------------------------------------------------------------------
 
     fun selectAll(ctx: ToolContext): ToolResult = ToolResult(next = withSelection(Selectability.selectable(ctx.scene).map { it.id }))
@@ -116,6 +129,9 @@ class SelectTool(
 
     private fun onDown(event: InputEvent, ctx: ToolContext): ToolResult {
         val touch = touchPresent || event.pointerKind != PointerKind.Mouse
+        vertexUnder(event.point, ctx, touch)?.let { (line, index) ->
+            return ToolResult(next = VertexDrag(this, event.pointerId, line, index, event.point))
+        }
         val handle = handleLayout(ctx, touch)?.hit(event.point.x.value, event.point.y.value)
         if (handle != null) return ToolResult(next = Transforming(this, event.pointerId, handle, event.point, ctx))
         val hit = ctx.hitTester.hit(event.point, ctx.zoom)
@@ -210,6 +226,49 @@ class SelectTool(
             val skipped = owner.selection.count { ctx.scene[it] != null } - owner.editable(ctx).size
             val after = if (duplicate) owner.withSelection(idMap.values.toList()) else owner
             return ToolResult(cmd, null, after, owner.skipNotice(skipped))
+        }
+    }
+
+    /**
+     * One vertex of the selected line follows the pointer (one [SetLinePointsCommand], so one undo step). The vertex keeps
+     * its offset from where it was pressed, so a finger resting beside it does not make it jump; it then snaps to a nearby
+     * point of another shape, or to 15 degree steps from the previous vertex with Shift.
+     */
+    private class VertexDrag(
+        private val owner: SelectTool,
+        private val pointerId: Int,
+        private val line: LineElement,
+        private val index: Int,
+        private val start: ScenePoint,
+    ) : Tool, SelectionAware {
+        override val id: ToolId get() = ToolId.Select
+        override val selection: List<ElementId> get() = owner.selection
+        override val marquee: Box? get() = null
+
+        override fun onEvent(event: InputEvent, ctx: ToolContext): ToolResult = when {
+            event.type == InputType.Escape || event.type == InputType.Cancel -> ToolResult(preview = null, next = owner)
+            event.type == InputType.Down && event.pointerId != pointerId -> ToolResult(preview = null, next = owner)
+            event.pointerId != pointerId -> ToolResult.Nothing
+            event.type == InputType.Move -> ToolResult(preview = if (travelled(event, ctx)) previewOf(SetLinePointsCommand(line.id, moved(event, ctx)), ctx, listOf(line.id)) else null)
+            event.type == InputType.Up ->
+                if (travelled(event, ctx)) ToolResult(SetLinePointsCommand(line.id, moved(event, ctx)), null, owner) else ToolResult(preview = null, next = owner)
+            else -> ToolResult.Nothing
+        }
+
+        private fun travelled(event: InputEvent, ctx: ToolContext): Boolean =
+            hypot(event.point.x.value - start.x.value, event.point.y.value - start.y.value) * ctx.zoom > DRAG_THRESHOLD_PX
+
+        private fun moved(event: InputEvent, ctx: ToolContext): List<ScenePoint> {
+            val grabbed = line.points[index]
+            val raw = ScenePoint(
+                unitOrZero(event.point.x.value + grabbed.x.value - start.x.value),
+                unitOrZero(event.point.y.value + grabbed.y.value - start.y.value),
+            )
+            val touch = owner.touchPresent || event.pointerKind != PointerKind.Mouse
+            val previous = line.points.getOrNull(index - 1)
+            val to = VertexSnap.nearest(raw, line, index, owner.vertexTolerance(ctx, touch), ctx)
+                ?: if (event.modifiers.shift && previous != null) AngleSnap.snap(previous, raw) else raw
+            return line.points.toMutableList().also { it[index] = to }
         }
     }
 
