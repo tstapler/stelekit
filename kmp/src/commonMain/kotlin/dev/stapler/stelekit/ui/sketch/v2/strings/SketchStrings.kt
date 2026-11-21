@@ -421,6 +421,16 @@ object SketchStrings {
     /** The scene hard cap and the constraint cap (Story 2.2.4, UX-73) and the low-memory toast. */
     /** The prompt shown when the user leaves a sheet whose latest edits are not on disk (UX-72). */
     /** The panel's tab names (ux.md section 17): the tab list is a group of selectable tabs, each named in words. */
+    /** The overflow entries that open the side panels and switch the sheet type; a phone has no other way to reach them. */
+    object PanelMenu {
+        const val STYLE = "Style and size"
+        const val ELEMENTS = "Elements"
+        const val LAYERS = "Layers"
+        const val TECHNICAL = "Technical data (dimensions)"
+        const val MAKE_TECHNICAL = "Make this a technical sheet"
+        const val MAKE_DIAGRAM = "Make this a diagram sheet"
+    }
+
     object PanelTabs {
         const val LIST = "Panels"
         const val STYLE = "Style"
