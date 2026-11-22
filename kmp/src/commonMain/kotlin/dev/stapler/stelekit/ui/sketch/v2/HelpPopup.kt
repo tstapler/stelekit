@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -37,6 +38,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.invisibleToUser
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -44,6 +46,7 @@ import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchChromeStrings
 
 /** The name and the reason or explanation of a control, glyph or disabled item: what a hover tooltip shows on desktop. */
 data class HelpEntry(val id: String, val name: String, val text: String)
@@ -65,16 +68,27 @@ class HelpPopupState {
 
     private var followsFocus = false
 
-    /** The user asked for it (long press, the "i" affordance): it stays until dismissed. */
+    /** True for a popup a touch asked for (long press, the "i" affordance): the next press elsewhere closes it. */
+    var touchOpened: Boolean by mutableStateOf(false)
+        private set
+
+    /** The user asked for it (long press, the "i" affordance): it stays until the next press elsewhere, Close or Esc (a pinned contract: it does not time out). */
     fun show(entry: HelpEntry) {
         shown = entry
         followsFocus = false
+        touchOpened = true
     }
 
     /** Keyboard focus reached [entry] (the caller checks the input mode, so a mouse click shows none): the popup follows focus. */
     fun showForFocus(entry: HelpEntry) {
         shown = entry
         followsFocus = true
+        touchOpened = false
+    }
+
+    /** A press somewhere else: a popup a touch opened goes away; one that follows focus or hover is left to its own end. */
+    fun dismissTouchOpened() {
+        if (touchOpened) dismiss()
     }
 
     /** Focus left [entry]: a popup that only followed focus goes with it, one the user opened stays. */
@@ -85,6 +99,7 @@ class HelpPopupState {
     fun dismiss() {
         shown = null
         followsFocus = false
+        touchOpened = false
     }
 }
 
@@ -99,7 +114,7 @@ fun HelpPopupHost(state: HelpPopupState, modifier: Modifier = Modifier) {
         modifier
             .testTag(HelpTags.POPUP)
             .widthIn(max = POPUP_WIDTH)
-            .semantics { liveRegion = LiveRegionMode.Polite; contentDescription = entry.describedBy() }
+            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite; contentDescription = entry.describedBy() }
             .onPreviewKeyEvent { e -> isEscapeDown(e.type, e.key).also { if (it) state.dismiss() } },
         color = MaterialTheme.colorScheme.inverseSurface,
         contentColor = MaterialTheme.colorScheme.inverseOnSurface,
@@ -107,12 +122,18 @@ fun HelpPopupHost(state: HelpPopupState, modifier: Modifier = Modifier) {
         shadowElevation = ELEVATION,
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f, fill = false)) {
+            // The words are read once, through the popup's own description; the Close button below stays its own control.
+            Column(Modifier.weight(1f, fill = false).semantics { invisibleToUser() }) {
                 Text(entry.name, style = MaterialTheme.typography.labelLarge)
                 if (entry.text.isNotBlank() && entry.text != entry.name) Text(entry.text, style = MaterialTheme.typography.bodySmall)
             }
-            TextButton(onClick = state::dismiss, modifier = Modifier.defaultMinSize(minWidth = CLOSE_MIN, minHeight = CLOSE_MIN).testTag(HelpTags.CLOSE)) {
-                Text("Close")
+            TextButton(
+                onClick = state::dismiss,
+                modifier = Modifier.defaultMinSize(minWidth = CLOSE_MIN, minHeight = CLOSE_MIN).testTag(HelpTags.CLOSE),
+                // inversePrimary, not primary: primary on the inverse surface is about 3:1, inversePrimary is made for this ground.
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.inversePrimary),
+            ) {
+                Text(SketchChromeStrings.CLOSE)
             }
         }
     }
@@ -158,15 +179,15 @@ fun Modifier.helpable(state: HelpPopupState, entry: HelpEntry): Modifier =
 fun HelpInfoButton(state: HelpPopupState, entry: HelpEntry, modifier: Modifier = Modifier) {
     Box(
         modifier.size(INFO_SIZE).testTag(HelpTags.infoButton(entry.id))
-            .semantics { role = Role.Button; contentDescription = "Help: ${entry.name}" }
+            .semantics { role = Role.Button; contentDescription = SketchChromeStrings.helpFor(entry.name) }
             .clickable { state.show(entry) },
         contentAlignment = Alignment.Center,
-    ) { Text("i") }
+    ) { StripIconView(StripIcon.Help, MaterialTheme.colorScheme.onSurfaceVariant) }
 }
 
 private fun isEscapeDown(type: KeyEventType, key: Key): Boolean = type == KeyEventType.KeyDown && key == Key.Escape
 
 private val POPUP_WIDTH = 280.dp
-private val CLOSE_MIN = 44.dp
-private val INFO_SIZE = 44.dp
+private val CLOSE_MIN = 48.dp
+private val INFO_SIZE = 48.dp
 private val ELEVATION = 4.dp

@@ -4,6 +4,18 @@
 package dev.stapler.stelekit.ui.sketch.v2
 
 import androidx.compose.ui.test.assertContentDescriptionContains
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsToggleable
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
@@ -92,6 +104,35 @@ class ControlHelpPopupTest {
         mount()
         hold("sketch.snap")
         rule.onNodeWithTag(HelpTags.POPUP).assertContentDescriptionContains(SketchChromeStrings.SNAP_HINT, substring = true)
+    }
+
+    @Test
+    fun aPressOnTheCanvas_should_CloseAPopupATouchOpened() {
+        mount()
+        hold(StripTags.tool(ToolId.Select))
+        rule.onNodeWithTag(HelpTags.POPUP).assertExists()
+        rule.onNodeWithTag(ShellTags.CANVAS).performTouchInput { down(center); up() }
+        rule.waitForIdle()
+        rule.onNodeWithTag(HelpTags.POPUP).assertDoesNotExist()
+    }
+
+    @Test
+    fun theCloseButton_should_BeA48dpTarget_AndLabelledFromTheStringTable() {
+        mount()
+        hold(StripTags.tool(ToolId.Select))
+        rule.onNodeWithTag(HelpTags.CLOSE).assertHeightIsAtLeast(48.dp).assertWidthIsAtLeast(48.dp)
+        rule.onNodeWithTag(HelpTags.CLOSE).assertTextEquals(SketchChromeStrings.CLOSE)
+    }
+
+    @Test
+    fun toolLock_should_BeASwitch_AndADisabledButton_should_SayItIsDisabled() {
+        mount()
+        // On a phone the lock sits at the far end of the scrolling strip, so scroll to it before pressing it.
+        rule.onNodeWithTag(StripTags.TOOL_LOCK).performScrollTo().assertIsToggleable().assertIsOff()
+        rule.onNodeWithTag(StripTags.TOOL_LOCK).performSemanticsAction(SemanticsActions.OnClick)
+        rule.waitForIdle()
+        rule.onNodeWithTag(StripTags.TOOL_LOCK).assertIsOn()
+        rule.onNodeWithTag(StripTags.UNDO).assertIsNotEnabled()
     }
 
     @Test

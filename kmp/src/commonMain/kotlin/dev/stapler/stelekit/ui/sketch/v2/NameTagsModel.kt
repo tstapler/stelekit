@@ -5,8 +5,13 @@
 package dev.stapler.stelekit.ui.sketch.v2
 
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
+import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementNames
+import dev.stapler.stelekit.sketch.v2.scene.LineElement
+import dev.stapler.stelekit.sketch.v2.scene.PointElement
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
+import dev.stapler.stelekit.sketch.v2.tools.HandleLayout
+import dev.stapler.stelekit.sketch.v2.tools.HandleTier
 import dev.stapler.stelekit.sketch.v2.view.SceneBounds
 import dev.stapler.stelekit.sketch.v2.view.SketchViewport
 import kotlin.math.max
@@ -40,6 +45,16 @@ object NameTagsModel {
     private const val ANCHOR_GAP_PX = 2.0
 
     /** "Show names" defaults ON on scaled/technical and converted sheets, OFF on diagram sheets (ux.md section 8). */
+    /**
+     * True when the lone selected shape's name chip would sit under its drawn corner handles: only the touch-only Compact tier
+     * puts handles that close, and a line, arrow or point has no corners to cover. The caller names it for screen readers instead.
+     */
+    fun hiddenByCompactHandles(scene: SketchSceneV2, selection: Set<ElementId>, handles: HandleLayout?): Boolean {
+        val only = selection.singleOrNull()?.let { scene[it] } ?: return false
+        if (only is LineElement || only is ArrowElement || only is PointElement) return false
+        return handles?.tier == HandleTier.Compact
+    }
+
     fun defaultShowNames(technicalOrConverted: Boolean): Boolean = technicalOrConverted
 
     fun layout(

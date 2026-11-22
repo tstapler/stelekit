@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.ui.sketch.v2
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -58,6 +59,7 @@ import dev.stapler.stelekit.sketch.v2.tools.SelectTool
 import dev.stapler.stelekit.sketch.v2.tools.ToolContext
 import dev.stapler.stelekit.sketch.v2.tools.PointerKind
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
+import dev.stapler.stelekit.sketch.v2.scene.ElementNames
 import dev.stapler.stelekit.sketch.v2.view.SceneBounds
 import dev.stapler.stelekit.sketch.v2.view.ScreenPx
 import dev.stapler.stelekit.ui.sketch.ModernPreviewEnvironment
@@ -336,10 +338,11 @@ private fun BoxScope.SketchCanvasContent(
             .wheelInput(controller),
     ) {
         SketchCanvasV2(layer, liveOps, viewport, painter)
-        SelectionVisuals(controller)
         ConstraintPickerOverlay(controller, pointer)
     }
     NameTagsOverlay(controller)
+    // After the name tags, so a tiny shape's handles are drawn over its label and never hidden by it (the overlay takes no pointer input).
+    SelectionVisuals(controller)
     controller.tools.textSession?.let { session ->
         TextEditorOverlay(session, state.viewport, hasHardwareKeyboard = pointer != PointerClass.TouchOrPen, onCommit = controller.tools::commitText)
     }
@@ -361,6 +364,17 @@ private fun SelectionVisuals(controller: SketchEditorController) {
 private fun BoxScope.NameTagsOverlay(controller: SketchEditorController) {
     val state = controller.ui
     if (state.selection.isEmpty()) return
+    // A tiny shape on touch shows corner handles over where its label would sit: skip the chip, but still name it for screen readers.
+    val ids = state.selection.mapTo(LinkedHashSet(), ::ElementId)
+    val covered = state.activeTool == ToolId.Select && run {
+        val ctx = ToolContext(controller.doc.scene, state.viewport.zoom, controller.defaultStyle, controller.ids, controller.spatialIndex, controller.view.pxPerDp)
+        NameTagsModel.hiddenByCompactHandles(controller.doc.scene, ids, SelectTool(ids.toList(), controller.touchPresent).handleLayout(ctx))
+    }
+    if (covered) {
+        val name = controller.doc.scene[ids.single()]?.let(ElementNames::nameOf).orEmpty()
+        Box(Modifier.size(0.dp).semantics { contentDescription = name })
+        return
+    }
     val size = controller.view.canvasSize
     val layout = remember(controller.revision, state.viewport, state.selection, size) {
         NameTagsModel.layout(controller.doc.scene, state.viewport, size.x, size.y, NameTagSubjects(selected = state.selection.mapTo(LinkedHashSet(), ::ElementId)))

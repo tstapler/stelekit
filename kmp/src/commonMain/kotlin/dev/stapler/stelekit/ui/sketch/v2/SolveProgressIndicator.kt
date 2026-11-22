@@ -44,7 +44,7 @@ object SolveMessages {
 
     /** The Cancel chip for the action chip row, which survives a collapsed status row (ux.md section 9). */
     fun cancelChip(onCancel: () -> Unit): ActionChip =
-        ActionChip(SolveProgressTags.CANCEL, SketchStrings.Solve.CANCEL, SketchStrings.Solve.CANCEL_NAME, onCancel)
+        ActionChip(SolveProgressTags.CANCEL, SketchStrings.Solve.CANCEL, SketchStrings.Solve.CANCEL_NAME, onClick = onCancel)
 }
 
 /**

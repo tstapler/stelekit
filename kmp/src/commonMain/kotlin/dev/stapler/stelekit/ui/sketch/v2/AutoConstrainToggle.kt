@@ -22,6 +22,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.Arrangement
 import dev.stapler.stelekit.sketch.v2.constraints.AutoConstrainDefault
 import dev.stapler.stelekit.sketch.v2.constraints.AutoConstrainOptions
 import dev.stapler.stelekit.sketch.v2.constraints.SheetKind
@@ -82,6 +83,7 @@ fun AutoConstrainToggle(state: AutoConstrainState, modifier: Modifier = Modifier
             .toggleable(value = state.enabled, role = Role.Switch, onValueChange = { state.toggle() })
             .clearAndSetSemantics { contentDescription = description; role = Role.Switch; stateDescription = if (state.enabled) SketchConstraintStrings.AutoConstrain.STATE_ON else SketchConstraintStrings.AutoConstrain.STATE_OFF },
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(TOGGLE_GAP),
     ) {
         Text(SketchConstraintStrings.AutoConstrain.TOGGLE)
         Switch(checked = state.enabled, onCheckedChange = null)
@@ -94,6 +96,8 @@ object AutoConstrainChips {
         if (!state.enabled) {
             null
         } else {
-            ActionChip(AutoConstrainTags.FREE_DRAW_CHIP, SketchConstraintStrings.AutoConstrain.FREE_DRAW_CHIP, SketchConstraintStrings.AutoConstrain.FREE_DRAW_NAME, state::toggleFreeDraw)
+            ActionChip(AutoConstrainTags.FREE_DRAW_CHIP, SketchConstraintStrings.AutoConstrain.FREE_DRAW_CHIP, SketchConstraintStrings.AutoConstrain.FREE_DRAW_NAME, StripIcon.Freedraw, onClick = state::toggleFreeDraw)
         }
 }
+
+private val TOGGLE_GAP = 12.dp
