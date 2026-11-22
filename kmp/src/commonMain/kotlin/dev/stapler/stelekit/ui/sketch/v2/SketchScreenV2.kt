@@ -6,6 +6,20 @@ package dev.stapler.stelekit.ui.sketch.v2
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchChromeStrings
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.focusable
@@ -36,6 +50,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -165,6 +180,7 @@ object ShellTags {
     const val OVERFLOW_PAN = "sketch.overflow.pan"
     const val OVERFLOW_PANEL_STYLE = "sketch.overflow.panel.style"
     const val OVERFLOW_PANEL_ELEMENTS = "sketch.overflow.panel.elements"
+    const val OVERFLOW_PANEL_LAYERS = "sketch.overflow.panel.layers"
     const val OVERFLOW_PANEL_TECHNICAL = "sketch.overflow.panel.technical"
     const val OVERFLOW_MAKE_TECHNICAL = "sketch.overflow.make.technical"
     const val OVERFLOW_MAKE_DIAGRAM = "sketch.overflow.make.diagram"
@@ -253,7 +269,7 @@ private fun SketchShell(
                 Column(Modifier.fillMaxSize()) {
                     ShellTopBar(state, config, focus, grouped, window, regions)
                     BannerSlot(state, config, focus, grouped)
-                    CanvasArea(state, config, focus, regions, Modifier.weight(1f).tourAnchored(config, TabStop.Canvas), hintShown, cue, canvas)
+                    CanvasArea(state, config, focus, regions, Modifier.weight(1f).tourAnchored(config, TabStop.Canvas), hintShown, cue, helpNearStrip = true, canvas = canvas)
                     if (state.panelTab != null) panelContent()
                     strip(Modifier.fillMaxWidth())
                 }
@@ -263,7 +279,7 @@ private fun SketchShell(
                     Column(Modifier.weight(1f)) {
                         ShellTopBar(state, config, focus, grouped, window, regions)
                         BannerSlot(state, config, focus, grouped)
-                        CanvasArea(state, config, focus, regions, Modifier.weight(1f).tourAnchored(config, TabStop.Canvas), hintShown, cue, canvas)
+                        CanvasArea(state, config, focus, regions, Modifier.weight(1f).tourAnchored(config, TabStop.Canvas), hintShown, cue, canvas = canvas)
                     }
                     if (layout.panels == PanelHost.PersistentPane || state.panelTab != null) panelContent()
                 }
@@ -349,7 +365,7 @@ private fun ShellTopBar(state: SketchEditorState, config: SketchShellConfig, foc
             onSelectionAction = config.onSelectionAction,
             onHelp = config.onHelp,
         ),
-        Modifier.padding(horizontal = 16.dp),
+        Modifier.padding(horizontal = 4.dp),
         Modifier.anchorFor(state, WalkthroughStep.Shortcuts).tourAnchored(config, TabStop.TopBar)
             .focusProperties { next = if (state.walkthrough.step == WalkthroughStep.Shortcuts) state.walkthrough.popoverFocus else FocusRequester.Default }
             .focusRequester(focus.overflow)
@@ -363,14 +379,34 @@ private fun ShellTopBar(state: SketchEditorState, config: SketchShellConfig, foc
 private fun PanelMenuItems(state: SketchEditorState, config: SketchShellConfig, close: () -> Unit) {
     fun open(tab: PanelTab) { close(); state.panelTab = tab }
     Column {
-        DropdownMenuItem(text = { Text(SketchStrings.PanelMenu.STYLE) }, onClick = { open(PanelTab.Style) }, modifier = Modifier.testTag(ShellTags.OVERFLOW_PANEL_STYLE))
-        DropdownMenuItem(text = { Text(SketchStrings.PanelMenu.ELEMENTS) }, onClick = { open(PanelTab.Elements) }, modifier = Modifier.testTag(ShellTags.OVERFLOW_PANEL_ELEMENTS))
-        if (config.hasMultipleLayers) {
-            DropdownMenuItem(text = { Text(SketchStrings.PanelMenu.LAYERS) }, onClick = { open(PanelTab.Layers) })
+        MenuSection(SketchChromeStrings.MENU_PANELS)
+        // One row of chips, not one row per panel: the menu stays short enough to reach its last entries on a small phone.
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MenuChip(SketchStrings.PanelTabs.STYLE, ShellTags.OVERFLOW_PANEL_STYLE) { open(PanelTab.Style) }
+            MenuChip(SketchStrings.PanelTabs.ELEMENTS, ShellTags.OVERFLOW_PANEL_ELEMENTS) { open(PanelTab.Elements) }
+            if (config.hasMultipleLayers) MenuChip(SketchStrings.PanelTabs.LAYERS, ShellTags.OVERFLOW_PANEL_LAYERS) { open(PanelTab.Layers) }
+            if (config.technicalPanel) MenuChip(SketchStrings.PanelTabs.TECHNICAL, ShellTags.OVERFLOW_PANEL_TECHNICAL) { open(PanelTab.Technical) }
         }
-        if (config.technicalPanel) {
-            DropdownMenuItem(text = { Text(SketchStrings.PanelMenu.TECHNICAL) }, onClick = { open(PanelTab.Technical) }, modifier = Modifier.testTag(ShellTags.OVERFLOW_PANEL_TECHNICAL))
-        }
+    }
+}
+
+/** A pill-shaped menu entry that opens a panel; 48 dp tall like the rows around it. */
+@Composable
+private fun MenuChip(label: String, tag: String, onClick: () -> Unit) {
+    Box(
+        Modifier.height(MENU_CHIP_HEIGHT).testTag(tag).clip(RoundedCornerShape(MENU_CHIP_HEIGHT / 2)).background(MaterialTheme.colorScheme.secondaryContainer)
+            .semantics { role = Role.Button }.clickable(onClick = onClick).padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center,
+    ) { Text(label, color = MaterialTheme.colorScheme.onSecondaryContainer, style = MaterialTheme.typography.labelLarge, maxLines = 1) }
+}
+
+private val MENU_CHIP_HEIGHT = 40.dp
+
+/** The sheet's own switches: its type (diagram or technical) and the constraint entries that only a technical sheet makes useful. */
+@Composable
+private fun SheetMenuItems(state: SketchEditorState, config: SketchShellConfig, close: () -> Unit) {
+    Column {
+        MenuSection(SketchChromeStrings.MENU_SHEET)
         val switch = config.onSheetKind
         when (config.sheetKind) {
             dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Diagram -> if (switch != null) DropdownMenuItem(
@@ -385,30 +421,54 @@ private fun PanelMenuItems(state: SketchEditorState, config: SketchShellConfig, 
             )
             else -> Unit
         }
-    }
-}
-
-@Composable
-private fun OverflowItems(state: SketchEditorState, config: SketchShellConfig, grouped: Boolean, close: () -> Unit) {
-    Column {
-        PanelMenuItems(state, config, close)
         if (config.constraintsAvailable) {
             DropdownMenuItem(
-                text = { Text("Constrain (K)") },
+                text = { Text(SketchChromeStrings.CONSTRAIN) },
                 onClick = { close(); config.actions.onConstrain() },
                 modifier = Modifier.testTag(ShellTags.OVERFLOW_CONSTRAIN),
             )
         }
         config.autoConstrain?.takeIf { config.constraintsAvailable }?.let { AutoConstrainToggle(it, Modifier.padding(horizontal = 16.dp)) }
+    }
+}
+
+/** A small heading that groups the entries under it, announced as a heading by a screen reader. */
+@Composable
+private fun MenuSection(label: String) {
+    Text(
+        label,
+        Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp).semantics { heading() },
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary,
+    )
+}
+
+/**
+ * The three-dot menu, in sections so a long list can be scanned: Panels, Sheet, Import and export, Tools, View, Help. A phone has
+ * no other way to open the panels, so they come first; the rarely used view and help entries come last.
+ */
+@Composable
+private fun OverflowItems(state: SketchEditorState, config: SketchShellConfig, grouped: Boolean, close: () -> Unit) {
+    Column {
+        PanelMenuItems(state, config, close)
+        SheetMenuItems(state, config, close)
+        FileMenuItems(config, close)
+        if (config.model.overflowTools.isNotEmpty()) {
+            MenuSection(SketchChromeStrings.MENU_TOOLS)
+            for (tool in config.model.overflowTools) {
+                DropdownMenuItem(
+                    leadingIcon = { StripIconView(StripIcon.of(tool.id), MaterialTheme.colorScheme.onSurface) },
+                    text = { Text(SketchChromeStrings.moreTool(tool.label, tool.shortcut)) },
+                    onClick = { close(); state.chooseTool(tool.id) },
+                    modifier = Modifier.testTag(ShellTags.overflowTool(tool.id)),
+                )
+            }
+        }
+        MenuSection(SketchChromeStrings.MENU_VIEW)
         DropdownMenuItem(
-            text = { Text("Pan arrows") },
+            text = { Text(SketchChromeStrings.PAN_ARROWS) },
             onClick = { close(); state.panPadOpen = true },
             modifier = Modifier.testTag(ShellTags.OVERFLOW_PAN),
-        )
-        DropdownMenuItem(
-            text = { Text(SketchStrings.Empty.SHORTCUTS) },
-            onClick = { close(); config.onShortcuts() },
-            modifier = Modifier.testTag(ShellTags.OVERFLOW_SHORTCUTS),
         )
         config.onGoToElement?.let { onGoTo ->
             DropdownMenuItem(
@@ -417,6 +477,12 @@ private fun OverflowItems(state: SketchEditorState, config: SketchShellConfig, g
                 modifier = Modifier.testTag(ShellTags.OVERFLOW_GO_TO),
             )
         }
+        DropdownMenuItem(
+            text = { Text(SketchStrings.Empty.SHORTCUTS) },
+            onClick = { close(); config.onShortcuts() },
+            modifier = Modifier.testTag(ShellTags.OVERFLOW_SHORTCUTS),
+        )
+        MenuSection(SketchChromeStrings.MENU_HELP)
         config.onHelp?.let { onHelp ->
             DropdownMenuItem(
                 text = { Text(SketchStrings.TopBar.HELP) },
@@ -433,6 +499,14 @@ private fun OverflowItems(state: SketchEditorState, config: SketchShellConfig, g
             },
             modifier = Modifier.testTag(ShellTags.OVERFLOW_TIPS),
         )
+    }
+}
+
+/** Import, export and restore: the entries that leave or replace the sketch's file, kept above the view and help entries so they stay in reach on a small phone. */
+@Composable
+private fun FileMenuItems(config: SketchShellConfig, close: () -> Unit) {
+    Column {
+        if (config.onImport != null || config.onExport != null || config.restore != null) MenuSection(SketchChromeStrings.MENU_FILE)
         config.onImport?.let { onImport ->
             DropdownMenuItem(
                 text = { ImportMenuLabel(config.importDisabledReason) },
@@ -449,13 +523,6 @@ private fun OverflowItems(state: SketchEditorState, config: SketchShellConfig, g
             )
         }
         config.restore?.let { RestoreMenuItem(it, close) }
-        for (tool in config.model.overflowTools) {
-            DropdownMenuItem(
-                text = { Text("More tools: ${tool.label}  ${tool.shortcut}") },
-                onClick = { close(); state.chooseTool(tool.id) },
-                modifier = Modifier.testTag(ShellTags.overflowTool(tool.id)),
-            )
-        }
     }
 }
 
@@ -500,6 +567,7 @@ private fun CanvasArea(
     modifier: Modifier = Modifier,
     hintShown: Boolean = true,
     cue: ShownCue? = null,
+    helpNearStrip: Boolean = false,
     canvas: @Composable BoxScope.() -> Unit,
 ) {
     var canvasPx by remember { mutableStateOf(IntSize.Zero) }
@@ -508,7 +576,7 @@ private fun CanvasArea(
         canvas()
         if (config.banner?.emptyStateVisible == true) EmptyState(config.emptyActions, Modifier.align(Alignment.Center))
         Column(Modifier.align(Alignment.TopStart).padding(8.dp)) {
-            if (hintShown) Text(cueHint(cue, hintLine(state, config.pointer), canvasPx.width / density.density), Modifier.testTag(ShellTags.HINT), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (hintShown && (state.selection.isEmpty() || cue != null)) Text(cueHint(cue, hintLine(state, config.pointer), canvasPx.width / density.density), Modifier.testTag(ShellTags.HINT), color = MaterialTheme.colorScheme.onSurfaceVariant)
             config.toasts?.let { ToastLaneOverlay(it, canvasPx.height / density.density) }
         }
         ActionChipRow(
@@ -517,9 +585,12 @@ private fun CanvasArea(
                 if (state.toolLock) ActionChip(ShellTags.TOOL_LOCK_CHIP, SketchStrings.Chrome.TOOL_LOCK_CHIP) { state.toolLock = false } else null,
                 config.autoConstrain?.takeIf { config.constraintsAvailable }?.let(AutoConstrainChips::freeDraw),
             ) + config.extraChips,
-            Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 8.dp),
+            // On a narrow canvas the chips and the view cluster cannot share the bottom row, so the chips sit on the row above it.
+            Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = if (canvasPx.width / density.density < CHIPS_BESIDE_CLUSTER_MIN_DP) CHIPS_RAISED else 8.dp),
         )
-        HelpPopupHost(state.help, Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
+        // The popup sits beside the control it explains: above the dock when the strip is at the bottom, at the top otherwise.
+        if (helpNearStrip) HelpPopupHost(state.help, Modifier.align(Alignment.BottomCenter).padding(bottom = HELP_ABOVE_CLUSTER))
+        else HelpPopupHost(state.help, Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
         val stripInset = PanPadPolicy.stripInsetDp(config.edgeStripAtEnd).dp
         Column(
             Modifier.align(Alignment.BottomEnd).padding(end = 16.dp + config.endInset + stripInset, bottom = 8.dp),
@@ -563,32 +634,71 @@ internal fun hintLine(state: SketchEditorState, pointer: PointerClass = PointerC
 /** Zoom out, zoom level, zoom in, grid and snap; every target is at least the floor of the pointer class. */
 @Composable
 private fun ViewCluster(state: SketchEditorState, config: SketchShellConfig, modifier: Modifier = Modifier) {
-    val target = 44.dp
+    val target = ChromeBudget.TOOL_TARGET_DP.dp
     var localGrid by remember { mutableStateOf(false) }
     var localSnap by remember { mutableStateOf(false) }
     val grid = if (config.onGrid != null) config.grid else localGrid
     val snap = if (config.onSnap != null) config.snap else localSnap
     // Activating a view button is what the zoom step points at, so it ends the walkthrough (ux.md section 22).
     val act = { action: () -> Unit -> { state.walkthrough.anchorActivated(WalkthroughStep.Zoom); action() } }
-    Row(modifier.testTag(ShellTags.VIEW_CLUSTER), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        ClusterButton("sketch.zoomout", "Zoom out", "−", target, act { state.viewport = state.viewport.zoomBy(centre, ZOOM_STEP_OUT) })
-        ClusterButton("sketch.zoomlevel", "Zoom ${(state.viewport.zoom * PERCENT).toInt()}%", "${(state.viewport.zoom * PERCENT).toInt()}%", target, act { state.viewport = state.viewport.zoomTo(centre, 1.0) })
-        ClusterButton("sketch.zoomin", "Zoom in", "+", target, act { state.viewport = state.viewport.zoomBy(centre, ZOOM_STEP_IN) })
-        ClusterButton("sketch.grid", if (grid) SketchHostStrings.View.GRID_ON else SketchHostStrings.View.GRID_OFF, "#", target, act { config.onGrid?.invoke() ?: run { localGrid = !localGrid } })
-        ClusterButton("sketch.snap", if (snap) SketchHostStrings.View.SNAP_ON else SketchHostStrings.View.SNAP_OFF, "⊙", target, act { config.onSnap?.invoke() ?: run { localSnap = !localSnap } })
+    val percent = (state.viewport.zoom * PERCENT).toInt()
+    // A soft pill keeps the controls readable over any drawing; Grid and Snap show their on/off state as a filled chip.
+    Row(
+        modifier.testTag(ShellTags.VIEW_CLUSTER).clip(RoundedCornerShape(CLUSTER_RADIUS)).background(MaterialTheme.colorScheme.surface.copy(alpha = CLUSTER_ALPHA)),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        val zoomOut = act { state.viewport = state.viewport.zoomBy(centre, ZOOM_STEP_OUT) }
+        val zoomIn = act { state.viewport = state.viewport.zoomBy(centre, ZOOM_STEP_IN) }
+        ClusterButton(state, "sketch.zoomout", SketchChromeStrings.ZOOM_OUT, SketchChromeStrings.ZOOM_OUT_HINT, StripIcon.ZoomOut, null, target, null, zoomOut)
+        ClusterButton(state, "sketch.zoomlevel", SketchChromeStrings.zoom(percent), SketchChromeStrings.ZOOM_LEVEL_HINT, null, "$percent%", target, null, act { state.viewport = state.viewport.zoomTo(centre, 1.0) })
+        ClusterButton(state, "sketch.zoomin", SketchChromeStrings.ZOOM_IN, SketchChromeStrings.ZOOM_IN_HINT, StripIcon.ZoomIn, null, target, null, zoomIn)
+        ClusterButton(state, "sketch.grid", if (grid) SketchHostStrings.View.GRID_ON else SketchHostStrings.View.GRID_OFF, SketchChromeStrings.GRID_HINT, StripIcon.Grid, null, target, grid, act { config.onGrid?.invoke() ?: run { localGrid = !localGrid } })
+        ClusterButton(state, "sketch.snap", if (snap) SketchHostStrings.View.SNAP_ON else SketchHostStrings.View.SNAP_OFF, SketchChromeStrings.SNAP_HINT, StripIcon.Snap, null, target, snap, act { config.onSnap?.invoke() ?: run { localSnap = !localSnap } })
         if (PanPadPolicy.buttonShown(config.panArrows, state.fingerDrawing, config.pointer == PointerClass.TouchOrPen)) {
             PanButton(state.panPadOpen, { state.panPadOpen = !state.panPadOpen })
         }
     }
 }
 
+/**
+ * One view-cluster button: an [icon] or a [label], with the hint popup on long press, focus and hover. [on] is null for a plain
+ * action and true or false for a toggle, which then reads as a filled chip and announces its state.
+ */
 @Composable
-private fun ClusterButton(tag: String, description: String, glyph: String, size: Dp, onClick: () -> Unit) {
+private fun ClusterButton(
+    state: SketchEditorState, tag: String, description: String, hint: String, icon: StripIcon?, label: String?, size: Dp, on: Boolean?, onClick: () -> Unit,
+) {
+    val entry = HelpEntry(tag, description, hint)
+    val scheme = MaterialTheme.colorScheme
+    // A label may be wider than the target at a large font, so the target grows with it instead of clipping the text.
     Box(
-        Modifier.size(size).testTag(tag).semantics { contentDescription = description }.clickable(onClick = onClick),
+        Modifier.height(size).defaultMinSize(minWidth = size).testTag(tag)
+            .helpOnFocus(state.help, entry).helpOnHover(state.help, entry)
+            .semantics { contentDescription = description; if (on != null) { role = Role.Switch; toggleableState = ToggleableState(on) } }
+            .combinedClickable(onLongClick = { state.help.show(entry) }, onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { Text(glyph) }
+    ) {
+        Box(
+            Modifier.fillMaxHeight().defaultMinSize(minWidth = size - CLUSTER_INSET * 2).padding(vertical = CLUSTER_INSET).clip(RoundedCornerShape(CLUSTER_RADIUS))
+                .background(if (on == true) scheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent)
+                .padding(horizontal = if (label != null) CLUSTER_LABEL_PAD else 0.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            val ink = if (on == true) scheme.onPrimaryContainer else scheme.onSurface
+            if (icon != null) StripIconView(icon, ink, size = CLUSTER_ICON)
+            if (label != null) Text(label, color = ink, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        }
+    }
 }
+
+private val CLUSTER_RADIUS = 16.dp
+private val CLUSTER_INSET = 4.dp
+private val CLUSTER_ICON = 22.dp
+private val CLUSTER_LABEL_PAD = 6.dp
+private val HELP_ABOVE_CLUSTER = 112.dp
+private val CHIPS_RAISED = 64.dp
+private const val CHIPS_BESIDE_CLUSTER_MIN_DP = 420f
+private const val CLUSTER_ALPHA = 0.92f
 
 private val centre = dev.stapler.stelekit.sketch.v2.view.ScreenPx(0.0, 0.0)
 private const val ZOOM_STEP_IN = 1.25
@@ -608,18 +718,37 @@ private fun PanelHostContent(state: SketchEditorState, config: SketchShellConfig
     }
     Column(shape.tourAnchored(config, TabStop.SidePane).testTag(ShellTags.PANEL).background(MaterialTheme.colorScheme.surfaceVariant)) {
         if (host == PanelHost.BottomSheet) PanelSheetHeader(state.sheetSize, { state.sheetSize = it }, { state.panelTab = null })
-        Row(Modifier.fillMaxWidth().selectableGroup().semantics { contentDescription = SketchStrings.PanelTabs.LIST }) {
-            for (tab in tabs) {
-                Text(
-                    tabLabel(tab),
-                    Modifier.testTag(ShellTags.tab(tab)).height(44.dp).selectable(selected = tab == open, role = Role.Tab, onClick = { state.panelTab = tab }),
-                    color = if (tab == open) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                )
-            }
+        // The tabs scroll sideways when they do not fit, each is a 48 dp target with room around its label, and the open one is underlined.
+        val tabScroll = rememberScrollState()
+        val surface = MaterialTheme.colorScheme.surfaceVariant
+        Row(Modifier.fillMaxWidth().scrollEdgeFade(tabScroll, false, surface, MaterialTheme.colorScheme.onSurfaceVariant).horizontalScroll(tabScroll).selectableGroup().semantics { contentDescription = SketchStrings.PanelTabs.LIST }) {
+            for (tab in tabs) PanelTabButton(tab, tab == open) { state.panelTab = tab }
         }
         panel(open)
     }
 }
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun PanelTabButton(tab: PanelTab, open: Boolean, onSelect: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    // The open tab is scrolled into view, so opening "Technical" from the menu never leaves it off the edge with no tab shown as open.
+    val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    LaunchedEffect(open) { if (open) runCatching { bring.bringIntoView() } }
+    Box(
+        Modifier.testTag(ShellTags.tab(tab)).bringIntoViewRequester(bring).defaultMinSize(minWidth = TAB_MIN_WIDTH, minHeight = TAB_HEIGHT).selectable(selected = open, role = Role.Tab, onClick = onSelect)
+            .drawBehind { if (open) drawRect(scheme.primary, Offset(0f, size.height - TAB_UNDERLINE.toPx()), Size(size.width, TAB_UNDERLINE.toPx())) },
+        contentAlignment = Alignment.Center,
+    ) {
+        // The padding is on the label, inside the target, so the whole padded tab is the press area; the open tab is underlined, not only recoloured.
+        Text(tabLabel(tab), Modifier.padding(horizontal = TAB_PAD), color = if (open) scheme.primary else scheme.onSurface, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+    }
+}
+
+private val TAB_HEIGHT = 48.dp
+private val TAB_MIN_WIDTH = 64.dp
+private val TAB_PAD = 16.dp
+private val TAB_UNDERLINE = 3.dp
 
 private fun tabLabel(tab: PanelTab): String = when (tab) {
     PanelTab.Style -> SketchStrings.PanelTabs.STYLE

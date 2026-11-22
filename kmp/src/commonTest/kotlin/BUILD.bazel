@@ -285,6 +285,8 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/tools/SelectToolTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/SelectVertexDragTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/SelectTouchReachTest.kt",
+        "dev/stapler/stelekit/sketch/v2/tools/SmallShapeResizeTest.kt",
+        "dev/stapler/stelekit/ui/sketch/v2/NoticeReplaceTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/EraserFrameToolTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/PointArcToolsTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/FreedrawToolTest.kt",

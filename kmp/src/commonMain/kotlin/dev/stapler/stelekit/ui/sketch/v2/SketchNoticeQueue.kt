@@ -133,6 +133,16 @@ class SketchNoticeQueue(
         syncYield()
     }
 
+    /**
+     * Shows [notice] and drops any live notice that has the same key but other text, so a toggle ("Snap on", then "Snap off")
+     * replaces its own previous toast instead of stacking beside it. An identical one still coalesces, as in [post].
+     */
+    fun postReplacing(notice: SketchNotice, now: Long) {
+        advance(now)
+        active.removeAll { it.notice.key == notice.key && it.notice != notice }
+        post(notice, now)
+    }
+
     /** The notices on screen, in priority order, at most `maxVisibleNotices` of them. */
     fun visible(now: Long): List<VisibleNotice> {
         advance(now)

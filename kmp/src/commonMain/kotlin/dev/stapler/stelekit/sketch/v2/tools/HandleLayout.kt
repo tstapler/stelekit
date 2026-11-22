@@ -17,7 +17,13 @@ enum class Handle(val sx: Int, val sy: Int) {
 }
 
 /** How many handles a selection of a given on-screen size can show without their hit areas overlapping (UX-127). */
-enum class HandleTier { Full, Corners, None }
+enum class HandleTier {
+    Full, Corners,
+
+    /** A selection too small for the floor-sized corners: the four corners with a reach clamped to a fraction of the shape. */
+    Compact,
+    None,
+}
 
 /**
  * The touch-target floor in density-independent pixels (UX-46, UX-92, D-17): 44 whenever a touch or pen pointer is
@@ -79,6 +85,29 @@ data class HandleLayout(val tier: HandleTier, val handles: List<PlacedHandle>) {
             val placed = shown.map { place(it, it.sx * width / HALF, it.sy * height / HALF) }.toMutableList()
             if (rotatable) placed += place(Handle.Rotate, 0.0, -height / HALF - ROTATE_OFFSET_FLOORS * floorPx / zoom)
             return HandleLayout(tier, placed)
+        }
+
+        /** How far in from a side a corner's hit area may reach, as a share of the shorter side: the middle of a small shape stays its body. */
+        const val COMPACT_REACH = 0.3
+
+        /**
+         * The four corner handles of a box too small for [compute]'s tiers (the user must still be able to resize it without
+         * moving it). Each hit area is the floor, clamped to [COMPACT_REACH] of the shorter side, so the corners never swallow the
+         * whole shape; the press nearest a corner wins over the body because the Select tool tries handles first. A box with no
+         * area (a straight line) has no corners and gets none.
+         */
+        fun compact(cx: Double, cy: Double, width: Double, height: Double, angle: Double, zoom: Double, floorPx: Double): HandleLayout {
+            val shorter = minOf(width, height)
+            if (shorter <= 0.0) return HandleLayout(HandleTier.None, emptyList())
+            val half = minOf(floorPx / zoom / HALF, COMPACT_REACH * shorter)
+            val c = cos(angle)
+            val s = sin(angle)
+            val placed = Handle.entries.filter { it.isCorner }.map { h ->
+                val lx = h.sx * width / HALF
+                val ly = h.sy * height / HALF
+                PlacedHandle(h, ScenePoint(unit(cx + lx * c - ly * s), unit(cy + lx * s + ly * c)), half)
+            }
+            return HandleLayout(HandleTier.Compact, placed)
         }
 
         private fun unit(v: Double) = dev.stapler.stelekit.sketch.v2.scene.SceneUnit.of(v).getOrNull() ?: dev.stapler.stelekit.sketch.v2.scene.SceneUnit.ZERO

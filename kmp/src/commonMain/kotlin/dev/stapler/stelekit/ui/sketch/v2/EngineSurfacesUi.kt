@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -97,7 +100,12 @@ internal fun SheetKindRow(controller: SketchEditorController, modifier: Modifier
 
 @Composable
 private fun StyleChoice(label: String, tag: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    TextButton(onClick, Modifier.defaultMinSize(minHeight = TARGET_DP.dp).testTag(tag), enabled = enabled && !selected) { Text(label) }
+    // The current choice is not clickable, but it must not look disabled: it is the filled chip, the others are plain text buttons.
+    val scheme = MaterialTheme.colorScheme
+    val colors = if (selected) ButtonDefaults.textButtonColors(disabledContainerColor = scheme.primaryContainer, disabledContentColor = scheme.onPrimaryContainer) else ButtonDefaults.textButtonColors()
+    TextButton(onClick, Modifier.defaultMinSize(minHeight = TARGET_DP.dp).testTag(tag), enabled = enabled && !selected, colors = colors) {
+        Text(label, fontWeight = if (selected) FontWeight.SemiBold else null)
+    }
 }
 
 @Composable
