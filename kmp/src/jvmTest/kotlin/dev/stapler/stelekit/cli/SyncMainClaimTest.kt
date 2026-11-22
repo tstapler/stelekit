@@ -14,7 +14,7 @@ import dev.stapler.stelekit.git.LockVerdict
 import dev.stapler.stelekit.git.OwnedOperationInfo
 import dev.stapler.stelekit.git.OwnedOperationSupport
 import dev.stapler.stelekit.git.RepoOpGate
-import dev.stapler.stelekit.git.SyncOrigin
+import dev.stapler.stelekit.error.SyncOrigin
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.model.EffectiveNotesPath

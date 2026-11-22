@@ -328,7 +328,7 @@ class DomainErrorTest {
     @Test
     fun syncInProgressAndStaleLockCopy_should_NeverReadAsAFailure() {
         val busy = DomainError.GitError.SyncInProgress(heldBy = null)
-        val moving = DomainError.GitError.SyncInProgress(heldBy = dev.stapler.stelekit.git.SyncOrigin.Quiesce)
+        val moving = DomainError.GitError.SyncInProgress(heldBy = dev.stapler.stelekit.error.SyncOrigin.Quiesce)
         val unsure = DomainError.GitError.StaleLockFile("/path/.git/index.lock")
 
         assertEquals("Already syncing", busy.toSyncErrorMessage())

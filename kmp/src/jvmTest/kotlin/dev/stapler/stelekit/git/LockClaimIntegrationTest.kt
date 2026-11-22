@@ -6,6 +6,7 @@ package dev.stapler.stelekit.git
 
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.error.SyncOrigin
 import java.io.File
 import java.nio.file.Files
 import java.util.Random

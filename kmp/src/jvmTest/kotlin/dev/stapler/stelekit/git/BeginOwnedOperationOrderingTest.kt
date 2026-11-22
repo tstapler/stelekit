@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.git
 
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.error.SyncOrigin
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.model.RepoRoot

@@ -6,6 +6,7 @@ package dev.stapler.stelekit.git
 import arrow.core.Either
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.error.SyncOrigin
 import dev.stapler.stelekit.git.testsupport.cloningStub
 import kotlinx.coroutines.runBlocking
 import java.io.File

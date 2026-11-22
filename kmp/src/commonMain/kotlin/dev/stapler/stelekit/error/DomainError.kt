@@ -1,7 +1,6 @@
 package dev.stapler.stelekit.error
 
 import dev.stapler.stelekit.git.LockVerdict
-import dev.stapler.stelekit.git.SyncOrigin
 import dev.stapler.stelekit.merge.WriteRefusedReason
 
 sealed interface DomainError {

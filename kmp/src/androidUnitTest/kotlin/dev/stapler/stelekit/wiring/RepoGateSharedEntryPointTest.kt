@@ -13,7 +13,7 @@ import dev.stapler.stelekit.git.FetchResult
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.GitSyncBusyCounter
 import dev.stapler.stelekit.git.SkipReason
-import dev.stapler.stelekit.git.SyncOrigin
+import dev.stapler.stelekit.error.SyncOrigin
 import dev.stapler.stelekit.git.TickOutcome
 import dev.stapler.stelekit.git.runColdFetch
 import dev.stapler.stelekit.git.SyncStalenessStore

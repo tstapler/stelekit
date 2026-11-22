@@ -260,7 +260,7 @@ import dev.stapler.stelekit.editor.ImageAttachCallbackContractTest
 import dev.stapler.stelekit.export.ExportServiceJournalRangeTest
 import dev.stapler.stelekit.export.ExportServiceLinkedPagesTest
 import dev.stapler.stelekit.git.GitCloneRetryCleanupTest
-import dev.stapler.stelekit.jobs.TrackedCopyRunHostTest
+import dev.stapler.stelekit.merge.TrackedCopyRunHostTest
 import dev.stapler.stelekit.ui.GitSyncCoordinatorJobsTest
 import dev.stapler.stelekit.ui.GitSyncCoordinatorCoalesceTest
 import dev.stapler.stelekit.git.GitConfigCloneDepthMappingTest

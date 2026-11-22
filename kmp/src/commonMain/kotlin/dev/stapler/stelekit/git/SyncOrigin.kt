@@ -3,26 +3,7 @@
 
 package dev.stapler.stelekit.git
 
-/**
- * Who started a repository operation. Used for logging, the run-in-flight info and rerun bookkeeping only;
- * consent and guard semantics stay on [SyncTrigger] (ADR-001 decision 1).
- */
-enum class SyncOrigin {
-    UiPress,
-    FollowUp,
-    Scheduled,
-    Worker,
-    Cold,
-    Resume,
-    RateLimitRetry,
-    Resolve,
-    Repair,
-    Deepen,
-    Setup,
-    Clone,
-    Cli,
-    Quiesce,
-}
+import dev.stapler.stelekit.error.SyncOrigin
 
 /**
  * The consent trigger this origin carries into `sync()`; null for origins that call their own method (ADR-001

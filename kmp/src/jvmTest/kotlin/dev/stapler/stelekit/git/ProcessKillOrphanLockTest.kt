@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.error.SyncOrigin
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.util.concurrent.TimeUnit

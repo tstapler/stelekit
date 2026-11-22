@@ -6,7 +6,7 @@ package dev.stapler.stelekit.ux
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.LockVerdict
 import dev.stapler.stelekit.git.PausedRetryInfo
-import dev.stapler.stelekit.git.SyncOrigin
+import dev.stapler.stelekit.error.SyncOrigin
 import dev.stapler.stelekit.git.SyncRunInfo
 import dev.stapler.stelekit.git.SyncSheetState
 import dev.stapler.stelekit.git.SyncStaleness
