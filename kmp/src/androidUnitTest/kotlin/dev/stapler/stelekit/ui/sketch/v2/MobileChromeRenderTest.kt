@@ -17,8 +17,11 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -215,6 +218,16 @@ class MobileChromeRenderTest {
         mount(Scenario(elements = listOf(filledRectEl("r1", 40, 40, 40, 30)), select = listOf("r1")))
         shot("phone-17-small-shape")
         rule.onNodeWithTag("handles-hint").assertExists()
+        // The chip is hidden under the compact corners, so the shape is still named for screen readers.
+        rule.onAllNodesWithText("Rectangle 1").assertCountEquals(0)
+        rule.onNodeWithContentDescription("Rectangle 1").assertExists()
+    }
+
+    @Test
+    fun phone_smallShapeWithAMouse_keepsItsNameChip() {
+        mount(Scenario(elements = listOf(filledRectEl("r1", 40, 40, 40, 30)), select = listOf("r1"), touch = false))
+        shot("phone-17b-small-shape-mouse")
+        rule.onAllNodesWithText("Rectangle 1").assertCountEquals(1)
     }
 
     @Test
