@@ -60,7 +60,7 @@ object DimensionChips {
     /** The chip as an entry of the action chip row (touch has no Enter or D): its label is the suggestion and the action word. */
     fun actionChip(suggestion: DimensionSuggestion, onAccept: () -> Unit): ActionChip {
         val label = "${suggestion.label} ${SketchConstraintStrings.Dimension.CHIP_ACTION}"
-        return ActionChip(DimensionChipTags.CHIP, label, SketchConstraintStrings.Dimension.chipName(suggestion.label), onAccept)
+        return ActionChip(DimensionChipTags.CHIP, label, SketchConstraintStrings.Dimension.chipName(suggestion.label), onClick = onAccept)
     }
 }
 
