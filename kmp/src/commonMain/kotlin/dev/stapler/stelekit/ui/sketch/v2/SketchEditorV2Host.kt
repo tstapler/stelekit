@@ -58,6 +58,7 @@ import dev.stapler.stelekit.sketch.v2.tools.SelectTool
 import dev.stapler.stelekit.sketch.v2.tools.ToolContext
 import dev.stapler.stelekit.sketch.v2.tools.PointerKind
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
+import dev.stapler.stelekit.sketch.v2.tools.TouchFloor
 import dev.stapler.stelekit.sketch.v2.view.SceneBounds
 import dev.stapler.stelekit.sketch.v2.view.ScreenPx
 import dev.stapler.stelekit.ui.sketch.ModernPreviewEnvironment
@@ -336,10 +337,11 @@ private fun BoxScope.SketchCanvasContent(
             .wheelInput(controller),
     ) {
         SketchCanvasV2(layer, liveOps, viewport, painter)
-        SelectionVisuals(controller)
         ConstraintPickerOverlay(controller, pointer)
     }
     NameTagsOverlay(controller)
+    // After the name tags, so a tiny shape's handles are drawn over its label and never hidden by it (the overlay takes no pointer input).
+    SelectionVisuals(controller)
     controller.tools.textSession?.let { session ->
         TextEditorOverlay(session, state.viewport, hasHardwareKeyboard = pointer != PointerClass.TouchOrPen, onCommit = controller.tools::commitText)
     }
@@ -357,10 +359,17 @@ private fun SelectionVisuals(controller: SketchEditorController) {
     SelectionOverlay(select.selectionFrame(ctx), select.handleLayout(ctx), state.viewport, onZoomToSelection = controller.view::zoomToSelection, vertices = select.vertexPoints(ctx))
 }
 
+/** How many touch floors the shorter side of a single selection needs before its name label fits beside the handles. */
+private const val TINY_SELECTION_FLOORS = 2.0
+
 @Composable
 private fun BoxScope.NameTagsOverlay(controller: SketchEditorController) {
     val state = controller.ui
     if (state.selection.isEmpty()) return
+    // A single selected shape too small for full handles shows its corner handles instead of a name: the label would sit on them.
+    val tiny = state.selection.singleOrNull()?.let { controller.doc.scene[ElementId(it)] }?.let(SceneBounds::of)
+        ?.let { b -> minOf(b.width, b.height) * state.viewport.zoom < TINY_SELECTION_FLOORS * TouchFloor.TOUCH_DP * controller.view.pxPerDp } == true
+    if (tiny) return
     val size = controller.view.canvasSize
     val layout = remember(controller.revision, state.viewport, state.selection, size) {
         NameTagsModel.layout(controller.doc.scene, state.viewport, size.x, size.y, NameTagSubjects(selected = state.selection.mapTo(LinkedHashSet(), ::ElementId)))

@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchChromeStrings
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,11 +82,9 @@ fun PanelSheetHeader(size: SheetSize, onSize: (SheetSize) -> Unit, onClose: () -
                 .focusable(),
             contentAlignment = Alignment.Center,
         ) { Text("═", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        Text(
-            SheetSizing.toggleLabel(size),
-            Modifier.size(width = BUTTON_WIDTH, height = HEADER_TARGET).testTag(SheetTags.TOGGLE).clickable { onSize(SheetSizing.cycle(size)) },
-        )
-        Text("Close", Modifier.size(width = BUTTON_WIDTH, height = HEADER_TARGET).testTag(SheetTags.CLOSE).clickable(onClick = onClose))
+        // Real buttons, centred in 48 dp targets, not bare labels pinned to the top-left of a box.
+        TextButton({ onSize(SheetSizing.cycle(size)) }, Modifier.size(width = BUTTON_WIDTH, height = HEADER_TARGET).testTag(SheetTags.TOGGLE)) { Text(SheetSizing.toggleLabel(size)) }
+        TextButton(onClose, Modifier.size(width = BUTTON_WIDTH, height = HEADER_TARGET).testTag(SheetTags.CLOSE)) { Text(SketchChromeStrings.CLOSE) }
     }
 }
 
@@ -100,5 +100,5 @@ private fun arrowResize(type: KeyEventType, key: Key, size: SheetSize, onSize: (
     return true
 }
 
-private val HEADER_TARGET = 44.dp
+private val HEADER_TARGET = 48.dp
 private val BUTTON_WIDTH = 88.dp

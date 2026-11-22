@@ -60,6 +60,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -162,8 +165,12 @@ fun ToolStrip(
 }
 
 /** Fades the edge of a scrolling strip that still has content behind it, so a strip that scrolls always looks like it does. */
-internal fun Modifier.scrollEdgeFade(scroll: ScrollState, vertical: Boolean, color: Color, ink: Color): Modifier = drawWithContent {
+internal fun Modifier.scrollEdgeFade(scroll: ScrollState, vertical: Boolean, color: Color, ink: Color, gutter: Dp = 0.dp): Modifier = drawWithContent {
     drawContent()
+    if (gutter > 0.dp) {
+        drawGutterChevrons(scroll, vertical, ink, gutter.toPx())
+        return@drawWithContent
+    }
     val fade = StripLook.FADE.toPx().coerceAtMost((if (vertical) size.height else size.width) / 2f)
     val clear = color.copy(alpha = 0f)
     val extent = if (vertical) size.height else size.width
@@ -193,6 +200,27 @@ internal fun Modifier.scrollEdgeFade(scroll: ScrollState, vertical: Boolean, col
         drawRect(brush, if (vertical) Offset(0f, from) else Offset(from, 0f), if (vertical) Size(size.width, fade) else Size(fade, size.height))
         chevron(extent - fade / 3f, 1f)
     }
+}
+
+/**
+ * The cue for a scroller that reserves a [gutter] at each end for it (the panel tab row): a bare chevron centred in the gutter, so
+ * it never sits on top of a label. Drawn in the scroller's own frame, outside the padded content.
+ */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawGutterChevrons(scroll: ScrollState, vertical: Boolean, ink: Color, gutter: Float) {
+    val reach = StripLook.CHEVRON.toPx()
+    val extent = if (vertical) size.height else size.width
+    val mid = (if (vertical) size.width else size.height) / 2f
+    fun chevron(centre: Float, toward: Float) {
+        val tip = centre + toward * reach / 2f
+        val back = tip - toward * reach
+        val path = Path().apply {
+            if (vertical) { moveTo(mid - reach, back); lineTo(mid, tip); lineTo(mid + reach, back) }
+            else { moveTo(back, mid - reach); lineTo(tip, mid); lineTo(back, mid + reach) }
+        }
+        drawPath(path, ink, style = Stroke(StripLook.CHEVRON_STROKE.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+    if (scroll.value > 0) chevron(gutter / 2f, -1f)
+    if (scroll.canScrollForward) chevron(extent - gutter / 2f, 1f)
 }
 
 @Composable
@@ -309,7 +337,7 @@ private fun ToolLockButton(c: StripControls) {
     val on = c.state.toolLock
     StripButton(
         c, "toollock", StripTags.TOOL_LOCK, if (on) SketchChromeStrings.TOOL_LOCK_ON else SketchChromeStrings.TOOL_LOCK_OFF, SketchChromeStrings.TOOL_LOCK_HINT, if (on) StripIcon.LockClosed else StripIcon.LockOpen,
-        TouchTargetFloor.TOUCH_DP, selected = on, enabled = true, onClick = { c.state.toolLock = !c.state.toolLock },
+        TouchTargetFloor.TOUCH_DP, selected = on, enabled = true, onClick = { c.state.toolLock = !c.state.toolLock }, toggle = on,
     )
 }
 
@@ -325,6 +353,7 @@ private fun ToolLockButton(c: StripControls) {
 private fun StripButton(
     c: StripControls, key: String, tag: String, description: String, hint: String, icon: StripIcon, sizeDp: Int,
     selected: Boolean, enabled: Boolean, onClick: () -> Unit, opensFlyout: (() -> Unit)? = null, iconSize: Dp = StripLook.ICON,
+    toggle: Boolean? = null,
 ) {
     val hit = maxOf(sizeDp, TouchTargetFloor.floorDp(c.pointer))
     val requester = c.focus.getValue(key)
@@ -347,9 +376,18 @@ private fun StripButton(
             .onSecondaryPress(opensFlyout)
             .semantics {
                 contentDescription = description
-                role = Role.Button
-                this.selected = selected
-                if (!enabled) stateDescription = "unavailable"
+                // A toggle (Tool lock) is a switch with an on/off state; a tool is a button that is selected or not.
+                if (toggle != null) {
+                    role = Role.Switch
+                    toggleableState = ToggleableState(toggle)
+                } else {
+                    role = Role.Button
+                    this.selected = selected
+                }
+                if (!enabled) {
+                    disabled()
+                    stateDescription = SketchChromeStrings.UNAVAILABLE
+                }
             }
             .combinedClickable(onLongClickLabel = if (opensFlyout != null) SketchStrings.Strip.FLYOUT_OPEN_LABEL else SketchStrings.Strip.SHOW_HELP_LABEL, onLongClick = longPress) {
                 if (enabled) {

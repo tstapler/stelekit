@@ -139,7 +139,7 @@ object TargetPicker {
 
     /** The Cancel chip for the action chip row: touch has no Esc and the status row may be collapsed (UX-98, D-17). */
     fun cancelChip(onCancel: () -> Unit): ActionChip =
-        ActionChip(PickerTags.CANCEL, SketchConstraintStrings.Picker.CANCEL, SketchConstraintStrings.Picker.CANCEL_NAME, onCancel)
+        ActionChip(PickerTags.CANCEL, SketchConstraintStrings.Picker.CANCEL, SketchConstraintStrings.Picker.CANCEL_NAME, onClick = onCancel)
 
     fun listNameOf(element: SceneElement, part: TargetPart): String {
         val name = ElementNames.nameOf(element)

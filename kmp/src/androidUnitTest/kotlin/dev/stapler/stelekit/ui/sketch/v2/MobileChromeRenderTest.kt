@@ -218,6 +218,15 @@ class MobileChromeRenderTest {
     }
 
     @Test
+    fun phone_gridAndSnapOn() {
+        mount(Scenario(elements = listOf(box), select = listOf("r1")))
+        rule.onNodeWithTag("sketch.grid").performClick()
+        rule.onNodeWithTag("sketch.snap").performClick()
+        rule.waitForIdle()
+        shot("phone-18-grid-snap-on")
+    }
+
+    @Test
     fun phone_longPressPopups() {
         mount(Scenario(elements = listOf(box), select = listOf("r1")))
         val popups = listOf("select" to StripTags.tool(ToolId.Select), "delete" to StripTags.DELETE, "snap" to "sketch.snap")

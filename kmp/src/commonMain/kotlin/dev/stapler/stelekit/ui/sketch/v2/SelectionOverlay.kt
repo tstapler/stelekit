@@ -112,7 +112,7 @@ fun SelectionOverlay(
             }
         }
         layout?.handles?.forEach { h ->
-            val c = viewport.toScreen(h.centre)
+            val c = viewport.toScreen(h.hitCentre)
             val hitPx = (h.halfHit * 2.0 * viewport.zoom).toFloat()
             Box(
                 Modifier
@@ -123,7 +123,9 @@ fun SelectionOverlay(
             )
         }
         val small = layout != null && (layout.needsTransformMenu || layout.tier == HandleTier.Compact)
-        if (small && minOf(frame.box.width, frame.box.height) > 0.0) {
+        // Only where it helps: a line's vertices are grab points already, and there is nothing to zoom into at the maximum zoom.
+        val zoomWouldHelp = vertices.isEmpty() && viewport.zoom < viewport.maxZoom - ZOOM_EPS
+        if (small && zoomWouldHelp && minOf(frame.box.width, frame.box.height) > 0.0) {
             // At the end, above the view cluster: the start side is where the host's action chips (Free draw, Tool lock) sit.
             HandlesChip(onZoomToSelection, Modifier.align(Alignment.BottomEnd).padding(end = CHIP_END, bottom = CHIP_BOTTOM))
         }
@@ -194,4 +196,5 @@ private const val DEGREES_PER_RADIAN_NUMERATOR = 180.0
 private const val OUTLINE_DP = 1.5f
 private const val HANDLE_VISIBLE_DP = 8f
 private const val VERTEX_DP = 6f
+private const val ZOOM_EPS = 1e-6
 private const val BAR_BUTTON_DP = 48

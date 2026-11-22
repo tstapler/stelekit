@@ -33,8 +33,6 @@ ui/sketch/v2/ElementsPanelModel.kt :: const val NAME_TAKEN = "An element with th
 ui/sketch/v2/ElementsPanelModel.kt :: const val TAB_LABEL = "Elements"
 ui/sketch/v2/ElementsPanelModel.kt :: is CommandError.NameTooLong -> "Names can have up to ${error.limit} characters"
 ui/sketch/v2/ElementsPanelModel.kt :: val description: String get() = "Layer ${layer.name}, $elementCount elements, ${if (expanded) "expanded" else "collapsed"}"
-ui/sketch/v2/HelpPopup.kt :: .semantics { role = Role.Button; contentDescription = "Help: ${entry.name}" }
-ui/sketch/v2/HelpPopup.kt :: Text("Close")
 ui/sketch/v2/HelpPopup.kt :: onLongClick(label = "Show help") { state.show(entry); true }
 ui/sketch/v2/KeyDispatcher.kt :: "bringForward" -> KeyAction.Arrange(ZOrderMove.Forward)
 ui/sketch/v2/KeyDispatcher.kt :: "bringToFront" -> KeyAction.Arrange(ZOrderMove.ToFront)

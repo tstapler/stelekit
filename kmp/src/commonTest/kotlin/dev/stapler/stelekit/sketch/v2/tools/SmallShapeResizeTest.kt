@@ -63,6 +63,34 @@ class SmallShapeResizeTest {
     }
 
     @Test
+    fun aMouse_should_GetNoCornerHandlesOnASmallShape_AndAPressNearACornerMovesIt() {
+        val ctx = testToolContext(sceneOfElements(filledRectEl("a", 0, 0, 20, 20)))
+        val tool = SelectTool(listOf(elId("a")))
+        assertEquals(HandleTier.None, tool.handleLayout(ctx)?.tier, "the compact corners are for touch only")
+        assertEquals(emptyList(), tool.handleLayout(ctx)?.handles)
+        val r = runScenario(tool, ctx) { down(2, 2); move(15, 15); up(15, 15) }
+        assertTrue(r.commands.single() is MoveSelectionCommand, "a mouse press near the corner moves the shape, got ${r.commands}")
+    }
+
+    @Test
+    fun aCompactCorner_should_ReachOutwardLessThanInward_SoANeighbourStaysSelectable() {
+        val layout = HandleLayout.compact(30.0, 30.0, 60.0, 60.0, 0.0, 1.0, floorPx = 132.0)
+        val inward = HandleLayout.COMPACT_REACH * 60.0
+        assertEquals(Handle.NW, layout.hit(inward * 0.9, inward * 0.9), "a press just inside the corner resizes")
+        assertEquals(Handle.NW, layout.hit(-inward * HandleLayout.COMPACT_OUTWARD_SHARE * 0.9, 0.0), "a press just outside, within the outward cap, still resizes")
+        assertEquals(null, layout.hit(-inward * 0.9, -inward * 0.9), "further outside is the neighbour's")
+    }
+
+    @Test
+    fun aPressBesideASmallSelectedShape_should_SelectTheNeighbour_NotResizeIt() {
+        val small = filledRectEl("a", 100, 100, 20, 20)
+        val neighbour = filledRectEl("b", 70, 100, 28, 20)
+        val ctx = testToolContext(sceneOfElements(small, neighbour))
+        val r = runScenario(SelectTool(listOf(elId("a")), touchPresent = true), ctx) { down(96, 101, kind = touch); up(96, 101, kind = touch) }
+        assertEquals(listOf("b"), (r.finalTool as SelectionAware).selection.map { it.value })
+    }
+
+    @Test
     fun aBoxWithNoArea_should_GetNoCornerHandles() {
         assertEquals(HandleTier.None, HandleLayout.compact(50.0, 0.0, 100.0, 0.0, 0.0, 1.0, floorPx = 44.0).tier)
     }
