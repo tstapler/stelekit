@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.120.0](https://github.com/tstapler/stelekit/compare/v0.119.0...v0.120.0) (2026-11-22)
+
+
+### Features
+
+* **sketch:** revamp the mobile tool strip, top bar, panel tabs and menu ([#707](https://github.com/tstapler/stelekit/issues/707)) ([17ef327](https://github.com/tstapler/stelekit/commit/17ef327eef35bef7655564b4c809a48159b22562))
+
+
+### Bug Fixes
+
+* **sketch:** mobile chrome review fixes (L1-L3, A1-A10) ([#711](https://github.com/tstapler/stelekit/issues/711)) ([7431a49](https://github.com/tstapler/stelekit/commit/7431a49642b8f471bdd75a7514e8e64f7ad82680))
+* **sketch:** touch targets were sized in pixels, not dp, so handles and shapes were hard to hit on a phone ([#706](https://github.com/tstapler/stelekit/issues/706)) ([6b00bac](https://github.com/tstapler/stelekit/commit/6b00bac1b5279758ff50f6820d57f763d1277137))
+
 ## [0.119.0](https://github.com/tstapler/stelekit/compare/v0.118.0...v0.119.0) (2026-11-21)
 
 
