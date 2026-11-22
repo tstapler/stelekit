@@ -13,6 +13,8 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -127,7 +129,7 @@ class ControlHelpPopupTest {
         mount()
         // On a phone the lock sits at the far end of the scrolling strip, so scroll to it before pressing it.
         rule.onNodeWithTag(StripTags.TOOL_LOCK).performScrollTo().assertIsToggleable().assertIsOff()
-        rule.onNodeWithTag(StripTags.TOOL_LOCK).performClick()
+        rule.onNodeWithTag(StripTags.TOOL_LOCK).performSemanticsAction(SemanticsActions.OnClick)
         rule.waitForIdle()
         rule.onNodeWithTag(StripTags.TOOL_LOCK).assertIsOn()
         rule.onNodeWithTag(StripTags.UNDO).assertIsNotEnabled()
