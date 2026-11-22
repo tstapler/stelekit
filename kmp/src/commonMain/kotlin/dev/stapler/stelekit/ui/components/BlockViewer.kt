@@ -24,6 +24,8 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
 import dev.stapler.stelekit.ui.theme.StelekitTheme
@@ -119,6 +121,10 @@ fun WikiLinkText(
     hasSectionFilter: Boolean = false,
     /** Called when the user taps a cross-section unavailable link (FR-14). */
     onUnavailableLinkTap: () -> Unit = {},
+    /** Paragraph alignment; table cells use it for GFM column alignment. */
+    textAlign: TextAlign = TextAlign.Unspecified,
+    /** Base weight override (table header cells); null keeps the body style's weight. */
+    fontWeight: FontWeight? = null,
 ) {
     val blockRefBg = StelekitTheme.colors.blockRefBackground
     val codeBg = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
@@ -206,7 +212,9 @@ fun WikiLinkText(
 
     BasicText(
         text = annotatedString,
-        style = MaterialTheme.typography.bodyMedium.copy(color = textColor),
+        style = MaterialTheme.typography.bodyMedium.copy(color = textColor, textAlign = textAlign).let {
+            if (fontWeight != null) it.copy(fontWeight = fontWeight) else it
+        },
         onTextLayout = { textLayoutResult = it },
         modifier = modifier
             .padding(vertical = 4.dp)

@@ -140,6 +140,8 @@ fun SettingsDialog(
     updatesNotifications: UpdatesNotificationSettingsState? = null,
     // Image-annotator toggles (auto-return, sticky tools); null hides the rows.
     annotatorSettings: dev.stapler.stelekit.platform.Settings? = null,
+    // Table display toggles (wrap/scroll, numeric alignment, density); null hides the rows.
+    tablePreferences: dev.stapler.stelekit.ui.components.TablePreferences? = null,
 ) {
     if (visible) {
         Dialog(
@@ -226,7 +228,7 @@ fun SettingsDialog(
                             LfsTransferSection(lfsTransfer)
                         }
                     }
-                    SettingsCategory.EDITOR -> EditorSettings(annotatorSettings)
+                    SettingsCategory.EDITOR -> EditorSettings(annotatorSettings, tablePreferences)
                     SettingsCategory.PLUGINS -> PluginsSettings(assetIndexing, assetPlugins, onViewPipelineLog, scrollToPluginList)
                     SettingsCategory.ADVANCED -> AdvancedSettings(onReindex, annotatorSettings)
                     SettingsCategory.VOICE -> if (voiceSettings != null && onRebuildVoicePipeline != null) {

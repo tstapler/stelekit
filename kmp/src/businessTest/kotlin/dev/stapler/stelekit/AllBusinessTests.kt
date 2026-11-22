@@ -310,6 +310,7 @@ import dev.stapler.stelekit.tags.LlmTagProviderBranchesTest
 import dev.stapler.stelekit.llm.LlmSuggestionWriterEditsTest
 import dev.stapler.stelekit.vault.VaultHeaderModelTest
 import dev.stapler.stelekit.parser.MarkdownParserInlineStorageTest
+import dev.stapler.stelekit.parser.TableRoundTripTest
 import dev.stapler.stelekit.git.lfs.FileSystemLfsContentProbeTest
 import dev.stapler.stelekit.git.SqlDelightGitConfigRepositoryRoundTripTest
 import dev.stapler.stelekit.migration.ChangeApplierBranchesTest
@@ -426,6 +427,9 @@ import dev.stapler.stelekit.ui.StelekitViewModelNavigationTest
 import dev.stapler.stelekit.ui.StelekitViewModelUiToggleTest
 import dev.stapler.stelekit.ui.screens.DiskConflictFullScreenStateTest
 import dev.stapler.stelekit.ui.components.MermaidRenderKeyTest
+import dev.stapler.stelekit.ui.components.TableColumnLayoutTest
+import dev.stapler.stelekit.ui.components.TableModelTest
+import dev.stapler.stelekit.ui.components.TablePreferencesTest
 import dev.stapler.stelekit.ui.components.MermaidRenderResultTest
 import dev.stapler.stelekit.ui.components.MermaidSvgAspectRatioTest
 import dev.stapler.stelekit.ui.state.BlockInvalidationIntegrationTest
@@ -759,6 +763,10 @@ import org.junit.runners.Suite
     LlmSuggestionWriterEditsTest::class,
     VaultHeaderModelTest::class,
     MarkdownParserInlineStorageTest::class,
+    TableRoundTripTest::class,
+    TableModelTest::class,
+    TableColumnLayoutTest::class,
+    TablePreferencesTest::class,
     FileSystemLfsContentProbeTest::class,
     SqlDelightGitConfigRepositoryRoundTripTest::class,
     ChangeApplierBranchesTest::class,

@@ -108,11 +108,15 @@ data class ThematicBreakBlockNode(
  *
  * [indentLevel] is the outline nesting depth (mirrors [BulletBlockNode.level]) for tables
  * that decorate a bullet; top-level tables default to 0.
+ *
+ * [rawText] is the table's source lines as written (delimiter row, padding and all), so
+ * serialization can return the user's text unchanged instead of re-rendering it from the cells.
  */
 data class TableBlockNode(
     val headers: List<String>,
     val alignments: List<TableAlignment?>,
     val rows: List<List<String>>,
+    val rawText: String? = null,
     override val content: List<InlineNode> = emptyList(),
     override val children: List<BlockNode> = emptyList(),
     override val properties: Map<String, String> = emptyMap(),
