@@ -4,9 +4,6 @@
 
 package dev.stapler.stelekit.ui
 
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import dev.stapler.stelekit.sketch.v2.text.TextMetricsProvider
 import dev.stapler.stelekit.performance.NoOpSpanRecorder
 import dev.stapler.stelekit.performance.SpanRecorder
 import dev.stapler.stelekit.platform.DefaultEncryptionManager

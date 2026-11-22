@@ -3,6 +3,7 @@ test-class-count: 67
 golden-fixture-count: 9
 change-record: kmp/src/businessTest/kotlin/dev/stapler/stelekit/db/SketchMigrationTest.kt -- additive sketch_sheets.schema_version column (commit bac2d41bdc); the test asserts the new column set, no assertion weakened
 change-record: kmp/src/businessTest/kotlin/dev/stapler/stelekit/db/SketchStubGatingTest.kt -- insertSketchSheet takes the new schema_version argument (commit bac2d41bdc); same assertions
+change-record: kmp/src/jvmTest/kotlin/dev/stapler/stelekit/ui/sketch/SketchPreviewRenderTest.kt -- ImageBlock now draws sketch embeds through LocalSketchEmbedRenderer (W9 module split, #712); the test provides it, no assertion changed
 # sketch test files (path)
 kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/sketch/DimensionFieldTest.kt
 kmp/src/androidUnitTest/kotlin/dev/stapler/stelekit/ui/sketch/DrawingAttachUiTest.kt

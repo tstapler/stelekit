@@ -7,7 +7,6 @@ package dev.stapler.stelekit.ui.sketch.v2
 import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
 import dev.stapler.stelekit.sketch.v2.tools.InputEvent
 import dev.stapler.stelekit.sketch.v2.tools.InputType
-import dev.stapler.stelekit.sketch.v2.tools.Modifiers
 import dev.stapler.stelekit.sketch.v2.tools.PointerKind
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
 import dev.stapler.stelekit.sketch.v2.view.ScreenPx

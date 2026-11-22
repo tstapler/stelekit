@@ -10,7 +10,6 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.platform.FileSystem
-import dev.stapler.stelekit.projectbridge.FileProjectSidecarStore
 import dev.stapler.stelekit.projectbridge.ProjectSidecarStore
 import dev.stapler.stelekit.projectbridge.SidecarCodec
 import dev.stapler.stelekit.projectbridge.SidecarRead

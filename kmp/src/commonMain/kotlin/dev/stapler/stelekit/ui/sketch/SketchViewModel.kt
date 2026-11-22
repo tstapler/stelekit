@@ -32,7 +32,6 @@ import dev.stapler.stelekit.sketch.Zone
 import dev.stapler.stelekit.sketch.ZoneConstraints
 import dev.stapler.stelekit.sketch.ZoneReport
 import dev.stapler.stelekit.sketch.ZoneSet
-import dev.stapler.stelekit.units.Inches
 import dev.stapler.stelekit.util.UuidGenerator
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CancellationException
