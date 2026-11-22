@@ -12,14 +12,14 @@ via `server.mjs` (sets the COOP/COEP headers the wasm build needs for
 ./gradlew :kmp:wasmJsBrowserDistribution -PenableJs=true
 
 cd e2e
-npm ci
-npx playwright install --with-deps chromium
+bun install --frozen-lockfile
+bunx playwright install --with-deps chromium
 
-npm test                              # tests/demo.spec.ts + tests/benchmark.spec.ts
-npx playwright test tests/demo.spec.ts        # functional suite only (what CI runs)
-npx playwright test tests/benchmark.spec.ts   # timing benchmarks (not run in CI — see below)
-npm run test:headed                   # watch it run in a real browser window
-npm run test:ui                       # Playwright's interactive UI mode
+bun run test                            # tests/demo.spec.ts + tests/benchmark.spec.ts
+bunx playwright test tests/demo.spec.ts        # functional suite only (what CI runs)
+bunx playwright test tests/benchmark.spec.ts   # timing benchmarks (not run in CI — see below)
+bun run test:headed                  # watch it run in a real browser window
+bun run test:ui                     # Playwright's interactive UI mode
 ```
 
 ## What's covered today

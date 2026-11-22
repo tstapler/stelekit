@@ -1,0 +1,3 @@
+site/node_modules
+e2e/node_modules
+scripts/sketch-goldens/node_modules

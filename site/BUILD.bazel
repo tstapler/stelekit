@@ -1,0 +1,11 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+# Astro build via the pinned Bun. Needs network (bun install) and the writable checkout, so it
+# is local + manual: `bazel test //site:build`.
+sh_test(
+    name = "build",
+    srcs = ["//third_party/bun:run_bun.sh"],
+    args = ["$(rootpath //third_party/bun:bun)", "site", "--install", "run", "build"],
+    data = ["//third_party/bun:bun", "//:MODULE.bazel"],
+    tags = ["local", "manual", "requires-network", "web"],
+)
