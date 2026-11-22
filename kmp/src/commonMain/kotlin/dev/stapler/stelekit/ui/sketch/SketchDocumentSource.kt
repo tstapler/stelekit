@@ -15,6 +15,8 @@ import dev.stapler.stelekit.repository.SketchSheetRepository
 import dev.stapler.stelekit.sketch.SheetProps
 import dev.stapler.stelekit.sketch.SketchDocument
 import dev.stapler.stelekit.sketch.SketchScene
+import dev.stapler.stelekit.sketch.toScenePrimitive
+import dev.stapler.stelekit.sketch.toSheetProps
 import dev.stapler.stelekit.sketch.ZoneSet
 import dev.stapler.stelekit.sketch.v2.runtime.projection.SheetProjectionSource
 import kotlinx.coroutines.flow.first

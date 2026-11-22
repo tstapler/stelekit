@@ -81,10 +81,12 @@ class SketchPreviewRenderTest {
         var selected = 0
         rule.setContent {
             MaterialTheme {
-                ImageBlock(
-                    url = "../assets/stelekit-sketch/$slug/preview.svg", altText = "sketch", onStartEditing = {},
-                    onToggleSelect = { selected++ }, onOpenSketch = { opened++ }, sketchSlug = slug,
-                )
+                CompositionLocalProvider(dev.stapler.stelekit.ui.components.LocalSketchEmbedRenderer provides SketchEmbedPreviewRenderer) {
+                    ImageBlock(
+                        url = "../assets/stelekit-sketch/$slug/preview.svg", altText = "sketch", onStartEditing = {},
+                        onToggleSelect = { selected++ }, onOpenSketch = { opened++ }, sketchSlug = slug,
+                    )
+                }
             }
         }
         rule.onNodeWithText(MISSING_SKETCH_TEXT).performClick()

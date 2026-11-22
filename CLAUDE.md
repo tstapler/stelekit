@@ -119,6 +119,15 @@ done
 pgrep -f '<output_base_hash>' | xargs -r kill -9
 ```
 
+### Bazel JVM module split (W9 stage A)
+
+The JVM sources (`commonMain` + `jvmCommonMain` + `jvmMain`) are not one library any more: `kmp/modules_manifest.bzl` assigns **every file to exactly one module** (`core`, `fusion`, `model`, `platform`, `sched`, `persist`, `sketch_core`, `devices`, `ai`, `git`, `merge`, `asset`, `console`, `export`, `transfer`, `sketch_runtime`, `ui_found`, `ui_main`, `ui_sketch`, `ui_app`,  — 20 generated libraries — plus the prebuilt `stats`/`mermaid`, the umbrella's `app` layer and the `gradle_only` files nothing compiles) and lists each module's direct module deps. `//kmp/modules` builds one `kt_jvm_library` per module (each with its own `common_srcs` expect/actual pair and friend access to the modules below it); `//kmp/src/jvmMain/kotlin:jvm_main_lib` is an umbrella that compiles `app` and re-exports all modules, so `desktop_app` and the test libraries still depend on one label. Android is **not** split (`android_main` still compiles all of `commonMain`).
+
+- **New or moved source file:** run `scripts/kmp-modules-sync.py` (adds it to the module that owns its directory, drops deleted files) or edit the manifest by hand. `ModuleManifestGuardTest` fails if a file is in no module or two, if the module graph has a cycle, or if a file imports a declaration from a module outside its dependency closure. A new import that points "up" the DAG is a layering violation: extract a port or move the type down (see `project_plans/rules-kotlin-wasm-kmp/w9-module-split-analysis.md`), do not add a back edge.
+- **Test targets** that need `internal` access list `["//kmp/src/jvmMain/kotlin:jvm_main_lib"] + kmp_module_labels()` (from `//kmp:modules.bzl`) in `associates`.
+- **Per-module test targets** (e.g. `//kmp/modules:transfer_tests`) depend on the module, not the umbrella, so an edit outside the module's closure leaves them cached. Everything still on the umbrella (`business_tests`, `jvm_tests`) reruns for any JVM source edit; re-homing those tests is the remaining W9 work.
+- Gradle is unaffected: the manifest only describes Bazel targets, and no source file moved directories.
+
 ## Gradle Build & Run Commands
 
 **Always use `./gradlew`, never the system `gradle` command.** The wrapper pins Gradle 9.5.0; the system install is 9.3.1 and cannot share daemons with wrapper builds — using it silently doubles the daemon count and memory footprint.

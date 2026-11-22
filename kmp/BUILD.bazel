@@ -57,6 +57,12 @@ test_suite(
     visibility = ["//visibility:public"],
 )
 
+# The module-split manifest, bundled as a classpath resource for ModuleManifestGuardTest (businessTest).
+exports_files(
+    ["modules_manifest.bzl"],
+    visibility = ["//kmp:__subpackages__"],
+)
+
 # Exposes the SQLDelight schema source so MigrationRunnerSchemaSyncTest can bundle it as a
 # classpath resource (Bazel path — see kmp/src/businessTest/kotlin/BUILD.bazel) instead of
 # relying on the Gradle-only -Dstelekit.sq.file system property.

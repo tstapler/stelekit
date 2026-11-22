@@ -4,5 +4,8 @@
 filegroup(
     name = "srcs",
     srcs = glob(["*.kt"]),
-    visibility = ["//kmp/src/commonMain/kotlin:__pkg__"],
+    visibility = [
+        "//kmp/modules:__pkg__",
+        "//kmp/src/commonMain/kotlin:__pkg__",
+    ],
 )

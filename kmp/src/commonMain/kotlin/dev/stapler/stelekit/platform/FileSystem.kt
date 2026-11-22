@@ -302,11 +302,11 @@ interface FileSystem {
     fun setOnFlushFailed(callback: (suspend (String) -> Unit)?) {}
 
     /**
-     * Registers the [dev.stapler.stelekit.performance.SpanEmitter] used to emit a
+     * Registers the [dev.stapler.stelekit.util.SpanSink] (in practice a `SpanEmitter`) used to emit a
      * "file.write.deferred" span for each write-behind SAF flush, feeding the disk-IO SLO
      * ([dev.stapler.stelekit.performance.SloChecker]). No-op on platforms without write-behind.
      */
-    fun setSpanEmitter(spanEmitter: dev.stapler.stelekit.performance.SpanEmitter?) {}
+    fun setSpanEmitter(spanEmitter: dev.stapler.stelekit.util.SpanSink?) {}
 
     /**
      * Registers a provider for the Android SAF shadow-git-worktree lock key (`GitShadowWorktree`'s

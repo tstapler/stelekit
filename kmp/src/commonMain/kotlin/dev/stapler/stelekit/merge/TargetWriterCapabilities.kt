@@ -13,39 +13,6 @@ import dev.stapler.stelekit.model.EffectiveNotesPath
  */
 const val SAF_ATOMIC_REPLACE_VERIFIED = false
 
-enum class CapabilityAction(val label: String) {
-    RegrantAccess("Re-grant access"),
-    OpenGraph("Open that graph to copy into it"),
-}
-
-/** Why an INACTIVE target cannot be written off-graph. Rendered by the destination chooser as disabled-with-reason. */
-sealed interface WriteCapabilityReason {
-    val userText: String
-    val action: CapabilityAction?
-
-    data object Encrypted : WriteCapabilityReason {
-        override val userText = "This graph is encrypted, so it can only be changed while it is open."
-        override val action = CapabilityAction.OpenGraph
-    }
-
-    /** No verified write grant for the SAF folder (never granted, revoked, or unconfirmed). */
-    data class NoGrant(val canRegrant: Boolean = true) : WriteCapabilityReason {
-        override val userText = "SteleKit no longer has permission to write to this graph's folder."
-        override val action = if (canRegrant) CapabilityAction.RegrantAccess else CapabilityAction.OpenGraph
-    }
-
-    /** Granted SAF folder, but atomic replace is unverified ([SAF_ATOMIC_REPLACE_VERIFIED]). */
-    data object SafInboxOnly : WriteCapabilityReason {
-        override val userText = "This graph's folder cannot be written safely while it is closed."
-        override val action = CapabilityAction.OpenGraph
-    }
-
-    data object PlatformUnsupported : WriteCapabilityReason {
-        override val userText = "This device cannot write to a graph that is not open."
-        override val action = CapabilityAction.OpenGraph
-    }
-}
-
 /** What the policy needs to know about a target; the active graph is always writable (via ActiveTargetWriter). */
 data class OffGraphTarget(
     val graphId: GraphId,

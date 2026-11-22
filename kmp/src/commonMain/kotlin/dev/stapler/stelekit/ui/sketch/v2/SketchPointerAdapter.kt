@@ -15,24 +15,6 @@ import dev.stapler.stelekit.sketch.v2.view.SketchViewport
 import kotlin.math.exp
 import kotlin.math.hypot
 
-enum class RawPhase { Down, Move, Up, Cancel, Hover }
-
-/** One platform pointer sample in screen pixels. [secondaryButton] is the right mouse button or a stylus barrel button. */
-data class RawPointer(
-    val id: Int,
-    val kind: PointerKind,
-    val phase: RawPhase,
-    val position: ScreenPx,
-    val pressure: Double? = null,
-    val secondaryButton: Boolean = false,
-    /** The platform classified this contact as a palm (Android `TOOL_TYPE_PALM`, palm `ACTION_CANCEL`; Task 3.1.2h). */
-    val palm: Boolean = false,
-    val modifiers: Modifiers = Modifiers.None,
-    val timestamp: Long = 0L,
-    /** 2 for the second press of a double click (the platform's own count), else 1. */
-    val clickCount: Int = 1,
-)
-
 /** A rectangle of the canvas in screen pixels; the edge-pan strip's hit area (Task 3.1.2g). */
 data class ScreenRect(val left: Double, val top: Double, val right: Double, val bottom: Double) {
     operator fun contains(p: ScreenPx): Boolean = p.x >= left && p.x < right && p.y >= top && p.y < bottom

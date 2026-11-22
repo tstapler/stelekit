@@ -7,47 +7,6 @@ import okio.ByteString.Companion.encodeUtf8
 /** Identifies a page within one target graph. */
 data class PageKey(val name: String, val isJournal: Boolean = false)
 
-/** Why a writer refused; carried by [DomainError.MergeError.WriteRefused]. A refusal writes nothing. */
-sealed interface WriteRefusedReason {
-    val message: String
-
-    data class PathOutsideGraph(val path: String) : WriteRefusedReason {
-        override val message = "Path is outside the graph: $path"
-    }
-
-    data class InvalidPageName(val name: String) : WriteRefusedReason {
-        override val message = "Invalid page name for a file path"
-    }
-
-    data class JournalFormatUnsupported(val format: String) : WriteRefusedReason {
-        override val message = "Unsupported journal file-name format: $format"
-    }
-
-    data class NotRoundTrippable(val detail: dev.stapler.stelekit.merge.NotRoundTrippable) : WriteRefusedReason {
-        override val message = detail.message
-    }
-
-    /** An owned-page replace found a page without the app's marker (or another digest's); it is never touched. */
-    data class NotOwned(val page: String) : WriteRefusedReason {
-        override val message = "Page '$page' exists and is not an app-generated page; not replacing it"
-    }
-
-    /** The owned page's body no longer matches its recorded hash: the user edited it. Surfaced for confirmation, never overwritten. */
-    data class EditedByUser(val page: String) : WriteRefusedReason {
-        override val message = "Page '$page' was edited since it was generated; not overwriting it"
-    }
-
-    /** The page file holds git conflict markers; resolve the sync conflict first. */
-    data class Conflicted(val page: String) : WriteRefusedReason {
-        override val message = "Page '$page' has unresolved sync conflict markers; resolve them first"
-    }
-
-    /** The target cannot be written off-graph (capability changed, e.g. a grant was lost mid-run). */
-    data class Unwritable(val reason: WriteCapabilityReason) : WriteRefusedReason {
-        override val message = reason.userText
-    }
-}
-
 sealed interface WriteOutcome {
     /** [contentHash] is [TargetWriter.fileHash] of the new file, for the undo manifest. */
     data class Created(val path: String, val contentHash: String) : WriteOutcome

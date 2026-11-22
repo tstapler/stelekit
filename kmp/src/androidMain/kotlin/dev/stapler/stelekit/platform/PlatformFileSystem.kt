@@ -953,11 +953,11 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     private var onFlushComplete: (suspend (String) -> Unit)? = null
     private var onFlushPreWrite: (suspend (String) -> Unit)? = null
     private var onFlushFailed: (suspend (String) -> Unit)? = null
-    private var spanEmitter: dev.stapler.stelekit.performance.SpanEmitter? = null
+    private var spanEmitter: dev.stapler.stelekit.util.SpanSink? = null
     private var gitShadowKeyProvider: (() -> String?)? = null
 
     /** Registers the [dev.stapler.stelekit.performance.SpanEmitter] used to instrument write-behind SAF flushes. */
-    override fun setSpanEmitter(spanEmitter: dev.stapler.stelekit.performance.SpanEmitter?) {
+    override fun setSpanEmitter(spanEmitter: dev.stapler.stelekit.util.SpanSink?) {
         this.spanEmitter = spanEmitter
     }
 

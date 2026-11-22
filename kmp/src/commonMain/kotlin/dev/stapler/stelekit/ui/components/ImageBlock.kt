@@ -27,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -37,6 +38,15 @@ import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
 import coil3.compose.rememberAsyncImagePainter
 import dev.stapler.stelekit.platform.image.ImageTier
+
+/**
+ * Draws a sketch embed: (slug, modifier, onRemoveEmbed, onOpenPage). Provided by the sketch UI so the block UI does not
+ * import it (module boundary: ui_main must not depend on ui_sketch).
+ */
+typealias SketchEmbedRenderer = @Composable (String, Modifier, (() -> Unit)?, (() -> Unit)?) -> Unit
+
+@Suppress("CompositionLocalAllowlist") // set once by GraphContentActiveShell, next to LocalOpenSketchAction
+val LocalSketchEmbedRenderer = staticCompositionLocalOf<SketchEmbedRenderer?> { null }
 
 /**
  * Renders a Logseq image node as a full-width async image using Coil 3.
@@ -67,14 +77,16 @@ internal fun ImageBlock(
     /** Set for a sketch embed: removes the embed text from its block (the missing-sketch state's Remove embed). */
     onRemoveSketchEmbed: (() -> Unit)? = null,
 ) {
-    if (sketchSlug != null) {
-        dev.stapler.stelekit.ui.sketch.SketchPreviewBlock(
-            slug = sketchSlug,
-            actions = dev.stapler.stelekit.ui.sketch.SketchEmbedActions(onRemoveEmbed = onRemoveSketchEmbed, onOpenPage = onOpenSketch),
-            modifier = modifier.fillMaxWidth().combinedClickable(
+    val sketchRenderer = LocalSketchEmbedRenderer.current
+    if (sketchSlug != null && sketchRenderer != null) {
+        sketchRenderer(
+            sketchSlug,
+            modifier.fillMaxWidth().combinedClickable(
                 onLongClick = onLongPressSelect,
                 onClick = { if (isInSelectionMode) onToggleSelect() else onOpenSketch?.invoke() },
             ),
+            onRemoveSketchEmbed,
+            onOpenSketch,
         )
         return
     }

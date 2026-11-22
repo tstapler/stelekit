@@ -436,6 +436,7 @@ import dev.stapler.stelekit.voice.GenAiErrorMappingTest
 import dev.stapler.stelekit.voice.LlmProviderSupportTest
 import dev.stapler.stelekit.voice.MlKitAvailabilityMappingTest
 import dev.stapler.stelekit.voice.VoicePipelineConfigTest
+import dev.stapler.stelekit.audit.ModuleManifestGuardTest
 import dev.stapler.stelekit.audit.TestHygieneAuditTest
 import dev.stapler.stelekit.audit.TestPlacementAuditTest
 import dev.stapler.stelekit.audit.TestRegistrationAuditTest
@@ -885,6 +886,7 @@ import org.junit.runners.Suite
     MlKitAvailabilityMappingTest::class,
     VoicePipelineConfigTest::class,
     QueryExecutorTest::class,
+    ModuleManifestGuardTest::class,
     TestHygieneAuditTest::class,
     TestPlacementAuditTest::class,
     TestRegistrationAuditTest::class,
