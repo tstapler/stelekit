@@ -9,7 +9,7 @@ import dev.stapler.stelekit.sketch.v2.tools.InputType
 import dev.stapler.stelekit.sketch.v2.tools.PointerKind
 import dev.stapler.stelekit.sketch.v2.view.ScreenPx
 import io.kotest.property.Arb
-import io.kotest.property.arbitrary.double
+import io.kotest.property.arbitrary.numericDouble
 import io.kotest.property.checkAll
 import kotlinx.coroutines.test.runTest
 import kotlin.math.abs
@@ -117,7 +117,7 @@ class LoupeSpecTest {
 
     @Test
     fun place_should_KeepTheBubbleInsideTheCanvasAndOffTheFinger_ForAnyContact() = runTest {
-        checkAll(Arb.double(0.0, phoneW), Arb.double(0.0, phoneH)) { x, y ->
+        checkAll(Arb.numericDouble(0.0, phoneW), Arb.numericDouble(0.0, phoneH)) { x, y ->
             val half = LoupeSpec.DIAMETER_DP / 2
             val p = LoupeSpec.place(ScreenPx(x, y), phoneW, phoneH, 1.0)
             assertTrue(p.centre.x - half >= LoupeSpec.MARGIN_DP - EPS && p.centre.x + half <= phoneW - LoupeSpec.MARGIN_DP + EPS, "x for ($x,$y) $p")
@@ -133,7 +133,7 @@ class LoupeSpecTest {
 
     @Test
     fun layerTransform_should_PutTheContactAtTheBubbleCentre_And_MagnifyAroundIt() = runTest {
-        checkAll(Arb.double(0.0, phoneW), Arb.double(0.0, phoneH), Arb.double(-50.0, 50.0), Arb.double(-50.0, 50.0)) { cx, cy, dx, dy ->
+        checkAll(Arb.numericDouble(0.0, phoneW), Arb.numericDouble(0.0, phoneH), Arb.numericDouble(-50.0, 50.0), Arb.numericDouble(-50.0, 50.0)) { cx, cy, dx, dy ->
             val contact = ScreenPx(cx, cy)
             val centre = LoupeSpec.place(contact, phoneW, phoneH, 1.0).centre
             val t = LoupeSpec.layerTransform(contact, centre)

@@ -355,7 +355,8 @@ private fun BoxScope.SketchCanvasContent(
     SelectionVisuals(controller)
     TouchLoupe(controller.tools.loupe, state.touchLoupe, { controller.view.canvasSize }, pxPerDp) {
         SketchCanvasV2(layer, liveOps, viewport, painter)
-        SelectionVisuals(controller)
+        // The copy takes no clicks: the Zoom chip is left out so nothing inside the bubble can be hit.
+        SelectionVisuals(controller, interactive = false)
     }
     controller.tools.textSession?.let { session ->
         TextEditorOverlay(session, state.viewport, hasHardwareKeyboard = pointer != PointerClass.TouchOrPen, onCommit = controller.tools::commitText)
@@ -363,7 +364,7 @@ private fun BoxScope.SketchCanvasContent(
 }
 
 @Composable
-private fun SelectionVisuals(controller: SketchEditorController) {
+private fun SelectionVisuals(controller: SketchEditorController, interactive: Boolean = true) {
     val state = controller.ui
     val ids = state.selection
     if (ids.isEmpty() || state.activeTool != ToolId.Select) return
@@ -371,7 +372,7 @@ private fun SelectionVisuals(controller: SketchEditorController) {
         ToolContext(controller.doc.scene, state.viewport.zoom, controller.defaultStyle, controller.ids, controller.spatialIndex, controller.view.pxPerDp)
     }
     val select = remember(ids, controller.revision) { SelectTool(ids.map(::ElementId), controller.touchPresent) }
-    SelectionOverlay(select.selectionFrame(ctx), select.handleLayout(ctx), state.viewport, onZoomToSelection = controller.view::zoomToSelection, vertices = select.vertexPoints(ctx))
+    SelectionOverlay(select.selectionFrame(ctx), select.handleLayout(ctx), state.viewport, onZoomToSelection = if (interactive) controller.view::zoomToSelection else null, vertices = select.vertexPoints(ctx))
 }
 
 @Composable

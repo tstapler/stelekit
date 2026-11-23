@@ -75,9 +75,9 @@ fun BoxScope.TouchLoupe(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    val holdFor by remember(tracker) { derivedStateOf { tracker.state.takeIf { it.phase == LoupePhase.Armed }?.pointerId } }
+    val holdFor by remember(tracker) { derivedStateOf { tracker.state.takeIf { it.phase == LoupePhase.Armed }?.let { it.pointerId to it.start } } }
     LaunchedEffect(holdFor) {
-        val id = holdFor ?: return@LaunchedEffect
+        val id = holdFor?.first ?: return@LaunchedEffect
         // Frame time, not delay(): it follows the test clock and needs no timer of its own.
         val start = withFrameMillis { it }
         while (withFrameMillis { it } - start < LoupeSpec.HOLD_MS) Unit
