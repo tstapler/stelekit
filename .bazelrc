@@ -117,15 +117,6 @@ build:ci --experimental_repository_downloader_retries=5
 #   bazel vendor --vendor_dir=vendor --repo='@@rules_android++com_android_dex_extension+com_android_dex'
 common --vendor_dir=vendor
 
-# ── Maven fetch rate limiting ─────────────────────────────────────────────────
-# rules_android_maven (inside rules_android, repo1.maven.org only, so we cannot add the GCS mirror) fetches through
-# coursier, which already backs off on HTTP 429 but gives up quickly: it honours a Retry-After of at most 5s and
-# spends at most 1 min per download (CI defaults 1 min / 5 min apply only when CI is set, and Bazel scrubs the env).
-# Allow a longer Retry-After and up to 10 min of throttle waiting before a repository fetch fails.
-# https://get-coursier.io/docs/next/other-retries
-common --repo_env=COURSIER_MAX_HTTP_RETRY_AFTER=120s
-common --repo_env=COURSIER_MAX_THROTTLE_WAIT=600s
-
 # ── Remote HTTP cache (bazel-cache-proxy) ─────────────────────────────────────
 # Enable with --config=remote-cache.  CI starts bazel-cache-proxy on port 9090
 # backed by the GHA cache API; all jobs on the same PR share the cache.
