@@ -204,6 +204,12 @@ class SnapGuidesHostTest {
         rule.waitForIdle()
         assertEquals(1, haptics.ticks.size, "the same target running longer is not a new snap")
 
+        guides = emptyList()
+        rule.waitForIdle()
+        guides = listOf(guide(70.0).copy(kind = SnapKind.GRID))
+        rule.waitForIdle()
+        assertEquals(1, haptics.ticks.size, "grid guides draw but do not tick")
+
         touch = false
         guides = emptyList()
         rule.waitForIdle()

@@ -15,6 +15,7 @@ import dev.stapler.stelekit.sketch.v2.scene.LineElement
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
+import dev.stapler.stelekit.sketch.v2.snap.GuideAxis
 import dev.stapler.stelekit.sketch.v2.snap.QuarterTurn
 import dev.stapler.stelekit.sketch.v2.snap.ResizeSides
 import dev.stapler.stelekit.sketch.v2.snap.SnapGuide
@@ -221,7 +222,9 @@ class SelectTool(
             if (duplicate) return SnapOutcome(dx, dy, emptyList())
             val out = ctx.snap.move(ctx.scene, ctx.snapIndex, items.toSet(), dx, dy, ctx.zoom, ctx.pxPerDp, bypass = event.modifiers.ctrl)
             val locked = event.modifiers.shift && !shift
-            return SnapOutcome(if (locked && dx == 0.0) 0.0 else out.dx, if (locked && dy == 0.0) 0.0 else out.dy, out.guides)
+            // A locked axis stays put, so a guide on it would show a snap that did not happen.
+            val shown = out.guides.filterNot { (locked && dx == 0.0 && it.axis == GuideAxis.Vertical) || (locked && dy == 0.0 && it.axis == GuideAxis.Horizontal) }
+            return SnapOutcome(if (locked && dx == 0.0) 0.0 else out.dx, if (locked && dy == 0.0) 0.0 else out.dy, shown)
         }
 
         private fun travelled(event: InputEvent, ctx: ToolContext): Boolean =

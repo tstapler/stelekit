@@ -602,7 +602,7 @@ private fun CanvasArea(
         // Above the chip row, not under the hint: the top of the canvas is where a finger drags and a toast there hides the shape being moved.
         val chipsRaised = canvasPx.width / density.density < CHIPS_BESIDE_CLUSTER_MIN_DP
         config.toasts?.let {
-            ToastLaneOverlay(it, canvasPx.height / density.density, Modifier.align(Alignment.BottomStart).padding(start = 8.dp, end = 8.dp, bottom = (if (chipsRaised) CHIPS_RAISED else 8.dp) + TOAST_ABOVE_CHIPS))
+            ToastLaneOverlay(it, canvasPx.height / density.density, Modifier.align(Alignment.BottomStart).padding(start = 8.dp, end = 16.dp + config.endInset + PanPadPolicy.stripInsetDp(config.edgeStripAtEnd).dp, bottom = (if (chipsRaised) CHIPS_RAISED else 8.dp) + TOAST_ABOVE_CHIPS))
         }
         ActionChipRow(
             config.priorityChips + listOfNotNull(
@@ -735,7 +735,7 @@ private val CLUSTER_LABEL_PAD = 6.dp
 private val HELP_GAP = 8.dp
 private val HELP_CLEARS_ZOOM_CHIP = 56.dp
 private val CHIPS_RAISED = 64.dp
-private val TOAST_ABOVE_CHIPS = 56.dp
+private val TOAST_ABOVE_CHIPS = ChromeBudget.TOOL_TARGET_DP.dp + 8.dp
 private const val CHIPS_BESIDE_CLUSTER_MIN_DP = 420f
 private const val CLUSTER_ALPHA = 0.92f
 

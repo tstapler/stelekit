@@ -129,6 +129,15 @@ class SnapFollowupsTest {
         assertTrue(assertNotNull(r.previews[1]).guides.isEmpty())
     }
 
+    @Test
+    fun shiftAxisLock_should_NotShowAGuideOnTheLockedAxis() {
+        val offset = filledRectEl("right", 300, 0, 100, 120)
+        val scene = sceneOfElements(filledRectEl("a", 0, 0, 200, 120), offset)
+        val shift = Modifiers(shift = true)
+        val r = runScenario(select("a"), ctx(scene)) { down(100, 60); move(100, 62, mods = shift); up(100, 62, mods = shift) }
+        assertTrue(r.previews.filterNotNull().all { p -> p.guides.none { it.axis == GuideAxis.Vertical } }, "dx is locked at 0, so no vertical guide")
+    }
+
     // ---- bypass ----------------------------------------------------------------------------------------------------
 
     @Test

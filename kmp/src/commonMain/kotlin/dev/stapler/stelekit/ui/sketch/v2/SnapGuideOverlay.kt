@@ -41,7 +41,8 @@ fun SnapGuideOverlay(guides: List<SnapGuide>, viewport: SketchViewport, haptics:
     val ticker = remember { SnapTicker() }
     val clock = remember { TimeSource.Monotonic.markNow() }
     LaunchedEffect(guides) {
-        val tick = ticker.onGuides(guides, clock.elapsedNow().inWholeMilliseconds)
+        // Grid guides change at every cell crossing, which would buzz continuously; only element snaps tick.
+        val tick = ticker.onGuides(guides.filter { it.kind != SnapKind.GRID }, clock.elapsedNow().inWholeMilliseconds)
         if (tick && haptics) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
     }
     if (guides.isEmpty()) return
