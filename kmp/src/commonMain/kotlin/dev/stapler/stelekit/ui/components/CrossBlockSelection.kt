@@ -75,7 +75,7 @@ class CrossBlockSelectionState {
     private val infos = HashMap<String, BlockTextInfo>()
 
     fun register(blockUuid: String, info: BlockTextInfo) { infos[blockUuid] = info }
-    fun unregister(blockUuid: String, info: BlockTextInfo) { infos.remove(blockUuid, info) }
+    fun unregister(blockUuid: String, info: BlockTextInfo) { if (infos[blockUuid] === info) infos.remove(blockUuid) }
     fun info(blockUuid: String): BlockTextInfo? = infos[blockUuid]
     fun clear() { selection = null }
 

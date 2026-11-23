@@ -1079,6 +1079,7 @@ KMP_MODULES = {
    "persist"
   ],
   "srcs": [
+   "commonMain/kotlin/dev/stapler/stelekit/export/BulletListExporter.kt",
    "commonMain/kotlin/dev/stapler/stelekit/export/ClipboardProvider.kt",
    "commonMain/kotlin/dev/stapler/stelekit/export/ExportDtos.kt",
    "commonMain/kotlin/dev/stapler/stelekit/export/ExportService.kt",
@@ -1305,6 +1306,7 @@ KMP_MODULES = {
    "commonMain/kotlin/dev/stapler/stelekit/ui/components/CapturePreviewDialog.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/components/CodeFenceBlock.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/components/CommandPalette.kt",
+   "commonMain/kotlin/dev/stapler/stelekit/ui/components/CrossBlockSelection.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/components/DebugMenuOverlay.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/components/DemoBanner.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/components/DiskConflictDialog.kt",
@@ -1351,6 +1353,7 @@ KMP_MODULES = {
    "commonMain/kotlin/dev/stapler/stelekit/ui/components/ShareDialog.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/components/ShareDialogHost.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/components/ShareInboxPanel.kt",
+   "commonMain/kotlin/dev/stapler/stelekit/ui/components/SharePreviewPane.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/components/ShortcutTable.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/components/Sidebar.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/components/SnippetText.kt",
