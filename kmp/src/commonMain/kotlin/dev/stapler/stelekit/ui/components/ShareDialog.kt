@@ -13,6 +13,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import arrow.core.left
+import dev.stapler.stelekit.error.DomainError.ExportError
 import dev.stapler.stelekit.export.ShareProvider
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
@@ -31,6 +33,7 @@ private const val FORMAT_MARKDOWN = "markdown"
 private const val FORMAT_PLAIN_TEXT = "plain-text"
 private const val FORMAT_HTML = "html"
 private const val FORMAT_JSON = "json"
+private const val FORMAT_BULLET_LIST = "bullet-list"
 
 /**
  * Inner content of the share dialog — scope selector, format picker, and destination tiles.
@@ -39,6 +42,7 @@ private const val FORMAT_JSON = "json"
  * Auth state is owned by AppState ([AppState.shareIsGoogleAuthenticated]) and refreshed
  * when the dialog opens via [ShareDialogHost.refreshShareGoogleAuthState].
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ShareContent(
     appState: AppState,
@@ -60,6 +64,7 @@ fun ShareContent(
     var journalToText by remember { mutableStateOf("") }
     var dateError by remember { mutableStateOf<String?>(null) }
     var exportError by remember { mutableStateOf<String?>(null) }
+    var previewVisible by remember { mutableStateOf(false) }
 
     val isSelectionEmpty = appState.shareScope == ShareScope.SelectedBlocks && selectedBlockUuids.isEmpty()
     val isGoogleAuthenticated = appState.shareIsGoogleAuthenticated
@@ -176,8 +181,9 @@ fun ShareContent(
             FORMAT_PLAIN_TEXT to "Plain Text",
             FORMAT_HTML to "HTML",
             FORMAT_JSON to "JSON",
+            FORMAT_BULLET_LIST to "Bullet List",
         )
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -186,7 +192,6 @@ fun ShareContent(
                     selected = appState.shareFormat == formatId,
                     onClick = { viewModel.setShareFormat(formatId) },
                     label = { Text(label, style = MaterialTheme.typography.labelSmall) },
-                    modifier = Modifier.weight(1f),
                 )
             }
         }
@@ -221,6 +226,52 @@ fun ShareContent(
 
         exportError?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+
+        // Preview
+        OutlinedButton(
+            onClick = { previewVisible = !previewVisible },
+            enabled = page != null && !isSelectionEmpty,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (previewVisible) "Hide Preview" else "Preview")
+        }
+        if (previewVisible && page != null && !isSelectionEmpty) {
+            val previewDates = if (appState.shareScope == ShareScope.JournalRange) {
+                val from = runCatching { LocalDate.parse(journalFromText) }.getOrNull()
+                val to = runCatching { LocalDate.parse(journalToText) }.getOrNull()
+                from to to
+            } else null to null
+            val shareScope = appState.shareScope
+            val formatId = appState.shareFormat
+            SharePreviewPane(
+                previewKey = listOf(
+                    shareScope, page.uuid, blocks, selectedBlockUuids, formatId,
+                    appState.shareStripTrackingParams, previewDates,
+                ),
+                compute = {
+                    if (shareScope == ShareScope.JournalRange && (previewDates.first == null || previewDates.second == null)) {
+                        ExportError.SerializationFailed("Enter a valid date range to preview").left()
+                    } else {
+                        viewModel.resolveExportContent(
+                            shareScope, page, blocks, selectedBlockUuids, formatId,
+                            previewDates.first, previewDates.second,
+                        )
+                    }
+                },
+                onCopy = {
+                    val dates = datesForScope() ?: return@SharePreviewPane
+                    viewModel.exportScopeToClipboard(
+                        shareScope = appState.shareScope,
+                        page = page,
+                        allBlocks = blocks,
+                        selectedUuids = selectedBlockUuids,
+                        formatId = appState.shareFormat,
+                        journalFrom = dates.first,
+                        journalTo = dates.second,
+                    )
+                },
+            )
         }
 
         // Clipboard

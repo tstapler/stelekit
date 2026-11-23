@@ -28,6 +28,10 @@ kt_android_library(
             "**/ArchiveUrlEntryPointTest.kt",
             # Composes @Composable lambdas; no Compose compiler plugin in this target (Gradle-only)
             "**/AnnotateImageEntryPointTest.kt",
+            # Composes @Composable lambdas; no Compose compiler plugin in this target (Gradle-only)
+            "**/CrossBlockDragSelectTest.kt",
+            "**/SharePreviewPaneTest.kt",
+            "**/EditorSettingsDragSelectTest.kt",
             # Compose host tests for the flagged project list and settings panel (Gradle-only, R-AU)
             "**/ProjectSettingsPanelTest.kt",
             "**/ProjectListPhoneLayoutTest.kt",

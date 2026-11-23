@@ -21,12 +21,16 @@ import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.platform.ANNOTATOR_AUTO_RETURN_TO_SELECT_KEY
 import dev.stapler.stelekit.platform.ANNOTATOR_STICKY_TOOLS_KEY
 import dev.stapler.stelekit.platform.Settings
+import dev.stapler.stelekit.ui.components.MULTI_BLOCK_DRAG_SELECT_KEY
+import dev.stapler.stelekit.ui.components.setMultiBlockDragSelect
+import dev.stapler.stelekit.ui.isMobile
 import dev.stapler.stelekit.platform.annotatorAutoReturnToSelect
 import dev.stapler.stelekit.platform.annotatorStickyTools
 import dev.stapler.stelekit.ui.components.TableDensity
 import dev.stapler.stelekit.ui.components.TableOverflow
 import dev.stapler.stelekit.ui.components.TablePreferences
 
+const val DRAG_SELECT_LABEL = "Drag to select text across blocks (mouse)"
 const val ANNOTATOR_AUTO_RETURN_LABEL = "Return to Select after each measurement"
 const val ANNOTATOR_STICKY_TOOLS_LABEL = "Keep tools active"
 const val TABLE_WRAP_LABEL = "Wrap text in table cells"
@@ -41,6 +45,16 @@ fun EditorSettings(annotatorSettings: Settings? = null, tablePreferences: TableP
         SettingsToggleRow("Show Brackets", true) {}
     }
     if (annotatorSettings != null) {
+        SettingsSection("Text selection") {
+            val isMobile = dev.stapler.stelekit.ui.LocalWindowSizeClass.current.isMobile
+            var checked by remember(annotatorSettings) {
+                mutableStateOf(annotatorSettings.getBoolean(MULTI_BLOCK_DRAG_SELECT_KEY, !isMobile))
+            }
+            SettingsSwitchRow(DRAG_SELECT_LABEL, checked) {
+                checked = it
+                annotatorSettings.setMultiBlockDragSelect(it)
+            }
+        }
         SettingsSection("Image annotator") {
             AnnotatorAutoReturnRow(annotatorSettings)
         }

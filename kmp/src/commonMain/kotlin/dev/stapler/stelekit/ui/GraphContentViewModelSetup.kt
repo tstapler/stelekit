@@ -9,6 +9,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import dev.stapler.stelekit.export.ClipboardProvider
 import dev.stapler.stelekit.export.ExportService
+import dev.stapler.stelekit.export.BulletListExporter
 import dev.stapler.stelekit.export.HtmlExporter
 import dev.stapler.stelekit.export.JsonExporter
 import dev.stapler.stelekit.export.MarkdownExporter
@@ -79,7 +80,7 @@ internal fun rememberGraphContentViewModelStack(
 
     val exportService = remember(clipboardProvider, repos) {
         ExportService(
-            exporters = listOf(MarkdownExporter(), PlainTextExporter(), HtmlExporter(), JsonExporter()),
+            exporters = listOf(MarkdownExporter(), PlainTextExporter(), HtmlExporter(), JsonExporter(), BulletListExporter()),
             clipboard = clipboardProvider,
             blockRepository = repos.blockRepository,
         )

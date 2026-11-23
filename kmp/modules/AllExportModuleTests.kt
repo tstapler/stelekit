@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.modules
 
 import dev.stapler.stelekit.export.BlockRefExpansionTest
+import dev.stapler.stelekit.export.BulletListExporterTest
 import dev.stapler.stelekit.export.HtmlUtilsTest
 import dev.stapler.stelekit.export.JsonExporterTest
 import dev.stapler.stelekit.export.MarkdownExporterTest
@@ -11,6 +12,7 @@ import org.junit.runners.Suite
 @RunWith(Suite::class)
 @Suite.SuiteClasses(
     BlockRefExpansionTest::class,
+    BulletListExporterTest::class,
     HtmlUtilsTest::class,
     JsonExporterTest::class,
     MarkdownExporterTest::class,

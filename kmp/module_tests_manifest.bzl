@@ -55,6 +55,7 @@ KMP_MODULE_TESTS = {
  "export": {
   "srcs": [
    "dev/stapler/stelekit/export/BlockRefExpansionTest.kt",
+   "dev/stapler/stelekit/export/BulletListExporterTest.kt",
    "dev/stapler/stelekit/export/HtmlUtilsTest.kt",
    "dev/stapler/stelekit/export/JsonExporterTest.kt",
    "dev/stapler/stelekit/export/MarkdownExporterTest.kt"
@@ -231,6 +232,7 @@ KMP_MODULE_TESTS = {
    "dev/stapler/stelekit/jobs/BackgroundJobsTest.kt",
    "dev/stapler/stelekit/ui/assets/AssetDetailViewModelTest.kt",
    "dev/stapler/stelekit/ui/assets/ImageViewerPanBoundsTest.kt",
+   "dev/stapler/stelekit/ui/components/CrossBlockSelectionTest.kt",
    "dev/stapler/stelekit/ui/components/EditorToolbarCursorResolutionTest.kt",
    "dev/stapler/stelekit/ui/components/ExtractSuggestionsTest.kt",
    "dev/stapler/stelekit/ui/components/HeadingScaleTest.kt",

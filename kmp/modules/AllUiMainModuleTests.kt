@@ -3,6 +3,7 @@ package dev.stapler.stelekit.modules
 import dev.stapler.stelekit.jobs.BackgroundJobsTest
 import dev.stapler.stelekit.ui.assets.AssetDetailViewModelTest
 import dev.stapler.stelekit.ui.assets.ImageViewerPanBoundsTest
+import dev.stapler.stelekit.ui.components.CrossBlockSelectionTest
 import dev.stapler.stelekit.ui.components.EditorToolbarCursorResolutionTest
 import dev.stapler.stelekit.ui.components.ExtractSuggestionsTest
 import dev.stapler.stelekit.ui.components.HeadingScaleTest
@@ -32,6 +33,7 @@ import org.junit.runners.Suite
     BackgroundJobsTest::class,
     AssetDetailViewModelTest::class,
     ImageViewerPanBoundsTest::class,
+    CrossBlockSelectionTest::class,
     EditorToolbarCursorResolutionTest::class,
     ExtractSuggestionsTest::class,
     HeadingScaleTest::class,
