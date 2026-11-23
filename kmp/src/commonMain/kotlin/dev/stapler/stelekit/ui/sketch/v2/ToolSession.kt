@@ -211,6 +211,9 @@ class ToolSession(
         if (command is AddElementCommand || command is AddFrameCommand) afterCreation(command as? AddElementCommand)
     }
 
+    /** Told after a shape was drawn and selected (tool lock off); the technical sheet opens the Width field from it. */
+    var onShapeCreated: (AddElementCommand) -> Unit = {}
+
     /** A shape was committed: the tool returns to Select unless tool lock is on (UX-04) and the new element is selected. */
     private fun afterCreation(created: AddElementCommand?) {
         val keep = ui.toolLock
@@ -220,6 +223,7 @@ class ToolSession(
             tool = freshTool(ui.activeTool)
             preview = null
             configureAdapter()
+            created?.let(onShapeCreated)
         }
     }
 }

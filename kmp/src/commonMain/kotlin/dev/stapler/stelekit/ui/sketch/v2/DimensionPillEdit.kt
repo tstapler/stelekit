@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.stapler.stelekit.sketch.v2.commands.ResizeElement
+import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.ui.sketch.lengthTextOf
 
@@ -30,7 +31,7 @@ class DimensionPillEdit(val element: SceneElement, start: PillKind) {
     private val specs = DimensionPillModel.specs(element)
     private val entered = mutableMapOf<PillKind, Long>()
 
-    val kinds: List<PillKind> = specs.map { it.kind }
+    val kinds: List<PillKind> = DimensionPillModel.editKinds(element, start)
     var current: PillKind by mutableStateOf(if (start in kinds) start else kinds.first())
         private set
 
@@ -53,9 +54,18 @@ class DimensionPillEdit(val element: SceneElement, start: PillKind) {
         }
     }
 
+    /** Shift+Tab: back to the previous field, keeping what was typed here when it is a valid length; false on the first field. */
+    fun back(text: String): Boolean {
+        val index = kinds.indexOf(current)
+        if (index == 0) return false
+        (DimensionPillModel.parse(text) as? DimensionPillModel.ParsedLength.Valid)?.let { entered[current] = it.sixteenths }
+        current = kinds[index - 1]
+        return true
+    }
+
     private fun finish(): ResizeElement? {
         val changed = entered.filter { (kind, value) -> specs.first { it.kind == kind }.sixteenths != value }
-        return if (changed.isEmpty()) null else DimensionPillModel.resizeCommand(element, changed)
+        return if (changed.isEmpty()) null else PillResize.command(element, changed)
     }
 }
 
@@ -64,6 +74,12 @@ class DimensionPillsState {
     var visible: Boolean by mutableStateOf(true)
     var edit: DimensionPillEdit? by mutableStateOf(null)
         private set
+
+    /** A rectangle was just drawn on a technical sheet: its Width field opens once the shape is selected (set by the tool session, cleared on use). */
+    var autoOpenFor: ElementId? by mutableStateOf(null)
+
+    /** Tests set this to simulate the soft keyboard covering the bottom of the canvas by this many dp; null reads the real insets. */
+    var imeOverlapOverrideDp: Float? by mutableStateOf(null)
 
     fun toggle() {
         visible = !visible

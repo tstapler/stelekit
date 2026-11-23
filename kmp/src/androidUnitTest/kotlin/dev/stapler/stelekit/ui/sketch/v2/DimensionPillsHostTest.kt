@@ -4,6 +4,18 @@
 package dev.stapler.stelekit.ui.sketch.v2
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.ExperimentalTestApi
+import dev.stapler.stelekit.sketch.v2.tools.PointerKind
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.performTouchInput
+import dev.stapler.stelekit.sketch.v2.tools.ToolId
+import dev.stapler.stelekit.sketch.v2.view.ScreenPx
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.performScrollTo
@@ -60,6 +72,7 @@ import kotlin.test.assertTrue
  * inline field, Enter walks Width to Height and commits one undo step, a bad length says why and keeps the old size. Images
  * land in `build/outputs/roborazzi/pills-*.png` (record with `-Proborazzi.test.record=true`). jvmTest-reason: pixels.
  */
+@OptIn(ExperimentalTestApi::class)
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [29], qualifiers = "w360dp-h780dp-xxhdpi")
@@ -79,7 +92,7 @@ class DimensionPillsHostTest {
     /** One dp per scene unit at xxhdpi (density 3), so a 160-unit shape is 160 dp wide. */
     private fun view(panX: Double = 0.0, panY: Double = 0.0, zoom: Double = 3.0) = SketchViewport.of(zoom, panX, panY)
 
-    private fun mount(elements: List<SceneElement>, select: List<String> = listOf("r1"), technical: Boolean = true, viewport: SketchViewport = view()): SketchEditorSession {
+    private fun mount(elements: List<SceneElement>, select: List<String> = listOf("r1"), technical: Boolean = true, viewport: SketchViewport = view(), keyboardDp: Float? = null): SketchEditorSession {
         val rig = V2EditorRig()
         runBlocking { rig.seed() }
         val metrics = FixedAdvanceTextMetricsProvider()
@@ -90,9 +103,12 @@ class DimensionPillsHostTest {
         val session = SketchEditorSession(opened.controller, opened.diagnostics, opened.title, null, opened.slug, sheet, services)
         if (technical) rule.runOnUiThread { session.controller.setSheetKind(SheetKind.Technical) }
         rule.runOnUiThread { elements.forEach { session.controller.submit(AddElement(it)) } }
-        rule.setContent { MaterialTheme(colorScheme = lightColorScheme()) { SketchEditorV2Host(session, ModernPreviewEnvironment(metrics, PainterResources()), onBack = {}) } }
+        rule.setContent {
+            MaterialTheme(colorScheme = lightColorScheme()) { SketchEditorV2Host(session, ModernPreviewEnvironment(metrics, PainterResources()), onBack = {}) }
+        }
         rule.waitForIdle()
         rule.runOnUiThread {
+            session.extras?.pills?.imeOverlapOverrideDp = keyboardDp
             session.controller.ui.viewport = viewport
             session.controller.tools.select(select.map(::ElementId))
         }
@@ -226,15 +242,94 @@ class DimensionPillsHostTest {
     }
 
     @Test
-    fun anOutsideTap_should_CancelTheEdit_AndLeaveTheShapeAlone() {
+    fun aTapOnTheBlankCanvas_should_CancelTheEdit_AndLeaveTheShapeAlone() {
         val session = mount(listOf(rect))
         pill(PillKind.Width).performClick()
         rule.waitForIdle()
         rule.onNodeWithTag(DimensionPillTags.FIELD).performTextReplacement("40\"")
-        rule.onNodeWithTag(DimensionPillTags.SCRIM).performClick()
+        rule.onNodeWithTag(ShellTags.CANVAS).performTouchInput { click(Offset(20f, 20f)) }
         rule.waitForIdle()
         rule.onAllNodesWithTag(DimensionPillTags.EDITOR).assertCountEquals(0)
         assertEquals(160.0, session.rect().width.value)
+    }
+
+    @Test
+    fun thePanAndPinchGestures_should_KeepWorkingWhileAFieldIsOpen() {
+        val session = mount(listOf(rect))
+        pill(PillKind.Width).performClick()
+        rule.waitForIdle()
+        val before = session.controller.ui.viewport
+        rule.runOnUiThread { session.controller.ui.viewport = before.panBy(10.0, 0.0) }
+        rule.waitForIdle()
+        rule.onNodeWithTag(DimensionPillTags.EDITOR).assertIsDisplayed()
+    }
+
+    @Test
+    fun escape_should_CancelTheEdit() {
+        val session = mount(listOf(rect))
+        pill(PillKind.Width).performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag(DimensionPillTags.FIELD).performKeyInput { pressKey(Key.Escape) }
+        rule.waitForIdle()
+        rule.onAllNodesWithTag(DimensionPillTags.EDITOR).assertCountEquals(0)
+        assertEquals(160.0, session.rect().width.value)
+    }
+
+    @Test
+    fun shiftTab_should_GoBackToTheWidthField() {
+        mount(listOf(rect))
+        pill(PillKind.Height).performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag(DimensionPillTags.FIELD).performKeyInput { keyDown(Key.ShiftLeft); pressKey(Key.Tab); keyUp(Key.ShiftLeft) }
+        rule.waitForIdle()
+        rule.onNodeWithTag(DimensionPillTags.FIELD).assertTextContains("10\"")
+    }
+
+    @Test
+    fun anOpenField_should_NeverCoverTheShape() {
+        mount(listOf(rect))
+        pill(PillKind.Width).performClick()
+        rule.waitForIdle()
+        val editor = rule.onNodeWithTag(DimensionPillTags.EDITOR).getBoundsInRoot()
+        val width = pill(PillKind.Width).getBoundsInRoot()
+        assertTrue(editor.top >= width.top - 1.dp || editor.bottom <= width.top + 1.dp || editor.left >= width.right, "field sits clear of the shape: $editor")
+        shot("13-field-clear")
+        rule.onNodeWithTag(DimensionPillTags.FIELD).performKeyInput { pressKey(Key.Escape) }
+        rule.waitForIdle()
+        rule.onAllNodesWithTag(DimensionPillTags.EDITOR).assertCountEquals(0)
+        pill(PillKind.Width).assertIsDisplayed()
+    }
+
+    @Test
+    fun withTheKeyboardUp_should_TheFieldStayAboveItAndTheShapePanClear() {
+        val session = mount(listOf(filledRectEl("r1", 60, 300, 160, 90)), keyboardDp = 330f)
+        pill(PillKind.Width).performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag(DimensionPillTags.EDITOR).assertIsDisplayed()
+        shot("14-keyboard")
+        val editor = rule.onNodeWithTag(DimensionPillTags.EDITOR).getBoundsInRoot()
+        val visibleBottom = rule.onRoot().getBoundsInRoot().bottom - 330.dp
+        assertTrue(editor.bottom <= visibleBottom + 1.dp, "field $editor is above the keyboard top $visibleBottom")
+        assertTrue(session.controller.ui.viewport.panY < 0.0, "the view panned up to keep the shape off the keyboard")
+    }
+
+    @Test
+    fun aRectangleDrawnOnATechnicalSheet_should_OpenItsWidthField() {
+        val session = mount(emptyList(), select = emptyList())
+        rule.runOnUiThread {
+            session.controller.tools.chooseTool(ToolId.Rectangle)
+            val pointer = session.controller.tools
+            pointer.onPointer(RawPointer(1, PointerKind.Mouse, RawPhase.Down, ScreenPx(300.0, 800.0)))
+            pointer.onPointer(RawPointer(1, PointerKind.Mouse, RawPhase.Move, ScreenPx(600.0, 1000.0)))
+            pointer.onPointer(RawPointer(1, PointerKind.Mouse, RawPhase.Up, ScreenPx(600.0, 1000.0)))
+        }
+        rule.waitForIdle()
+        assertEquals(1, session.controller.doc.scene.elementsInOrder.count { it is RectElement })
+        rule.onNodeWithTag(DimensionPillTags.FIELD).assertIsDisplayed()
+        shot("15-autoopen")
+        rule.onNodeWithTag(DimensionPillTags.FIELD).performKeyInput { pressKey(Key.Escape) }
+        rule.waitForIdle()
+        rule.onAllNodesWithTag(DimensionPillTags.EDITOR).assertCountEquals(0)
     }
 
     @Test
@@ -273,6 +368,19 @@ class DimensionPillsHostTest {
         assertEquals(64.0, e.rx.value)
         assertEquals(90.0, e.cx.value - e.rx.value)
         shot("5-circle")
+    }
+
+    @Test
+    fun aCircle_should_AlsoOfferARadiusPill_ThatSetsHalfTheDiameter() {
+        val session = mount(listOf(circle), select = listOf("c1"))
+        pill(PillKind.Radius).assertIsDisplayed()
+        pill(PillKind.Radius).performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag(DimensionPillTags.FIELD).performTextReplacement("4\"")
+        rule.onNodeWithTag(DimensionPillTags.FIELD).performImeAction()
+        rule.waitForIdle()
+        assertEquals(64.0, assertIs<EllipseElement>(session.controller.doc.scene[ElementId("c1")]).rx.value)
+        shot("16-radius")
     }
 
     @Test

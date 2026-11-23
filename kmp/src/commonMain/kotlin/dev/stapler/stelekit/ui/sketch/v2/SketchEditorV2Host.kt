@@ -213,7 +213,7 @@ fun SketchEditorV2Host(
         sheetKind = controller.sheetKind.takeIf { it != dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Converted && !controller.readOnly },
         onSheetKind = { controller.setSheetKind(it) },
         technicalPanel = technical != null && controller.sheetKind == dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical,
-        canvasModifier = remember(canvasAccess) { canvasRegionKeysOf(canvasAccess) },
+        canvasModifier = remember(canvasAccess, extras) { canvasRegionKeysOf(canvasAccess) { extras.pills.edit == null } },
         onRegions = { canvasAccess.regions = it },
         tours = tours,
         onHelp = { controller.overlay = EditorOverlay.HelpSearch },
@@ -292,12 +292,13 @@ private fun canvasKey(controller: SketchEditorController, extras: EditorExtras, 
 }
 
 /** Tab, F6 and Esc across the canvas stops (skip link, elements) and out to the other regions of the one tab order. */
-private fun canvasRegionKeysOf(access: EditorCanvasAccess): Modifier = Modifier.canvasRegionKeys(
+private fun canvasRegionKeysOf(access: EditorCanvasAccess, enabled: () -> Boolean): Modifier = Modifier.canvasRegionKeys(
     focus = { access.focus },
     stops = { access.tree().tabStops },
     present = { access.present },
     moveWithin = access::moveWithin,
     moveOut = access::moveOut,
+    enabled = enabled,
 )
 
 /** True when the first row of the one Esc order that applies is the shell's (the Pan pad, a help popup or the tour), so the canvas passes the press on. */

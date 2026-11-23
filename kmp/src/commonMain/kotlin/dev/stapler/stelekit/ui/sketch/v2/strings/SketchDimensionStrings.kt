@@ -11,10 +11,12 @@ object SketchDimensionStrings {
         const val HEIGHT = "Height"
         const val DIAMETER = "Diameter"
         const val LENGTH = "Length"
+        const val RADIUS = "Radius"
         const val WIDTH_SYMBOL = "W"
         const val HEIGHT_SYMBOL = "H"
         const val DIAMETER_SYMBOL = "Ø"
         const val LENGTH_SYMBOL = "L"
+        const val RADIUS_SYMBOL = "R"
         const val LOCKED = "Locked. Unlock the shape to change its size."
         const val REFUSED = "That size was not accepted."
 

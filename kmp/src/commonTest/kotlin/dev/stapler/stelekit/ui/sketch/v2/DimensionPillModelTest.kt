@@ -46,7 +46,7 @@ class DimensionPillModelTest {
 
     private fun apply(element: SceneElement, values: Map<PillKind, Long>): SceneElement {
         val doc = SketchDocumentV2(scene = sceneOfElements(element))
-        val command = assertNotNull(DimensionPillModel.resizeCommand(element, values))
+        val command = assertNotNull(PillResize.command(element, values))
         return command.apply(doc).getOrNull()!!.doc.scene[element.id]!!
     }
 
@@ -55,7 +55,7 @@ class DimensionPillModelTest {
         assertEquals(listOf(PillKind.Width, PillKind.Height), DimensionPillModel.specs(filledRectEl("r", 0, 0, 160, 80)).map { it.kind })
         assertEquals(listOf(160L, 80L), DimensionPillModel.specs(filledRectEl("r", 0, 0, 160, 80)).map { it.sixteenths })
         assertEquals(listOf(PillKind.Width, PillKind.Height), DimensionPillModel.specs(ellipse("e", 50, 50, 40, 20)).map { it.kind })
-        assertEquals(listOf(PillSpec(PillKind.Diameter, 80)), DimensionPillModel.specs(ellipse("c", 50, 50, 40, 40)))
+        assertEquals(listOf(PillSpec(PillKind.Diameter, 80), PillSpec(PillKind.Radius, 40)), DimensionPillModel.specs(ellipse("c", 50, 50, 40, 40)))
         assertEquals(listOf(PillSpec(PillKind.Length, 50)), DimensionPillModel.specs(line("l", 0, 0, 30, 40)))
         val poly = LineElement(ElementBase(ElementId("p")), listOf(sp(0, 0), sp(10, 0), sp(10, 10)))
         assertTrue(DimensionPillModel.specs(poly).isEmpty())
@@ -73,13 +73,13 @@ class DimensionPillModelTest {
     }
 
     @Test
-    fun layout_should_PutWidthCentredAboveTheTopEdge_AndHeightCentredBesideTheRightEdge() {
+    fun layout_should_PutWidthCentredBelowTheBottomEdge_AndHeightCentredBesideTheRightEdge() {
         val rect = filledRectEl("r", 100, 200, 160, 80)
         val pills = DimensionPillModel.layout(rect, canvas())
         val width = pills.of(PillKind.Width)
         val height = pills.of(PillKind.Height)
         assertEquals(180.0, width.centreX, 0.001)
-        assertTrue(width.bottom <= 200.0 - DimensionPillModel.GAP_DP + 0.001, "width pill sits above the top edge: ${width.bottom}")
+        assertTrue(width.top >= 280.0 + DimensionPillModel.GAP_DP - 0.001, "width pill sits below the bottom edge, away from the rotate handle: ${width.top}")
         assertEquals(240.0, height.centreY, 0.001)
         assertTrue(height.left >= 260.0 + DimensionPillModel.GAP_DP - 0.001, "height pill sits right of the right edge: ${height.left}")
     }
@@ -96,10 +96,10 @@ class DimensionPillModelTest {
     }
 
     @Test
-    fun layout_should_FlipToTheBottom_When_TheShapeIsAtTheTopEdge() {
-        val rect = filledRectEl("r", 100, 10, 160, 80)
+    fun layout_should_FlipToTheTop_When_TheShapeIsAtTheBottomEdge() {
+        val rect = filledRectEl("r", 100, 500, 160, 80)
         val width = DimensionPillModel.layout(rect, canvas()).of(PillKind.Width)
-        assertTrue(width.top >= 90.0, "flipped below the shape: ${width.top}")
+        assertTrue(width.bottom <= 500.0, "flipped above the shape: ${width.bottom}")
     }
 
     @Test
@@ -128,8 +128,8 @@ class DimensionPillModelTest {
     fun layout_should_MoveWidthToTheSide_When_TheShapeIsRotatedAQuarterTurn() {
         val rect = RectElement(ElementBase(ElementId("r")), su(100), su(200), su(160), su(80), angle = PI / 2)
         val width = DimensionPillModel.layout(rect, canvas()).of(PillKind.Width)
-        // Rotated about the centre (180, 240) a quarter turn clockwise, the top edge faces right.
-        assertTrue(width.centreX > 180.0 + 40.0, "width pill follows the rotated top edge: ${width.centreX}")
+        // Rotated about the centre (180, 240) a quarter turn, the bottom edge faces left.
+        assertTrue(width.right < 180.0 - 40.0, "width pill follows the rotated bottom edge: ${width.right}")
     }
 
     @Test
@@ -201,8 +201,8 @@ class DimensionPillModelTest {
 
     @Test
     fun resizeCommand_should_BeNull_When_TheValuesNameNoKindOfTheElement() {
-        assertNull(DimensionPillModel.resizeCommand(filledRectEl("r", 0, 0, 10, 10), mapOf(PillKind.Length to 5L)))
-        assertNull(DimensionPillModel.resizeCommand(filledRectEl("r", 0, 0, 10, 10), emptyMap()))
+        assertNull(PillResize.command(filledRectEl("r", 0, 0, 10, 10), mapOf(PillKind.Length to 5L)))
+        assertNull(PillResize.command(filledRectEl("r", 0, 0, 10, 10), emptyMap()))
     }
 
     @Test
@@ -279,8 +279,8 @@ class DimensionPillModelTest {
     fun layout_should_ClearARotatedBox_ByItsSupportDistance() {
         val rect = RectElement(ElementBase(ElementId("r")), su(100), su(200), su(160), su(80), angle = PI / 2)
         val width = DimensionPillModel.layout(rect, canvas(w = 600.0, h = 800.0)).of(PillKind.Width)
-        // Centre (180, 240); the shape's screen half-width is 40, so the pill's left edge must be past 220.
-        assertTrue(width.left >= 180.0 + 40.0, "pill overlaps the rotated shape: ${width.left}")
+        // Centre (180, 240); the shape's screen half-width is 40, so the pill's right edge must be left of 140.
+        assertTrue(width.right <= 180.0 - 40.0, "pill overlaps the rotated shape: ${width.right}")
     }
 
     @Test
@@ -288,5 +288,104 @@ class DimensionPillModelTest {
         val rect = RectElement(ElementBase(ElementId("r")), su(0), su(0), su(160), su(80))
         val done = assertIs<PillStep.Done>(DimensionPillEdit(rect, PillKind.Height).submit("6\""))
         assertEquals(96.0, assertNotNull(done.command).height)
+    }
+
+    @Test
+    fun resizeCommand_should_TakeARadiusAsHalfTheDiameter() {
+        val resized = assertIs<EllipseElement>(apply(ellipse("c", 100, 100, 40, 40), mapOf(PillKind.Radius to 30L)))
+        assertEquals(30.0, resized.rx.value)
+        assertEquals(60.0, resized.cx.value - resized.rx.value)
+    }
+
+    @Test
+    fun resizeCommand_should_KeepALinesStartPointFixed_WhateverEndItStartsAt() {
+        val reversed = line("l", 30, 40, 0, 0)
+        val scaled = assertIs<LineElement>(apply(reversed, mapOf(PillKind.Length to 100L)))
+        val (a, b) = scaled.points
+        assertEquals(30.0, a.x.value, 0.01)
+        assertEquals(40.0, a.y.value, 0.01)
+        assertEquals(100.0, hypot(b.x.value - a.x.value, b.y.value - a.y.value), 0.5)
+    }
+
+    @Test
+    fun layout_should_GiveACircleADiameterPillBelowAndARadiusPillBesideIt() {
+        val pills = DimensionPillModel.layout(ellipse("c", 150, 200, 40, 40), canvas())
+        assertEquals(listOf(PillKind.Diameter, PillKind.Radius), pills.map { it.kind })
+        assertTrue(pills.of(PillKind.Diameter).top >= 240.0)
+        assertTrue(pills.of(PillKind.Radius).left >= 190.0)
+        assertTrue(!pills[0].overlaps(pills[1]))
+    }
+
+    @Test
+    fun edit_should_BeASingleFieldForACirclesDiameterOrRadius() {
+        val circle = ellipse("c", 50, 50, 40, 40)
+        val radius = DimensionPillEdit(circle, PillKind.Radius)
+        assertEquals(listOf(PillKind.Radius), radius.kinds)
+        val done = assertIs<PillStep.Done>(radius.submit("2\""))
+        assertEquals(64.0, assertNotNull(done.command).width)
+    }
+
+    @Test
+    fun edit_should_GoBackAKeepingWhatWasTyped_AndStayPutOnTheFirstField() {
+        val edit = DimensionPillEdit(filledRectEl("r", 0, 0, 160, 80), PillKind.Width)
+        assertTrue(!edit.back("1\""))
+        edit.submit("20\"")
+        assertEquals(PillKind.Height, edit.current)
+        assertTrue(edit.back("6\""))
+        assertEquals(PillKind.Width, edit.current)
+        assertEquals(lengthTextOf(320), edit.textOf(PillKind.Width))
+        assertEquals(lengthTextOf(96), edit.textOf(PillKind.Height))
+    }
+
+    private val shape = ShapeRect(100.0, 100.0, 260.0, 190.0)
+
+    @Test
+    fun placement_should_PutTheFieldBelowTheShape_WhenThePillIsBelow_AndNeverOverTheShape() {
+        val pill = PlacedPill(PillKind.Width, "W", 180.0, 215.0, 80.0, 44.0)
+        val plan = PillEditorPlacement.plan(shape, pill, 360.0, 600.0, 232.0, 128.0)
+        assertTrue(plan.top >= shape.bottom, "field below the shape: ${plan.top}")
+        assertEquals(0.0, plan.panDy)
+    }
+
+    @Test
+    fun placement_should_ChooseASideThatKeepsTheShapeVisible_WhenTheRightHasNoRoom() {
+        val pill = PlacedPill(PillKind.Height, "H", 300.0, 145.0, 80.0, 44.0)
+        val plan = PillEditorPlacement.plan(shape, pill, 360.0, 600.0, 232.0, 128.0)
+        val box = ShapeRect(plan.left, plan.top, plan.left + 232.0, plan.top + 128.0)
+        assertTrue(!box.intersects(shape), "field covers the shape: $plan")
+    }
+
+    @Test
+    fun placement_should_StayInsideTheCanvasTheKeyboardLeaves_AndPanAShapeThatIsUnderIt() {
+        val low = ShapeRect(100.0, 500.0, 260.0, 590.0)
+        val visible = PillEditorPlacement.visibleHeight(700.0, 320.0)
+        assertEquals(380.0, visible)
+        val plan = PillEditorPlacement.plan(low, null, 360.0, visible, 232.0, 128.0)
+        assertTrue(plan.panDy < 0.0, "a shape under the keyboard is panned up: ${plan.panDy}")
+        val shifted = low.shiftedY(plan.panDy)
+        assertTrue(shifted.top < visible - 56.0)
+        val box = ShapeRect(plan.left, plan.top, plan.left + 232.0, plan.top + 128.0)
+        assertTrue(box.bottom <= visible, "field above the keyboard: ${box.bottom}")
+        assertTrue(!box.intersects(shifted), "field off the shape")
+    }
+
+    @Test
+    fun placement_should_NotPan_When_TheShapeIsAlreadyVisible() {
+        assertEquals(0.0, PillEditorPlacement.plan(shape, null, 360.0, 380.0, 232.0, 128.0).panDy)
+    }
+
+    @Test
+    fun placement_should_FallBackToTheBottomOfTheVisibleArea_When_TheShapeFillsTheView() {
+        val full = ShapeRect(0.0, 0.0, 360.0, 380.0)
+        val plan = PillEditorPlacement.plan(full, null, 360.0, 380.0, 232.0, 128.0)
+        assertEquals(380.0 - 128.0 - DimensionPillModel.EDGE_DP, plan.top, 0.001)
+    }
+
+    @Test
+    fun shapeBounds_should_CoverARotatedBoxByItsCorners() {
+        val rect = RectElement(ElementBase(ElementId("r")), su(100), su(200), su(160), su(80), angle = PI / 2)
+        val b = assertNotNull(PillEditorPlacement.shapeBounds(rect, canvas()))
+        assertEquals(40.0, b.right - b.centreX, 0.001)
+        assertEquals(80.0, b.bottom - b.centreY, 0.001)
     }
 }

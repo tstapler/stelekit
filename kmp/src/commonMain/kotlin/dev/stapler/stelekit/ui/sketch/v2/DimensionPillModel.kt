@@ -5,7 +5,6 @@
 package dev.stapler.stelekit.ui.sketch.v2
 
 import dev.stapler.stelekit.sketch.DimensionInput
-import dev.stapler.stelekit.sketch.v2.commands.ResizeElement
 import dev.stapler.stelekit.sketch.v2.scene.BoxElement
 import dev.stapler.stelekit.sketch.v2.scene.DiamondElement
 import dev.stapler.stelekit.sketch.v2.scene.EllipseElement
@@ -24,7 +23,7 @@ import kotlin.math.round
 import kotlin.math.sin
 
 /** What one on-canvas dimension pill measures. */
-enum class PillKind { Width, Height, Diameter, Length }
+enum class PillKind { Width, Height, Diameter, Radius, Length }
 
 /** One measurable of the selected element: [sixteenths] is its current size (a scene unit is a sixteenth of an inch). */
 data class PillSpec(val kind: PillKind, val sixteenths: Long)
@@ -79,7 +78,7 @@ object DimensionPillModel {
     fun specs(element: SceneElement): List<PillSpec> = when (element) {
         is RectElement -> boxSpecs(element.width.value, element.height.value)
         is DiamondElement -> boxSpecs(element.width.value, element.height.value)
-        is EllipseElement -> if (element.isCircle) listOf(PillSpec(PillKind.Diameter, sixteenths(2 * element.rx.value))) else boxSpecs(2 * element.rx.value, 2 * element.ry.value)
+        is EllipseElement -> if (element.isCircle) listOf(PillSpec(PillKind.Diameter, sixteenths(2 * element.rx.value)), PillSpec(PillKind.Radius, sixteenths(element.rx.value))) else boxSpecs(2 * element.rx.value, 2 * element.ry.value)
         is LineElement -> lineLength(element)?.let { listOf(PillSpec(PillKind.Length, sixteenths(it))) }.orEmpty()
         else -> emptyList()
     }
@@ -88,7 +87,7 @@ object DimensionPillModel {
 
     private fun sixteenths(v: Double): Long = max(1L, round(v).toLong())
 
-    private fun lineLength(e: LineElement): Double? {
+    internal fun lineLength(e: LineElement): Double? {
         if (e.polygon || e.points.size != 2) return null
         val (a, b) = e.points
         return hypot(b.x.value - a.x.value, b.y.value - a.y.value).takeIf { it > 0.0 }
@@ -98,11 +97,21 @@ object DimensionPillModel {
     fun shown(technical: Boolean, readOnly: Boolean, visible: Boolean, selected: Int, tool: ToolId): Boolean =
         technical && !readOnly && visible && selected == 1 && tool == ToolId.Select
 
+    /**
+     * The fields one edit walks through, starting at [start]: Width then Height for a box or ellipse. A circle's Diameter and
+     * Radius are the same size, so each is its own one-field edit.
+     */
+    fun editKinds(element: SceneElement, start: PillKind): List<PillKind> {
+        val all = specs(element).map { it.kind }
+        return if (PillKind.Diameter in all) listOf(if (start in all) start else PillKind.Diameter) else all
+    }
+
     fun label(kind: PillKind): String = when (kind) {
         PillKind.Width -> SketchDimensionStrings.Pill.WIDTH
         PillKind.Height -> SketchDimensionStrings.Pill.HEIGHT
         PillKind.Diameter -> SketchDimensionStrings.Pill.DIAMETER
         PillKind.Length -> SketchDimensionStrings.Pill.LENGTH
+        PillKind.Radius -> SketchDimensionStrings.Pill.RADIUS
     }
 
     private fun symbol(kind: PillKind): String = when (kind) {
@@ -110,6 +119,7 @@ object DimensionPillModel {
         PillKind.Height -> SketchDimensionStrings.Pill.HEIGHT_SYMBOL
         PillKind.Diameter -> SketchDimensionStrings.Pill.DIAMETER_SYMBOL
         PillKind.Length -> SketchDimensionStrings.Pill.LENGTH_SYMBOL
+        PillKind.Radius -> SketchDimensionStrings.Pill.RADIUS_SYMBOL
     }
 
     /** The text on a pill: a one-letter name and the value in feet, inches and sixteenths. */
@@ -118,8 +128,8 @@ object DimensionPillModel {
     fun pillWidthDp(text: String): Double = max(TouchFloor.TOUCH_DP, PAD_DP + CHAR_DP * text.length)
 
     /**
-     * Where each pill of [element] goes on [canvas]. Width goes outside the top edge, Height outside the right edge; a pill that
-     * would leave the canvas flips to the opposite side, and one with no room on either side is clamped inside. A pill that
+     * Where each pill of [element] goes on [canvas]. Width and Diameter go outside the bottom edge (the top edge carries the
+     * rotate handle), Height and Radius outside the right edge; a pill that would leave the canvas flips to the opposite side, and one with no room on either side is clamped inside. A pill that
      * lands on another is moved along its own edge.
      */
     fun layout(element: SceneElement, canvas: PillCanvas): List<PlacedPill> {
@@ -145,7 +155,7 @@ object DimensionPillModel {
     private fun boxPill(element: SceneElement, spec: PillSpec, text: String, w: Double, canvas: PillCanvas): PlacedPill {
         val f = frameOf(element, canvas) ?: return PlacedPill(spec.kind, text, canvas.width / 2, canvas.height / 2, w, PILL_HEIGHT_DP)
         val h = PILL_HEIGHT_DP
-        val horizontalEdge = spec.kind != PillKind.Height
+        val horizontalEdge = spec.kind != PillKind.Height && spec.kind != PillKind.Radius
         fun at(sign: Double): PlacedPill {
             val c = cos(f.angle)
             val s = sin(f.angle)
@@ -155,8 +165,8 @@ object DimensionPillModel {
             val reach = (if (horizontalEdge) f.halfH else f.halfW) + GAP_DP + abs(nx) * w / 2 + abs(ny) * h / 2
             return PlacedPill(spec.kind, text, f.cx + nx * reach, f.cy + ny * reach, w, h)
         }
-        // Top for Width and Right for Height are the outward-facing sides; the other side is the flip.
-        return firstFitting(at(if (horizontalEdge) -1.0 else 1.0), at(if (horizontalEdge) 1.0 else -1.0), canvas)
+        // Bottom for Width and Right for Height are the primary sides; the other side is the flip.
+        return firstFitting(at(1.0), at(-1.0), canvas)
     }
 
     private fun linePill(line: LineElement, spec: PillSpec, text: String, w: Double, canvas: PillCanvas): PlacedPill {
@@ -183,57 +193,19 @@ object DimensionPillModel {
         else -> canvas.clamp(primary)
     }
 
-    /** Moves [p] along its edge (down for Height, left for Width and Length) until it clears every pill in [others]. */
+    /** Moves [p] to the nearest spot that clears every pill in [others]: along its own edge first (down for Height and Radius, left otherwise), then the other ways. */
     private fun separate(p: PlacedPill, others: List<PlacedPill>, canvas: PillCanvas): PlacedPill {
-        var out = canvas.clamp(p)
-        for (o in others) {
-            if (!out.overlaps(o)) continue
-            val moved = if (out.kind == PillKind.Height) out.copy(centreY = o.bottom + GAP_DP + out.heightDp / 2) else out.copy(centreX = o.left - GAP_DP - out.widthDp / 2)
-            out = canvas.clamp(moved)
-        }
-        return out
-    }
-
-    /**
-     * The command that applies typed sizes (sixteenths by kind) to [element]. The top-left of the box stays put, so the shape
-     * grows right and down and does not jump. A line keeps its direction and is scaled to the new length. Null when the
-     * element has no pills or [values] names none of its kinds.
-     */
-    fun resizeCommand(element: SceneElement, values: Map<PillKind, Long>): ResizeElement? {
-        val stats = ElementStats.of(element) ?: return null
-        val specs = specs(element)
-        if (specs.none { it.kind in values }) return null
-        fun size(kind: PillKind, current: Double): Double = values[kind]?.toDouble() ?: current
-        return when (element) {
-            is LineElement -> {
-                val len = lineLength(element) ?: return null
-                val k = size(PillKind.Length, len) / len
-                ResizeElement(element.id, stats.x, stats.y, stats.width * k, stats.height * k)
-            }
-            else -> {
-                val (ax, ay) = anchorKeepingTopLeft(element, stats, values)
-                val diameter = values[PillKind.Diameter]?.toDouble()
-                ResizeElement(element.id, ax, ay, diameter ?: size(PillKind.Width, stats.width), diameter ?: size(PillKind.Height, stats.height))
-            }
-        }
-    }
-
-    /** The unrotated origin that keeps the visible top-left corner of a rotated box where it is (the unrotated one when the angle is 0). */
-    private fun anchorKeepingTopLeft(element: SceneElement, stats: ElementStats, values: Map<PillKind, Long>): Pair<Double, Double> {
-        val angle = (element as? BoxElement)?.angle ?: (element as? EllipseElement)?.angle ?: 0.0
-        if (angle == 0.0) return stats.x to stats.y
-        val diameter = values[PillKind.Diameter]?.toDouble()
-        val w = diameter ?: values[PillKind.Width]?.toDouble() ?: stats.width
-        val h = diameter ?: values[PillKind.Height]?.toDouble() ?: stats.height
-        val c = cos(angle)
-        val s = sin(angle)
-        val cx = stats.x + stats.width / 2
-        val cy = stats.y + stats.height / 2
-        val tlx = cx + (-stats.width / 2) * c - (-stats.height / 2) * s
-        val tly = cy + (-stats.width / 2) * s + (-stats.height / 2) * c
-        val ncx = tlx + (w / 2) * c - (h / 2) * s
-        val ncy = tly + (w / 2) * s + (h / 2) * c
-        return (ncx - w / 2) to (ncy - h / 2)
+        val start = canvas.clamp(p)
+        val blockers = others.filter { start.overlaps(it) }
+        if (blockers.isEmpty()) return start
+        val vertical = p.kind == PillKind.Height || p.kind == PillKind.Radius
+        val o = blockers.first()
+        val down = start.copy(centreY = o.bottom + GAP_DP + start.heightDp / 2)
+        val up = start.copy(centreY = o.top - GAP_DP - start.heightDp / 2)
+        val left = start.copy(centreX = o.left - GAP_DP - start.widthDp / 2)
+        val right = start.copy(centreX = o.right + GAP_DP + start.widthDp / 2)
+        val moves = if (vertical) listOf(down, up, left, right) else listOf(left, right, up, down)
+        return moves.map(canvas::clamp).firstOrNull { c -> others.none { c.overlaps(it) } } ?: start
     }
 
     /** The sixteenths of a typed length, or the parser's message; the same grammar and messages as the Style tab's size fields. */

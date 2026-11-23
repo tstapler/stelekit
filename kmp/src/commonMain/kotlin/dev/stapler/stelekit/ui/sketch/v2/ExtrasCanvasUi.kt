@@ -83,7 +83,7 @@ private fun selectGlyph(controller: SketchEditorController, id: ConstraintId) {
 @Composable
 private fun BoxScope.SuggestionChip(controller: SketchEditorController, extras: EditorExtras) {
     val selection = controller.ui.selection
-    val idle = extras.dimension.state == DimensionEditState.Closed && controller.constraints.picker == null && controller.ui.activeTool == ToolId.Select
+    val idle = extras.dimension.state == DimensionEditState.Closed && extras.pills.edit == null && controller.constraints.picker == null && controller.ui.activeTool == ToolId.Select
     if (!idle || selection.isEmpty() || controller.readOnly) return
     val dof = controller.constraintState.analysis.dof
     val suggestion = remember(controller.revision, selection, dof, extras.tier) {

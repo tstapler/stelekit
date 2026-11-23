@@ -215,8 +215,10 @@ fun Modifier.canvasRegionKeys(
     present: () -> Set<TabStop>,
     moveWithin: (CanvasFocus) -> Unit,
     moveOut: (TabStop) -> Unit,
+    /** False while a text field inside the canvas (the dimension pill's) owns Tab and Esc. */
+    enabled: () -> Boolean = { true },
 ): Modifier = onPreviewKeyEvent { e ->
-    if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+    if (e.type != KeyEventType.KeyDown || !enabled()) return@onPreviewKeyEvent false
     val backward = e.isShiftPressed
     when (e.key) {
         Key.Tab -> {

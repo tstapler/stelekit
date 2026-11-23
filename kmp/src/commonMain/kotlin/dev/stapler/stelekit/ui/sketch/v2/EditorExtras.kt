@@ -89,7 +89,11 @@ class EditorExtras(
     val dimension = DimensionEditor { controller.sheetKind == SheetKind.Technical }
 
     /** The on-canvas dimension pills of a technical sheet: whether they show and the size edit in progress. */
-    val pills = DimensionPillsState()
+    val pills = DimensionPillsState().also { pills ->
+        controller.tools.onShapeCreated = { command ->
+            if (controller.sheetKind == SheetKind.Technical && pills.visible && command.element is dev.stapler.stelekit.sketch.v2.scene.RectElement) pills.autoOpenFor = command.element.id
+        }
+    }
     val autoConstrain = AutoConstrainState({ controller.sheetKind })
 
     var grid: Boolean by mutableStateOf(false)
