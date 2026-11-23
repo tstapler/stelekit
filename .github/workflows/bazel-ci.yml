@@ -152,7 +152,7 @@ jobs:
           max_attempts: 2
           retry_wait_seconds: 30
           command: |
-            set -o pipefail
+            set -euo pipefail
             scripts/kmp-module-tests-sync.py
             git diff --exit-code -- kmp/module_tests_manifest.bzl kmp/modules ':!kmp/modules/BUILD.bazel'
             bazel test //kmp:business_tests //kmp/modules:all --build_tests_only \

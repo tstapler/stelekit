@@ -13,6 +13,17 @@ import dev.stapler.stelekit.db.ReplaceWikilinkTest
 import dev.stapler.stelekit.db.SerializerParserSymmetryTest
 import dev.stapler.stelekit.db.SidecarManagerPositionTest
 import dev.stapler.stelekit.diagnostics.DirectoryScannerTest
+import dev.stapler.stelekit.git.BeforeUnloadWarningTest
+import dev.stapler.stelekit.git.BranchRepairServiceTest
+import dev.stapler.stelekit.git.CloneProgressTrackerTest
+import dev.stapler.stelekit.git.ConflictResolverTest
+import dev.stapler.stelekit.git.DefaultBranchDetectionTest
+import dev.stapler.stelekit.git.GitHostAdapterTest
+import dev.stapler.stelekit.git.GitSyncBusyCounterTest
+import dev.stapler.stelekit.git.GitWriteLockNamingTest
+import dev.stapler.stelekit.git.InFlightCloneTrackerTest
+import dev.stapler.stelekit.git.SecretRedactionTest
+import dev.stapler.stelekit.git.WasmGitWriteServiceAlgorithmsTest
 import dev.stapler.stelekit.git.merge.BlockDiff3Test
 import dev.stapler.stelekit.git.merge.Diff3Test
 import dev.stapler.stelekit.git.merge.GitAttributesTest
@@ -23,6 +34,7 @@ import dev.stapler.stelekit.git.model.DirtySetMarkerTest
 import dev.stapler.stelekit.git.model.GitDataApiModelsTest
 import dev.stapler.stelekit.git.model.GitLabCommitModelsTest
 import dev.stapler.stelekit.git.model.SyncStateTest
+import dev.stapler.stelekit.vault.VaultRootMigrationTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
 
@@ -42,6 +54,17 @@ import org.junit.runners.Suite
     SerializerParserSymmetryTest::class,
     SidecarManagerPositionTest::class,
     DirectoryScannerTest::class,
+    BeforeUnloadWarningTest::class,
+    BranchRepairServiceTest::class,
+    CloneProgressTrackerTest::class,
+    ConflictResolverTest::class,
+    DefaultBranchDetectionTest::class,
+    GitHostAdapterTest::class,
+    GitSyncBusyCounterTest::class,
+    GitWriteLockNamingTest::class,
+    InFlightCloneTrackerTest::class,
+    SecretRedactionTest::class,
+    WasmGitWriteServiceAlgorithmsTest::class,
     BlockDiff3Test::class,
     Diff3Test::class,
     GitAttributesTest::class,
@@ -52,5 +75,6 @@ import org.junit.runners.Suite
     GitDataApiModelsTest::class,
     GitLabCommitModelsTest::class,
     SyncStateTest::class,
+    VaultRootMigrationTest::class,
 )
 class AllGitModuleTests

@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.modules
 
 import dev.stapler.stelekit.db.sidecar.SidecarSerializationTest
+import dev.stapler.stelekit.performance.DebounceManagerTest
 import dev.stapler.stelekit.query.QueryParserTest
 import dev.stapler.stelekit.repository.BlockOperationsEdgeCaseTest
 import dev.stapler.stelekit.repository.DatalogBlockRepositoryTest
@@ -16,6 +17,7 @@ import org.junit.runners.Suite
 @RunWith(Suite::class)
 @Suite.SuiteClasses(
     SidecarSerializationTest::class,
+    DebounceManagerTest::class,
     QueryParserTest::class,
     BlockOperationsEdgeCaseTest::class,
     DatalogBlockRepositoryTest::class,

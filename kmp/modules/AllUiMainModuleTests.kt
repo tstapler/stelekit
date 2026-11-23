@@ -10,6 +10,9 @@ import dev.stapler.stelekit.ui.components.QueryResultCountTextTest
 import dev.stapler.stelekit.ui.components.UuidKeysTest
 import dev.stapler.stelekit.ui.screens.DiskConflictDiffTest
 import dev.stapler.stelekit.ui.screens.GlobalUnlinkedReferencesViewModelTest
+import dev.stapler.stelekit.ui.screens.ImportViewModelTest
+import dev.stapler.stelekit.ui.screens.JournalsViewModelEditorTest
+import dev.stapler.stelekit.ui.screens.JournalsViewModelTest
 import dev.stapler.stelekit.ui.screens.SearchViewModelTest
 import dev.stapler.stelekit.ui.screens.git.CloneFailureCopyTest
 import dev.stapler.stelekit.ui.screens.git.HunkBlockPickerTest
@@ -36,6 +39,9 @@ import org.junit.runners.Suite
     UuidKeysTest::class,
     DiskConflictDiffTest::class,
     GlobalUnlinkedReferencesViewModelTest::class,
+    ImportViewModelTest::class,
+    JournalsViewModelEditorTest::class,
+    JournalsViewModelTest::class,
     SearchViewModelTest::class,
     CloneFailureCopyTest::class,
     HunkBlockPickerTest::class,
