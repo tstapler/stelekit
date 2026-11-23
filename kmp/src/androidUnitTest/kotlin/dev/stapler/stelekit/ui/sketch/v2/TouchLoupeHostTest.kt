@@ -7,7 +7,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertIsToggleable
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.performTouchInput
 import com.github.takahirom.roborazzi.captureRoboImage
 import dev.stapler.stelekit.sketch.v2.V2EditorRig
@@ -29,6 +32,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import kotlin.test.assertEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -97,6 +101,7 @@ class TouchLoupeHostTest {
         select(controller, "a")
         holdDrag(Offset(370f, 465f), Offset(398f, 472f))
         assertTrue(controller.tools.loupe.state.visible)
+        rule.onNodeWithTag(LoupeTags.BUBBLE).assertExists()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/loupe-1-drag-close-shapes.png")
         release()
         assertFalse(controller.tools.loupe.state.visible, "release hides the bubble")
@@ -122,9 +127,12 @@ class TouchLoupeHostTest {
         select(controller, "a")
         canvas().performTouchInput { down(Offset(255f, 465f)) }
         assertEquals(LoupePhase.Armed, controller.tools.loupe.state.phase)
-        rule.mainClock.advanceTimeBy(LoupeSpec.HOLD_MS * 2)
-        rule.waitForIdle()
+        rule.mainClock.autoAdvance = false
+        rule.mainClock.advanceTimeBy(LoupeSpec.HOLD_MS - FRAME_SLACK_MS)
+        assertFalse(controller.tools.loupe.state.visible, "not before the hold time")
+        rule.mainClock.advanceTimeBy(LoupeSpec.HOLD_MS)
         assertTrue(controller.tools.loupe.state.visible, "${controller.tools.loupe.state}")
+        rule.mainClock.autoAdvance = true
         release()
     }
 
@@ -165,7 +173,20 @@ class TouchLoupeHostTest {
         rule.waitForIdle()
         select(controller, "a")
         holdDrag(Offset(370f, 465f), Offset(398f, 472f))
+        assertTrue(controller.tools.loupe.state.visible, "the gesture is tracked")
+        rule.onNodeWithTag(LoupeTags.BUBBLE).assertDoesNotExist()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/loupe-5-setting-off.png")
+        release()
+    }
+
+    @Test
+    fun loupe_should_NotShow_When_FingerDrawingIsOff_BecauseATouchDragPans() {
+        val controller = mount(*pair(120))
+        controller.ui.fingerDrawing = false
+        select(controller, "a")
+        holdDrag(Offset(370f, 465f), Offset(398f, 472f))
+        assertEquals(LoupePhase.Hidden, controller.tools.loupe.state.phase)
+        rule.onNodeWithTag(LoupeTags.BUBBLE).assertDoesNotExist()
         release()
     }
 
@@ -175,7 +196,7 @@ class TouchLoupeHostTest {
         assertTrue(controller.ui.touchLoupe)
         rule.onNodeWithTag(ShellTags.OVERFLOW).performClick()
         rule.waitForIdle()
-        rule.onNodeWithTag(LoupeTags.TOGGLE).assertExists()
+        rule.onNodeWithTag(LoupeTags.TOGGLE).assertExists().assertIsToggleable().assertHeightIsAtLeast(MIN_TARGET_DP.dp)
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/loupe-7-overflow-switch.png")
         rule.onNodeWithTag(LoupeTags.TOGGLE).performClick()
         rule.waitForIdle()
@@ -184,5 +205,7 @@ class TouchLoupeHostTest {
 
     private companion object {
         const val ZOOM = 3.0
+        const val FRAME_SLACK_MS = 20L
+        const val MIN_TARGET_DP = 40
     }
 }

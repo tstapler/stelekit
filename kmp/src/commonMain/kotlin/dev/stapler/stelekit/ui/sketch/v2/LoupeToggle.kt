@@ -25,6 +25,7 @@ import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 
 object LoupeTags {
     const val TOGGLE = "sketch.loupe.toggle"
+    const val BUBBLE = "sketch.loupe.bubble"
 }
 
 /**

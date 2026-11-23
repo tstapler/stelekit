@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -96,7 +97,7 @@ fun BoxScope.TouchLoupe(
     val ring = MaterialTheme.colorScheme.outline
     Box(
         modifier
-            .clearAndSetSemantics { }
+            .clearAndSetSemantics { testTag = LoupeTags.BUBBLE }
             .offset {
                 val c = placement().centre
                 IntOffset((c.x - diameter / 2).roundToInt(), (c.y - diameter / 2).roundToInt())

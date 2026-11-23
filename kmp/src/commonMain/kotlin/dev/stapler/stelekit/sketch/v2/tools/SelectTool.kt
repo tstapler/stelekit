@@ -327,6 +327,8 @@ class SelectTool(
         /** The pointer with the resize snap applied (a rotate has none), so the loupe's crosshair sits on the edge that will land. */
         private fun snappedCursor(event: InputEvent, ctx: ToolContext): ScenePoint {
             if (handle == Handle.Rotate) return event.point
+            // Shift (aspect) and Alt (from centre) move the landing edge beyond the snap offset, so the crosshair follows the finger.
+            if (event.modifiers.shift || event.modifiers.alt) return event.point
             val rawDx = event.point.x.value - start.x.value
             val rawDy = event.point.y.value - start.y.value
             val (dx, dy) = snappedDelta(rawDx, rawDy, event.modifiers, ctx)
