@@ -1056,6 +1056,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.tools.ImageToolTest::class,
     dev.stapler.stelekit.sketch.v2.tools.SelectToolTest::class,
     dev.stapler.stelekit.sketch.v2.tools.ResizeSnapTest::class,
+    dev.stapler.stelekit.sketch.v2.tools.SnapFollowupsTest::class,
     dev.stapler.stelekit.sketch.v2.tools.SelectVertexDragTest::class,
     dev.stapler.stelekit.sketch.v2.tools.SelectTouchReachTest::class,
     dev.stapler.stelekit.sketch.v2.tools.SmallShapeResizeTest::class,

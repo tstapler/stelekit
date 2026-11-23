@@ -7,6 +7,7 @@ package dev.stapler.stelekit.sketch.v2.tools
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
+import dev.stapler.stelekit.sketch.v2.snap.SnapGuide
 
 /** The frozen tool inventory (requirements.md metric 1, 12 tools plus Point and Arc under OD-8); adding one is a requirements change. */
 enum class ToolId { Select, Rectangle, Diamond, Ellipse, Arrow, Line, Freedraw, Text, Image, Eraser, Frame, Hand, Point, Arc }
@@ -24,7 +25,16 @@ data class AddElementCommand(val element: SceneElement) : ToolCommand
  * [highlight] is the shape an arrow end would bind to if released now (ux.md section 5): the host outlines it.
  * [cursor] is the point the tool is acting on after snapping (the touch loupe's crosshair), or null when it is the raw pointer.
  */
-data class ToolPreview(val elements: List<SceneElement>, val highlight: ElementId? = null, val cursor: ScenePoint? = null)
+data class ToolPreview(
+    val elements: List<SceneElement>,
+    val highlight: ElementId? = null,
+    /** Guide lines of the snap engaged by a move or resize drag; the host draws them. */
+    val guides: List<SnapGuide> = emptyList(),
+    /** The selection frame after the drag so far (move, resize); the host draws the handles on it so they follow the finger. */
+    val frame: SelectionFrame? = null,
+    /** The point the touch loupe centres its crosshair on (the snapped one while a drag is snapped). */
+    val cursor: ScenePoint? = null,
+)
 
 /** A short message a tool raises for the host's notice queue (UX-12, UX-101); the host owns the wording and the queue. */
 sealed interface ToolNotice {

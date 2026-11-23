@@ -15,8 +15,10 @@ import dev.stapler.stelekit.sketch.v2.scene.LineElement
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
+import dev.stapler.stelekit.sketch.v2.snap.QuarterTurn
 import dev.stapler.stelekit.sketch.v2.snap.ResizeSides
-import dev.stapler.stelekit.sketch.v2.view.SceneBounds
+import dev.stapler.stelekit.sketch.v2.snap.SnapGuide
+import dev.stapler.stelekit.sketch.v2.snap.SnapOutcome
 import kotlin.math.abs
 import kotlin.math.hypot
 
@@ -70,9 +72,12 @@ class SelectTool(
         return SelectionFrame(Box(joint.minX, joint.minY, joint.maxX - joint.minX, joint.maxY - joint.minY), 0.0, rotatable)
     }
 
-    /** The handles to draw and hit-test: floor-sized ones where they fit, else the four compact corners ([HandleLayout.compact]). */
-    fun handleLayout(ctx: ToolContext, touch: Boolean = touchPresent): HandleLayout? {
-        val f = selectionFrame(ctx) ?: return null
+    /**
+     * The handles to draw and hit-test: floor-sized ones where they fit, else the four compact corners ([HandleLayout.compact]).
+     * [around] is the frame to surround (default the selection's); the overlay passes the snapped preview frame while a drag runs.
+     */
+    fun handleLayout(ctx: ToolContext, touch: Boolean = touchPresent, around: SelectionFrame? = selectionFrame(ctx)): HandleLayout? {
+        val f = around ?: return null
         val floorPx = TouchFloor.dp(touch) * ctx.pxPerDp
         val sized = HandleLayout.compute(f.box.cx, f.box.cy, f.box.width, f.box.height, f.angle, ctx.zoom, floorPx, f.rotatable)
         // On touch, a selection too small for floor-sized handles still gets its four corners, so a finger can resize it without
@@ -211,43 +216,43 @@ class SelectTool(
          * The move delta snapped to neighbours and the grid, so the preview shows what commits; Ctrl bypasses. A duplicate is
          * not snapped (its originals stay put as snap targets only in the next move), and a Shift axis lock keeps its zero axis.
          */
-        private fun snappedDelta(event: InputEvent, items: List<ElementId>, ctx: ToolContext): Pair<Double, Double> {
+        private fun snappedDelta(event: InputEvent, items: List<ElementId>, ctx: ToolContext): SnapOutcome {
             val (dx, dy) = delta(event)
-            if (duplicate) return dx to dy
+            if (duplicate) return SnapOutcome(dx, dy, emptyList())
             val out = ctx.snap.move(ctx.scene, ctx.snapIndex, items.toSet(), dx, dy, ctx.zoom, ctx.pxPerDp, bypass = event.modifiers.ctrl)
             val locked = event.modifiers.shift && !shift
-            return (if (locked && dx == 0.0) 0.0 else out.dx) to (if (locked && dy == 0.0) 0.0 else out.dy)
+            return SnapOutcome(if (locked && dx == 0.0) 0.0 else out.dx, if (locked && dy == 0.0) 0.0 else out.dy, out.guides)
         }
 
         private fun travelled(event: InputEvent, ctx: ToolContext): Boolean =
             hypot(event.point.x.value - start.x.value, event.point.y.value - start.y.value) * ctx.zoom > DRAG_THRESHOLD_PX
 
-        /** Where the grabbed point lands once the move snaps: where it was pressed plus the snapped delta. */
-        private fun snappedCursor(event: InputEvent, items: List<ElementId>, ctx: ToolContext): ScenePoint {
-            val (dx, dy) = snappedDelta(event, items, ctx)
-            return ScenePoint(unitOrZero(start.x.value + dx), unitOrZero(start.y.value + dy))
-        }
+        private class Planned(val command: ToolCommand, val shown: List<ElementId>, val guides: List<SnapGuide>, val cursor: ScenePoint)
 
-        private fun command(event: InputEvent, ctx: ToolContext): Pair<ToolCommand, List<ElementId>>? {
+        private fun command(event: InputEvent, ctx: ToolContext): Planned? {
             val items = owner.editable(ctx).map { it.id }
             if (items.isEmpty()) return null
-            val (dx, dy) = snappedDelta(event, items, ctx)
+            val out = snappedDelta(event, items, ctx)
+            val (dx, dy) = out.dx to out.dy
+            // Where the grabbed point lands once the move snaps: where it was pressed plus the snapped delta (the loupe's crosshair).
+            val cursor = ScenePoint(unitOrZero(start.x.value + dx), unitOrZero(start.y.value + dy))
             return if (duplicate) {
-                DuplicateSelectionCommand(items, idMap.filterKeys { it in items }, dx, dy) to idMap.filterKeys { it in items }.values.toList()
+                val copies = idMap.filterKeys { it in items }
+                Planned(DuplicateSelectionCommand(items, copies, dx, dy), copies.values.toList(), emptyList(), cursor)
             } else {
-                MoveSelectionCommand(items, dx, dy, FrameMembership.changesAfterMove(ctx.scene, items.toSet(), dx, dy)) to items
+                Planned(MoveSelectionCommand(items, dx, dy, FrameMembership.changesAfterMove(ctx.scene, items.toSet(), dx, dy)), items, out.guides, cursor)
             }
         }
 
         private fun preview(event: InputEvent, ctx: ToolContext): ToolResult {
             if (!travelled(event, ctx)) return ToolResult.Nothing
-            val (cmd, shown) = command(event, ctx) ?: return ToolResult.Nothing
-            return ToolResult(preview = previewOf(cmd, ctx, shown, snappedCursor(event, shown, ctx)))
+            val plan = command(event, ctx) ?: return ToolResult.Nothing
+            return ToolResult(preview = previewOf(plan.command, ctx, plan.shown, plan.cursor, plan.guides, owner.takeUnless { duplicate }))
         }
 
         private fun finish(event: InputEvent, ctx: ToolContext): ToolResult {
             if (!travelled(event, ctx)) return ToolResult(preview = null, next = owner)
-            val (cmd, _) = command(event, ctx) ?: return ToolResult(preview = null, next = owner)
+            val cmd = command(event, ctx)?.command ?: return ToolResult(preview = null, next = owner)
             val skipped = owner.selection.count { ctx.scene[it] != null } - owner.editable(ctx).size
             val after = if (duplicate) owner.withSelection(idMap.values.toList()) else owner
             return ToolResult(cmd, null, after, owner.skipNotice(skipped))
@@ -315,10 +320,10 @@ class SelectTool(
             event.type == InputType.Escape || event.type == InputType.Cancel -> ToolResult(preview = null, next = owner)
             event.type == InputType.Down && event.pointerId != pointerId -> ToolResult(preview = null, next = owner)
             event.pointerId != pointerId -> ToolResult.Nothing
-            event.type == InputType.Move -> ToolResult(preview = steps(event, ctx)?.let { previewOf(TransformSelectionCommand(it), ctx, items.map { e -> e.id }, snappedCursor(event, ctx)) })
+            event.type == InputType.Move -> ToolResult(preview = steps(event, ctx)?.let { previewOf(TransformSelectionCommand(it.transforms), ctx, items.map { e -> e.id }, snappedCursor(event, ctx), it.guides, owner) })
             event.type == InputType.Up -> {
                 val skipped = owner.selection.count { ctx.scene[it] != null } - items.size
-                val cmd = steps(event, ctx)?.let { TransformSelectionCommand(it) }
+                val cmd = steps(event, ctx)?.let { TransformSelectionCommand(it.transforms) }
                 ToolResult(cmd, null, owner, owner.skipNotice(skipped))
             }
             else -> ToolResult.Nothing
@@ -331,39 +336,41 @@ class SelectTool(
             if (event.modifiers.shift || event.modifiers.alt) return event.point
             val rawDx = event.point.x.value - start.x.value
             val rawDy = event.point.y.value - start.y.value
-            val (dx, dy) = snappedDelta(rawDx, rawDy, event.modifiers, ctx)
-            return ScenePoint(unitOrZero(event.point.x.value + dx - rawDx), unitOrZero(event.point.y.value + dy - rawDy))
+            val out = snappedDelta(rawDx, rawDy, event.modifiers, ctx)
+            return ScenePoint(unitOrZero(event.point.x.value + out.dx - rawDx), unitOrZero(event.point.y.value + out.dy - rawDy))
         }
 
-        private fun steps(event: InputEvent, ctx: ToolContext): List<ElementTransform>? {
+        private class Steps(val transforms: List<ElementTransform>, val guides: List<SnapGuide> = emptyList())
+
+        private fun steps(event: InputEvent, ctx: ToolContext): Steps? {
             val dx = event.point.x.value - start.x.value
             val dy = event.point.y.value - start.y.value
             if (dx == 0.0 && dy == 0.0) return null
-            return if (handle == Handle.Rotate) rotateSteps(event) else resizeSteps(dx, dy, event.modifiers, ctx)
+            return if (handle == Handle.Rotate) Steps(rotateSteps(event)) else resizeSteps(dx, dy, event.modifiers, ctx)
         }
 
         /**
          * Snaps the dragged edge(s) in the pointer delta before resizing, so the anchored edge stays put and Shift (aspect) and
-         * Alt (from centre) still apply on top; Ctrl bypasses. Unrotated frames only (see ResizeSnap).
+         * Alt (from centre) still apply on top; Ctrl bypasses. Quarter-turn frames snap on their visible edges, any other angle stays raw (see [QuarterTurn]).
          */
-        private fun snappedDelta(dx: Double, dy: Double, mods: Modifiers, ctx: ToolContext): Pair<Double, Double> {
-            if (abs(frame.angle) > ANGLE_EPSILON) return dx to dy
-            val box = SceneBounds(frame.box.x, frame.box.y, frame.box.x + frame.box.width, frame.box.y + frame.box.height)
-            val out = ctx.snap.resize(
-                ctx.scene, ctx.snapIndex, items.mapTo(HashSet()) { it.id }, box, ResizeSides(handle.sx, handle.sy),
+        private fun snappedDelta(dx: Double, dy: Double, mods: Modifiers, ctx: ToolContext): SnapOutcome {
+            val raw = SnapOutcome(dx, dy, emptyList())
+            val aligned = QuarterTurn.align(frame.box.cx, frame.box.cy, frame.box.width, frame.box.height, frame.angle, ResizeSides(handle.sx, handle.sy)) ?: return raw
+            return ctx.snap.resize(
+                ctx.scene, ctx.snapIndex, items.mapTo(HashSet()) { it.id }, aligned.bounds, aligned.sides,
                 dx, dy, keepAspect = mods.shift, fromCentre = mods.alt, zoom = ctx.zoom, pxPerDp = ctx.pxPerDp, bypass = mods.ctrl,
             )
-            return out.dx to out.dy
         }
 
-        private fun resizeSteps(rawDx: Double, rawDy: Double, mods: Modifiers, ctx: ToolContext): List<ElementTransform> {
-            val (dx, dy) = snappedDelta(rawDx, rawDy, mods, ctx)
-            val next = TransformMath.resize(frame.box, frame.angle, handle, dx, dy, keepAspect = mods.shift, fromCentre = mods.alt)
-            if (items.size == 1) return listOf(fit(items.single(), next, null))
-            return items.map { e ->
+        private fun resizeSteps(rawDx: Double, rawDy: Double, mods: Modifiers, ctx: ToolContext): Steps {
+            val out = snappedDelta(rawDx, rawDy, mods, ctx)
+            val next = TransformMath.resize(frame.box, frame.angle, handle, out.dx, out.dy, keepAspect = mods.shift, fromCentre = mods.alt)
+            if (items.size == 1) return Steps(listOf(fit(items.single(), next, null)), out.guides)
+            val moved = items.map { e ->
                 val mapped = TransformMath.mapBox(ownBox(e), frame.box, next)
                 if (e is PointElement || e is ArcElement) shift(e, mapped) else fit(e, mapped, null)
             }
+            return Steps(moved, out.guides)
         }
 
         private fun rotateSteps(event: InputEvent): List<ElementTransform> {
@@ -441,9 +448,6 @@ class SelectTool(
 
         /** Ctrl+D copies land this many scene units (one inch) down and to the right of the originals. */
         const val DUPLICATE_OFFSET = 16.0
-
-        /** A frame rotated by less than this many radians counts as axis-aligned for resize snapping. */
-        private const val ANGLE_EPSILON = 1e-9
     }
 }
 
@@ -460,7 +464,15 @@ internal fun ownAngle(e: SceneElement): Double = when (e) {
 }
 
 /** What [command] would leave on the canvas for [shown], by running it against a scratch copy of the scene; null when it would fail. */
-internal fun previewOf(command: ToolCommand, ctx: ToolContext, shown: Collection<ElementId>, cursor: ScenePoint? = null): ToolPreview? {
+internal fun previewOf(
+    command: ToolCommand,
+    ctx: ToolContext,
+    shown: Collection<ElementId>,
+    cursor: ScenePoint? = null,
+    guides: List<SnapGuide> = emptyList(),
+    frameOwner: SelectTool? = null,
+): ToolPreview? {
     val applied = command.toCommand().getOrNull()?.apply(SketchDocumentV2(ctx.scene))?.getOrNull() ?: return null
-    return ToolPreview(shown.mapNotNull { applied.doc.scene[it] }, cursor = cursor)
+    val frame = frameOwner?.selectionFrame(ctx.copy(scene = applied.doc.scene))
+    return ToolPreview(shown.mapNotNull { applied.doc.scene[it] }, guides = guides, frame = frame, cursor = cursor)
 }

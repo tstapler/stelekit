@@ -157,6 +157,9 @@ data class SketchShellConfig(
     val snap: Boolean = false,
     val onGrid: (() -> Unit)? = null,
     val onSnap: (() -> Unit)? = null,
+    /** Told when a finger rests on the Snap button (true) and when it lifts (false): the touch way to skip snapping for one drag; null disables it. */
+    val onSnapHold: ((Boolean) -> Unit)? = null,
+    val snapHeld: Boolean = false,
     /** The overflow entry "Restore original (v1) sheet"; null hides it (no restore action wired). */
     val restore: RestoreMenuEntry? = null,
     /** The persistent cue of a suspected private window or a temporary graph (UX-153); null shows none. */
@@ -595,7 +598,11 @@ private fun CanvasArea(
         if (config.banner?.emptyStateVisible == true) EmptyState(config.emptyActions, Modifier.align(Alignment.Center))
         Column(Modifier.align(Alignment.TopStart).padding(8.dp)) {
             if (hintShown && (state.selection.isEmpty() || cue != null)) Text(cueHint(cue, hintLine(state, config.pointer), canvasPx.width / density.density), Modifier.testTag(ShellTags.HINT), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            config.toasts?.let { ToastLaneOverlay(it, canvasPx.height / density.density) }
+        }
+        // Above the chip row, not under the hint: the top of the canvas is where a finger drags and a toast there hides the shape being moved.
+        val chipsRaised = canvasPx.width / density.density < CHIPS_BESIDE_CLUSTER_MIN_DP
+        config.toasts?.let {
+            ToastLaneOverlay(it, canvasPx.height / density.density, Modifier.align(Alignment.BottomStart).padding(start = 8.dp, end = 8.dp, bottom = (if (chipsRaised) CHIPS_RAISED else 8.dp) + TOAST_ABOVE_CHIPS))
         }
         ActionChipRow(
             config.priorityChips + listOfNotNull(
@@ -674,7 +681,14 @@ private fun ViewCluster(state: SketchEditorState, config: SketchShellConfig, mod
         ClusterButton(state, "sketch.zoomlevel", SketchChromeStrings.zoom(percent), SketchChromeStrings.ZOOM_LEVEL_HINT, null, "$percent%", target, null, act { state.viewport = state.viewport.zoomTo(centre, 1.0) })
         ClusterButton(state, "sketch.zoomin", SketchChromeStrings.ZOOM_IN, SketchChromeStrings.ZOOM_IN_HINT, StripIcon.ZoomIn, null, target, null, zoomIn)
         ClusterButton(state, "sketch.grid", if (grid) SketchHostStrings.View.GRID_ON else SketchHostStrings.View.GRID_OFF, SketchChromeStrings.GRID_HINT, StripIcon.Grid, null, target, grid, act { config.onGrid?.invoke() ?: run { localGrid = !localGrid } })
-        ClusterButton(state, "sketch.snap", if (snap) SketchHostStrings.View.SNAP_ON else SketchHostStrings.View.SNAP_OFF, SketchChromeStrings.SNAP_HINT, StripIcon.Snap, null, target, snap, act { config.onSnap?.invoke() ?: run { localSnap = !localSnap } })
+        // A finger resting here pauses snapping (the touch counterpart of Ctrl), so a second finger can drag while this one holds.
+        val held = config.snapHeld
+        val snapName = when {
+            held -> SketchHostStrings.View.SNAP_PAUSED
+            snap -> SketchHostStrings.View.SNAP_ON
+            else -> SketchHostStrings.View.SNAP_OFF
+        }
+        ClusterButton(state, "sketch.snap", snapName, SketchChromeStrings.SNAP_HINT, StripIcon.Snap, null, target, snap && !held, act { config.onSnap?.invoke() ?: run { localSnap = !localSnap } }, config.onSnapHold)
         if (PanPadPolicy.buttonShown(config.panArrows, state.fingerDrawing, config.pointer == PointerClass.TouchOrPen)) {
             PanButton(state.panPadOpen, { state.panPadOpen = !state.panPadOpen })
         }
@@ -688,6 +702,7 @@ private fun ViewCluster(state: SketchEditorState, config: SketchShellConfig, mod
 @Composable
 private fun ClusterButton(
     state: SketchEditorState, tag: String, description: String, hint: String, icon: StripIcon?, label: String?, size: Dp, on: Boolean?, onClick: () -> Unit,
+    onHold: ((Boolean) -> Unit)? = null,
 ) {
     val entry = HelpEntry(tag, description, hint)
     val scheme = MaterialTheme.colorScheme
@@ -695,6 +710,7 @@ private fun ClusterButton(
     Box(
         Modifier.height(size).defaultMinSize(minWidth = size).testTag(tag)
             .helpOnFocus(state.help, entry).helpOnHover(state.help, entry)
+            .holdReporting(onHold)
             .semantics { contentDescription = description; if (on != null) { role = Role.Switch; toggleableState = ToggleableState(on) } }
             .combinedClickable(onLongClick = { state.help.show(entry) }, onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -719,6 +735,7 @@ private val CLUSTER_LABEL_PAD = 6.dp
 private val HELP_GAP = 8.dp
 private val HELP_CLEARS_ZOOM_CHIP = 56.dp
 private val CHIPS_RAISED = 64.dp
+private val TOAST_ABOVE_CHIPS = 56.dp
 private const val CHIPS_BESIDE_CLUSTER_MIN_DP = 420f
 private const val CLUSTER_ALPHA = 0.92f
 
