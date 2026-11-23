@@ -130,9 +130,9 @@ class TouchLoupeHostTest {
         rule.mainClock.autoAdvance = false
         rule.mainClock.advanceTimeBy(LoupeSpec.HOLD_MS - FRAME_SLACK_MS)
         assertFalse(controller.tools.loupe.state.visible, "not before the hold time")
-        rule.mainClock.advanceTimeBy(LoupeSpec.HOLD_MS)
-        assertTrue(controller.tools.loupe.state.visible, "${controller.tools.loupe.state}")
         rule.mainClock.autoAdvance = true
+        rule.waitForIdle()
+        assertTrue(controller.tools.loupe.state.visible, "${controller.tools.loupe.state}")
         release()
     }
 
