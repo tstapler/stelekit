@@ -52,6 +52,7 @@ def test_classes(src):
     return found
 
 
+ANY_DECL = re.compile(r"\b(?:class|object|interface|typealias|fun|val|var)\s+(?:<[^>]*>\s*)?(?:[\w.<>?]+\.)?(\w+)")
 DECL = re.compile(r"^(?:internal |public |private |data |sealed |abstract |open |enum |annotation |fun )*(?:class|object|interface|typealias|fun|val|var)\s+(?:<[^>]*>\s*)?(?:[\w.<>?]+\.)?(\w+)", re.M)
 
 
@@ -97,6 +98,10 @@ def main():
                 pkg = os.path.dirname(s.split("/kotlin/", 1)[1]).replace("/", ".")
                 pkg2mods[pkg].add(k)
                 cls2mod[pkg + "." + os.path.basename(s)[:-3]] = k
+                path = os.path.join("kmp/src", s)
+                if os.path.exists(path):  # every top-level declaration, not just the one named like the file
+                    for n in ANY_DECL.findall(open(path, encoding="utf-8").read()):
+                        cls2mod.setdefault(pkg + "." + n, k)
     reg = registered()
     out = collections.defaultdict(list)
     idx = fixture_index()
@@ -112,7 +117,7 @@ def main():
                 ms.add(cls2mod[imp])
             elif imp.startswith("dev.stapler") and imp.rsplit(".", 1)[0] in pkg2mods:
                 ms |= pkg2mods[imp.rsplit(".", 1)[0]] - {"app"}  # package-level guess: never the umbrella
-        for fq in set(re.findall(r"dev\.stapler\.stelekit(?:\.\w+)+", src)):
+        for fq in set(re.findall(r"dev\.stapler\.stelekit(?:\.\w+)+", re.sub(r"^package .*$", "", src, flags=re.M))):
             parts = fq.split(".")
             for i in range(len(parts), 3, -1):
                 cand = ".".join(parts[:i])
@@ -122,7 +127,21 @@ def main():
                 if cand in pkg2mods:
                     ms |= pkg2mods[cand] - {"app"}
                     break
+        if not ms:  # nothing resolved to a class: fall back to the package's lowest module (never the umbrella)
+            ms = {m for m in pkg2mods.get(pkg, ()) if m != "app"}
+            ms = {m for m in ms if not (closure(mods, m) & ms)}
+            if len(ms) > 1:  # unordered siblings and no class reference to tell them apart: the module owning most of the package
+                counts = collections.Counter(k for k, v in mods.items() for s in v["srcs"]
+                                             if k in ms and s.endswith(".kt") and "/kotlin/" in s
+                                             and os.path.dirname(s.split("/kotlin/", 1)[1]).replace("/", ".") == pkg)
+                ms = {counts.most_common(1)[0][0]}
         top = [x for x in ms if all(y == x or y in closure(mods, x) for y in ms)]
+        if not top:  # unordered siblings: take the module that owns most files of the test's package; the build proves it
+            owner = collections.Counter(k for k in ms for s in mods[k]["srcs"] if s.endswith(".kt") and "/kotlin/" in s
+                                        and os.path.dirname(s.split("/kotlin/", 1)[1]).replace("/", ".") == pkg)
+            top = sorted(ms, key=lambda x: (-len(({x} | closure(mods, x)) & ms), -owner[x], x))[:1]
+        if not top:
+            print("WARNING: no single top module for %s: %s" % (f, sorted(ms)), file=sys.stderr)
         if not top or top[0] in SKIP_MODULES or (only and top[0] not in only):
             continue
         for c in test_classes(src):

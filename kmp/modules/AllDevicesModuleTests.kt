@@ -12,12 +12,12 @@ import dev.stapler.stelekit.platform.measurement.KeyboardMeasurementParserTest
 import dev.stapler.stelekit.platform.measurement.LeicaDistoProtocolTest
 import dev.stapler.stelekit.platform.measurement.MeasurementDeviceRegistryTest
 import dev.stapler.stelekit.platform.measurement.NoOpBleScannerTest
+import dev.stapler.stelekit.platform.sensor.BearingAnnotationTest
 import dev.stapler.stelekit.platform.sensor.DepthConversionsTest
 import dev.stapler.stelekit.platform.sensor.GpsTaggingTest
 import dev.stapler.stelekit.platform.sensor.MotionSensorProviderTest
 import dev.stapler.stelekit.platform.sensor.NoOpCameraFrameSourceTest
 import dev.stapler.stelekit.platform.sensor.NoOpCameraProviderTest
-import dev.stapler.stelekit.platform.sensor.SensorDataPropagationTest
 import dev.stapler.stelekit.platform.sensor.SensorModuleTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
@@ -37,12 +37,12 @@ import org.junit.runners.Suite
     LeicaDistoProtocolTest::class,
     MeasurementDeviceRegistryTest::class,
     NoOpBleScannerTest::class,
+    BearingAnnotationTest::class,
     DepthConversionsTest::class,
     GpsTaggingTest::class,
     MotionSensorProviderTest::class,
     NoOpCameraFrameSourceTest::class,
     NoOpCameraProviderTest::class,
-    SensorDataPropagationTest::class,
     SensorModuleTest::class,
 )
 class AllDevicesModuleTests

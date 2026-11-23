@@ -42,30 +42,32 @@ KMP_MODULE_TESTS = {
    "dev/stapler/stelekit/platform/measurement/LeicaDistoProtocolTest.kt",
    "dev/stapler/stelekit/platform/measurement/MeasurementDeviceRegistryTest.kt",
    "dev/stapler/stelekit/platform/measurement/NoOpBleScannerTest.kt",
+   "dev/stapler/stelekit/platform/sensor/BearingAnnotationTest.kt",
    "dev/stapler/stelekit/platform/sensor/DepthConversionsTest.kt",
    "dev/stapler/stelekit/platform/sensor/GpsTaggingTest.kt",
    "dev/stapler/stelekit/platform/sensor/MotionSensorProviderTest.kt",
    "dev/stapler/stelekit/platform/sensor/NoOpCameraFrameSourceTest.kt",
    "dev/stapler/stelekit/platform/sensor/NoOpCameraProviderTest.kt",
-   "dev/stapler/stelekit/platform/sensor/SensorDataPropagationTest.kt",
    "dev/stapler/stelekit/platform/sensor/SensorModuleTest.kt"
   ],
   "suite": "AllDevicesModuleTests"
  },
+ "export": {
+  "srcs": [
+   "dev/stapler/stelekit/export/BlockRefExpansionTest.kt",
+   "dev/stapler/stelekit/export/HtmlUtilsTest.kt",
+   "dev/stapler/stelekit/export/JsonExporterTest.kt",
+   "dev/stapler/stelekit/export/MarkdownExporterTest.kt"
+  ],
+  "suite": "AllExportModuleTests"
+ },
  "git": {
   "srcs": [
-   "dev/stapler/stelekit/db/BlockInvalidationActorTest.kt",
    "dev/stapler/stelekit/db/ChangeDetectionSchedulerTest.kt",
-   "dev/stapler/stelekit/db/ImageImportServicePathTest.kt",
-   "dev/stapler/stelekit/db/ImageStoragePathResolverTest.kt",
    "dev/stapler/stelekit/db/IndexOnlyParseTest.kt",
-   "dev/stapler/stelekit/db/LogseqPageSerializerTest.kt",
-   "dev/stapler/stelekit/db/MarkdownPageParserTest.kt",
    "dev/stapler/stelekit/db/MoveInProgressFlagTest.kt",
    "dev/stapler/stelekit/db/PageFileResolverTest.kt",
-   "dev/stapler/stelekit/db/ReplaceWikilinkTest.kt",
    "dev/stapler/stelekit/db/SerializerParserSymmetryTest.kt",
-   "dev/stapler/stelekit/db/SidecarManagerPositionTest.kt",
    "dev/stapler/stelekit/db/sidecar/FakeFileSystem.kt",
    "dev/stapler/stelekit/diagnostics/DirectoryScannerTest.kt",
    "dev/stapler/stelekit/git/BeforeUnloadWarningTest.kt",
@@ -80,6 +82,7 @@ KMP_MODULE_TESTS = {
    "dev/stapler/stelekit/git/LockRecoveryClaimTest.kt",
    "dev/stapler/stelekit/git/LockRecoveryDecisionTest.kt",
    "dev/stapler/stelekit/git/RedactGitMessageTest.kt",
+   "dev/stapler/stelekit/git/ScheduledSyncStatusTest.kt",
    "dev/stapler/stelekit/git/WasmGitWriteServiceAlgorithmsTest.kt",
    "dev/stapler/stelekit/git/merge/BlockDiff3Test.kt",
    "dev/stapler/stelekit/git/merge/Diff3Test.kt",
@@ -92,9 +95,21 @@ KMP_MODULE_TESTS = {
    "dev/stapler/stelekit/git/model/GitDataApiModelsTest.kt",
    "dev/stapler/stelekit/git/model/GitLabCommitModelsTest.kt",
    "dev/stapler/stelekit/git/model/SyncStateTest.kt",
+   "dev/stapler/stelekit/platform/DirtyTrackingAlgorithmsTest.kt",
+   "dev/stapler/stelekit/platform/FolderSyncLockNamingTest.kt",
    "dev/stapler/stelekit/vault/VaultRootMigrationTest.kt"
   ],
   "suite": "AllGitModuleTests"
+ },
+ "merge": {
+  "srcs": [
+   "dev/stapler/stelekit/merge/BlockMarkupRoundTripTest.kt",
+   "dev/stapler/stelekit/merge/MergeArbs.kt",
+   "dev/stapler/stelekit/merge/MergeFixtures.kt",
+   "dev/stapler/stelekit/merge/MergeRoundTripPropertyTest.kt",
+   "dev/stapler/stelekit/merge/UuidRemapTest.kt"
+  ],
+  "suite": "AllMergeModuleTests"
  },
  "model": {
   "srcs": [
@@ -137,9 +152,17 @@ KMP_MODULE_TESTS = {
  },
  "persist": {
   "srcs": [
+   "dev/stapler/stelekit/db/BlockInvalidationActorTest.kt",
+   "dev/stapler/stelekit/db/ImageImportServicePathTest.kt",
+   "dev/stapler/stelekit/db/ImageStoragePathResolverTest.kt",
+   "dev/stapler/stelekit/db/LogseqPageSerializerTest.kt",
+   "dev/stapler/stelekit/db/MarkdownPageParserTest.kt",
+   "dev/stapler/stelekit/db/ReplaceWikilinkTest.kt",
+   "dev/stapler/stelekit/db/SidecarManagerPositionTest.kt",
    "dev/stapler/stelekit/db/sidecar/FakeFileSystem.kt",
    "dev/stapler/stelekit/db/sidecar/SidecarSerializationTest.kt",
    "dev/stapler/stelekit/performance/DebounceManagerTest.kt",
+   "dev/stapler/stelekit/platform/FileSystemDefaultsTest.kt",
    "dev/stapler/stelekit/query/QueryParserTest.kt",
    "dev/stapler/stelekit/repository/BlockOperationsEdgeCaseTest.kt",
    "dev/stapler/stelekit/repository/DatalogBlockRepositoryTest.kt",
@@ -153,7 +176,10 @@ KMP_MODULE_TESTS = {
  },
  "platform": {
   "srcs": [
-   "dev/stapler/stelekit/service/DroppedFileBytesTest.kt"
+   "dev/stapler/stelekit/platform/HostAccessStateTest.kt",
+   "dev/stapler/stelekit/platform/HostReconciliationTest.kt",
+   "dev/stapler/stelekit/platform/HostWritePayloadTest.kt",
+   "dev/stapler/stelekit/platform/MeasurementUnitPreferenceTest.kt"
   ],
   "suite": "AllPlatformModuleTests"
  },
@@ -166,7 +192,6 @@ KMP_MODULE_TESTS = {
  "sketch_runtime": {
   "srcs": [
    "dev/stapler/stelekit/db/sidecar/FakeFileSystem.kt",
-   "dev/stapler/stelekit/merge/BlockMarkupRoundTripTest.kt",
    "dev/stapler/stelekit/merge/MarkdownSourceGraphReaderParseTest.kt",
    "dev/stapler/stelekit/merge/MarkdownSplicerFixtureTest.kt",
    "dev/stapler/stelekit/merge/MergeArbs.kt",
@@ -174,11 +199,9 @@ KMP_MODULE_TESTS = {
    "dev/stapler/stelekit/merge/MergeFixtures.kt",
    "dev/stapler/stelekit/merge/MergePageExamplesTest.kt",
    "dev/stapler/stelekit/merge/MergePagePropertyTest.kt",
-   "dev/stapler/stelekit/merge/MergeRoundTripPropertyTest.kt",
    "dev/stapler/stelekit/merge/RoundTripGuardTest.kt",
    "dev/stapler/stelekit/merge/SelectionFilterTest.kt",
    "dev/stapler/stelekit/merge/StagedPageTest.kt",
-   "dev/stapler/stelekit/merge/UuidRemapTest.kt",
    "dev/stapler/stelekit/projectbridge/FusionSettingsAndSuggestionsTest.kt",
    "dev/stapler/stelekit/projectbridge/RegistryEditingTest.kt"
   ],
@@ -196,12 +219,8 @@ KMP_MODULE_TESTS = {
  },
  "ui_found": {
   "srcs": [
-   "dev/stapler/stelekit/export/BlockRefExpansionTest.kt",
    "dev/stapler/stelekit/export/ExportServiceTest.kt",
    "dev/stapler/stelekit/export/HtmlExporterUnitTest.kt",
-   "dev/stapler/stelekit/export/HtmlUtilsTest.kt",
-   "dev/stapler/stelekit/export/JsonExporterTest.kt",
-   "dev/stapler/stelekit/export/MarkdownExporterTest.kt",
    "dev/stapler/stelekit/export/PlainTextExporterTest.kt",
    "dev/stapler/stelekit/export/TrackingParamStripperTest.kt"
   ],
