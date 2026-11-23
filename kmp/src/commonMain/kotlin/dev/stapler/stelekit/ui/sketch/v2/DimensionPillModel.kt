@@ -71,6 +71,7 @@ object DimensionPillModel {
     /** A pill is at least as tall as a finger-sized target (UX-46) so a tap always lands. */
     val PILL_HEIGHT_DP: Double = TouchFloor.TOUCH_DP
 
+    private const val TWO_POINT_LINE = 2
     private const val CHAR_DP = 9.0
     private const val PAD_DP = 28.0
 
@@ -88,7 +89,7 @@ object DimensionPillModel {
     private fun sixteenths(v: Double): Long = max(1L, round(v).toLong())
 
     internal fun lineLength(e: LineElement): Double? {
-        if (e.polygon || e.points.size != 2) return null
+        if (e.polygon || e.points.size != TWO_POINT_LINE) return null
         val (a, b) = e.points
         return hypot(b.x.value - a.x.value, b.y.value - a.y.value).takeIf { it > 0.0 }
     }
