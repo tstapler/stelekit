@@ -114,6 +114,15 @@ class TableBlockLayoutTest {
     }
 
     @Test
+    fun aLongUrlInWrapModeBreaksAtTheEdgeInsteadOfForcingScroll() {
+        val url = "https://example.com/" + "segment/".repeat(20)
+        show("| Link | N |\n|---|---|\n| $url | 1 |")
+        rule.waitForIdle()
+        val limit = with(rule.density) { phoneWidth.toPx() }
+        assertTrue(unclippedRight("1") <= limit + 0.5f, "long URL pushed the table to ${unclippedRight("1")} past $limit")
+    }
+
+    @Test
     fun scrollModeKeepsNaturalColumnWidthInsteadOfWrapping() {
         val long = "| A | B |\n|---|---|\n| ${"word ".repeat(12).trim()} | x |"
         show(long, TableDisplayPrefs(overflow = TableOverflow.SCROLL))

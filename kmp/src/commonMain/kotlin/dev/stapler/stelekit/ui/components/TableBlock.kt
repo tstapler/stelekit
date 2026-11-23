@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 
 /** Widest a column may grow when cells scroll instead of wrapping, so one long cell cannot dominate. */
@@ -146,19 +147,31 @@ private fun TableGrid(
     Layout(content = content) { measurables, _ ->
         val cols = columnCount
         val rowCount = measurables.size / cols
+        val avail = availableWidth()
         val mins = IntArray(cols)
+        val softMins = IntArray(cols)
         val maxs = IntArray(cols)
         measurables.forEachIndexed { i, m ->
             val c = i % cols
-            // A cell with no whitespace is one token: the line breaker would split "249.4" at the '.', so it never shrinks below its natural width.
-            val unbreakable = m.layoutId == UNBREAKABLE_CELL
-            mins[c] = maxOf(mins[c], if (unbreakable) m.maxIntrinsicWidth(Constraints.Infinity) else m.minIntrinsicWidth(Constraints.Infinity))
-            maxs[c] = maxOf(maxs[c], m.maxIntrinsicWidth(Constraints.Infinity))
+            val soft = m.minIntrinsicWidth(Constraints.Infinity)
+            val max = m.maxIntrinsicWidth(Constraints.Infinity)
+            // A cell with no whitespace is one token: the line breaker would split "249.4" at the '.', so it keeps its natural width.
+            mins[c] = maxOf(mins[c], if (m.layoutId == UNBREAKABLE_CELL) max else soft)
+            softMins[c] = maxOf(softMins[c], soft)
+            maxs[c] = maxOf(maxs[c], max)
+        }
+        // If those whole tokens cannot fit, let the widest break (a long URL) rather than force a scroll; SCROLL mode keeps them whole up to the cap.
+        if (overflow == TableOverflow.WRAP && avail > 0) {
+            while (mins.sum() > avail) {
+                val widest = (0 until cols).filter { mins[it] > minOf(softMins[it], avail / cols) }.maxByOrNull { mins[it] - minOf(softMins[it], avail / cols) } ?: break
+                // The line breaker never splits a URL, but Compose hard-breaks a word wider than its column, so an equal share is a safe floor.
+                mins[widest] = minOf(softMins[widest], avail / cols)
+            }
         }
         val widths = computeColumnWidths(
             minWidths = mins,
             maxWidths = maxs,
-            available = availableWidth(),
+            available = avail,
             overflow = overflow,
             maxColumnWidth = MAX_SCROLL_COLUMN_WIDTH.roundToPx(),
         )
@@ -212,7 +225,8 @@ private fun TableCell(
             .drawBehind {
                 drawRect(background)
                 if (rightRule != null) {
-                    drawLine(rightRule, Offset(size.width - 0.5f, 0f), Offset(size.width - 0.5f, size.height), 1f)
+                    val x = if (layoutDirection == LayoutDirection.Rtl) 0.5f else size.width - 0.5f
+                    drawLine(rightRule, Offset(x, 0f), Offset(x, size.height), 1f)
                 }
                 if (bottomRule != null) {
                     drawLine(bottomRule, Offset(0f, size.height - 0.5f), Offset(size.width, size.height - 0.5f), 1f)
