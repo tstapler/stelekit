@@ -8,6 +8,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,16 +52,18 @@ fun EditorSettings(annotatorSettings: Settings? = null, tablePreferences: TableP
 
 /** Off for [TABLE_WRAP_LABEL] means cells keep their natural width and the table scrolls sideways. */
 @Composable
-fun TableSettingsRows(tablePreferences: TablePreferences) {
+fun TableSettingsRows(tablePreferences: TablePreferences, modifier: Modifier = Modifier) {
     val prefs = tablePreferences.prefs
-    SettingsSwitchRow(TABLE_WRAP_LABEL, prefs.overflow == TableOverflow.WRAP) { wrap ->
-        tablePreferences.update { it.copy(overflow = if (wrap) TableOverflow.WRAP else TableOverflow.SCROLL) }
-    }
-    SettingsSwitchRow(TABLE_NUMERIC_RIGHT_ALIGN_LABEL, prefs.numericRightAlign) { on ->
-        tablePreferences.update { it.copy(numericRightAlign = on) }
-    }
-    SettingsSwitchRow(TABLE_COMPACT_LABEL, prefs.density == TableDensity.COMPACT) { compact ->
-        tablePreferences.update { it.copy(density = if (compact) TableDensity.COMPACT else TableDensity.COMFORTABLE) }
+    Column(modifier) {
+        SettingsSwitchRow(TABLE_WRAP_LABEL, prefs.overflow == TableOverflow.WRAP) { wrap ->
+            tablePreferences.update { it.copy(overflow = if (wrap) TableOverflow.WRAP else TableOverflow.SCROLL) }
+        }
+        SettingsSwitchRow(TABLE_NUMERIC_RIGHT_ALIGN_LABEL, prefs.numericRightAlign) { on ->
+            tablePreferences.update { it.copy(numericRightAlign = on) }
+        }
+        SettingsSwitchRow(TABLE_COMPACT_LABEL, prefs.density == TableDensity.COMPACT) { compact ->
+            tablePreferences.update { it.copy(density = if (compact) TableDensity.COMPACT else TableDensity.COMFORTABLE) }
+        }
     }
 }
 

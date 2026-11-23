@@ -92,7 +92,7 @@ internal fun TableBlock(
         Box(modifier = Modifier.horizontalScroll(rememberScrollState())) {
             TableGrid(
                 columnCount = tableData.columnCount,
-                availableWidth = availableWidth,
+                availableWidth = { availableWidth.intValue },
                 overflow = prefs.overflow,
             ) {
                 val allRows = listOf(tableData.headers) + tableData.rows
@@ -139,7 +139,7 @@ private fun Modifier.captureMaxWidth(into: MutableIntState): Modifier = layout {
 @Composable
 private fun TableGrid(
     columnCount: Int,
-    availableWidth: MutableIntState,
+    availableWidth: () -> Int,
     overflow: TableOverflow,
     content: @Composable () -> Unit,
 ) {
@@ -158,7 +158,7 @@ private fun TableGrid(
         val widths = computeColumnWidths(
             minWidths = mins,
             maxWidths = maxs,
-            available = availableWidth.intValue,
+            available = availableWidth(),
             overflow = overflow,
             maxColumnWidth = MAX_SCROLL_COLUMN_WIDTH.roundToPx(),
         )
