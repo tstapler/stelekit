@@ -5,6 +5,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.semantics.SemanticsActions
@@ -12,7 +15,10 @@ import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.ui.components.settings.TABLE_WRAP_LABEL
@@ -142,7 +148,50 @@ class TableBlockLayoutTest {
         assertEquals(TableOverflow.SCROLL, holder.prefs.overflow)
     }
 
+    private fun showLinks(opened: MutableList<String>, edits: MutableList<Unit>) = rule.setContent {
+        val handler = object : UriHandler {
+            override fun openUri(uri: String) { opened += uri }
+        }
+        CompositionLocalProvider(LocalUriHandler provides handler) {
+            MaterialTheme {
+                Surface {
+                    Box(Modifier.width(phoneWidth)) {
+                        TableBlock(content = LINK_TABLE, onStartEditing = { edits += Unit }, prefs = TableDisplayPrefs(numericRightAlign = false))
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun markdownLinkAndBareUrlInACellOpenInsteadOfStartingAnEdit() {
+        val opened = mutableListOf<String>()
+        val edits = mutableListOf<Unit>()
+        showLinks(opened, edits)
+        rule.onNodeWithText("the docs", useUnmergedTree = true).performTouchInput { click(Offset(8f, 8f)) }
+        rule.onNodeWithText("https://example.org/spec", useUnmergedTree = true).performTouchInput { click(Offset(8f, 8f)) }
+        assertEquals(listOf("https://example.com/docs", "https://example.org/spec"), opened)
+        assertEquals(0, edits.size, "tapping a link must not enter edit mode")
+    }
+
+    @Test
+    fun plainCellTextStillStartsAnEdit() {
+        val opened = mutableListOf<String>()
+        val edits = mutableListOf<Unit>()
+        showLinks(opened, edits)
+        rule.onNodeWithText("Plain", useUnmergedTree = true).performClick()
+        assertEquals(1, edits.size)
+        assertTrue(opened.isEmpty())
+    }
+
     companion object {
+        private val LINK_TABLE = """
+            | Name | Link |
+            |---|---|
+            | Plain | [the docs](https://example.com/docs) |
+            | Spec | https://example.org/spec |
+        """.trimIndent()
+
         private val WIDE_TABLE = """
             | Item | Total |
             |---|---|
