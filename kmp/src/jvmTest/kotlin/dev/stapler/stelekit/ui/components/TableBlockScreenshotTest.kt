@@ -99,8 +99,8 @@ class TableBlockScreenshotTest {
         }
         renderWith(handler) { TableBlock(content = LINK_TABLE, onStartEditing = {}) }
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("https://example.org/spec").performTouchInput { click(Offset(8f, 8f)) }
-        composeTestRule.onNodeWithText("https://example.org/spec").performTouchInput { click(Offset(8f, 8f)) }
+        composeTestRule.onNodeWithText("https://example.org/spec", useUnmergedTree = true).performTouchInput { click(Offset(8f, 8f)) }
+        composeTestRule.onNodeWithText("https://example.org/spec", useUnmergedTree = true).performTouchInput { click(Offset(8f, 8f)) }
         assertEquals(listOf("https://example.org/spec", "https://example.org/spec"), opened)
     }
 
@@ -118,7 +118,7 @@ class TableBlockScreenshotTest {
             )
         }
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("https://example.org/spec").performTouchInput { click(Offset(8f, 8f)) }
+        composeTestRule.onNodeWithText("https://example.org/spec", useUnmergedTree = true).performTouchInput { click(Offset(8f, 8f)) }
         assertEquals(listOf("https://example.org/spec"), opened)
     }
 
