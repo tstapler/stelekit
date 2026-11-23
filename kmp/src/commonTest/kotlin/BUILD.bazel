@@ -389,6 +389,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/ui/sketch/v2/ConstraintTargetPickerModelTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/DimensionEditModelTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/DimensionChipsTest.kt",
+        "dev/stapler/stelekit/ui/sketch/v2/DimensionPillModelTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/SmartDimensionPathBoundTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/ArrowToolTest.kt",
         "dev/stapler/stelekit/sketch/v2/BindingFollowTest.kt",

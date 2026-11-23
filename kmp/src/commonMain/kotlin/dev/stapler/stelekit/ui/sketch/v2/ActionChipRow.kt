@@ -49,7 +49,7 @@ fun ActionChipRow(chips: List<ActionChip>, modifier: Modifier = Modifier) {
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     Row(modifier.testTag(ShellTags.CHIP_ROW), verticalAlignment = Alignment.CenterVertically) {
-        Row(Modifier.horizontalScroll(scroll), horizontalArrangement = Arrangement.spacedBy(CHIP_GAP_DP.dp)) {
+        Row(Modifier.weight(1f, fill = false).horizontalScroll(scroll), horizontalArrangement = Arrangement.spacedBy(CHIP_GAP_DP.dp)) {
             for (chip in chips) {
                 Box(
                     Modifier.testTag(chip.tag)

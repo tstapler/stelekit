@@ -26,7 +26,7 @@ import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
 
 private const val DIMENSION_EDITOR_TOP_DP = 56
-private const val CHIP_BOTTOM_DP = 72
+private const val CHIP_BOTTOM_DP = 120
 private const val PANEL_BOTTOM_DP = 8
 private const val EDITOR_PAD_DP = 12
 private const val STATUS_PAD_DP = 8
@@ -49,6 +49,7 @@ internal fun BoxScope.ExtrasCanvasOverlays(controller: SketchEditorController, e
         if (!glyphsHidden) GlyphOverlay(controller, extras, pointer)
         SuggestionChip(controller, extras)
     }
+    DimensionPillsOverlay(controller, extras, autoOpen = pointer == PointerClass.TouchOrPen)
     DimensionEditorOverlay(extras)
     SolveStatus(controller)
     ExtraPanelHost(controller, extras, Modifier.align(Alignment.BottomCenter).padding(bottom = PANEL_BOTTOM_DP.dp))
@@ -82,7 +83,7 @@ private fun selectGlyph(controller: SketchEditorController, id: ConstraintId) {
 @Composable
 private fun BoxScope.SuggestionChip(controller: SketchEditorController, extras: EditorExtras) {
     val selection = controller.ui.selection
-    val idle = extras.dimension.state == DimensionEditState.Closed && controller.constraints.picker == null && controller.ui.activeTool == ToolId.Select
+    val idle = extras.dimension.state == DimensionEditState.Closed && extras.pills.edit == null && controller.constraints.picker == null && controller.ui.activeTool == ToolId.Select
     if (!idle || selection.isEmpty() || controller.readOnly) return
     val dof = controller.constraintState.analysis.dof
     val suggestion = remember(controller.revision, selection, dof, extras.tier) {

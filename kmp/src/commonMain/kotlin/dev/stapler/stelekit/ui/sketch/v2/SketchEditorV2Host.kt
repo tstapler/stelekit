@@ -121,7 +121,7 @@ fun SketchEditorV2Host(
     val technical = remember(session) { session.services.technical?.let { source -> session.sheet?.let { TechnicalPanelState(source, it) } } }
     SideEffect { controller.keys.hint = hint }
     val tours = remember(session) { session.services.platform.tourProgress?.let { TourController(GuideContent.registry(), it) } }
-    TourTriggers(tours, controller.ui.activeTool, controller.overlay == EditorOverlay.ConstrainMenu, controller.ui.panelTab, controller.ui.selection.singleOrNull()?.let { controller.doc.scene[ElementId(it)] } is LineElement)
+    TourTriggers(tours, controller.ui.activeTool, controller.overlay == EditorOverlay.ConstrainMenu, controller.ui.panelTab, controller.ui.selection.singleOrNull()?.let { controller.doc.scene[ElementId(it)] } is LineElement, technicalShapeSelected = technicalShapeSelected(controller, extras))
     LaunchedEffect(controller.revision) { largeScene.refresh() }
     DisposableEffect(extras) { onDispose { extras.close() } }
     val latestBack by rememberUpdatedState(onBack)
@@ -202,6 +202,7 @@ fun SketchEditorV2Host(
         importDisabledReason = extras.importDisabledReason,
         onExport = if (extras.exportAvailable) extras.exporter::open else null,
         extraChips = solveChips(controller, solving) + extras.access.chips(),
+        priorityChips = technicalChips(controller, extras, extras.constraintsAvailable, technical != null),
         edgeStripAtEnd = extras.input.stripAtEnd,
         durabilityCue = cue,
         grid = extras.grid,
@@ -212,7 +213,7 @@ fun SketchEditorV2Host(
         sheetKind = controller.sheetKind.takeIf { it != dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Converted && !controller.readOnly },
         onSheetKind = { controller.setSheetKind(it) },
         technicalPanel = technical != null && controller.sheetKind == dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical,
-        canvasModifier = remember(canvasAccess) { canvasRegionKeysOf(canvasAccess) },
+        canvasModifier = remember(canvasAccess, extras) { canvasRegionKeysOf(canvasAccess) { !extras.pills.fieldFocused } },
         onRegions = { canvasAccess.regions = it },
         tours = tours,
         onHelp = { controller.overlay = EditorOverlay.HelpSearch },
@@ -246,6 +247,14 @@ fun SketchEditorV2Host(
             )
         }
     }
+}
+
+/** True when a shape with dimension pills is selected on a technical sheet: the first time is the dimensions tour's cue. */
+private fun technicalShapeSelected(controller: SketchEditorController, extras: EditorExtras): Boolean {
+    val selection = controller.ui.selection
+    val technical = controller.sheetKind == dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical
+    if (!DimensionPillModel.shown(technical, controller.readOnly, extras.pills.visible, selection.size, controller.ui.activeTool)) return false
+    return selection.singleOrNull()?.let { controller.doc.scene[ElementId(it)] }?.let { DimensionPillModel.specs(it).isNotEmpty() } == true
 }
 
 /** The selection-menu entries this editor runs; Align, Order, Transform and Bind end open [ExtraPanel]s. */
@@ -283,12 +292,13 @@ private fun canvasKey(controller: SketchEditorController, extras: EditorExtras, 
 }
 
 /** Tab, F6 and Esc across the canvas stops (skip link, elements) and out to the other regions of the one tab order. */
-private fun canvasRegionKeysOf(access: EditorCanvasAccess): Modifier = Modifier.canvasRegionKeys(
+private fun canvasRegionKeysOf(access: EditorCanvasAccess, enabled: () -> Boolean): Modifier = Modifier.canvasRegionKeys(
     focus = { access.focus },
     stops = { access.tree().tabStops },
     present = { access.present },
     moveWithin = access::moveWithin,
     moveOut = access::moveOut,
+    enabled = enabled,
 )
 
 /** True when the first row of the one Esc order that applies is the shell's (the Pan pad, a help popup or the tour), so the canvas passes the press on. */

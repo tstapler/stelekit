@@ -148,6 +148,8 @@ data class SketchShellConfig(
     val onCanvasKey: (KeyEvent) -> Boolean = { false },
     /** Chips the host adds after the shell's own (the Cancel chip of a slow solve). */
     val extraChips: List<ActionChip> = emptyList(),
+    /** Chips that lead the row, ahead of the shell's own, so the most-used ones are first in thumb reach (the technical sheet's shortcuts). */
+    val priorityChips: List<ActionChip> = emptyList(),
     /** The view cluster's grid and snap toggles live in the host when [onGrid] and [onSnap] are set; the cluster keeps its own state otherwise. */
     val grid: Boolean = false,
     val snap: Boolean = false,
@@ -593,7 +595,7 @@ private fun CanvasArea(
             config.toasts?.let { ToastLaneOverlay(it, canvasPx.height / density.density) }
         }
         ActionChipRow(
-            listOfNotNull(
+            config.priorityChips + listOfNotNull(
                 cue?.takeIf { it.placement == CuePlacement.ChipRow }?.let { ActionChip(ShellTags.DURABILITY_CUE, it.chip?.text.orEmpty(), it.view.accessibleName, onClick = it.view.onActivate) },
                 if (state.toolLock) ActionChip(ShellTags.TOOL_LOCK_CHIP, SketchStrings.Chrome.TOOL_LOCK_CHIP, icon = StripIcon.LockClosed) { state.toolLock = false } else null,
                 config.autoConstrain?.takeIf { config.constraintsAvailable }?.let(AutoConstrainChips::freeDraw),

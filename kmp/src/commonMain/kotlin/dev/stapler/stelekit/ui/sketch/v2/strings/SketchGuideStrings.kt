@@ -55,6 +55,15 @@ object SketchGuideStrings {
         const val EDIT_BODY = "Edit a value and the drawing follows. Sizes are in inches and sixteenths."
     }
 
+    /** Typing a size on the canvas of a technical sheet. */
+    object Dimensions {
+        const val TITLE = "Type a size on the canvas"
+        const val PILL_TITLE = "Tap a size to type it"
+        const val PILL_BODY = "Select a shape on a technical sheet and its sizes appear beside it. Tap one, type a length such as 12 3/16\", then tap Next or Done. Next moves from Width to Height; tap outside to cancel."
+        const val CHIP_TITLE = "Show or hide the sizes"
+        const val CHIP_BODY = "The Dimensions chip at the bottom turns the size pills on or off. Constraints and Technical data open their panels from the same row."
+    }
+
     /** Dragging one point of a line. */
     object PointDrag {
         const val TITLE = "Move one point"
@@ -77,6 +86,7 @@ object SketchGuideStrings {
         const val CONSTRAINTS = "Constraints"
         const val TECHNICAL = "Technical sheets"
         const val POINT_DRAG = "Moving one point"
+        const val DIMENSIONS = "Typing sizes on the canvas"
         const val GESTURES = "Touch gestures"
         const val KEYBOARD = "Keyboard"
         const val ORIENTATION = "Finding your way around"
@@ -84,6 +94,7 @@ object SketchGuideStrings {
         const val TOOLS_BODY = "Select moves and resizes what you draw. Rectangle, Diamond, Ellipse, Arrow, Line and Freedraw make shapes. Text adds words, Image adds a picture, Frame groups shapes, Eraser removes them. Hand pans the view. On a technical sheet, Point and Arc add exact geometry that constraints can hold."
         const val CONSTRAINTS_BODY = "A constraint is a rule the sketch keeps true. Select a line, circle or point and choose Constrain to add one: Coincident, Horizontal, Vertical, Parallel, Perpendicular, Equal, Tangent, Symmetric, Fixed, and the numeric ones Distance, Angle and Radius. The Constraints panel lists every rule with its state. Redundant means a rule repeats another; Conflict means two rules cannot both be true, and Show conflicts points at them. Auto-constrain adds the obvious rules as you draw."
         const val TECHNICAL_BODY = "Open the three-dot menu and choose Make this a technical sheet to get inch dimensions, a sixteenth-inch grid, the Point and Arc tools and the Constrain tools. The Technical tab (three-dot menu, Technical data) holds named dimensions and zones; edit a value and the drawing follows. Size fields for the selected shape are in the Style tab."
+        const val DIMENSIONS_BODY = "On a technical sheet, select one shape and its sizes show as pills beside it: Width and Height for a rectangle, Diameter for a circle, Length for a line. Tap a pill, type a length such as 12 3/16\" or 3' 4\", and tap Next or Done; Next on Width moves on to Height. The cancel button, or a tap on the canvas, ends the edit, and a length that cannot be read keeps the old size and says why. With a keyboard, Enter applies, Shift+Tab goes back and Esc cancels. The Dimensions chip in the bottom row shows or hides the pills."
         const val POINT_DRAG_BODY = "Select a line, then press close to one of its points and drag; only that point moves. Pressing within about a finger's width of the point is enough. The point snaps to other shapes' corners, ends and centres; hold Shift to snap the angle to 15 degree steps. Release to finish; it is one undo step."
         const val GESTURES_BODY = "Tap selects. Drag moves. Drag a handle to resize or rotate. Pinch zooms; the Hand tool or the pan pad pans. With a line selected, press a corner or end and drag to move just that point. Double tap enters a group."
         const val KEYBOARD_BODY = "Ctrl+/ (Cmd+/ on a Mac) opens Help and search for tools and actions. Ctrl or Cmd+Z undoes; add Shift to redo. Delete removes the selection. Esc cancels a gesture or deselects. F6 moves between regions; Tab moves within one. The menu entry Keyboard shortcuts lists every key."

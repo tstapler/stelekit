@@ -42,6 +42,8 @@ kt_android_library(
             "**/StripIconsTest.kt",
             "**/SketchEmbedUiTest.kt",
             "**/ElementStatsHostTest.kt",
+            "**/DimensionPillsHostTest.kt",
+            "**/DimensionTourTest.kt",
             "**/SourcePagePickerTest.kt",
             "**/DrawingAttachUiTest.kt",
             "**/RegistryEditorScreenTest.kt",
