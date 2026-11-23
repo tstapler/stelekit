@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.error.SyncOrigin
 import dev.stapler.stelekit.model.RepoRoot
 import android.app.ForegroundServiceStartNotAllowedException
 import android.app.NotificationChannel

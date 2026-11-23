@@ -17,7 +17,7 @@ import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.GitTransportRetryState
 import dev.stapler.stelekit.git.RepoOpGate
-import dev.stapler.stelekit.git.SyncOrigin
+import dev.stapler.stelekit.error.SyncOrigin
 import dev.stapler.stelekit.git.withExclusiveLease
 import dev.stapler.stelekit.git.model.CloneDepthState
 import dev.stapler.stelekit.git.model.DEFAULT_CLONE_DEPTH

@@ -160,6 +160,7 @@ import org.junit.runners.Suite
     // DiscoverabilityTest, CoachWalkthroughTest and EmptyStateTest (sketch v2, Stories 3.6.8 and 3.6.6) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
     // SolveProgressIndicatorTest (sketch v2, Task 4.1.4b) is excluded for the same reason (1) and composes @Composable lambdas (no Compose plugin in this target).
     // SceneSemanticsTest and TechnicalDataPanelTest (sketch v2, Stories 3.6.2 and 4.2.5) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
+    // HelpSearchDialogTest (sketch v2 Help and search) is excluded for the same reason (1) and composes @Composable lambdas (no Compose plugin in this target).
     // ConstraintPanelTest and UxConstraintsAcceptanceTest (sketch v2, Stories 4.2.2 and 4.2.3) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
     // ConstraintTargetPickerTest and DimensionEditTest (sketch v2, Tasks 4.2.6b, 4.2.7b and 4.2.7d) are excluded for the same reason (1) and compose @Composable lambdas (no Compose plugin in this target).
     // PanelTabsA11yTest (sketch v2 review finding 6) is excluded for the same reason (1) and composes the shell (no Compose plugin in this target).
@@ -189,6 +190,9 @@ import org.junit.runners.Suite
     // DepthEstimationPanelLiveRegionTest and ScheduledSyncControlsApplyTest are excluded for the same reason (1).
     // AndroidPixelSpikeTest (Spike 0.1.3e) needs the commonTest DeterminismSpikeSupport and InputSpikeAndroidTest composes @Composable lambdas (no Compose plugin or commonTest in this target); both run under Gradle.
     // EscOrderIntegrationTest and BracketPlateUxScenarioTest (sketch v2, Tasks 6.2.4h and 6.2.4f) mount the real host (composeRule, no Compose plugin in this target) over the commonTest rig; Gradle-only.
+    // TechnicalTabHostTest (the Technical tab of the real host) mounts the host over the commonTest rig and StripIconsTest renders Compose canvases (composeRule, no Compose plugin in this target); both Gradle-only.
+    // PhoneMenuEntryTest (the phone-size overflow menu entries for panels and the sheet type) mounts the real host over the commonTest rig (composeRule, no Compose plugin in this target); Gradle-only.
+    // MobileChromeRenderTest (phone, wide-phone and tablet renders of the chrome) ControlHelpPopupTest (the long-press help of each icon-only control) SnapToastHostTest (one live Snap toast) CanvasPressHostTest (presses reach the canvas through the chrome) and ChromeTargetSizeTest (every chrome control meets the touch floor) mount the real host over the commonTest rig (composeRule, no Compose plugin in this target); Gradle-only.
     // KeyboardAccessHostTest (sketch v2, Task 3.6.3c and the host's accessibility mounts) mounts the real host over the commonTest rig (composeRule, no Compose plugin in this target); Gradle-only.
     // ElementStatsHostTest (the element size section of the real host's Style tab) mounts the host over the commonTest rig (composeRule, no Compose plugin in this target); Gradle-only.
     // Task 6.2.1c: WiringV2AndroidEntryPointTest (the root, the class seams of the plan-seam-classes block and the saver's durability) stays Gradle-only for the reasons named above; it is named here so TestRegistrationAuditTest can tell an exclusion from an unregistered class.

@@ -47,6 +47,13 @@ import dev.stapler.stelekit.sketch.v2.render.RenderStyle
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
+import dev.stapler.stelekit.sketch.v2.scene.LineElement
+import dev.stapler.stelekit.ui.sketch.v2.guide.GuideEffects
+import dev.stapler.stelekit.ui.sketch.v2.guide.GuideRunner
+import dev.stapler.stelekit.ui.sketch.v2.guide.TourTriggers
+import dev.stapler.stelekit.ui.sketch.v2.guide.GuideContent
+import dev.stapler.stelekit.ui.sketch.v2.guide.HelpSearchDialog
+import dev.stapler.stelekit.ui.sketch.v2.guide.TourController
 import dev.stapler.stelekit.sketch.v2.tools.SelectTool
 import dev.stapler.stelekit.sketch.v2.tools.ToolContext
 import dev.stapler.stelekit.sketch.v2.tools.PointerKind
@@ -111,6 +118,8 @@ fun SketchEditorV2Host(
     val hint = remember(session) { SingleKeyHintProducer(session.diagnostics.port, controller.keymap.isWeb) }
     val technical = remember(session) { session.services.technical?.let { source -> session.sheet?.let { TechnicalPanelState(source, it) } } }
     SideEffect { controller.keys.hint = hint }
+    val tours = remember(session) { session.services.platform.tourProgress?.let { TourController(GuideContent.registry(), it) } }
+    TourTriggers(tours, controller.ui.activeTool, controller.overlay == EditorOverlay.ConstrainMenu, controller.ui.panelTab, controller.ui.selection.singleOrNull()?.let { controller.doc.scene[ElementId(it)] } is LineElement)
     LaunchedEffect(controller.revision) { largeScene.refresh() }
     DisposableEffect(extras) { onDispose { extras.close() } }
     val latestBack by rememberUpdatedState(onBack)
@@ -198,9 +207,13 @@ fun SketchEditorV2Host(
         onGrid = extras::toggleGrid,
         onSnap = extras::toggleSnap,
         restore = restore,
-        technicalPanel = technical != null,
+        sheetKind = controller.sheetKind.takeIf { it != dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Converted && !controller.readOnly },
+        onSheetKind = { controller.setSheetKind(it) },
+        technicalPanel = technical != null && controller.sheetKind == dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical,
         canvasModifier = remember(canvasAccess) { canvasRegionKeysOf(canvasAccess) },
         onRegions = { canvasAccess.regions = it },
+        tours = tours,
+        onHelp = { controller.overlay = EditorOverlay.HelpSearch },
     )
     DiagnosticsHost(session.diagnostics, modifier.testTag(HostTags.ROOT)) {
         SketchScreenV2(
@@ -217,7 +230,7 @@ fun SketchEditorV2Host(
                 largeScene.hardCap?.let { HardCapNotice(it, largeScene::answer, Modifier.align(Alignment.TopCenter)) }
             },
         )
-        HostOverlays(controller, extras, singleKey) { singleKey = it }
+        HostOverlays(controller, extras, tours, singleKey) { singleKey = it }
         if (leave.prompting) {
             LeaveSketchPrompt(
                 onRetry = leave::retry,
@@ -338,10 +351,10 @@ private fun SelectionVisuals(controller: SketchEditorController) {
     val ids = state.selection
     if (ids.isEmpty() || state.activeTool != ToolId.Select) return
     val ctx = remember(controller.revision, state.viewport.zoom, ids) {
-        ToolContext(controller.doc.scene, state.viewport.zoom, controller.defaultStyle, controller.ids, controller.spatialIndex)
+        ToolContext(controller.doc.scene, state.viewport.zoom, controller.defaultStyle, controller.ids, controller.spatialIndex, controller.view.pxPerDp)
     }
     val select = remember(ids, controller.revision) { SelectTool(ids.map(::ElementId), controller.touchPresent) }
-    SelectionOverlay(select.selectionFrame(ctx), select.handleLayout(ctx), state.viewport)
+    SelectionOverlay(select.selectionFrame(ctx), select.handleLayout(ctx), state.viewport, onZoomToSelection = controller.view::zoomToSelection, vertices = select.vertexPoints(ctx))
 }
 
 @Composable
@@ -385,7 +398,7 @@ private fun Modifier.wheelInput(controller: SketchEditorController): Modifier = 
 }
 
 @Composable
-private fun HostOverlays(controller: SketchEditorController, extras: EditorExtras, singleKey: Boolean, onSingleKey: (Boolean) -> Unit) {
+private fun HostOverlays(controller: SketchEditorController, extras: EditorExtras, tours: TourController?, singleKey: Boolean, onSingleKey: (Boolean) -> Unit) {
     ExtrasDialogs(extras)
     when (controller.overlay) {
         EditorOverlay.Shortcuts -> ShortcutsSheet(
@@ -402,6 +415,7 @@ private fun HostOverlays(controller: SketchEditorController, extras: EditorExtra
             onDismiss = { controller.overlay = null },
         )
         EditorOverlay.ConstrainMenu -> ConstrainMenuDialog(controller, extras)
+        EditorOverlay.HelpSearch -> GuideDialog(controller, extras, tours)
         null -> Unit
     }
 }
@@ -423,3 +437,35 @@ fun SketchEditorLoading(modifier: Modifier = Modifier) {
 
 internal fun SketchEditorController.boundsOfSelection(): SceneBounds? =
     SceneBounds.of(ui.selection.mapNotNull { doc.scene[ElementId(it)] })
+
+/** Help and search: the tools this sheet offers and the actions this host can run. */
+@Composable
+private fun GuideDialog(controller: SketchEditorController, extras: EditorExtras, tours: TourController?) {
+    val tools = remember(controller.sheetKind) { ToolStripModel(technicalSheet = controller.sheetKind == dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical, keymapEnv = controller.keymap).tools.map { it.id } }
+    val actions = GuideRunner.offered(extras.constraintsAvailable, extras.exportAvailable, extras.importDisabledReason == null)
+    HelpSearchDialog(
+        tours = tours,
+        tools = tools,
+        actions = actions,
+        onRun = { action ->
+            controller.overlay = null
+            GuideRunner.run(action, editorGuideEffects(controller, extras))
+        },
+        onDismiss = { controller.overlay = null },
+    )
+}
+
+private fun editorGuideEffects(controller: SketchEditorController, extras: EditorExtras) = object : GuideEffects {
+    override fun undo() = controller.undo()
+    override fun redo() = controller.redo()
+    override fun delete() { controller.keys.run(KeyAction.Delete) }
+    override fun constrain() { controller.overlay = EditorOverlay.ConstrainMenu }
+    override fun shortcuts() { controller.overlay = EditorOverlay.Shortcuts }
+    override fun goToElement() { controller.overlay = EditorOverlay.GoToElement }
+    override fun fit() { controller.ui.viewport = controller.view.fit() }
+    override fun grid() = extras.toggleGrid()
+    override fun snap() = extras.toggleSnap()
+    override fun export() = extras.exporter.open()
+    override fun import() { extras.importer.chooseFile() }
+    override fun useTool(tool: ToolId) = controller.tools.chooseTool(tool)
+}

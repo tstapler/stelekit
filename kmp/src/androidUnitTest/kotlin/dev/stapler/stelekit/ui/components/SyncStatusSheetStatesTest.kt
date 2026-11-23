@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.LockVerdict
 import dev.stapler.stelekit.git.PausedRetryInfo
-import dev.stapler.stelekit.git.SyncOrigin
+import dev.stapler.stelekit.error.SyncOrigin
 import dev.stapler.stelekit.git.SyncRunInfo
 import dev.stapler.stelekit.git.SyncStaleness
 import dev.stapler.stelekit.git.SyncStatusSheetModel

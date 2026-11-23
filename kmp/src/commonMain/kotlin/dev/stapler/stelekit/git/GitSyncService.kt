@@ -12,6 +12,7 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.error.SyncOrigin
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.git.merge.JournalMergeService

@@ -1,4 +1,4 @@
-// One-off golden generator (Task 0.1.5b). Run: npm install && node generate.mjs [outDir]
+// One-off golden generator (Task 0.1.5b). Run: bun install && bun generate.mjs [outDir]
 // Output goes to kmp/src/commonTest/resources/excalidraw/ by default. Not run in CI.
 import { getStroke } from "perfect-freehand";
 import rough from "roughjs/bundled/rough.esm.js";

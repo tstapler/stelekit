@@ -7,6 +7,7 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.merge.ApplyFailure
+import dev.stapler.stelekit.merge.CopyJobTracking
 import dev.stapler.stelekit.merge.CopyRunOutcome
 import dev.stapler.stelekit.merge.MergeResult
 import dev.stapler.stelekit.merge.PageFailure

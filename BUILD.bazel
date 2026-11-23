@@ -112,3 +112,4 @@ filegroup(
     srcs = glob(["docs/journeys/*.md"]),
     visibility = ["//kmp:__subpackages__"],
 )
+exports_files(["MODULE.bazel"], visibility = ["//visibility:public"])

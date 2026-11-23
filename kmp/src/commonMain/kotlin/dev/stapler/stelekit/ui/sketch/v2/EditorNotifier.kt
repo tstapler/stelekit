@@ -35,7 +35,11 @@ class EditorNotifier(val queue: SketchNoticeQueue, private val clockMillis: () -
 
     fun now(): Long = clockMillis()
 
-    fun toast(key: String, text: String) = post(SketchNotice(key, BannerTier.Info, text))
+    /** A transient info toast; a later toast with the same key replaces this one (a toggle's "on" is gone when its "off" shows). */
+    fun toast(key: String, text: String) {
+        queue.postReplacing(SketchNotice(key, BannerTier.Info, text), now())
+        revision += 1
+    }
 
     fun post(notice: SketchNotice) {
         queue.post(notice, now())

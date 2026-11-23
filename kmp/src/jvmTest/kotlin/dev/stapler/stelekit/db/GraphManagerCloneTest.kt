@@ -162,7 +162,7 @@ class GraphManagerCloneTest {
         val gm = graphManager()
         val fakeGit = FakeGitRepository(cloneResult = Unit.right())
         val gate = dev.stapler.stelekit.git.RepoOpGate()
-        val hold = checkNotNull(gate.tryAcquire(checkNotNull(fakeGit.gateKeyForRoot("/tmp/held-clone")), dev.stapler.stelekit.git.SyncOrigin.UiPress))
+        val hold = checkNotNull(gate.tryAcquire(checkNotNull(fakeGit.gateKeyForRoot("/tmp/held-clone")), dev.stapler.stelekit.error.SyncOrigin.UiPress))
 
         val result = gm.cloneAndAdd(gitRepository = fakeGit, gate = gate, url = "https://example.com/r.git", localPath = "/tmp/held-clone", auth = GitAuth.None, onProgress = {})
 

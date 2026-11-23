@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Tyler Stapler
 // SPDX-License-Identifier: Elastic-2.0
 
-package dev.stapler.stelekit.jobs
+package dev.stapler.stelekit.merge
 
 import arrow.core.left
 import arrow.core.right
@@ -9,23 +9,14 @@ import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.RegistryGraphLocator
 import dev.stapler.stelekit.git.testsupport.StubFileSystem
-import dev.stapler.stelekit.merge.ApplyFailure
-import dev.stapler.stelekit.merge.ClosureSummary
-import dev.stapler.stelekit.merge.CopyDirection
-import dev.stapler.stelekit.merge.CopyRunHost
-import dev.stapler.stelekit.merge.CopyRunOutcome
-import dev.stapler.stelekit.merge.DryRunSummary
-import dev.stapler.stelekit.merge.InMemoryMergeStorage
-import dev.stapler.stelekit.merge.MergePlan
-import dev.stapler.stelekit.merge.MergeResult
-import dev.stapler.stelekit.merge.PageFailure
-import dev.stapler.stelekit.merge.PageMergeService
-import dev.stapler.stelekit.merge.TargetWriterCapabilities
-import dev.stapler.stelekit.merge.TargetWriterRouter
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.GraphRegistry
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.GraphBackend
+import dev.stapler.stelekit.jobs.InProcessJobs
+import dev.stapler.stelekit.jobs.JobKind
+import dev.stapler.stelekit.jobs.JobState
+import dev.stapler.stelekit.jobs.CompositeJobRegistry
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first

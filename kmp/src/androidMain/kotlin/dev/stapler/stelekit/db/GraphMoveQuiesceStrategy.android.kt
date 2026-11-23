@@ -15,7 +15,7 @@ import dev.stapler.stelekit.git.GitSyncBusyCounter
 import dev.stapler.stelekit.git.GateLease
 import dev.stapler.stelekit.git.GitWriteBackQueue
 import dev.stapler.stelekit.git.RepoOpGate
-import dev.stapler.stelekit.git.SyncOrigin
+import dev.stapler.stelekit.error.SyncOrigin
 import dev.stapler.stelekit.git.WorkManagerSyncScheduler
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.model.StorageMoveOperation

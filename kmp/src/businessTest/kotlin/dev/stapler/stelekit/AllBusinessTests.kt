@@ -260,7 +260,7 @@ import dev.stapler.stelekit.editor.ImageAttachCallbackContractTest
 import dev.stapler.stelekit.export.ExportServiceJournalRangeTest
 import dev.stapler.stelekit.export.ExportServiceLinkedPagesTest
 import dev.stapler.stelekit.git.GitCloneRetryCleanupTest
-import dev.stapler.stelekit.jobs.TrackedCopyRunHostTest
+import dev.stapler.stelekit.merge.TrackedCopyRunHostTest
 import dev.stapler.stelekit.ui.GitSyncCoordinatorJobsTest
 import dev.stapler.stelekit.ui.GitSyncCoordinatorCoalesceTest
 import dev.stapler.stelekit.git.GitConfigCloneDepthMappingTest
@@ -1035,6 +1035,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.ExcalidrawFillTest::class,
     dev.stapler.stelekit.sketch.v2.ScenePainterPixelTest::class,
     dev.stapler.stelekit.sketch.v2.ToolStripModelTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.StripIconDrawTest::class,
     dev.stapler.stelekit.sketch.v2.ElementStatsGeometryTest::class,
     dev.stapler.stelekit.sketch.v2.FreehandGoldenTest::class,
     dev.stapler.stelekit.sketch.v2.tools.ToolCancelTest::class,
@@ -1044,6 +1045,10 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.tools.TextToolTest::class,
     dev.stapler.stelekit.sketch.v2.tools.ImageToolTest::class,
     dev.stapler.stelekit.sketch.v2.tools.SelectToolTest::class,
+    dev.stapler.stelekit.sketch.v2.tools.SelectVertexDragTest::class,
+    dev.stapler.stelekit.sketch.v2.tools.SelectTouchReachTest::class,
+    dev.stapler.stelekit.sketch.v2.tools.SmallShapeResizeTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.NoticeReplaceTest::class,
     dev.stapler.stelekit.sketch.v2.tools.EraserFrameToolTest::class,
     dev.stapler.stelekit.sketch.v2.tools.PointArcToolsTest::class,
     dev.stapler.stelekit.sketch.v2.tools.FreedrawToolTest::class,
@@ -1070,6 +1075,10 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.tools.ShapeToolsTest::class,
     dev.stapler.stelekit.ui.sketch.v2.NoticeQueueTest::class,
     dev.stapler.stelekit.ui.sketch.v2.OnboardingPolicyTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.guide.TourControllerTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.guide.GuideContentTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.guide.GuideSearchTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.guide.GuideModelsTest::class,
     dev.stapler.stelekit.ui.sketch.v2.OnboardingSequencerTest::class,
     dev.stapler.stelekit.ui.sketch.v2.NonDragTransformModeTest::class,
     dev.stapler.stelekit.ui.sketch.v2.NonDragPickModesTest::class,
@@ -1207,6 +1216,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.projectbridge.ProjectSidecarStoreTest::class,
     dev.stapler.stelekit.projectbridge.SidecarOldReaderSchemaGateTest::class,
     dev.stapler.stelekit.projectbridge.SidecarBackupAndStagingTest::class,
+    dev.stapler.stelekit.projectbridge.ProjectTechnicalDataTest::class,
     dev.stapler.stelekit.projectbridge.SheetCodecDispatchTest::class,
     dev.stapler.stelekit.projectbridge.SidecarRetentionPolicyTest::class,
     dev.stapler.stelekit.projectbridge.BundleV2PassthroughTest::class,

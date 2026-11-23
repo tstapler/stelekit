@@ -1,0 +1,17 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+# Service-worker + app-shell unit tests (node:test API, run by Bun). Hermetic: staged in the
+# runfiles tree, no network.
+sh_test(
+    name = "service_worker_tests",
+    srcs = ["//third_party/bun:run_bun_staged.sh"],
+    args = ["$(rootpath //third_party/bun:bun)", "test"],
+    data = [
+        "//third_party/bun:bun",
+        "looks-like-app-shell.js",
+        "looks-like-app-shell.test.js",
+        "stelekit-service-worker.js",
+        "stelekit-service-worker.test.js",
+    ],
+    tags = ["web"],
+)

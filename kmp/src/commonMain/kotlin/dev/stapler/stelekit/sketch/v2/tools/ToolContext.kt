@@ -28,11 +28,21 @@ data class ToolContext(
     val ids: ElementIdSource,
     /** The host's live index of [scene]; when null the first hit test builds one (O(elements): fine for a test or one-off). */
     val spatialIndex: SpatialIndex? = null,
+    /** Screen pixels per dp, so a touch target stated in dp is the same physical size on every screen. */
+    val pxPerDp: Double = 1.0,
 ) {
+    /** How far from an outline a press still hits it, in screen px: a finger-sized reach for touch, the fine mouse reach otherwise. */
+    fun hitTolerancePx(touch: Boolean): Double = if (touch) maxOf(TOUCH_HIT_DP * pxPerDp, HitTester.HIT_TOLERANCE_PX) else HitTester.HIT_TOLERANCE_PX
+
     /** Narrow-phase hit testing over [scene], shared by every tool handling this event. */
     val hitTester: HitTester by lazy { HitTester(scene, spatialIndex ?: SpatialIndex().also { it.rebuild(scene) }) }
 
     init {
         require(zoom.isFinite() && zoom > 0.0) { "zoom must be positive and finite" }
+        require(pxPerDp.isFinite() && pxPerDp > 0.0) { "pxPerDp must be positive and finite" }
+    }
+
+    private companion object {
+        const val TOUCH_HIT_DP = 12.0
     }
 }

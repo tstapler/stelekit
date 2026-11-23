@@ -10,7 +10,7 @@ import dev.stapler.stelekit.git.LockVerdict
 import dev.stapler.stelekit.git.OwnedOperationInfo
 import dev.stapler.stelekit.git.OwnerHeartbeat
 import dev.stapler.stelekit.git.RepoOpGate
-import dev.stapler.stelekit.git.SyncOrigin
+import dev.stapler.stelekit.error.SyncOrigin
 import dev.stapler.stelekit.git.buildCommitMessage
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.JvmGitRepository

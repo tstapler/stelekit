@@ -30,6 +30,9 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.testTag
@@ -124,6 +127,18 @@ fun Modifier.helpOnFocus(state: HelpPopupState, entry: HelpEntry): Modifier {
             state.blurred(entry)
         } else if (input.inputMode == InputMode.Keyboard) {
             state.showForFocus(entry)
+        }
+    }
+}
+
+/** A mouse hovering over the control shows [entry] and leaving hides it; a finger never hovers, so touch keeps its long press. Never consumes an event. */
+fun Modifier.helpOnHover(state: HelpPopupState, entry: HelpEntry): Modifier = pointerInput(entry) {
+    awaitPointerEventScope {
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val mouse = event.changes.any { it.type == PointerType.Mouse }
+            if (mouse && event.type == PointerEventType.Enter) state.showForFocus(entry)
+            if (event.type == PointerEventType.Exit) state.blurred(entry)
         }
     }
 }

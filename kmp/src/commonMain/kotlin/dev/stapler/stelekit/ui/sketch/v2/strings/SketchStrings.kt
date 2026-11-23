@@ -338,6 +338,7 @@ object SketchStrings {
     /** The top bar (Story 3.1.4d, UX-80): the Finger drawing chip at both tiers and the save status. */
     object TopBar {
         const val BACK = "Back"
+        const val HELP = "Help and search"
         const val FINGER_ON = "Finger: On"
         const val FINGER_OFF = "Finger: Off"
         const val FINGER_ON_SHORT = "On"
@@ -420,6 +421,12 @@ object SketchStrings {
     /** The scene hard cap and the constraint cap (Story 2.2.4, UX-73) and the low-memory toast. */
     /** The prompt shown when the user leaves a sheet whose latest edits are not on disk (UX-72). */
     /** The panel's tab names (ux.md section 17): the tab list is a group of selectable tabs, each named in words. */
+    /** The overflow entries that open the side panels and switch the sheet type; a phone has no other way to reach them. */
+    object PanelMenu {
+        const val MAKE_TECHNICAL = "Make this a technical sheet"
+        const val MAKE_DIAGRAM = "Make this a diagram sheet"
+    }
+
     object PanelTabs {
         const val LIST = "Panels"
         const val STYLE = "Style"

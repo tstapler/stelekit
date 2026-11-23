@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.error.SyncOrigin
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.element
 import io.kotest.property.arbitrary.list

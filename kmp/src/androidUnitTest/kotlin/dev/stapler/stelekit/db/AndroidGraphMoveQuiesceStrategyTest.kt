@@ -9,7 +9,7 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.GitSyncBusyCounter
 import dev.stapler.stelekit.git.GitWriteBackQueue
 import dev.stapler.stelekit.git.RepoOpGate
-import dev.stapler.stelekit.git.SyncOrigin
+import dev.stapler.stelekit.error.SyncOrigin
 import dev.stapler.stelekit.platform.GitWorktreeLocks
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred

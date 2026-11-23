@@ -32,6 +32,14 @@ kt_android_library(
             "**/ProjectSettingsPanelTest.kt",
             "**/ProjectListPhoneLayoutTest.kt",
             "**/ProjectListDeleteTest.kt",
+            "**/TechnicalTabHostTest.kt",
+            "**/PhoneMenuEntryTest.kt",
+            "**/MobileChromeRenderTest.kt",
+            "**/ControlHelpPopupTest.kt",
+            "**/SnapToastHostTest.kt",
+            "**/CanvasPressHostTest.kt",
+            "**/ChromeTargetSizeTest.kt",
+            "**/StripIconsTest.kt",
             "**/SketchEmbedUiTest.kt",
             "**/ElementStatsHostTest.kt",
             "**/SourcePagePickerTest.kt",
@@ -67,6 +75,8 @@ kt_android_library(
             # Compose host tests for the v2 scene semantics and the technical-data panel (Gradle-only, no Compose plugin in this target)
             "**/SceneSemanticsTest.kt",
             "**/TechnicalDataPanelTest.kt",
+            # Compose host test for the v2 Help and search dialog (Gradle-only, no Compose plugin in this target)
+            "**/HelpSearchDialogTest.kt",
             # Compose host tests for the v2 constraint panel, glyph overlay, auto-constrain toggle, target picker and dimension editor (Gradle-only, no Compose plugin in this target)
             "**/ConstraintPanelTest.kt",
             "**/UxConstraintsAcceptanceTest.kt",
