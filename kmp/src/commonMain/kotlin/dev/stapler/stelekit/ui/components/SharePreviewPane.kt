@@ -14,7 +14,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import arrow.core.Either
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
 import dev.stapler.stelekit.error.DomainError
 
 /** Outcome of computing the preview text for the current format + scope. */
@@ -25,7 +27,7 @@ internal sealed interface PreviewState {
 }
 
 /**
- * Shows the string [compute] yields (the export flow's own output for the chosen format + scope), as
+ * Runs [compute] on [PlatformDispatcher.Default] (never the UI thread) and shows the string it yields (the export flow's own output for the chosen format + scope), as
  * selectable monospace text (HTML is shown as source, never rendered). Recomputed off the UI
  * thread (the export service runs on the DB dispatcher) whenever an input changes; the previous
  * computation is cancelled by [LaunchedEffect].
@@ -45,7 +47,7 @@ internal fun SharePreviewPane(
     LaunchedEffect(previewKey) {
         state = PreviewState.Loading
         state = try {
-            currentCompute().fold({ PreviewState.Failed(it.message) }, { PreviewState.Ready(it) })
+            withContext(PlatformDispatcher.Default) { currentCompute() }.fold({ PreviewState.Failed(it.message) }, { PreviewState.Ready(it) })
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {

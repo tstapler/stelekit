@@ -15,6 +15,15 @@ import androidx.compose.ui.text.TextLayoutResult
 /** Settings key for the cross-block drag-select feature flag. */
 const val MULTI_BLOCK_DRAG_SELECT_KEY = "feature.multi_block_drag_select"
 
+/** Bumped when the flag is toggled in Settings so the app root re-reads [MULTI_BLOCK_DRAG_SELECT_KEY]. */
+val multiBlockDragSelectRevision = kotlinx.coroutines.flow.MutableStateFlow(0)
+
+/** Persists the flag and notifies observers; takes effect immediately, no restart needed. */
+fun dev.stapler.stelekit.platform.Settings.setMultiBlockDragSelect(enabled: Boolean) {
+    putBoolean(MULTI_BLOCK_DRAG_SELECT_KEY, enabled)
+    multiBlockDragSelectRevision.value++
+}
+
 /** Provided by the app root from [MULTI_BLOCK_DRAG_SELECT_KEY]; [BlockList] reads it. */
 @Suppress("CompositionLocalAllowlist") // threading the flag through BlockList -> BlockRenderer -> BlockItem -> BlockViewer would touch every row signature
 val LocalMultiBlockDragSelect = compositionLocalOf { false }

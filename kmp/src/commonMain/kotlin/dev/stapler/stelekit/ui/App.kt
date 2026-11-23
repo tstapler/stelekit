@@ -169,10 +169,12 @@ private fun MainGraphContentHost(
     val graphManager = graphManagerState.graphManager
     val activeGraphId = graphManagerState.activeGraphId
     val repos = graphManagerState.activeRepoSet
+    val isMobileWindow = LocalWindowSizeClass.current.isMobile
     // Desktop-only default: touch devices keep native long-press/drag behaviour unless opted in.
-    val multiBlockDragSelect = platformSettings.getBoolean(
-        MULTI_BLOCK_DRAG_SELECT_KEY, !LocalWindowSizeClass.current.isMobile,
-    )
+    val dragSelectRevision by multiBlockDragSelectRevision.collectAsState()
+    val multiBlockDragSelect = remember(dragSelectRevision, platformSettings) {
+        platformSettings.getBoolean(MULTI_BLOCK_DRAG_SELECT_KEY, !isMobileWindow)
+    }
 
     if (repos == null || !graphManagerState.migrationReady) {
         // Show loading state while repositories are being initialized or migration is running.

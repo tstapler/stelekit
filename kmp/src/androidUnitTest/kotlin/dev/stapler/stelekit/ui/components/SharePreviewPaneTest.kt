@@ -48,15 +48,48 @@ class SharePreviewPaneTest {
         composeRule.onNodeWithText("- item").assertDoesNotExistOrFail()
 
         gate.complete(Unit)
-        composeRule.waitForIdle()
-        composeRule.onNodeWithText("- item").assertExists()
+        waitForText("- item")
         composeRule.onNodeWithText("Copy").assertIsEnabled().performClick()
         assertEquals(1, copies)
 
         format = "html"
-        composeRule.waitForIdle()
-        composeRule.onNodeWithText("<p>raw &amp; source</p>").assertExists()
+        waitForText("<p>raw &amp; source</p>")
+    }
+
+    // compute runs on a background dispatcher, so idle-waiting alone can return before it finishes.
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    private fun waitForText(text: String) {
+        composeRule.waitUntilAtLeastOneExists(androidx.compose.ui.test.hasText(text), 5_000)
     }
 
     private fun androidx.compose.ui.test.SemanticsNodeInteraction.assertDoesNotExistOrFail() = assertDoesNotExist()
+
+    @Test
+    fun largeExport_computeRunsOffTheMainThread_andShowsLoadingFirst() {
+        val gate = CompletableDeferred<Unit>()
+        var computeThread: Thread? = null
+        val mainThread = Thread.currentThread()
+        val bigText = (1..600).joinToString("\n") { "- block $it" }
+        composeRule.setContent {
+            MaterialTheme {
+                SharePreviewPane(
+                    previewKey = "big",
+                    compute = {
+                        computeThread = Thread.currentThread()
+                        gate.await()
+                        bigText.right()
+                    },
+                    onCopy = {},
+                )
+            }
+        }
+        composeRule.onNodeWithText("Copy").assertIsNotEnabled() // loading while the 600-block export is pending
+        composeRule.onNodeWithText("Copy").assertExists()
+        gate.complete(Unit)
+        composeRule.waitUntil(5_000) { computeThread != null }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Copy").assertIsEnabled()
+        assertEquals(true, computeThread !== mainThread, "compute ran on the main thread")
+        composeRule.onNodeWithText("- block 600", substring = true).assertExists()
+    }
 }
