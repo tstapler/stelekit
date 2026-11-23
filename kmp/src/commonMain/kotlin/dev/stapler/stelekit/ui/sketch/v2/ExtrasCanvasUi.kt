@@ -26,7 +26,7 @@ import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
 
 private const val DIMENSION_EDITOR_TOP_DP = 56
-private const val CHIP_BOTTOM_DP = 72
+private const val CHIP_BOTTOM_DP = 120
 private const val PANEL_BOTTOM_DP = 8
 private const val EDITOR_PAD_DP = 12
 private const val STATUS_PAD_DP = 8
@@ -49,6 +49,7 @@ internal fun BoxScope.ExtrasCanvasOverlays(controller: SketchEditorController, e
         if (!glyphsHidden) GlyphOverlay(controller, extras, pointer)
         SuggestionChip(controller, extras)
     }
+    DimensionPillsOverlay(controller, extras)
     DimensionEditorOverlay(extras)
     SolveStatus(controller)
     ExtraPanelHost(controller, extras, Modifier.align(Alignment.BottomCenter).padding(bottom = PANEL_BOTTOM_DP.dp))

@@ -13,6 +13,7 @@ object GuideFeatures {
     const val CONSTRAINTS = "feature.constraints"
     const val TECHNICAL_TAB = "feature.technical-tab"
     const val POINT_DRAG = "feature.point-drag"
+    const val TECHNICAL_SHAPE = "feature.technical-shape"
 
     /** The constraint-only tools: using one is the first use of constraints. */
     fun ofTool(id: ToolId): String? = when (id) {
@@ -30,6 +31,7 @@ object GuideContent {
     const val CONSTRAINTS = "constraints"
     const val TECHNICAL = "technical"
     const val POINT_DRAG = "point-drag"
+    const val DIMENSIONS = "dimensions"
 
     private val orientation = Tour(
         ORIENTATION, S.Orientation.TITLE,
@@ -72,7 +74,16 @@ object GuideContent {
         setOf(GuideFeatures.POINT_DRAG),
     )
 
-    val tours: List<Tour> = listOf(orientation, constraints, technical, pointDrag)
+    private val dimensions = Tour(
+        DIMENSIONS, S.Dimensions.TITLE,
+        listOf(
+            TourStep("pill", TabStop.Canvas, S.Dimensions.PILL_TITLE, S.Dimensions.PILL_BODY),
+            TourStep("chip", TabStop.Canvas, S.Dimensions.CHIP_TITLE, S.Dimensions.CHIP_BODY),
+        ),
+        setOf(GuideFeatures.TECHNICAL_SHAPE),
+    )
+
+    val tours: List<Tour> = listOf(orientation, constraints, technical, pointDrag, dimensions)
 
     fun registry(): TourRegistry = TourRegistry(tours)
 
@@ -81,6 +92,7 @@ object GuideContent {
         HelpTopic("tools", S.Help.TOOLS, S.Help.TOOLS_BODY, listOf("tool", "draw", "shape", "strip")),
         HelpTopic(CONSTRAINTS, S.Help.CONSTRAINTS, S.Help.CONSTRAINTS_BODY, listOf("constrain", "rule", "parallel", "horizontal", "vertical", "dimension", "conflict", "auto"), CONSTRAINTS),
         HelpTopic(TECHNICAL, S.Help.TECHNICAL, S.Help.TECHNICAL_BODY, listOf("technical", "inches", "dimension", "zone", "grid", "size"), TECHNICAL),
+        HelpTopic(DIMENSIONS, S.Help.DIMENSIONS, S.Help.DIMENSIONS_BODY, listOf("dimension", "width", "height", "size", "pill", "type", "measure", "inches", "length", "diameter", "technical"), DIMENSIONS),
         HelpTopic(POINT_DRAG, S.Help.POINT_DRAG, S.Help.POINT_DRAG_BODY, listOf("point", "vertex", "drag", "snap", "corner", "endpoint"), POINT_DRAG),
         HelpTopic("gestures", S.Help.GESTURES, S.Help.GESTURES_BODY, listOf("touch", "pinch", "zoom", "pan", "tap", "drag")),
         HelpTopic("keyboard", S.Help.KEYBOARD, S.Help.KEYBOARD_BODY, listOf("shortcut", "key", "ctrl", "cmd", "undo")),

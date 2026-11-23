@@ -55,14 +55,15 @@ object GuideTriggers {
     }
 }
 
-/** Starts a feature's tour the first time the user reaches it: a constraint tool, menu or panel, the Technical tab, or a selected line. */
+/** Starts a feature's tour the first time the user reaches it: a constraint tool, menu or panel, the Technical tab, a selected line, or the first shape selected on a technical sheet. */
 @Composable
-fun TourTriggers(tours: TourController?, tool: ToolId, constrainMenuOpen: Boolean, panel: PanelTab?, lineSelected: Boolean) {
+fun TourTriggers(tours: TourController?, tool: ToolId, constrainMenuOpen: Boolean, panel: PanelTab?, lineSelected: Boolean, technicalShapeSelected: Boolean = false) {
     if (tours == null) return
     LaunchedEffect(tool) { GuideFeatures.ofTool(tool)?.let(tours::onFeatureFirstUse) }
     LaunchedEffect(constrainMenuOpen) { if (constrainMenuOpen) tours.onFeatureFirstUse(GuideFeatures.CONSTRAINTS) }
     LaunchedEffect(panel) { GuideTriggers.ofPanel(panel)?.let(tours::onFeatureFirstUse) }
     LaunchedEffect(lineSelected) { if (lineSelected) tours.onFeatureFirstUse(GuideFeatures.POINT_DRAG) }
+    LaunchedEffect(technicalShapeSelected) { if (technicalShapeSelected) tours.onFeatureFirstUse(GuideFeatures.TECHNICAL_SHAPE) }
 }
 
 /** What running a search result does in the editor; the host implements it over its controller. */

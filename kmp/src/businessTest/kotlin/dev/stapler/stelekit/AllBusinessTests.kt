@@ -1137,6 +1137,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.ui.sketch.v2.ConstraintTargetPickerModelTest::class,
     dev.stapler.stelekit.ui.sketch.v2.DimensionEditModelTest::class,
     dev.stapler.stelekit.ui.sketch.v2.DimensionChipsTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.DimensionPillModelTest::class,
     dev.stapler.stelekit.ui.sketch.v2.SmartDimensionPathBoundTest::class,
     dev.stapler.stelekit.sketch.v2.tools.ArrowToolTest::class,
     dev.stapler.stelekit.sketch.v2.BindingFollowTest::class,
