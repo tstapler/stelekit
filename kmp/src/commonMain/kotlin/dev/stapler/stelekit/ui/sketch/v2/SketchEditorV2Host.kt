@@ -353,6 +353,10 @@ private fun BoxScope.SketchCanvasContent(
     NameTagsOverlay(controller)
     // After the name tags, so a tiny shape's handles are drawn over its label and never hidden by it (the overlay takes no pointer input).
     SelectionVisuals(controller)
+    TouchLoupe(controller.tools.loupe, state.touchLoupe, { controller.view.canvasSize }, pxPerDp) {
+        SketchCanvasV2(layer, liveOps, viewport, painter)
+        SelectionVisuals(controller)
+    }
     controller.tools.textSession?.let { session ->
         TextEditorOverlay(session, state.viewport, hasHardwareKeyboard = pointer != PointerClass.TouchOrPen, onCommit = controller.tools::commitText)
     }

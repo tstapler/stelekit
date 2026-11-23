@@ -94,7 +94,7 @@ object GuideContent {
         HelpTopic(TECHNICAL, S.Help.TECHNICAL, S.Help.TECHNICAL_BODY, listOf("technical", "inches", "dimension", "zone", "grid", "size"), TECHNICAL),
         HelpTopic(DIMENSIONS, S.Help.DIMENSIONS, S.Help.DIMENSIONS_BODY, listOf("dimension", "width", "height", "size", "pill", "type", "measure", "inches", "length", "diameter", "technical"), DIMENSIONS),
         HelpTopic(POINT_DRAG, S.Help.POINT_DRAG, S.Help.POINT_DRAG_BODY, listOf("point", "vertex", "drag", "snap", "corner", "endpoint"), POINT_DRAG),
-        HelpTopic("gestures", S.Help.GESTURES, S.Help.GESTURES_BODY, listOf("touch", "pinch", "zoom", "pan", "tap", "drag")),
+        HelpTopic("gestures", S.Help.GESTURES, S.Help.GESTURES_BODY, listOf("touch", "pinch", "zoom", "pan", "tap", "drag", "loupe", "magnifier", "finger")),
         HelpTopic("keyboard", S.Help.KEYBOARD, S.Help.KEYBOARD_BODY, listOf("shortcut", "key", "ctrl", "cmd", "undo")),
     ) + ToolId.entries.map { id ->
         val (name, what) = S.tool(id)
