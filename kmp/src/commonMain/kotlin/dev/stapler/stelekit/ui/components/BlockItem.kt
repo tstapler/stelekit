@@ -500,7 +500,6 @@ internal fun BlockItem(
                         onStartEditing = onStartEditing,
                         linkColor = linkColor,
                         onLinkClick = onLinkClick,
-                        onUrlRightClick = onArchiveUrl?.let { archive -> { url -> archive(url, block.uuid.value) } },
                         isInSelectionMode = isInSelectionMode,
                         onToggleSelect = onToggleSelect,
                         onLongPressSelect = onLongPressSelect,
