@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.121.0](https://github.com/tstapler/stelekit/compare/v0.120.0...v0.121.0) (2026-11-23)
+
+
+### Features
+
+* **sketch:** on-canvas dimension pills and technical chips ([#713](https://github.com/tstapler/stelekit/issues/713)) ([9f7310d](https://github.com/tstapler/stelekit/commit/9f7310dce4a42767677528d95a86f79e14407336))
+
+
+### Bug Fixes
+
+* **tables:** shared column widths, wrapping, GFM alignment, inline markdown, table settings ([#714](https://github.com/tstapler/stelekit/issues/714)) ([7a9e8fc](https://github.com/tstapler/stelekit/commit/7a9e8fc68e255b116e09c018e536bc469022ab1a))
+
 ## [0.120.0](https://github.com/tstapler/stelekit/compare/v0.119.0...v0.120.0) (2026-11-22)
 
 
