@@ -209,6 +209,36 @@ class ShareContentTest {
     }
 
     @Test
+    fun previewButton_should_ShowPaneWithCopy_AndHideAgain() {
+        showContent()
+        composeTestRule.onNodeWithText("Preview").performClick()
+        composeTestRule.waitUntil(5_000) {
+            composeTestRule.onAllNodesWithText("Copy").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeTestRule.onNodeWithText("Copy").performClick()
+
+        composeTestRule.onNodeWithText("Hide Preview").performClick()
+        composeTestRule.onAllNodesWithText("Copy").assertCountEquals(0)
+    }
+
+    @Test
+    fun preview_should_ShowDateError_ForJournalRangeWithInvalidDates() {
+        val vm = makeViewModel()
+        vm.setShareScope(ShareScope.JournalRange)
+        showContent(viewModel = vm)
+        composeTestRule.onNodeWithText("From (YYYY-MM-DD)").performTextInput("2026-01-01")
+        composeTestRule.onNodeWithText("To (YYYY-MM-DD)").performTextInput("2026-01-02")
+        composeTestRule.onNodeWithText("Preview").performClick()
+        composeTestRule.waitUntil(5_000) {
+            composeTestRule.onAllNodesWithText("Copy").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeTestRule.onNodeWithText("From (YYYY-MM-DD)").performTextInput("x")
+        composeTestRule.waitUntil(5_000) {
+            composeTestRule.onAllNodesWithText("Enter a valid date range to preview").fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    @Test
     fun journalRange_should_ShowDateFields_OnlyForThatScope() {
         val vm = showContent()
         composeTestRule.onAllNodesWithText("From (YYYY-MM-DD)").assertCountEquals(0)
