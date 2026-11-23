@@ -66,7 +66,7 @@ object SketchChromeStrings {
     const val ZOOM_IN_HINT = "Zoom in."
     const val ZOOM_LEVEL_HINT = "Tap to return to 100%."
     const val GRID_HINT = "Show a grid and place points on it."
-    const val SNAP_HINT = "Snap to corners, ends and centres of other shapes."
+    const val SNAP_HINT = "Snap to corners, ends and centres of other shapes. Hold this button with a second finger while dragging to skip snapping."
 
     const val MENU_VIEW = "View"
     const val MENU_PANELS = "Panels"

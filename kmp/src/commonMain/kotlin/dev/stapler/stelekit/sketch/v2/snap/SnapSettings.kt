@@ -20,6 +20,12 @@ data class SnapSettings(val objects: Boolean = false, val grid: GridSettings? = 
 
     val active: Boolean get() = objects || activeGrid != null
 
+    /**
+     * These settings while a finger rests on the Snap button (the touch counterpart of holding Ctrl): [None] for as long as
+     * [held], so the drag in progress and the next ones go unsnapped until the finger lifts.
+     */
+    fun whileHeld(held: Boolean): SnapSettings = if (held) None else this
+
     /** [dx], [dy] of moving [ids] corrected to the neighbours and grid; unchanged when [bypass] (Ctrl held) or nothing snaps. */
     @Suppress("LongParameterList")
     fun move(scene: SketchSceneV2, index: SpatialIndex, ids: Set<ElementId>, dx: Double, dy: Double, zoom: Double, pxPerDp: Double, bypass: Boolean): SnapOutcome {

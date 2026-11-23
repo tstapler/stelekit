@@ -10,7 +10,9 @@ import dev.stapler.stelekit.sketch.v2.index.SpatialIndex
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
 import dev.stapler.stelekit.sketch.v2.view.SceneBounds
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /** Which sides a resize handle drags: [sx] and [sy] are -1 (left/top), 0 (not dragged) or 1 (right/bottom), as on `Handle`. */
 data class ResizeSides(val sx: Int, val sy: Int) {
@@ -23,8 +25,9 @@ data class ResizeSides(val sx: Int, val sy: Int) {
  * Works on the pointer delta, not the finished box: the edge a handle drags sits at its start position plus the delta
  * (also with Alt/from-centre, where the opposite edge mirrors it), so correcting the delta moves only that edge and the
  * anchored edge stays put. Aspect lock (Shift on a corner) derives one axis from the other, so only the primary axis
- * (the one scaled most) is snapped and the other follows. Only unrotated frames are snapped; a rotated frame has no
- * axis-aligned edge to align, so the caller does not ask.
+ * (the one scaled most) is snapped and the other follows. Only frames turned by a multiple of a quarter turn are snapped
+ * (see [QuarterTurn], which maps them to an axis-aligned frame); at any other angle no frame edge is axis-aligned, so
+ * there is nothing meaningful to align and the caller leaves the resize raw.
  */
 object ResizeSnap {
     private const val FROM_CENTRE_GROWTH = 2.0
@@ -118,5 +121,44 @@ object ResizeSnap {
         if (grid == null) return null
         val target = grid.snap(edge)
         return (target - edge) to ObjectSnap.Line(target, SnapKind.GRID, SceneBounds(target, target, target, target))
+    }
+}
+
+/** A frame seen in world axes: its visible [bounds] and the handle's [sides] in those axes. */
+data class AxisAlignedFrame(val bounds: SceneBounds, val sides: ResizeSides)
+
+/**
+ * Frames turned by 0, 90, 180 or 270 degrees are axis-aligned on screen: 90 and 270 swap width and height, and a handle's local
+ * sides map to other world sides. Any other angle yields null (left unsnapped, see [ResizeSnap]).
+ */
+object QuarterTurn {
+    private const val TOLERANCE = 1e-6
+    private const val QUARTER = PI / 2.0
+    private const val FULL = 4
+    private const val HALF_EXTENT = 2.0
+    private const val ONE_TURN = 1
+    private const val TWO_TURNS = 2
+
+    /** 0..3 quarter turns (clockwise on screen) when [angle] is within a hair of one, else null. */
+    fun turnsOf(angle: Double): Int? {
+        if (!angle.isFinite()) return null
+        val quarters = angle / QUARTER
+        val nearest = quarters.roundToInt()
+        return if (abs(quarters - nearest) * QUARTER <= TOLERANCE) ((nearest % FULL) + FULL) % FULL else null
+    }
+
+    /** The visible bounds and world-axis sides of a frame centred ([cx], [cy]) of local size [width] x [height] turned by [angle]; null when the angle is no quarter turn. */
+    fun align(cx: Double, cy: Double, width: Double, height: Double, angle: Double, sides: ResizeSides): AxisAlignedFrame? {
+        val turns = turnsOf(angle) ?: return null
+        val swap = turns % TWO_TURNS == ONE_TURN
+        val halfW = (if (swap) height else width) / HALF_EXTENT
+        val halfH = (if (swap) width else height) / HALF_EXTENT
+        val world = when (turns) {
+            0 -> sides
+            1 -> ResizeSides(-sides.sy, sides.sx)
+            2 -> ResizeSides(-sides.sx, -sides.sy)
+            else -> ResizeSides(sides.sy, -sides.sx)
+        }
+        return AxisAlignedFrame(SceneBounds(cx - halfW, cy - halfH, cx + halfW, cy + halfH), world)
     }
 }

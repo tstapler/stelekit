@@ -100,6 +100,8 @@ class EditorExtras(
     /** Object snap is on by default on both sheet kinds; the bottom-bar toggle and Ctrl while dragging turn it off. */
     var snap: Boolean by mutableStateOf(true)
         private set
+    /** True while a finger rests on the Snap button: snapping is suspended for the drag in progress (see [SnapSettings.whileHeld]). */
+    var snapHeld: Boolean by mutableStateOf(false)
     var panel: ExtraPanel? by mutableStateOf(null)
 
     val clipboard = EditorClipboard(controller, services.limits) { text ->
@@ -226,7 +228,7 @@ class EditorExtras(
     private fun snapSettings(): SnapSettings = SnapSettings(
         objects = snap,
         grid = if (controller.sheetKind == SheetKind.Technical) GridSettings.technical(grid) else GridSettings.diagram(grid),
-    )
+    ).whileHeld(snapHeld)
 
     private fun autoConstrained(command: AddElementCommand): ToolCommand? {
         val element = if (controller.activeLayer == dev.stapler.stelekit.sketch.v2.scene.LayerId.Default) {

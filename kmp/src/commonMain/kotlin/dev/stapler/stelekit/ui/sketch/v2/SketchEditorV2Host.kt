@@ -210,6 +210,8 @@ fun SketchEditorV2Host(
         snap = extras.snap,
         onGrid = extras::toggleGrid,
         onSnap = extras::toggleSnap,
+        onSnapHold = { extras.snapHeld = it },
+        snapHeld = extras.snapHeld,
         restore = restore,
         sheetKind = controller.sheetKind.takeIf { it != dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Converted && !controller.readOnly },
         onSheetKind = { controller.setSheetKind(it) },
@@ -354,6 +356,7 @@ private fun BoxScope.SketchCanvasContent(
     NameTagsOverlay(controller)
     // After the name tags, so a tiny shape's handles are drawn over its label and never hidden by it (the overlay takes no pointer input).
     SelectionVisuals(controller)
+    SnapGuideOverlay(controller.tools.preview?.guides.orEmpty(), state.viewport, haptics = state.lastInput == InputKind.TouchOrPen)
     TouchLoupe(controller.tools.loupe, state.touchLoupe, { controller.view.canvasSize }, { loupeFocus(controller) }, pxPerDp) { region ->
         // Its own painter, so the loupe's cull and path cache never touch the main canvas's.
         val loupePainter = remember(environment) { ScenePainter(resources = environment.resources) }
@@ -379,7 +382,15 @@ private fun SelectionVisuals(controller: SketchEditorController, interactive: Bo
         ToolContext(controller.doc.scene, state.viewport.zoom, controller.defaultStyle, controller.ids, controller.spatialIndex, controller.view.pxPerDp)
     }
     val select = remember(ids, controller.revision) { SelectTool(ids.map(::ElementId), controller.touchPresent) }
-    SelectionOverlay(select.selectionFrame(ctx), select.handleLayout(ctx), state.viewport, onZoomToSelection = if (interactive) controller.view::zoomToSelection else null, vertices = select.vertexPoints(ctx))
+    // While a move or resize runs, the handles ride the snapped preview frame instead of staying at the pre-drag one.
+    val dragged = controller.tools.preview?.frame
+    SelectionOverlay(
+        dragged ?: select.selectionFrame(ctx),
+        select.handleLayout(ctx, around = dragged ?: select.selectionFrame(ctx)),
+        state.viewport,
+        onZoomToSelection = if (interactive) controller.view::zoomToSelection else null,
+        vertices = select.vertexPoints(ctx),
+    )
 }
 
 @Composable
