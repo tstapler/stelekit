@@ -24,10 +24,13 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 
 /** Widest a column may grow when cells scroll instead of wrapping, so one long cell cannot dominate. */
+private const val UNBREAKABLE_CELL = "unbreakable"
+private const val BREAKABLE_CELL = "breakable"
 private val MAX_SCROLL_COLUMN_WIDTH = 480.dp
 
 /**
@@ -147,7 +150,9 @@ private fun TableGrid(
         val maxs = IntArray(cols)
         measurables.forEachIndexed { i, m ->
             val c = i % cols
-            mins[c] = maxOf(mins[c], m.minIntrinsicWidth(Constraints.Infinity))
+            // A cell with no whitespace is one token: the line breaker would split "249.4" at the '.', so it never shrinks below its natural width.
+            val unbreakable = m.layoutId == UNBREAKABLE_CELL
+            mins[c] = maxOf(mins[c], if (unbreakable) m.maxIntrinsicWidth(Constraints.Infinity) else m.minIntrinsicWidth(Constraints.Infinity))
             maxs[c] = maxOf(maxs[c], m.maxIntrinsicWidth(Constraints.Infinity))
         }
         val widths = computeColumnWidths(
@@ -213,7 +218,8 @@ private fun TableCell(
                     drawLine(bottomRule, Offset(0f, size.height - 0.5f), Offset(size.width, size.height - 0.5f), 1f)
                 }
             }
-            .padding(horizontal = horizontal, vertical = vertical),
+            .padding(horizontal = horizontal, vertical = vertical)
+            .layoutId(if (text.none { it.isWhitespace() }) UNBREAKABLE_CELL else BREAKABLE_CELL),
     ) {
         WikiLinkText(
             text = text,

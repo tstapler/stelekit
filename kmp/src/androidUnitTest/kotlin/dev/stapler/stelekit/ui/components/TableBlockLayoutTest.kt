@@ -22,12 +22,14 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import kotlin.math.abs
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /** Table layout on a 360dp phone: shared columns, wrapping, GFM alignment, inline markdown, settings. Gradle-only (Compose host). */
 @RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [29], qualifiers = "w360dp-h800dp-xhdpi")
 class TableBlockLayoutTest {
     @get:Rule
@@ -43,10 +45,14 @@ class TableBlockLayoutTest {
         }
     }
 
-    private fun bounds(text: String): Rect = rule.onNodeWithText(text).fetchSemanticsNode().boundsInRoot
+    /** Right edge ignoring the scroll viewport's clip (boundsInRoot is clipped, so it can never exceed the viewport). */
+    private fun unclippedRight(text: String): Float =
+        rule.onNodeWithText(text, useUnmergedTree = true).fetchSemanticsNode().let { it.positionInRoot.x + it.size.width }
+
+    private fun bounds(text: String): Rect = rule.onNodeWithText(text, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
 
     private fun layout(text: String): Pair<SemanticsNode, TextLayoutResult> {
-        val node = rule.onNodeWithText(text).fetchSemanticsNode()
+        val node = rule.onNodeWithText(text, useUnmergedTree = true).fetchSemanticsNode()
         val out = mutableListOf<TextLayoutResult>()
         node.config[SemanticsActions.GetTextLayoutResult].action!!.invoke(out)
         return node to out.single()
@@ -71,21 +77,23 @@ class TableBlockLayoutTest {
 
     @Test
     fun tableFitsThePhoneWidthByWrappingInsteadOfClipping() {
-        show(PHONE_TABLE)
+        show(WIDE_TABLE)
         rule.waitForIdle()
         val limit = with(rule.density) { phoneWidth.toPx() }
-        listOf("W total", "249.4", "Pixel track (RGBW)").forEach {
-            assertTrue(bounds(it).right <= limit + 0.5f, "'$it' right=${bounds(it).right} exceeds $limit")
-        }
+        assertTrue(unclippedRight("Total") <= limit + 0.5f, "last column right=${unclippedRight("Total")} exceeds $limit")
+        // A token with no whitespace (a number) must never be split mid-token.
+        assertEquals(1, layout("249.4").second.lineCount, "249.4 must stay on one line")
+        // The long cell must have wrapped onto several lines rather than stretched the table.
+        assertTrue(layout("Controller cabinet with redundant power supplies and a spare output module").second.lineCount > 1)
     }
 
     @Test
     fun inlineMarkdownInCellsIsRenderedNotShownRaw() {
         show(PHONE_TABLE)
         rule.waitForIdle()
-        assertEquals(0, rule.onAllNodesWithText("**DC total**").fetchSemanticsNodes().size)
-        rule.onNodeWithText("DC total").assertExists()
-        rule.onNodeWithText("249.4").assertExists()
+        assertEquals(0, rule.onAllNodesWithText("**DC total**", useUnmergedTree = true).fetchSemanticsNodes().size)
+        rule.onNodeWithText("DC total", useUnmergedTree = true).assertExists()
+        rule.onNodeWithText("249.4", useUnmergedTree = true).assertExists()
     }
 
     @Test
@@ -111,18 +119,27 @@ class TableBlockLayoutTest {
         show(long, TableDisplayPrefs(overflow = TableOverflow.SCROLL))
         rule.waitForIdle()
         val limit = with(rule.density) { phoneWidth.toPx() }
-        assertTrue(bounds("x").right > limit, "scrolling table extends past the phone width")
+        // boundsInRoot is clipped to the scroll viewport, so measure the unclipped position + size.
+        val node = rule.onNodeWithText("x", useUnmergedTree = true).fetchSemanticsNode()
+        val unclippedRight = node.positionInRoot.x + node.size.width
+        assertTrue(unclippedRight > limit, "scrolling table extends past the phone width (right=$unclippedRight, limit=$limit)")
     }
 
     @Test
     fun settingsToggleWritesThroughToThePreferenceHolder() {
         val holder = TablePreferences(null)
         rule.setContent { MaterialTheme { Column { TableSettingsRows(holder) } } }
-        rule.onNodeWithText(TABLE_WRAP_LABEL).performClick()
+        rule.onNodeWithText(TABLE_WRAP_LABEL, useUnmergedTree = true).performClick()
         assertEquals(TableOverflow.SCROLL, holder.prefs.overflow)
     }
 
     companion object {
+        private val WIDE_TABLE = """
+            | Item | Total |
+            |---|---|
+            | Controller cabinet with redundant power supplies and a spare output module | 249.4 |
+        """.trimIndent()
+
         private val PHONE_TABLE = """
             | Load | Qty | W each | W total |
             |---|---|---|---|
