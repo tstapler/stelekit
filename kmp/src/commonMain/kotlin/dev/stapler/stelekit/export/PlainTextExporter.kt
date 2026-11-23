@@ -31,7 +31,7 @@ class PlainTextExporter : PageExporter {
 
                 val indent = "  ".repeat(block.level)
                 append(indent)
-                append(renderPlainText(block.content, resolvedRefs))
+                append(renderInlinePlainText(block.content, resolvedRefs))
                 append("\n")
 
                 // Separate top-level blocks with an additional blank line
@@ -41,43 +41,44 @@ class PlainTextExporter : PageExporter {
             }
         }
     }
+}
 
-    private fun renderPlainText(content: String, resolvedRefs: Map<String, String>): String {
-        val nodes = InlineParser(content).parse()
-        return buildString {
-            nodes.forEach { node -> appendNode(node, resolvedRefs) }
-        }
+/** Renders inline markup in [content] as plain text; shared by plain-text and bullet-list exporters. */
+internal fun renderInlinePlainText(content: String, resolvedRefs: Map<String, String>): String {
+    val nodes = InlineParser(content).parse()
+    return buildString {
+        nodes.forEach { node -> appendNode(node, resolvedRefs) }
     }
+}
 
-    private fun StringBuilder.appendNode(node: InlineNode, resolvedRefs: Map<String, String>) {
-        when (node) {
-            is TextNode -> append(node.content)
-            is BoldNode -> node.children.forEach { appendNode(it, resolvedRefs) }
-            is ItalicNode -> node.children.forEach { appendNode(it, resolvedRefs) }
-            is StrikeNode -> node.children.forEach { appendNode(it, resolvedRefs) }
-            is HighlightNode -> node.children.forEach { appendNode(it, resolvedRefs) }
-            is CodeNode -> append(node.content)
-            is WikiLinkNode -> append(node.alias ?: node.target)
-            is BlockRefNode -> append(resolvedRefs[node.blockUuid] ?: "[block ref]")
-            is TagNode -> append(node.tag)
-            is UrlLinkNode -> node.text.forEach { appendNode(it, resolvedRefs) }
-            is MdLinkNode -> append(node.label)
-            is ImageNode -> append("[Image: ${node.alt}]")
-            is MacroNode -> {
-                append("[${node.name}")
-                if (node.arguments.isNotEmpty()) {
-                    append(": ")
-                    append(node.arguments.joinToString())
-                }
-                append("]")
+private fun StringBuilder.appendNode(node: InlineNode, resolvedRefs: Map<String, String>) {
+    when (node) {
+        is TextNode -> append(node.content)
+        is BoldNode -> node.children.forEach { appendNode(it, resolvedRefs) }
+        is ItalicNode -> node.children.forEach { appendNode(it, resolvedRefs) }
+        is StrikeNode -> node.children.forEach { appendNode(it, resolvedRefs) }
+        is HighlightNode -> node.children.forEach { appendNode(it, resolvedRefs) }
+        is CodeNode -> append(node.content)
+        is WikiLinkNode -> append(node.alias ?: node.target)
+        is BlockRefNode -> append(resolvedRefs[node.blockUuid] ?: "[block ref]")
+        is TagNode -> append(node.tag)
+        is UrlLinkNode -> node.text.forEach { appendNode(it, resolvedRefs) }
+        is MdLinkNode -> append(node.label)
+        is ImageNode -> append("[Image: ${node.alt}]")
+        is MacroNode -> {
+            append("[${node.name}")
+            if (node.arguments.isNotEmpty()) {
+                append(": ")
+                append(node.arguments.joinToString())
             }
-            is TaskMarkerNode -> append("${node.marker} ")
-            is LatexInlineNode -> append(node.formula)
-            is HardBreakNode -> append("\n")
-            is SoftBreakNode -> append("\n")
-            is SubscriptNode -> node.children.forEach { appendNode(it, resolvedRefs) }
-            is SuperscriptNode -> node.children.forEach { appendNode(it, resolvedRefs) }
-            is PriorityNode -> append("[#${node.priority}]")
+            append("]")
         }
+        is TaskMarkerNode -> append("${node.marker} ")
+        is LatexInlineNode -> append(node.formula)
+        is HardBreakNode -> append("\n")
+        is SoftBreakNode -> append("\n")
+        is SubscriptNode -> node.children.forEach { appendNode(it, resolvedRefs) }
+        is SuperscriptNode -> node.children.forEach { appendNode(it, resolvedRefs) }
+        is PriorityNode -> append("[#${node.priority}]")
     }
 }

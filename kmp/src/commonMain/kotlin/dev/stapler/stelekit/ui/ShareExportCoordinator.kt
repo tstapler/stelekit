@@ -402,6 +402,7 @@ class ShareExportCoordinator(
         "plain-text" -> "Plain Text"
         "html" -> "HTML"
         "json" -> "JSON"
+        "bullet-list" -> "Bullet List"
         else -> formatId
     }
 }
