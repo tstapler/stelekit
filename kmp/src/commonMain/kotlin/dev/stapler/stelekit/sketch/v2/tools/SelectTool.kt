@@ -15,6 +15,8 @@ import dev.stapler.stelekit.sketch.v2.scene.LineElement
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
+import dev.stapler.stelekit.sketch.v2.snap.ResizeSides
+import dev.stapler.stelekit.sketch.v2.view.SceneBounds
 import kotlin.math.abs
 import kotlin.math.hypot
 
@@ -205,13 +207,25 @@ class SelectTool(
             return dx to dy
         }
 
+        /**
+         * The move delta snapped to neighbours and the grid, so the preview shows what commits; Ctrl bypasses. A duplicate is
+         * not snapped (its originals stay put as snap targets only in the next move), and a Shift axis lock keeps its zero axis.
+         */
+        private fun snappedDelta(event: InputEvent, items: List<ElementId>, ctx: ToolContext): Pair<Double, Double> {
+            val (dx, dy) = delta(event)
+            if (duplicate) return dx to dy
+            val out = ctx.snap.move(ctx.scene, ctx.snapIndex, items.toSet(), dx, dy, ctx.zoom, ctx.pxPerDp, bypass = event.modifiers.ctrl)
+            val locked = event.modifiers.shift && !shift
+            return (if (locked && dx == 0.0) 0.0 else out.dx) to (if (locked && dy == 0.0) 0.0 else out.dy)
+        }
+
         private fun travelled(event: InputEvent, ctx: ToolContext): Boolean =
             hypot(event.point.x.value - start.x.value, event.point.y.value - start.y.value) * ctx.zoom > DRAG_THRESHOLD_PX
 
         private fun command(event: InputEvent, ctx: ToolContext): Pair<ToolCommand, List<ElementId>>? {
             val items = owner.editable(ctx).map { it.id }
             if (items.isEmpty()) return null
-            val (dx, dy) = delta(event)
+            val (dx, dy) = snappedDelta(event, items, ctx)
             return if (duplicate) {
                 DuplicateSelectionCommand(items, idMap.filterKeys { it in items }, dx, dy) to idMap.filterKeys { it in items }.values.toList()
             } else {
@@ -295,23 +309,38 @@ class SelectTool(
             event.type == InputType.Escape || event.type == InputType.Cancel -> ToolResult(preview = null, next = owner)
             event.type == InputType.Down && event.pointerId != pointerId -> ToolResult(preview = null, next = owner)
             event.pointerId != pointerId -> ToolResult.Nothing
-            event.type == InputType.Move -> ToolResult(preview = steps(event)?.let { previewOf(TransformSelectionCommand(it), ctx, items.map { e -> e.id }) })
+            event.type == InputType.Move -> ToolResult(preview = steps(event, ctx)?.let { previewOf(TransformSelectionCommand(it), ctx, items.map { e -> e.id }) })
             event.type == InputType.Up -> {
                 val skipped = owner.selection.count { ctx.scene[it] != null } - items.size
-                val cmd = steps(event)?.let { TransformSelectionCommand(it) }
+                val cmd = steps(event, ctx)?.let { TransformSelectionCommand(it) }
                 ToolResult(cmd, null, owner, owner.skipNotice(skipped))
             }
             else -> ToolResult.Nothing
         }
 
-        private fun steps(event: InputEvent): List<ElementTransform>? {
+        private fun steps(event: InputEvent, ctx: ToolContext): List<ElementTransform>? {
             val dx = event.point.x.value - start.x.value
             val dy = event.point.y.value - start.y.value
             if (dx == 0.0 && dy == 0.0) return null
-            return if (handle == Handle.Rotate) rotateSteps(event) else resizeSteps(dx, dy, event.modifiers)
+            return if (handle == Handle.Rotate) rotateSteps(event) else resizeSteps(dx, dy, event.modifiers, ctx)
         }
 
-        private fun resizeSteps(dx: Double, dy: Double, mods: Modifiers): List<ElementTransform> {
+        /**
+         * Snaps the dragged edge(s) in the pointer delta before resizing, so the anchored edge stays put and Shift (aspect) and
+         * Alt (from centre) still apply on top; Ctrl bypasses. Unrotated frames only (see ResizeSnap).
+         */
+        private fun snappedDelta(dx: Double, dy: Double, mods: Modifiers, ctx: ToolContext): Pair<Double, Double> {
+            if (abs(frame.angle) > ANGLE_EPSILON) return dx to dy
+            val box = SceneBounds(frame.box.x, frame.box.y, frame.box.x + frame.box.width, frame.box.y + frame.box.height)
+            val out = ctx.snap.resize(
+                ctx.scene, ctx.snapIndex, items.mapTo(HashSet()) { it.id }, box, ResizeSides(handle.sx, handle.sy),
+                dx, dy, keepAspect = mods.shift, fromCentre = mods.alt, zoom = ctx.zoom, pxPerDp = ctx.pxPerDp, bypass = mods.ctrl,
+            )
+            return out.dx to out.dy
+        }
+
+        private fun resizeSteps(rawDx: Double, rawDy: Double, mods: Modifiers, ctx: ToolContext): List<ElementTransform> {
+            val (dx, dy) = snappedDelta(rawDx, rawDy, mods, ctx)
             val next = TransformMath.resize(frame.box, frame.angle, handle, dx, dy, keepAspect = mods.shift, fromCentre = mods.alt)
             if (items.size == 1) return listOf(fit(items.single(), next, null))
             return items.map { e ->
@@ -395,6 +424,9 @@ class SelectTool(
 
         /** Ctrl+D copies land this many scene units (one inch) down and to the right of the originals. */
         const val DUPLICATE_OFFSET = 16.0
+
+        /** A frame rotated by less than this many radians counts as axis-aligned for resize snapping. */
+        private const val ANGLE_EPSILON = 1e-9
     }
 }
 

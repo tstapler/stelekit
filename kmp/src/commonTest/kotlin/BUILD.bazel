@@ -288,6 +288,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/tools/ImageToolTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/ToolSceneSupport.kt",
         "dev/stapler/stelekit/sketch/v2/tools/SelectToolTest.kt",
+        "dev/stapler/stelekit/sketch/v2/tools/ResizeSnapTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/SelectVertexDragTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/SelectTouchReachTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/SmallShapeResizeTest.kt",
@@ -613,6 +614,6 @@ kt_android_library(
 
 # The transfer module's commonTest sources, for //kmp/modules:transfer_tests (W9 G7: a per-module test target).
 exports_files(
-    glob(["dev/stapler/stelekit/transfer/**/*.kt"]),
+    glob(["dev/**/*.kt"]),
     visibility = ["//kmp/modules:__pkg__"],
 )

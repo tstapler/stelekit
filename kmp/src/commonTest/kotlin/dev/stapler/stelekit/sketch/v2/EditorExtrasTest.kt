@@ -18,6 +18,7 @@ import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneUnit
 import dev.stapler.stelekit.sketch.v2.scene.ZKey
 import dev.stapler.stelekit.sketch.v2.text.FixedAdvanceTextMetricsProvider
+import dev.stapler.stelekit.sketch.v2.snap.GridSettings
 import dev.stapler.stelekit.sketch.v2.tools.ElementIdSource
 import dev.stapler.stelekit.sketch.v2.tools.MoveSelectionCommand
 import dev.stapler.stelekit.sketch.v2.tools.StandardToolRegistry
@@ -126,33 +127,29 @@ class EditorExtrasTest {
     }
 
     @Test
-    fun gridOn_should_SnapAFinishedMoveToTheGridStep() = runTest {
+    fun snapSettings_should_DefaultToObjectSnapOn_GridOff_AndFollowTheToggles() = runTest {
         val (controller, extras) = rig()
-        controller.tools.select(listOf(ElementId("r1")))
-        extras.toggleGrid()
 
-        val out = controller.interceptToolCommand(MoveSelectionCommand(listOf(ElementId("r1")), 13.0, 4.0)) as MoveSelectionCommand
-
-        assertEquals(20.0, out.dx)
-        assertEquals(0.0, out.dy)
+        assertTrue(controller.snapSettings().objects, "object snap is on until toggled off")
+        assertNull(controller.snapSettings().activeGrid, "the grid is off until toggled on")
         extras.toggleGrid()
-        val untouched = controller.interceptToolCommand(MoveSelectionCommand(listOf(ElementId("r1")), 13.0, 4.0)) as MoveSelectionCommand
-        assertEquals(13.0, untouched.dx, "grid off leaves the move alone")
+        assertEquals(GridSettings.DIAGRAM_STEP_UNITS, controller.snapSettings().activeGrid?.stepUnits, "a diagram sheet snaps to the diagram grid")
+        extras.toggleGrid()
+        assertNull(controller.snapSettings().activeGrid)
+        extras.toggleSnap()
+        assertTrue(!extras.snap && !controller.snapSettings().objects, "the toggle turns object snap off")
         controller.close()
         extras.close()
     }
 
     @Test
-    fun snapOn_should_AlignTheMovedShapeToANeighbourWithinTheSnapRadius() = runTest {
+    fun moveCommands_should_PassThroughTheInterceptUnchanged_BecauseTheToolAlreadySnapped() = runTest {
         val (controller, extras) = rig()
-        extras.toggleSnap()
+        extras.toggleGrid()
 
-        // r1 spans x 0..10; moving it 87 puts its right edge at 97, within 8 px of r2's left edge at 100 (zoom 1).
-        val out = controller.interceptToolCommand(MoveSelectionCommand(listOf(ElementId("r1")), 90.0, 0.0)) as MoveSelectionCommand
+        val out = controller.interceptToolCommand(MoveSelectionCommand(listOf(ElementId("r1")), 13.0, 4.0)) as MoveSelectionCommand
 
-        assertEquals(90.0, out.dx, "the right edge (100) already meets r2's left edge")
-        val near = controller.interceptToolCommand(MoveSelectionCommand(listOf(ElementId("r1")), 87.0, 0.0)) as MoveSelectionCommand
-        assertEquals(90.0, near.dx, "3 units short of the neighbour snaps onto it")
+        assertEquals(13.0, out.dx, "an explicit offset or a Ctrl-bypassed drag is not snapped again at commit")
         controller.close()
         extras.close()
     }

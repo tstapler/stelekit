@@ -626,6 +626,8 @@ KMP_MODULES = {
    "commonMain/kotlin/dev/stapler/stelekit/sketch/v2/scene/SketchSceneV2.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/v2/search/ElementLabelIndex.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/v2/snap/ObjectSnap.kt",
+   "commonMain/kotlin/dev/stapler/stelekit/sketch/v2/snap/ResizeSnap.kt",
+   "commonMain/kotlin/dev/stapler/stelekit/sketch/v2/snap/SnapSettings.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/v2/text/TextMetricsProvider.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/v2/text/TextWrap.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/v2/tools/ArcTool.kt",

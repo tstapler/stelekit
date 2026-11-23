@@ -40,6 +40,7 @@ import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
 import dev.stapler.stelekit.sketch.v2.tools.AddElementCommand
 import dev.stapler.stelekit.sketch.v2.tools.ElementIdSource
 import dev.stapler.stelekit.sketch.v2.tools.ToolCommand
+import dev.stapler.stelekit.sketch.v2.snap.SnapSettings
 import dev.stapler.stelekit.sketch.v2.tools.ToolContext
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
 import dev.stapler.stelekit.sketch.v2.tools.Tool
@@ -201,7 +202,10 @@ class SketchEditorController(
         if (!readOnly) ports.quality?.beginSession()
     }
 
-    private fun toolContext(): ToolContext = ToolContext(history.present.scene, ui.viewport.zoom, defaultStyle, ports.ids, index, view.pxPerDp)
+    /** What drags snap to, read at every pointer event; the extras host wires the toggles and the sheet's grid. */
+    var snapSettings: () -> SnapSettings = { SnapSettings.None }
+
+    private fun toolContext(): ToolContext = ToolContext(history.present.scene, ui.viewport.zoom, defaultStyle, ports.ids, index, view.pxPerDp, snapSettings())
 
     /** A fresh idle tool for [id], for the keyboard path (Crosshair mode) that runs a tool beside the pointer's. */
     internal val newTool: (ToolId) -> Tool? = { id -> ports.tools.create(id) }
