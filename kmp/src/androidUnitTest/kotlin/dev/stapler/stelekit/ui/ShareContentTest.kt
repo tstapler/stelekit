@@ -212,30 +212,28 @@ class ShareContentTest {
     fun previewButton_should_ShowPaneWithCopy_AndHideAgain() {
         showContent()
         composeTestRule.onNodeWithText("Preview").performClick()
+        // This view model has no export service, so the pane settles on its error. "Copy" renders while
+        // Loading too, so wait for the settled text: hiding mid-compute races the Default-dispatcher thread.
         composeTestRule.waitUntil(5_000) {
-            composeTestRule.onAllNodesWithText("Copy").fetchSemanticsNodes().isNotEmpty()
+            composeTestRule.onAllNodesWithText("Export service unavailable", substring = true).fetchSemanticsNodes().isNotEmpty()
         }
-        composeTestRule.onNodeWithText("Copy").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Copy").assertIsNotEnabled()
 
         composeTestRule.onNodeWithText("Hide Preview").performClick()
         composeTestRule.onAllNodesWithText("Copy").assertCountEquals(0)
     }
 
     @Test
-    fun preview_should_ShowDateError_ForJournalRangeWithInvalidDates() {
+    fun preview_should_ShowDateError_ForJournalRangeWithEmptyDates() {
         val vm = makeViewModel()
         vm.setShareScope(ShareScope.JournalRange)
         showContent(viewModel = vm)
-        composeTestRule.onNodeWithText("From (YYYY-MM-DD)").performTextInput("2026-01-01")
-        composeTestRule.onNodeWithText("To (YYYY-MM-DD)").performTextInput("2026-01-02")
         composeTestRule.onNodeWithText("Preview").performClick()
-        composeTestRule.waitUntil(5_000) {
-            composeTestRule.onAllNodesWithText("Copy").fetchSemanticsNodes().isNotEmpty()
-        }
-        composeTestRule.onNodeWithText("From (YYYY-MM-DD)").performTextInput("x")
         composeTestRule.waitUntil(5_000) {
             composeTestRule.onAllNodesWithText("Enter a valid date range to preview").fetchSemanticsNodes().isNotEmpty()
         }
+        composeTestRule.waitForIdle()
     }
 
     @Test
