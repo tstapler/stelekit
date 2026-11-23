@@ -30,11 +30,9 @@ import dev.stapler.stelekit.sketch.v2.runtime.export.SketchExportRunner
 import dev.stapler.stelekit.sketch.v2.runtime.image.ImageStoreError
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.snap.GridSettings
-import dev.stapler.stelekit.sketch.v2.snap.ObjectSnap
+import dev.stapler.stelekit.sketch.v2.snap.SnapSettings
 import dev.stapler.stelekit.sketch.v2.tools.AddElementCommand
-import dev.stapler.stelekit.sketch.v2.tools.MoveSelectionCommand
 import dev.stapler.stelekit.sketch.v2.tools.ToolCommand
-import dev.stapler.stelekit.sketch.v2.view.SceneBounds
 import dev.stapler.stelekit.sketch.v2.view.ScreenPx
 import dev.stapler.stelekit.ui.sketch.ModernPreviewEnvironment
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchEditorStrings
@@ -98,7 +96,8 @@ class EditorExtras(
 
     var grid: Boolean by mutableStateOf(false)
         private set
-    var snap: Boolean by mutableStateOf(false)
+    /** Object snap is on by default on both sheet kinds; the bottom-bar toggle and Ctrl while dragging turn it off. */
+    var snap: Boolean by mutableStateOf(true)
         private set
     var panel: ExtraPanel? by mutableStateOf(null)
 
@@ -164,6 +163,7 @@ class EditorExtras(
         controller.constraints.onDimensionDraft = ::openDimensionDraft
         controller.extraKeys = ::onKey
         controller.interceptToolCommand = ::intercept
+        controller.snapSettings = ::snapSettings
     }
 
     /** The Esc row of the dimension field, while its label editor or a dimension pill's size field is open. */
@@ -213,14 +213,19 @@ class EditorExtras(
     }
 
     /**
-     * Runs on every finished gesture: a drawn shape with auto-constrain on goes through the solver with its inferred constraints,
-     * a move snaps to objects and the grid. Returns the command to commit as usual, or null when it was committed here.
+     * Runs on every finished gesture: a drawn shape with auto-constrain on goes through the solver with its inferred constraints.
+     * Moves and resizes snap inside the Select tool (see [snapSettings]) so the preview matches the commit. Returns the command to commit as usual, or null when it was committed here.
      */
     private fun intercept(command: ToolCommand): ToolCommand? = when (command) {
         is AddElementCommand -> if (autoConstrain.enabled && constraintsAvailable) autoConstrained(command) else command
-        is MoveSelectionCommand -> snapped(command)
         else -> command
     }
+
+    /** Technical sheets snap to the sixteenth of an inch, diagram sheets to the diagram grid. */
+    private fun snapSettings(): SnapSettings = SnapSettings(
+        objects = snap,
+        grid = if (controller.sheetKind == SheetKind.Technical) GridSettings.technical(grid) else GridSettings.diagram(grid),
+    )
 
     private fun autoConstrained(command: AddElementCommand): ToolCommand? {
         val element = if (controller.activeLayer == dev.stapler.stelekit.sketch.v2.scene.LayerId.Default) {
@@ -238,20 +243,6 @@ class EditorExtras(
             result?.let { dev.stapler.stelekit.ui.sketch.v2.ConstraintToasts.post(controller.notices, it, controller.notifier.now()) }
         }
         return null
-    }
-
-    private fun snapped(command: MoveSelectionCommand): ToolCommand {
-        if (!snap && !grid) return command
-        val moving = command.ids.toSet()
-        val settings = GridSettings.diagram(grid)
-        val scene = controller.doc.scene
-        val zoom = controller.ui.viewport.zoom
-        if (snap) {
-            val out = ObjectSnap.snapMove(scene, controller.spatialIndex, moving, command.dx, command.dy, zoom, grid = settings.takeIf { grid })
-            return command.copy(dx = out.dx, dy = out.dy)
-        }
-        val base = SceneBounds.of(command.ids.mapNotNull { scene[it] }) ?: return command
-        return command.copy(dx = settings.snap(base.minX + command.dx) - base.minX, dy = settings.snap(base.minY + command.dy) - base.minY)
     }
 
     private fun onKey(action: KeyAction): Boolean = when (action) {
