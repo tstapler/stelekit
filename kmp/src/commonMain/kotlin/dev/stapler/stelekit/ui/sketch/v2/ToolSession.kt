@@ -39,6 +39,9 @@ class ToolSession(
 ) {
     val adapter = SketchPointerAdapter(ui.viewport, ui.fingerDrawing)
 
+    /** The touch magnifier's state; it follows the tool inputs that [onPointerActions] feeds, and a view change ends it. */
+    val loupe = LoupeTracker()
+
     /** The shape being drawn over the canvas; null when no gesture runs. */
     var preview: ToolPreview? by mutableStateOf(null)
         private set
@@ -70,8 +73,14 @@ class ToolSession(
         syncTool()
         for (action in actions) {
             when (action) {
-                is PointerAction.ToolInput -> if (!readOnly) feed(action)
-                is PointerAction.ViewChange -> ui.viewport = action.viewport
+                is PointerAction.ToolInput -> if (!readOnly) {
+                    feed(action)
+                    loupe.onInput(action.event, ui.viewport, context().pxPerDp)
+                }
+                is PointerAction.ViewChange -> {
+                    ui.viewport = action.viewport
+                    loupe.onViewChange()
+                }
                 is PointerAction.ContextMenu -> contextMenuAt = action.at
             }
         }

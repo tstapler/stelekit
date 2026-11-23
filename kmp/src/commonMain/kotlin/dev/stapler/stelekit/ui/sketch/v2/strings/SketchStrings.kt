@@ -15,6 +15,15 @@ import dev.stapler.stelekit.sketch.v2.tools.ToolId
  * into it as they are touched; the audit baseline lists the files that still hold literals and may only shrink.
  */
 object SketchStrings {
+    /** The overflow switch for the touch magnifier. */
+    object Loupe {
+        const val TOGGLE = "Touch magnifier"
+        const val TOGGLE_ON = "Touch magnifier, on"
+        const val TOGGLE_OFF = "Touch magnifier, off"
+        const val STATE_ON = "on"
+        const val STATE_OFF = "off"
+    }
+
     object Empty {
         const val PROMPT = "Pick a tool and draw, or import an .excalidraw file"
         const val IMPORT = "Import"

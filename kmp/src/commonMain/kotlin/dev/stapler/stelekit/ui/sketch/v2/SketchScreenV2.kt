@@ -135,6 +135,8 @@ data class SketchShellConfig(
     val constraintsAvailable: Boolean = true,
     /** The sheet's auto-constrain setting; its toggle joins the overflow menu and its "Free draw" chip the chip row (Story 4.2.2c). */
     val autoConstrain: AutoConstrainState? = null,
+    /** The touch magnifier's switch in the overflow menu; null hides it. */
+    val loupe: LoupePreference? = null,
     /** The overflow entries "Import .excalidraw..." and "Export..." (Stories 5.1.5, 5.2.3); null hides the entry. */
     val onImport: (() -> Unit)? = null,
     /** Why Import cannot run here (no file storage, UX-135): the entry is then shown disabled with this text. */
@@ -442,6 +444,7 @@ private fun SheetMenuItems(state: SketchEditorState, config: SketchShellConfig, 
             )
         }
         config.autoConstrain?.takeIf { config.constraintsAvailable }?.let { AutoConstrainToggle(it, Modifier.padding(horizontal = MENU_TEXT_INSET)) }
+        config.loupe?.let { LoupeToggle(it, Modifier.padding(horizontal = MENU_TEXT_INSET)) }
     }
 }
 

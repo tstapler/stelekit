@@ -78,19 +78,22 @@ fun SketchCanvasV2(
     painter: ScenePainter,
     modifier: Modifier = Modifier,
     probe: RecompositionProbe? = null,
+    region: (() -> ScreenRect)? = null,
 ) {
     Box(modifier.fillMaxSize()) {
-        StaticSceneLayer(staticLayer, viewport, painter, probe)
+        StaticSceneLayer(staticLayer, viewport, painter, probe, region)
         LiveSceneLayer(liveOps, viewport, painter, probe)
     }
 }
 
 @Composable
-private fun StaticSceneLayer(layer: StaticLayerHandle, viewport: State<SketchViewport>, painter: ScenePainter, probe: RecompositionProbe?) {
+private fun StaticSceneLayer(layer: StaticLayerHandle, viewport: State<SketchViewport>, painter: ScenePainter, probe: RecompositionProbe?, region: (() -> ScreenRect)?) {
     SideEffect { probe?.onStaticLayerComposed() }
     Canvas(Modifier.fillMaxSize()) {
         val vp = viewport.value
-        val visible = layer.index?.let { ScenePainter.visibleIds(it, vp, size.width.toDouble(), size.height.toDouble()) }
+        // A [region] (the loupe) culls to the small area it shows, so its cost follows that area and not the visible scene.
+        val area = region?.invoke() ?: ScreenRect(0.0, 0.0, size.width.toDouble(), size.height.toDouble())
+        val visible = layer.index?.let { ScenePainter.visibleIdsIn(it, vp, area) }
         painter.paintAndPrune(this, layer.ops, vp, visible)
     }
 }

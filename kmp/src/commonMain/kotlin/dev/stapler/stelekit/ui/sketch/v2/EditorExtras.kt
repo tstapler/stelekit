@@ -93,6 +93,7 @@ class EditorExtras(
         }
     }
     val autoConstrain = AutoConstrainState({ controller.sheetKind })
+    val loupe = LoupePreference(controller.ui, services.platform.fingerDrawing)
 
     var grid: Boolean by mutableStateOf(false)
         private set

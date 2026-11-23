@@ -222,6 +222,12 @@ class SelectTool(
         private fun travelled(event: InputEvent, ctx: ToolContext): Boolean =
             hypot(event.point.x.value - start.x.value, event.point.y.value - start.y.value) * ctx.zoom > DRAG_THRESHOLD_PX
 
+        /** Where the grabbed point lands once the move snaps: where it was pressed plus the snapped delta. */
+        private fun snappedCursor(event: InputEvent, items: List<ElementId>, ctx: ToolContext): ScenePoint {
+            val (dx, dy) = snappedDelta(event, items, ctx)
+            return ScenePoint(unitOrZero(start.x.value + dx), unitOrZero(start.y.value + dy))
+        }
+
         private fun command(event: InputEvent, ctx: ToolContext): Pair<ToolCommand, List<ElementId>>? {
             val items = owner.editable(ctx).map { it.id }
             if (items.isEmpty()) return null
@@ -236,7 +242,7 @@ class SelectTool(
         private fun preview(event: InputEvent, ctx: ToolContext): ToolResult {
             if (!travelled(event, ctx)) return ToolResult.Nothing
             val (cmd, shown) = command(event, ctx) ?: return ToolResult.Nothing
-            return ToolResult(preview = previewOf(cmd, ctx, shown))
+            return ToolResult(preview = previewOf(cmd, ctx, shown, snappedCursor(event, shown, ctx)))
         }
 
         private fun finish(event: InputEvent, ctx: ToolContext): ToolResult {
@@ -268,7 +274,7 @@ class SelectTool(
             event.type == InputType.Escape || event.type == InputType.Cancel -> ToolResult(preview = null, next = owner)
             event.type == InputType.Down && event.pointerId != pointerId -> ToolResult(preview = null, next = owner)
             event.pointerId != pointerId -> ToolResult.Nothing
-            event.type == InputType.Move -> ToolResult(preview = if (travelled(event, ctx)) previewOf(SetLinePointsCommand(line.id, moved(event, ctx)), ctx, listOf(line.id)) else null)
+            event.type == InputType.Move -> ToolResult(preview = if (travelled(event, ctx)) moved(event, ctx).let { points -> previewOf(SetLinePointsCommand(line.id, points), ctx, listOf(line.id), points[index]) } else null)
             event.type == InputType.Up ->
                 if (travelled(event, ctx)) ToolResult(SetLinePointsCommand(line.id, moved(event, ctx)), null, owner) else ToolResult(preview = null, next = owner)
             else -> ToolResult.Nothing
@@ -309,13 +315,24 @@ class SelectTool(
             event.type == InputType.Escape || event.type == InputType.Cancel -> ToolResult(preview = null, next = owner)
             event.type == InputType.Down && event.pointerId != pointerId -> ToolResult(preview = null, next = owner)
             event.pointerId != pointerId -> ToolResult.Nothing
-            event.type == InputType.Move -> ToolResult(preview = steps(event, ctx)?.let { previewOf(TransformSelectionCommand(it), ctx, items.map { e -> e.id }) })
+            event.type == InputType.Move -> ToolResult(preview = steps(event, ctx)?.let { previewOf(TransformSelectionCommand(it), ctx, items.map { e -> e.id }, snappedCursor(event, ctx)) })
             event.type == InputType.Up -> {
                 val skipped = owner.selection.count { ctx.scene[it] != null } - items.size
                 val cmd = steps(event, ctx)?.let { TransformSelectionCommand(it) }
                 ToolResult(cmd, null, owner, owner.skipNotice(skipped))
             }
             else -> ToolResult.Nothing
+        }
+
+        /** The pointer with the resize snap applied (a rotate has none), so the loupe's crosshair sits on the edge that will land. */
+        private fun snappedCursor(event: InputEvent, ctx: ToolContext): ScenePoint {
+            if (handle == Handle.Rotate) return event.point
+            // Shift (aspect) and Alt (from centre) move the landing edge beyond the snap offset, so the crosshair follows the finger.
+            if (event.modifiers.shift || event.modifiers.alt) return event.point
+            val rawDx = event.point.x.value - start.x.value
+            val rawDy = event.point.y.value - start.y.value
+            val (dx, dy) = snappedDelta(rawDx, rawDy, event.modifiers, ctx)
+            return ScenePoint(unitOrZero(event.point.x.value + dx - rawDx), unitOrZero(event.point.y.value + dy - rawDy))
         }
 
         private fun steps(event: InputEvent, ctx: ToolContext): List<ElementTransform>? {
@@ -443,7 +460,7 @@ internal fun ownAngle(e: SceneElement): Double = when (e) {
 }
 
 /** What [command] would leave on the canvas for [shown], by running it against a scratch copy of the scene; null when it would fail. */
-internal fun previewOf(command: ToolCommand, ctx: ToolContext, shown: Collection<ElementId>): ToolPreview? {
+internal fun previewOf(command: ToolCommand, ctx: ToolContext, shown: Collection<ElementId>, cursor: ScenePoint? = null): ToolPreview? {
     val applied = command.toCommand().getOrNull()?.apply(SketchDocumentV2(ctx.scene))?.getOrNull() ?: return null
-    return ToolPreview(shown.mapNotNull { applied.doc.scene[it] })
+    return ToolPreview(shown.mapNotNull { applied.doc.scene[it] }, cursor = cursor)
 }

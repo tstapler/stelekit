@@ -53,6 +53,9 @@ class SketchEditorState(
     var fingerDrawing by mutableStateOf(fingerDrawing)
     var largerTouchHandles by mutableStateOf(largerTouchHandles)
 
+    /** The magnifier bubble that shows beside a finger driving a tool; on by default, never shown for a mouse or a pen. Not saved. */
+    var touchLoupe by mutableStateOf(true)
+
     /** Key of the strip control that last had focus; the next layout gives it focus again. */
     var focusedControl by mutableStateOf(focusedControl)
 

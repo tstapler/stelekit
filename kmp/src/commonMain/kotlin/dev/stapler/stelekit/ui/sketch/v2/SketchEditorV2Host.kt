@@ -198,6 +198,7 @@ fun SketchEditorV2Host(
         onCanvasKey = { event -> extras.dimension.state == DimensionEditState.Closed && canvasKey(controller, extras, event, singleKey) },
         constraintsAvailable = extras.constraintsAvailable,
         autoConstrain = extras.autoConstrain,
+        loupe = extras.loupe,
         onImport = { extras.importer.chooseFile() },
         importDisabledReason = extras.importDisabledReason,
         onExport = if (extras.exportAvailable) extras.exporter::open else null,
@@ -353,13 +354,24 @@ private fun BoxScope.SketchCanvasContent(
     NameTagsOverlay(controller)
     // After the name tags, so a tiny shape's handles are drawn over its label and never hidden by it (the overlay takes no pointer input).
     SelectionVisuals(controller)
+    TouchLoupe(controller.tools.loupe, state.touchLoupe, { controller.view.canvasSize }, { loupeFocus(controller) }, pxPerDp) { region ->
+        // Its own painter, so the loupe's cull and path cache never touch the main canvas's.
+        val loupePainter = remember(environment) { ScenePainter(resources = environment.resources) }
+        SketchCanvasV2(layer, liveOps, viewport, loupePainter, region = region)
+        // The copy takes no clicks: the Zoom chip is left out so nothing inside the bubble can be hit.
+        SelectionVisuals(controller, interactive = false)
+    }
     controller.tools.textSession?.let { session ->
         TextEditorOverlay(session, state.viewport, hasHardwareKeyboard = pointer != PointerClass.TouchOrPen, onCommit = controller.tools::commitText)
     }
 }
 
+/** The snapped point the active tool acts on, in canvas pixels; null when the tool shows none (the loupe then follows the finger). */
+private fun loupeFocus(controller: SketchEditorController): ScreenPx? =
+    controller.tools.preview?.cursor?.let { controller.ui.viewport.toScreen(it) }
+
 @Composable
-private fun SelectionVisuals(controller: SketchEditorController) {
+private fun SelectionVisuals(controller: SketchEditorController, interactive: Boolean = true) {
     val state = controller.ui
     val ids = state.selection
     if (ids.isEmpty() || state.activeTool != ToolId.Select) return
@@ -367,7 +379,7 @@ private fun SelectionVisuals(controller: SketchEditorController) {
         ToolContext(controller.doc.scene, state.viewport.zoom, controller.defaultStyle, controller.ids, controller.spatialIndex, controller.view.pxPerDp)
     }
     val select = remember(ids, controller.revision) { SelectTool(ids.map(::ElementId), controller.touchPresent) }
-    SelectionOverlay(select.selectionFrame(ctx), select.handleLayout(ctx), state.viewport, onZoomToSelection = controller.view::zoomToSelection, vertices = select.vertexPoints(ctx))
+    SelectionOverlay(select.selectionFrame(ctx), select.handleLayout(ctx), state.viewport, onZoomToSelection = if (interactive) controller.view::zoomToSelection else null, vertices = select.vertexPoints(ctx))
 }
 
 @Composable

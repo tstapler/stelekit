@@ -175,11 +175,15 @@ class ScenePainter(val paths: PathCache = PathCache(), private val resources: Pa
         const val CULL_MARGIN_PX = 48.0
 
         /** Ids of the elements whose bounds meet the [widthPx] x [heightPx] screen area under [viewport]. */
-        fun visibleIds(index: SpatialIndex, viewport: SketchViewport, widthPx: Double, heightPx: Double): Set<ElementId> {
+        fun visibleIds(index: SpatialIndex, viewport: SketchViewport, widthPx: Double, heightPx: Double): Set<ElementId> =
+            visibleIdsIn(index, viewport, ScreenRect(0.0, 0.0, widthPx, heightPx))
+
+        /** Ids of the elements whose bounds meet the screen [area] under [viewport] (the touch loupe draws only the area under its bubble). */
+        fun visibleIdsIn(index: SpatialIndex, viewport: SketchViewport, area: ScreenRect): Set<ElementId> {
             val m = CULL_MARGIN_PX / viewport.zoom
-            val minX = -viewport.panX / viewport.zoom - m
-            val minY = -viewport.panY / viewport.zoom - m
-            return index.query(Bounds(minX, minY, minX + widthPx / viewport.zoom + 2 * m, minY + heightPx / viewport.zoom + 2 * m))
+            val minX = (area.left - viewport.panX) / viewport.zoom - m
+            val minY = (area.top - viewport.panY) / viewport.zoom - m
+            return index.query(Bounds(minX, minY, minX + (area.right - area.left) / viewport.zoom + 2 * m, minY + (area.bottom - area.top) / viewport.zoom + 2 * m))
         }
     }
 }

@@ -30,7 +30,14 @@ class FingerDrawingSettings(private val settings: Settings) {
         return flips
     }
 
+    /** The touch magnifier switch: on unless the user turned it off (per device, with the other editor input settings). */
+    val loupeOn: Boolean get() = settings.getBoolean(LOUPE_KEY, true)
+
+    fun chooseLoupe(on: Boolean) = settings.putBoolean(LOUPE_KEY, on)
+
     companion object {
+        const val LOUPE_KEY = "sketch.touch_loupe"
+
         const val CHOICE_KEY = "sketch.finger_drawing"
         const val STYLUS_SEEN_KEY = "sketch.stylus_seen"
     }
