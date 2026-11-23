@@ -1,6 +1,19 @@
 package dev.stapler.stelekit.ui.components
 
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.performTouchInput
+import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockType
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
+import kotlin.test.assertEquals
+import kotlin.time.Clock
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -67,6 +80,48 @@ class TableBlockScreenshotTest {
         composeTestRule.onNodeWithText("Sequence").assertIsDisplayed()
     }
 
+    // ---- Links in cells ----------------------------------------------------------
+
+    private fun renderWith(handler: UriHandler, content: @Composable () -> Unit) {
+        composeTestRule.setContent {
+            CompositionLocalProvider(LocalUriHandler provides handler) { StelekitTheme { Surface { content() } } }
+        }
+    }
+
+    @Test
+    fun `tapping a url cell opens it and a handler that throws is swallowed`() {
+        val opened = mutableListOf<String>()
+        val handler = object : UriHandler {
+            override fun openUri(uri: String) {
+                opened += uri
+                if (opened.size == 2) error("platform cannot open this")
+            }
+        }
+        renderWith(handler) { TableBlock(content = LINK_TABLE, onStartEditing = {}) }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("https://example.org/spec").performTouchInput { click(Offset(8f, 8f)) }
+        composeTestRule.onNodeWithText("https://example.org/spec").performTouchInput { click(Offset(8f, 8f)) }
+        assertEquals(listOf("https://example.org/spec", "https://example.org/spec"), opened)
+    }
+
+    @Test
+    fun `a table block rendered by BlockItem opens the url tapped in a cell`() {
+        val opened = mutableListOf<String>()
+        val block = Block(
+            uuid = BlockUuid("t1"), pageUuid = PageUuid("p1"), content = LINK_TABLE, position = "a0",
+            createdAt = Clock.System.now(), updatedAt = Clock.System.now(), blockType = BlockType.Table,
+        )
+        renderWith(object : UriHandler { override fun openUri(uri: String) { opened += uri } }) {
+            BlockItem(
+                block = block, isEditing = false, onStartEditing = {}, onStopEditing = {},
+                onContentChange = { _, _ -> }, onLinkClick = {}, onNewBlock = {}, onSplitBlock = { _, _ -> },
+            )
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("https://example.org/spec").performTouchInput { click(Offset(8f, 8f)) }
+        assertEquals(listOf("https://example.org/spec"), opened)
+    }
+
     // ---- Screenshot tests (require golden recording on first run) ---------------
 
     @Test
@@ -84,6 +139,12 @@ class TableBlockScreenshotTest {
     }
 
     companion object {
+        private val LINK_TABLE = """
+            | Name | Link |
+            |---|---|
+            | Spec | https://example.org/spec |
+        """.trimIndent()
+
         private val TABLE_CONTENT = """
             | Scenario | Prefer | Reason |
             |---|---|---|
