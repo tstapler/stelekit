@@ -16,6 +16,7 @@ To run: bazel test //kmp/src/jvmTest/kotlin:jvm_tests
 Or via alias: bazel test //kmp:jvm_tests
 """
 
+load("//kmp:modules.bzl", "kmp_module_labels")
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_test")
 load("@rules_java//java:defs.bzl", "java_library")
 
@@ -71,7 +72,7 @@ kt_jvm_test(
             "dev/stapler/stelekit/ui/sketch/v2/ComposeTextMetricsProviderTest.kt",
         ],
     ),
-    associates = ["//kmp/src/jvmMain/kotlin:jvm_main_lib"],
+    associates = ["//kmp/src/jvmMain/kotlin:jvm_main_lib"] + kmp_module_labels(),
     # Source-scanning audit tests walk up from the working directory (the runfiles root) to find these paths.
     data = [
         "//kmp/src/commonMain/kotlin:source_audit_sources",

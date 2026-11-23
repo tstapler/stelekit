@@ -45,6 +45,8 @@ kt_android_library(
             "**/StripIconsTest.kt",
             "**/SketchEmbedUiTest.kt",
             "**/ElementStatsHostTest.kt",
+            "**/DimensionPillsHostTest.kt",
+            "**/DimensionTourTest.kt",
             "**/SourcePagePickerTest.kt",
             "**/DrawingAttachUiTest.kt",
             "**/RegistryEditorScreenTest.kt",
@@ -128,6 +130,8 @@ kt_android_library(
             "**/AnnotationNonDragModeTest.kt",
             # Compose host test for the annotator Settings rows (Gradle-only, same reason)
             "**/AnnotatorSettingsRowsTest.kt",
+            # Compose host test for table layout/alignment and the Tables settings rows (Gradle-only, no Compose plugin here)
+            "**/TableBlockLayoutTest.kt",
             # Compose host tests for the annotator status strip, pasteboard inset and gesture layer (Gradle-only)
             "**/StatusStripTest.kt",
             "**/PasteboardInsetTest.kt",

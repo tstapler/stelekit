@@ -36,6 +36,38 @@ class NoticeReplaceTest {
         assertEquals(setOf("Grid on", "Snap off"), q.visible(now = 20).map { it.notice.text }.toSet())
     }
 
+    private val rich = SketchNotice("Locked", BannerTier.Info, "2 locked skipped", details = "Rectangle 1, Rectangle 2", secondaryActions = listOf("Unlock all"))
+
+    @Test
+    fun aPlainToast_should_NotReplaceARichSameKeyNotice() {
+        val q = SketchNoticeQueue()
+        q.post(rich, now = 0)
+        q.postReplacing(toast("Locked", "plain"), now = 10)
+        assertEquals(setOf("2 locked skipped", "plain"), q.visible(now = 20).map { it.notice.text }.toSet())
+    }
+
+    @Test
+    fun aRichNotice_should_NotReplaceAPlainSameKeyToast() {
+        val q = SketchNoticeQueue()
+        q.postReplacing(toast("Locked", "plain"), now = 0)
+        q.postReplacing(rich, now = 10)
+        assertEquals(setOf("2 locked skipped", "plain"), q.visible(now = 20).map { it.notice.text }.toSet())
+    }
+
+    @Test
+    fun editorNotifierToast_should_KeepTheRichLockedSkippedNotice_InEitherOrder() {
+        val key = dev.stapler.stelekit.ui.sketch.v2.strings.SketchEditorStrings.Toasts.KEY_LOCKED_SKIPPED
+        val keyboardFirst = EditorNotifier(SketchNoticeQueue()) { 0L }
+        keyboardFirst.lockedSkipped(2)
+        keyboardFirst.toast(key, "a drag skipped 1")
+        assertEquals(2, keyboardFirst.queue.visible(1).count { it.notice.key == key })
+
+        val dragFirst = EditorNotifier(SketchNoticeQueue()) { 0L }
+        dragFirst.toast(key, "a drag skipped 1")
+        dragFirst.lockedSkipped(2)
+        assertEquals(2, dragFirst.queue.visible(1).count { it.notice.key == key })
+    }
+
     @Test
     fun post_should_StillStack_ForPlainPosts_SoThePinnedQueueRulesHold() {
         val q = SketchNoticeQueue()

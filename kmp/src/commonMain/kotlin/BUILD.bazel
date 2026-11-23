@@ -200,3 +200,9 @@ filegroup(
     srcs = glob(["**/*.kt"]),
     visibility = ["//kmp/src/businessTest/kotlin:__pkg__"],
 )
+
+# Individual source files, so //kmp/modules can assign each to exactly one module (see //kmp:modules.bzl).
+exports_files(
+    glob(["**/*.kt"]),
+    visibility = ["//kmp:__subpackages__"],
+)

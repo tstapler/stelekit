@@ -498,6 +498,8 @@ internal fun BlockItem(
                     is BlockType.Table -> TableBlock(
                         content = block.content,
                         onStartEditing = onStartEditing,
+                        linkColor = linkColor,
+                        onLinkClick = onLinkClick,
                         isInSelectionMode = isInSelectionMode,
                         onToggleSelect = onToggleSelect,
                         onLongPressSelect = onLongPressSelect,

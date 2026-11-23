@@ -188,6 +188,7 @@ private fun SettingsDialogHost(
         isLeftHanded = appState.isLeftHanded,
         onLeftHandedChange = { viewModel.setLeftHanded(it) },
         annotatorSettings = viewModel.annotatorSettings,
+        tablePreferences = viewModel.tablePreferences,
         voiceSettings = settings.voiceSettings,
         llmCredentialStore = settings.llmCredentialStore,
         llmProviderRegistry = settings.llmProviderRegistry,

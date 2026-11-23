@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.sketch.fitPreview
+import dev.stapler.stelekit.ui.components.SketchEmbedRenderer
 import dev.stapler.stelekit.sketch.previewAspectRatio
 import dev.stapler.stelekit.sketch.sceneBounds
 
@@ -61,6 +62,11 @@ fun SketchPreviewBlock(slug: String, modifier: Modifier = Modifier, actions: Ske
         value = loader?.load(slug) ?: SketchPreview.Missing
     }
     SketchPreviewContent(preview, modifier.testTag(SKETCH_PREVIEW_TAG), actions.copy(onChooseAnother = actions.onChooseAnother ?: LocalChooseSketchAction.current))
+}
+
+/** What `LocalSketchEmbedRenderer` is set to: block UI draws sketch embeds through [SketchPreviewBlock]. */
+val SketchEmbedPreviewRenderer: SketchEmbedRenderer = { slug, modifier, onRemoveEmbed, onOpenPage ->
+    SketchPreviewBlock(slug = slug, modifier = modifier, actions = SketchEmbedActions(onRemoveEmbed = onRemoveEmbed, onOpenPage = onOpenPage))
 }
 
 @Composable

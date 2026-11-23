@@ -40,7 +40,6 @@ import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.performance.NavigationTracingEffect
 import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.ui.state.BlockStateManager
-import dev.stapler.stelekit.ui.StelekitViewModel
 import androidx.compose.runtime.CompositionLocalProvider
 import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.ui.components.PageContent
@@ -87,7 +86,7 @@ fun PageView(
     onToggleFavorite: (Page) -> Unit,
     onRefresh: () -> Unit,
     onLinkClick: (String) -> Unit,
-    viewModel: StelekitViewModel,
+    viewModel: PageViewHost,
     searchViewModel: SearchViewModel? = null,
     writeActor: DatabaseWriteActor? = null,
     isDebugMode: Boolean = false,

@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.ui.sketch.v2
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -58,6 +59,7 @@ import dev.stapler.stelekit.sketch.v2.tools.SelectTool
 import dev.stapler.stelekit.sketch.v2.tools.ToolContext
 import dev.stapler.stelekit.sketch.v2.tools.PointerKind
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
+import dev.stapler.stelekit.sketch.v2.scene.ElementNames
 import dev.stapler.stelekit.sketch.v2.view.SceneBounds
 import dev.stapler.stelekit.sketch.v2.view.ScreenPx
 import dev.stapler.stelekit.ui.sketch.ModernPreviewEnvironment
@@ -119,7 +121,7 @@ fun SketchEditorV2Host(
     val technical = remember(session) { session.services.technical?.let { source -> session.sheet?.let { TechnicalPanelState(source, it) } } }
     SideEffect { controller.keys.hint = hint }
     val tours = remember(session) { session.services.platform.tourProgress?.let { TourController(GuideContent.registry(), it) } }
-    TourTriggers(tours, controller.ui.activeTool, controller.overlay == EditorOverlay.ConstrainMenu, controller.ui.panelTab, controller.ui.selection.singleOrNull()?.let { controller.doc.scene[ElementId(it)] } is LineElement)
+    TourTriggers(tours, controller.ui.activeTool, controller.overlay == EditorOverlay.ConstrainMenu, controller.ui.panelTab, controller.ui.selection.singleOrNull()?.let { controller.doc.scene[ElementId(it)] } is LineElement, technicalShapeSelected = technicalShapeSelected(controller, extras))
     LaunchedEffect(controller.revision) { largeScene.refresh() }
     DisposableEffect(extras) { onDispose { extras.close() } }
     val latestBack by rememberUpdatedState(onBack)
@@ -200,6 +202,7 @@ fun SketchEditorV2Host(
         importDisabledReason = extras.importDisabledReason,
         onExport = if (extras.exportAvailable) extras.exporter::open else null,
         extraChips = solveChips(controller, solving) + extras.access.chips(),
+        priorityChips = technicalChips(controller, extras, extras.constraintsAvailable, technical != null),
         edgeStripAtEnd = extras.input.stripAtEnd,
         durabilityCue = cue,
         grid = extras.grid,
@@ -210,7 +213,7 @@ fun SketchEditorV2Host(
         sheetKind = controller.sheetKind.takeIf { it != dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Converted && !controller.readOnly },
         onSheetKind = { controller.setSheetKind(it) },
         technicalPanel = technical != null && controller.sheetKind == dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical,
-        canvasModifier = remember(canvasAccess) { canvasRegionKeysOf(canvasAccess) },
+        canvasModifier = remember(canvasAccess, extras) { canvasRegionKeysOf(canvasAccess) { !extras.pills.fieldFocused } },
         onRegions = { canvasAccess.regions = it },
         tours = tours,
         onHelp = { controller.overlay = EditorOverlay.HelpSearch },
@@ -244,6 +247,14 @@ fun SketchEditorV2Host(
             )
         }
     }
+}
+
+/** True when a shape with dimension pills is selected on a technical sheet: the first time is the dimensions tour's cue. */
+private fun technicalShapeSelected(controller: SketchEditorController, extras: EditorExtras): Boolean {
+    val selection = controller.ui.selection
+    val technical = controller.sheetKind == dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical
+    if (!DimensionPillModel.shown(technical, controller.readOnly, extras.pills.visible, selection.size, controller.ui.activeTool)) return false
+    return selection.singleOrNull()?.let { controller.doc.scene[ElementId(it)] }?.let { DimensionPillModel.specs(it).isNotEmpty() } == true
 }
 
 /** The selection-menu entries this editor runs; Align, Order, Transform and Bind end open [ExtraPanel]s. */
@@ -281,12 +292,13 @@ private fun canvasKey(controller: SketchEditorController, extras: EditorExtras, 
 }
 
 /** Tab, F6 and Esc across the canvas stops (skip link, elements) and out to the other regions of the one tab order. */
-private fun canvasRegionKeysOf(access: EditorCanvasAccess): Modifier = Modifier.canvasRegionKeys(
+private fun canvasRegionKeysOf(access: EditorCanvasAccess, enabled: () -> Boolean): Modifier = Modifier.canvasRegionKeys(
     focus = { access.focus },
     stops = { access.tree().tabStops },
     present = { access.present },
     moveWithin = access::moveWithin,
     moveOut = access::moveOut,
+    enabled = enabled,
 )
 
 /** True when the first row of the one Esc order that applies is the shell's (the Pan pad, a help popup or the tour), so the canvas passes the press on. */
@@ -336,10 +348,11 @@ private fun BoxScope.SketchCanvasContent(
             .wheelInput(controller),
     ) {
         SketchCanvasV2(layer, liveOps, viewport, painter)
-        SelectionVisuals(controller)
         ConstraintPickerOverlay(controller, pointer)
     }
     NameTagsOverlay(controller)
+    // After the name tags, so a tiny shape's handles are drawn over its label and never hidden by it (the overlay takes no pointer input).
+    SelectionVisuals(controller)
     controller.tools.textSession?.let { session ->
         TextEditorOverlay(session, state.viewport, hasHardwareKeyboard = pointer != PointerClass.TouchOrPen, onCommit = controller.tools::commitText)
     }
@@ -361,6 +374,17 @@ private fun SelectionVisuals(controller: SketchEditorController) {
 private fun BoxScope.NameTagsOverlay(controller: SketchEditorController) {
     val state = controller.ui
     if (state.selection.isEmpty()) return
+    // A tiny shape on touch shows corner handles over where its label would sit: skip the chip, but still name it for screen readers.
+    val ids = state.selection.mapTo(LinkedHashSet(), ::ElementId)
+    val covered = state.activeTool == ToolId.Select && run {
+        val ctx = ToolContext(controller.doc.scene, state.viewport.zoom, controller.defaultStyle, controller.ids, controller.spatialIndex, controller.view.pxPerDp)
+        NameTagsModel.hiddenByCompactHandles(controller.doc.scene, ids, SelectTool(ids.toList(), controller.touchPresent).handleLayout(ctx))
+    }
+    if (covered) {
+        val name = controller.doc.scene[ids.single()]?.let(ElementNames::nameOf).orEmpty()
+        Box(Modifier.size(0.dp).semantics { contentDescription = name })
+        return
+    }
     val size = controller.view.canvasSize
     val layout = remember(controller.revision, state.viewport, state.selection, size) {
         NameTagsModel.layout(controller.doc.scene, state.viewport, size.x, size.y, NameTagSubjects(selected = state.selection.mapTo(LinkedHashSet(), ::ElementId)))

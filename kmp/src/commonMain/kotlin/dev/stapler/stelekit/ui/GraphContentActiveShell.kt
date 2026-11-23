@@ -346,9 +346,11 @@ internal fun GraphContentActiveShell(
         CompositionLocalProvider(
             dev.stapler.stelekit.ui.sketch.LocalSketchPreviewLoader provides sketchPreviewLoader,
             dev.stapler.stelekit.ui.sketch.LocalChooseSketchAction provides chooseSketchAction,
+            dev.stapler.stelekit.ui.components.LocalSketchEmbedRenderer provides dev.stapler.stelekit.ui.sketch.SketchEmbedPreviewRenderer,
             dev.stapler.stelekit.ui.components.LocalOpenSketchAction provides openSketchAction,
             dev.stapler.stelekit.ui.components.LocalArchiveUrlAction provides archiveUrlAction,
             dev.stapler.stelekit.ui.components.LocalAnnotateImageAction provides annotateImageAction,
+            dev.stapler.stelekit.ui.components.LocalTablePreferences provides viewModel.tablePreferences,
             LocalWindowSizeClass provides windowSizeClass,
             LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) },
             LocalFileSystem provides effectiveFileSystem,

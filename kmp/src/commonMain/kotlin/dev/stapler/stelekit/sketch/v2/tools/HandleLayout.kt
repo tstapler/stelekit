@@ -37,7 +37,7 @@ object TouchFloor {
 }
 
 /** One shown handle: where it is (scene units, rotation applied) and the half side of its square hit area (scene units). */
-data class PlacedHandle(val handle: Handle, val centre: ScenePoint, val halfHit: Double)
+data class PlacedHandle(val handle: Handle, val centre: ScenePoint, val halfHit: Double, val hitCentre: ScenePoint = centre)
 
 /** The handles to draw and hit-test for one selection (Task 3.2.2d, the computed tiers of ux.md section 1). */
 data class HandleLayout(val tier: HandleTier, val handles: List<PlacedHandle>) {
@@ -46,7 +46,7 @@ data class HandleLayout(val tier: HandleTier, val handles: List<PlacedHandle>) {
 
     /** The handle whose hit area contains ([x], [y]); the rotation handle and corners win over edges when areas touch. */
     fun hit(x: Double, y: Double): Handle? = handles
-        .filter { abs(x - it.centre.x.value) <= it.halfHit && abs(y - it.centre.y.value) <= it.halfHit }
+        .filter { abs(x - it.hitCentre.x.value) <= it.halfHit && abs(y - it.hitCentre.y.value) <= it.halfHit }
         .minByOrNull { if (it.handle == Handle.Rotate) 0 else if (it.handle.isCorner) 1 else 2 }
         ?.handle
 
@@ -90,6 +90,9 @@ data class HandleLayout(val tier: HandleTier, val handles: List<PlacedHandle>) {
         /** How far in from a side a corner's hit area may reach, as a share of the shorter side: the middle of a small shape stays its body. */
         const val COMPACT_REACH = 0.3
 
+        /** How much of the inward reach a compact corner keeps outward: half, so a neighbouring shape beside a small one stays selectable. */
+        const val COMPACT_OUTWARD_SHARE = 0.5
+
         /**
          * The four corner handles of a box too small for [compute]'s tiers (the user must still be able to resize it without
          * moving it). Each hit area is the floor, clamped to [COMPACT_REACH] of the shorter side, so the corners never swallow the
@@ -99,13 +102,25 @@ data class HandleLayout(val tier: HandleTier, val handles: List<PlacedHandle>) {
         fun compact(cx: Double, cy: Double, width: Double, height: Double, angle: Double, zoom: Double, floorPx: Double): HandleLayout {
             val shorter = minOf(width, height)
             if (shorter <= 0.0) return HandleLayout(HandleTier.None, emptyList())
-            val half = minOf(floorPx / zoom / HALF, COMPACT_REACH * shorter)
+            // Reach inward as far as the floor allows (clamped to a share of the shape), but only part of that outward, so a press
+            // just outside a small selected shape still selects the neighbour there instead of resizing this one.
+            val inward = minOf(floorPx / zoom / HALF, COMPACT_REACH * shorter)
+            val outward = inward * COMPACT_OUTWARD_SHARE
+            val half = (inward + outward) / HALF
+            val shift = (inward - outward) / HALF
             val c = cos(angle)
             val s = sin(angle)
             val placed = Handle.entries.filter { it.isCorner }.map { h ->
                 val lx = h.sx * width / HALF
                 val ly = h.sy * height / HALF
-                PlacedHandle(h, ScenePoint(unit(cx + lx * c - ly * s), unit(cy + lx * s + ly * c)), half)
+                val hx = lx - h.sx * shift
+                val hy = ly - h.sy * shift
+                PlacedHandle(
+                    h,
+                    ScenePoint(unit(cx + lx * c - ly * s), unit(cy + lx * s + ly * c)),
+                    half,
+                    ScenePoint(unit(cx + hx * c - hy * s), unit(cy + hx * s + hy * c)),
+                )
             }
             return HandleLayout(HandleTier.Compact, placed)
         }

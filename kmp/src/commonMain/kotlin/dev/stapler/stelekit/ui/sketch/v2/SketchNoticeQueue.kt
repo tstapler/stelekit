@@ -139,9 +139,13 @@ class SketchNoticeQueue(
      */
     fun postReplacing(notice: SketchNotice, now: Long) {
         advance(now)
-        active.removeAll { it.notice.key == notice.key && it.notice != notice }
+        // Only a plain toast replaces a plain toast: one with an action, details or More items (the "Unlock all" locked-skipped
+        // toast) is never dropped by a later one, nor does it displace a plain one, so neither is lost.
+        if (notice.isPlain) active.removeAll { it.notice.key == notice.key && it.notice != notice && it.notice.isPlain }
         post(notice, now)
     }
+
+    private val SketchNotice.isPlain: Boolean get() = action == null && details == null && secondaryActions.isEmpty()
 
     /** The notices on screen, in priority order, at most `maxVisibleNotices` of them. */
     fun visible(now: Long): List<VisibleNotice> {

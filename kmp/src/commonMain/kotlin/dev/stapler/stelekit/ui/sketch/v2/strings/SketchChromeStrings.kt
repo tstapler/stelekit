@@ -29,6 +29,12 @@ object SketchChromeStrings {
     }
 
     const val ZOOM_TO_SELECTION = "Zoom to selection"
+    const val CLOSE = "Close"
+    const val UNAVAILABLE = "unavailable"
+    const val PANEL_SIZE = "Panel size"
+    const val EXPAND_PANEL = "Expand"
+
+    fun helpFor(name: String) = "Help: $name"
     const val UNDO = "Undo"
     const val REDO = "Redo"
     const val DELETE = "Delete"

@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.performance
 
+import dev.stapler.stelekit.util.SpanSink
 import dev.stapler.stelekit.util.UuidGenerator
 
 /**
@@ -12,7 +13,7 @@ import dev.stapler.stelekit.util.UuidGenerator
  * Every span automatically carries [AppSession.id] so the export report can
  * distinguish spans from different process lifetimes.
  */
-class SpanEmitter(private val ringBuffer: RingBufferSpanExporter?) {
+class SpanEmitter(private val ringBuffer: RingBufferSpanExporter?) : SpanSink {
 
     fun emit(
         name: String,
@@ -39,7 +40,7 @@ class SpanEmitter(private val ringBuffer: RingBufferSpanExporter?) {
     }
 
     /** Convenience: emit a root span with [startMs] already captured. */
-    fun trace(name: String, startMs: Long, attrs: Map<String, String> = emptyMap()) {
+    override fun trace(name: String, startMs: Long, attrs: Map<String, String>) {
         emit(name, startMs, attrs = attrs)
     }
 

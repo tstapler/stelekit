@@ -310,6 +310,7 @@ import dev.stapler.stelekit.tags.LlmTagProviderBranchesTest
 import dev.stapler.stelekit.llm.LlmSuggestionWriterEditsTest
 import dev.stapler.stelekit.vault.VaultHeaderModelTest
 import dev.stapler.stelekit.parser.MarkdownParserInlineStorageTest
+import dev.stapler.stelekit.parser.TableRoundTripTest
 import dev.stapler.stelekit.git.lfs.FileSystemLfsContentProbeTest
 import dev.stapler.stelekit.git.SqlDelightGitConfigRepositoryRoundTripTest
 import dev.stapler.stelekit.migration.ChangeApplierBranchesTest
@@ -426,6 +427,9 @@ import dev.stapler.stelekit.ui.StelekitViewModelNavigationTest
 import dev.stapler.stelekit.ui.StelekitViewModelUiToggleTest
 import dev.stapler.stelekit.ui.screens.DiskConflictFullScreenStateTest
 import dev.stapler.stelekit.ui.components.MermaidRenderKeyTest
+import dev.stapler.stelekit.ui.components.TableColumnLayoutTest
+import dev.stapler.stelekit.ui.components.TableModelTest
+import dev.stapler.stelekit.ui.components.TablePreferencesTest
 import dev.stapler.stelekit.ui.components.MermaidRenderResultTest
 import dev.stapler.stelekit.ui.components.MermaidSvgAspectRatioTest
 import dev.stapler.stelekit.ui.state.BlockInvalidationIntegrationTest
@@ -436,6 +440,7 @@ import dev.stapler.stelekit.voice.GenAiErrorMappingTest
 import dev.stapler.stelekit.voice.LlmProviderSupportTest
 import dev.stapler.stelekit.voice.MlKitAvailabilityMappingTest
 import dev.stapler.stelekit.voice.VoicePipelineConfigTest
+import dev.stapler.stelekit.audit.ModuleManifestGuardTest
 import dev.stapler.stelekit.audit.TestHygieneAuditTest
 import dev.stapler.stelekit.audit.TestPlacementAuditTest
 import dev.stapler.stelekit.audit.TestRegistrationAuditTest
@@ -758,6 +763,10 @@ import org.junit.runners.Suite
     LlmSuggestionWriterEditsTest::class,
     VaultHeaderModelTest::class,
     MarkdownParserInlineStorageTest::class,
+    TableRoundTripTest::class,
+    TableModelTest::class,
+    TableColumnLayoutTest::class,
+    TablePreferencesTest::class,
     FileSystemLfsContentProbeTest::class,
     SqlDelightGitConfigRepositoryRoundTripTest::class,
     ChangeApplierBranchesTest::class,
@@ -885,6 +894,7 @@ import org.junit.runners.Suite
     MlKitAvailabilityMappingTest::class,
     VoicePipelineConfigTest::class,
     QueryExecutorTest::class,
+    ModuleManifestGuardTest::class,
     TestHygieneAuditTest::class,
     TestPlacementAuditTest::class,
     TestRegistrationAuditTest::class,
@@ -1049,6 +1059,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.tools.SelectTouchReachTest::class,
     dev.stapler.stelekit.sketch.v2.tools.SmallShapeResizeTest::class,
     dev.stapler.stelekit.ui.sketch.v2.NoticeReplaceTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.NameTagHiddenTest::class,
     dev.stapler.stelekit.sketch.v2.tools.EraserFrameToolTest::class,
     dev.stapler.stelekit.sketch.v2.tools.PointArcToolsTest::class,
     dev.stapler.stelekit.sketch.v2.tools.FreedrawToolTest::class,
@@ -1134,6 +1145,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.ui.sketch.v2.ConstraintTargetPickerModelTest::class,
     dev.stapler.stelekit.ui.sketch.v2.DimensionEditModelTest::class,
     dev.stapler.stelekit.ui.sketch.v2.DimensionChipsTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.DimensionPillModelTest::class,
     dev.stapler.stelekit.ui.sketch.v2.SmartDimensionPathBoundTest::class,
     dev.stapler.stelekit.sketch.v2.tools.ArrowToolTest::class,
     dev.stapler.stelekit.sketch.v2.BindingFollowTest::class,

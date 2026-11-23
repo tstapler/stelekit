@@ -15,6 +15,7 @@ of ITS OWN suite. Use :git_testsupport below instead if you only need the
 fixture classes (StubGitRepository etc., none of which carry @Test methods).
 """
 
+load("//kmp:modules.bzl", "kmp_module_labels")
 load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 
@@ -39,7 +40,7 @@ kt_jvm_library(
     # only visible across a kt_jvm_library boundary via `associates`, mirroring the same
     # attribute on //kmp/src/jvmTest/kotlin:jvm_tests. rules_kotlin rejects a target listed
     # in both associates and deps, so it must NOT also appear in deps here.
-    associates = ["//kmp/src/jvmMain/kotlin:jvm_main_lib"],
+    associates = ["//kmp/src/jvmMain/kotlin:jvm_main_lib"] + kmp_module_labels(),
     deps = [
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
         "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
@@ -211,6 +212,10 @@ kt_jvm_library(
         "dev/stapler/stelekit/jobs/schedule/ScheduleLatenessTest.kt",
         "dev/stapler/stelekit/jobs/schedule/TaskKeyTest.kt",
         "dev/stapler/stelekit/parser/MarkdownParserInlineStorageTest.kt",
+        "dev/stapler/stelekit/parser/TableRoundTripTest.kt",
+        "dev/stapler/stelekit/ui/components/TableModelTest.kt",
+        "dev/stapler/stelekit/ui/components/TableColumnLayoutTest.kt",
+        "dev/stapler/stelekit/ui/components/TablePreferencesTest.kt",
         "dev/stapler/stelekit/platform/OpfsProbeDirectoryTest.kt",
         "dev/stapler/stelekit/platform/OpfsStorageVerdictTest.kt",
         "dev/stapler/stelekit/platform/V2StorageStatusTest.kt",
@@ -287,6 +292,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/tools/SelectTouchReachTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/SmallShapeResizeTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/NoticeReplaceTest.kt",
+        "dev/stapler/stelekit/ui/sketch/v2/NameTagHiddenTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/EraserFrameToolTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/PointArcToolsTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/FreedrawToolTest.kt",
@@ -383,6 +389,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/ui/sketch/v2/ConstraintTargetPickerModelTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/DimensionEditModelTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/DimensionChipsTest.kt",
+        "dev/stapler/stelekit/ui/sketch/v2/DimensionPillModelTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/SmartDimensionPathBoundTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/ArrowToolTest.kt",
         "dev/stapler/stelekit/sketch/v2/BindingFollowTest.kt",
@@ -602,4 +609,10 @@ kt_android_library(
         "//kmp/src/androidMain/kotlin:android_main",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
     ],
+)
+
+# The transfer module's commonTest sources, for //kmp/modules:transfer_tests (W9 G7: a per-module test target).
+exports_files(
+    glob(["dev/stapler/stelekit/transfer/**/*.kt"]),
+    visibility = ["//kmp/modules:__pkg__"],
 )

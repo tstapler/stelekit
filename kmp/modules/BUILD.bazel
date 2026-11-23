@@ -1,0 +1,41 @@
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_test")
+load("//kmp:modules.bzl", "kmp_jvm_modules")
+
+# One kt_jvm_library per module of //kmp:modules_manifest.bzl.
+kmp_jvm_modules()
+
+# G7 demonstration (W9): the `transfer` module's own tests depend on //kmp/modules:transfer, not on the
+# //kmp/src/jvmMain/kotlin:jvm_main_lib umbrella, so editing git/merge/ui code neither rebuilds nor reruns this target
+# while editing transfer does. The sources are the module's commonTest files (14 classes, previously Gradle-only).
+kt_jvm_test(
+    name = "transfer_tests",
+    srcs = ["AllTransferModuleTests.kt"] + [
+        "//kmp/src/commonTest/kotlin:" + path
+        for path in [
+            "dev/stapler/stelekit/transfer/Crc32Test.kt",
+            "dev/stapler/stelekit/transfer/TransferTypesTest.kt",
+            "dev/stapler/stelekit/transfer/qrcode/ChunkBufferConcurrencyTest.kt",
+            "dev/stapler/stelekit/transfer/qrcode/ChunkBufferTest.kt",
+            "dev/stapler/stelekit/transfer/qrcode/ChunkFrameCodecTest.kt",
+            "dev/stapler/stelekit/transfer/qrcode/FountainCodecRoundTripTest.kt",
+            "dev/stapler/stelekit/transfer/qrcode/FountainCodecVectorTest.kt",
+            "dev/stapler/stelekit/transfer/qrcode/FountainDecoderTest.kt",
+            "dev/stapler/stelekit/transfer/qrcode/FountainEncoderPreflightTest.kt",
+            "dev/stapler/stelekit/transfer/qrcode/FountainEncoderTest.kt",
+            "dev/stapler/stelekit/transfer/qrcode/QrFrameTransportTest.kt",
+            "dev/stapler/stelekit/transfer/qrcode/QrScannerTest.kt",
+            "dev/stapler/stelekit/transfer/qrcode/QrTransferSettingsTest.kt",
+            "dev/stapler/stelekit/transfer/qrcode/TransferPayloadEnvelopeTest.kt",
+        ]
+    ],
+    associates = [":transfer"],
+    kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
+    test_class = "dev.stapler.stelekit.transfer.AllTransferModuleTests",
+    deps = [
+        "@maven//:io_arrow_kt_arrow_core_jvm",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+    ],
+)

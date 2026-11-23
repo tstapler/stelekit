@@ -8,6 +8,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
@@ -30,7 +32,7 @@ import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 import kotlinx.coroutines.launch
 
 /** One chip of the action chip row: a touch or pen user's control for the active tool or operation (UX-126). */
-data class ActionChip(val tag: String, val label: String, val accessibleName: String = label, val onClick: () -> Unit)
+data class ActionChip(val tag: String, val label: String, val accessibleName: String = label, val icon: StripIcon? = null, val onClick: () -> Unit)
 
 object ActionChipTags {
     const val CHEVRON = "sketch.chips.chevron"
@@ -47,17 +49,24 @@ fun ActionChipRow(chips: List<ActionChip>, modifier: Modifier = Modifier) {
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     Row(modifier.testTag(ShellTags.CHIP_ROW), verticalAlignment = Alignment.CenterVertically) {
-        Row(Modifier.horizontalScroll(scroll), horizontalArrangement = Arrangement.spacedBy(CHIP_GAP_DP.dp)) {
+        Row(Modifier.weight(1f, fill = false).horizontalScroll(scroll), horizontalArrangement = Arrangement.spacedBy(CHIP_GAP_DP.dp)) {
             for (chip in chips) {
                 Box(
                     Modifier.testTag(chip.tag)
                         .defaultMinSize(minWidth = CHIP_MIN_WIDTH_DP.dp, minHeight = ChromeBudget.TOOL_TARGET_DP.dp)
+                        .clip(RoundedCornerShape(CHIP_RADIUS_DP.dp))
                         .background(MaterialTheme.colorScheme.secondaryContainer)
                         .clickable(onClick = chip.onClick)
                         .semantics { contentDescription = chip.accessibleName; role = Role.Button }
                         .padding(horizontal = CHIP_PAD_DP.dp),
                     contentAlignment = Alignment.Center,
-                ) { Text(chip.label, color = MaterialTheme.colorScheme.onSecondaryContainer) }
+                ) {
+                    // A chip names its mode with an icon as well as a word, so it reads at a glance.
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(CHIP_ICON_GAP_DP.dp)) {
+                        chip.icon?.let { StripIconView(it, MaterialTheme.colorScheme.onSecondaryContainer, size = CHIP_ICON_DP.dp) }
+                        Text(chip.label, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+                }
             }
         }
         if (scroll.canScrollForward) {
@@ -72,6 +81,9 @@ fun ActionChipRow(chips: List<ActionChip>, modifier: Modifier = Modifier) {
 }
 
 private const val CHIP_GAP_DP = 8
+private const val CHIP_RADIUS_DP = 24
+private const val CHIP_ICON_DP = 18
+private const val CHIP_ICON_GAP_DP = 6
 private const val CHIP_PAD_DP = 12
 private const val CHIP_MIN_WIDTH_DP = 88
 private const val CHEVRON_GLYPH = "›"

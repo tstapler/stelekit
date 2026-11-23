@@ -87,6 +87,13 @@ class EditorExtras(
     val access = EditorKeyboardAccess(controller)
 
     val dimension = DimensionEditor { controller.sheetKind == SheetKind.Technical }
+
+    /** The on-canvas dimension pills of a technical sheet: whether they show and the size edit in progress. */
+    val pills = DimensionPillsState().also { pills ->
+        controller.tools.onShapeCreated = { command ->
+            if (controller.sheetKind == SheetKind.Technical && pills.visible && command.element is dev.stapler.stelekit.sketch.v2.scene.RectElement) pills.autoOpenFor = command.element.id
+        }
+    }
     val autoConstrain = AutoConstrainState({ controller.sheetKind })
 
     var grid: Boolean by mutableStateOf(false)
@@ -159,9 +166,9 @@ class EditorExtras(
         controller.interceptToolCommand = ::intercept
     }
 
-    /** The Esc row of the dimension field, while its label editor is open. */
+    /** The Esc row of the dimension field, while its label editor or a dimension pill's size field is open. */
     fun escRows(): Set<EscRow> =
-        (if (dimension.state == DimensionEditState.Closed) emptySet() else setOf(EscRow.TextOverlayOrDimensionField)) + access.escRows()
+        (if (dimension.state == DimensionEditState.Closed && pills.edit == null) emptySet() else setOf(EscRow.TextOverlayOrDimensionField)) + access.escRows()
 
     fun close() {
         importer.close()

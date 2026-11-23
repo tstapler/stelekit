@@ -14,6 +14,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -148,9 +149,12 @@ private fun FingerChip(content: TopBarContent, actions: TopBarActions) {
     // press target (so the target keeps its full size) and the text stays the box's direct child.
     val scheme = MaterialTheme.colorScheme
     val look = Modifier.padding(horizontal = CHIP_INSET, vertical = CHIP_VERTICAL).clip(RoundedCornerShape(CHIP_RADIUS))
-    Box(
+    // The chip is at least its budgeted size and grows with a large font instead of squeezing its text against the border; in the
+    // short form (a bare On or Off) a finger icon says what it is.
+    val ink = if (content.fingerOn) scheme.onPrimaryContainer else scheme.onSurface
+    Row(
         Modifier.testTag(ShellTags.FINGER_CHIP)
-            .size(width = width.dp, height = TouchTargetFloor.floorDp(content.pointer).dp.coerceAtLeast(ChromeBudget.BACK_DP.dp))
+            .defaultMinSize(minWidth = width.dp, minHeight = TouchTargetFloor.floorDp(content.pointer).dp.coerceAtLeast(ChromeBudget.BACK_DP.dp))
             .clickable(onClick = actions.onFingerToggle)
             .semantics {
                 contentDescription = SketchStrings.TopBar.FINGER_SEMANTICS
@@ -158,8 +162,12 @@ private fun FingerChip(content: TopBarContent, actions: TopBarActions) {
                 role = Role.Switch
             }
             .then(if (content.fingerOn) look.background(scheme.primaryContainer) else look.border(1.dp, scheme.outlineVariant, RoundedCornerShape(CHIP_RADIUS))),
-        contentAlignment = Alignment.Center,
-    ) { Text(label, maxLines = 1, style = MaterialTheme.typography.labelLarge, color = if (content.fingerOn) scheme.onPrimaryContainer else scheme.onSurface) }
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        if (short) StripIconView(StripIcon.Finger, ink, Modifier.padding(start = CHIP_TEXT_PAD), size = CHIP_ICON)
+        Text(label, Modifier.padding(horizontal = CHIP_TEXT_PAD), maxLines = 1, style = MaterialTheme.typography.labelLarge, color = ink)
+    }
 }
 
 @Composable
@@ -168,12 +176,13 @@ private fun SaveStatusButton(plan: TopBarPlan, status: SaveStatus) {
     val full = saveFullText(status)
     val width = if (!glyphOnly && plan.form == TopBarForm.Full) ChromeBudget.SAVE_FULL_DP else ChromeBudget.SAVE_SHORT_DP
     Box(
-        Modifier.testTag(TopBarTags.SAVE).size(width = width.dp, height = ChromeBudget.SAVE_SHORT_DP.dp).semantics { contentDescription = full },
+        // At least the budgeted size, and wider when the icon and the word need it, so the word is never cut ("Unsave").
+        Modifier.testTag(TopBarTags.SAVE).defaultMinSize(minWidth = width.dp, minHeight = ChromeBudget.SAVE_SHORT_DP.dp).semantics { contentDescription = full },
         contentAlignment = Alignment.Center,
     ) {
-        // An icon carries the state at a glance; the word is added only where the budget allows it.
+        // An icon carries the state at a glance (larger where the word is dropped); the word is added only where the budget allows it.
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(SAVE_GAP)) {
-            StripIconView(saveIcon(status), saveColor(status), size = SAVE_ICON)
+            StripIconView(saveIcon(status), saveColor(status), size = if (glyphOnly) SAVE_ICON_LARGE else SAVE_ICON)
             if (!glyphOnly && width > ChromeBudget.SAVE_SHORT_DP) Text(saveShortText(status), maxLines = 1, style = MaterialTheme.typography.labelMedium)
         }
     }
@@ -222,6 +231,9 @@ private fun saveFullText(status: SaveStatus): String = when (status) {
 }
 
 private val SAVE_GAP = 4.dp
+private val CHIP_TEXT_PAD = 6.dp
+private val CHIP_ICON = 16.dp
+private val SAVE_ICON_LARGE = 24.dp
 private val CHIP_INSET = 2.dp
 private val CHIP_VERTICAL = 8.dp
 private val CHIP_RADIUS = 16.dp
