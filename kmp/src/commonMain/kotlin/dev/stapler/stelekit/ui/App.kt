@@ -169,6 +169,10 @@ private fun MainGraphContentHost(
     val graphManager = graphManagerState.graphManager
     val activeGraphId = graphManagerState.activeGraphId
     val repos = graphManagerState.activeRepoSet
+    // Desktop-only default: touch devices keep native long-press/drag behaviour unless opted in.
+    val multiBlockDragSelect = platformSettings.getBoolean(
+        MULTI_BLOCK_DRAG_SELECT_KEY, !LocalWindowSizeClass.current.isMobile,
+    )
 
     if (repos == null || !graphManagerState.migrationReady) {
         // Show loading state while repositories are being initialized or migration is running.
@@ -181,7 +185,10 @@ private fun MainGraphContentHost(
 
     // Use key(graphId) to recreate ViewModels when graph changes
     Box(modifier = Modifier.fillMaxSize()) {
-        CompositionLocalProvider(LocalShareInboxUi provides shareUi) {
+        CompositionLocalProvider(
+            LocalShareInboxUi provides shareUi,
+            LocalMultiBlockDragSelect provides multiBlockDragSelect,
+        ) {
         key(activeGraphId) {
             GraphContent(GraphContentDeps(
                 repos = repos,

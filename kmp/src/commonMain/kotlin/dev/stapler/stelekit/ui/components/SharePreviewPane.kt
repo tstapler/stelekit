@@ -13,11 +13,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import dev.stapler.stelekit.model.Block
-import dev.stapler.stelekit.model.Page
-import dev.stapler.stelekit.ui.ShareScope
-import dev.stapler.stelekit.ui.StelekitViewModel
-import kotlinx.datetime.LocalDate
+import arrow.core.Either
+import dev.stapler.stelekit.error.DomainError
 
 /** Outcome of computing the preview text for the current format + scope. */
 internal sealed interface PreviewState {
@@ -27,35 +24,26 @@ internal sealed interface PreviewState {
 }
 
 /**
- * Shows the exact string the export flow would produce for [formatId] + [shareScope], as
+ * Shows the string [compute] yields (the export flow's own output for the chosen format + scope), as
  * selectable monospace text (HTML is shown as source, never rendered). Recomputed off the UI
  * thread (the export service runs on the DB dispatcher) whenever an input changes; the previous
  * computation is cancelled by [LaunchedEffect].
  */
 @Composable
 internal fun SharePreviewPane(
-    viewModel: StelekitViewModel,
-    shareScope: ShareScope,
-    page: Page,
-    blocks: List<Block>,
-    selectedUuids: Set<String>,
-    formatId: String,
-    stripTrackingParams: Boolean,
-    journalFrom: LocalDate?,
-    journalTo: LocalDate?,
+    previewKey: Any?,
+    compute: suspend () -> Either<DomainError, String>,
     onCopy: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val currentCompute by rememberUpdatedState(compute)
     var state by remember { mutableStateOf<PreviewState>(PreviewState.Loading) }
 
-    LaunchedEffect(shareScope, page.uuid, blocks, selectedUuids, formatId, stripTrackingParams, journalFrom, journalTo) {
+    // previewKey carries every input of [compute] (format, scope, blocks, ...); a change cancels
+    // the in-flight computation and starts a new one.
+    LaunchedEffect(previewKey) {
         state = PreviewState.Loading
-        state = if (shareScope == ShareScope.JournalRange && (journalFrom == null || journalTo == null)) {
-            PreviewState.Failed("Enter a valid date range to preview")
-        } else {
-            viewModel.resolveExportContent(shareScope, page, blocks, selectedUuids, formatId, journalFrom, journalTo)
-                .fold({ PreviewState.Failed(it.message) }, { PreviewState.Ready(it) })
-        }
+        state = currentCompute().fold({ PreviewState.Failed(it.message) }, { PreviewState.Ready(it) })
     }
 
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -4,7 +4,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -277,6 +288,17 @@ fun BlockList(
         uuids + uuids.flatMap { getDescendantUuids(it) }
     }
 
+    // Cross-block drag text selection (desktop pointer, feature-flagged). The state lives and dies
+    // with this composable; block text registers its layout via LocalCrossBlockSelectionState.
+    val dragSelectEnabled = LocalMultiBlockDragSelect.current
+    val dragSelectState = remember(dragSelectEnabled) { if (dragSelectEnabled) CrossBlockSelectionState() else null }
+    val visibleOrder = remember(blocks, hiddenBlocks) { blocks.map { it.uuid.value }.filter { it !in hiddenBlocks } }
+    dragSelectState?.order = visibleOrder
+    val dragSelectFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val dragSelectClipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    val currentEditingUuid by rememberUpdatedState(editingBlockUuid)
+    var boxCoords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+
     fun refreshDropTarget(state: BlockDragState) {
         val result = computeDropTarget(
             pointerY = state.pointerOffsetY,
@@ -304,6 +326,15 @@ fun BlockList(
             }
             .onKeyEvent { event ->
                 when {
+                    dragSelectState?.selection != null && event.type == KeyEventType.KeyDown &&
+                        (event.isCtrlPressed || event.isMetaPressed) && event.key == Key.C -> {
+                        dragSelectState.selectedText()?.let { dragSelectClipboard.setText(AnnotatedString(it)) }
+                        true
+                    }
+                    dragSelectState?.selection != null && event.key == Key.Escape -> {
+                        dragSelectState.clear()
+                        true
+                    }
                     event.key == Key.ShiftLeft || event.key == Key.ShiftRight -> {
                         isShiftDown = event.type == KeyEventType.KeyDown
                         false
@@ -328,6 +359,43 @@ fun BlockList(
                     else -> false
                 }
             }
+            .then(
+                if (dragSelectState == null) Modifier else Modifier
+                    .onGloballyPositioned { boxCoords = it }
+                    .focusRequester(dragSelectFocus)
+                    .focusable()
+                    .pointerInput(dragSelectState) {
+                        awaitEachGesture {
+                            // Initial pass: observe before children, consume nothing until a drag
+                            // starts, so taps / double-clicks / links keep working untouched.
+                            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                            // A press anywhere clears the previous selection (single click clears).
+                            dragSelectState.clear()
+                            val box = boxCoords ?: return@awaitEachGesture
+                            if (down.type != PointerType.Mouse || currentEditingUuid != null) return@awaitEachGesture
+                            val startRoot = box.localToRoot(down.position)
+                            if (!dragSelectState.hitsText(startRoot)) return@awaitEachGesture
+                            val anchor = dragSelectState.positionAt(startRoot) ?: return@awaitEachGesture
+                            var dragging = false
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) break
+                                if (!dragging && (change.position - down.position).getDistance() > viewConfiguration.touchSlop) {
+                                    dragging = true
+                                }
+                                if (dragging) {
+                                    val focus = dragSelectState.positionAt(box.localToRoot(change.position))
+                                    if (focus != null && (focus.blockUuid != anchor.blockUuid || focus.offset != anchor.offset)) {
+                                        dragSelectState.selection = CrossBlockSelection(anchor, focus)
+                                    }
+                                    change.consume()
+                                }
+                            }
+                            if (dragging && dragSelectState.selection != null) dragSelectFocus.requestFocus()
+                        }
+                    },
+            )
     ) {
         // Blocks are each wrapped in their own per-row Box (below, for the cut-block alpha
         // treatment), so `coords.positionInParent()` on a block would report its position
@@ -346,6 +414,10 @@ fun BlockList(
                 val isDropTarget = dragState != null && dropTargetUuid == block.uuid.value
                 val isCutBlock = cutBlockUuids.isNotEmpty() && block.uuid.value in cutBlockUuids
                 Box(modifier = if (isCutBlock) Modifier.graphicsLayer { alpha = 0.4f } else Modifier) {
+                CompositionLocalProvider(
+                    LocalCrossBlockSelectionState provides dragSelectState,
+                    LocalRenderedBlockUuid provides block.uuid.value,
+                ) {
                 BlockRenderer(
                     block = block,
                     isDebugMode = isDebugMode,
@@ -498,6 +570,7 @@ fun BlockList(
                         }
                     },
                 )
+                } // end CompositionLocalProvider
                 } // end Box (cut block alpha wrapper)
             }
         }

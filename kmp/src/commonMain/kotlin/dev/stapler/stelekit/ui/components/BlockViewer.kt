@@ -8,6 +8,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -151,6 +155,30 @@ fun WikiLinkText(
 
     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
 
+    // Cross-block drag selection: register this text's layout under its block uuid (null for
+    // WikiLinkText used outside a BlockList row) and paint the selected slice behind the text.
+    val dragSelect = LocalCrossBlockSelectionState.current
+    val renderedBlockUuid = LocalRenderedBlockUuid.current
+    var textCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+    if (dragSelect != null && renderedBlockUuid != null) {
+        val layout = textLayoutResult
+        val coords = textCoords
+        DisposableEffect(dragSelect, renderedBlockUuid, layout, coords, annotatedString) {
+            if (layout != null && coords != null) {
+                dragSelect.register(renderedBlockUuid, BlockTextInfo(annotatedString.text, layout, coords))
+            }
+            onDispose { dragSelect.unregister(renderedBlockUuid) }
+        }
+    }
+    val highlightModifier = if (dragSelect != null && renderedBlockUuid != null) {
+        Modifier.drawBehind {
+            val layout = textLayoutResult ?: return@drawBehind
+            val range = dragSelect.highlightFor(renderedBlockUuid, layout.layoutInput.text.length) ?: return@drawBehind
+            drawPath(layout.getPathForRange(range.first, range.last + 1), highlightColor)
+        }
+    } else Modifier
+
     // Helper: decode a PAGE_SUGGESTION annotation value into triple or null
     fun decodeSuggestionAnnotation(item: String): Triple<String, Int, Int>? {
         val parts = item.split("|")
@@ -210,6 +238,8 @@ fun WikiLinkText(
         onTextLayout = { textLayoutResult = it },
         modifier = modifier
             .padding(vertical = 4.dp)
+            .onGloballyPositioned { textCoords = it }
+            .then(highlightModifier)
             // isInSelectionMode is a key (not just annotatedString) so this coroutine
             // relaunches -- and picks up the current isInSelectionMode/onToggleSelect/
             // onLongPressSelect closures -- whenever selection mode toggles without the

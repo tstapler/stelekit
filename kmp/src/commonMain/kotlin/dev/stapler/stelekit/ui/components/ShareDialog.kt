@@ -13,6 +13,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import arrow.core.left
+import dev.stapler.stelekit.error.DomainError.ExportError
 import dev.stapler.stelekit.export.ShareProvider
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
@@ -241,16 +243,23 @@ fun ShareContent(
                 val to = runCatching { LocalDate.parse(journalToText) }.getOrNull()
                 from to to
             } else null to null
+            val shareScope = appState.shareScope
+            val formatId = appState.shareFormat
             SharePreviewPane(
-                viewModel = viewModel,
-                shareScope = appState.shareScope,
-                page = page,
-                blocks = blocks,
-                selectedUuids = selectedBlockUuids,
-                formatId = appState.shareFormat,
-                stripTrackingParams = appState.shareStripTrackingParams,
-                journalFrom = previewDates.first,
-                journalTo = previewDates.second,
+                previewKey = listOf(
+                    shareScope, page.uuid, blocks, selectedBlockUuids, formatId,
+                    appState.shareStripTrackingParams, previewDates,
+                ),
+                compute = {
+                    if (shareScope == ShareScope.JournalRange && (previewDates.first == null || previewDates.second == null)) {
+                        ExportError.SerializationFailed("Enter a valid date range to preview").left()
+                    } else {
+                        viewModel.resolveExportContent(
+                            shareScope, page, blocks, selectedBlockUuids, formatId,
+                            previewDates.first, previewDates.second,
+                        )
+                    }
+                },
                 onCopy = {
                     val dates = datesForScope() ?: return@SharePreviewPane
                     viewModel.exportScopeToClipboard(
