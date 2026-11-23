@@ -42,6 +42,14 @@ jobs:
           # expect/actual mismatch errors (e.g. PlatformSettings supertype mismatch).
           gradle-home-cache-excludes: caches/kotlin-build-*
 
+      # Robolectric fetches android-all jars at test time with no 429 backoff; kmp/build.gradle.kts points it at a
+      # high-limit Central mirror, and this cache avoids the download. Keyed on the Robolectric versions in use
+      # (kmp 4.16, androidApp 4.13) so unrelated build-file edits don't save another ~680 MB entry; bump with them.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-android-all-4.16-4.13
+
       # Run tests, record screenshots, and assemble the APK in a single Gradle
       # invocation so configuration, compilation, and daemon startup happen once.
       # Goldens are intentionally not committed — rendering differs between machines.
