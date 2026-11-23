@@ -54,6 +54,14 @@ class TableModelTest {
     }
 
     @Test
+    fun bodyCellsBeyondTheHeaderAreDroppedLikeGfm() {
+        val t = parseTableContent("| A | B |\n|---|---|\n| 1 | 2 | extra |\n| 3 |")
+        assertEquals(2, t.columnCount)
+        assertEquals(listOf("1", "2"), t.rows[0])
+        assertEquals(listOf("3", ""), t.rows[1])
+    }
+
+    @Test
     fun escapedPipeStaysInsideItsCell() {
         assertEquals(listOf("a|b", "c"), splitTableRow("| a\\|b | c |"))
     }

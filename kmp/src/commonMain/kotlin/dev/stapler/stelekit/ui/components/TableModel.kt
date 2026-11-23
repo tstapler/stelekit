@@ -64,14 +64,15 @@ fun parseTableContent(raw: String): TableData {
     val rawHeaders = splitTableRow(lines[0])
     val rawRows = lines.drop(2).map { splitTableRow(it) }
     val explicit = splitTableRow(lines[1]).map { parseAlignmentCell(it) }
-    val columnCount = maxOf(rawHeaders.size, rawRows.maxOfOrNull { it.size } ?: 0)
+    // GFM: the header row fixes the column count; body cells beyond it are dropped, short rows are padded.
+    val columnCount = rawHeaders.size
 
     fun <T> List<T>.padTo(fill: T): List<T> = this + List((columnCount - size).coerceAtLeast(0)) { fill }
     val explicitPadded = explicit.take(columnCount).padTo(null)
     return TableData(
         headers = rawHeaders.padTo(""),
         alignments = explicitPadded.map { it ?: TableColumnAlignment.LEFT },
-        rows = rawRows.map { it.padTo("") },
+        rows = rawRows.map { it.take(columnCount).padTo("") },
         explicitAlignments = explicitPadded,
     )
 }

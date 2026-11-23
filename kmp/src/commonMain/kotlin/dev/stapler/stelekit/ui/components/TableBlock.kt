@@ -173,7 +173,7 @@ private fun TableGrid(
             for (r in 0 until rowCount) {
                 var x = 0
                 for (c in 0 until cols) {
-                    placeables[r * cols + c].place(x, y)
+                    placeables[r * cols + c].placeRelative(x, y)
                     x += widths[c]
                 }
                 y += heights[r]
