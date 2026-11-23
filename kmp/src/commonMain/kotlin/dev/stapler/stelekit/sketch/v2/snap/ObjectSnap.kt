@@ -88,8 +88,9 @@ object ObjectSnap {
         if (disabled || base == null || !usableZoom) return SnapOutcome(dx, dy, emptyList())
         val tolerance = SNAP_RADIUS_PX * pxPerDp / zoom
         val proposed = SceneBounds(base.minX + dx, base.minY + dy, base.maxX + dx, base.maxY + dy)
+        val hidden = scene.layers.filter { !it.visible }.map { it.id }.toSet()
         val near = index.query(Bounds(proposed.minX, proposed.minY, proposed.maxX, proposed.maxY).inflated(SNAP_REACH_PX / zoom))
-            .filter { it !in movingIds }.mapNotNull { scene[it] }.mapNotNull { SceneBounds.of(it) }
+            .filter { it !in movingIds }.mapNotNull { scene[it] }.filter { it.base.layerId !in hidden }.mapNotNull { SceneBounds.of(it) }
 
         val xBest = best(xLines(proposed), near.flatMap { xLines(it) }, tolerance)
         val yBest = best(yLines(proposed), near.flatMap { yLines(it) }, tolerance)

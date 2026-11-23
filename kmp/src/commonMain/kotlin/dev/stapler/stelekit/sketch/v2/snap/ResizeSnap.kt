@@ -29,6 +29,9 @@ data class ResizeSides(val sx: Int, val sy: Int) {
 object ResizeSnap {
     private const val FROM_CENTRE_GROWTH = 2.0
 
+    /** A snap never moves an edge by more than this share of the frame's size on that axis, so a small shape is not dominated by its neighbours. */
+    private const val MAX_TOLERANCE_SHARE = 0.25
+
     @Suppress("LongParameterList")
     fun snap(
         scene: SketchSceneV2,
@@ -52,11 +55,11 @@ object ResizeSnap {
 
         val edgeX = (if (sides.sx > 0) frame.maxX else frame.minX) + dx
         val edgeY = (if (sides.sy > 0) frame.maxY else frame.minY) + dy
+        val grow = if (fromCentre) FROM_CENTRE_GROWTH else 1.0
         var snapX = sides.sx != 0
         var snapY = sides.sy != 0
         val hasArea = frame.width > 0.0 && frame.height > 0.0
         if (keepAspect && sides.isCorner && hasArea) {
-            val grow = if (fromCentre) FROM_CENTRE_GROWTH else 1.0
             val xPrimary = (frame.width + sides.sx * dx * grow) / frame.width >= (frame.height + sides.sy * dy * grow) / frame.height
             snapX = xPrimary
             snapY = !xPrimary
@@ -64,8 +67,8 @@ object ResizeSnap {
 
         val tolerance = ObjectSnap.SNAP_RADIUS_PX * pxPerDp / zoom
         val near = if (settings.objects) neighbours(scene, index, movingIds, frame, edgeX, edgeY, dx, dy, zoom) else emptyList()
-        val xHit = if (snapX) correction(edgeX, near.flatMap { ObjectSnap.xLines(it) }, tolerance, grid) else null
-        val yHit = if (snapY) correction(edgeY, near.flatMap { ObjectSnap.yLines(it) }, tolerance, grid) else null
+        val xHit = if (snapX) correction(edgeX, near.flatMap { ObjectSnap.xLines(it) }, capped(tolerance, frame.width), grid) else null
+        val yHit = if (snapY) correction(edgeY, near.flatMap { ObjectSnap.yLines(it) }, capped(tolerance, frame.height), grid) else null
         if (xHit == null && yHit == null) return unchanged
 
         val moved = SceneBounds(
@@ -78,8 +81,17 @@ object ResizeSnap {
             xHit?.second?.let { ObjectSnap.guide(GuideAxis.Vertical, it, moved) },
             yHit?.second?.let { ObjectSnap.guide(GuideAxis.Horizontal, it, moved) },
         )
-        return SnapOutcome(dx + (xHit?.first ?: 0.0), dy + (yHit?.first ?: 0.0), guides)
+        var outX = dx + (xHit?.first ?: 0.0)
+        var outY = dy + (yHit?.first ?: 0.0)
+        // Aspect lock: re-derive the other axis from the snapped one so TransformMath keeps the same primary axis and the edge stays on its line.
+        if (keepAspect && sides.isCorner && hasArea) {
+            if (xHit != null) outY = ((frame.width + sides.sx * outX * grow) / frame.width * frame.height - frame.height) / (sides.sy * grow)
+            if (yHit != null) outX = ((frame.height + sides.sy * outY * grow) / frame.height * frame.width - frame.width) / (sides.sx * grow)
+        }
+        return SnapOutcome(outX, outY, guides)
     }
+
+    private fun capped(tolerance: Double, size: Double): Double = if (size > 0.0) minOf(tolerance, size * MAX_TOLERANCE_SHARE) else tolerance
 
     @Suppress("LongParameterList")
     private fun neighbours(
@@ -95,7 +107,8 @@ object ResizeSnap {
     ): List<SceneBounds> {
         val area = Bounds(minOf(frame.minX, edgeX), minOf(frame.minY, edgeY), maxOf(frame.maxX, edgeX), maxOf(frame.maxY, edgeY))
         val reach = ObjectSnap.SNAP_REACH_PX / zoom + abs(dx) + abs(dy)
-        return index.query(area.inflated(reach)).filter { it !in movingIds }.mapNotNull { scene[it] }.mapNotNull { SceneBounds.of(it) }
+        val hidden = scene.layers.filter { !it.visible }.map { it.id }.toSet()
+        return index.query(area.inflated(reach)).filter { it !in movingIds }.mapNotNull { scene[it] }.filter { it.base.layerId !in hidden }.mapNotNull { SceneBounds.of(it) }
     }
 
     /** The shift that puts [edge] on the closest element line within [tolerance], else on the grid; null when neither applies. */

@@ -7,6 +7,8 @@ package dev.stapler.stelekit.sketch.v2.tools
 import dev.stapler.stelekit.sketch.SnapKind
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.index.SpatialIndex
+import dev.stapler.stelekit.sketch.v2.scene.Layer
+import dev.stapler.stelekit.sketch.v2.scene.LayerId
 import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
 import dev.stapler.stelekit.sketch.v2.snap.GridSettings
@@ -204,5 +206,33 @@ class ResizeSnapTest {
     fun snap_should_IgnoreUnusableZoom() {
         val scene = sceneOfElements(subject, right)
         assertEquals(97.0, ResizeSnap.snap(scene, index(scene), setOf(elId("a")), frame, ResizeSides(1, 0), 97.0, 0.0, false, false, 0.0, 1.0, objects).dx)
+    }
+
+    @Test
+    fun aspectLock_should_KeepTheSnappedAxisPrimary_SoTheEdgeLandsOnTheLine() {
+        val line = filledRectEl("n", 147, 500, 30, 30)
+        val scene = sceneOfElements(line)
+        val square = SceneBounds(0.0, 0.0, 100.0, 100.0)
+        val out = ResizeSnap.snap(scene, index(scene), setOf(elId("a")), square, ResizeSides(1, 1), 50.0, 48.0, true, false, 1.0, 1.0, objects)
+        val box = TransformMath.resize(Box(0.0, 0.0, 100.0, 100.0), 0.0, Handle.SE, out.dx, out.dy, keepAspect = true, fromCentre = false)
+        assertEquals(147.0, box.width, "x snapped to 147; the derived y must not overtake it")
+        assertEquals(147.0, box.height)
+    }
+
+    @Test
+    fun hiddenLayerElements_should_NotAttractTheEdge() {
+        val hiddenLayer = LayerId("hidden")
+        val base = sceneOfElements(subject)
+        val scene = base.withLayers(base.layers + Layer(hiddenLayer, "Hidden", visible = false, order = 1)).add(filledRectEl("h", 300, 0, 100, 120, RectSpec(layer = hiddenLayer))).getOrNull()!!
+        val out = ResizeSnap.snap(scene, index(scene), setOf(elId("a")), frame, ResizeSides(1, 0), 97.0, 0.0, false, false, 1.0, 1.0, objects)
+        assertEquals(97.0, out.dx)
+    }
+
+    @Test
+    fun smallFrame_should_NotBeDominatedByANeighbourInsideTheFullRadius() {
+        val scene = sceneOfElements(filledRectEl("n", 16, 0, 10, 10))
+        val tiny = SceneBounds(0.0, 0.0, 12.0, 12.0)
+        val out = ResizeSnap.snap(scene, index(scene), setOf(elId("a")), tiny, ResizeSides(1, 0), 0.0, 0.0, false, false, 1.0, 1.0, objects)
+        assertEquals(0.0, out.dx, "4 units away is inside 8 px but past a quarter of a 12 unit frame")
     }
 }
