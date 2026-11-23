@@ -27,6 +27,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.platform.LocalUriHandler
+import kotlinx.coroutines.CancellationException
 import androidx.compose.ui.unit.dp
 
 /** Widest a column may grow when cells scroll instead of wrapping, so one long cell cannot dominate. */
@@ -52,8 +54,19 @@ internal fun TableBlock(
     onLongPressSelect: (() -> Unit)? = null,
     linkColor: Color = MaterialTheme.colorScheme.primary,
     onLinkClick: (String) -> Unit = {},
+    onUrlRightClick: ((String) -> Unit)? = null,
     prefs: TableDisplayPrefs = LocalTablePreferences.current.prefs,
 ) {
+    val uriHandler = LocalUriHandler.current
+    val onUrlClick: (String) -> Unit = { url ->
+        try {
+            uriHandler.openUri(url)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Ignore a URL the platform cannot open, like BlockViewer.
+        }
+    }
     val tableData = remember(content) { parseTableContent(content) }
 
     if (tableData.headers.isEmpty()) {
@@ -113,6 +126,8 @@ internal fun TableBlock(
                             density = prefs.density,
                             linkColor = linkColor,
                             onLinkClick = onLinkClick,
+                            onUrlClick = onUrlClick,
+                            onUrlRightClick = onUrlRightClick,
                             onStartEditing = onStartEditing,
                             isInSelectionMode = isInSelectionMode,
                             onToggleSelect = onToggleSelect,
@@ -206,6 +221,8 @@ private fun TableCell(
     density: TableDensity,
     linkColor: Color,
     onLinkClick: (String) -> Unit,
+    onUrlClick: (String) -> Unit,
+    onUrlRightClick: ((String) -> Unit)?,
     onStartEditing: () -> Unit,
     isInSelectionMode: Boolean,
     onToggleSelect: () -> Unit,
@@ -240,6 +257,8 @@ private fun TableCell(
             textColor = if (isHeader) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
             linkColor = linkColor,
             onLinkClick = onLinkClick,
+            onUrlClick = onUrlClick,
+            onUrlRightClick = onUrlRightClick,
             onClick = onStartEditing,
             isInSelectionMode = isInSelectionMode,
             onToggleSelect = onToggleSelect,
