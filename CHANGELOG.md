@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.122.0](https://github.com/tstapler/stelekit/compare/v0.121.0...v0.122.0) (2026-11-23)
+
+
+### Features
+
+* **sketch:** snap guides, handles follow preview, quarter-turn snap, touch snap pause ([#723](https://github.com/tstapler/stelekit/issues/723)) ([23c9ad8](https://github.com/tstapler/stelekit/commit/23c9ad893259dc1f5c00aab5483c3afa831a15d1))
+* **sketch:** touch magnifier loupe for precise finger drags ([#719](https://github.com/tstapler/stelekit/issues/719)) ([34bc1da](https://github.com/tstapler/stelekit/commit/34bc1da1dac6c520dc574679b38ecb9255444385))
+
+
+### Bug Fixes
+
+* **sketch:** snap handle resizes; live-preview snapping ([#718](https://github.com/tstapler/stelekit/issues/718)) ([5df6335](https://github.com/tstapler/stelekit/commit/5df6335a6d169705f1d0055f087a29ba18f5f30b))
+* **tables:** open links and URLs tapped inside table cells ([#721](https://github.com/tstapler/stelekit/issues/721)) ([a10038b](https://github.com/tstapler/stelekit/commit/a10038b36aa6378feec7c3f31a62fd4092802843))
+
 ## [0.121.0](https://github.com/tstapler/stelekit/compare/v0.120.0...v0.121.0) (2026-11-23)
 
 
