@@ -1,0 +1,122 @@
+{
+  "timestamp": "2026-11-23 09:28:11 UTC",
+  "gitSha": "9f7310dce",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 0,
+  "phase2Ms": 0,
+  "phase3Ms": 1,
+  "totalMs": 1,
+  "jankBaselineP50Ms": 0,
+  "jankBaselineP95Ms": 22,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.05,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 1016,
+      "pct": 34.7
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 216,
+      "pct": 7.4
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 179,
+      "pct": 6.1
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 157,
+      "pct": 5.4
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 128,
+      "pct": 4.4
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 65,
+      "pct": 2.2
+    },
+    {
+      "frame": "org.jacoco.agent.rt.internal_aeaf9ab.asm.SymbolTable$Entry_[k]",
+      "samples": 56,
+      "pct": 1.9
+    },
+    {
+      "frame": "java.nio.DirectByteBuffer_[k]",
+      "samples": 51,
+      "pct": 1.7
+    },
+    {
+      "frame": "char[]_[k]",
+      "samples": 47,
+      "pct": 1.6
+    },
+    {
+      "frame": "org.jacoco.agent.rt.internal_aeaf9ab.asm.Label_[k]",
+      "samples": 45,
+      "pct": 1.5
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 36860,
+      "pct": 98.7
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-3e129977-2a31-4318-95bf-f414a8238e78-libsqlitejdbc.so",
+      "samples": 181,
+      "pct": 0.5
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 53,
+      "pct": 0.1
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 39,
+      "pct": 0.1
+    },
+    {
+      "frame": "syscall",
+      "samples": 23,
+      "pct": 0.1
+    },
+    {
+      "frame": "__xstat64",
+      "samples": 6,
+      "pct": 0.0
+    },
+    {
+      "frame": "prctl",
+      "samples": 6,
+      "pct": 0.0
+    },
+    {
+      "frame": "munmap",
+      "samples": 4,
+      "pct": 0.0
+    },
+    {
+      "frame": "dev/stapler/stelekit/util/ContentHasher.sha256_[1]",
+      "samples": 4,
+      "pct": 0.0
+    },
+    {
+      "frame": "ftruncate",
+      "samples": 3,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": []
+}
