@@ -261,4 +261,32 @@ class DimensionPillModelTest {
         assertEquals("W " + lengthTextOf(195), DimensionPillModel.pillText(PillSpec(PillKind.Width, 195)))
         assertTrue(DimensionPillModel.pillWidthDp("W 12' 3 3/16\"") >= 44.0)
     }
+
+    @Test
+    fun resizeCommand_should_KeepTheVisibleTopLeftOfARotatedBox() {
+        val rect = RectElement(ElementBase(ElementId("r")), su(0), su(0), su(100), su(100), angle = PI / 2)
+        val resized = assertIs<RectElement>(apply(rect, mapOf(PillKind.Width to 200L)))
+        // Rotated a quarter turn about the centre, the visible top-left is the original (100, 0).
+        val cx = resized.x.value + resized.width.value / 2
+        val cy = resized.y.value + resized.height.value / 2
+        val tlx = cx - (-resized.width.value / 2) * 0.0 - (-resized.height.value / 2) * 1.0 + 0.0
+        val tly = cy + (-resized.width.value / 2) * 1.0
+        assertEquals(100.0, tlx, 0.001)
+        assertEquals(0.0, tly, 0.001)
+    }
+
+    @Test
+    fun layout_should_ClearARotatedBox_ByItsSupportDistance() {
+        val rect = RectElement(ElementBase(ElementId("r")), su(100), su(200), su(160), su(80), angle = PI / 2)
+        val width = DimensionPillModel.layout(rect, canvas(w = 600.0, h = 800.0)).of(PillKind.Width)
+        // Centre (180, 240); the shape's screen half-width is 40, so the pill's left edge must be past 220.
+        assertTrue(width.left >= 180.0 + 40.0, "pill overlaps the rotated shape: ${width.left}")
+    }
+
+    @Test
+    fun edit_should_OnlyWriteTheFieldsThatChanged() {
+        val rect = RectElement(ElementBase(ElementId("r")), su(0), su(0), su(160), su(80))
+        val done = assertIs<PillStep.Done>(DimensionPillEdit(rect, PillKind.Height).submit("6\""))
+        assertEquals(96.0, assertNotNull(done.command).height)
+    }
 }

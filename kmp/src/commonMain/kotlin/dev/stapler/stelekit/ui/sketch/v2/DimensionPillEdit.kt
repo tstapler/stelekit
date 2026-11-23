@@ -55,7 +55,7 @@ class DimensionPillEdit(val element: SceneElement, start: PillKind) {
 
     private fun finish(): ResizeElement? {
         val changed = entered.filter { (kind, value) -> specs.first { it.kind == kind }.sixteenths != value }
-        return if (changed.isEmpty()) null else DimensionPillModel.resizeCommand(element, entered)
+        return if (changed.isEmpty()) null else DimensionPillModel.resizeCommand(element, changed)
     }
 }
 

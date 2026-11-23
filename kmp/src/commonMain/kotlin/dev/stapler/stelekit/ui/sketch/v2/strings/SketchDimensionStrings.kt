@@ -20,9 +20,9 @@ object SketchDimensionStrings {
 
         fun description(label: String, value: String) = "$label, $value. Tap to type a new size."
 
-        const val APPLY_HINT = "Enter to apply, Esc to cancel"
+        const val APPLY_HINT = "Done applies. Tap outside to cancel."
 
-        fun nextHint(next: String) = "Enter for $next, Esc to cancel"
+        fun nextHint(next: String) = "Next goes to $next. Tap outside to cancel."
     }
 
     object Chips {

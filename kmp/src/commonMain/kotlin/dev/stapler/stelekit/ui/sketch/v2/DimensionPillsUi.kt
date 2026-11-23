@@ -10,6 +10,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -43,7 +44,9 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -165,7 +168,7 @@ private fun PillEditorBox(edit: DimensionPillEdit, element: SceneElement, anchor
 private fun LockedNote(onClose: () -> Unit) {
     Text(
         S.Pill.LOCKED,
-        Modifier.padding(EDITOR_PAD_DP.dp).testTag(DimensionPillTags.LOCKED).clickable(onClick = onClose),
+        Modifier.defaultMinSize(minHeight = 44.dp).padding(EDITOR_PAD_DP.dp).testTag(DimensionPillTags.LOCKED).clickable(role = Role.Button, onClick = onClose),
         style = MaterialTheme.typography.bodyMedium,
     )
 }
@@ -198,7 +201,7 @@ private fun PillField(edit: DimensionPillEdit, onDone: (ResizeElement) -> Comman
             label = { Text(label) },
             singleLine = true,
             isError = error != null,
-            supportingText = { Text(error ?: hint, Modifier.testTag(if (error != null) DimensionPillTags.ERROR else DimensionPillTags.EDITOR + ".hint"), color = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) },
+            supportingText = { Text(error ?: hint, Modifier.testTag(if (error != null) DimensionPillTags.ERROR else DimensionPillTags.EDITOR + ".hint").semantics { liveRegion = LiveRegionMode.Polite }, color = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = if (edit.isLast) ImeAction.Done else ImeAction.Next),
             keyboardActions = KeyboardActions(onNext = { submit() }, onDone = { submit() }),
             modifier = Modifier.fillMaxWidth().focusRequester(focus).testTag(DimensionPillTags.FIELD).onPreviewKeyEvent { event ->

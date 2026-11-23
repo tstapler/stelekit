@@ -59,7 +59,7 @@ object SketchGuideStrings {
     object Dimensions {
         const val TITLE = "Type a size on the canvas"
         const val PILL_TITLE = "Tap a size to type it"
-        const val PILL_BODY = "Select a shape on a technical sheet and its sizes appear beside it. Tap one, type a length such as 12 3/16\", then press Enter. Enter moves from Width to Height; Esc cancels."
+        const val PILL_BODY = "Select a shape on a technical sheet and its sizes appear beside it. Tap one, type a length such as 12 3/16\", then tap Next or Done. Next moves from Width to Height; tap outside to cancel."
         const val CHIP_TITLE = "Show or hide the sizes"
         const val CHIP_BODY = "The Dimensions chip at the bottom turns the size pills on or off. Constraints and Technical data open their panels from the same row."
     }

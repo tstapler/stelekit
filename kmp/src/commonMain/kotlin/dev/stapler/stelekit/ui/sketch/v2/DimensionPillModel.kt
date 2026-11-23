@@ -86,7 +86,7 @@ object DimensionPillModel {
 
     private fun boxSpecs(w: Double, h: Double) = listOf(PillSpec(PillKind.Width, sixteenths(w)), PillSpec(PillKind.Height, sixteenths(h)))
 
-    private fun sixteenths(v: Double): Long = round(v).toLong()
+    private fun sixteenths(v: Double): Long = max(1L, round(v).toLong())
 
     private fun lineLength(e: LineElement): Double? {
         if (e.polygon || e.points.size != 2) return null
@@ -147,11 +147,13 @@ object DimensionPillModel {
         val h = PILL_HEIGHT_DP
         val horizontalEdge = spec.kind != PillKind.Height
         fun at(sign: Double): PlacedPill {
-            val lx = if (horizontalEdge) 0.0 else sign * (f.halfW + GAP_DP + w / 2)
-            val ly = if (horizontalEdge) sign * (f.halfH + GAP_DP + h / 2) else 0.0
             val c = cos(f.angle)
             val s = sin(f.angle)
-            return PlacedPill(spec.kind, text, f.cx + lx * c - ly * s, f.cy + lx * s + ly * c, w, h)
+            // The outward normal in screen space; the pill is an upright rectangle, so it clears the outline by its support distance along that normal.
+            val nx = if (horizontalEdge) -sign * s else sign * c
+            val ny = if (horizontalEdge) sign * c else sign * s
+            val reach = (if (horizontalEdge) f.halfH else f.halfW) + GAP_DP + abs(nx) * w / 2 + abs(ny) * h / 2
+            return PlacedPill(spec.kind, text, f.cx + nx * reach, f.cy + ny * reach, w, h)
         }
         // Top for Width and Right for Height are the outward-facing sides; the other side is the flip.
         return firstFitting(at(if (horizontalEdge) -1.0 else 1.0), at(if (horizontalEdge) 1.0 else -1.0), canvas)
@@ -209,10 +211,29 @@ object DimensionPillModel {
                 ResizeElement(element.id, stats.x, stats.y, stats.width * k, stats.height * k)
             }
             else -> {
+                val (ax, ay) = anchorKeepingTopLeft(element, stats, values)
                 val diameter = values[PillKind.Diameter]?.toDouble()
-                ResizeElement(element.id, stats.x, stats.y, diameter ?: size(PillKind.Width, stats.width), diameter ?: size(PillKind.Height, stats.height))
+                ResizeElement(element.id, ax, ay, diameter ?: size(PillKind.Width, stats.width), diameter ?: size(PillKind.Height, stats.height))
             }
         }
+    }
+
+    /** The unrotated origin that keeps the visible top-left corner of a rotated box where it is (the unrotated one when the angle is 0). */
+    private fun anchorKeepingTopLeft(element: SceneElement, stats: ElementStats, values: Map<PillKind, Long>): Pair<Double, Double> {
+        val angle = (element as? BoxElement)?.angle ?: (element as? EllipseElement)?.angle ?: 0.0
+        if (angle == 0.0) return stats.x to stats.y
+        val diameter = values[PillKind.Diameter]?.toDouble()
+        val w = diameter ?: values[PillKind.Width]?.toDouble() ?: stats.width
+        val h = diameter ?: values[PillKind.Height]?.toDouble() ?: stats.height
+        val c = cos(angle)
+        val s = sin(angle)
+        val cx = stats.x + stats.width / 2
+        val cy = stats.y + stats.height / 2
+        val tlx = cx + (-stats.width / 2) * c - (-stats.height / 2) * s
+        val tly = cy + (-stats.width / 2) * s + (-stats.height / 2) * c
+        val ncx = tlx + (w / 2) * c - (h / 2) * s
+        val ncy = tly + (w / 2) * s + (h / 2) * c
+        return (ncx - w / 2) to (ncy - h / 2)
     }
 
     /** The sixteenths of a typed length, or the parser's message; the same grammar and messages as the Style tab's size fields. */
