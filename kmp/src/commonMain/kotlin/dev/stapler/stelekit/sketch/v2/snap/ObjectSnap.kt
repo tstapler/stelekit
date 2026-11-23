@@ -53,7 +53,7 @@ data class GridSettings(val enabled: Boolean, val stepUnits: Double) {
  * only elements near the dragged bounds are looked at. Pure: the caller keeps the index current with the scene.
  */
 object ObjectSnap {
-    /** Reach of a snap in screen pixels; divided by the zoom to get scene units. */
+    /** Reach of a snap in screen pixels at one pixel per dp (so 8 dp); scaled by the density and divided by the zoom to get scene units. */
     const val SNAP_RADIUS_PX = 8.0
 
     /** How far from the dragged bounds, in screen pixels, other elements are looked at: about one screen. */
@@ -61,11 +61,11 @@ object ObjectSnap {
 
     private const val CENTRE = 2.0
 
-    private class Line(val value: Double, val kind: SnapKind, val source: SceneBounds)
+    internal class Line(val value: Double, val kind: SnapKind, val source: SceneBounds)
 
-    private fun xLines(b: SceneBounds) = listOf(Line(b.minX, SnapKind.ENDPOINT, b), Line((b.minX + b.maxX) / CENTRE, SnapKind.MIDPOINT, b), Line(b.maxX, SnapKind.ENDPOINT, b))
+    internal fun xLines(b: SceneBounds) = listOf(Line(b.minX, SnapKind.ENDPOINT, b), Line((b.minX + b.maxX) / CENTRE, SnapKind.MIDPOINT, b), Line(b.maxX, SnapKind.ENDPOINT, b))
 
-    private fun yLines(b: SceneBounds) = listOf(Line(b.minY, SnapKind.ENDPOINT, b), Line((b.minY + b.maxY) / CENTRE, SnapKind.MIDPOINT, b), Line(b.maxY, SnapKind.ENDPOINT, b))
+    internal fun yLines(b: SceneBounds) = listOf(Line(b.minY, SnapKind.ENDPOINT, b), Line((b.minY + b.maxY) / CENTRE, SnapKind.MIDPOINT, b), Line(b.maxY, SnapKind.ENDPOINT, b))
 
     /**
      * Snaps the selection [movingIds], proposed to move by ([dx], [dy]), to other elements, then to [grid] on the axes that
@@ -80,12 +80,13 @@ object ObjectSnap {
         zoom: Double,
         disabled: Boolean = false,
         grid: GridSettings? = null,
+        pxPerDp: Double = 1.0,
     ): SnapOutcome {
         val moving = movingIds.mapNotNull { scene[it] }
         val base = SceneBounds.of(moving)
         val usableZoom = zoom.isFinite() && zoom > 0.0
         if (disabled || base == null || !usableZoom) return SnapOutcome(dx, dy, emptyList())
-        val tolerance = SNAP_RADIUS_PX / zoom
+        val tolerance = SNAP_RADIUS_PX * pxPerDp / zoom
         val proposed = SceneBounds(base.minX + dx, base.minY + dy, base.maxX + dx, base.maxY + dy)
         val near = index.query(Bounds(proposed.minX, proposed.minY, proposed.maxX, proposed.maxY).inflated(SNAP_REACH_PX / zoom))
             .filter { it !in movingIds }.mapNotNull { scene[it] }.mapNotNull { SceneBounds.of(it) }
@@ -110,8 +111,15 @@ object ObjectSnap {
         return SnapOutcome(outX, outY, guides)
     }
 
+    /** [dx], [dy] with the top-left of [movingIds]' joint bounds rounded onto [grid]; unchanged when the grid is off or nothing is selected. */
+    fun snapMoveToGrid(scene: SketchSceneV2, movingIds: Set<ElementId>, dx: Double, dy: Double, grid: GridSettings): SnapOutcome {
+        val base = SceneBounds.of(movingIds.mapNotNull { scene[it] })
+        if (!grid.enabled || base == null) return SnapOutcome(dx, dy, emptyList())
+        return SnapOutcome(grid.snap(base.minX + dx) - base.minX, grid.snap(base.minY + dy) - base.minY, emptyList())
+    }
+
     /** The correction (target minus mine) and target of the closest pair within [tolerance], or null. */
-    private fun best(mine: List<Line>, targets: List<Line>, tolerance: Double): Pair<Double, Line>? {
+    internal fun best(mine: List<Line>, targets: List<Line>, tolerance: Double): Pair<Double, Line>? {
         var winner: Pair<Double, Line>? = null
         for (m in mine) for (t in targets) {
             val d = t.value - m.value
@@ -120,9 +128,9 @@ object ObjectSnap {
         return winner
     }
 
-    private fun SceneBounds.shifted(dx: Double, dy: Double) = SceneBounds(minX + dx, minY + dy, maxX + dx, maxY + dy)
+    internal fun SceneBounds.shifted(dx: Double, dy: Double) = SceneBounds(minX + dx, minY + dy, maxX + dx, maxY + dy)
 
-    private fun guide(axis: GuideAxis, target: Line, moved: SceneBounds): SnapGuide {
+    internal fun guide(axis: GuideAxis, target: Line, moved: SceneBounds): SnapGuide {
         val s = target.source
         return if (axis == GuideAxis.Vertical) {
             SnapGuide(axis, target.value, minOf(s.minY, moved.minY), maxOf(s.maxY, moved.maxY), target.kind)

@@ -20,7 +20,7 @@ import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
-/** Toggling Snap twice from the real view cluster leaves one live toast, not "Snap on" and "Snap off" stacked (seen on a phone). */
+/** Toggling Snap twice from the real view cluster (snap starts on) leaves one live toast, not "Snap off" and "Snap on" stacked (seen on a phone). */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29], qualifiers = "w360dp-h780dp-xxhdpi")
 class SnapToastHostTest {
@@ -28,7 +28,7 @@ class SnapToastHostTest {
     val rule = createComposeRule()
 
     @Test
-    fun togglingSnapTwice_should_LeaveOneToast_ThatSaysOff() {
+    fun togglingSnapTwice_should_LeaveOneToast_ThatSaysOn() {
         val rig = V2EditorRig()
         runBlocking { rig.seed() }
         val metrics = FixedAdvanceTextMetricsProvider()
@@ -43,6 +43,6 @@ class SnapToastHostTest {
 
         val notifier = session.controller.notifier
         val shown = notifier.queue.visible(notifier.now()).filter { it.notice.key == SketchHostStrings.View.SNAP_KEY }
-        assertEquals(listOf(SketchHostStrings.View.SNAP_OFF), shown.map { it.notice.text })
+        assertEquals(listOf(SketchHostStrings.View.SNAP_ON), shown.map { it.notice.text })
     }
 }

@@ -9,6 +9,7 @@ import dev.stapler.stelekit.sketch.v2.index.SpatialIndex
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.ElementStyle
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
+import dev.stapler.stelekit.sketch.v2.snap.SnapSettings
 
 /** Source of fresh element ids; a seam so scenario tests are deterministic. */
 fun interface ElementIdSource {
@@ -30,9 +31,14 @@ data class ToolContext(
     val spatialIndex: SpatialIndex? = null,
     /** Screen pixels per dp, so a touch target stated in dp is the same physical size on every screen. */
     val pxPerDp: Double = 1.0,
+    /** What drags snap to (object edges, the grid); none by default so a tool sees raw geometry unless the host asks. */
+    val snap: SnapSettings = SnapSettings.None,
 ) {
     /** How far from an outline a press still hits it, in screen px: a finger-sized reach for touch, the fine mouse reach otherwise. */
     fun hitTolerancePx(touch: Boolean): Double = if (touch) maxOf(TOUCH_HIT_DP * pxPerDp, HitTester.HIT_TOLERANCE_PX) else HitTester.HIT_TOLERANCE_PX
+
+    /** The index snapping queries: the host's, or one built once from [scene]. */
+    val snapIndex: SpatialIndex by lazy { spatialIndex ?: SpatialIndex().also { it.rebuild(scene) } }
 
     /** Narrow-phase hit testing over [scene], shared by every tool handling this event. */
     val hitTester: HitTester by lazy { HitTester(scene, spatialIndex ?: SpatialIndex().also { it.rebuild(scene) }) }
