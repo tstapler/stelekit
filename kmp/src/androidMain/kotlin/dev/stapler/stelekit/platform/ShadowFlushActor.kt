@@ -26,7 +26,7 @@ internal class ShadowFlushActor(
     private val onPreFlush: (suspend (safPath: String) -> Unit)? = null,
     private val onFlushed: (suspend (safPath: String) -> Unit)? = null,
     private val onFlushFailed: (suspend (safPath: String) -> Unit)? = null,
-    private val spanEmitter: dev.stapler.stelekit.performance.SpanEmitter? = null,
+    private val spanEmitter: dev.stapler.stelekit.util.SpanSink? = null,
 ) {
     companion object {
         private val logger = dev.stapler.stelekit.logging.Logger("ShadowFlushActor")
@@ -75,7 +75,7 @@ internal class ShadowFlushActor(
 
             val writeSpanStart = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
             val ok = fileSystem.writeFile(safPath, content)
-            spanEmitter?.emit(
+            spanEmitter?.trace(
                 name = "file.write.deferred",
                 startMs = writeSpanStart,
                 attrs = mapOf("path" to safPath.redactPath()),

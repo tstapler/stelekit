@@ -62,3 +62,7 @@ internal object SketchBundleRemap {
 
     private const val UUID_HEX = 32
 }
+
+/** The same bundle as a separate project under another slug: its project, sheet and element uuids and sheet file names are remapped too. */
+fun SketchBundle.renamed(newSlug: String): Either<DomainError, SketchBundle> =
+    SketchBundleRemap.remap(files, newSlug).map { SketchBundle(newSlug, it, assets, missingAssets) }

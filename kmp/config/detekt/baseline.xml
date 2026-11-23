@@ -46,7 +46,7 @@
     <ID>LargeClass:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries</ID>
     <ID>LargeClass:SqlDelightBlockRepository.kt$SqlDelightBlockRepository : BlockRepository</ID>
     <ID>LargeClass:SqlDelightSearchRepository.kt$SqlDelightSearchRepository : SearchRepository</ID>
-    <ID>LargeClass:StelekitViewModel.kt$StelekitViewModel</ID>
+    <ID>LargeClass:StelekitViewModel.kt$StelekitViewModel : ShareDialogHostPageViewHost</ID>
     <ID>ModifierMissing:AdvancedSettings.kt$AdvancedSettings</ID>
     <ID>ModifierMissing:CommandPalette.kt$CommandItem</ID>
     <ID>ModifierMissing:FrameTimeOverlay.kt$FrameTimeOverlay</ID>
@@ -118,7 +118,7 @@
     <ID>TooManyFunctions:SqlDelightBlockRepository.kt$SqlDelightBlockRepository : BlockRepository</ID>
     <ID>TooManyFunctions:SqlDelightPageRepository.kt$SqlDelightPageRepository : PageRepository</ID>
     <ID>TooManyFunctions:SqlDelightSearchRepository.kt$SqlDelightSearchRepository : SearchRepository</ID>
-    <ID>TooManyFunctions:StelekitViewModel.kt$StelekitViewModel</ID>
+    <ID>TooManyFunctions:StelekitViewModel.kt$StelekitViewModel : ShareDialogHostPageViewHost</ID>
     <ID>UnusedParameter:BlockEditor.kt$localVersion: Long</ID>
     <ID>UnusedParameter:StelekitViewModel.kt$StelekitViewModel$reset: Boolean = false</ID>
   </CurrentIssues>

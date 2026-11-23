@@ -34,8 +34,8 @@ import dev.stapler.stelekit.sketch.v2.codec.SheetCodecV2
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.runtime.telemetry.SketchLog
 import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
-import dev.stapler.stelekit.ui.sketch.toScenePrimitive
-import dev.stapler.stelekit.ui.sketch.toSheetProps
+import dev.stapler.stelekit.sketch.toScenePrimitive
+import dev.stapler.stelekit.sketch.toSheetProps
 import dev.stapler.stelekit.util.ContentHasher
 
 /** Why a conversion did not happen. Nothing is lost in any case: the v1 sheet stays the referenced one. */

@@ -5,6 +5,7 @@ This source set compiles against jvm_main_lib; it has no Compose or platform
 dependencies, making it fast to run in CI.
 """
 
+load("//kmp:modules.bzl", "kmp_module_labels")
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library", "kt_jvm_test")
 load("@rules_java//java:defs.bzl", "java_library")
 
@@ -104,6 +105,13 @@ filegroup(
     srcs = glob(["**/*.kt"]),
 )
 
+# kmp/modules_manifest.bzl as the classpath resource "modules_manifest.bzl" for ModuleManifestGuardTest.
+java_library(
+    name = "module_manifest_as_resource",
+    resources = ["//kmp:modules_manifest.bzl"],
+    resource_strip_prefix = "kmp",
+)
+
 # androidApp/src/main and /test keep "src/main/kotlin/..." and "src/test/kotlin/..." names.
 java_library(
     name = "wiring_androidapp_sources_as_resources",
@@ -167,7 +175,7 @@ kt_jvm_test(
     # test sandbox, so GraphManager tests that open a file DB failed with SQLITE_CANTOPEN.
     jvm_flags = ["-Duser.home=$$TEST_TMPDIR"],
     kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
-    associates = ["//kmp/src/jvmMain/kotlin:jvm_main_lib"],
+    associates = ["//kmp/src/jvmMain/kotlin:jvm_main_lib"] + kmp_module_labels(),
     deps = [
         "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
@@ -191,6 +199,7 @@ kt_jvm_test(
         ":journey_docs_as_resources",
         ":wiring_kmp_sources_as_resources",
         ":wiring_androidapp_sources_as_resources",
+        ":module_manifest_as_resource",
         ":business_test_data_as_resources",
         ":home_sketch_data_as_resources",
         ":sketch_data_as_resources",

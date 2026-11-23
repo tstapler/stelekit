@@ -116,7 +116,7 @@ sealed class IndexingState {
  */
 class StelekitViewModel(
     deps: StelekitViewModelDependencies,
-) {
+) : dev.stapler.stelekit.ui.components.ShareDialogHost, dev.stapler.stelekit.ui.screens.PageViewHost {
     private val fileSystem: FileSystem = deps.fileSystem
     private val pageRepository: PageRepository = deps.pageRepository
     private val blockRepository: BlockRepository = deps.blockRepository
@@ -448,10 +448,10 @@ class StelekitViewModel(
     val pageNameIndex = PageNameIndex(pageRepository, scope)
 
     /** Pre-built matcher for the current graph's page names. Null until pages are loaded. */
-    val suggestionMatcher: StateFlow<AhoCorasickMatcher?> = pageNameIndex.matcher
+    override val suggestionMatcher: StateFlow<AhoCorasickMatcher?> = pageNameIndex.matcher
 
     /** Local page names for cross-section link rendering (FR-14). Derived from the autocomplete matcher index. */
-    val localPageNames: StateFlow<Set<String>> = pageNameIndex.matcher
+    override val localPageNames: StateFlow<Set<String>> = pageNameIndex.matcher
         .map { pageNameIndex.vocabularyNames().toHashSet() }
         .stateIn(scope, SharingStarted.Lazily, emptySet())
 
@@ -469,7 +469,7 @@ class StelekitViewModel(
             currentSectionStates = platformSettings.getSectionStates(),
         )
     )
-    val uiState: StateFlow<AppState> = _uiState.asStateFlow()
+    override val uiState: StateFlow<AppState> = _uiState.asStateFlow()
 
     /** The notes folder of the graph the view model has loaded, or null before one is. */
     val currentNotesPath: EffectiveNotesPath? get() = _uiState.value.currentNotesPath
@@ -600,7 +600,7 @@ class StelekitViewModel(
         llmSuggestionCoordinator.llmSuggestions
 
     /** Routes a suggestion from TagSuggestionViewModel's scan into the inbox. */
-    fun proposeLlmSuggestion(suggestion: dev.stapler.stelekit.llm.PendingLlmSuggestion) =
+    override fun proposeLlmSuggestion(suggestion: dev.stapler.stelekit.llm.PendingLlmSuggestion) =
         llmSuggestionCoordinator.proposeLlmSuggestion(suggestion)
 
     /** Dismisses the LLM suggestion review screen without accepting or rejecting anything. */
@@ -1486,7 +1486,7 @@ class StelekitViewModel(
      * [pageUuid] is optional — if provided it is stored in the screen so the editor can
      * expose a "Go to page" action that returns here.
      */
-    fun navigateToAnnotationEditor(imageAnnotationUuid: String, pageUuid: String? = null) {
+    override fun navigateToAnnotationEditor(imageAnnotationUuid: String, pageUuid: String?) {
         navigateTo(Screen.AnnotationEditor(imageAnnotationUuid = ImageAnnotationUuid(imageAnnotationUuid), pageUuid = pageUuid))
     }
 
@@ -1592,7 +1592,7 @@ class StelekitViewModel(
     /**
      * Get the content of a block by its UUID
      */
-    suspend fun getBlockContent(blockUuid: String): String? {
+    override suspend fun getBlockContent(blockUuid: String): String? {
         val blockResult = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first()
         return blockResult.getOrNull()?.content
     }
@@ -2053,13 +2053,13 @@ class StelekitViewModel(
     fun hideShareDialog() = shareExportCoordinator.hideShareDialog()
 
     /** Updates the share format selection (persists across dialog invocations in the session). */
-    fun setShareFormat(format: String) = shareExportCoordinator.setShareFormat(format)
+    override fun setShareFormat(format: String) = shareExportCoordinator.setShareFormat(format)
 
     /** Updates the share scope selection (persists across dialog invocations in the session). */
-    fun setShareScope(scope: ShareScope) = shareExportCoordinator.setShareScope(scope)
+    override fun setShareScope(scope: ShareScope) = shareExportCoordinator.setShareScope(scope)
 
     /** Persists the opt-in "strip tracking parameters" share option. */
-    fun setStripTrackingParams(enabled: Boolean) = shareExportCoordinator.setStripTrackingParams(enabled)
+    override fun setStripTrackingParams(enabled: Boolean) = shareExportCoordinator.setStripTrackingParams(enabled)
 
     /**
      * Resolve export content for any [ShareScope].
@@ -2067,37 +2067,37 @@ class StelekitViewModel(
      * Routes to the appropriate ExportService method based on scope.
      * Requires [journalFrom]/[journalTo] (non-null) when scope is [ShareScope.JournalRange].
      */
-    suspend fun resolveExportContent(
+    override suspend fun resolveExportContent(
         shareScope: ShareScope,
         page: Page,
         allBlocks: List<Block>,
         selectedUuids: Set<String>,
         formatId: String,
-        journalFrom: LocalDate? = null,
-        journalTo: LocalDate? = null,
+        journalFrom: LocalDate?,
+        journalTo: LocalDate?,
     ): Either<DomainError, String> = shareExportCoordinator.resolveExportContent(
         shareScope, page, allBlocks, selectedUuids, formatId, journalFrom, journalTo,
     )
 
     /** Exports the resolved scope content to the clipboard. Errors surface via [notificationManager]. */
-    fun exportScopeToClipboard(
+    override fun exportScopeToClipboard(
         shareScope: ShareScope,
         page: Page,
         allBlocks: List<Block>,
         selectedUuids: Set<String>,
         formatId: String,
-        journalFrom: LocalDate? = null,
-        journalTo: LocalDate? = null,
-        onDone: () -> Unit = {},
+        journalFrom: LocalDate?,
+        journalTo: LocalDate?,
+        onDone: () -> Unit,
     ) = shareExportCoordinator.exportScopeToClipboard(
         shareScope, page, allBlocks, selectedUuids, formatId, journalFrom, journalTo, onDone,
     )
 
     /** Launches Google OAuth in the ViewModel scope, updates [AppState.shareIsGoogleAuthenticated] on completion. */
-    fun launchGoogleAuth(manager: GoogleAuthManager) = shareExportCoordinator.launchGoogleAuth(manager)
+    override fun launchGoogleAuth(manager: GoogleAuthManager) = shareExportCoordinator.launchGoogleAuth(manager)
 
     /** Re-queries auth state from [manager] and syncs to [AppState]. Call when the dialog opens. */
-    fun refreshShareGoogleAuthState(manager: GoogleAuthManager) =
+    override fun refreshShareGoogleAuthState(manager: GoogleAuthManager) =
         shareExportCoordinator.refreshShareGoogleAuthState(manager)
 
     /** Sets the journal date range for a [ShareScope.JournalRange] export. */
@@ -2111,14 +2111,14 @@ class StelekitViewModel(
      * On success: opens the created document in the browser.
      * On error: shows a snackbar notification.
      */
-    fun shareToGoogleDocs(
+    override fun shareToGoogleDocs(
         shareScope: ShareScope,
         page: Page,
         allBlocks: List<Block>,
         selectedUuids: Set<String>,
         driveClient: dev.stapler.stelekit.platform.google.DriveUploader,
-        journalFrom: LocalDate? = null,
-        journalTo: LocalDate? = null,
+        journalFrom: LocalDate?,
+        journalTo: LocalDate?,
     ) = shareExportCoordinator.shareToGoogleDocs(
         shareScope, page, allBlocks, selectedUuids, driveClient, journalFrom, journalTo,
     )
@@ -2144,7 +2144,7 @@ class StelekitViewModel(
     private val _snackbarEvents = Channel<String>(Channel.BUFFERED)
     val snackbarEvents: Flow<String> = _snackbarEvents.receiveAsFlow()
 
-    fun sendSnackbar(message: String) {
+    override fun sendSnackbar(message: String) {
         val result = _snackbarEvents.trySend(message)
         if (!result.isSuccess) logger.warn("sendSnackbar: channel full, message dropped: $message")
     }
@@ -2421,7 +2421,7 @@ class StelekitViewModel(
     /**
      * Search pages for autocomplete
      */
-    fun searchPages(query: String): Flow<List<SearchResultItem>> {
+    override fun searchPages(query: String): Flow<List<SearchResultItem>> {
         val request = SearchRequest(
             query = query,
             scope = SearchScope.PAGES_ONLY,
@@ -2487,17 +2487,17 @@ class StelekitViewModel(
      * Exports the current page to [formatId] and copies the result to the clipboard.
      * No-op when there is no current page or no [ExportService] configured.
      */
-    fun exportPage(formatId: String) = shareExportCoordinator.exportPage(formatId)
+    override fun exportPage(formatId: String) = shareExportCoordinator.exportPage(formatId)
 
     /**
      * Exports the currently selected blocks (and their subtrees) to [formatId].
      * Falls back to [exportPage] when no blocks are selected.
      */
-    fun exportSelectedBlocks(formatId: String) = shareExportCoordinator.exportSelectedBlocks(formatId)
+    override fun exportSelectedBlocks(formatId: String) = shareExportCoordinator.exportSelectedBlocks(formatId)
 
     // ===== Rename Page =====
 
-    fun showRenameDialog(page: Page) {
+    override fun showRenameDialog(page: Page) {
         _uiState.update { it.copy(renameDialogPage = page, renameDialogBusy = false, renameDialogError = null) }
     }
 

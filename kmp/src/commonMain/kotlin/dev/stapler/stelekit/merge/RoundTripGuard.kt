@@ -6,58 +6,6 @@ import arrow.core.right
 import dev.stapler.stelekit.model.Block
 
 /**
- * Why a page cannot be safely rewritten off-graph. A `Left` of this type means the writer must
- * write nothing: share queues to the inbox, copy fails that page and keeps it staged for Retry.
- */
-sealed interface NotRoundTrippable {
-    val message: String
-
-    /** The existing file does not parse. */
-    data class ParseFailed(val detail: String) : NotRoundTrippable {
-        override val message get() = "Existing file does not parse: $detail"
-    }
-
-    /** A fence, heading or prose continuation absorbed the appended bullet (known non-outline pages). */
-    data class AppendAbsorbed(val detail: String) : NotRoundTrippable {
-        override val message get() = "Appended block would be absorbed by existing content: $detail"
-    }
-
-    /** Adding the block would change a pre-existing block or the page properties. */
-    data class ExistingContentChanged(val detail: String) : NotRoundTrippable {
-        override val message get() = "Splice would change existing content: $detail"
-    }
-
-    /** An inserted block re-parses differently from what the merge intended (lossy markup). */
-    data class InsertedContentChanged(val detail: String) : NotRoundTrippable {
-        override val message get() = "Inserted content would not survive a re-read: $detail"
-    }
-
-    /** The page file is a symlink; replacing it would swap the link for a regular file and leave its target stale. */
-    data class SymlinkTarget(val path: String) : NotRoundTrippable {
-        override val message get() = "Page file is a symlink; not replacing it: $path"
-    }
-
-    /** Block references could not be resolved to a fixed point while merging. */
-    data class RefsDidNotConverge(val passes: Int) : NotRoundTrippable {
-        override val message get() = "Block references did not settle after $passes passes; the page was not copied"
-    }
-
-    /** The new block landed somewhere other than the last child of the intended parent. */
-    data class Misplaced(val detail: String) : NotRoundTrippable {
-        override val message get() = "Inserted block misplaced: $detail"
-    }
-
-    /** The splice altered original bytes instead of only adding lines (a splicer bug). */
-    data class BytesChanged(val detail: String) : NotRoundTrippable {
-        override val message get() = "Splice altered untouched bytes: $detail"
-    }
-
-    data class UnresolvableParent(val path: List<Int>) : NotRoundTrippable {
-        override val message get() = "No block at path $path"
-    }
-}
-
-/**
  * Splice-based guard (Spike 0.1.4: measured 99.68% on a real 11k-file graph; exact
  * `serialize(parse(f)) == f` only 12%). Instead of asking whether the file re-serializes
  * identically, it asks the question the writer cares about: after inserting the new block,

@@ -25,12 +25,13 @@ import dev.stapler.stelekit.sketch.SketchDocument
 import dev.stapler.stelekit.sketch.SketchHistory
 import dev.stapler.stelekit.sketch.SketchPoint
 import dev.stapler.stelekit.sketch.SketchScene
+import dev.stapler.stelekit.sketch.toScenePrimitive
+import dev.stapler.stelekit.sketch.toSheetProps
 import dev.stapler.stelekit.sketch.SketchPrimitive
 import dev.stapler.stelekit.sketch.Zone
 import dev.stapler.stelekit.sketch.ZoneConstraints
 import dev.stapler.stelekit.sketch.ZoneReport
 import dev.stapler.stelekit.sketch.ZoneSet
-import dev.stapler.stelekit.units.Inches
 import dev.stapler.stelekit.util.UuidGenerator
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CancellationException
@@ -320,8 +321,6 @@ class SketchViewModel(
 private fun withHistory(state: SketchUiState, history: SketchHistory): SketchUiState =
     state.copy(history = history, zoneReport = ZoneConstraints.resolve(history.present.zones, history.present.sheet.viewDirection).getOrNull(), saveStatus = SaveStatus.PENDING, error = null)
 
-internal fun SketchSheet.toSheetProps(): SheetProps = SheetProps.fromStored(kind, viewDirection, scaleSixteenthsPerUnit, layers)
-
 private fun SheetProps.applyTo(stored: SketchSheet): SketchSheet = stored.copy(
     kind = kind.wire, viewDirection = viewDirection.wire, scaleSixteenthsPerUnit = scaleSixteenths, layers = layers.map { it.encode() },
 )
@@ -329,16 +328,6 @@ private fun SheetProps.applyTo(stored: SketchSheet): SketchSheet = stored.copy(
 private fun SketchPrimitive.toStored(sheet: SheetUuid, z: Long): StoredPrimitive = when (this) {
     is SketchPrimitive.Line -> StoredPrimitive(id, sheet, "line", a.x.sixteenths, a.y.sixteenths, b.x.sixteenths, b.y.sixteenths, layer = layer, z = z)
     is SketchPrimitive.Rect -> StoredPrimitive(id, sheet, "rect", a.x.sixteenths, a.y.sixteenths, b.x.sixteenths, b.y.sixteenths, layer = layer, z = z)
-}
-
-internal fun StoredPrimitive.toScenePrimitive(): SketchPrimitive? {
-    val a = SketchPoint(Inches(x1), Inches(y1))
-    val b = SketchPoint(Inches(x2), Inches(y2))
-    return when (kind) {
-        "line" -> SketchPrimitive.Line(uuid, a, b, layer)
-        "rect" -> SketchPrimitive.Rect(uuid, a, b, layer)
-        else -> null
-    }
 }
 
 private fun ZoneSet.toJson(): JsonArray = JsonArray(

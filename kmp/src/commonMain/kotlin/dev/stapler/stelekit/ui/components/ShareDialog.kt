@@ -21,7 +21,6 @@ import dev.stapler.stelekit.platform.google.GoogleAuthManager
 import dev.stapler.stelekit.ui.AppState
 import dev.stapler.stelekit.ui.LocalWindowSizeClass
 import dev.stapler.stelekit.ui.ShareScope
-import dev.stapler.stelekit.ui.StelekitViewModel
 import dev.stapler.stelekit.ui.isMobile
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
@@ -38,12 +37,12 @@ private const val FORMAT_JSON = "json"
  *
  * All selections update AppState via ViewModel callbacks.
  * Auth state is owned by AppState ([AppState.shareIsGoogleAuthenticated]) and refreshed
- * when the dialog opens via [StelekitViewModel.refreshShareGoogleAuthState].
+ * when the dialog opens via [ShareDialogHost.refreshShareGoogleAuthState].
  */
 @Composable
 fun ShareContent(
     appState: AppState,
-    viewModel: StelekitViewModel,
+    viewModel: ShareDialogHost,
     page: Page?,
     blocks: List<Block>,
     selectedBlockUuids: Set<String>,
@@ -399,7 +398,7 @@ fun ShareContent(
 @Composable
 fun ShareDialog(
     appState: AppState,
-    viewModel: StelekitViewModel,
+    viewModel: ShareDialogHost,
     page: Page?,
     blocks: List<Block>,
     selectedBlockUuids: Set<String>,

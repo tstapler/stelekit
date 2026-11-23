@@ -315,4 +315,10 @@ class SketchBundleCopyTest {
         assertTrue(!fs.fileExists("/data/b/assets/$f1.png"), "the image this call created is removed again")
         assertTrue(!fs.fileExists("/data/b/assets/stelekit-sketch/kitchen/sheets/s1.v2.json"))
     }
+
+    @Test
+    fun layout_constants_match_the_projectbridge_originals() {
+        assertEquals(SidecarCodec.MODEL_PATH, SKETCH_BUNDLE_MODEL_PATH)
+        assertEquals(dev.stapler.stelekit.projectbridge.FileProjectSidecarStore.ROOT_DIR, dev.stapler.stelekit.platform.SidecarLiveSet.ROOT_DIR)
+    }
 }

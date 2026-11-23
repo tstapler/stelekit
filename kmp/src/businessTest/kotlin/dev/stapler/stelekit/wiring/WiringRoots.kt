@@ -18,6 +18,7 @@ object WiringRoots {
         "androidApp.main/$PKG/MainActivity.kt",
         "androidApp.main/$PKG/SteleKitApplication.kt",
         "commonMain/$PKG/ui/StelekitAppDependencies.kt",
+        "commonMain/$PKG/ui/RememberSketchTextMetricsProvider.kt",
         "commonMain/$PKG/repository/RepositoryFactory.kt",
     )
 
