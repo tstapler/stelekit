@@ -8,6 +8,8 @@ import dev.stapler.stelekit.sketch.v2.tools.InputEvent
 import dev.stapler.stelekit.sketch.v2.tools.InputType
 import dev.stapler.stelekit.sketch.v2.tools.PointerKind
 import dev.stapler.stelekit.sketch.v2.view.ScreenPx
+import dev.stapler.stelekit.sketch.v2.RigSettings
+import dev.stapler.stelekit.sketch.v2.runtime.settings.FingerDrawingSettings
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.numericDouble
 import io.kotest.property.checkAll
@@ -143,6 +145,23 @@ class LoupeSpecTest {
             assertEquals(centre.x + LoupeSpec.MAGNIFICATION * dx, moved.x, EPS)
             assertEquals(centre.y + LoupeSpec.MAGNIFICATION * dy, moved.y, EPS)
         }
+    }
+
+    @Test
+    fun preference_should_DefaultOn_PersistTheChoice_AndSurviveANewEditor() {
+        val store = FingerDrawingSettings(RigSettings())
+        val first = SketchEditorState()
+        val pref = LoupePreference(first, store)
+        assertTrue(pref.on)
+        pref.toggle()
+        assertFalse(first.touchLoupe)
+        assertFalse(LoupePreference(SketchEditorState(), store).on, "a new editor reads the stored choice")
+        LoupePreference(SketchEditorState(), null).let { session -> session.toggle(); assertFalse(session.on) }
+    }
+
+    @Test
+    fun hold_should_BeQuarterOfASecond() {
+        assertEquals(250L, LoupeSpec.HOLD_MS)
     }
 
     private companion object {

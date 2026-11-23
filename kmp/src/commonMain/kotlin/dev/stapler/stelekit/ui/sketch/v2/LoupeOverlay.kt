@@ -71,16 +71,18 @@ fun BoxScope.TouchLoupe(
     tracker: LoupeTracker,
     enabled: Boolean,
     canvasSize: () -> ScreenPx,
+    focus: () -> ScreenPx?,
     pxPerDp: Double,
     modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
+    content: @Composable (region: () -> ScreenRect) -> Unit,
 ) {
     val holdFor by remember(tracker) { derivedStateOf { tracker.state.takeIf { it.phase == LoupePhase.Armed }?.let { it.pointerId to it.start } } }
     LaunchedEffect(holdFor) {
         val id = holdFor?.first ?: return@LaunchedEffect
         // Frame time, not delay(): it follows the test clock and needs no timer of its own.
         val start = withFrameMillis { it }
-        while (withFrameMillis { it } - start < LoupeSpec.HOLD_MS) Unit
+        var now = start
+        while (now - start < LoupeSpec.HOLD_MS) now = withFrameMillis { it }
         tracker.holdElapsed(id)
     }
     val showing by remember(tracker, enabled) { derivedStateOf { LoupeSpec.shouldShow(tracker.state, enabled) } }
@@ -104,7 +106,7 @@ fun BoxScope.TouchLoupe(
             .clip(CircleShape)
             .background(background, CircleShape),
     ) {
-        MagnifiedScene(tracker, canvas, pxPerDp, content)
+        MagnifiedScene(tracker, canvas, focus, pxPerDp, content)
         Crosshair(pxPerDp)
         Box(Modifier.size(size).border(RING, ring, CircleShape))
     }
@@ -112,8 +114,9 @@ fun BoxScope.TouchLoupe(
 
 /** The whole canvas laid out at its own size, scaled about the contact point and shifted so that point sits at the bubble's centre. */
 @Composable
-private fun MagnifiedScene(tracker: LoupeTracker, canvas: ScreenPx, pxPerDp: Double, content: @Composable () -> Unit) {
+private fun MagnifiedScene(tracker: LoupeTracker, canvas: ScreenPx, focus: () -> ScreenPx?, pxPerDp: Double, content: @Composable (() -> ScreenRect) -> Unit) {
     val diameter = LoupeSpec.diameterPx(pxPerDp)
+    fun focusNow() = focus() ?: tracker.state.at
     fun centre() = LoupeSpec.place(tracker.state.at, canvas.x, canvas.y, pxPerDp).centre
     Box(
         Modifier
@@ -125,7 +128,7 @@ private fun MagnifiedScene(tracker: LoupeTracker, canvas: ScreenPx, pxPerDp: Dou
                 }
             }
             .graphicsLayer {
-                val contact = tracker.state.at
+                val contact = focusNow()
                 val t = LoupeSpec.layerTransform(contact, centre())
                 scaleX = t.scale.toFloat()
                 scaleY = t.scale.toFloat()
@@ -133,7 +136,7 @@ private fun MagnifiedScene(tracker: LoupeTracker, canvas: ScreenPx, pxPerDp: Dou
                 translationX = t.translateX.toFloat()
                 translationY = t.translateY.toFloat()
             },
-        content = { content() },
+        content = { content { LoupeSpec.visibleRegion(focusNow(), pxPerDp) } },
     )
 }
 

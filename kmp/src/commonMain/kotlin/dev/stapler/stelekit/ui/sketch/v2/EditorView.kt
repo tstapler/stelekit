@@ -4,6 +4,9 @@
 
 package dev.stapler.stelekit.ui.sketch.v2
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.LayerId
@@ -21,7 +24,7 @@ class EditorView(
     private val notifier: EditorNotifier,
 ) {
     /** The canvas size in pixels; the host reports it so fit and page-pan know the view. */
-    var canvasSize: ScreenPx = ScreenPx(0.0, 0.0)
+    var canvasSize: ScreenPx by mutableStateOf(ScreenPx(0.0, 0.0))
 
     /** Pixels per dp of the canvas's display, which turns the 40 dp and 200 dp pan steps into pixels. */
     var pxPerDp: Double = 1.0

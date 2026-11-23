@@ -7,6 +7,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import com.github.takahirom.roborazzi.captureRoboImage
 import dev.stapler.stelekit.sketch.v2.V2EditorRig
@@ -166,6 +167,19 @@ class TouchLoupeHostTest {
         holdDrag(Offset(370f, 465f), Offset(398f, 472f))
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/loupe-5-setting-off.png")
         release()
+    }
+
+    @Test
+    fun overflowSwitch_should_TurnTheLoupeOff() {
+        val controller = mount(*pair(120))
+        assertTrue(controller.ui.touchLoupe)
+        rule.onNodeWithTag(ShellTags.OVERFLOW).performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag(LoupeTags.TOGGLE).assertExists()
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/loupe-7-overflow-switch.png")
+        rule.onNodeWithTag(LoupeTags.TOGGLE).performClick()
+        rule.waitForIdle()
+        assertFalse(controller.ui.touchLoupe)
     }
 
     private companion object {

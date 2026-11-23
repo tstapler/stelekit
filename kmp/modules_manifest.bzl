@@ -1690,6 +1690,7 @@ KMP_MODULES = {
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/LoadingState.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/LoupeModel.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/LoupeOverlay.kt",
+   "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/LoupeToggle.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/MotionPolicy.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/NameTags.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/NameTagsModel.kt",

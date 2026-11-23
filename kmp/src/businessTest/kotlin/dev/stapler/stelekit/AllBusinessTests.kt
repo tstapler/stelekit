@@ -1098,6 +1098,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.ui.sketch.v2.FingerDrawingDefaultsTest::class,
     dev.stapler.stelekit.ui.sketch.v2.EdgePanPolicyTest::class,
     dev.stapler.stelekit.ui.sketch.v2.LoupeSpecTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.TouchModeMatrixTest::class,
+    dev.stapler.stelekit.sketch.v2.tools.PreviewCursorTest::class,
     dev.stapler.stelekit.ui.sketch.v2.PlatformInputHostTest::class,
     dev.stapler.stelekit.ui.sketch.v2.WebStorageHostTest::class,
     dev.stapler.stelekit.ui.sketch.v2.KeyboardPanningTest::class,

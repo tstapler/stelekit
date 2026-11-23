@@ -46,7 +46,7 @@ object LoupeSpec {
     const val MOVE_SLOP_DP = 6.0
 
     /** A touch held this long (ms) without moving shows the bubble, so a precise placement can be checked before moving. */
-    const val HOLD_MS = 180L
+    const val HOLD_MS = 250L
 
     private const val HALF = 2.0
     private const val SIDE_RAISE = 3.0
@@ -118,6 +118,15 @@ object LoupeSpec {
     /** The hold timer fired for [pointerId]: an armed touch that is still down shows the bubble. */
     fun holdElapsed(state: LoupeState, pointerId: Int): LoupeState =
         if (state.phase == LoupePhase.Armed && state.pointerId == pointerId) state.copy(phase = LoupePhase.Showing) else state
+
+    /**
+     * The canvas area the bubble shows around [focus]: the circle's radius divided by the magnification, as a square.
+     * Drawing only this area keeps the loupe's cost independent of how much of the scene is on screen.
+     */
+    fun visibleRegion(focus: ScreenPx, pxPerDp: Double): ScreenRect {
+        val r = diameterPx(pxPerDp) / HALF / MAGNIFICATION
+        return ScreenRect(focus.x - r, focus.y - r, focus.x + r, focus.y + r)
+    }
 
     /**
      * The transform that magnifies a full-canvas layer by [MAGNIFICATION] about [contact] and moves that point to [bubbleCentre]:
