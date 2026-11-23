@@ -49,7 +49,7 @@ internal fun BoxScope.ExtrasCanvasOverlays(controller: SketchEditorController, e
         if (!glyphsHidden) GlyphOverlay(controller, extras, pointer)
         SuggestionChip(controller, extras)
     }
-    DimensionPillsOverlay(controller, extras)
+    DimensionPillsOverlay(controller, extras, autoOpen = pointer == PointerClass.TouchOrPen)
     DimensionEditorOverlay(extras)
     SolveStatus(controller)
     ExtraPanelHost(controller, extras, Modifier.align(Alignment.BottomCenter).padding(bottom = PANEL_BOTTOM_DP.dp))

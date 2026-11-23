@@ -26,24 +26,27 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -73,6 +76,7 @@ object DimensionPillTags {
     const val EDITOR = "sketch.pill.editor"
     const val FIELD = "sketch.pill.field"
     const val ERROR = "sketch.pill.error"
+    const val CANCEL = "sketch.pill.cancel"
     const val LOCKED = "sketch.pill.locked"
     const val CHIP_DIMENSIONS = "sketch.chip.dimensions"
     const val CHIP_CONSTRAINTS = "sketch.chip.constraints"
@@ -103,7 +107,7 @@ private fun imeOverlapDp(layerBottomPx: Float, simulated: Float?): Double {
  * for a locked sheet, a multi-selection, another tool than Select or a sheet that is not technical.
  */
 @Composable
-internal fun DimensionPillsOverlay(controller: SketchEditorController, extras: EditorExtras) {
+internal fun DimensionPillsOverlay(controller: SketchEditorController, extras: EditorExtras, autoOpen: Boolean = true) {
     val state = extras.pills
     val selection = controller.ui.selection
     val technical = controller.sheetKind == SheetKind.Technical
@@ -112,19 +116,19 @@ internal fun DimensionPillsOverlay(controller: SketchEditorController, extras: E
     // An edit holds the element it opened on; once the element changed (undo, a drag) or the pills went away it must not commit over it.
     SideEffect {
         if (!shown || state.edit?.element != element) state.close()
-        if (selection.isNotEmpty() && selection.singleOrNull() != state.autoOpenFor?.value) state.autoOpenFor = null
+        if (state.autoOpenFor != null && (!autoOpen || selection.singleOrNull() != state.autoOpenFor?.value)) state.autoOpenFor = null
     }
     if (!shown || element == null) return
     LaunchedEffect(state.autoOpenFor, element) {
-        if (state.autoOpenFor == element.id && !element.base.locked) {
+        if (state.autoOpenFor == element.id) {
             state.autoOpenFor = null
-            state.open(element, PillKind.Width)
+            if (!element.base.locked) state.open(element, PillKind.Width)
         }
     }
     val viewport = controller.ui.viewport
     val density = LocalDensity.current.density
     var layerBottomPx by remember { mutableFloatStateOf(0f) }
-    BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { layerBottomPx = it.boundsInWindow().bottom }) {
+    BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { layerBottomPx = it.positionInWindow().y + it.size.height }) {
         val editing = state.edit?.takeIf { it.element.id == element.id }
         val visibleH = if (editing != null) PillEditorPlacement.visibleHeight(maxHeight.value.toDouble(), imeOverlapDp(layerBottomPx, state.imeOverlapOverrideDp)) else maxHeight.value.toDouble()
         val canvas = PillCanvas(
@@ -135,16 +139,14 @@ internal fun DimensionPillsOverlay(controller: SketchEditorController, extras: E
         )
         val pills = remember(element, viewport, density, canvas.width, canvas.height) { DimensionPillModel.layout(element, canvas) }
         val requesters = remember { PillKind.entries.associateWith { FocusRequester() } }
-        var lastEdited by remember { mutableStateOf<PillKind?>(null) }
         pills.forEach { pill -> PillButton(pill, element.base.locked, requesters.getValue(pill.kind)) { state.open(element, pill.kind) } }
-        LaunchedEffect(editing == null) {
-            val back = lastEdited
-            if (editing == null && back != null) runCatching { requesters.getValue(back).requestFocus() }
+        LaunchedEffect(state.refocus) {
+            state.refocus?.let { runCatching { requesters.getValue(it).requestFocus() } }
+            state.refocus = null
         }
         if (editing != null) {
-            lastEdited = editing.current
             val shape = PillEditorPlacement.shapeBounds(element, canvas)
-            val plan = shape?.let { PillEditorPlacement.plan(it, pills.firstOrNull { p -> p.kind == editing.current }, canvas.width, visibleH, EDITOR_WIDTH_DP, EDITOR_HEIGHT_DP) }
+            val plan = shape?.let { PillEditorPlacement.plan(it, pills.firstOrNull { p -> p.kind == editing.current }, canvas.width, visibleH, EDITOR_WIDTH_DP, EDITOR_HEIGHT_DP * max(1f, LocalDensity.current.fontScale)) }
             LaunchedEffect(plan?.panDy) {
                 if (plan != null && abs(plan.panDy) > 0.5) controller.ui.viewport = controller.ui.viewport.panBy(0.0, plan.panDy * density)
             }
@@ -189,7 +191,7 @@ private fun PillEditorBox(edit: DimensionPillEdit, element: SceneElement, plan: 
         if (element.base.locked) {
             LockedNote(state::close)
         } else {
-            PillField(edit, onDone = { command -> controller.submit(command) }, onClose = state::close)
+            PillField(edit, onDone = { command -> controller.submit(command) }, onClose = state::finish, onFocus = { state.fieldFocused = it })
         }
     }
 }
@@ -204,7 +206,7 @@ private fun LockedNote(onClose: () -> Unit) {
 }
 
 @Composable
-private fun PillField(edit: DimensionPillEdit, onDone: (ResizeElement) -> CommandError?, onClose: () -> Unit) {
+private fun PillField(edit: DimensionPillEdit, onDone: (ResizeElement) -> CommandError?, onClose: () -> Unit, onFocus: (Boolean) -> Unit) {
     val kind = edit.current
     // The text is owned here and keyed on the field only, so a pan, a zoom or a pointer move never rewrites what was typed.
     val initial = remember(edit, kind) { edit.textOf(kind) }
@@ -213,6 +215,8 @@ private fun PillField(edit: DimensionPillEdit, onDone: (ResizeElement) -> Comman
     val focus = remember { FocusRequester() }
     var shiftDown by remember { mutableStateOf(false) }
     LaunchedEffect(edit, kind) { focus.requestFocus() }
+    val latestFocus by rememberUpdatedState(onFocus)
+    DisposableEffect(Unit) { onDispose { latestFocus(false) } }
     fun submit() {
         when (val step = edit.submit(field.text)) {
             is PillStep.Invalid -> error = step.message
@@ -230,12 +234,18 @@ private fun PillField(edit: DimensionPillEdit, onDone: (ResizeElement) -> Comman
             value = field,
             onValueChange = { field = it; error = null },
             label = { Text(label) },
+            trailingIcon = {
+                Box(
+                    Modifier.size(48.dp).clickable(role = Role.Button, onClick = onClose).semantics { contentDescription = S.Pill.CANCEL }.testTag(DimensionPillTags.CANCEL),
+                    contentAlignment = Alignment.Center,
+                ) { Text("\u2715") }
+            },
             singleLine = true,
             isError = error != null,
             supportingText = { Text(error ?: hint, Modifier.testTag(if (error != null) DimensionPillTags.ERROR else DimensionPillTags.EDITOR + ".hint").semantics { liveRegion = LiveRegionMode.Polite }, color = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = if (edit.isLast) ImeAction.Done else ImeAction.Next),
             keyboardActions = KeyboardActions(onNext = { submit() }, onDone = { submit() }),
-            modifier = Modifier.fillMaxWidth().focusRequester(focus).testTag(DimensionPillTags.FIELD).onPreviewKeyEvent { event ->
+            modifier = Modifier.fillMaxWidth().focusRequester(focus).testTag(DimensionPillTags.FIELD).onFocusChanged { onFocus(it.isFocused) }.onPreviewKeyEvent { event ->
                 val shift = event.key == Key.ShiftLeft || event.key == Key.ShiftRight
                 if (shift) shiftDown = event.type == KeyEventType.KeyDown
                 when {

@@ -213,7 +213,7 @@ fun SketchEditorV2Host(
         sheetKind = controller.sheetKind.takeIf { it != dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Converted && !controller.readOnly },
         onSheetKind = { controller.setSheetKind(it) },
         technicalPanel = technical != null && controller.sheetKind == dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical,
-        canvasModifier = remember(canvasAccess, extras) { canvasRegionKeysOf(canvasAccess) { extras.pills.edit == null } },
+        canvasModifier = remember(canvasAccess, extras) { canvasRegionKeysOf(canvasAccess) { !extras.pills.fieldFocused } },
         onRegions = { canvasAccess.regions = it },
         tours = tours,
         onHelp = { controller.overlay = EditorOverlay.HelpSearch },

@@ -313,23 +313,36 @@ class DimensionPillsHostTest {
         assertTrue(session.controller.ui.viewport.panY < 0.0, "the view panned up to keep the shape off the keyboard")
     }
 
-    @Test
-    fun aRectangleDrawnOnATechnicalSheet_should_OpenItsWidthField() {
-        val session = mount(emptyList(), select = emptyList())
+    private fun draw(session: SketchEditorSession, kind: PointerKind) {
         rule.runOnUiThread {
             session.controller.tools.chooseTool(ToolId.Rectangle)
             val pointer = session.controller.tools
-            pointer.onPointer(RawPointer(1, PointerKind.Mouse, RawPhase.Down, ScreenPx(300.0, 800.0)))
-            pointer.onPointer(RawPointer(1, PointerKind.Mouse, RawPhase.Move, ScreenPx(600.0, 1000.0)))
-            pointer.onPointer(RawPointer(1, PointerKind.Mouse, RawPhase.Up, ScreenPx(600.0, 1000.0)))
+            pointer.onPointer(RawPointer(1, kind, RawPhase.Down, ScreenPx(300.0, 800.0)))
+            pointer.onPointer(RawPointer(1, kind, RawPhase.Move, ScreenPx(600.0, 1000.0)))
+            pointer.onPointer(RawPointer(1, kind, RawPhase.Up, ScreenPx(600.0, 1000.0)))
         }
         rule.waitForIdle()
+    }
+
+    @Test
+    fun aRectangleDrawnWithAPen_should_OpenItsWidthField() {
+        val session = mount(emptyList(), select = emptyList())
+        draw(session, PointerKind.Stylus)
         assertEquals(1, session.controller.doc.scene.elementsInOrder.count { it is RectElement })
         rule.onNodeWithTag(DimensionPillTags.FIELD).assertIsDisplayed()
         shot("15-autoopen")
-        rule.onNodeWithTag(DimensionPillTags.FIELD).performKeyInput { pressKey(Key.Escape) }
+        rule.onNodeWithTag(DimensionPillTags.CANCEL).performClick()
         rule.waitForIdle()
         rule.onAllNodesWithTag(DimensionPillTags.EDITOR).assertCountEquals(0)
+    }
+
+    @Test
+    fun aRectangleDrawnWithAMouse_should_NotStealFocusIntoAField() {
+        val session = mount(emptyList(), select = emptyList())
+        draw(session, PointerKind.Mouse)
+        assertEquals(1, session.controller.doc.scene.elementsInOrder.count { it is RectElement })
+        rule.onAllNodesWithTag(DimensionPillTags.EDITOR).assertCountEquals(0)
+        pill(PillKind.Width).assertIsDisplayed()
     }
 
     @Test

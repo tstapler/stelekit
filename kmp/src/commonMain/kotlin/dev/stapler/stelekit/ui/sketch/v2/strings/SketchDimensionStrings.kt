@@ -18,6 +18,7 @@ object SketchDimensionStrings {
         const val LENGTH_SYMBOL = "L"
         const val RADIUS_SYMBOL = "R"
         const val LOCKED = "Locked. Unlock the shape to change its size."
+        const val CANCEL = "Cancel size edit"
         const val REFUSED = "That size was not accepted."
 
         fun description(label: String, value: String) = "$label, $value. Tap to type a new size."

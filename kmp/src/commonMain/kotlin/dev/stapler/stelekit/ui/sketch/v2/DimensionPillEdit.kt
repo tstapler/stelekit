@@ -93,4 +93,15 @@ class DimensionPillsState {
     fun close() {
         edit = null
     }
+
+    /** The pill that gets focus back after Done, Esc or Cancel (not after a tap elsewhere, which already moved focus). */
+    var refocus: PillKind? by mutableStateOf(null)
+
+    /** True while the size field has focus: only then does it own Tab and Esc instead of the canvas. */
+    var fieldFocused: Boolean by mutableStateOf(false)
+
+    fun finish() {
+        refocus = edit?.current
+        edit = null
+    }
 }
