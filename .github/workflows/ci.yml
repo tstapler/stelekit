@@ -47,8 +47,21 @@ jobs:
       # Goldens are intentionally not committed — rendering differs between machines.
       # To enable regression detection: download artifacts from a baseline CI run,
       # commit to kmp/src/androidUnitTest/snapshots/images/, then switch to verifyRoborazziDebug.
+      # Robolectric fetches android-all jars at test time (no 429 backoff of its own; see the mirror property in
+      # kmp/build.gradle.kts). Cache them, and retry with a wait long enough for a rate limit to clear.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-android-all-${{ hashFiles('kmp/build.gradle.kts', 'androidApp/build.gradle.kts') }}
+          restore-keys: robolectric-android-all-
+
       - name: Run Android tests and build APK
-        run: ./gradlew :kmp:testDebugUnitTest :androidApp:testDebugUnitTest :kmp:recordRoborazziDebug :androidApp:assembleDebug --no-daemon --build-cache
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 30
+          max_attempts: 2
+          retry_wait_seconds: 90
+          command: ./gradlew :kmp:testDebugUnitTest :androidApp:testDebugUnitTest :kmp:recordRoborazziDebug :androidApp:assembleDebug --no-daemon --build-cache
 
       - uses: actions/upload-artifact@v4
         if: always()

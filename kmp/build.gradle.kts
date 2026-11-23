@@ -1508,6 +1508,12 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        // Robolectric downloads android-all jars at test time and has no 429 backoff of its own; repo1.maven.org
+        // rate-limits shared CI egress. Google's GCS mirror of Central serves the same artifacts with higher limits.
+        unitTests.all {
+            it.systemProperty("robolectric.dependency.repo.id", "central-gcs-mirror")
+            it.systemProperty("robolectric.dependency.repo.url", "https://maven-central.storage-download.googleapis.com/maven2")
+        }
     }
 
     packaging {
