@@ -77,7 +77,7 @@ class MarkdownParser {
         // See project_plans/render-all-markdown/decisions/ for the ADR on this two-pass design.
 
         val contentString = when (block) {
-            is TableBlockNode -> {
+            is TableBlockNode -> block.rawText ?: run {
                 val header = block.headers.joinToString(" | ", "| ", " |")
                 val separator = block.alignments.map { align ->
                     when (align) {

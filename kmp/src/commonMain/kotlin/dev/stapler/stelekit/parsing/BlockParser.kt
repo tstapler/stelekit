@@ -215,6 +215,7 @@ class BlockParser(private val source: CharSequence) {
     private fun tryParseTable(): TableBlockNode? {
         val savedState = lexer.saveState()
         val savedToken = currentToken
+        val rawStart = currentToken.start
 
         // Parse header row
         val headerRow = parsePipeRow() ?: run {
@@ -250,10 +251,12 @@ class BlockParser(private val source: CharSequence) {
             rows.add(row)
         }
 
+        val rawText = source.substring(rawStart, currentToken.start).lines().joinToString("\n") { it.trim() }.trim()
         return TableBlockNode(
             headers = headerRow,
             alignments = alignments,
-            rows = rows
+            rows = rows,
+            rawText = rawText,
         )
     }
 

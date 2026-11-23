@@ -8,6 +8,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,12 +23,18 @@ import dev.stapler.stelekit.platform.ANNOTATOR_STICKY_TOOLS_KEY
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.platform.annotatorAutoReturnToSelect
 import dev.stapler.stelekit.platform.annotatorStickyTools
+import dev.stapler.stelekit.ui.components.TableDensity
+import dev.stapler.stelekit.ui.components.TableOverflow
+import dev.stapler.stelekit.ui.components.TablePreferences
 
 const val ANNOTATOR_AUTO_RETURN_LABEL = "Return to Select after each measurement"
 const val ANNOTATOR_STICKY_TOOLS_LABEL = "Keep tools active"
+const val TABLE_WRAP_LABEL = "Wrap text in table cells"
+const val TABLE_NUMERIC_RIGHT_ALIGN_LABEL = "Right-align number columns"
+const val TABLE_COMPACT_LABEL = "Compact table rows"
 
 @Composable
-fun EditorSettings(annotatorSettings: Settings? = null) {
+fun EditorSettings(annotatorSettings: Settings? = null, tablePreferences: TablePreferences? = null) {
     SettingsSection("Editor Behavior") {
         SettingsToggleRow("Logical Outdenting", true) {}
         SettingsToggleRow("Wide Mode", false) {}
@@ -36,6 +43,26 @@ fun EditorSettings(annotatorSettings: Settings? = null) {
     if (annotatorSettings != null) {
         SettingsSection("Image annotator") {
             AnnotatorAutoReturnRow(annotatorSettings)
+        }
+    }
+    if (tablePreferences != null) {
+        SettingsSection("Tables") { TableSettingsRows(tablePreferences) }
+    }
+}
+
+/** Off for [TABLE_WRAP_LABEL] means cells keep their natural width and the table scrolls sideways. */
+@Composable
+fun TableSettingsRows(tablePreferences: TablePreferences, modifier: Modifier = Modifier) {
+    val prefs = tablePreferences.prefs
+    Column(modifier) {
+        SettingsSwitchRow(TABLE_WRAP_LABEL, prefs.overflow == TableOverflow.WRAP) { wrap ->
+            tablePreferences.update { it.copy(overflow = if (wrap) TableOverflow.WRAP else TableOverflow.SCROLL) }
+        }
+        SettingsSwitchRow(TABLE_NUMERIC_RIGHT_ALIGN_LABEL, prefs.numericRightAlign) { on ->
+            tablePreferences.update { it.copy(numericRightAlign = on) }
+        }
+        SettingsSwitchRow(TABLE_COMPACT_LABEL, prefs.density == TableDensity.COMPACT) { compact ->
+            tablePreferences.update { it.copy(density = if (compact) TableDensity.COMPACT else TableDensity.COMFORTABLE) }
         }
     }
 }

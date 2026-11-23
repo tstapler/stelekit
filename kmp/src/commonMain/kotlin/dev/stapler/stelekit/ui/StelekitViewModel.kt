@@ -2164,6 +2164,10 @@ class StelekitViewModel(
     /** Backing store for the Settings dialog's image-annotator toggles. */
     val annotatorSettings: Settings get() = platformSettings
 
+    /** Persisted table display preferences; shared by the Settings dialog and every rendered table. */
+    val tablePreferences: dev.stapler.stelekit.ui.components.TablePreferences =
+        dev.stapler.stelekit.ui.components.TablePreferences(platformSettings)
+
     fun setLeftHanded(value: Boolean) {
         platformSettings.putBoolean("isLeftHanded", value)
         _uiState.update { it.copy(isLeftHanded = value) }
