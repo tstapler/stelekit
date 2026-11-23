@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import arrow.core.Either
+import kotlinx.coroutines.CancellationException
 import dev.stapler.stelekit.error.DomainError
 
 /** Outcome of computing the preview text for the current format + scope. */
@@ -43,7 +44,13 @@ internal fun SharePreviewPane(
     // the in-flight computation and starts a new one.
     LaunchedEffect(previewKey) {
         state = PreviewState.Loading
-        state = currentCompute().fold({ PreviewState.Failed(it.message) }, { PreviewState.Ready(it) })
+        state = try {
+            currentCompute().fold({ PreviewState.Failed(it.message) }, { PreviewState.Ready(it) })
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            PreviewState.Failed(e.message ?: "Preview failed")
+        }
     }
 
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {

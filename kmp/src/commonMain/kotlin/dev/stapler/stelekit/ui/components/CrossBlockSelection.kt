@@ -62,11 +62,11 @@ class BlockTextInfo(val text: String, val layout: TextLayoutResult, val coords: 
 @Stable
 class CrossBlockSelectionState {
     var selection by mutableStateOf<CrossBlockSelection?>(null)
-    var order: List<String> = emptyList()
+    var order by mutableStateOf<List<String>>(emptyList())
     private val infos = HashMap<String, BlockTextInfo>()
 
     fun register(blockUuid: String, info: BlockTextInfo) { infos[blockUuid] = info }
-    fun unregister(blockUuid: String) { infos.remove(blockUuid) }
+    fun unregister(blockUuid: String, info: BlockTextInfo) { infos.remove(blockUuid, info) }
     fun info(blockUuid: String): BlockTextInfo? = infos[blockUuid]
     fun clear() { selection = null }
 

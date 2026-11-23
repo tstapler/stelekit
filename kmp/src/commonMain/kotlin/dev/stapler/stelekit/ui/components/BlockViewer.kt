@@ -165,10 +165,9 @@ fun WikiLinkText(
         val layout = textLayoutResult
         val coords = textCoords
         DisposableEffect(dragSelect, renderedBlockUuid, layout, coords, annotatedString) {
-            if (layout != null && coords != null) {
-                dragSelect.register(renderedBlockUuid, BlockTextInfo(annotatedString.text, layout, coords))
-            }
-            onDispose { dragSelect.unregister(renderedBlockUuid) }
+            val info = if (layout != null && coords != null) BlockTextInfo(annotatedString.text, layout, coords) else null
+            if (info != null) dragSelect.register(renderedBlockUuid, info)
+            onDispose { if (info != null) dragSelect.unregister(renderedBlockUuid, info) }
         }
     }
     val highlightModifier = if (dragSelect != null && renderedBlockUuid != null) {

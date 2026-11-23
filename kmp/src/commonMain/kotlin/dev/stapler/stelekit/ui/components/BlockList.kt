@@ -8,6 +8,7 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.isCtrlPressed
@@ -293,7 +294,12 @@ fun BlockList(
     val dragSelectEnabled = LocalMultiBlockDragSelect.current
     val dragSelectState = remember(dragSelectEnabled) { if (dragSelectEnabled) CrossBlockSelectionState() else null }
     val visibleOrder = remember(blocks, hiddenBlocks) { blocks.map { it.uuid.value }.filter { it !in hiddenBlocks } }
-    dragSelectState?.order = visibleOrder
+    SideEffect {
+        if (dragSelectState != null && dragSelectState.order != visibleOrder) {
+            dragSelectState.order = visibleOrder
+            dragSelectState.clear()
+        }
+    }
     val dragSelectFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val dragSelectClipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     val currentEditingUuid by rememberUpdatedState(editingBlockUuid)
