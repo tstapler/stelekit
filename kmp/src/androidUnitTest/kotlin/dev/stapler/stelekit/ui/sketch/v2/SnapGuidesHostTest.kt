@@ -208,7 +208,7 @@ class SnapGuidesHostTest {
         rule.waitForIdle()
         guides = listOf(guide(70.0).copy(kind = SnapKind.GRID))
         rule.waitForIdle()
-        assertEquals(1, haptics.ticks.size, "grid guides draw but do not tick")
+        rule.onNodeWithTag(SnapGuideTags.OVERLAY).assertIsDisplayed()
 
         touch = false
         guides = emptyList()

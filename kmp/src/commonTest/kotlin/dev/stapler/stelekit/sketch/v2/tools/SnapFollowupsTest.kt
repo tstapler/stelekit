@@ -131,11 +131,14 @@ class SnapFollowupsTest {
 
     @Test
     fun shiftAxisLock_should_NotShowAGuideOnTheLockedAxis() {
-        val offset = filledRectEl("right", 300, 0, 100, 120)
-        val scene = sceneOfElements(filledRectEl("a", 0, 0, 200, 120), offset)
+        val near = filledRectEl("near", 203, 0, 100, 120)
+        val scene = sceneOfElements(filledRectEl("a", 0, 0, 200, 120), near)
         val shift = Modifiers(shift = true)
-        val r = runScenario(select("a"), ctx(scene)) { down(100, 60); move(100, 62, mods = shift); up(100, 62, mods = shift) }
-        assertTrue(r.previews.filterNotNull().all { p -> p.guides.none { it.axis == GuideAxis.Vertical } }, "dx is locked at 0, so no vertical guide")
+        val locked = runScenario(select("a"), ctx(scene)) { down(100, 60); move(100, 70, mods = shift); up(100, 70, mods = shift) }
+        assertTrue(locked.previews.filterNotNull().isNotEmpty(), "the drag travelled far enough to preview")
+        assertTrue(locked.previews.filterNotNull().all { p -> p.guides.none { it.axis == GuideAxis.Vertical } }, "dx is locked at 0, so no vertical guide although the edge 203 is in reach")
+        val free = runScenario(select("a"), ctx(scene)) { down(100, 60); move(100, 70); up(100, 70) }
+        assertTrue(free.previews.filterNotNull().any { p -> p.guides.any { it.axis == GuideAxis.Vertical } }, "without the lock the same drag does snap x, so the lock is what removed the guide")
     }
 
     // ---- bypass ----------------------------------------------------------------------------------------------------
@@ -174,6 +177,14 @@ class SnapFollowupsTest {
         assertFalse(ticker.onGuides(listOf(guide(120.0)), 30), "30 ms after the last tick")
         assertFalse(ticker.onGuides(listOf(guide(120.0)), 200), "that target was already seen, its tick is not owed")
         assertTrue(ticker.onGuides(listOf(guide(140.0)), 300))
+    }
+
+    @Test
+    fun ticker_should_NeverTickForGridGuides() {
+        val ticker = SnapTicker(minGapMs = 0)
+        assertFalse(ticker.onGuides(listOf(guide(20.0, SnapKind.GRID)), 0))
+        assertFalse(ticker.onGuides(listOf(guide(40.0, SnapKind.GRID)), 1))
+        assertTrue(ticker.onGuides(listOf(guide(40.0, SnapKind.GRID), guide(300.0)), 2), "an element target alongside the grid ticks")
     }
 
     @Test

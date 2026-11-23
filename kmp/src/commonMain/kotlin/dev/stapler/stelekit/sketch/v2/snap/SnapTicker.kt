@@ -20,9 +20,9 @@ class SnapTicker(private val minGapMs: Long = DEBOUNCE_MS) {
     private var seen: Set<GuideKey> = emptySet()
     private var lastTickMs: Long? = null
 
-    /** Feeds one drag sample's [guides]; true when the platform should tick now. */
+    /** Feeds one drag sample's [guides]; true when the platform should tick now. Grid guides never tick: they change at every cell crossing and would buzz. */
     fun onGuides(guides: List<SnapGuide>, nowMs: Long): Boolean {
-        val keys = guides.mapTo(HashSet()) { it.key() }
+        val keys = guides.filter { it.kind != SnapKind.GRID }.mapTo(HashSet()) { it.key() }
         val fresh = keys.any { it !in seen }
         seen = keys
         val last = lastTickMs
