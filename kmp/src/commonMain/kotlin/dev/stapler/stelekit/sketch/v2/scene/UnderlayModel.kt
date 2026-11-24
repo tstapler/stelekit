@@ -8,10 +8,10 @@ import arrow.core.Either
 import arrow.core.getOrElse
 import arrow.core.left
 import arrow.core.right
+import dev.stapler.stelekit.sketch.v2.codec.CanonicalJson
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlin.math.PI
@@ -94,10 +94,14 @@ object UnderlayMetaCodec {
     private fun point(e: kotlinx.serialization.json.JsonElement?): ImagePx? {
         val arr = e as? JsonArray ?: return null
         if (arr.size != PAIR) return null
-        val u = (arr[0] as? JsonPrimitive)?.takeUnless { it.isString }?.doubleOrNull ?: return null
-        val v = (arr[1] as? JsonPrimitive)?.takeUnless { it.isString }?.doubleOrNull ?: return null
+        val u = (arr[0] as? JsonPrimitive)?.let(CanonicalJson::doubleOf) ?: return null
+        val v = (arr[1] as? JsonPrimitive)?.let(CanonicalJson::doubleOf) ?: return null
         return if (u.isFinite() && v.isFinite()) ImagePx(u, v) else null
     }
+
+    private fun num(d: Double): JsonPrimitive = CanonicalJson.number(d).getOrNull() ?: JsonPrimitive(0)
+
+    private fun whole(v: Int): JsonPrimitive = JsonPrimitive(v)
 
     /** [extras] with [meta] stored; null removes it. */
     fun write(extras: JsonObject, meta: UnderlayMeta?): JsonObject {
@@ -105,14 +109,14 @@ object UnderlayMetaCodec {
         val refs = meta.refs.map { r ->
             JsonObject(
                 mapOf(
-                    A to JsonArray(listOf(JsonPrimitive(r.a.u), JsonPrimitive(r.a.v))),
-                    B to JsonArray(listOf(JsonPrimitive(r.b.u), JsonPrimitive(r.b.v))),
+                    A to JsonArray(listOf(num(r.a.u), num(r.a.v))),
+                    B to JsonArray(listOf(num(r.b.u), num(r.b.v))),
                     LEN to JsonPrimitive(r.lengthUnits),
                 ),
             )
         }
         val root = buildMap<String, kotlinx.serialization.json.JsonElement> {
-            put(PX, JsonArray(listOf(JsonPrimitive(meta.widthPx), JsonPrimitive(meta.heightPx))))
+            put(PX, JsonArray(listOf(whole(meta.widthPx), whole(meta.heightPx))))
             if (refs.isNotEmpty()) put(REFS, JsonArray(refs))
         }
         return JsonObject(extras + (UnderlayIds.EXTRAS_KEY to JsonObject(root)))

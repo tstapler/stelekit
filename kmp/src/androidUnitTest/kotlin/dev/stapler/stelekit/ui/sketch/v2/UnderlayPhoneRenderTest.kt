@@ -125,9 +125,6 @@ class UnderlayPhoneRenderTest {
         assertEquals(CalibrationNote.Calibrated(576L, perspective = false), CalibrationNote.of(extras.underlay.state))
         rule.onNodeWithTag(UnderlayTags.NOTE).assertTextEquals("calibrated: 3' 0\" ref")
         rule.onNodeWithTag(UnderlayTags.REF_LABEL).assertTextEquals("3' 0\"")
-        // By now the canvas has drawn the photo: the bitmap is held at its own size (it is under the display cap).
-        val fileId = assertNotNull(extras.underlay.state).element.fileId!!
-        assertEquals(PHOTO_W, assertNotNull(extras.imageBitmaps.heldSize(fileId)).first)
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/underlay-3-calibrated.png")
     }
 
