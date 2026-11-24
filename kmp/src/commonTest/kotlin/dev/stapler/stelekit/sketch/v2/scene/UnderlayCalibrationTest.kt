@@ -140,7 +140,7 @@ class UnderlayCalibrationTest {
     @Test
     fun meta_should_RoundTripThroughExtras_Property() = runTest {
         checkAll(200, Arb.int(1..10_000), Arb.int(1..10_000), finite(0.0, 9_999.0), finite(0.0, 9_999.0), Arb.long(1L, 1_000_000L)) { w, h, u, v, len ->
-            val meta = UnderlayMeta(w, h, listOf(CalibrationRef(ImagePx(u, v), ImagePx(u + 10.0, v), len)))
+            val meta = UnderlayMeta(w, h, listOf(CalibrationRef(ImagePx(u + 0.0, v + 0.0), ImagePx(u + 10.0, v + 0.0), len)))
             val written = UnderlayMetaCodec.write(JsonObject(emptyMap()), meta)
             assertEquals(meta, UnderlayMetaCodec.read(written))
             assertEquals(JsonObject(emptyMap()), UnderlayMetaCodec.write(written, null))
