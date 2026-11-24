@@ -5,6 +5,7 @@ This source set compiles against jvm_main_lib; it has no Compose or platform
 dependencies, making it fast to run in CI.
 """
 
+load("//kmp:module_tests_manifest.bzl", "KMP_MODULE_BUSINESS_TESTS")
 load("//kmp:modules.bzl", "kmp_module_labels")
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library", "kt_jvm_test")
 load("@rules_java//java:defs.bzl", "java_library")
@@ -166,10 +167,23 @@ kt_jvm_library(
     deps = ["@maven//:org_jetbrains_kotlin_kotlin_stdlib"],
 )
 
+# Test files that run in //kmp/modules:<module>_business_tests instead (scripts/kmp-module-tests-sync.py).
+_MODULE_BUSINESS_TEST_FILES = [
+    path[len("businessTest/kotlin/"):]
+    for spec in KMP_MODULE_BUSINESS_TESTS.values()
+    for path in spec["tests"]
+]
+
+# Sources (tests and their helpers) compiled by the per-module business test targets.
+exports_files(
+    glob(["dev/**/*.kt"]),
+    visibility = ["//kmp/modules:__pkg__"],
+)
+
 # Runnable test target — bazel test //kmp:business_tests
 kt_jvm_test(
     name = "business_tests",
-    srcs = glob(["**/*.kt"]),
+    srcs = glob(["**/*.kt"], exclude = _MODULE_BUSINESS_TEST_FILES),
     test_class = "dev.stapler.stelekit.AllBusinessTests",
     # DriverFactory resolves its data dir from user.home; the real home is not writable in the
     # test sandbox, so GraphManager tests that open a file DB failed with SQLITE_CANTOPEN.

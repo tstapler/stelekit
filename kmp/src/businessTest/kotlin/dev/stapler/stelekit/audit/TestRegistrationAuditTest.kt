@@ -26,7 +26,7 @@ class TestRegistrationAuditTest {
 
     /** Test files of [sources] under a `sketch/v2` package whose simple name the set's suite file never mentions. */
     fun unnamedInSuite(sources: Map<String, String>): List<String> = suites.flatMap { (set, suitePath) ->
-        val suite = sources[suitePath].orEmpty()
+        val suite = sources[suitePath].orEmpty() + MODULE_INDEX[set]?.let { sources[it] }.orEmpty()
         sources.filter { (path, text) -> path.startsWith("$set/") && isSketchV2TestFile(path) && hasTests(text) && path != suitePath }
             .keys.filter { path -> !suite.contains(path.substringAfterLast('/').removeSuffix(".kt")) }
     }.sorted()
@@ -117,5 +117,8 @@ class TestRegistrationAuditTest {
 
     private companion object {
         val SKETCH_V2 = Regex("""/sketch/v2/""")
+
+        /** Generated list of classes a per-module Bazel target runs instead of the set's suite (scripts/kmp-module-tests-sync.py). */
+        val MODULE_INDEX = mapOf("businessTest" to "businessTest/dev/stapler/stelekit/ModuleBusinessTests.kt")
     }
 }

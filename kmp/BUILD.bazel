@@ -12,6 +12,7 @@ See CLAUDE.md for the full Gradle → Bazel command equivalence table.
 """
 
 load("@rules_android//rules:rules.bzl", "android_library")
+load("//kmp:module_tests_manifest.bzl", "KMP_MODULE_BUSINESS_TESTS")
 
 # ── Android KMP resources ─────────────────────────────────────────────────────
 # res/ lives in the kmp/ Bazel package (no BUILD in src/androidMain/), so the
@@ -53,7 +54,11 @@ test_suite(
 
 test_suite(
     name = "business_tests",
-    tests = ["//kmp/src/businessTest/kotlin:business_tests"],
+    # Plus the businessTest classes moved to per-module targets (scripts/kmp-module-tests-sync.py).
+    tests = ["//kmp/src/businessTest/kotlin:business_tests"] + [
+        "//kmp/modules:%s_business_tests" % m
+        for m in sorted(KMP_MODULE_BUSINESS_TESTS)
+    ],
     visibility = ["//visibility:public"],
 )
 

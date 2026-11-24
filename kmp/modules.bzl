@@ -12,7 +12,7 @@ Android is not split: android_main still compiles all of commonMain (see android
 """
 
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library", "kt_jvm_test")
-load("//kmp:module_tests_manifest.bzl", "KMP_MODULE_TESTS")
+load("//kmp:module_tests_manifest.bzl", "KMP_MODULE_BUSINESS_TESTS", "KMP_MODULE_TESTS")
 load("//kmp:modules_manifest.bzl", "KMP_MODULES")
 
 # Modules that already have their own Bazel target (their files are listed in the manifest only for the partition check).
@@ -225,6 +225,31 @@ def kmp_module_tests():
                 "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
                 "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
                 "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
+                "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+            ],
+        )
+
+def kmp_module_business_tests():
+    """One kt_jvm_test per module of KMP_MODULE_BUSINESS_TESTS: businessTest classes moved out of //kmp:business_tests.
+
+    Like kmp_module_tests, each target associates only with its module closure (not jvm_main_lib), so an edit reruns only
+    the targets of the edited module's dependents. Helper files travel as sources (the generator's fixture closure).
+    """
+    reach = _closure()
+    for module, spec in KMP_MODULE_BUSINESS_TESTS.items():
+        kt_jvm_test(
+            name = module + "_business_tests",
+            srcs = [spec["suite"] + ".kt"] + [_src_label(s) for s in spec["srcs"]],
+            associates = [":" + module] + [_module_label(m) for m in sorted(reach[module]) if m not in KMP_PREBUILT_MODULES],
+            kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
+            test_class = "dev.stapler.stelekit.modules." + spec["suite"],
+            # Same as //kmp:business_tests: DriverFactory resolves its data dir from user.home, read-only in the sandbox.
+            jvm_flags = ["-Duser.home=$$TEST_TMPDIR", "-Xmx4g"],  # -Xmx4g: as the jvm_tests cap; ~18 uncapped JVMs would otherwise run at once
+            deps = [_module_label(m) for m in sorted(reach[module]) if m in KMP_PREBUILT_MODULES] + KMP_JVM_EXTERNAL_DEPS + [
+                "@maven//:com_squareup_okio_okio_fakefilesystem_jvm",
+                "@maven//:io_kotest_kotest_property_jvm",
+                "@maven//:io_ktor_ktor_client_mock_jvm",
+                "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
                 "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
             ],
         )
