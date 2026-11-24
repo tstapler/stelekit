@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.ui.components
 
+import dev.stapler.stelekit.table.ColumnAlign
+import dev.stapler.stelekit.table.TableCellCodec
+import dev.stapler.stelekit.table.TableParseResult
+import dev.stapler.stelekit.table.TableParser
+
 enum class TableColumnAlignment { LEFT, CENTER, RIGHT }
 
 /**
@@ -57,14 +62,37 @@ fun splitTableRow(line: String): List<String> {
     return cells
 }
 
+/** Display view over `TableDoc`: header fixes the column count, cells keep source `<br>` text for the renderer. */
 fun parseTableContent(raw: String): TableData {
+    val doc = (TableParser.parse(raw) as? TableParseResult.Parsed)?.doc ?: return parseTableContentLegacy(raw)
+    fun cells(rawCells: List<String>) = rawCells.map(TableCellCodec::unescapePipes)
+    val rawHeaders = cells(doc.header.rawCells)
+    val columnCount = rawHeaders.size
+    fun <T> List<T>.padTo(fill: T): List<T> = this + List((columnCount - size).coerceAtLeast(0)) { fill }
+    val explicit = doc.delimiter.aligns.map {
+        when (it) {
+            ColumnAlign.NONE -> null
+            ColumnAlign.LEFT -> TableColumnAlignment.LEFT
+            ColumnAlign.CENTER -> TableColumnAlignment.CENTER
+            ColumnAlign.RIGHT -> TableColumnAlignment.RIGHT
+        }
+    }.take(columnCount).padTo(null)
+    return TableData(
+        headers = rawHeaders,
+        alignments = explicit.map { it ?: TableColumnAlignment.LEFT },
+        rows = doc.body.map { cells(it.rawCells).take(columnCount).padTo("") },
+        explicitAlignments = explicit,
+    )
+}
+
+/** Fallback for content `TableParser` rejects (no valid delimiter line): the previous lenient behaviour. */
+private fun parseTableContentLegacy(raw: String): TableData {
     val lines = raw.lines().filter { it.isNotBlank() }
     if (lines.size < 2) return TableData(emptyList(), emptyList(), emptyList())
 
     val rawHeaders = splitTableRow(lines[0])
     val rawRows = lines.drop(2).map { splitTableRow(it) }
     val explicit = splitTableRow(lines[1]).map { parseAlignmentCell(it) }
-    // GFM: the header row fixes the column count; body cells beyond it are dropped, short rows are padded.
     val columnCount = rawHeaders.size
 
     fun <T> List<T>.padTo(fill: T): List<T> = this + List((columnCount - size).coerceAtLeast(0)) { fill }

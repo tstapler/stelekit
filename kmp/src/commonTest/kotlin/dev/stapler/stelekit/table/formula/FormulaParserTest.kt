@@ -139,4 +139,69 @@ class FormulaParserTest {
         // Flat chains are iterative and must not count toward depth.
         assertIs<FormulaParse.Ok>(FormulaParser.parse("=" + "1+".repeat(499) + "1"))
     }
+
+    private val noSpan = Span(0, 0)
+
+    private fun strip(e: Expr): Expr = when (e) {
+        is Expr.Num -> e.copy(span = noSpan)
+        is Expr.Str -> e.copy(span = noSpan)
+        is Expr.Ref -> e.copy(span = noSpan)
+        is Expr.RefError -> e.copy(span = noSpan)
+        is Expr.Range -> Expr.Range(strip(e.from) as Expr.Ref, strip(e.to) as Expr.Ref, noSpan)
+        is Expr.Bin -> Expr.Bin(e.op, strip(e.left), strip(e.right), noSpan)
+        is Expr.Neg -> Expr.Neg(strip(e.operand), noSpan)
+        is Expr.Pct -> Expr.Pct(strip(e.operand), noSpan)
+        is Expr.Call -> Expr.Call(e.name, e.args.map(::strip), noSpan)
+    }
+
+    @Test
+    fun print_should_RoundTripToSameTree_When_ParenthesesPrecedenceAndAssociativityMatter() {
+        val texts = listOf(
+            "=-2^2", "=(-2)^2", "=2^3^2", "=(2^3)^2", "=10-4-3", "=10-(4-3)", "=1+2*3", "=(1+2)*3",
+            "=2^-2", "=-(1+2)", "=--1", "=-5%", "=(-5)%", "=5%%", "=(1+2)%", "=2*-3", "=1-(2+3)", "=1/(2*3)",
+            "=A1>=2", "=(A1=1)=2", "=A1=(1=2)", "=\$A\$1+B\$2+\$C3", "=SUM(B2:B5,1,\"a\"\"b\")",
+            "=IF(A1>0,\"B2\",C3)", "=SUM()", "=1.5e3", "=0.1+0.2", "=ROUND(2.675,2)", "=zz99+a1",
+        )
+        for (text in texts) {
+            val tree = ok(text)
+            val printed = FormulaPrinter.print(tree)
+            assertEquals(strip(tree), strip(ok(printed)), "$text -> $printed")
+            assertEquals(printed, FormulaPrinter.print(ok(printed)), "idempotent: $text")
+        }
+    }
+
+    @Test
+    fun print_should_ReproduceCanonicalSourceByteIdentically_When_AlreadyCanonical() {
+        for (text in listOf("=#REF!*2", "=SUM(#REF!)", "=SUM(B2:B5)", "=\$A\$1*2", "=-2^2", "=IF(A1>0,\"x\",3)", "=SUM(A1:B2)")) {
+            assertEquals(text, FormulaPrinter.print(ok(text)))
+        }
+        // Non-canonical spacing and case are normalised by the printer; edits splice by span instead.
+        assertEquals("=SUM(B2:B5)", FormulaPrinter.print(ok("=sum( b2:b5 )")))
+        val rewritten = ok("=#REF!*2")
+        assertEquals("=#REF!*2", FormulaPrinter.print(ok(FormulaPrinter.print(rewritten))))
+    }
+
+    @Test
+    fun print_should_StayIterativeAndBounded_When_DeepOrFlatInput() {
+        val flat = "=" + "1+".repeat(499) + "1"
+        assertEquals(flat, FormulaPrinter.print(ok(flat)))
+        val nested = "=" + "(".repeat(FormulaParser.MAX_DEPTH - 1) + "1" + ")".repeat(FormulaParser.MAX_DEPTH - 1)
+        assertEquals("=1", FormulaPrinter.print(ok(nested)))
+        assertEquals(FormulaParseError.Limit, failure("=" + "(".repeat(10_000) + "1" + ")".repeat(10_000)))
+    }
+
+    @Test
+    fun parse_should_KeepSpansInsideTheCellText_When_NodesCarryOffsets() {
+        val text = "=SUM(B2:B5)*2"
+        fun check(e: Expr) {
+            assertTrue(e.span.start in 1..e.span.end && e.span.end <= text.length, "$e")
+            when (e) {
+                is Expr.Bin -> { check(e.left); check(e.right) }
+                is Expr.Call -> e.args.forEach(::check)
+                else -> Unit
+            }
+        }
+        check(ok(text))
+        assertEquals("SUM(B2:B5)*2", text.substring(ok(text).span.start, ok(text).span.end))
+    }
 }
