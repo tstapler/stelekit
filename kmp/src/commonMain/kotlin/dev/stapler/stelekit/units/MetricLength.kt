@@ -32,6 +32,7 @@ object MetricLength {
     private const val TENTHS_PER_INCH = 254L
     private const val UNITS_PER_INCH = 16L
     private const val MAX_DIGITS = 12
+    private const val THOUSANDS_GROUP = 3
     private const val DECIMAL_BASE = 10L
     private const val TENTHS_PER_CM = 100L
     private const val TENTHS_PER_M = 10_000L
@@ -72,6 +73,8 @@ object MetricLength {
         if (!wellFormed) return MetricParse.NotMetric
         if (digitsOnly.length > MAX_DIGITS) return MetricParse.TooLarge
         val markAt = number.indexOfFirst { it == '.' || it == ',' }
+        // "1,000 mm" is a thousands separator in many locales; reading it as 1.000 mm would be a silent 1000x error.
+        if (markAt >= 0 && number[markAt] == ',' && number.length - markAt - 1 == THOUSANDS_GROUP) return MetricParse.NotMetric
         val decimals = if (markAt < 0) 0 else number.length - markAt - 1
         var scale = 1L
         repeat(decimals) { scale *= DECIMAL_BASE }

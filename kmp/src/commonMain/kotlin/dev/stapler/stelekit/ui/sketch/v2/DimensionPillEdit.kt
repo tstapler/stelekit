@@ -70,9 +70,11 @@ class DimensionPillEdit(val element: SceneElement, start: PillKind) {
         is DimensionPillModel.ParsedLength.Invalid -> PillStep.Invalid(parsed.message)
         is DimensionPillModel.ParsedLength.Valid -> {
             // The prefill passed on untouched is not a typed value: a shape of 80.4 units keeps it rather than becoming 80.
-            if (!(untouched && current !in entered)) {
+            // Text still equal to what an entered value is shown as is not a new value: re-reading it would round a metric value to a sixteenth.
+            val shownAsEntered = current in entered && text == textOf(current, format)
+            if (!(untouched && current !in entered) && !shownAsEntered) {
                 entered[current] = parsed.units
-                MetricLength.explicitUnitOf(text)?.let { stickyUnit = it }
+                if (MetricLength.isMetric(format)) MetricLength.explicitUnitOf(text)?.let { stickyUnit = it }
             }
             if (isLast) {
                 PillStep.Done(finish())

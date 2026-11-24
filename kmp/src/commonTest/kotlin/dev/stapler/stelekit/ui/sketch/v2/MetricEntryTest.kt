@@ -109,6 +109,16 @@ class MetricEntryTest {
     }
 
     @Test
+    fun inInchDisplay_should_NotStickAUnit_AndBackShouldKeepAnExactMetricValue() {
+        val edit = DimensionPillEdit(filledRectEl("r", 0, 0, 160, 80), PillKind.Width)
+        assertEquals(PillStep.Next(PillKind.Height), edit.submit("25 mm"))
+        assertNull(edit.stickyUnit)
+        assertTrue(edit.back(edit.textOf(PillKind.Height)))
+        val done = assertIs<PillStep.Done>(edit.commitPending(edit.textOf(PillKind.Width), untouched = false))
+        assertEquals(MetricLength.toUnits(250), done.command?.width)
+    }
+
+    @Test
     fun inchesTyped_should_StillCommitWholeSixteenths_InAMetricEdit() {
         val edit = DimensionPillEdit(filledRectEl("r", 0, 0, 160, 80), PillKind.Width)
         edit.format = LengthFormat.METRIC_MM

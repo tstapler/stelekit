@@ -50,9 +50,9 @@ class SegmentChainEdit(private val line: LineElement, var format: LengthFormat =
         when (val parsed = DimensionPillModel.parse(text, format, stickyUnit)) {
             is DimensionPillModel.ParsedLength.Invalid -> SegmentStep.Invalid(parsed.message)
             is DimensionPillModel.ParsedLength.Valid -> {
-                if (!(untouched && index !in entered)) {
+                if (!(untouched && index !in entered) && !(index in entered && text == textOf(index))) {
                     entered[index] = parsed.units
-                    MetricLength.explicitUnitOf(text)?.let { stickyUnit = it }
+                    if (MetricLength.isMetric(format)) MetricLength.explicitUnitOf(text)?.let { stickyUnit = it }
                 }
                 if (isLast) SegmentStep.Done(finish()) else SegmentStep.Next(++index)
             }

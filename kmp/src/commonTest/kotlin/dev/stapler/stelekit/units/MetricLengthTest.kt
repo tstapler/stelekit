@@ -84,6 +84,8 @@ class MetricLengthTest {
         assertEquals(MetricParse.NotMetric, MetricLength.parse("1,5,2 mm", null))
         assertEquals(MetricParse.NotMetric, MetricLength.parse("1.000,5 mm", null))
         assertEquals(MetricParse.NotMetric, MetricLength.parse("1,2.3 m", null))
+        assertEquals(MetricParse.NotMetric, MetricLength.parse("1,000 mm", null), "three digits after a comma read as a thousands group, not 1 mm")
+        assertEquals(10L, read("1.000 mm").tenthsMm)
     }
 
     @Test
