@@ -108,7 +108,7 @@ fun StylePanel(
         model.fontFamily?.let { family ->
             ChoiceRow("Font", FontChoice.entries.map { it to it.label }, family.asChoice { FontChoice.of(it) }) { onCommand(StyleActions.font(ids, it, metrics)) }
             model.fontSize?.let { size ->
-                TextSizeRow(TextSizeModel.current(selection), onTextSize)
+                TextSizeModel.current(selection)?.let { TextSizeRow(it, onTextSize) }
                 ChoiceRow("Font size", FontSizeChoice.entries.map { it to it.label }, size.asChoice { FontSizeChoice.of(it) }) { onCommand(StyleActions.fontSize(ids, it, metrics)) }
             }
         }

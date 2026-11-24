@@ -208,6 +208,24 @@ class TextAutoSizeTest {
     }
 
     @Test
+    fun sideDrag_on_rotatedText_should_KeepTheOppositeEdgeFixedInTheWorld() {
+        for (angle in listOf(0.7, 1.5707963267948966, -2.1, 3.0)) {
+            val e = text(20.0, raw = "Door opening wide").copy(angle = angle)
+            val box = ownBox(e)
+            val t = TextResize.handleDrag(e, box, Handle.E, 40.0 * kotlin.math.cos(angle), 40.0 * kotlin.math.sin(angle), fromCentre = false, metrics = metrics)
+            fun westEdge(x: Double, y: Double, w: Double, h: Double): Pair<Double, Double> {
+                val cx = x + w / 2
+                val cy = y + h / 2
+                return (cx - w / 2 * kotlin.math.cos(angle)) to (cy - w / 2 * kotlin.math.sin(angle))
+            }
+            val before = westEdge(box.x, box.y, box.width, box.height)
+            val after = westEdge(t.x, t.y, t.width, t.height)
+            assertEquals(before.first, after.first, 1e-6, "angle $angle: west edge x moved")
+            assertEquals(before.second, after.second, 1e-6, "angle $angle: west edge y moved")
+        }
+    }
+
+    @Test
     fun sideDrag_should_NeverWrapNarrowerThanOneEm() {
         val e = text(20.0)
         val box = ownBox(e)

@@ -27,7 +27,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -87,7 +89,7 @@ internal fun BoxScope.TextSizeBadge(controller: SketchEditorController) {
     val size = scaledTextSize(controller) ?: return
     val text = S.size(TextSizeModel.format(size))
     Surface(
-        modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp).testTag(TextSizeTags.BADGE).semantics { contentDescription = text },
+        modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp).testTag(TextSizeTags.BADGE).semantics { contentDescription = text; liveRegion = LiveRegionMode.Polite },
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.inverseSurface,
     ) {
@@ -97,11 +99,11 @@ internal fun BoxScope.TextSizeBadge(controller: SketchEditorController) {
 
 /**
  * The Style tab's size control: A- and A+ buttons around an editable size. The field applies on Done, not per key, so typing
- * "24" never passes through a clamped "2". [current] is null for a mixed selection (the field then starts empty).
+ * "24" never passes through a clamped "2". [current] is the first selected text's size.
  */
 @Composable
-internal fun TextSizeRow(current: Double?, onChange: (TextSizeChange) -> Unit) {
-    var text by remember(current) { mutableStateOf(current?.let(TextSizeModel::format).orEmpty()) }
+internal fun TextSizeRow(current: Double, onChange: (TextSizeChange) -> Unit) {
+    var text by remember(current) { mutableStateOf(TextSizeModel.format(current)) }
     var error by remember(current) { mutableStateOf<String?>(null) }
     val commit = {
         when (val change = TextSizeModel.typed(text)) {
@@ -113,7 +115,7 @@ internal fun TextSizeRow(current: Double?, onChange: (TextSizeChange) -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(S.LABEL, Modifier.widthIn(min = 72.dp))
             TextButton(
-                onClick = { onChange(TextSizeModel.smaller(current ?: return@TextButton)) },
+                onClick = { onChange(TextSizeModel.smaller(current)) },
                 modifier = Modifier.heightIn(min = TARGET).widthIn(min = TARGET).testTag(TextSizeTags.ROW_SMALLER).semantics { contentDescription = S.SMALLER_NAME },
             ) { Text(S.SMALLER) }
             OutlinedTextField(
@@ -126,7 +128,7 @@ internal fun TextSizeRow(current: Double?, onChange: (TextSizeChange) -> Unit) {
                 modifier = Modifier.widthIn(max = FIELD_MAX_WIDTH).testTag(TextSizeTags.FIELD).semantics { contentDescription = S.LABEL },
             )
             TextButton(
-                onClick = { onChange(TextSizeModel.larger(current ?: return@TextButton)) },
+                onClick = { onChange(TextSizeModel.larger(current)) },
                 modifier = Modifier.heightIn(min = TARGET).widthIn(min = TARGET).testTag(TextSizeTags.ROW_LARGER).semantics { contentDescription = S.LARGER_NAME },
             ) { Text(S.LARGER) }
         }

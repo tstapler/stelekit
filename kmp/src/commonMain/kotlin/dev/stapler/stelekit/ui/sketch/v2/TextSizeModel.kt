@@ -28,8 +28,8 @@ sealed interface TextSizeChange {
 object TextSizeModel {
     private const val TENTH = 10.0
 
-    /** The text elements the controls act on: stand-alone text, not a label that its shape or arrow sizes itself. */
-    fun targets(selection: List<SceneElement>): List<TextElement> = selection.filterIsInstance<TextElement>().filter { it.containerId == null }
+    /** The text elements the controls act on: stand-alone text, not a label that its shape or arrow sizes itself, and not locked text. */
+    fun targets(selection: List<SceneElement>): List<TextElement> = selection.filterIsInstance<TextElement>().filter { it.containerId == null && !it.base.locked }
 
     /** The size the controls show and step from, or null when no text is selected. */
     fun current(selection: List<SceneElement>): Double? = targets(selection).firstOrNull()?.fontSize

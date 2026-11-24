@@ -36,13 +36,13 @@ internal object TextResize {
         val kx = ratio(mapped.width, from.width)
         val ky = ratio(mapped.height, from.height)
         val size = TextSizeLimits.clamp(e.fontSize * min(kx, ky)).size
-        val k = size / e.fontSize
+        val k = ratio(size, e.fontSize)
         return ElementTransform.TextBox(e.id, mapped.x, mapped.y, from.width * k, from.height * k, size, e.text, e.autoResize)
     }
 
     private fun scaled(e: TextElement, box: Box, handle: Handle, k: Double, fromCentre: Boolean): ElementTransform.TextBox {
         val size = TextSizeLimits.clamp(e.fontSize * k).size
-        val b = TransformMath.scaleFromHandle(box, e.angle, handle, size / e.fontSize, fromCentre)
+        val b = TransformMath.scaleFromHandle(box, e.angle, handle, ratio(size, e.fontSize), fromCentre)
         return ElementTransform.TextBox(e.id, b.x, b.y, b.width, b.height, size, e.text, e.autoResize)
     }
 
@@ -53,7 +53,7 @@ internal object TextResize {
         // Place the wrap width with the opposite edge fixed, then move the centre along the text's own down axis so the top stays put.
         val grow = if (fromCentre) HALF else 1.0
         val along = (wrap - box.width) / (handle.sx * grow)
-        val widened = TransformMath.resize(box, e.angle, handle, along * cos(e.angle), -along * sin(e.angle), keepAspect = false, fromCentre = fromCentre)
+        val widened = TransformMath.resize(box, e.angle, handle, along * cos(e.angle), along * sin(e.angle), keepAspect = false, fromCentre = fromCentre)
         val shift = (fit.height - box.height) / HALF
         val cx = widened.cx - shift * sin(e.angle)
         val cy = widened.cy + shift * cos(e.angle)

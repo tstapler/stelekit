@@ -6,6 +6,7 @@ package dev.stapler.stelekit.sketch.v2.commands
 
 import arrow.core.Either
 import arrow.core.raise.either
+import dev.stapler.stelekit.sketch.v2.binding.followBoundArrows
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.ArrowType
 import dev.stapler.stelekit.sketch.v2.scene.Arrowhead
@@ -64,6 +65,8 @@ data class StyleText(
             out = out.replace(next.touched()).bind()
             changed += id
         }
+        val reflowed = changed.filter { id -> (out[id] as? TextElement)?.let { it.containerId == null } == true }.toSet()
+        if (reflowed.isNotEmpty()) out = out.followBoundArrows(reflowed).bind().scene
         var applied = finish(doc, out, changed)
         for (label in labels) applied = refitLabel(applied, label).bind()
         applied

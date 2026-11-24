@@ -84,6 +84,8 @@ class TextSizeModelTest {
         assertEquals(listOf("a", "b"), TextSizeModel.targets(selection).map { it.id.value })
         assertEquals(24.0, TextSizeModel.current(selection))
         assertNull(TextSizeModel.current(listOf(rect)))
+        val locked = text("k").let { it.copy(base = it.base.copy(locked = true)) }
+        assertEquals(emptyList(), TextSizeModel.targets(listOf(locked)), "locked text is not resized by the controls")
     }
 
     @Test
