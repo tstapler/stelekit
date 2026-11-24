@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.ui.sketch.v2
 
+import dev.stapler.stelekit.sketch.MetricScene
 import dev.stapler.stelekit.sketch.constraints.SolverTier
 import dev.stapler.stelekit.sketch.v2.commands.Command
 import dev.stapler.stelekit.sketch.v2.commands.SequenceCommand
@@ -126,7 +127,7 @@ object ConstraintValueText {
         val value = c.value ?: return null
         return when {
             c.kind == ConstraintKind.Angle -> "${(value * HALF_TURN_DEGREES / PI).roundToLong()}°"
-            technical -> if (MetricLength.isMetric(format)) LengthFormatter.formatUnits(value, format) else LengthFormatter.format(Inches(value.roundToLong()), LengthFormat.INCHES_MIXED)
+            technical -> if (MetricLength.isMetric(format)) MetricScene.formatUnits(value, format) else LengthFormatter.format(Inches(value.roundToLong()), LengthFormat.INCHES_MIXED)
             else -> value.roundToLong().toString()
         }
     }

@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.sketch.v2.annotation
 
+import dev.stapler.stelekit.sketch.MetricScene
 import dev.stapler.stelekit.sketch.v2.index.ElementBounds
 import dev.stapler.stelekit.sketch.v2.scene.BoxElement
 import dev.stapler.stelekit.sketch.v2.scene.DiamondElement
@@ -135,7 +136,7 @@ object AnnotationText {
     /** [exact] is the unrounded size in scene units: a metric display shows it to 0.1 mm instead of the rounded sixteenth. */
     fun value(kind: MeasureKind, sixteenths: Long, format: LengthFormat = LengthFormat.FEET_INCHES, exact: Double = sixteenths.toDouble()): String =
         (if (kind == MeasureKind.Diameter) "$DIAMETER_SYMBOL " else "") +
-            if (MetricLength.isMetric(format)) LengthFormatter.formatUnits(abs(exact), format) else LengthFormatter.format(Inches(abs(sixteenths)), format)
+            if (MetricLength.isMetric(format)) MetricScene.formatUnits(abs(exact), format) else LengthFormatter.format(Inches(abs(sixteenths)), format)
 }
 
 /**

@@ -517,6 +517,7 @@ KMP_MODULES = {
   "srcs": [
    "commonMain/kotlin/dev/stapler/stelekit/platform/SketchPlatformInput.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/DimensionInput.kt",
+   "commonMain/kotlin/dev/stapler/stelekit/sketch/MetricScene.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/SketchCommands.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/SketchHistory.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/SketchPointer.kt",

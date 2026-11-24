@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.sketch.v2
 
+import dev.stapler.stelekit.sketch.MetricScene
 import dev.stapler.stelekit.sketch.v2.annotation.DimensionExportOptions
 import dev.stapler.stelekit.sketch.v2.export.SvgExportOptions
 import dev.stapler.stelekit.sketch.v2.export.SvgExporter
@@ -48,7 +49,7 @@ class MetricExportTest {
 
     @Test
     fun svg_should_ShowASubSixteenthShapeToTenthsOfAMillimetre() {
-        val shape = filledRectEl("r", 0, 0, 100, 100).copy(width = SceneUnit.of(MetricLength.toUnits(1230)).getOrNull()!!)
+        val shape = filledRectEl("r", 0, 0, 100, 100).copy(width = SceneUnit.of(MetricScene.toUnits(1230)).getOrNull()!!)
         val out = labels(svg(scene(shape), LengthFormat.METRIC_MM))
         assertTrue("123 mm" in out, out.toString())
     }

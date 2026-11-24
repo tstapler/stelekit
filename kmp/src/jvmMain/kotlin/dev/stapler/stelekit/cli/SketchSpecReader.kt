@@ -6,6 +6,7 @@
 
 package dev.stapler.stelekit.cli
 
+import dev.stapler.stelekit.sketch.MetricScene
 import dev.stapler.stelekit.units.Inches
 import dev.stapler.stelekit.units.LengthFormat
 import dev.stapler.stelekit.units.LengthFormatter
@@ -96,7 +97,7 @@ internal class SpecReader(
         if (p.isString) {
             SketchLengths.parseMetricTenths(p.content)?.let { tenths ->
                 // Metric text keeps its 0.1 mm precision: scene units are a Double, so it is not snapped to a sixteenth.
-                val exact = MetricLength.toUnits(tenths)
+                val exact = MetricScene.toUnits(tenths)
                 if ((MetricLength.parse(p.content, null) as? MetricParse.Ok)?.reading?.rounded == true) {
                     issues.warn(path, "\"${p.content}\" is finer than 0.1 mm; rounded to ${MetricLength.formatMm(tenths)}")
                 }

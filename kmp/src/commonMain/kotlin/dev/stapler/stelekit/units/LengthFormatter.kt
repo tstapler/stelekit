@@ -26,15 +26,6 @@ object LengthFormatter {
     private const val INCHES_PER_FOOT = 12L
     private const val DECIMAL_PLACES = 4
     private const val DECIMAL_SCALE = 10_000L
-    private const val HALF = 0.5
-
-    /**
-     * [units] scene units (sixteenths of an inch, possibly fractional): metric formats show the value to 0.1 mm without first
-     * rounding to a sixteenth; the inch formats round to the nearest sixteenth (halves up) as the sheet's grid does.
-     */
-    fun formatUnits(units: Double, format: LengthFormat): String =
-        if (MetricLength.isMetric(format)) MetricLength.format(MetricLength.tenthsOf(units), format)
-        else format(Inches(kotlin.math.floor(units + HALF).toLong()), format)
 
     fun format(length: Inches, format: LengthFormat): String {
         if (MetricLength.isMetric(format)) return MetricLength.format(MetricLength.tenthsOfSixteenths(length.sixteenths), format)

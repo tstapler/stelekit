@@ -5,6 +5,7 @@
 // jvmTest-reason: desktop-only (the CLI lives in jvmMain; the PNG case needs the desktop Skia raster)
 package dev.stapler.stelekit.cli
 
+import dev.stapler.stelekit.sketch.MetricScene
 import arrow.core.Either
 import dev.stapler.stelekit.projectbridge.SidecarCodec
 import dev.stapler.stelekit.sketch.v2.codec.SheetCodecV2
@@ -62,7 +63,7 @@ class SketchAgentCliTest {
         val doc = built(spec)
         val box = doc.scene.elementsInOrder.first { it.id.value == "box" } as dev.stapler.stelekit.sketch.v2.scene.RectElement
         assertEquals(1600.0, box.width.value)
-        assertEquals(SketchLengths.tidy(dev.stapler.stelekit.units.MetricLength.toUnits(123)), box.height.value)
+        assertEquals(SketchLengths.tidy(dev.stapler.stelekit.sketch.MetricScene.toUnits(123)), box.height.value)
         assertTrue(outcome(spec).issues.warnings.isEmpty(), "exact tenths need no warning")
         val finer = outcome(spec.replace("12.3 mm", "12.34 mm"))
         assertTrue(finer.issues.errors.isEmpty())

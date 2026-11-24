@@ -140,11 +140,11 @@ object DimensionInput {
     fun interpretUnits(text: String, format: LengthFormat, bare: MetricUnit? = null): Either<DimensionInputError, TypedUnits> {
         val metric = metricReading(text, format, bare)
             ?: return interpretInches(text).map { TypedUnits(it.inches.sixteenths.toDouble(), it.roundedFrom) }
-        return metric.map { TypedUnits(MetricLength.toUnits(it.tenthsMm), if (it.rounded) text.trim() else null, it.tenthsMm) }
+        return metric.map { TypedUnits(MetricScene.toUnits(it.tenthsMm), if (it.rounded) text.trim() else null, it.tenthsMm) }
     }
 
     private fun nearestSixteenth(reading: dev.stapler.stelekit.units.MetricReading): Inches =
-        Inches(kotlin.math.floor(MetricLength.toUnits(reading.tenthsMm) + 0.5).toLong())
+        Inches(kotlin.math.floor(MetricScene.toUnits(reading.tenthsMm) + 0.5).toLong())
 
     /** Null when [text] is not metric (the caller reads it as inches); a reading, or the reason it cannot be one. */
     private fun metricReading(text: String, format: LengthFormat, bare: MetricUnit?): Either<DimensionInputError, dev.stapler.stelekit.units.MetricReading>? =

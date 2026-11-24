@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.ui.sketch.v2
 
+import dev.stapler.stelekit.sketch.MetricScene
 import dev.stapler.stelekit.sketch.v2.commands.ResizeElement
 import dev.stapler.stelekit.sketch.v2.constraints.ConstraintKind
 import dev.stapler.stelekit.sketch.v2.tools.filledRectEl
@@ -72,8 +73,8 @@ class MetricEntryTest {
         assertEquals(MetricUnit.CM, edit.stickyUnit)
         val done = assertIs<PillStep.Done>(edit.submit("4"))
         val command = assertIs<ResizeElement>(done.command)
-        assertEquals(MetricLength.toUnits(150), command.width)
-        assertEquals(MetricLength.toUnits(400), command.height)
+        assertEquals(MetricScene.toUnits(150), command.width)
+        assertEquals(MetricScene.toUnits(400), command.height)
     }
 
     @Test
@@ -83,7 +84,7 @@ class MetricEntryTest {
         edit.submit(edit.textOf(PillKind.Width, edit.format), untouched = true)
         assertNull(edit.stickyUnit)
         val done = assertIs<PillStep.Done>(edit.submit("3"))
-        assertEquals(MetricLength.toUnits(300), done.command?.height)
+        assertEquals(MetricScene.toUnits(300), done.command?.height)
     }
 
     @Test
@@ -103,8 +104,8 @@ class MetricEntryTest {
         assertEquals(PillStep.Next(PillKind.Height), edit.submit("1,23 cm"))
         assertTrue(edit.back("4.5 cm"))
         val done = assertIs<PillStep.Done>(edit.commitPending("1,23 cm", untouched = false))
-        assertEquals(MetricLength.toUnits(450), done.command?.height)
-        assertEquals(MetricLength.toUnits(123), done.command?.width)
+        assertEquals(MetricScene.toUnits(450), done.command?.height)
+        assertEquals(MetricScene.toUnits(123), done.command?.width)
     }
 
     @Test
@@ -114,7 +115,7 @@ class MetricEntryTest {
         assertNull(edit.stickyUnit)
         assertTrue(edit.back(edit.textOf(PillKind.Height)))
         val done = assertIs<PillStep.Done>(edit.commitPending(edit.textOf(PillKind.Width), untouched = false))
-        assertEquals(MetricLength.toUnits(250), done.command?.width)
+        assertEquals(MetricScene.toUnits(250), done.command?.width)
     }
 
     @Test
@@ -144,7 +145,7 @@ class MetricEntryTest {
         val rect = filledRectEl("r", 0, 0, 160, 80)
         val spec = DimensionPillModel.specs(rect).first()
         assertEquals("W 254 mm", DimensionPillModel.pillText(spec, LengthFormat.METRIC_MM))
-        val fractional = PillSpec(PillKind.Width, 8L, MetricLength.toUnits(123))
+        val fractional = PillSpec(PillKind.Width, 8L, MetricScene.toUnits(123))
         assertEquals("W 12.3 mm", DimensionPillModel.pillText(fractional, LengthFormat.METRIC_MM))
         assertEquals("W 1/2\"", DimensionPillModel.pillText(fractional, LengthFormat.INCHES_MIXED))
     }
@@ -152,15 +153,15 @@ class MetricEntryTest {
     @Test
     fun labelEditorParser_should_KeepTenthsOfAMillimetre_AndSayWhenItRounds() {
         val exact = DimensionValueParser.interpret(ConstraintKind.Distance, "12,3 mm", technical = true, format = LengthFormat.METRIC_MM).getOrNull()!!
-        assertEquals(MetricLength.toUnits(123), exact.value)
+        assertEquals(MetricScene.toUnits(123), exact.value)
         assertNull(exact.roundedNotice)
         val finer = DimensionValueParser.interpret(ConstraintKind.Distance, "12,34", technical = true, format = LengthFormat.METRIC_MM).getOrNull()!!
-        assertEquals(MetricLength.toUnits(123), finer.value)
+        assertEquals(MetricScene.toUnits(123), finer.value)
         assertEquals("12,34 is finer than 0.1 mm. Rounded to 12.3 mm", finer.roundedNotice)
         assertEquals(40.0 * 16, DimensionValueParser.interpret(ConstraintKind.Distance, "40", technical = true).getOrNull()!!.value)
         assertTrue(DimensionValueParser.parse(ConstraintKind.Distance, "12.34 mm", technical = true, format = LengthFormat.METRIC_MM).isLeft())
-        assertEquals(MetricLength.toUnits(254), DimensionValueParser.parse(ConstraintKind.Distance, "25.4 mm", technical = true).getOrNull())
-        assertEquals("12.3 mm", ConstraintValueTextCompat.of(MetricLength.toUnits(123), LengthFormat.METRIC_MM))
+        assertEquals(MetricScene.toUnits(254), DimensionValueParser.parse(ConstraintKind.Distance, "25.4 mm", technical = true).getOrNull())
+        assertEquals("12.3 mm", ConstraintValueTextCompat.of(MetricScene.toUnits(123), LengthFormat.METRIC_MM))
         assertEquals(SketchDimensionStrings.Units.CHIP_METRIC_MM, LengthFormat.METRIC_MM.chipLabel)
     }
 }

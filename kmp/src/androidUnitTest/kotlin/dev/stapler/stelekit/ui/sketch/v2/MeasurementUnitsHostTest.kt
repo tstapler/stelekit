@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.ui.sketch.v2
 
+import dev.stapler.stelekit.sketch.MetricScene
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.Key
@@ -286,7 +287,7 @@ class MeasurementUnitsHostTest {
         rule.onNodeWithTag(LengthKeyTags.ADVANCE).assertContentDescriptionEquals("Done, apply the size").performClick()
         rule.waitForIdle()
         val after = session.controller.doc.scene[ElementId("r1")] as RectElement
-        assertEquals(dev.stapler.stelekit.units.MetricLength.toUnits(123), after.width.value)
-        assertEquals(dev.stapler.stelekit.units.MetricLength.toUnits(400), after.height.value)
+        assertEquals(dev.stapler.stelekit.sketch.MetricScene.toUnits(123), after.width.value)
+        assertEquals(dev.stapler.stelekit.sketch.MetricScene.toUnits(400), after.height.value)
     }
 }

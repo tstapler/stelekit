@@ -1,7 +1,5 @@
 package dev.stapler.stelekit.units
 
-import kotlin.math.round
-
 /** A metric unit a length can be written in. [tenthsMmPerUnit] is how many tenths of a millimetre one of it is. */
 enum class MetricUnit(val suffix: String, val tenthsMmPerUnit: Long) {
     MM("mm", 1L * MetricLength.TENTHS_PER_MM),
@@ -84,12 +82,6 @@ object MetricLength {
         val roundedUp = if (remainder * 2 >= scale) tenths + 1 else tenths
         return if (roundedUp > MAX_TENTHS) MetricParse.TooLarge else MetricParse.Ok(MetricReading(roundedUp, remainder != 0L))
     }
-
-    /** Scene units (sixteenths of an inch, fractional) for [tenthsMm]; one correctly rounded division. */
-    fun toUnits(tenthsMm: Long): Double = tenthsMm.toDouble() * UNITS_PER_INCH / TENTHS_PER_INCH
-
-    /** The nearest tenth of a millimetre to [units] scene units. */
-    fun tenthsOf(units: Double): Long = round(units * TENTHS_PER_INCH / UNITS_PER_INCH).toLong()
 
     /** The nearest tenth of a millimetre to [sixteenths] of an inch (exact halves away from zero). */
     fun tenthsOfSixteenths(sixteenths: Long): Long {

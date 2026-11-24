@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.units
 
+import dev.stapler.stelekit.sketch.MetricScene
 import dev.stapler.stelekit.sketch.DimensionInput
 import dev.stapler.stelekit.sketch.DimensionInputError
 import dev.stapler.stelekit.ui.sketch.v2.DimensionHint
@@ -50,7 +51,7 @@ class MetricLengthTest {
 
     @Test
     fun unitsFromTenths_should_ComeBackAsTheSameTenths() = runTest {
-        checkAll(tenths) { t -> assertEquals(t, MetricLength.tenthsOf(MetricLength.toUnits(t))) }
+        checkAll(tenths) { t -> assertEquals(t, MetricScene.tenthsOf(MetricScene.toUnits(t))) }
     }
 
     @Test
@@ -63,7 +64,7 @@ class MetricLengthTest {
         assertEquals("1.0001 m", LengthFormatter.format(Inches(630), LengthFormat.METRIC_CM_M))
         assertEquals("99.99 cm", MetricLength.format(9999, LengthFormat.METRIC_CM_M))
         assertEquals("1 m", MetricLength.format(10_000, LengthFormat.METRIC_CM_M))
-        assertEquals("12.3 mm", LengthFormatter.formatUnits(MetricLength.toUnits(123), LengthFormat.METRIC_MM))
+        assertEquals("12.3 mm", MetricScene.formatUnits(MetricScene.toUnits(123), LengthFormat.METRIC_MM))
     }
 
     @Test
@@ -116,14 +117,14 @@ class MetricLengthTest {
     @Test
     fun typedMetric_should_BeStoredExactToTenthsOfAMillimetre_NotRoundedToASixteenth() {
         val typed = DimensionInput.interpretUnits("12.3 mm", LengthFormat.FEET_INCHES).getOrNull()!!
-        assertEquals(MetricLength.toUnits(123), typed.units)
+        assertEquals(MetricScene.toUnits(123), typed.units)
         assertNotEquals(typed.units, kotlin.math.floor(typed.units + 0.5), "12.3 mm is 7.75 sixteenths, not 8")
         assertNull(typed.roundedFrom)
         assertEquals(123L, typed.metricTenthsMm)
         assertEquals(16.0, DimensionInput.interpretUnits("25.4 mm", LengthFormat.INCHES_MIXED).getOrNull()!!.units)
         val finer = DimensionInput.interpretUnits("12.34 mm", LengthFormat.METRIC_MM).getOrNull()!!
         assertEquals("12.34 mm", finer.roundedFrom)
-        assertEquals(MetricLength.toUnits(123), finer.units)
+        assertEquals(MetricScene.toUnits(123), finer.units)
     }
 
     @Test
@@ -166,7 +167,7 @@ class MetricLengthTest {
         val exact = DimensionHint.reading("12,3", LengthFormat.METRIC_MM)!!
         assertEquals("= 12.3 mm (about 1/2\")", exact.text)
         assertNull(exact.roundedNotice)
-        assertEquals(MetricLength.toUnits(123), exact.units)
+        assertEquals(MetricScene.toUnits(123), exact.units)
         val finer = DimensionHint.reading("12,34", LengthFormat.METRIC_MM)!!
         assertEquals("12,34 is finer than 0.1 mm. Rounded to 12.3 mm", finer.roundedNotice)
         val inInches = DimensionHint.reading("25.4 mm", LengthFormat.FEET_INCHES)!!

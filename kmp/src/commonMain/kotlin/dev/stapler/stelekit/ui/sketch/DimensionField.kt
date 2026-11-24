@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.ui.sketch
 
+import dev.stapler.stelekit.sketch.MetricScene
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
@@ -41,7 +42,7 @@ fun lengthTextOf(sixteenths: Long, format: LengthFormat = LengthFormat.FEET_INCH
 
 /** [units] scene units as text: a metric display keeps the sub-sixteenth part (to 0.1 mm), an inch display rounds to the sixteenth. */
 fun lengthTextOfUnits(units: Double, format: LengthFormat = LengthFormat.FEET_INCHES): String =
-    LengthFormatter.formatUnits(abs(units), format)
+    MetricScene.formatUnits(abs(units), format)
 
 /**
  * A length field for the selected line. Any grammar the wiki length parser accepts works; text
