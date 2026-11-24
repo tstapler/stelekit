@@ -224,7 +224,7 @@ private fun select(controller: SketchEditorController, state: DimensionPillsStat
     val current = controller.ui.selection.map(::ElementId)
     val next = SelectTool.clickSelection(a.elementId, current, shift, clickCount = 1, scene = controller.doc.scene)
     controller.tools.select(next)
-    if (next == listOf(a.elementId)) state.open(element, a.kind)
+    if (next == listOf(a.elementId)) state.open(element, a.kind) else state.close()
 }
 
 /** Each line is drawn twice: a wider [casing] stroke first, then the [ink] on it, so the line reads over a light or dark shape fill alike. */
