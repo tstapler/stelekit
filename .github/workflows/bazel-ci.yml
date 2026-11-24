@@ -16,9 +16,28 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Path gate: release-bot and bench-bot PRs touch no code, so the Bazel jobs skip. Pushes to main always run
+  # (release.yml's safety gate looks for a green run of this workflow on the code commit).
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.paths.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # merge-base diff against the PR base
+      - id: paths
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/changed-paths.py --base "$BASE_SHA"
+
   # ── JVM / Desktop tests ────────────────────────────────────────────────────
   bazel-jvm:
     name: Bazel JVM tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     # Bumped from 30 to cover the retry wrapping below (transient external-fetch
     # failures, e.g. rules_android's com_android_dex 503 — see release.yml's
@@ -115,6 +134,8 @@ jobs:
   # ── Business-logic tests (no UI) ────────────────────────────────────────────
   bazel-business:
     name: Bazel business-logic tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     # Bumped from 30 to cover the retry wrapping below — see bazel-jvm's comment.
     timeout-minutes: 50
@@ -184,6 +205,8 @@ jobs:
   # ── Android build ──────────────────────────────────────────────────────────
   bazel-android:
     name: Bazel Android build
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     # Bumped from 65 to cover the retry wrapping below. This job is the most
     # directly exposed to the com_android_dex fetch flake (--config=android
@@ -275,6 +298,8 @@ jobs:
   # ── Android unit tests ─────────────────────────────────────────────────────
   bazel-android-tests:
     name: Bazel Android unit tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     # Bumped from 30 to cover the retry wrapping below — see bazel-jvm's comment.
     timeout-minutes: 60
@@ -350,6 +375,8 @@ jobs:
   # Gradle's own incremental cache is preserved via the gradle-home cache key.
   bazel-web:
     name: Bazel web (WASM/JS via Gradle genrule)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     # Bumped from 30 to cover the retry wrapping below — see bazel-jvm's comment.
     timeout-minutes: 55

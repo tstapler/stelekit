@@ -20,9 +20,144 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # ── Path gate: release-bot and bench-bot PRs touch no code, so the heavy jobs below skip ──
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.paths.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # merge-base diff against the PR base
+      - id: paths
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/changed-paths.py --base "$BASE_SHA"
+
+  # ── Every no-Gradle check in one job: one runner slot instead of seven ─────
+  # Each step runs even if an earlier one failed (`!cancelled()`), so one push shows every failure.
+  quick-checks:
+    name: Quick checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # private-string/reachability diff the PR base; sketch baseline needs its recorded SHA
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4 # keep in sync with MODULE.bazel
+
+      - name: Private-string guard mutation tests
+        run: python3 -m unittest scripts/ci/private_string_guard_test.py -v
+
+      # Structural patterns only here; the title denylist is local (`make ready`), so
+      # titles are unchecked in CI and the local denylist is the control.
+      - name: Private-string guard scan of added lines
+        if: ${{ !cancelled() }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then BASE_SHA=HEAD~1; fi
+          python3 scripts/ci/private-string-guard.py --diff-base "$BASE_SHA"
+
+      - name: README sync
+        if: ${{ !cancelled() }}
+        run: |
+          bash scripts/generate-readme.sh
+          if ! git diff --exit-code README.md; then
+            echo ""
+            echo "README.md is out of sync with docs/install.md."
+            echo "Run './scripts/generate-readme.sh' and commit the result."
+            exit 1
+          fi
+
+      - name: Sketch chrome fixture self-test
+        if: ${{ !cancelled() }}
+        run: python3 scripts/sketch-chrome/gen-chrome-fixture.py --selftest
+
+      - name: Sketch chrome fixture matches ux.md
+        if: ${{ !cancelled() }}
+        run: python3 scripts/sketch-chrome/gen-chrome-fixture.py --check
+
+      # Task 6.2.5a, metric 6: no baseline sketch test or golden fixture was removed or edited since the recorded pre-change SHA.
+      - name: Sketch regression baseline self-test
+        if: ${{ !cancelled() }}
+        run: scripts/sketch-baseline/test-check-sketch-baseline.sh
+
+      - name: Sketch regression baseline holds
+        if: ${{ !cancelled() }}
+        run: scripts/sketch-baseline/check-sketch-baseline.sh
+
+      # Reachability ratchet: the name-based scan fails on a new unreferenced type and prints "baseline can
+      # shrink" for a removed one (ADR-002 layer 2). --allowlist ties it to wiring-allowlist.txt.
+      - name: Reachability and CI-script Python tests
+        if: ${{ !cancelled() }}
+        run: python3 -m unittest scripts/ci/reachability_scan_test.py scripts/ci/coverage_baseline_workflow_test.py scripts/ci/coverage-map_test.py scripts/ci/changed_paths_test.py scripts/ci/release_proof_test.py -v
+
+      - name: Previous wiring allowlist (pull requests only)
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mkdir -p .cache
+          MERGE_BASE=$(git merge-base HEAD "$BASE_SHA")
+          git show "$MERGE_BASE:kmp/src/businessTest/resources/wiring-allowlist.txt" > .cache/wiring-allowlist.prev 2>/dev/null || : > .cache/wiring-allowlist.prev
+
+      - name: Reachability scan against the baseline
+        if: ${{ !cancelled() }}
+        run: |
+          ARGS=(--check-baseline scripts/ci/reachability-baseline.txt --allowlist kmp/src/businessTest/resources/wiring-allowlist.txt --catalog kmp/src/businessTest/resources/wiring-catalog.txt)
+          if [ -s .cache/wiring-allowlist.prev ]; then ARGS+=(--allowlist-prev .cache/wiring-allowlist.prev); fi
+          python3 scripts/ci/reachability-scan.py "${ARGS[@]}"
+
+      - name: Bun tests (budget checker, calibration, benchdiff export, privacy gate)
+        if: ${{ !cancelled() }}
+        run: bun test scripts/bench-budget-check.test.js scripts/bench-budget-calibrate.test.js scripts/benchdiff-export.test.js scripts/check-artifact-privacy.test.js
+
+      - name: Python summarizer tests
+        if: ${{ !cancelled() }}
+        run: python3 scripts/android-benchmark-summarize_test.py
+
+      - name: Budgets file matches the probe catalog
+        if: ${{ !cancelled() }}
+        run: bun scripts/bench-budget-check.js --validate
+
+      - name: No mutation flags in production sources
+        if: ${{ !cancelled() }}
+        run: scripts/check-no-mutations-in-main.sh
+
+      - name: Install actionlint
+        if: ${{ !cancelled() }}
+        run: |
+          ACTIONLINT_VERSION="1.7.12"
+          curl -sSfL \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            | tar -xz -C /usr/local/bin actionlint
+
+      - name: Run actionlint
+        if: ${{ !cancelled() }}
+        run: actionlint -color
+
+      - name: Run zizmor
+        # uvx runs the pinned zizmor version from PyPI without a persistent install.
+        # GH_TOKEN allows zizmor to resolve action metadata for permission auditing.
+        # continue-on-error: true until pre-existing unpinned-uses findings are resolved
+        # via `pinact run`. Track: run `pinact run` then remove this flag.
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: uvx 'zizmor==1.25.2' .
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   # ── Android unit tests + debug APK ────────────────────────────────────────
   android:
     name: Android
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -90,6 +225,8 @@ jobs:
   # ── SQLDelight generated sources staleness check ─────────────────────────
   sqldelight-sync:
     name: SQLDelight generated sources
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -122,26 +259,11 @@ jobs:
             exit 1
           fi
 
-  # ── README sync check ─────────────────────────────────────────────────────
-  readme-sync:
-    name: README sync
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Regenerate README and check for drift
-        run: |
-          bash scripts/generate-readme.sh
-          if ! git diff --exit-code README.md; then
-            echo ""
-            echo "README.md is out of sync with docs/install.md."
-            echo "Run './scripts/generate-readme.sh' and commit the result."
-            exit 1
-          fi
-
   # ── Detekt static analysis ────────────────────────────────────────────────
   lint:
     name: Lint (Detekt)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -183,61 +305,12 @@ jobs:
           path: kmp/build/reports/detekt/
           retention-days: 7
 
-  # ── Reachability ratchet + script tests (no Gradle, no memory impact) ─────
-  # The name-based scan fails on a new unreferenced type and prints "baseline can shrink" for a
-  # removed one (ADR-002 layer 2). --allowlist ties it to wiring-allowlist.txt: an awaiting-unit
-  # class the scan reports must also be in the baseline, and a PR may not lower an entry's renewals.
-  # Structural patterns only here; the title denylist is local (`make ready`), so
-  # titles are unchecked in CI and the local denylist is the control.
-  private-string-guard:
-    name: Private-string guard
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # merge-base diff against the PR base
-
-      - name: Guard script mutation tests
-        run: python3 -m unittest scripts/ci/private_string_guard_test.py -v
-
-      - name: Scan added lines
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then BASE_SHA=HEAD~1; fi
-          python3 scripts/ci/private-string-guard.py --diff-base "$BASE_SHA"
-
-  sketch-chrome-fixture:
-    name: Sketch chrome fixture (ux.md sync)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Generator self-test
-        run: python3 scripts/sketch-chrome/gen-chrome-fixture.py --selftest
-
-      - name: Committed fixture matches ux.md
-        run: python3 scripts/sketch-chrome/gen-chrome-fixture.py --check
-
-  # Task 6.2.5a, metric 6: no baseline sketch test or golden fixture was removed or edited since the recorded pre-change SHA.
-  sketch-regression-baseline:
-    name: Sketch regression baseline (metric 6)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # a shallow clone cannot reach the baseline SHA
-
-      - name: Script self-test
-        run: scripts/sketch-baseline/test-check-sketch-baseline.sh
-
-      - name: Baseline holds at the recorded SHA
-        run: scripts/sketch-baseline/check-sketch-baseline.sh
-
   # Story 6.2.2: the sketch engine's JVM performance budgets. No draft-PR `if:` here, so it also runs on push to
   # main (BUG-002 only affects benchmark.yml and android-benchmark.yml).
   sketch-engine-budgets:
     name: Sketch engine budgets
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -257,38 +330,13 @@ jobs:
       - name: Run SketchEngineBenchmark
         run: ./gradlew :kmp:jvmTest --tests "dev.stapler.stelekit.sketch.v2.SketchEngineBenchmark" --no-daemon --build-cache -i
 
-  reachability:
-    name: Reachability (baseline ratchet)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # base branch needed to compare allowlist renewals
-
-      - name: Python tests (scan, coverage-baseline workflow, coverage map)
-        run: python3 -m unittest scripts/ci/reachability_scan_test.py scripts/ci/coverage_baseline_workflow_test.py scripts/ci/coverage-map_test.py -v
-
-      - name: Previous wiring allowlist (pull requests only)
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          mkdir -p .cache
-          MERGE_BASE=$(git merge-base HEAD "$BASE_SHA")
-          git show "$MERGE_BASE:kmp/src/businessTest/resources/wiring-allowlist.txt" > .cache/wiring-allowlist.prev 2>/dev/null || : > .cache/wiring-allowlist.prev
-
-      - name: Scan against the baseline
-        run: |
-          ARGS=(--check-baseline scripts/ci/reachability-baseline.txt --allowlist kmp/src/businessTest/resources/wiring-allowlist.txt --catalog kmp/src/businessTest/resources/wiring-catalog.txt)
-          if [ -s .cache/wiring-allowlist.prev ]; then ARGS+=(--allowlist-prev .cache/wiring-allowlist.prev); fi
-          python3 scripts/ci/reachability-scan.py "${ARGS[@]}"
-
   # ── Change-scoped quality gate: incremental coverage + mutation ──────────
   # Runs only the tests tied to the PR's changed files (see kmp/build.gradle.kts) under JaCoCo:
   # the Bazel suite has no coverage, and full Gradle jvmTest hangs on 2-core runners.
   diff-coverage:
     name: Incremental coverage + mutation (changed files)
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -397,7 +445,8 @@ jobs:
   android-smoke:
     name: Android Smoke Tests (Emulator)
     runs-on: ubuntu-latest
-    needs: [android]
+    needs: [changes, android]
+    if: needs.changes.outputs.code == 'true'
 
     steps:
       - uses: actions/checkout@v4
@@ -446,60 +495,11 @@ jobs:
           fail_on_failure: true
           check_name: Android Smoke Test Results
 
-  # ── Workflow lint (actionlint + zizmor) ──────────────────────────────────
-  bench-scripts:
-    name: Benchmark Scripts
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: 1.4.4 # keep in sync with MODULE.bazel
-
-      - name: Bun tests (budget checker, calibration, benchdiff export, privacy gate)
-        run: bun test scripts/bench-budget-check.test.js scripts/bench-budget-calibrate.test.js scripts/benchdiff-export.test.js scripts/check-artifact-privacy.test.js
-
-      - name: Python summarizer tests
-        run: python3 scripts/android-benchmark-summarize_test.py
-
-      - name: Release proof walk-back tests
-        run: python3 scripts/ci/release_proof_test.py
-
-      - name: Budgets file matches the probe catalog
-        run: bun scripts/bench-budget-check.js --validate
-
-      - name: No mutation flags in production sources
-        run: scripts/check-no-mutations-in-main.sh
-
-  workflow-lint:
-    name: Workflow Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install actionlint
-        run: |
-          ACTIONLINT_VERSION="1.7.12"
-          curl -sSfL \
-            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
-            | tar -xz -C /usr/local/bin actionlint
-
-      - name: Run actionlint
-        run: actionlint -color
-
-      - name: Run zizmor
-        # uvx runs the pinned zizmor version from PyPI without a persistent install.
-        # GH_TOKEN allows zizmor to resolve action metadata for permission auditing.
-        # continue-on-error: true until pre-existing unpinned-uses findings are resolved
-        # via `pinact run`. Track: run `pinact run` then remove this flag.
-        continue-on-error: true
-        run: uvx 'zizmor==1.25.2' .
-        env:
-          GH_TOKEN: ${{ github.token }}
-
   # ── Wasm/JS compile check ─────────────────────────────────────────────────
   wasmjs-compile:
     name: Wasm/JS Compile & Tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -564,6 +564,8 @@ jobs:
   # ── Wasm/JS e2e (Playwright) ───────────────────────────────────────────────
   wasmjs-e2e:
     name: Wasm/JS E2E
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     # Pinned: Playwright 1.59 cannot install chromium on ubuntu-latest (now 26.04).
     runs-on: ubuntu-24.04
 
