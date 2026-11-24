@@ -60,6 +60,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.DropdownMenuItem
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchDimensionStrings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -137,6 +138,8 @@ data class SketchShellConfig(
     val autoConstrain: AutoConstrainState? = null,
     /** The touch magnifier's switch in the overflow menu; null hides it. */
     val loupe: LoupePreference? = null,
+    /** The length display switch of a technical sheet in the overflow menu; null hides it. */
+    val lengthUnit: LengthUnitState? = null,
     /** The overflow entries "Import .excalidraw..." and "Export..." (Stories 5.1.5, 5.2.3); null hides the entry. */
     val onImport: (() -> Unit)? = null,
     /** Why Import cannot run here (no file storage, UX-135): the entry is then shown disabled with this text. */
@@ -448,6 +451,16 @@ private fun SheetMenuItems(state: SketchEditorState, config: SketchShellConfig, 
         }
         config.autoConstrain?.takeIf { config.constraintsAvailable }?.let { AutoConstrainToggle(it, Modifier.padding(horizontal = MENU_TEXT_INSET)) }
         config.loupe?.let { LoupeToggle(it, Modifier.padding(horizontal = MENU_TEXT_INSET)) }
+        config.lengthUnit?.let { units ->
+            val current = units.format
+            DropdownMenuItem(
+                text = { Text(SketchDimensionStrings.Units.menuText(current.displayName)) },
+                // The menu stays open so the switch can be tapped through to the display wanted.
+                onClick = units::cycle,
+                modifier = Modifier.testTag(LengthUnitTags.MENU_ROW)
+                    .semantics { contentDescription = SketchDimensionStrings.Units.menuDescription(current.displayName, current.next().displayName); role = Role.Button },
+            )
+        }
     }
 }
 

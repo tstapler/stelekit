@@ -30,6 +30,7 @@ import dev.stapler.stelekit.ui.sketch.DimensionField
 import dev.stapler.stelekit.ui.sketch.lengthTextOf
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 import dev.stapler.stelekit.units.Inches
+import dev.stapler.stelekit.units.LengthFormat
 
 
 /**
@@ -44,6 +45,8 @@ fun ElementStatsPanel(
     technical: Boolean,
     onCommand: (Command) -> Unit,
     modifier: Modifier = Modifier,
+    format: LengthFormat = LengthFormat.FEET_INCHES,
+    onFormatCycle: (() -> Unit)? = null,
 ) {
     val stats = ElementStats.of(element) ?: return
     Column(modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -59,14 +62,18 @@ fun ElementStatsPanel(
         }
         if (technical) {
             DimensionField(
-                initial = lengthTextOf(kotlin.math.round(stats.width).toLong()),
+                initial = lengthTextOf(kotlin.math.round(stats.width).toLong(), format),
                 onCommit = { inches -> onCommand(sizeCommand(element, stats, widthUnits = inches)) },
                 label = "Width",
+                format = format,
+                onFormatCycle = onFormatCycle,
             )
             DimensionField(
-                initial = lengthTextOf(kotlin.math.round(stats.height).toLong()),
+                initial = lengthTextOf(kotlin.math.round(stats.height).toLong(), format),
                 onCommit = { inches -> onCommand(sizeCommand(element, stats, heightUnits = inches)) },
                 label = "Height",
+                format = format,
+                onFormatCycle = onFormatCycle,
             )
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {

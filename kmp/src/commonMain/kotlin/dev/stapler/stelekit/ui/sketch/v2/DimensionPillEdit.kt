@@ -11,6 +11,7 @@ import dev.stapler.stelekit.sketch.v2.commands.ResizeElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.ui.sketch.lengthTextOf
+import dev.stapler.stelekit.units.LengthFormat
 
 /** What a submitted field does: show the parser's message, move to the next field, or finish with one command (null when nothing changed). */
 sealed interface PillStep {
@@ -38,7 +39,8 @@ class DimensionPillEdit(val element: SceneElement, start: PillKind) {
     val isLast: Boolean get() = current == kinds.last()
 
     /** The text a field starts with: what was typed there already, else the current size. */
-    fun textOf(kind: PillKind): String = lengthTextOf(entered[kind] ?: specs.first { it.kind == kind }.sixteenths)
+    fun textOf(kind: PillKind, format: LengthFormat = LengthFormat.FEET_INCHES): String =
+        lengthTextOf(entered[kind] ?: specs.first { it.kind == kind }.sixteenths, format)
 
     /** The field's text is submitted: Next goes on to the following field, Done on the last. Invalid keeps the edit open and every value as it was. */
     fun submit(text: String): PillStep = when (val parsed = DimensionPillModel.parse(text)) {

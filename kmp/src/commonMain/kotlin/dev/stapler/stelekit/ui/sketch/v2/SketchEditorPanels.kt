@@ -22,7 +22,7 @@ import dev.stapler.stelekit.util.UuidGenerator
 internal fun SketchPanels(controller: SketchEditorController, tab: PanelTab, extras: EditorExtras, technical: TechnicalPanelState? = null) {
     Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         when (tab) {
-            PanelTab.Technical -> technical?.let { TechnicalTab(controller, it, Modifier.fillMaxWidth()) }
+            PanelTab.Technical -> technical?.let { TechnicalTab(controller, it, Modifier.fillMaxWidth(), extras.lengthUnit) }
             PanelTab.Style -> StyleTab(controller, extras)
             PanelTab.Layers -> LayersTab(controller)
             PanelTab.Constraints -> ConstraintsTab(controller, extras)
@@ -48,6 +48,8 @@ private fun StyleTab(controller: SketchEditorController, extras: EditorExtras) {
                 technical = controller.sheetKind == dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical,
                 onCommand = { controller.submit(it) },
                 modifier = Modifier.fillMaxWidth(),
+                format = extras.lengthUnit.format,
+                onFormatCycle = extras.lengthUnit::cycle,
             )
         }
     }

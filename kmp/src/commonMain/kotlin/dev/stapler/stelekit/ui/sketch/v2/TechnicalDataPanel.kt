@@ -28,6 +28,7 @@ import dev.stapler.stelekit.ui.sketch.DimensionField
 import dev.stapler.stelekit.ui.sketch.ZonePanel
 import dev.stapler.stelekit.ui.sketch.fromJson
 import dev.stapler.stelekit.ui.sketch.lengthTextOf
+import dev.stapler.stelekit.units.LengthFormat
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 import dev.stapler.stelekit.units.toInches
 
@@ -46,16 +47,16 @@ data class DimensionRow(val key: String, val valueText: String, val locked: Bool
  */
 data class TechnicalDataView(val dimensions: List<DimensionRow>, val zones: ZoneSet, val report: ZoneReport?) {
     companion object {
-        fun of(bundle: ProjectBundle, sheet: SheetUuid): TechnicalDataView {
+        fun of(bundle: ProjectBundle, sheet: SheetUuid, format: LengthFormat = LengthFormat.FEET_INCHES): TechnicalDataView {
             val current = bundle.sheets.firstOrNull { it.uuid == sheet }
             val zones = ZoneSet.fromJson(TechnicalData.zones(bundle, sheet))
             val direction = current?.let { ViewDirection.fromWire(it.viewDirection) } ?: ViewDirection.TOP
-            return TechnicalDataView(bundle.dimensions.map(::rowOf), zones, ZoneConstraints.resolve(zones, direction).getOrNull())
+            return TechnicalDataView(bundle.dimensions.map { rowOf(it, format) }, zones, ZoneConstraints.resolve(zones, direction).getOrNull())
         }
 
-        private fun rowOf(d: SketchDimension): DimensionRow {
+        private fun rowOf(d: SketchDimension, format: LengthFormat): DimensionRow {
             val inches = d.value.toInches().getOrNull()
-            return DimensionRow(d.key, inches?.let { lengthTextOf(it.sixteenths) } ?: "${d.value}\"", d.locked, inches != null)
+            return DimensionRow(d.key, inches?.let { lengthTextOf(it.sixteenths, format) } ?: "${d.value}\"", d.locked, inches != null)
         }
     }
 }
@@ -71,8 +72,10 @@ fun TechnicalDataPanel(
     sheet: SheetUuid,
     onBundleChange: (ProjectBundle) -> Unit,
     modifier: Modifier = Modifier,
+    format: LengthFormat = LengthFormat.FEET_INCHES,
+    onFormatCycle: (() -> Unit)? = null,
 ) {
-    val view = remember(bundle, sheet) { TechnicalDataView.of(bundle, sheet) }
+    val view = remember(bundle, sheet, format) { TechnicalDataView.of(bundle, sheet, format) }
     fun apply(edit: Either<TechnicalEditError, ProjectBundle>) = edit.onRight { if (it != bundle) onBundleChange(it) }
     Column(modifier.padding(8.dp).testTag(TechnicalDataTags.PANEL), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(SketchStrings.TechnicalData.HEADING, style = MaterialTheme.typography.titleSmall)
@@ -85,6 +88,8 @@ fun TechnicalDataPanel(
                 DimensionField(
                     initial = row.valueText,
                     label = row.key,
+                    format = format,
+                    onFormatCycle = onFormatCycle,
                     onCommit = { inches -> inches.toRational().onRight { apply(TechnicalData.withDimensionValue(bundle, row.key, it)) } },
                 )
             }

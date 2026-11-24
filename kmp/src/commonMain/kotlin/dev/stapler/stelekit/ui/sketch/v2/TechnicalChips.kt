@@ -22,6 +22,13 @@ internal fun technicalChips(controller: SketchEditorController, extras: EditorEx
             StripIcon.Technical,
             extras.pills::toggle,
         ),
+        ActionChip(
+            LengthUnitTags.CHIP_ROW,
+            S.Units.chipRowLabel(extras.lengthUnit.format.chipLabel),
+            extras.lengthUnit.format.chipDescription,
+            null,
+            extras.lengthUnit::cycle,
+        ),
         if (constraintsAvailable) ActionChip(DimensionPillTags.CHIP_CONSTRAINTS, S.Chips.CONSTRAINTS, S.Chips.CONSTRAINTS_DESCRIPTION, StripIcon.Constrain) { controller.ui.panelTab = PanelTab.Constraints } else null,
         if (technicalPanel) ActionChip(DimensionPillTags.CHIP_TECHNICAL, S.Chips.TECHNICAL, S.Chips.TECHNICAL_DESCRIPTION, StripIcon.Grid) { controller.ui.panelTab = PanelTab.Technical } else null,
     )

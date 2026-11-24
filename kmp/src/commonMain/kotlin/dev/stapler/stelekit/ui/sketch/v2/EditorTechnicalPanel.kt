@@ -23,6 +23,7 @@ import dev.stapler.stelekit.model.SheetUuid
 import dev.stapler.stelekit.sketch.v2.bridge.ProjectionReport
 import dev.stapler.stelekit.sketch.v2.bridge.ProjectionReports
 import dev.stapler.stelekit.sketch.v2.bridge.V2ToV1
+import dev.stapler.stelekit.units.LengthFormat
 import kotlinx.coroutines.launch
 
 object TechnicalPanelTags {
@@ -50,12 +51,17 @@ class TechnicalPanelState(val source: TechnicalDataSource, val sheet: SheetUuid)
  * against the named dimensions once it is rounded to sixteenths, and how many elements v1 cannot hold (ux.md section 9).
  */
 @Composable
-internal fun TechnicalTab(controller: SketchEditorController, state: TechnicalPanelState, modifier: Modifier = Modifier) {
+internal fun TechnicalTab(controller: SketchEditorController, state: TechnicalPanelState, modifier: Modifier = Modifier, units: LengthUnitState? = null) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(state) { state.load() }
     Column(modifier) {
         state.bundle?.let { bundle ->
-            TechnicalDataPanel(bundle, state.sheet, onBundleChange = { edited -> scope.launch { state.save(edited) } })
+            TechnicalDataPanel(
+                bundle, state.sheet,
+                onBundleChange = { edited -> scope.launch { state.save(edited) } },
+                format = units?.format ?: LengthFormat.FEET_INCHES,
+                onFormatCycle = units?.let { it::cycle },
+            )
         }
         val report = remember(controller.revision) { projectionReport(controller, state) }
         ProjectionMessages.lines(report).forEach { line ->

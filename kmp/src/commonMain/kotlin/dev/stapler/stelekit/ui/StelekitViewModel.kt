@@ -541,6 +541,7 @@ class StelekitViewModel(
             edgePan = dev.stapler.stelekit.sketch.v2.runtime.settings.EdgePanSettings(platformSettings),
             storageStatus = { fileSystem.storageStatus },
             fingerDrawing = dev.stapler.stelekit.sketch.v2.runtime.settings.FingerDrawingSettings(platformSettings),
+            lengthFormat = dev.stapler.stelekit.sketch.v2.runtime.settings.LengthFormatSettings(platformSettings),
             tourProgress = dev.stapler.stelekit.ui.sketch.v2.guide.TourProgress(platformSettings),
             canvasDrop = dev.stapler.stelekit.platform.WebCanvasDrop.host,
         )
