@@ -1,0 +1,122 @@
+{
+  "timestamp": "2026-11-24 01:58:45 UTC",
+  "gitSha": "fb15fd524",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 1,
+  "phase2Ms": 0,
+  "phase3Ms": 1,
+  "totalMs": 2,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 36,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 1369,
+      "pct": 33.1
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 317,
+      "pct": 7.7
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 234,
+      "pct": 5.7
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 212,
+      "pct": 5.1
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 206,
+      "pct": 5.0
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 108,
+      "pct": 2.6
+    },
+    {
+      "frame": "org.jacoco.agent.rt.internal_aeaf9ab.asm.SymbolTable$Entry_[k]",
+      "samples": 77,
+      "pct": 1.9
+    },
+    {
+      "frame": "java.util.regex.Matcher_[k]",
+      "samples": 68,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.util.HashMap$Node[]_[k]",
+      "samples": 63,
+      "pct": 1.5
+    },
+    {
+      "frame": "dev.stapler.stelekit.parsing.lexer.Token_[k]",
+      "samples": 62,
+      "pct": 1.5
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 51263,
+      "pct": 98.3
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-ea2aec54-8ff0-4f48-a5b8-cc6c9c60063c-libsqlitejdbc.so",
+      "samples": 306,
+      "pct": 0.6
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 87,
+      "pct": 0.2
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 85,
+      "pct": 0.2
+    },
+    {
+      "frame": "dev/stapler/stelekit/model/Validation.validateUuidString_[1]",
+      "samples": 9,
+      "pct": 0.0
+    },
+    {
+      "frame": "dev/stapler/stelekit/model/Validation.validateString_[1]",
+      "samples": 8,
+      "pct": 0.0
+    },
+    {
+      "frame": "__xstat64",
+      "samples": 8,
+      "pct": 0.0
+    },
+    {
+      "frame": "prctl",
+      "samples": 6,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/String.isLatin1_[i]",
+      "samples": 6,
+      "pct": 0.0
+    },
+    {
+      "frame": "JfrVframeStream::next_vframe",
+      "samples": 6,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": []
+}
