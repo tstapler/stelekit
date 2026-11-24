@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.stapler.stelekit.sketch.v2.commands.ResizeElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
+import dev.stapler.stelekit.sketch.v2.runtime.settings.FingerDrawingSettings
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.ui.sketch.lengthTextOf
 import dev.stapler.stelekit.units.LengthFormat
@@ -74,8 +75,13 @@ class DimensionPillEdit(val element: SceneElement, start: PillKind) {
 }
 
 /** The pills' state, held by the editor: whether they show (on by default on a technical sheet) and the edit in progress. */
-class DimensionPillsState {
-    var visible: Boolean by mutableStateOf(true)
+class DimensionPillsState(private val settings: FingerDrawingSettings? = null) {
+    var visible: Boolean by mutableStateOf(settings?.dimensionsOn ?: true)
+        private set
+
+    /** Whether the annotations of a technical sheet show on every shape or only on the selected ones; kept per device with [visible]. */
+    var scope: DimensionScope by mutableStateOf(if (settings?.dimensionsAll == false) DimensionScope.Selected else DimensionScope.All)
+        private set
     var edit: DimensionPillEdit? by mutableStateOf(null)
         private set
 
@@ -88,7 +94,15 @@ class DimensionPillsState {
     fun toggle() {
         visible = !visible
         if (!visible) edit = null
+        persist()
     }
+
+    fun toggleScope() {
+        scope = if (scope == DimensionScope.All) DimensionScope.Selected else DimensionScope.All
+        persist()
+    }
+
+    private fun persist() = settings?.chooseDimensions(visible, scope == DimensionScope.All)
 
     fun open(element: SceneElement, kind: PillKind) {
         edit = DimensionPillEdit(element, kind)

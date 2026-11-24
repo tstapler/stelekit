@@ -8,13 +8,15 @@ import dev.stapler.stelekit.sketch.v2.constraints.SheetKind
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchDimensionStrings as S
 
 /**
- * The technical sheet's most-used actions as chips in the thumb-reach chip row, shown while a shape is selected: the Dimensions
- * toggle, the Constraints panel and the Technical data panel. They are shortcuts; the overflow menu keeps its entries.
+ * The technical sheet's most-used actions as chips in the thumb-reach chip row: the Dimensions toggle and its all/selected scope
+ * are always there, the Constraints and Technical data panels join them while a shape is selected. They are shortcuts; the
+ * overflow menu keeps its entries.
  */
 internal fun technicalChips(controller: SketchEditorController, extras: EditorExtras, constraintsAvailable: Boolean, technicalPanel: Boolean): List<ActionChip> {
-    if (controller.sheetKind != SheetKind.Technical || controller.ui.selection.isEmpty()) return emptyList()
+    if (controller.sheetKind != SheetKind.Technical) return emptyList()
     val on = extras.pills.visible
-    return listOfNotNull(
+    val allShapes = extras.pills.scope == DimensionScope.All
+    val dimensions = listOfNotNull(
         ActionChip(
             DimensionPillTags.CHIP_DIMENSIONS,
             if (on) S.Chips.DIMENSIONS else S.Chips.DIMENSIONS_OFF,
@@ -29,7 +31,23 @@ internal fun technicalChips(controller: SketchEditorController, extras: EditorEx
             null,
             extras.lengthUnit::cycle,
         ),
+    )
+    val scopeChip = listOfNotNull(
+        if (on) {
+            ActionChip(
+                DimensionPillTags.CHIP_DIMENSION_SCOPE,
+                if (allShapes) S.Chips.SCOPE_ALL else S.Chips.SCOPE_SELECTED,
+                if (allShapes) S.Chips.SCOPE_ALL_DESCRIPTION else S.Chips.SCOPE_SELECTED_DESCRIPTION,
+                StripIcon.Select,
+                extras.pills::toggleScope,
+            )
+        } else {
+            null
+        },
+    )
+    if (controller.ui.selection.isEmpty()) return dimensions + scopeChip
+    return dimensions + listOfNotNull(
         if (constraintsAvailable) ActionChip(DimensionPillTags.CHIP_CONSTRAINTS, S.Chips.CONSTRAINTS, S.Chips.CONSTRAINTS_DESCRIPTION, StripIcon.Constrain) { controller.ui.panelTab = PanelTab.Constraints } else null,
         if (technicalPanel) ActionChip(DimensionPillTags.CHIP_TECHNICAL, S.Chips.TECHNICAL, S.Chips.TECHNICAL_DESCRIPTION, StripIcon.Grid) { controller.ui.panelTab = PanelTab.Technical } else null,
-    )
+    ) + scopeChip
 }

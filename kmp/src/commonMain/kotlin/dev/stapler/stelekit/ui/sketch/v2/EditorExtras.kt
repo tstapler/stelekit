@@ -87,13 +87,15 @@ class EditorExtras(
     val dimension = DimensionEditor { controller.sheetKind == SheetKind.Technical }
 
     /** The on-canvas dimension pills of a technical sheet: whether they show and the size edit in progress. */
-    val pills = DimensionPillsState().also { pills ->
+    val pills = DimensionPillsState(services.platform.fingerDrawing).also { pills ->
         controller.tools.onShapeCreated = { command ->
             if (controller.sheetKind == SheetKind.Technical && pills.visible && command.element is dev.stapler.stelekit.sketch.v2.scene.RectElement) pills.autoOpenFor = command.element.id
         }
     }
 
     /** How lengths read on this technical sheet: pills, the size field, the Technical data panel and the Stats fields (per device when the host stores it). */
+    /** The tap targets of the dimension values, read by the canvas input chain. */
+    internal val annotationTaps = AnnotationTapTargets()
     val lengthUnit = LengthUnitState(services.platform.lengthFormat)
     val autoConstrain = AutoConstrainState({ controller.sheetKind })
     val loupe = LoupePreference(controller.ui, services.platform.fingerDrawing)
