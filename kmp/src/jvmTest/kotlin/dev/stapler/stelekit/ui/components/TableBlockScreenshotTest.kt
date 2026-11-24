@@ -105,6 +105,18 @@ class TableBlockScreenshotTest {
     }
 
     @Test
+    fun `a headerless table block still opens a tapped url`() {
+        val opened = mutableListOf<String>()
+        renderWith(object : UriHandler { override fun openUri(uri: String) { opened += uri } }) {
+            TableBlock(content = "https://example.org/only-line", onStartEditing = {})
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("https://example.org/only-line", useUnmergedTree = true)
+            .performTouchInput { click(Offset(8f, 8f)) }
+        assertEquals(listOf("https://example.org/only-line"), opened)
+    }
+
+    @Test
     fun `a table block rendered by BlockItem opens the url tapped in a cell`() {
         val opened = mutableListOf<String>()
         val block = Block(
