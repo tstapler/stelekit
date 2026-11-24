@@ -13,7 +13,10 @@ class AnyCodeTest(unittest.TestCase):
         self.assertFalse(cp.any_code(["version.txt", "CHANGELOG.md", ".release-please-manifest.json"]))
 
     def test_bench_bot_commit_is_not_code(self):
-        self.assertFalse(cp.any_code(["benchmarks/history/x.json", "benchmarks/summary.md"]))
+        self.assertFalse(cp.any_code(["benchmarks/history/x.json", "benchmarks/android-history/y.json"]))
+
+    def test_budgets_file_is_code_because_a_gated_test_reads_it(self):
+        self.assertTrue(cp.any_code(["benchmarks/budgets/sketch-engine-budgets.json"]))
 
     def test_one_source_file_makes_it_code(self):
         self.assertTrue(cp.any_code(["CHANGELOG.md", "kmp/src/commonMain/kotlin/A.kt"]))

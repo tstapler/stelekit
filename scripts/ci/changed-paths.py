@@ -19,7 +19,12 @@ NON_CODE_EXACT = {
     "CLAUDE.md",
     "LICENSE",
 }
-NON_CODE_PREFIXES = ("benchmarks/",)
+# Bot-written history only: benchmarks/budgets/ is read by the sketch-engine-budgets test, so it stays code.
+NON_CODE_PREFIXES = (
+    "benchmarks/history/",
+    "benchmarks/android-history/",
+    "benchmarks/android-resource-history/",
+)
 
 
 def is_code(path):
@@ -32,7 +37,7 @@ def any_code(paths):
 
 
 def changed_files(base):
-    out = subprocess.run(["git", "diff", "--name-only", f"{base}...HEAD"],
+    out = subprocess.run(["git", "diff", "--name-only", "--no-renames", f"{base}...HEAD"],
                          check=True, capture_output=True, text=True).stdout
     return [line for line in out.splitlines() if line]
 
