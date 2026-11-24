@@ -1636,6 +1636,8 @@ KMP_MODULES = {
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/CrosshairDrawing.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/CrosshairPadUi.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/DiagnosticsHost.kt",
+   "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/DimensionAnnotationModel.kt",
+   "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/DimensionAnnotationsUi.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/DimensionEditModel.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/DimensionHint.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/DimensionLabelEditor.kt",

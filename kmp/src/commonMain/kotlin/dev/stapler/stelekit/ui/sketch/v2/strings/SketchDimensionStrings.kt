@@ -28,11 +28,39 @@ object SketchDimensionStrings {
         fun nextHint(next: String) = "Next goes to $next. Tap outside to cancel."
     }
 
+    /** The always-on dimension lines of a technical sheet. */
+    object Annotation {
+        fun description(label: String, element: String, spoken: String) = "$label of $element: $spoken"
+
+        fun editAction(label: String) = "Edit $label"
+    }
+
+    /** A length in words, for a screen reader. */
+    object Spoken {
+        const val FOOT = "foot"
+        const val FEET = "feet"
+        const val INCH = "inch"
+        const val INCHES = "inches"
+        const val AND = "and"
+        const val OF_AN_INCH = "of an inch"
+
+        fun denominator(d: Long, plural: Boolean): String = when (d) {
+            2L -> if (plural) "halves" else "half"
+            4L -> if (plural) "quarters" else "quarter"
+            8L -> if (plural) "eighths" else "eighth"
+            else -> if (plural) "sixteenths" else "sixteenth"
+        }
+    }
+
     object Chips {
         const val DIMENSIONS = "Dimensions"
         const val DIMENSIONS_OFF = "Dimensions off"
-        const val DIMENSIONS_HIDE = "Hide dimension pills"
-        const val DIMENSIONS_SHOW = "Show dimension pills"
+        const val DIMENSIONS_HIDE = "Hide dimensions"
+        const val DIMENSIONS_SHOW = "Show dimensions"
+        const val SCOPE_ALL = "Show: all"
+        const val SCOPE_ALL_DESCRIPTION = "Dimensions show on every shape. Tap to show only the selected shapes."
+        const val SCOPE_SELECTED = "Show: selected"
+        const val SCOPE_SELECTED_DESCRIPTION = "Dimensions show on the selected shapes only. Tap to show every shape."
         const val CONSTRAINTS = "Constraints"
         const val CONSTRAINTS_DESCRIPTION = "Open the Constraints panel"
         const val TECHNICAL = "Tech data"

@@ -87,6 +87,7 @@ object DimensionPillTags {
     const val READING = "sketch.pill.reading"
     const val ROUNDED = "sketch.pill.rounded"
     const val CHIP_DIMENSIONS = "sketch.chip.dimensions"
+    const val CHIP_DIMENSION_SCOPE = "sketch.chip.dimensions.scope"
     const val CHIP_CONSTRAINTS = "sketch.chip.constraints"
     const val CHIP_TECHNICAL = "sketch.chip.technicaldata"
 }

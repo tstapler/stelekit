@@ -35,7 +35,20 @@ class FingerDrawingSettings(private val settings: Settings) {
 
     fun chooseLoupe(on: Boolean) = settings.putBoolean(LOUPE_KEY, on)
 
+    /** Whether technical sheets draw their dimension annotations (on unless turned off); per device. */
+    val dimensionsOn: Boolean get() = settings.getBoolean(DIMENSIONS_KEY, true)
+
+    /** Whether they show on every shape (the default) or only on the selected ones. */
+    val dimensionsAll: Boolean get() = settings.getBoolean(DIMENSIONS_ALL_KEY, true)
+
+    fun chooseDimensions(on: Boolean, all: Boolean) {
+        settings.putBoolean(DIMENSIONS_KEY, on)
+        settings.putBoolean(DIMENSIONS_ALL_KEY, all)
+    }
+
     companion object {
+        const val DIMENSIONS_KEY = "sketch.dimensions_on"
+        const val DIMENSIONS_ALL_KEY = "sketch.dimensions_all"
         const val LOUPE_KEY = "sketch.touch_loupe"
 
         const val CHOICE_KEY = "sketch.finger_drawing"

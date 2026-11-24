@@ -522,6 +522,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.ui.sketch.v2.ConstraintTargetPickerModelTest::class,
     dev.stapler.stelekit.ui.sketch.v2.DimensionEditModelTest::class,
     dev.stapler.stelekit.ui.sketch.v2.DimensionChipsTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.DimensionAnnotationModelTest::class,
     dev.stapler.stelekit.ui.sketch.v2.DimensionPillModelTest::class,
     dev.stapler.stelekit.ui.sketch.v2.MeasurementInputTest::class,
     dev.stapler.stelekit.ui.sketch.v2.SmartDimensionPathBoundTest::class,

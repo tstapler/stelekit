@@ -52,6 +52,7 @@ kt_android_library(
             "**/SketchEmbedUiTest.kt",
             "**/ElementStatsHostTest.kt",
             "**/DimensionPillsHostTest.kt",
+            "**/DimensionAnnotationsHostTest.kt",
             "**/DimensionTourTest.kt",
             "**/SourcePagePickerTest.kt",
             "**/DrawingAttachUiTest.kt",
