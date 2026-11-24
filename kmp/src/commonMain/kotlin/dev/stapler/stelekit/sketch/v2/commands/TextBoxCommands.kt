@@ -34,7 +34,7 @@ data class SetTextBox(
         if (e !is TextElement) raise(CommandError.Unsupported(id.value, "text box"))
         if (width < 0.0) raise(CommandError.ValueRejected(ValueError.NotPositive(width)))
         if (height < 0.0) raise(CommandError.ValueRejected(ValueError.NotPositive(height)))
-        if (text.length > limits.maxTextChars) raise(CommandError.TextTooLong(limits.maxTextChars))
+        if (text != e.text && text.length > limits.maxTextChars) raise(CommandError.TextTooLong(limits.maxTextChars))
         if (!fontSize.isFinite() || fontSize <= 0.0) raise(CommandError.ValueRejected(ValueError.NotPositive(fontSize)))
         val next = e.copy(
             x = sceneUnit(x, limits).bind(),

@@ -66,7 +66,11 @@ data class StyleText(
             changed += id
         }
         val reflowed = changed.filter { id -> (out[id] as? TextElement)?.let { it.containerId == null } == true }.toSet()
-        if (reflowed.isNotEmpty()) out = out.followBoundArrows(reflowed).bind().scene
+        if (reflowed.isNotEmpty()) {
+            val followed = out.followBoundArrows(reflowed).bind()
+            out = followed.scene
+            changed += followed.arrows
+        }
         var applied = finish(doc, out, changed)
         for (label in labels) applied = refitLabel(applied, label).bind()
         applied

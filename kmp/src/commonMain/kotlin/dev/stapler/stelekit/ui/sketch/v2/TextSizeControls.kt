@@ -27,9 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -89,7 +87,7 @@ internal fun BoxScope.TextSizeBadge(controller: SketchEditorController) {
     val size = scaledTextSize(controller) ?: return
     val text = S.size(TextSizeModel.format(size))
     Surface(
-        modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp).testTag(TextSizeTags.BADGE).semantics { contentDescription = text; liveRegion = LiveRegionMode.Polite },
+        modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp).testTag(TextSizeTags.BADGE).semantics { contentDescription = text },
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.inverseSurface,
     ) {
