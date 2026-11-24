@@ -28,11 +28,22 @@ object TextSizeLimits {
         else -> Clamped(size, null)
     }
 
-    /** The next ladder size above [current]; at the top it stays at [MAX] and reports the bound. */
-    fun stepUp(current: Double): Clamped = LADDER.firstOrNull { it > current }?.let { Clamped(it, null) } ?: Clamped(MAX, Bound.Max)
+    /**
+     * [current] changed to [next] by a continuous change (a drag or group scale): clamped only when it crosses a bound from
+     * inside. A size already outside stays where it is if [next] goes further out, so an imported size never jumps.
+     */
+    fun clampChange(current: Double, next: Double): Clamped = when {
+        !next.isFinite() -> Clamped(current, null)
+        next > MAX && next > current -> if (current > MAX) Clamped(current, Bound.Max) else Clamped(MAX, Bound.Max)
+        next < MIN && next < current -> if (current < MIN) Clamped(current, Bound.Min) else Clamped(MIN, Bound.Min)
+        else -> Clamped(next, null)
+    }
 
-    /** The next ladder size below [current]; at the bottom it stays at [MIN] and reports the bound. */
-    fun stepDown(current: Double): Clamped = LADDER.lastOrNull { it < current }?.let { Clamped(it, null) } ?: Clamped(MIN, Bound.Min)
+    /** The next ladder size above [current]; at or above the top it stays at [current] (or [MAX]) and reports the bound. */
+    fun stepUp(current: Double): Clamped = LADDER.firstOrNull { it > current }?.let { Clamped(it, null) } ?: Clamped(maxOf(current, MAX), Bound.Max)
+
+    /** The next ladder size below [current]; at or below the bottom it stays at [current] (or [MIN]) and reports the bound. */
+    fun stepDown(current: Double): Clamped = LADDER.lastOrNull { it < current }?.let { Clamped(it, null) } ?: Clamped(minOf(current, MIN), Bound.Min)
 }
 
 /** The wrapped text and box of one fit. [text] has its line breaks in it, like `TextElement.text`. */

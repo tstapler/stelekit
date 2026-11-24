@@ -301,7 +301,60 @@ class TextAutoSizeTest {
             assertTrue(TextSizeLimits.stepUp(size).size >= minOf(size, TextSizeLimits.MAX) - 1e-9 || size > TextSizeLimits.MAX)
             assertTrue(TextSizeLimits.stepDown(size).size <= maxOf(size, TextSizeLimits.MIN) + 1e-9 || size < TextSizeLimits.MIN)
             assertTrue(abs(TextSizeLimits.clamp(size).size - size) < 1e-9 || size !in TextSizeLimits.MIN..TextSizeLimits.MAX)
+            assertTrue(TextSizeLimits.stepUp(size).size >= size, "A+ from $size gave ${TextSizeLimits.stepUp(size).size}")
+            assertTrue(TextSizeLimits.stepDown(size).size <= size, "A- from $size gave ${TextSizeLimits.stepDown(size).size}")
             size *= 1.37
         }
+    }
+
+    @Test
+    fun outOfRangeSizes_should_BeLeftAlone_ByIdentityAndTinyChanges() {
+        val huge = text(300.0)
+        assertEquals(300.0, TextResize.groupScale(huge, ownBox(huge), ownBox(huge)).fontSize, "a group scale of exactly 1 keeps 300")
+        val tiny = text(4.0)
+        val box = ownBox(tiny)
+        val nudged = TextResize.handleDrag(tiny, box, Handle.SE, 0.01, 0.01, fromCentre = false, metrics = metrics)
+        assertTrue(nudged.fontSize < 4.1, "a 0.01 nudge on size 4 gave ${nudged.fontSize}")
+        assertTrue(nudged.width < box.width * 1.05, "a 0.01 nudge on size 4 grew the box from ${box.width} to ${nudged.width}")
+        val grown = TextResize.handleDrag(huge, ownBox(huge), Handle.SE, 10.0, 10.0, fromCentre = false, metrics = metrics)
+        assertTrue(grown.fontSize >= 256.0 && grown.fontSize <= 300.0, "growing size 300 neither shrinks below the limit nor grows: ${grown.fontSize}")
+        assertEquals(300.0, TextResize.handleDrag(huge, ownBox(huge), Handle.SE, 0.0, 0.0, fromCentre = false, metrics = metrics).fontSize)
+    }
+
+    /** Every guide the preview draws must sit on an edge of the text box that commits (#723: a guide shows a snap that happened). */
+    private fun assertGuidesHonoured(drags: List<Pair<Int, Int>>, vararg neighbours: SceneElement) {
+        val e = text(20.0, x = 0, y = 0)
+        val ctx = testToolContext(sceneOfElements(e, *neighbours), zoom = 4.0).copy(snap = dev.stapler.stelekit.sketch.v2.snap.SnapSettings(objects = true), textMetrics = metrics)
+        for ((tx, ty) in drags) {
+            val r = runScenario(SelectTool(listOf(id)), ctx) { down(120, 25); move(tx, ty); up(tx, ty) }
+            val box = assertIs<ElementTransform.TextBox>(assertIs<TransformSelectionCommand>(r.commands.single()).steps.single())
+            val guides = r.previews.filterNotNull().last().guides
+            for (g in guides) {
+                val edges = if (g.axis == dev.stapler.stelekit.sketch.v2.snap.GuideAxis.Vertical) listOf(box.x, box.x + box.width) else listOf(box.y, box.y + box.height)
+                assertTrue(edges.any { abs(it - g.position) < 1e-6 }, "drag to $tx,$ty shows $g but commits edges $edges (font ${box.fontSize})")
+            }
+        }
+    }
+
+    @Test
+    fun cornerDrag_should_OnlyShowAGuide_ForAnEdgeThatLandsOnIt() {
+        assertGuidesHonoured(listOf(299 to 200, 299 to 40, 297 to 30), filledRectEl("right", 300, 0, 100, 120))
+    }
+
+    @Test
+    fun cornerDrag_should_SnapTheTextEdge_WhenItsAxisLeadsTheRatio() {
+        val e = text(20.0, x = 0, y = 0)
+        val ctx = testToolContext(sceneOfElements(e, filledRectEl("right", 300, 0, 100, 120)), zoom = 4.0)
+            .copy(snap = dev.stapler.stelekit.sketch.v2.snap.SnapSettings(objects = true), textMetrics = metrics)
+        val r = runScenario(SelectTool(listOf(id)), ctx) { down(120, 25); move(299, 40); up(299, 40) }
+        val box = assertIs<ElementTransform.TextBox>(assertIs<TransformSelectionCommand>(r.commands.single()).steps.single())
+        assertEquals(300.0, box.x + box.width, 1e-6, "x grows most, so the right edge snaps to the neighbour")
+        assertEquals(50.0, box.fontSize, 1e-6)
+        assertEquals(1, r.previews.filterNotNull().last().guides.size)
+    }
+
+    @Test
+    fun cornerDrag_should_DropTheGuide_WhenTheFontLimitStopsTheEdgeShortOfIt() {
+        assertGuidesHonoured(listOf(2999 to 30), filledRectEl("far", 3000, 0, 100, 120))
     }
 }

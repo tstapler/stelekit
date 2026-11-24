@@ -44,10 +44,14 @@ object TextSizeModel {
 
     fun larger(current: Double): TextSizeChange = limited(TextSizeLimits.stepUp(current))
 
-    /** A size typed in the field: out of range is pulled to the limit and says so; not a number is refused. */
-    fun typed(text: String): TextSizeChange {
+    /**
+     * A size typed in the field: out of range is pulled to the limit and says so; not a number is refused. Re-entering the
+     * [current] size (as shown) is no change, so an imported size outside the limits is kept.
+     */
+    fun typed(text: String, current: Double? = null): TextSizeChange {
         val value = text.trim().toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 }
             ?: return TextSizeChange.Reject(S.invalid(format(TextSizeLimits.MIN), format(TextSizeLimits.MAX)))
+        if (current != null && format(value) == format(current)) return TextSizeChange.Apply(current, null)
         return limited(TextSizeLimits.clamp(value))
     }
 

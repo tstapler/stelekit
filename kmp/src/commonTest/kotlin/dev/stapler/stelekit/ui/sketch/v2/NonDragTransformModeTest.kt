@@ -134,6 +134,33 @@ class NonDragTransformModeTest {
         assertEquals(1, history.undoDepth)
     }
 
+    /** "Door opening" at size 20: 120 x 25, like a text box the pointer resize test uses. */
+    private val label = dev.stapler.stelekit.sketch.v2.scene.TextElement(
+        ElementBase(elId("t1")), dev.stapler.stelekit.sketch.v2.tools.su(0), dev.stapler.stelekit.sketch.v2.tools.su(0),
+        dev.stapler.stelekit.sketch.v2.tools.su(120), dev.stapler.stelekit.sketch.v2.tools.su(25),
+        text = "Door opening", originalText = "Door opening", fontSize = 20.0,
+    )
+
+    @Test
+    fun resize_of_text_should_ScaleTheFont_LikeAPointerCornerDrag_NotStretchTheBox() {
+        val one = sceneOfElements(label)
+        val mode = started(NonDragAction.Resize, scene = one, selection = listOf(elId("t1"))).nudge(1, 1)
+        val step = assertIs<TransformSelectionCommand>(mode.apply().command).steps.single()
+        val box = assertIs<dev.stapler.stelekit.sketch.v2.tools.ElementTransform.TextBox>(step, "text resizes through TextResize, got $step")
+        assertEquals(28.0, box.fontSize, 1e-9, "35/25 grows most, so the font scales by 1.4")
+        assertEquals(box.width / box.height, 120.0 / 25.0, 1e-9, "the aspect is kept")
+        assertEquals("width 120 → 168, height 25 → 35", mode.previewText())
+    }
+
+    @Test
+    fun resize_of_aGroupWithText_should_ScaleTheTextFont_LikeAPointerGroupResize() {
+        val two = sceneOfElements(label, filledRectEl("r2", 200, 0, 40, 25))
+        val mode = (0 until TEN).fold(started(NonDragAction.Resize, scene = two, selection = listOf(elId("t1"), elId("r2")))) { m, _ -> m.nudge(1, 1) }
+        val steps = assertIs<TransformSelectionCommand>(mode.apply().command).steps
+        val text = assertIs<dev.stapler.stelekit.sketch.v2.tools.ElementTransform.TextBox>(steps.single { it.id == elId("t1") })
+        assertTrue(text.fontSize > 20.0, "the group grew, so the text font grows: ${text.fontSize}")
+    }
+
     private companion object {
         const val FIFTEEN = 15
         const val TEN = 10

@@ -102,4 +102,23 @@ class TextSizeModelTest {
         assertTrue(after.height.value > before.height.value, "the larger label is taller: ${before.height.value} -> ${after.height.value}")
         assertTrue(after.text.lines().size >= before.text.lines().size)
     }
+
+    @Test
+    fun steps_should_NeverMoveAgainstTheirDirection_ForImportedSizesOutsideTheLimits() {
+        val up = assertIs<TextSizeChange.Apply>(TextSizeModel.larger(300.0))
+        assertTrue(up.size >= 300.0, "A+ on 300 gave ${up.size}")
+        assertNotNull(up.notice)
+        assertEquals(256.0, assertIs<TextSizeChange.Apply>(TextSizeModel.smaller(300.0)).size)
+        val down = assertIs<TextSizeChange.Apply>(TextSizeModel.smaller(4.0))
+        assertTrue(down.size <= 4.0, "A- on 4 gave ${down.size}")
+        assertNotNull(down.notice)
+        assertEquals(8.0, assertIs<TextSizeChange.Apply>(TextSizeModel.larger(4.0)).size)
+    }
+
+    @Test
+    fun typed_should_KeepAnImportedSize_WhenTheShownValueIsReEntered() {
+        assertEquals(TextSizeChange.Apply(300.0, null), TextSizeModel.typed("300", current = 300.0))
+        assertEquals(TextSizeChange.Apply(4.0, null), TextSizeModel.typed(" 4 ", current = 4.0))
+        assertEquals(256.0, assertIs<TextSizeChange.Apply>(TextSizeModel.typed("400", current = 300.0)).size, "a different size is still clamped")
+    }
 }

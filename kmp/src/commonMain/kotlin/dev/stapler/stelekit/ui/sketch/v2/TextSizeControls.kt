@@ -104,7 +104,7 @@ internal fun TextSizeRow(current: Double, onChange: (TextSizeChange) -> Unit) {
     var text by remember(current) { mutableStateOf(TextSizeModel.format(current)) }
     var error by remember(current) { mutableStateOf<String?>(null) }
     val commit = {
-        when (val change = TextSizeModel.typed(text)) {
+        when (val change = TextSizeModel.typed(text, current)) {
             is TextSizeChange.Reject -> error = change.message
             is TextSizeChange.Apply -> { error = null; onChange(change) }
         }

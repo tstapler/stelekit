@@ -10,6 +10,7 @@ import dev.stapler.stelekit.sketch.v2.scene.ElementStyle
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
+import dev.stapler.stelekit.sketch.v2.scene.TextElement
 import dev.stapler.stelekit.sketch.v2.tools.Box
 import dev.stapler.stelekit.sketch.v2.tools.ElementIdSource
 import dev.stapler.stelekit.sketch.v2.tools.ElementTransform
@@ -18,6 +19,7 @@ import dev.stapler.stelekit.sketch.v2.tools.Handle
 import dev.stapler.stelekit.sketch.v2.tools.MoveSelectionCommand
 import dev.stapler.stelekit.sketch.v2.tools.Selectability
 import dev.stapler.stelekit.sketch.v2.tools.SelectTool
+import dev.stapler.stelekit.sketch.v2.tools.TextResize
 import dev.stapler.stelekit.sketch.v2.tools.ToolCommand
 import dev.stapler.stelekit.sketch.v2.tools.ToolContext
 import dev.stapler.stelekit.sketch.v2.tools.ToolPreview
@@ -117,7 +119,7 @@ class NonDragTransformMode private constructor(
     /** "x +30, y 0", "width 120 → 150, height 80 → 80" or "angle 0° → 15°": what Apply would do. */
     fun previewText(): String = when (action) {
         NonDragAction.MoveElement -> SketchStrings.NonDrag.movePreview(Readout.signed(offsetX), Readout.signed(offsetY))
-        NonDragAction.Resize -> resized().let {
+        NonDragAction.Resize -> (textResize()?.let { Box(it.x, it.y, it.width, it.height) } ?: resized()).let {
             SketchStrings.NonDrag.resizePreview(Readout.number(frame.width), Readout.number(it.width), Readout.number(frame.height), Readout.number(it.height))
         }
         NonDragAction.Rotate -> SketchStrings.NonDrag.rotatePreview(
@@ -151,12 +153,21 @@ class NonDragTransformMode private constructor(
     /** The joint box after pulling the east and south edges by the offset (the same maths as the east, south-east and south handles). */
     private fun resized(): Box = TransformMath.resize(frame, frameAngle, Handle.SE, offsetX, offsetY, keepAspect = false, fromCentre = false)
 
+    /** A single text scales its font like a pointer corner drag ([TextResize]) instead of stretching its box; null otherwise. */
+    private fun textResize(): ElementTransform.TextBox? =
+        (items.singleOrNull() as? TextElement)?.let { TextResize.handleDrag(it, ownBox(it), Handle.SE, offsetX, offsetY, fromCentre = false, metrics = null) }
+
     private fun resizeSteps(): List<ElementTransform> {
+        textResize()?.let { return listOf(it) }
         val next = resized()
         if (items.size == 1) return listOf(fit(items.single(), next, null))
         return items.map { e ->
             val mapped = TransformMath.mapBox(ownBox(e), frame, next)
-            if (e is PointElement || e is ArcElement) shift(e, mapped) else fit(e, mapped, null)
+            when (e) {
+                is PointElement, is ArcElement -> shift(e, mapped)
+                is TextElement -> TextResize.groupScale(e, ownBox(e), mapped)
+                else -> fit(e, mapped, null)
+            }
         }
     }
 

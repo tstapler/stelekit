@@ -35,13 +35,13 @@ object TextResize {
     fun groupScale(e: TextElement, from: Box, mapped: Box): ElementTransform.TextBox {
         val kx = ratio(mapped.width, from.width)
         val ky = ratio(mapped.height, from.height)
-        val size = TextSizeLimits.clamp(e.fontSize * min(kx, ky)).size
+        val size = TextSizeLimits.clampChange(e.fontSize, e.fontSize * min(kx, ky)).size
         val k = ratio(size, e.fontSize)
         return ElementTransform.TextBox(e.id, mapped.x, mapped.y, from.width * k, from.height * k, size, e.text, e.autoResize)
     }
 
     private fun scaled(e: TextElement, box: Box, handle: Handle, k: Double, fromCentre: Boolean): ElementTransform.TextBox {
-        val size = TextSizeLimits.clamp(e.fontSize * k).size
+        val size = TextSizeLimits.clampChange(e.fontSize, e.fontSize * k).size
         val b = TransformMath.scaleFromHandle(box, e.angle, handle, ratio(size, e.fontSize), fromCentre)
         return ElementTransform.TextBox(e.id, b.x, b.y, b.width, b.height, size, e.text, e.autoResize)
     }
