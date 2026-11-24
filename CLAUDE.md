@@ -104,6 +104,11 @@ Host-OOM protection: Bazel test JVMs are capped at `-Xmx4g` (`jvm_flags` in `kmp
 
 If you're about to end an agent session/worktree that ran Bazel, run `bazel shutdown` from inside it first — it only tears down that workspace's own server, not anyone else's.
 
+**Cleanup is the agent's job, not the owner's.** Whoever creates a worktree for this repo (a subagent, or the parent session that spawned it) removes it once its branch is merged or its work is handed off, and the parent session sweeps what subagents leave behind before reporting a goal complete:
+- `git worktree remove <path>` (no `--force`) every worktree that is clean, has no unpushed commits, is not `locked` and has no process running in it. Leave dirty, unpushed and locked ones, and list them in the final report. The branch survives the removal, so nothing committed is lost.
+- Delete the Bazel output base of every workspace that no longer exists (the `ORPHAN` loop above, then `chmod -R u+w` and `rm -rf` the base after killing its server). Do it after removing worktrees, since each removed worktree orphans its own base. Never touch a base whose workspace directory still exists.
+- Local branches left by squash merges stay: `git branch -D` is blocked, and a squash-merged branch is never an ancestor of `main`.
+
 To find and clear existing orphans:
 ```bash
 # List each running server's output_base and workspace_directory, flagging any
