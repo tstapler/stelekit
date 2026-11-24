@@ -282,3 +282,11 @@ Inputs: the final UX triad gaps (3 HIGH, a MED group, a LOW group). Docs-only; n
 - Waves of existing tasks are unchanged; 3.1d gained a dependency on 2.1a (W1) and 4.4c, 5.1b, 5.1d, 5.1e on 3.2c, all earlier waves. `TableBlock.kt` is still edited by one task per wave.
 - The test inventory (217 rows) was not recounted; iteration 7 added UX rows only.
 - INFERRED and unverified: `isChangingConfigurations` as the config-change signal, Compose `PointerType` carrying the DOM pointer type on Wasm, platform text-state undo as an alternative to the `CellDraft` history, the 25% notice-height cap and the 5-notice retire threshold are proposals for the owner to confirm; nothing was built or run.
+
+## Phase 5 (PR-A) findings
+
+### P5-1: Logseq-native indented tables parse as `BlockType.Bullet`, not `Table` (found by Task 0.1a)
+VERIFIED by `TableBlockContentShapeTest` (15 tests): `BlockType.Table` is produced only when the pipe rows are unindented. `- | a | b |` followed by two-space-indented rows (Logseq's own format) parses as `BlockType.Bullet` with the same de-indented content. `BlockItem` renders `TableBlock` only for `BlockType.Table` (`BlockItem.kt:498`). Impact: not PR-A (the engine is independent of block type; `TableParser` takes the longest contiguous pipe run and keeps other lines verbatim). It affects Tasks 4.3c/5.1a (seam and sheet-open gating) in PR-B: they must decide how Bullet-typed table content gets the table UI. Not redesigned here.
+
+### P5-2: Bullet-form content keeps `\r` (CRLF) on line ends; Table-form content is LF-normalized
+Same test. `TableParser` strips `\r` per line for parsing and restores it on serialize (handled in Task 1.1a).

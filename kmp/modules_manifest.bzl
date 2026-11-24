@@ -36,6 +36,7 @@ KMP_MODULES = {
    "commonMain/kotlin/dev/stapler/stelekit/parsing/lexer/Token.kt",
    "commonMain/kotlin/dev/stapler/stelekit/resilience/RetryPolicies.kt",
    "commonMain/kotlin/dev/stapler/stelekit/security/Redactor.kt",
+   "commonMain/kotlin/dev/stapler/stelekit/table/CellAddress.kt",
    "commonMain/kotlin/dev/stapler/stelekit/table/TabularText.kt",
    "commonMain/kotlin/dev/stapler/stelekit/table/formula/Expr.kt",
    "commonMain/kotlin/dev/stapler/stelekit/table/formula/FormulaParser.kt",
