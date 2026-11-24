@@ -159,10 +159,12 @@ class MeasurementInputTest {
     }
 
     @Test
-    fun format_should_CycleThroughAllThreeAndBack() {
+    fun format_should_CycleThroughEveryDisplayAndBack() {
         assertEquals(LengthFormat.INCHES_MIXED, LengthFormat.FEET_INCHES.next())
         assertEquals(LengthFormat.DECIMAL_INCHES, LengthFormat.INCHES_MIXED.next())
-        assertEquals(LengthFormat.FEET_INCHES, LengthFormat.DECIMAL_INCHES.next())
+        assertEquals(LengthFormat.METRIC_MM, LengthFormat.DECIMAL_INCHES.next())
+        assertEquals(LengthFormat.METRIC_CM_M, LengthFormat.METRIC_MM.next())
+        assertEquals(LengthFormat.FEET_INCHES, LengthFormat.METRIC_CM_M.next())
     }
 
     @Test

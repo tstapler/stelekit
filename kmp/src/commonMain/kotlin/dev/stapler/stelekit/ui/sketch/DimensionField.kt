@@ -39,6 +39,10 @@ private val DIMENSION_FIELD_WIDTH = 168.dp
 fun lengthTextOf(sixteenths: Long, format: LengthFormat = LengthFormat.FEET_INCHES): String =
     LengthFormatter.format(Inches(abs(sixteenths)), format)
 
+/** [units] scene units as text: a metric display keeps the sub-sixteenth part (to 0.1 mm), an inch display rounds to the sixteenth. */
+fun lengthTextOfUnits(units: Double, format: LengthFormat = LengthFormat.FEET_INCHES): String =
+    LengthFormatter.formatUnits(abs(units), format)
+
 /**
  * A length field for the selected line. Any grammar the wiki length parser accepts works; text
  * that is not one length shows an inline error with an example and nothing is committed. While
@@ -83,7 +87,7 @@ fun DimensionField(
             }, LengthUnitTags.FIELD_CHIP)
         }
         TextButton(onClick = {
-            DimensionInput.interpret(text).fold({ error = it.message }, { onCommit(it.inches) })
+            DimensionInput.interpret(text, format).fold({ error = it.message(format) }, { onCommit(it.inches) })
         }) { Text("Set") }
     }
 }

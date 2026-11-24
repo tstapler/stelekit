@@ -85,7 +85,7 @@ class EditorExtras(
     /** Keyboard-only drawing (Crosshair mode) and the Esc of an armed picker; its Esc rows join [escRows]. */
     val access = EditorKeyboardAccess(controller)
 
-    val dimension = DimensionEditor { controller.sheetKind == SheetKind.Technical }
+    val dimension = DimensionEditor({ controller.sheetKind == SheetKind.Technical }, { lengthUnit.format })
 
     /** The on-canvas dimension pills of a technical sheet: whether they show and the size edit in progress. */
     val pills = DimensionPillsState(services.platform.fingerDrawing).also { pills ->
@@ -192,7 +192,7 @@ class EditorExtras(
     // ---- dimension label editor
 
     private fun openDimensionDraft(draft: dev.stapler.stelekit.sketch.v2.constraints.Constraint): Boolean {
-        dimension.openNew(controller.doc, draft, ConstraintValueText.of(draft, technical = controller.sheetKind == SheetKind.Technical).orEmpty())
+        dimension.openNew(controller.doc, draft, ConstraintValueText.of(draft, technical = controller.sheetKind == SheetKind.Technical, format = lengthUnit.format).orEmpty())
         return dimension.state != DimensionEditState.Closed
     }
 

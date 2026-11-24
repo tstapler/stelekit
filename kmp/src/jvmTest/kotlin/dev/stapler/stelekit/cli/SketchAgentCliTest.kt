@@ -57,6 +57,21 @@ class SketchAgentCliTest {
     }
 
     @Test
+    fun `metric lengths build exact scene units and warn when finer than a tenth of a millimetre`() {
+        val spec = """{"spec":1,"mode":"plan","title":"Metric","shapes":[{"id":"box","role":"furniture","x":"0","y":"0","w":"2,54 m","h":"12.3 mm"}]}"""
+        val doc = built(spec)
+        val box = doc.scene.elementsInOrder.first { it.id.value == "box" } as dev.stapler.stelekit.sketch.v2.scene.RectElement
+        assertEquals(1600.0, box.width.value)
+        assertEquals(SketchLengths.tidy(dev.stapler.stelekit.units.MetricLength.toUnits(123)), box.height.value)
+        assertTrue(outcome(spec).issues.warnings.isEmpty(), "exact tenths need no warning")
+        val finer = outcome(spec.replace("12.3 mm", "12.34 mm"))
+        assertTrue(finer.issues.errors.isEmpty())
+        assertTrue(finer.issues.warnings.any { it.contains("finer than 0.1 mm") }, finer.issues.warnings.toString())
+        val bad = outcome(spec.replace("12.3 mm", "12.3 furlongs"))
+        assertTrue(bad.issues.errors.any { it.contains("25.4 mm") }, bad.issues.errors.toString())
+    }
+
+    @Test
     fun `room describe matches the golden text`() {
         assertEquals(ROOM_DESCRIBE, SketchDescribe.describe(built(ROOM_SPEC)))
     }

@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.constraints.ConstraintId
 import dev.stapler.stelekit.sketch.v2.scene.ElementNames
+import dev.stapler.stelekit.units.LengthFormat
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchConstraintStrings
 
 object ConstraintGlyphTags {
@@ -60,21 +61,22 @@ fun ConstraintGlyphOverlay(
     onSelect: (ConstraintId) -> Unit,
     modifier: Modifier = Modifier,
     onEdit: ((ConstraintId) -> Unit)? = null,
+    format: LengthFormat = LengthFormat.INCHES_MIXED,
 ) {
     Box(modifier.testTag(ConstraintGlyphTags.OVERLAY).semantics { contentDescription = SketchConstraintStrings.Panel.GLYPHS_REGION }) {
         layout.marks.forEachIndexed { index, mark ->
             val hit = layout.hitDp
             Box(Modifier.offset((mark.x - hit / 2).dp, (mark.y - hit / 2).dp).size(hit.dp)) {
-                MarkTarget(doc, mark, index, technical, onSelect, onEdit)
+                MarkTarget(doc, mark, index, technical, format, onSelect, onEdit)
             }
         }
     }
 }
 
 @Composable
-private fun MarkTarget(doc: SketchDocumentV2, mark: GlyphMark, index: Int, technical: Boolean, onSelect: (ConstraintId) -> Unit, onEdit: ((ConstraintId) -> Unit)?) {
+private fun MarkTarget(doc: SketchDocumentV2, mark: GlyphMark, index: Int, technical: Boolean, format: LengthFormat, onSelect: (ConstraintId) -> Unit, onEdit: ((ConstraintId) -> Unit)?) {
     var open by remember { mutableStateOf(false) }
-    val face = faceOf(doc, mark, index, technical) ?: return
+    val face = faceOf(doc, mark, index, technical, format) ?: return
     Box {
         MarkFaceBox(face, mark, onSelect, editOf(doc, mark, onEdit)) { open = true }
         if (mark !is GlyphMark.Glyph) BadgeList(doc, mark, open, onSelect) { open = false }
@@ -117,9 +119,9 @@ private fun BadgeList(doc: SketchDocumentV2, mark: GlyphMark, open: Boolean, onS
     }
 }
 
-private fun faceOf(doc: SketchDocumentV2, mark: GlyphMark, index: Int, technical: Boolean): MarkFace? = when (mark) {
+private fun faceOf(doc: SketchDocumentV2, mark: GlyphMark, index: Int, technical: Boolean, format: LengthFormat): MarkFace? = when (mark) {
     is GlyphMark.Glyph -> doc.constraints.firstOrNull { it.id == mark.id }?.let { c ->
-        val value = ConstraintValueText.of(c, technical)
+        val value = ConstraintValueText.of(c, technical, format)
         val kind = SketchConstraintStrings.Panel.kindLabel(c.kind)
         MarkFace(value ?: SketchConstraintStrings.Panel.glyphOf(c.kind), SketchConstraintStrings.Panel.rowText(kind, value, "", null), ConstraintGlyphTags.glyph(c.id))
     }

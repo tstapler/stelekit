@@ -11,7 +11,7 @@ import dev.stapler.stelekit.sketch.v2.runtime.settings.LengthFormatSettings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchDimensionStrings.Units as U
 import dev.stapler.stelekit.units.LengthFormat
 
-/** The next display in the cycle a one-tap chip walks: feet and inches, inches, decimal inches, and round again. */
+/** The next display in the cycle a one-tap chip walks: feet and inches, inches, decimal inches, mm, cm and m, and round again. */
 fun LengthFormat.next(): LengthFormat = LengthFormat.entries[(ordinal + 1) % LengthFormat.entries.size]
 
 val LengthFormat.chipLabel: String
@@ -19,6 +19,8 @@ val LengthFormat.chipLabel: String
         LengthFormat.FEET_INCHES -> U.CHIP_FEET_INCHES
         LengthFormat.INCHES_MIXED -> U.CHIP_INCHES
         LengthFormat.DECIMAL_INCHES -> U.CHIP_DECIMAL
+        LengthFormat.METRIC_MM -> U.CHIP_METRIC_MM
+        LengthFormat.METRIC_CM_M -> U.CHIP_METRIC_CM_M
     }
 
 val LengthFormat.displayName: String
@@ -26,6 +28,8 @@ val LengthFormat.displayName: String
         LengthFormat.FEET_INCHES -> U.NAME_FEET_INCHES
         LengthFormat.INCHES_MIXED -> U.NAME_INCHES
         LengthFormat.DECIMAL_INCHES -> U.NAME_DECIMAL
+        LengthFormat.METRIC_MM -> U.NAME_METRIC_MM
+        LengthFormat.METRIC_CM_M -> U.NAME_METRIC_CM_M
     }
 
 /** What the unit chips speak: the current display and the one a tap switches to. */

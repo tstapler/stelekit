@@ -13,8 +13,11 @@ import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.runtime.settings.FingerDrawingSettings
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.ui.sketch.lengthTextOf
+import dev.stapler.stelekit.ui.sketch.lengthTextOfUnits
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchDimensionStrings
 import dev.stapler.stelekit.units.LengthFormat
+import dev.stapler.stelekit.units.MetricLength
+import dev.stapler.stelekit.units.MetricUnit
 
 /** What a submitted field does: show the parser's message, move to the next field, or finish with one command (null when nothing changed). */
 sealed interface PillStep {
@@ -33,7 +36,21 @@ sealed interface PillStep {
  */
 class DimensionPillEdit(val element: SceneElement, start: PillKind) {
     private val specs = DimensionPillModel.specs(element)
-    private val entered = mutableMapOf<PillKind, Long>()
+    private val entered = mutableMapOf<PillKind, Double>()
+
+    /**
+     * The display the field is read in: a plain number means this display's unit when it is metric. The host sets it from the
+     * unit chip; changing it forgets [stickyUnit], so a unit switch starts the numbers over in the new unit.
+     */
+    var format: LengthFormat = LengthFormat.FEET_INCHES
+        set(value) {
+            if (value != field) stickyUnit = null
+            field = value
+        }
+
+    /** The metric unit last written in this edit (`25 cm`): a later field's plain number reads in it, so `25 cm` then `10` is 10 cm. */
+    var stickyUnit: MetricUnit? = null
+        private set
 
     val kinds: List<PillKind> = DimensionPillModel.editKinds(element, start)
     var current: PillKind by mutableStateOf(if (start in kinds) start else kinds.first())
@@ -42,15 +59,21 @@ class DimensionPillEdit(val element: SceneElement, start: PillKind) {
     val isLast: Boolean get() = current == kinds.last()
 
     /** The text a field starts with: what was typed there already, else the current size. */
-    fun textOf(kind: PillKind, format: LengthFormat = LengthFormat.FEET_INCHES): String =
-        lengthTextOf(entered[kind] ?: specs.first { it.kind == kind }.sixteenths, format)
+    fun textOf(kind: PillKind, format: LengthFormat = LengthFormat.FEET_INCHES): String {
+        entered[kind]?.let { return lengthTextOfUnits(it, format) }
+        val spec = specs.first { it.kind == kind }
+        return if (MetricLength.isMetric(format)) lengthTextOfUnits(spec.exact, format) else lengthTextOf(spec.sixteenths, format)
+    }
 
     /** The field's text is submitted: Next goes on to the following field, Done on the last. Invalid keeps the edit open and every value as it was. */
-    fun submit(text: String, untouched: Boolean = false): PillStep = when (val parsed = DimensionPillModel.parse(text)) {
+    fun submit(text: String, untouched: Boolean = false): PillStep = when (val parsed = DimensionPillModel.parse(text, format, stickyUnit)) {
         is DimensionPillModel.ParsedLength.Invalid -> PillStep.Invalid(parsed.message)
         is DimensionPillModel.ParsedLength.Valid -> {
             // The prefill passed on untouched is not a typed value: a shape of 80.4 units keeps it rather than becoming 80.
-            if (!(untouched && current !in entered)) entered[current] = parsed.sixteenths
+            if (!(untouched && current !in entered)) {
+                entered[current] = parsed.units
+                MetricLength.explicitUnitOf(text)?.let { stickyUnit = it }
+            }
             if (isLast) {
                 PillStep.Done(finish())
             } else {
@@ -66,7 +89,7 @@ class DimensionPillEdit(val element: SceneElement, start: PillKind) {
      */
     fun commitPending(text: String, untouched: Boolean): PillStep {
         var step = submit(text, untouched)
-        while (step is PillStep.Next) step = submit(textOf(current), untouched = true)
+        while (step is PillStep.Next) step = submit(textOf(current, format), untouched = true)
         return step
     }
 
@@ -74,15 +97,15 @@ class DimensionPillEdit(val element: SceneElement, start: PillKind) {
     fun back(text: String, untouched: Boolean = false): Boolean {
         val index = kinds.indexOf(current)
         if (index == 0) return false
-        if (!(untouched && current !in entered)) (DimensionPillModel.parse(text) as? DimensionPillModel.ParsedLength.Valid)?.let { entered[current] = it.sixteenths }
+        if (!(untouched && current !in entered)) (DimensionPillModel.parse(text, format, stickyUnit) as? DimensionPillModel.ParsedLength.Valid)?.let { entered[current] = it.units }
         current = kinds[index - 1]
         return true
     }
 
     private fun finish(): ResizeElement? {
         // Against the exact size, not the rounded pill: typing "5\"" on a 5.025" shape makes it exactly 5".
-        val changed = entered.filter { (kind, value) -> specs.first { it.kind == kind }.exact != value.toDouble() }
-        return if (changed.isEmpty()) null else PillResize.command(element, changed)
+        val changed = entered.filter { (kind, value) -> specs.first { it.kind == kind }.exact != value }
+        return if (changed.isEmpty()) null else PillResize.commandExact(element, changed)
     }
 }
 

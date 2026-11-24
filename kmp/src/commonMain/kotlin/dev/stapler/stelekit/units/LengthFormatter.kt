@@ -9,6 +9,12 @@ enum class LengthFormat {
 
     /** `43.75"`, `0.0625"`, `12"`: decimal inches, trailing zeros trimmed (every sixteenth is at most four decimal places). */
     DECIMAL_INCHES,
+
+    /** `12.3 mm`, `25.4 mm`: millimetres to 0.1 mm. Appended after the inch formats so a stored choice keeps its meaning. */
+    METRIC_MM,
+
+    /** `12.34 cm` below a metre, `1.2345 m` from there on. */
+    METRIC_CM_M,
 }
 
 /**
@@ -20,14 +26,25 @@ object LengthFormatter {
     private const val INCHES_PER_FOOT = 12L
     private const val DECIMAL_PLACES = 4
     private const val DECIMAL_SCALE = 10_000L
+    private const val HALF = 0.5
+
+    /**
+     * [units] scene units (sixteenths of an inch, possibly fractional): metric formats show the value to 0.1 mm without first
+     * rounding to a sixteenth; the inch formats round to the nearest sixteenth (halves up) as the sheet's grid does.
+     */
+    fun formatUnits(units: Double, format: LengthFormat): String =
+        if (MetricLength.isMetric(format)) MetricLength.format(MetricLength.tenthsOf(units), format)
+        else format(Inches(kotlin.math.floor(units + HALF).toLong()), format)
 
     fun format(length: Inches, format: LengthFormat): String {
+        if (MetricLength.isMetric(format)) return MetricLength.format(MetricLength.tenthsOfSixteenths(length.sixteenths), format)
         val total = length.sixteenths
         // Split the signed value first, then take magnitudes: abs(Long.MIN_VALUE) never happens.
         val wholeInches = magnitude(total / SIXTEENTHS)
         val sixteenths = magnitude(total % SIXTEENTHS)
         val sign = if (total < 0) "-" else ""
         val body = when (format) {
+            LengthFormat.METRIC_MM, LengthFormat.METRIC_CM_M -> error("metric formats return above")
             LengthFormat.INCHES_MIXED -> inchesText(wholeInches, sixteenths)
             LengthFormat.DECIMAL_INCHES -> decimalText(wholeInches, sixteenths)
             LengthFormat.FEET_INCHES -> {
