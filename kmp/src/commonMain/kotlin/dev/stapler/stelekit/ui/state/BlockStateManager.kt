@@ -599,8 +599,15 @@ class BlockStateManager(
     val canUndo: StateFlow<Boolean> get() = undoManager.canUndo
     val canRedo: StateFlow<Boolean> get() = undoManager.canRedo
 
-    fun record(undo: suspend () -> Unit, redo: (suspend () -> Unit)? = null) =
+    private val _undoRecordCount = MutableStateFlow(0L)
+
+    /** Total undo entries recorded; lets a surface detect entries it did not make itself. */
+    val undoRecordCount: StateFlow<Long> = _undoRecordCount.asStateFlow()
+
+    fun record(undo: suspend () -> Unit, redo: (suspend () -> Unit)? = null) {
         undoManager.record(undo, redo)
+        _undoRecordCount.update { it + 1 }
+    }
 
     override fun undo(): Job = undoManager.undo()
     override fun redo(): Job = undoManager.redo()
@@ -1061,8 +1068,13 @@ class BlockStateManager(
      * [applyBlockContentUpdate] directly instead of going through this Job-launching entry
      * point (see the KNOWN LIMITATION note above [contentMutationMutex]).
      */
-    override fun updateBlockContent(blockUuid: BlockUuid, newContent: String, newVersion: Long): Job = scope.launch {
-        applyBlockContentUpdate(blockUuid, newContent, newVersion)
+    override fun updateBlockContent(
+        blockUuid: BlockUuid,
+        newContent: String,
+        newVersion: Long,
+        restoreEditFocus: Boolean,
+    ): Job = scope.launch {
+        applyBlockContentUpdate(blockUuid, newContent, newVersion, restoreEditFocus)
     }
 
     /**
@@ -1077,22 +1089,37 @@ class BlockStateManager(
      * directly keeps the write in the same coroutine that holds the mutex, so cancellation and
      * exceptions propagate normally.
      */
-    private suspend fun applyBlockContentUpdate(blockUuid: BlockUuid, newContent: String, newVersion: Long) {
+    private suspend fun applyBlockContentUpdate(
+        blockUuid: BlockUuid,
+        newContent: String,
+        newVersion: Long,
+        restoreEditFocus: Boolean = true,
+    ) {
         val block = findBlockOrNull(blockUuid) ?: return
         val oldContent = block.content
         val oldVersion = block.version
         if (oldContent == newContent) return
 
-        applyContentChange(blockUuid, newContent, newVersion)
+        // Table commits may pass a stale lower bound; mint a version the in-memory guard accepts.
+        val appliedVersion = if (restoreEditFocus) newVersion else maxOf(newVersion, oldVersion + 1)
+        applyContentChange(blockUuid, newContent, appliedVersion)
 
         record(
             undo = {
-                applyContentChange(blockUuid, oldContent, oldVersion)
-                requestEditBlock(blockUuid, oldContent.length)
+                if (restoreEditFocus) {
+                    applyContentChange(blockUuid, oldContent, oldVersion)
+                    requestEditBlock(blockUuid, oldContent.length)
+                } else {
+                    applyContentChange(blockUuid, oldContent, (findBlockOrNull(blockUuid)?.version ?: oldVersion) + 1)
+                }
             },
             redo = {
-                applyContentChange(blockUuid, newContent, newVersion)
-                requestEditBlock(blockUuid, newContent.length)
+                if (restoreEditFocus) {
+                    applyContentChange(blockUuid, newContent, appliedVersion)
+                    requestEditBlock(blockUuid, newContent.length)
+                } else {
+                    applyContentChange(blockUuid, newContent, (findBlockOrNull(blockUuid)?.version ?: appliedVersion) + 1)
+                }
             }
         )
     }

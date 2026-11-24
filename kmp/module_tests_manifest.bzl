@@ -21,6 +21,8 @@ KMP_MODULE_TESTS = {
    "dev/stapler/stelekit/error/DomainErrorStorageErrorTest.kt",
    "dev/stapler/stelekit/parsing/BlockParserTest.kt",
    "dev/stapler/stelekit/parsing/ParsingPropertyTest.kt",
+   "dev/stapler/stelekit/table/TabularTextTest.kt",
+   "dev/stapler/stelekit/table/formula/FormulaParserTest.kt",
    "dev/stapler/stelekit/util/ContentHasherRawBytesTest.kt",
    "dev/stapler/stelekit/util/ContentHasherTest.kt",
    "dev/stapler/stelekit/util/FileUtilsPropertyTest.kt",
@@ -147,6 +149,7 @@ KMP_MODULE_TESTS = {
    "dev/stapler/stelekit/parser/ReproductionTest.kt",
    "dev/stapler/stelekit/parser/TimestampParserTest.kt",
    "dev/stapler/stelekit/parsing/OutlinerParserTest.kt",
+   "dev/stapler/stelekit/parsing/TableBlockContentShapeTest.kt",
    "dev/stapler/stelekit/util/TestUtils.kt"
   ],
   "suite": "AllModelModuleTests"
@@ -248,8 +251,10 @@ KMP_MODULE_TESTS = {
    "dev/stapler/stelekit/ui/screens/git/HunkBlockPickerTest.kt",
    "dev/stapler/stelekit/ui/screens/llm/ParseMcpClientNameTest.kt",
    "dev/stapler/stelekit/ui/state/BlockStateManagerCopyPasteTest.kt",
+   "dev/stapler/stelekit/ui/state/BlockStateManagerDefaultPathTest.kt",
    "dev/stapler/stelekit/ui/state/BlockStateManagerPositionTest.kt",
    "dev/stapler/stelekit/ui/state/BlockStateManagerReorderTest.kt",
+   "dev/stapler/stelekit/ui/state/BlockStateManagerTableUndoTest.kt",
    "dev/stapler/stelekit/ui/state/BlockStateManagerTest.kt",
    "dev/stapler/stelekit/ui/transfer/QrTransferContrastTest.kt"
   ],

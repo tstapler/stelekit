@@ -36,6 +36,9 @@ const val ANNOTATOR_STICKY_TOOLS_LABEL = "Keep tools active"
 const val TABLE_WRAP_LABEL = "Wrap text in table cells"
 const val TABLE_NUMERIC_RIGHT_ALIGN_LABEL = "Right-align number columns"
 const val TABLE_COMPACT_LABEL = "Compact table rows"
+const val TABLE_INLINE_EDIT_LABEL = "Edit table cells in place"
+const val TABLE_SHEET_LABEL = "Spreadsheet view"
+const val TABLE_SHEET_HELPER = "Raw markdown editing is always available"
 
 @Composable
 fun EditorSettings(annotatorSettings: Settings? = null, tablePreferences: TablePreferences? = null) {
@@ -78,6 +81,17 @@ fun TableSettingsRows(tablePreferences: TablePreferences, modifier: Modifier = M
         SettingsSwitchRow(TABLE_COMPACT_LABEL, prefs.density == TableDensity.COMPACT) { compact ->
             tablePreferences.update { it.copy(density = if (compact) TableDensity.COMPACT else TableDensity.COMFORTABLE) }
         }
+        SettingsSwitchRow(TABLE_INLINE_EDIT_LABEL, prefs.inlineEditEnabled) { on ->
+            tablePreferences.update { it.copy(inlineEditEnabled = on) }
+        }
+        SettingsSwitchRow(TABLE_SHEET_LABEL, prefs.sheetEnabled) { on ->
+            tablePreferences.update { it.copy(sheetEnabled = on) }
+        }
+        Text(
+            TABLE_SHEET_HELPER,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

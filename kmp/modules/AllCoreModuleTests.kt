@@ -3,6 +3,8 @@ package dev.stapler.stelekit.modules
 import dev.stapler.stelekit.error.DomainErrorStorageErrorTest
 import dev.stapler.stelekit.parsing.BlockParserTest
 import dev.stapler.stelekit.parsing.ParsingPropertyTest
+import dev.stapler.stelekit.table.TabularTextTest
+import dev.stapler.stelekit.table.formula.FormulaParserTest
 import dev.stapler.stelekit.util.ContentHasherRawBytesTest
 import dev.stapler.stelekit.util.ContentHasherTest
 import dev.stapler.stelekit.util.FileUtilsPropertyTest
@@ -16,6 +18,8 @@ import org.junit.runners.Suite
     DomainErrorStorageErrorTest::class,
     BlockParserTest::class,
     ParsingPropertyTest::class,
+    TabularTextTest::class,
+    FormulaParserTest::class,
     ContentHasherRawBytesTest::class,
     ContentHasherTest::class,
     FileUtilsPropertyTest::class,
