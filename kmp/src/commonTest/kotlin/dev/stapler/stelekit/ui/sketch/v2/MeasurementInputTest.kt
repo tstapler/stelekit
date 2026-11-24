@@ -9,7 +9,11 @@ import dev.stapler.stelekit.sketch.DimensionInput
 import dev.stapler.stelekit.sketch.DimensionInputError
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.runtime.settings.LengthFormatSettings
+import dev.stapler.stelekit.sketch.v2.scene.ElementBase
+import dev.stapler.stelekit.sketch.v2.scene.ElementId
+import dev.stapler.stelekit.sketch.v2.scene.EllipseElement
 import dev.stapler.stelekit.sketch.v2.scene.RectElement
+import dev.stapler.stelekit.sketch.v2.scene.SceneUnit
 import dev.stapler.stelekit.sketch.v2.tools.filledRectEl
 import dev.stapler.stelekit.sketch.v2.tools.sceneOfElements
 import dev.stapler.stelekit.ui.sketch.v2.guide.MapSettings
@@ -57,6 +61,26 @@ class MeasurementInputTest {
         val after = command.apply(SketchDocumentV2(scene = sceneOfElements(rect))).getOrNull()!!.doc.scene[rect.id] as RectElement
         assertEquals("44\"", lengthOf(after.width.value))
         assertEquals("86 5/8\"", LengthFormatter.format(Inches(after.height.value.toLong()), LengthFormat.INCHES_MIXED))
+    }
+
+    @Test
+    fun typingTheDisplayedRoundValue_should_MakeAFractionalShapeExactlyThatSize_AndLeaveAnUntouchedFieldAlone() {
+        val fractional = filledRectEl("r", 0, 0, 100, 100).copy(width = SceneUnit.of(80.4).getOrNull()!!, height = SceneUnit.of(90.4).getOrNull()!!)
+        val edit = DimensionPillEdit(fractional, PillKind.Width)
+        assertEquals("5\"", edit.textOf(PillKind.Width))
+        assertIs<PillStep.Next>(edit.submit("5\""))
+        val done = assertIs<PillStep.Done>(edit.submit(edit.textOf(PillKind.Height), untouched = true))
+        val after = assertNotNull(done.command).apply(SketchDocumentV2(scene = sceneOfElements(fractional))).getOrNull()!!.doc.scene[fractional.id] as RectElement
+        assertEquals(80.0, after.width.value)
+        assertEquals(90.4, after.height.value, "an untouched prefill is not typed")
+    }
+
+    @Test
+    fun radiusPill_should_RoundHalvesUp_And_ApplyATypedRadiusThatMatchesTheRoundedDisplay() {
+        val circle = EllipseElement(ElementBase(ElementId("c")), SceneUnit.ofInt(50), SceneUnit.ofInt(50), SceneUnit.of(8.5).getOrNull()!!, SceneUnit.of(8.5).getOrNull()!!)
+        assertEquals(9L, DimensionPillModel.specs(circle).first { it.kind == PillKind.Radius }.sixteenths)
+        val edit = DimensionPillEdit(circle, PillKind.Radius)
+        assertNotNull(assertIs<PillStep.Done>(edit.submit("9/16\"")).command)
     }
 
     private fun lengthOf(units: Double) = LengthFormatter.format(Inches(units.toLong()), LengthFormat.INCHES_MIXED)

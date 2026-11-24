@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -72,6 +75,7 @@ import dev.stapler.stelekit.ui.sketch.lengthTextOf
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchDimensionStrings as S
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
 
 object DimensionPillTags {
     fun pill(kind: PillKind) = "sketch.pill.${kind.name.lowercase()}"
@@ -151,11 +155,12 @@ internal fun DimensionPillsOverlay(controller: SketchEditorController, extras: E
         }
         if (editing != null) {
             val shape = PillEditorPlacement.shapeBounds(element, canvas)
-            val plan = shape?.let { PillEditorPlacement.plan(it, pills.firstOrNull { p -> p.kind == editing.current }, canvas.width, visibleH, EDITOR_WIDTH_DP, EDITOR_HEIGHT_DP * max(1f, LocalDensity.current.fontScale)) }
+            val editorWidth = min(EDITOR_WIDTH_DP, canvas.width - 2 * DimensionPillModel.EDGE_DP)
+            val plan = shape?.let { PillEditorPlacement.plan(it, pills.firstOrNull { p -> p.kind == editing.current }, canvas.width, visibleH, editorWidth, EDITOR_HEIGHT_DP * max(1f, LocalDensity.current.fontScale)) }
             LaunchedEffect(plan?.panDy) {
                 if (plan != null && abs(plan.panDy) > 0.5) controller.ui.viewport = controller.ui.viewport.panBy(0.0, plan.panDy * density)
             }
-            PillEditorBox(editing, element, plan, controller, state, extras.lengthUnit)
+            PillEditorBox(editing, element, plan, controller, state, extras.lengthUnit, editorWidth, visibleH - 2 * DimensionPillModel.EDGE_DP)
         }
     }
 }
@@ -184,11 +189,11 @@ private fun PillButton(pill: PlacedPill, locked: Boolean, focus: FocusRequester,
  * changes the selection, which ends the edit (Esc does too).
  */
 @Composable
-private fun PillEditorBox(edit: DimensionPillEdit, element: SceneElement, plan: EditorPlan?, controller: SketchEditorController, state: DimensionPillsState, units: LengthUnitState) {
+private fun PillEditorBox(edit: DimensionPillEdit, element: SceneElement, plan: EditorPlan?, controller: SketchEditorController, state: DimensionPillsState, units: LengthUnitState, widthDp: Double, maxHeightDp: Double) {
     val left = plan?.left ?: DimensionPillModel.EDGE_DP
     val top = plan?.top ?: DimensionPillModel.EDGE_DP
     Surface(
-        Modifier.offset(left.dp, top.dp).width(EDITOR_WIDTH_DP.dp).testTag(DimensionPillTags.EDITOR),
+        Modifier.offset(left.dp, top.dp).width(widthDp.dp).heightIn(max = maxHeightDp.dp).testTag(DimensionPillTags.EDITOR),
         shape = RoundedCornerShape(EDITOR_RADIUS_DP.dp),
         tonalElevation = 6.dp,
         shadowElevation = 4.dp,
@@ -223,7 +228,8 @@ private fun PillField(edit: DimensionPillEdit, units: LengthUnitState, onDone: (
     fun cycleUnits() {
         units.cycle()
         // A text that reads as a length is rewritten in the new units; one that does not is left for the user to finish.
-        DimensionHint.reading(field.text, units.format)?.let {
+        // A text that had to be rounded keeps its wording, so the notice stays honest until Next or Done.
+        DimensionHint.reading(field.text, units.format)?.takeIf { it.roundedNotice == null }?.let {
             val rewritten = lengthTextOf(it.typed.inches.sixteenths, units.format)
             val untouched = field.text == generated
             generated = rewritten
@@ -237,7 +243,7 @@ private fun PillField(edit: DimensionPillEdit, units: LengthUnitState, onDone: (
     val latestFocus by rememberUpdatedState(onFocus)
     DisposableEffect(Unit) { onDispose { latestFocus(false) } }
     fun submit() {
-        when (val step = edit.submit(field.text)) {
+        when (val step = edit.submit(field.text, untouched = field.text == generated)) {
             is PillStep.Invalid -> error = step.message
             is PillStep.Next -> Unit
             is PillStep.Done -> {
@@ -248,7 +254,8 @@ private fun PillField(edit: DimensionPillEdit, units: LengthUnitState, onDone: (
     }
     val label = DimensionPillModel.label(kind)
     val hint = if (edit.isLast) S.Pill.APPLY_HINT else S.Pill.nextHint(DimensionPillModel.label(edit.kinds[edit.kinds.indexOf(kind) + 1]))
-    Column(Modifier.padding(EDITOR_PAD_DP.dp)) {
+    // Scrolls when a large font or a short window leaves less room than the field, hint and keys need.
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(EDITOR_PAD_DP.dp)) {
         OutlinedTextField(
             value = field,
             onValueChange = { field = it; error = null },
@@ -265,7 +272,7 @@ private fun PillField(edit: DimensionPillEdit, units: LengthUnitState, onDone: (
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         reading?.let { Text(it.text, Modifier.testTag(DimensionPillTags.READING), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface) }
-                        reading?.roundedNotice?.let { Text(it, Modifier.testTag(DimensionPillTags.ROUNDED).semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary) }
+                        reading?.roundedNotice?.let { Text(it, Modifier.testTag(DimensionPillTags.ROUNDED), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary) }
                         Text(error ?: hint, Modifier.testTag(if (error != null) DimensionPillTags.ERROR else DimensionPillTags.EDITOR + ".hint").semantics { liveRegion = LiveRegionMode.Polite }, color = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     LengthUnitChip(format, ::cycleUnits, LengthUnitTags.INLINE_CHIP)

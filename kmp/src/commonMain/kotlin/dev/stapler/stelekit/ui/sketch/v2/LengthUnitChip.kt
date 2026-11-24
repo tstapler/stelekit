@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -42,6 +43,7 @@ fun LengthUnitChip(format: LengthFormat, onCycle: () -> Unit, tag: String, modif
             .defaultMinSize(minWidth = ChromeBudget.TOOL_TARGET_DP.dp, minHeight = ChromeBudget.TOOL_TARGET_DP.dp)
             .clip(RoundedCornerShape(CHIP_RADIUS_DP.dp))
             .background(MaterialTheme.colorScheme.secondaryContainer)
+            .focusProperties { canFocus = false }
             .clickable(onClick = onCycle)
             .semantics { contentDescription = format.chipDescription; role = Role.Button }
             .padding(horizontal = CHIP_PAD_DP.dp),

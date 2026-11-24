@@ -43,10 +43,11 @@ class DimensionPillEdit(val element: SceneElement, start: PillKind) {
         lengthTextOf(entered[kind] ?: specs.first { it.kind == kind }.sixteenths, format)
 
     /** The field's text is submitted: Next goes on to the following field, Done on the last. Invalid keeps the edit open and every value as it was. */
-    fun submit(text: String): PillStep = when (val parsed = DimensionPillModel.parse(text)) {
+    fun submit(text: String, untouched: Boolean = false): PillStep = when (val parsed = DimensionPillModel.parse(text)) {
         is DimensionPillModel.ParsedLength.Invalid -> PillStep.Invalid(parsed.message)
         is DimensionPillModel.ParsedLength.Valid -> {
-            entered[current] = parsed.sixteenths
+            // The prefill passed on untouched is not a typed value: a shape of 80.4 units keeps it rather than becoming 80.
+            if (!(untouched && current !in entered)) entered[current] = parsed.sixteenths
             if (isLast) {
                 PillStep.Done(finish())
             } else {
@@ -66,7 +67,8 @@ class DimensionPillEdit(val element: SceneElement, start: PillKind) {
     }
 
     private fun finish(): ResizeElement? {
-        val changed = entered.filter { (kind, value) -> specs.first { it.kind == kind }.sixteenths != value }
+        // Against the exact size, not the rounded pill: typing "5\"" on a 5.025" shape makes it exactly 5".
+        val changed = entered.filter { (kind, value) -> specs.first { it.kind == kind }.exact != value.toDouble() }
         return if (changed.isEmpty()) null else PillResize.command(element, changed)
     }
 }

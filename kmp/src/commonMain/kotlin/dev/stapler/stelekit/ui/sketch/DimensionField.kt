@@ -9,6 +9,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.sketch.DimensionInput
 import dev.stapler.stelekit.ui.sketch.v2.DimensionHint
 import dev.stapler.stelekit.ui.sketch.v2.LengthUnitChip
+import dev.stapler.stelekit.ui.sketch.v2.next
 import dev.stapler.stelekit.ui.sketch.v2.LengthUnitTags
 import dev.stapler.stelekit.units.Inches
 import dev.stapler.stelekit.units.LengthFormat
@@ -52,7 +54,10 @@ fun DimensionField(
     format: LengthFormat = LengthFormat.FEET_INCHES,
     onFormatCycle: (() -> Unit)? = null,
 ) {
-    var text by remember(initial) { mutableStateOf(initial) }
+    // A unit switch changes [initial]; the text the user had typed is carried over, rewritten in the new units, instead of being wiped.
+    var carry by remember { mutableStateOf<String?>(null) }
+    var text by remember(initial) { mutableStateOf(carry ?: initial) }
+    LaunchedEffect(initial) { carry = null }
     var error by remember(initial) { mutableStateOf<String?>(null) }
     val reading = if (text == initial) null else DimensionHint.reading(text, format)
     Row(modifier.padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -65,12 +70,17 @@ fun DimensionField(
             supportingText = {
                 val message = error ?: reading?.let { it.roundedNotice ?: it.text }
                 message?.let {
-                    Text(it, Modifier.testTag(DIMENSION_FIELD_HINT_TAG).semantics { liveRegion = LiveRegionMode.Polite }, color = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(it, Modifier.testTag(DIMENSION_FIELD_HINT_TAG).then(if (error != null) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier), color = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             },
             modifier = Modifier.width(DIMENSION_FIELD_WIDTH).testTag(DIMENSION_FIELD_TAG),
         )
-        onFormatCycle?.let { LengthUnitChip(format, it, LengthUnitTags.FIELD_CHIP) }
+        onFormatCycle?.let { cycle ->
+            LengthUnitChip(format, {
+                if (text != initial) carry = DimensionHint.reading(text, format.next())?.typed?.inches?.let { lengthTextOf(it.sixteenths, format.next()) } ?: text
+                cycle()
+            }, LengthUnitTags.FIELD_CHIP)
+        }
         TextButton(onClick = {
             DimensionInput.interpret(text).fold({ error = it.message }, { onCommit(it.inches) })
         }) { Text("Set") }

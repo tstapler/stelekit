@@ -20,14 +20,14 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.max
-import kotlin.math.round
+import kotlin.math.floor
 import kotlin.math.sin
 
 /** What one on-canvas dimension pill measures. */
 enum class PillKind { Width, Height, Diameter, Radius, Length }
 
 /** One measurable of the selected element: [sixteenths] is its current size (a scene unit is a sixteenth of an inch). */
-data class PillSpec(val kind: PillKind, val sixteenths: Long)
+data class PillSpec(val kind: PillKind, val sixteenths: Long, val exact: Double = sixteenths.toDouble())
 
 /** A pill after layout: [text] is what it shows, the rest is its rectangle in the canvas's dp space. */
 data class PlacedPill(val kind: PillKind, val text: String, val centreX: Double, val centreY: Double, val widthDp: Double, val heightDp: Double) {
@@ -80,14 +80,17 @@ object DimensionPillModel {
     fun specs(element: SceneElement): List<PillSpec> = when (element) {
         is RectElement -> boxSpecs(element.width.value, element.height.value)
         is DiamondElement -> boxSpecs(element.width.value, element.height.value)
-        is EllipseElement -> if (element.isCircle) listOf(PillSpec(PillKind.Diameter, sixteenths(2 * element.rx.value)), PillSpec(PillKind.Radius, sixteenths(element.rx.value))) else boxSpecs(2 * element.rx.value, 2 * element.ry.value)
-        is LineElement -> lineLength(element)?.let { listOf(PillSpec(PillKind.Length, sixteenths(it))) }.orEmpty()
+        is EllipseElement -> if (element.isCircle) listOf(PillSpec(PillKind.Diameter, sixteenths(2 * element.rx.value), 2 * element.rx.value), PillSpec(PillKind.Radius, sixteenths(element.rx.value), element.rx.value)) else boxSpecs(2 * element.rx.value, 2 * element.ry.value)
+        is LineElement -> lineLength(element)?.let { listOf(PillSpec(PillKind.Length, sixteenths(it), it)) }.orEmpty()
         else -> emptyList()
     }
 
-    private fun boxSpecs(w: Double, h: Double) = listOf(PillSpec(PillKind.Width, sixteenths(w)), PillSpec(PillKind.Height, sixteenths(h)))
+    private fun boxSpecs(w: Double, h: Double) = listOf(PillSpec(PillKind.Width, sixteenths(w), w), PillSpec(PillKind.Height, sixteenths(h), h))
 
-    private fun sixteenths(v: Double): Long = max(1L, round(v).toLong())
+    /** The nearest sixteenth, halves up (not to even: a radius of 8.5 reads 9, not 8). */
+    private fun sixteenths(v: Double): Long = max(1L, floor(v + HALF_UNIT).toLong())
+
+    private const val HALF_UNIT = 0.5
 
     internal fun lineLength(e: LineElement): Double? {
         if (e.polygon || e.points.size != TWO_POINT_LINE) return null
