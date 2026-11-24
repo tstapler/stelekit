@@ -12,7 +12,7 @@ Android is not split: android_main still compiles all of commonMain (see android
 """
 
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library", "kt_jvm_test")
-load("//kmp:module_tests_manifest.bzl", "KMP_MODULE_BUSINESS_TESTS", "KMP_MODULE_TESTS")
+load("//kmp:module_tests_manifest.bzl", "KMP_MODULE_BUSINESS_TESTS", "KMP_MODULE_JVM_TESTS", "KMP_MODULE_TESTS")
 load("//kmp:modules_manifest.bzl", "KMP_MODULES")
 
 # Modules that already have their own Bazel target (their files are listed in the manifest only for the partition check).
@@ -249,6 +249,48 @@ def kmp_module_business_tests():
                 "@maven//:com_squareup_okio_okio_fakefilesystem_jvm",
                 "@maven//:io_kotest_kotest_property_jvm",
                 "@maven//:io_ktor_ktor_client_mock_jvm",
+                "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
+                "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+            ],
+        )
+
+def kmp_module_jvm_tests():
+    """One kt_jvm_test per module of KMP_MODULE_JVM_TESTS: jvmTest classes moved out of //kmp/src/jvmTest/kotlin:jvm_tests.
+
+    The generator moves only classes that need no display, but the JVM flags, env and plugins match jvm_tests so a moved
+    class runs as it did there. Tagged `jvm_module_tests` so the business CI job (//kmp/modules:all) can skip what the JVM
+    job already runs through //kmp:jvm_tests.
+    """
+    reach = _closure()
+    for module, spec in KMP_MODULE_JVM_TESTS.items():
+        kt_jvm_test(
+            name = module + "_jvm_tests",
+            srcs = [spec["suite"] + ".kt"] + [_src_label(s) for s in spec["srcs"]],
+            associates = [":" + module] + [_module_label(m) for m in sorted(reach[module]) if m not in KMP_PREBUILT_MODULES],
+            env = {"LIBGL_ALWAYS_SOFTWARE": "1"},
+            env_inherit = ["DISPLAY", "XAUTHORITY"],
+            jvm_flags = [
+                "-Xmx4g",
+                "-XX:+ExitOnOutOfMemoryError",
+                "-Djdk.attach.allowAttachSelf=true",
+                "--add-opens=java.base/java.lang=ALL-UNNAMED",
+                "-Djava.awt.headless=false",
+            ],
+            kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
+            plugins = [
+                "//:compose_compiler_plugin",
+                "//:serialization_compiler_plugin",
+            ],
+            tags = ["jvm_module_tests"],
+            test_class = "dev.stapler.stelekit.modules." + spec["suite"],
+            timeout = "long",
+            deps = [_module_label(m) for m in sorted(reach[module]) if m in KMP_PREBUILT_MODULES] + KMP_JVM_EXTERNAL_DEPS + [
+                "@maven//:com_squareup_okio_okio_fakefilesystem_jvm",
+                "@maven//:io_kotest_kotest_property_jvm",
+                "@maven//:io_ktor_ktor_client_mock_jvm",
+                "@maven//:io_modelcontextprotocol_kotlin_sdk_testing_jvm",
+                "@maven//:io_projectreactor_tools_blockhound",
+                "@maven//:org_jetbrains_kotlin_kotlin_reflect",
                 "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
                 "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
             ],

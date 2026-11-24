@@ -10,12 +10,16 @@ RendererSmoke,SecurityDirective}Test.kt) are excluded here and run instead as
 mermaid sources change. The MermaidBlock* Compose UI tests stay here — they
 depend on ui.theme from the monolith.
 
+Classes that need no display and reference one module chain run in //kmp/modules:<module>_jvm_tests
+instead (scripts/kmp-module-tests-sync.py; listed in ModuleJvmTests.kt); //kmp:jvm_tests runs all of them.
+
 Test framework: JUnit 4 via kotlin-test-junit (run by kt_jvm_test runner).
 
 To run: bazel test //kmp/src/jvmTest/kotlin:jvm_tests
 Or via alias: bazel test //kmp:jvm_tests
 """
 
+load("//kmp:module_tests_manifest.bzl", "KMP_MODULE_JVM_TESTS")
 load("//kmp:modules.bzl", "kmp_module_labels")
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_test")
 load("@rules_java//java:defs.bzl", "java_library")
@@ -30,6 +34,19 @@ java_library(
     name = "graph_content_wiring_test_sources_as_resources",
     resources = ["//kmp/src/commonMain/kotlin:graph_content_wiring_test_sources"],
     resource_strip_prefix = "kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui",
+)
+
+# Test files that run in //kmp/modules:<module>_jvm_tests instead (scripts/kmp-module-tests-sync.py).
+_MODULE_JVM_TEST_FILES = [
+    path[len("jvmTest/kotlin/"):]
+    for spec in KMP_MODULE_JVM_TESTS.values()
+    for path in spec["tests"]
+]
+
+# Sources (tests and their helpers) compiled by the per-module jvm test targets.
+exports_files(
+    glob(["dev/**/*.kt"]),
+    visibility = ["//kmp/modules:__pkg__"],
 )
 
 kt_jvm_test(
@@ -70,7 +87,7 @@ kt_jvm_test(
             # Reads the bundled fonts through Compose Multiplatform's generated `Res`, which Bazel does not generate (commonMain
             # uses bazel_stubs/SketchFontResources.kt instead); Gradle-only. Also skipped by AllJvmTestsCompletenessTest.
             "dev/stapler/stelekit/ui/sketch/v2/ComposeTextMetricsProviderTest.kt",
-        ],
+        ] + _MODULE_JVM_TEST_FILES,
     ),
     associates = ["//kmp/src/jvmMain/kotlin:jvm_main_lib"] + kmp_module_labels(),
     # Source-scanning audit tests walk up from the working directory (the runfiles root) to find these paths.

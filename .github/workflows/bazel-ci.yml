@@ -156,10 +156,14 @@ jobs:
             scripts/kmp-module-tests-sync.py
             git diff --exit-code -- kmp/module_tests_manifest.bzl kmp/modules ':!kmp/modules/BUILD.bazel' \
               kmp/src/businessTest/kotlin/dev/stapler/stelekit/AllBusinessTests.kt \
-              kmp/src/businessTest/kotlin/dev/stapler/stelekit/ModuleBusinessTests.kt
+              kmp/src/businessTest/kotlin/dev/stapler/stelekit/ModuleBusinessTests.kt \
+              kmp/src/jvmTest/kotlin/dev/stapler/stelekit/AllJvmTests.kt \
+              kmp/src/jvmTest/kotlin/dev/stapler/stelekit/ModuleJvmTests.kt
             git status --porcelain -- kmp/modules  # a new generated suite is untracked, which diff misses
             test -z "$(git status --porcelain -- kmp/modules)"
+            # -jvm_module_tests: the <module>_jvm_tests targets run in bazel-jvm, through //kmp:jvm_tests.
             bazel test //kmp:business_tests //kmp/modules:all --build_tests_only \
+              --test_tag_filters=-jvm_module_tests \
               --config=remote-cache \
               --test_env=LFS_DIFFERENTIAL_REQUIRED=true \
               --test_output=errors 2>&1 | sed -u /Download.from.*404.Not.Found/d | tee "$RUNNER_TEMP/bazel-business-test.log"
