@@ -19,6 +19,7 @@ object SketchEngineStrings {
     object Label {
         const val TITLE_SHAPE = "Shape label"
         const val TITLE_ARROW = "Arrow label"
+        const val TITLE_TEXT = "Edit text"
         const val FIELD = "Label text"
         const val SAVE = "Save"
         const val CANCEL = "Cancel"

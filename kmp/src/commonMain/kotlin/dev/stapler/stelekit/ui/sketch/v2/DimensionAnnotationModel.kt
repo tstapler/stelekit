@@ -39,6 +39,8 @@ data class AnnotationRect(val left: Double, val top: Double, val right: Double, 
 
     fun overlaps(o: AnnotationRect): Boolean = left < o.right && o.left < right && top < o.bottom && o.top < bottom
 
+    fun shifted(dx: Double, dy: Double): AnnotationRect = AnnotationRect(left + dx, top + dy, right + dx, bottom + dy)
+
     fun inflated(d: Double): AnnotationRect = AnnotationRect(left - d, top - d, right + d, bottom + d)
 
     fun contains(o: AnnotationRect): Boolean = o.left >= left && o.top >= top && o.right <= right && o.bottom <= bottom

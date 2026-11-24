@@ -21,6 +21,7 @@ import dev.stapler.stelekit.sketch.v2.scene.withArrowType
 import dev.stapler.stelekit.sketch.v2.text.TextAutoSize
 import dev.stapler.stelekit.sketch.v2.text.TextMetricsProvider
 import dev.stapler.stelekit.sketch.v2.text.TextRefit
+import dev.stapler.stelekit.sketch.v2.text.TextStyle
 
 // Style properties that live on one element kind (Task 3.5.4a): the text properties of the style panel and the two
 // arrowheads. Elements of other kinds are left alone, so a mixed selection styles what it can.
@@ -83,6 +84,26 @@ data class StyleText(
         val command = if (owner is ArrowElement) SetArrowLabel(owner.id, label.id, label.originalText, m) else SetContainerText(owner.id, label.id, label.originalText, m)
         val refit = command.apply(applied.doc).bind()
         Applied(refit.doc, applied.changedIds + refit.changedIds)
+    }
+}
+
+/**
+ * Replaces the words of a stand-alone text element and re-measures its box with its own font and alignment anchor, like a
+ * size change does. Text bound to a shape or arrow is edited through that owner's label commands, not this one; text over
+ * the scene's cap, blank text and an unloaded font are refused so nothing unmeasured or empty is stored.
+ */
+data class SetTextContent(val id: ElementId, val text: String, val metrics: TextMetricsProvider) : Command {
+    override fun apply(doc: SketchDocumentV2): Either<CommandError, Applied> = either {
+        val e = doc.scene[id] ?: raise(CommandError.UnknownElement(id.value))
+        if (e !is TextElement || e.containerId != null) raise(CommandError.Unsupported(id.value, "set text"))
+        if (text.isBlank() || text.length > doc.scene.limits.maxTextChars) raise(CommandError.Unsupported(id.value, "set text"))
+        if (text == e.originalText) raise(CommandError.NoChange)
+        val wrap = if (e.autoResize) null else e.width.value
+        val fit = TextAutoSize.fit(text, TextStyle(e.fontFamily, e.fontSize), e.lineHeight, wrap, metrics) ?: raise(CommandError.Unsupported(id.value, "font not loaded"))
+        val next = e.copy(originalText = text).withBox(TextAutoSize.anchored(e, fit), doc.scene.limits).bind()
+        val out = doc.scene.replace(next.touched()).bind()
+        val followed = out.followBoundArrows(setOf(id)).bind()
+        finish(doc, followed.scene, setOf(id) + followed.arrows)
     }
 }
 

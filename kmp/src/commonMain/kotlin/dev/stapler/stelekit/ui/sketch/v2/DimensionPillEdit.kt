@@ -7,11 +7,13 @@ package dev.stapler.stelekit.ui.sketch.v2
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import dev.stapler.stelekit.sketch.v2.commands.CommandError
 import dev.stapler.stelekit.sketch.v2.commands.ResizeElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.runtime.settings.FingerDrawingSettings
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.ui.sketch.lengthTextOf
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchDimensionStrings
 import dev.stapler.stelekit.units.LengthFormat
 
 /** What a submitted field does: show the parser's message, move to the next field, or finish with one command (null when nothing changed). */
@@ -58,6 +60,16 @@ class DimensionPillEdit(val element: SceneElement, start: PillKind) {
         }
     }
 
+    /**
+     * Applies what is typed in the open field and every later field as it stands, for an edit that ends without Done (a tap on
+     * another shape's value). Invalid keeps the edit open; Done carries the one resize, or null when nothing changed.
+     */
+    fun commitPending(text: String, untouched: Boolean): PillStep {
+        var step = submit(text, untouched)
+        while (step is PillStep.Next) step = submit(textOf(current), untouched = true)
+        return step
+    }
+
     /** Shift+Tab: back to the previous field, keeping what was typed here when it is a valid length; false on the first field. */
     fun back(text: String, untouched: Boolean = false): Boolean {
         val index = kinds.indexOf(current)
@@ -73,6 +85,9 @@ class DimensionPillEdit(val element: SceneElement, start: PillKind) {
         return if (changed.isEmpty()) null else PillResize.command(element, changed)
     }
 }
+
+/** What the open size field holds right now; [touched] is false while it still shows the app's own prefill. */
+class PillDraft(val edit: DimensionPillEdit, val kind: PillKind, val text: String, val touched: Boolean)
 
 /** The pills' state, held by the editor: whether they show (on by default on a technical sheet) and the edit in progress. */
 class DimensionPillsState(private val settings: FingerDrawingSettings? = null) {
@@ -110,6 +125,23 @@ class DimensionPillsState(private val settings: FingerDrawingSettings? = null) {
 
     fun close() {
         edit = null
+    }
+
+    /** The open field's text, kept so an edit cut short by a tap elsewhere can still be applied. */
+    var draft: PillDraft? = null
+
+    /**
+     * Applies the typed, unsubmitted size through [apply] before the edit goes away. Returns null when there was nothing to apply or it
+     * was applied, else the message to show: the edit then stays open with the typed text.
+     */
+    fun commitPending(apply: (ResizeElement) -> CommandError?): String? {
+        val open = edit ?: return null
+        val typed = draft?.takeIf { it.edit === open && it.kind == open.current && it.touched } ?: return null
+        return when (val step = open.commitPending(typed.text, untouched = false)) {
+            is PillStep.Invalid -> step.message
+            is PillStep.Next -> null
+            is PillStep.Done -> step.command?.let(apply)?.let { SketchDimensionStrings.Pill.REFUSED }
+        }
     }
 
     /** The pill that gets focus back after Done, Esc or Cancel (not after a tap elsewhere, which already moved focus). */

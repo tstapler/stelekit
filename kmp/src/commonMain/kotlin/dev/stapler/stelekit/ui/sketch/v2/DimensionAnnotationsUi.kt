@@ -12,20 +12,27 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.platform.LocalDensity
@@ -44,15 +51,19 @@ import dev.stapler.stelekit.sketch.v2.constraints.SheetKind
 import dev.stapler.stelekit.sketch.v2.index.Bounds
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
+import dev.stapler.stelekit.sketch.v2.tools.SelectTool
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
 import dev.stapler.stelekit.sketch.v2.tools.TouchFloor
 import dev.stapler.stelekit.units.LengthFormat
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchDimensionStrings as S
+import kotlin.math.abs
 import kotlin.math.hypot
+import kotlinx.coroutines.delay
 
 object DimensionAnnotationTags {
     const val LAYER = "sketch.annotations"
     const val LINES = "sketch.annotations.lines"
+    const val PENDING_TOAST_KEY = "sketch.annotation.pending"
     fun value(id: String, kind: PillKind) = "sketch.annotation.$id.${kind.name.lowercase()}"
 }
 
@@ -62,9 +73,36 @@ private const val HINT_BAND_DP = 60.0
 private const val LINE_DP = 1f
 private const val TICK_DP = 4f
 private const val LINE_ALPHA = 0.75f
+private const val CASING_ALPHA = 0.85f
+private const val CASING_FACTOR = 3f
 private const val TEXT_COLOR_ALPHA = 0.9f
 private const val CHIP_ALPHA = 0.85f
 private const val CHIP_RADIUS_DP = 3
+
+/** How far, in dp, a pan may carry the cached layout before it is laid out again (under the view margin, so no edge shows), and how long a pan must rest to settle. */
+private const val PAN_REUSE_DP = 24f
+private const val PAN_SETTLE_MS = 150L
+
+/** The annotation colours, all read from the theme so a dark scheme gets light ink on a dark chip; the contrast helpers let a test hold them to the WCAG bars. */
+internal object AnnotationInk {
+    fun chip(scheme: ColorScheme): Color = scheme.surface.copy(alpha = CHIP_ALPHA)
+
+    fun line(scheme: ColorScheme): Color = scheme.onSurface.copy(alpha = LINE_ALPHA)
+
+    fun text(scheme: ColorScheme): Color = scheme.onSurface.copy(alpha = TEXT_COLOR_ALPHA)
+
+    /** Contrast of a fully faded-in value over its chip, the chip over the canvas background (text needs 4.5:1). */
+    fun textContrast(scheme: ColorScheme): Double {
+        val chip = chip(scheme).compositeOver(scheme.background)
+        return FocusRingContrast.ratio(text(scheme).compositeOver(chip), chip)
+    }
+
+    /** Contrast of a fully faded-in dimension line over its casing, the chip colour at [CASING_ALPHA] over the canvas background (a line needs 3:1). */
+    fun lineContrast(scheme: ColorScheme): Double {
+        val casing = scheme.surface.copy(alpha = CASING_ALPHA).compositeOver(scheme.background)
+        return FocusRingContrast.ratio(line(scheme).compositeOver(casing), casing)
+    }
+}
 
 /** What one layout depends on; two equal keys mean the cached layout is still right. */
 private data class AnnotationKey(
@@ -105,29 +143,56 @@ internal fun DimensionAnnotationsOverlay(controller: SketchEditorController, ext
     val tool = controller.ui.activeTool
     val tappable = tool == ToolId.Select && !controller.readOnly
     val ink = MaterialTheme.colorScheme.onSurface
-    val chip = MaterialTheme.colorScheme.surface.copy(alpha = CHIP_ALPHA)
+    val chip = AnnotationInk.chip(MaterialTheme.colorScheme)
+    val surface = MaterialTheme.colorScheme.surface
+    // A pan only moves the cached layout: it is laid out again once the pan stops or has travelled far enough that its edges would show.
+    var anchor by remember { mutableStateOf(PanAnchor(viewport.zoom, viewport.panX, viewport.panY)) }
+    val reuse = anchor.reusableAt(viewport.zoom, viewport.panX, viewport.panY, PAN_REUSE_DP * density.density)
+    val layoutPanX = if (reuse) anchor.panX else viewport.panX
+    val layoutPanY = if (reuse) anchor.panY else viewport.panY
+    SideEffect { if (!reuse) anchor = PanAnchor(viewport.zoom, viewport.panX, viewport.panY) }
+    LaunchedEffect(viewport.panX, viewport.panY) {
+        delay(PAN_SETTLE_MS)
+        anchor = PanAnchor(viewport.zoom, viewport.panX, viewport.panY)
+    }
+    val shiftX = (viewport.panX - layoutPanX) / density.density
+    val shiftY = (viewport.panY - layoutPanY) / density.density
     BoxWithConstraints(Modifier.fillMaxSize().testTag(DimensionAnnotationTags.LAYER)) {
         val widthDp = maxWidth.value.toDouble()
         val heightDp = maxHeight.value.toDouble()
         val single = selection.singleOrNull()?.let { ElementId(it) }
         val pillsFor = single?.takeIf { DimensionPillModel.shown(true, controller.readOnly, true, selection.size, tool) }
         val key = AnnotationKey(
-            controller.revision, viewport.zoom, viewport.panX, viewport.panY, density.density, density.fontScale, widthDp, heightDp,
+            controller.revision, viewport.zoom, layoutPanX, layoutPanY, density.density, density.fontScale, widthDp, heightDp,
             selection, state.scope, pillsFor, TouchFloor.dp(pointer == PointerClass.TouchOrPen || controller.touchPresent), extras.lengthUnit.format,
         )
         val annotations = remember(key) { compute(controller, key) }
         val active = if (tappable) annotations.filter { it.alpha >= DimensionAnnotationLayout.TAP_MIN_ALPHA } else emptyList()
-        SideEffect { taps.targets = active.map { a -> AnnotationTapTargets.Target(a.tapRect) { select(controller, state, a) } } }
+        SideEffect { taps.targets = active.map { a -> AnnotationTapTargets.Target(a.tapRect.shifted(shiftX, shiftY)) { shift -> select(controller, state, a, shift) } } }
         DisposableEffect(taps) { onDispose { taps.targets = emptyList() } }
         if (annotations.isEmpty()) return@BoxWithConstraints
-        Canvas(Modifier.fillMaxSize().clearAndSetSemantics { }) { drawLines(annotations, ink) }
-        annotations.forEach { a ->
-            key(a.elementId.value, a.kind) { AnnotationValue(a, tappable && a.alpha >= DimensionAnnotationLayout.TAP_MIN_ALPHA, ink, chip) { select(controller, state, a) } }
+        Box(Modifier.fillMaxSize().graphicsLayer { translationX = shiftX.toFloat() * density.density; translationY = shiftY.toFloat() * density.density }) {
+            Canvas(Modifier.fillMaxSize().clearAndSetSemantics { }) { drawLines(annotations, ink, surface) }
+            annotations.forEach { a ->
+                key(a.elementId.value, a.kind) { AnnotationValue(a, tappable && a.alpha >= DimensionAnnotationLayout.TAP_MIN_ALPHA, ink, chip) { select(controller, state, a, shift = false) } }
+            }
         }
     }
 }
 
+/** The zoom and pan a layout was computed at; a pan within reach of it only shifts that layout. */
+private data class PanAnchor(val zoom: Double, val panX: Double, val panY: Double) {
+    fun reusableAt(zoom: Double, panX: Double, panY: Double, reachPx: Float): Boolean =
+        zoom == this.zoom && abs(panX - this.panX) <= reachPx && abs(panY - this.panY) <= reachPx
+}
+
+/** How many layouts have run in this process; a test reads the difference to prove a pan did not lay out again. */
+internal object AnnotationLayoutStats {
+    var computed: Int = 0
+}
+
 private fun compute(controller: SketchEditorController, key: AnnotationKey): List<DimensionAnnotation> {
+    AnnotationLayoutStats.computed++
     val scene = controller.doc.scene
     val density = key.density.toDouble()
     val canvas = PillCanvas(
@@ -146,17 +211,33 @@ private fun compute(controller: SketchEditorController, key: AnnotationKey): Lis
     return DimensionAnnotationLayout.layout(candidates.filter { it.id != key.pillsFor }, visible, canvas, reserved, key.fontScale.toDouble(), key.tapMinDp, key.format, hint)
 }
 
-private fun select(controller: SketchEditorController, state: DimensionPillsState, a: DimensionAnnotation) {
+/**
+ * A tap on a value picks its shape by the Select tool's own rule ([SelectTool.clickSelection]: a group is taken whole, Shift adds or
+ * removes), and opens the size editor only when that leaves this one shape selected. A size being typed in another field is applied first.
+ */
+private fun select(controller: SketchEditorController, state: DimensionPillsState, a: DimensionAnnotation, shift: Boolean) {
     val element = controller.doc.scene[a.elementId] ?: return
-    controller.tools.select(listOf(a.elementId))
-    state.open(element, a.kind)
+    state.commitPending { command -> controller.submit(command) }?.let {
+        controller.notifier.toast(DimensionAnnotationTags.PENDING_TOAST_KEY, it)
+        return
+    }
+    val current = controller.ui.selection.map(::ElementId)
+    val next = SelectTool.clickSelection(a.elementId, current, shift, clickCount = 1, scene = controller.doc.scene)
+    controller.tools.select(next)
+    if (next == listOf(a.elementId)) state.open(element, a.kind)
 }
 
-private fun DrawScope.drawLines(annotations: List<DimensionAnnotation>, ink: Color) {
-    val stroke = LINE_DP.dp.toPx()
+/** Each line is drawn twice: a wider [casing] stroke first, then the [ink] on it, so the line reads over a light or dark shape fill alike. */
+private fun DrawScope.drawLines(annotations: List<DimensionAnnotation>, ink: Color, casing: Color) {
+    drawPass(annotations, casing, CASING_ALPHA, LINE_DP * CASING_FACTOR)
+    drawPass(annotations, ink, LINE_ALPHA, LINE_DP)
+}
+
+private fun DrawScope.drawPass(annotations: List<DimensionAnnotation>, base: Color, alpha: Float, widthDp: Float) {
+    val stroke = widthDp.dp.toPx()
     val tick = TICK_DP.dp.toPx()
     for (a in annotations) {
-        val color = ink.copy(alpha = LINE_ALPHA * a.alpha.toFloat())
+        val color = base.copy(alpha = alpha * a.alpha.toFloat())
         val rect = Rect(a.textRect.left.dp.toPx(), a.textRect.top.dp.toPx(), a.textRect.right.dp.toPx(), a.textRect.bottom.dp.toPx())
         clipRect(rect.left, rect.top, rect.right, rect.bottom, ClipOp.Difference) {
             drawLine(color, a.line.a.offset(this), a.line.b.offset(this), stroke)

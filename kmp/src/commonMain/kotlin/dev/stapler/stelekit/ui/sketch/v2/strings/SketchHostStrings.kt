@@ -59,6 +59,8 @@ object SketchHostStrings {
         const val SNAP_ON = "Snap on"
         const val SNAP_OFF = "Snap off"
         const val SNAP_PAUSED = "Snap paused"
+        const val SNAP_PAUSE_ACTION = "Pause snapping"
+        const val SNAP_RESUME_ACTION = "Resume snapping"
         const val GRID_KEY = "ViewGrid"
         const val SNAP_KEY = "ViewSnap"
     }

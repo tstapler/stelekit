@@ -206,6 +206,17 @@ object SketchConstraintStrings {
             "Changing $old to $new can't be solved: it conflicts with $kind on $element"
 
         fun chipName(label: String): String = "$label $CHIP_ACTION"
+
+        const val ADJUSTED_KEY = "sketch.constraint.adjusted"
+
+        /** Names the shapes the solver moved or resized to keep a constraint true after a typed value: "Constraint adjusted Rectangle 2". */
+        fun adjusted(names: List<String>): String = when {
+            names.size == 1 -> "Constraint adjusted ${names.single()}"
+            names.size <= MAX_NAMED_ADJUSTED -> "Constraints adjusted ${names.joinToString(", ")}"
+            else -> "Constraints adjusted ${names.size} shapes"
+        }
+
+        private const val MAX_NAMED_ADJUSTED = 3
     }
 
     /** What a technical sheet says when its v1 projection no longer matches the named dimensions (Story 4.2.4). */

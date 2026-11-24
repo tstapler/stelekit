@@ -27,6 +27,7 @@ import dev.stapler.stelekit.sketch.v2.runtime.constraints.SolveRejection
 import dev.stapler.stelekit.sketch.v2.runtime.constraints.SolveRunner
 import dev.stapler.stelekit.sketch.v2.scene.ElementNames
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchConstraintStrings
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchDimensionStrings
 import kotlin.math.PI
 
 /** Turns what the user typed into a dimension's value in scene units (a length in sixteenths of an inch, an angle in radians). */
@@ -45,6 +46,24 @@ object DimensionValueParser {
         kind == ConstraintKind.Angle -> angle(text)
         technical -> DimensionInput.parse(text).fold({ SketchConstraintStrings.Dimension.notALength().left() }, { it.sixteenths.toDouble().right() })
         else -> text.trim().toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 }?.right() ?: SketchConstraintStrings.Dimension.notALength().left()
+    }
+
+    /** A value read by [interpret]; [roundedNotice] says a length between sixteenths was rounded, as the pill editor does. */
+    data class Interpreted(val value: Double, val roundedNotice: String? = null)
+
+    /**
+     * Like [parse], but on a technical sheet a length between two sixteenths (`0.3"`) is rounded to the nearest sixteenth and
+     * reported in [Interpreted.roundedNotice] instead of being refused. [parse] stays strict for its own callers.
+     */
+    fun interpret(kind: ConstraintKind, text: String, technical: Boolean): Either<String, Interpreted> {
+        if (kind == ConstraintKind.Angle || !technical) return parse(kind, text, technical).map { Interpreted(it) }
+        return DimensionInput.interpret(text).fold(
+            { SketchConstraintStrings.Dimension.notALength().left() },
+            { typed ->
+                val notice = typed.roundedFrom?.let { SketchDimensionStrings.Units.rounded(it, DimensionInput.roundedNoticeText(typed.inches)) }
+                Interpreted(typed.inches.sixteenths.toDouble(), notice).right()
+            },
+        )
     }
 
     private fun angle(text: String): Either<String, Double> {
@@ -93,6 +112,10 @@ class DimensionEditor(private val technicalNow: () -> Boolean) {
     private val technical: Boolean get() = technicalNow()
 
     var state: DimensionEditState by mutableStateOf(DimensionEditState.Closed)
+        private set
+
+    /** What the last committed value was rounded from and to ("0.3" is between sixteenths. Rounded to 5/16""), for the host to show; null when it was exact. */
+    var roundedNotice: String? = null
         private set
 
     /** The conflict card of a NEW dimension the solver refused (Replace existing and the other actions of UX-32); the host shows it. */
@@ -147,14 +170,19 @@ class DimensionEditor(private val technicalNow: () -> Boolean) {
     suspend fun submit(base: SketchDocumentV2, runner: SolveRunner): SolveOutcome? {
         val editing = state as? DimensionEditState.Editing ?: return null
         val subject = editing.subject
-        val value = DimensionValueParser.parse(subject.constraint.kind, editing.text, technical).fold(
+        roundedNotice = null
+        val interpreted = DimensionValueParser.interpret(subject.constraint.kind, editing.text, technical).fold(
             { message -> state = editing.copy(error = message); return null },
             { it },
         )
+        val value = interpreted.value
         val command = if (subject.isNew) AddConstraint(subject.constraint.copy(value = value)) else SetDimensionValue(subject.constraint.id, value)
         val outcome = runner.commitEdit(base, command)
         when (outcome) {
-            is SolveOutcome.Done, is SolveOutcome.Unchanged, is SolveOutcome.Posed -> state = DimensionEditState.Closed
+            is SolveOutcome.Done, is SolveOutcome.Unchanged, is SolveOutcome.Posed -> {
+                state = DimensionEditState.Closed
+                roundedNotice = interpreted.roundedNotice
+            }
             is SolveOutcome.Cancelled -> Unit
             is SolveOutcome.Rejected -> rejected(base, editing, subject.constraint.copy(value = value), outcome.reason)
         }

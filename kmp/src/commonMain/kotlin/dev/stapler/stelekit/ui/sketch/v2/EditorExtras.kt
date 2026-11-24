@@ -197,7 +197,10 @@ class EditorExtras(
     }
 
     fun submitDimension() {
-        scope.launch { controller.runLabelEdit { runner -> dimension.submit(controller.doc, runner) } }
+        scope.launch {
+            controller.runLabelEdit { runner -> dimension.submit(controller.doc, runner) }
+            dimension.roundedNotice?.let { controller.notifier.toast(ROUNDED_TOAST_KEY, it) }
+        }
     }
 
     fun chooseDimension(kind: DimensionFailureKind) {
@@ -305,6 +308,7 @@ class EditorExtras(
 
     private companion object {
         const val HALF = 2.0
+        const val ROUNDED_TOAST_KEY = "sketch.dimension.rounded"
     }
 }
 

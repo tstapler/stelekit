@@ -202,7 +202,7 @@ private fun PillEditorBox(edit: DimensionPillEdit, element: SceneElement, plan: 
         if (element.base.locked) {
             LockedNote(state::close)
         } else {
-            PillField(edit, units, onDone = { command -> controller.submit(command) }, onClose = state::finish, onFocus = { state.fieldFocused = it })
+            PillField(edit, units, onDone = { command -> controller.submit(command) }, onClose = state::finish, onFocus = { state.fieldFocused = it }, onDraft = { kind, text, touched -> state.draft = PillDraft(edit, kind, text, touched) })
         }
     }
 }
@@ -217,7 +217,7 @@ private fun LockedNote(onClose: () -> Unit) {
 }
 
 @Composable
-private fun PillField(edit: DimensionPillEdit, units: LengthUnitState, onDone: (ResizeElement) -> CommandError?, onClose: () -> Unit, onFocus: (Boolean) -> Unit) {
+private fun PillField(edit: DimensionPillEdit, units: LengthUnitState, onDone: (ResizeElement) -> CommandError?, onClose: () -> Unit, onFocus: (Boolean) -> Unit, onDraft: (PillKind, String, Boolean) -> Unit) {
     val kind = edit.current
     val format = units.format
     // The text is owned here and keyed on the field only, so a pan, a zoom or a pointer move never rewrites what was typed.
@@ -243,6 +243,7 @@ private fun PillField(edit: DimensionPillEdit, units: LengthUnitState, onDone: (
     val focus = remember { FocusRequester() }
     var shiftDown by remember { mutableStateOf(false) }
     LaunchedEffect(edit, kind) { focus.requestFocus() }
+    SideEffect { onDraft(kind, field.text, touched) }
     val latestFocus by rememberUpdatedState(onFocus)
     DisposableEffect(Unit) { onDispose { latestFocus(false) } }
     fun submit() {

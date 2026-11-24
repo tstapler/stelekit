@@ -11,6 +11,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
@@ -130,6 +131,20 @@ class SnapGuidesHostTest {
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/snap-guides-move-mid-drag.png")
         release()
         assertEquals(160.0, (session.controller.doc.scene[ElementId("r1")] as RectElement).x.value, "right edge 357 snapped to 360: x 40 + 120")
+    }
+
+    @Test
+    fun theSnapButton_should_OfferPausingAsAnAccessibilityAction_ForSwitchAccessAndTalkBack() {
+        mount()
+        fun pauseAction() = rule.onNodeWithTag("sketch.snap").fetchSemanticsNode().config[SemanticsActions.CustomActions].single()
+        assertEquals(SketchHostStrings.View.SNAP_PAUSE_ACTION, pauseAction().label)
+        rule.runOnUiThread { pauseAction().action() }
+        rule.waitForIdle()
+        rule.onNodeWithTag("sketch.snap").assertContentDescriptionEquals(SketchHostStrings.View.SNAP_PAUSED)
+        assertEquals(SketchHostStrings.View.SNAP_RESUME_ACTION, pauseAction().label)
+        rule.runOnUiThread { pauseAction().action() }
+        rule.waitForIdle()
+        rule.onNodeWithTag("sketch.snap").assertContentDescriptionEquals(SketchHostStrings.View.SNAP_ON)
     }
 
     @Test

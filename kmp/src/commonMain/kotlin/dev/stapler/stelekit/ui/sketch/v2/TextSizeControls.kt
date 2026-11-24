@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -108,6 +109,7 @@ internal fun TextSizeRow(current: Double, onChange: (TextSizeChange) -> Unit) {
             is TextSizeChange.Apply -> { error = null; onChange(change) }
         }
     }
+    var hadFocus by remember { mutableStateOf(false) }
     Column {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(S.LABEL, Modifier.widthIn(min = 72.dp))
@@ -122,7 +124,11 @@ internal fun TextSizeRow(current: Double, onChange: (TextSizeChange) -> Unit) {
                 isError = error != null,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { commit() }),
-                modifier = Modifier.widthIn(max = FIELD_MAX_WIDTH).testTag(TextSizeTags.FIELD).semantics { contentDescription = S.LABEL },
+                modifier = Modifier.widthIn(max = FIELD_MAX_WIDTH).onFocusChanged { state ->
+                    // Losing focus applies what was typed, like Done; an untouched field is not a change. hasFocus: the text node inside the field holds it.
+                    if (hadFocus && !state.hasFocus && text != TextSizeModel.format(current)) commit()
+                    hadFocus = state.hasFocus
+                }.testTag(TextSizeTags.FIELD).semantics { contentDescription = S.LABEL },
             )
             TextButton(
                 onClick = { onChange(TextSizeModel.larger(current)) },

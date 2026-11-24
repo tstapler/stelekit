@@ -1628,6 +1628,7 @@ KMP_MODULES = {
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/CoachWalkthrough.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/ComposeTextMetricsProvider.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/ConstrainMnemonics.kt",
+   "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/ConstraintCollateral.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/ConstraintCreation.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/ConstraintGlyphLayout.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/ConstraintGlyphs.kt",

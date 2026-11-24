@@ -10,7 +10,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotFocused
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
@@ -169,6 +176,27 @@ class TextAutosizeRenderTest {
         rule.waitForIdle()
         assertEquals(32.0, text(session).fontSize)
         shot("6-style-panel-after")
+    }
+
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test
+    fun stylePanel_sizeField_appliesWhenFocusLeaves_NotOnlyOnDone() {
+        val session = mount()
+        rule.runOnUiThread { session.controller.ui.panelTab = PanelTab.Style }
+        rule.waitForIdle()
+        rule.onNodeWithText("Expand").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag(TextSizeTags.FIELD).performScrollTo()
+        rule.onNodeWithTag(TextSizeTags.FIELD).performSemanticsAction(SemanticsActions.RequestFocus)
+        rule.waitForIdle()
+        rule.onNodeWithTag(TextSizeTags.FIELD).performTextReplacement("30")
+        rule.waitForIdle()
+        rule.onNodeWithTag(TextSizeTags.FIELD).assertIsFocused()
+        assertEquals(20.0, text(session).fontSize, "typing alone applies nothing")
+        rule.onNodeWithTag(TextSizeTags.FIELD).performKeyInput { pressKey(Key.Tab) }
+        rule.waitForIdle()
+        rule.onNodeWithTag(TextSizeTags.FIELD).assertIsNotFocused()
+        assertEquals(30.0, text(session).fontSize, "moving focus away applied the typed size")
     }
 
     @Test
