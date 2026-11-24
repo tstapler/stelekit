@@ -1,0 +1,258 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tstapler/stelekit/docs/reference/sketch-scene-v2.schema.json",
+  "title": "SteleKit sketch sheet, schema 2",
+  "description": "The native scene file at <graph>/assets/stelekit-sketch/<slug>/sheets/<sheetUuid>.v2.json. Units: 1 scene unit = 1/16 inch; x grows right, y grows down. This schema checks shape and types; the byte-exact canonical form (key order, number text) is produced by `sketch-cli canonicalize`, not by this schema. Spec: docs/reference/sketch-format-v2.md.",
+  "type": "object",
+  "required": ["schema", "sheetUuid"],
+  "properties": {
+    "schema": { "const": 2 },
+    "sheetUuid": { "type": "string", "minLength": 1, "description": "UUID of the sheet; also the file name stem." },
+    "constraints": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/constraint" } },
+    "elements": { "type": "array", "maxItems": 5000, "items": { "$ref": "#/$defs/element" }, "description": "In paint order: later entries draw on top (within a layer, ordered by z)." },
+    "extras": { "type": "object", "description": "Sheet-level keys the app does not interpret are kept as written. Known: sheetKind = \"technical\"; agent = {mode, title, spec} written by `sketch-cli build`." },
+    "layers": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/layer" }, "description": "The layer \"default\" always exists; it is added when absent." },
+    "nameCounters": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 1 }, "description": "Highest auto-name ordinal issued per kind (rectangle, line, arrow, text, ...)." }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "coord": { "type": "number", "minimum": -268435456, "maximum": 268435456, "description": "Scene units (1/16 inch)." },
+    "xy": { "type": "array", "prefixItems": [{ "$ref": "#/$defs/coord" }, { "$ref": "#/$defs/coord" }], "minItems": 2, "maxItems": 2 },
+    "points": { "type": "array", "items": { "$ref": "#/$defs/xy" }, "maxItems": 2000 },
+    "arrowhead": { "enum": ["None", "Arrow", "Bar", "Circle", "CircleOutline", "Triangle", "TriangleOutline", "Diamond", "DiamondOutline"] },
+    "layer": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "name": { "type": "string", "maxLength": 80 },
+        "visible": { "type": "boolean", "default": true },
+        "locked": { "type": "boolean", "default": false },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1, "default": 1 },
+        "order": { "type": "integer", "default": 0, "description": "Lower orders paint first (below)." }
+      },
+      "additionalProperties": false
+    },
+    "style": {
+      "type": "object",
+      "properties": {
+        "stroke": { "type": "string", "maxLength": 64, "default": "#1e1e1e", "description": "CSS colour: #rrggbb or transparent." },
+        "bg": { "type": "string", "maxLength": 64, "default": "transparent", "description": "Fill colour." },
+        "fill": { "enum": ["Hachure", "CrossHatch", "Solid", "Zigzag"], "default": "Solid" },
+        "sw": { "type": "number", "minimum": 0, "default": 2, "description": "Stroke width in scene units. On a real-world plan 16 = 1 inch." },
+        "ss": { "enum": ["Solid", "Dashed", "Dotted"], "default": "Solid" },
+        "rough": { "type": "integer", "default": 1, "description": "0 = clean lines; higher = hand-drawn wobble when drawn in Sketchy style." },
+        "round": {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": { "enum": ["Legacy", "ProportionalRadius", "AdaptiveRadius"] },
+            "value": { "type": "number" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "binding": {
+      "type": "object",
+      "required": ["id", "fx", "fy"],
+      "properties": {
+        "id": { "type": "string", "description": "Id of the bound shape (not an arrow, not the arrow itself)." },
+        "fx": { "type": "number", "description": "Fraction of the target's width where the arrow attaches (0 left .. 1 right)." },
+        "fy": { "type": "number", "description": "Fraction of the target's height (0 top .. 1 bottom)." },
+        "mode": { "enum": ["Inside", "Orbit", "Skip"], "default": "Orbit" }
+      },
+      "additionalProperties": false
+    },
+    "boundRef": {
+      "type": "object",
+      "required": ["id", "kind"],
+      "properties": { "id": { "type": "string" }, "kind": { "enum": ["Arrow", "Text"] } },
+      "additionalProperties": false
+    },
+    "constraint": {
+      "type": "object",
+      "required": ["id", "kind", "targets"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "pattern": "^[^#]+$" },
+        "kind": { "enum": ["Coincident", "Horizontal", "Vertical", "Parallel", "Perpendicular", "Equal", "Tangent", "Symmetric", "Fixed", "Distance", "Angle", "Radius", "Diameter", "DistanceX", "DistanceY"] },
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["e", "part"],
+            "properties": {
+              "e": { "type": "string", "description": "Element id." },
+              "part": { "type": "string", "pattern": "^(whole|start|end|centre|arcStart|arcEnd|vertex:(0|[1-9][0-9]*)|edge:(0|[1-9][0-9]*))$" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "value": { "type": "number", "description": "Required for Distance, Angle (radians), Radius, Diameter, DistanceX, DistanceY; forbidden otherwise. Scene units." },
+        "ref": { "type": "boolean", "description": "Reference (measured, not driving). Dimensional kinds only." }
+      },
+      "additionalProperties": false
+    },
+    "base": {
+      "type": "object",
+      "required": ["id", "type"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "description": "Unique within the sheet." },
+        "type": { "type": "string" },
+        "layer": { "type": "string", "maxLength": 64, "default": "default" },
+        "groups": { "type": "array", "items": { "type": "string" }, "description": "A group id needs at least two members; a lone id is removed on load." },
+        "frame": { "type": "string", "description": "Id of a frame element that clips this one." },
+        "z": { "type": "string", "pattern": "^[0-9A-Za-z]+$", "description": "Fractional paint-order key within a layer, compared as plain strings; ties fall back to array order." },
+        "locked": { "type": "boolean", "default": false },
+        "opacity": { "type": "integer", "minimum": 0, "maximum": 100, "default": 100 },
+        "style": { "$ref": "#/$defs/style" },
+        "seed": { "type": "integer", "default": 0, "description": "Seeds the hand-drawn wobble; any integer." },
+        "ver": { "type": "integer", "default": 1 },
+        "ord": { "type": "integer", "default": 0, "description": "Auto-name ordinal (\"Rectangle 3\"); 0 = unassigned." },
+        "name": { "type": "string", "maxLength": 80, "description": "User-visible name; must be unique among elements." },
+        "extras": { "type": "object" }
+      }
+    },
+    "box": {
+      "type": "object",
+      "required": ["x", "y", "w", "h"],
+      "properties": {
+        "x": { "$ref": "#/$defs/coord" },
+        "y": { "$ref": "#/$defs/coord" },
+        "w": { "$ref": "#/$defs/coord" },
+        "h": { "$ref": "#/$defs/coord" },
+        "angle": { "type": "number", "default": 0, "description": "Radians, clockwise on screen, about the box centre." }
+      }
+    },
+    "element": {
+      "type": "object",
+      "required": ["id", "type"],
+      "oneOf": [
+        { "$ref": "#/$defs/rect" }, { "$ref": "#/$defs/diamond" }, { "$ref": "#/$defs/frame" }, { "$ref": "#/$defs/ellipse" },
+        { "$ref": "#/$defs/line" }, { "$ref": "#/$defs/arrow" }, { "$ref": "#/$defs/freedraw" }, { "$ref": "#/$defs/text" },
+        { "$ref": "#/$defs/image" }, { "$ref": "#/$defs/point" }, { "$ref": "#/$defs/arc" }
+      ]
+    },
+    "rect": {
+      "allOf": [{ "$ref": "#/$defs/base" }, { "$ref": "#/$defs/box" }],
+      "properties": { "type": { "const": "rect" }, "bound": { "type": "array", "items": { "$ref": "#/$defs/boundRef" } } },
+      "unevaluatedProperties": false,
+      "description": "Rectangle. x,y is the top-left corner; the outline is stroked centred on the edge."
+    },
+    "diamond": {
+      "allOf": [{ "$ref": "#/$defs/base" }, { "$ref": "#/$defs/box" }],
+      "properties": { "type": { "const": "diamond" }, "bound": { "type": "array", "items": { "$ref": "#/$defs/boundRef" } } },
+      "unevaluatedProperties": false
+    },
+    "frame": {
+      "allOf": [{ "$ref": "#/$defs/base" }, { "$ref": "#/$defs/box" }],
+      "properties": { "type": { "const": "frame" } },
+      "unevaluatedProperties": false,
+      "description": "Clipping frame; its title is `name`. Members point at it with `frame`."
+    },
+    "ellipse": {
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "required": ["cx", "cy", "rx", "ry"],
+      "properties": {
+        "type": { "const": "ellipse" },
+        "cx": { "$ref": "#/$defs/coord" },
+        "cy": { "$ref": "#/$defs/coord" },
+        "rx": { "$ref": "#/$defs/coord", "exclusiveMinimum": 0 },
+        "ry": { "$ref": "#/$defs/coord", "exclusiveMinimum": 0 },
+        "angle": { "type": "number", "default": 0 },
+        "bound": { "type": "array", "items": { "$ref": "#/$defs/boundRef" } }
+      },
+      "unevaluatedProperties": false,
+      "description": "Centre and radii (not a box). rx == ry is a circle."
+    },
+    "line": {
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "required": ["pts"],
+      "properties": {
+        "type": { "const": "line" },
+        "pts": { "$ref": "#/$defs/points" },
+        "poly": { "type": "boolean", "default": false, "description": "true closes the shape back to the first point (and fills it with style.bg)." }
+      },
+      "unevaluatedProperties": false
+    },
+    "arrow": {
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "required": ["pts"],
+      "properties": {
+        "type": { "const": "arrow" },
+        "pts": { "$ref": "#/$defs/points" },
+        "sb": { "$ref": "#/$defs/binding" },
+        "eb": { "$ref": "#/$defs/binding" },
+        "sah": { "$ref": "#/$defs/arrowhead", "default": "None" },
+        "eah": { "$ref": "#/$defs/arrowhead", "default": "Arrow" },
+        "elbow": { "type": "boolean", "default": false }
+      },
+      "unevaluatedProperties": false,
+      "description": "The points are absolute scene coordinates; bindings record which shapes the ends are attached to, they do not move the points."
+    },
+    "freedraw": {
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "required": ["pts"],
+      "properties": {
+        "type": { "const": "freedraw" },
+        "pts": { "$ref": "#/$defs/points" },
+        "pressures": { "type": "array", "items": { "type": "number" } },
+        "sim": { "type": "boolean", "default": true }
+      },
+      "unevaluatedProperties": false
+    },
+    "text": {
+      "allOf": [{ "$ref": "#/$defs/base" }, { "$ref": "#/$defs/box" }],
+      "properties": {
+        "type": { "const": "text" },
+        "text": { "type": "string", "maxLength": 10000, "description": "As drawn, with \\n between wrapped lines." },
+        "orig": { "type": "string", "description": "The text before wrapping; defaults to `text`." },
+        "fs": { "type": "number", "default": 20, "description": "Font size in scene units." },
+        "ff": { "type": "integer", "default": 1, "description": "1 hand-drawn, 2 normal, 3 code." },
+        "ta": { "enum": ["Left", "Center", "Right"], "default": "Left" },
+        "va": { "enum": ["Top", "Middle", "Bottom"], "default": "Top" },
+        "container": { "type": "string", "description": "Id of a rect, diamond, ellipse or arrow this text labels." },
+        "lh": { "type": "number", "default": 1.25, "description": "Line height as a multiple of the font size." },
+        "auto": { "type": "boolean", "default": true }
+      },
+      "unevaluatedProperties": false,
+      "description": "Drawn from the stored box, never re-measured: x,y,w,h must already fit the text (about 0.55 x fs per character wide, lh x fs per line tall)."
+    },
+    "image": {
+      "allOf": [{ "$ref": "#/$defs/base" }, { "$ref": "#/$defs/box" }],
+      "properties": {
+        "type": { "const": "image" },
+        "fileId": { "type": "string", "description": "Lowercase sha256 of the image bytes; the bytes live in the graph's asset store. The CLI draws a dashed placeholder." },
+        "fx": { "type": "boolean", "default": false },
+        "fy": { "type": "boolean", "default": false },
+        "crop": {
+          "type": "object",
+          "required": ["x", "y", "w", "h", "nw", "nh"],
+          "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "w": { "type": "number" }, "h": { "type": "number" }, "nw": { "type": "number" }, "nh": { "type": "number" } },
+          "additionalProperties": false
+        }
+      },
+      "unevaluatedProperties": false
+    },
+    "point": {
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "required": ["x", "y"],
+      "properties": { "type": { "const": "point" }, "x": { "$ref": "#/$defs/coord" }, "y": { "$ref": "#/$defs/coord" } },
+      "unevaluatedProperties": false
+    },
+    "arc": {
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "required": ["cx", "cy", "r", "a0", "a1"],
+      "properties": {
+        "type": { "const": "arc" },
+        "cx": { "$ref": "#/$defs/coord" },
+        "cy": { "$ref": "#/$defs/coord" },
+        "r": { "$ref": "#/$defs/coord", "exclusiveMinimum": 0 },
+        "a0": { "type": "number", "description": "Start angle in radians; the arc sweeps toward increasing angle, which is clockwise on screen because y points down." },
+        "a1": { "type": "number", "description": "End angle in radians." }
+      },
+      "unevaluatedProperties": false
+    }
+  }
+}

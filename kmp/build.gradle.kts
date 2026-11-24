@@ -1228,6 +1228,38 @@ tasks.register<JavaExec>("runSync") {
     dependsOn("jvmJar")
 }
 
+// ── SteleKit headless sketch CLI (agents: render, validate, describe, build v2 sheets) ──
+// One-off:  ./gradlew :kmp:runSketchCli -Pargs="describe /abs/path/sheet.v2.json"   (args split on spaces)
+// Real use: scripts/sketch-cli <command> ...   (builds once, then runs `java -cp` so quoting and paths are exact)
+tasks.register<JavaExec>("runSketchCli") {
+    group = "application"
+    description = "Run the SteleKit sketch CLI (see docs/reference/sketch-format-v2.md)"
+    classpath = kotlin.jvm().compilations["main"].output.allOutputs +
+                kotlin.jvm().compilations["main"].runtimeDependencyFiles
+    mainClass.set("dev.stapler.stelekit.cli.SketchCliKt")
+    javaLauncher.set(jdk21Launcher)
+    jvmArgs("-Djava.awt.headless=true", "--add-opens=java.base/java.lang=ALL-UNNAMED")
+    val argsStr = project.findProperty("args") as String? ?: ""
+    args = argsStr.split(" ").filter { it.isNotBlank() }
+    dependsOn("jvmJar")
+}
+
+// Writes the runtime classpath that scripts/sketch-cli feeds to `java -cp`.
+tasks.register("sketchCliClasspath") {
+    group = "application"
+    description = "Write kmp/build/sketch-cli/classpath.txt for scripts/sketch-cli"
+    val cp = kotlin.jvm().compilations["main"].output.allOutputs + kotlin.jvm().compilations["main"].runtimeDependencyFiles
+    val outFile = layout.buildDirectory.file("sketch-cli/classpath.txt")
+    inputs.files(cp)
+    outputs.file(outFile)
+    dependsOn("jvmMainClasses")
+    doLast {
+        val f = outFile.get().asFile
+        f.parentFile.mkdirs()
+        f.writeText(cp.files.joinToString(File.pathSeparator) { it.absolutePath })
+    }
+}
+
 // ── Detekt static analysis ──────────────────────────────────────────────────
 detekt {
     config.setFrom(file("config/detekt/detekt.yml"))

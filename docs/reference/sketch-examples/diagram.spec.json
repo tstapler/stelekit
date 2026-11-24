@@ -1,0 +1,16 @@
+{
+  "spec": 1,
+  "mode": "diagram",
+  "title": "Request path",
+  "shapes": [
+    {"id": "web", "x": 0, "y": 0, "w": 160, "h": 70, "label": "Web app", "fill": "lightblue"},
+    {"id": "api", "rightOf": "web", "gap": 120, "w": 160, "h": 70, "label": "API", "fill": "lightblue"},
+    {"id": "db", "kind": "ellipse", "rightOf": "api", "gap": 120, "w": 160, "h": 90, "label": "Database", "fill": "lightyellow"},
+    {"id": "cache", "below": "api", "gap": 80, "w": 160, "h": 70, "label": "Cache"}
+  ],
+  "arrows": [
+    {"id": "a1", "from": "web", "to": "api", "label": "HTTPS"},
+    {"id": "a2", "from": "api", "to": "db", "label": "SQL"},
+    {"id": "a3", "from": "api", "to": "cache", "head": "both", "dashed": true}
+  ]
+}

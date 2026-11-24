@@ -1,0 +1,17 @@
+{
+  "spec": 1,
+  "mode": "plan",
+  "title": "Living room",
+  "shapes": [
+    {"id": "living", "x": "0", "y": "0", "w": "14'", "h": "12'", "label": "Living room"},
+    {"id": "sofa", "role": "furniture", "x": "1'", "y": "8'", "w": "7'", "h": "3'", "label": "Sofa"}
+  ],
+  "openings": [
+    {"id": "door1", "type": "door", "on": "living", "wall": "south", "offset": "10'", "width": "3'"},
+    {"id": "win1", "type": "window", "on": "living", "wall": "north", "offset": "4'", "width": "5'"}
+  ],
+  "dimensions": [
+    {"shape": "living", "side": "north", "offset": "30\""},
+    {"shape": "living", "side": "east", "offset": "30\""}
+  ]
+}

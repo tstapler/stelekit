@@ -3,6 +3,7 @@ kmp/ package — top-level developer-facing aliases.
 
 Developer commands:
   bazel run  //kmp:desktop_app          # Launch SteleKit desktop UI
+  bazel run   //kmp:sketch_cli -- help  # Headless sketch tools for agents (render/validate/describe/build)
   bazel build //kmp:android_app         # Build Android APK
   bazel test  //kmp:jvm_tests           # Run JVM (desktop + shared) test suite
   bazel test  //kmp:business_tests      # Run business-logic only tests (no UI)
@@ -30,6 +31,12 @@ android_library(
 alias(
     name = "desktop_app",
     actual = "//kmp/src/jvmMain/kotlin:desktop_app",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "sketch_cli",
+    actual = "//kmp/src/jvmMain/kotlin:sketch_cli",
     visibility = ["//visibility:public"],
 )
 

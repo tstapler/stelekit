@@ -1,0 +1,7 @@
+{"schema": 2, "sheetUuid": "11111111-1111-4111-8111-111111111111",
+ "elements": [
+  {"id": "web", "type": "rect", "x": 0, "y": 0, "w": 160, "h": 70, "style": {"bg": "#a5d8ff"}},
+  {"id": "web.label", "type": "text", "x": 40, "y": 22, "w": 80, "h": 25, "text": "Web", "orig": "Web", "fs": 20, "ta": "Center", "va": "Middle", "container": "web"},
+  {"id": "api", "type": "rect", "x": 280, "y": 0, "w": 160, "h": 70},
+  {"id": "a1", "type": "arrow", "pts": [[160, 35], [280, 35]], "sb": {"id": "web", "fx": 1, "fy": 0.5}, "eb": {"id": "api", "fx": 0, "fy": 0.5}}
+ ]}
