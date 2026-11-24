@@ -8,9 +8,10 @@ import org.junit.Assume
 import org.junit.runners.Suite
 
 /**
- * Bazel runs only the classes listed in [AllJvmTests]; a test class left out passes silently with
- * zero cases. This finds every concrete JUnit test class compiled alongside the suite and fails
- * when one is neither listed nor in [UNREGISTERED_JVM_TESTS].
+ * Bazel runs only the classes listed in [AllJvmTests] (or, for [MODULE_JVM_TESTS], in a per-module
+ * target); a test class left out passes silently with zero cases. This finds every concrete JUnit
+ * test class compiled alongside the suite and fails when one is neither listed nor in
+ * [UNREGISTERED_JVM_TESTS].
  */
 class AllJvmTestsCompletenessTest {
 
@@ -54,9 +55,20 @@ class AllJvmTestsCompletenessTest {
     }
 
     @Test
+    fun `no class runs both in AllJvmTests and in a module target`() {
+        val twice = (registered intersect MODULE_JVM_TESTS.keys).sorted()
+        assertTrue(
+            twice.isEmpty(),
+            "These classes run in a //kmp/modules:<module>_jvm_tests target AND in AllJvmTests; " +
+                "rerun scripts/kmp-module-tests-sync.py:\n" + twice.joinToString("\n"),
+        )
+    }
+
+    @Test
     fun `every jvmTest class is registered in AllJvmTests`() {
         assumeBazelJar()
-        val unlisted = (testClasses - registered - UNREGISTERED_JVM_TESTS).sorted()
+        // A class in MODULE_JVM_TESTS runs in its //kmp/modules:<module>_jvm_tests target, so it is registered there.
+        val unlisted = (testClasses - registered - UNREGISTERED_JVM_TESTS - MODULE_JVM_TESTS.keys).sorted()
         assertTrue(
             unlisted.isEmpty(),
             "Add to AllJvmTests @Suite.SuiteClasses (Bazel skips them otherwise):\n" + unlisted.joinToString("\n"),

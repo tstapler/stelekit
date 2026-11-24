@@ -42,10 +42,13 @@ class TestRegistrationAuditTest {
         builds.flatMap { (set, build) ->
             val suiteCode = stripComments(sources[suites.getValue(set)].orEmpty())
             val buildCode = stripComments(build)
+            val moduleIndex = MODULE_INDEX[set]?.let { sources[it] }.orEmpty()
             sources.filter { (path, text) -> path.startsWith("$set/") && isSketchV2TestFile(path) && hasTests(text) && path != suites.getValue(set) }
                 .keys.filter { path ->
                     val name = path.substringAfterLast('/').removeSuffix(".kt")
-                    !Regex("""\b$name::class\b""").containsMatchIn(suiteCode) && !buildCode.contains("$name.kt")
+                    // A moved class is excluded through the generated manifest, which the BUILD file reads by variable.
+                    !Regex("""\b$name::class\b""").containsMatchIn(suiteCode) && !buildCode.contains("$name.kt") &&
+                        !moduleIndex.contains(".$name\"")
                 }
         }.sorted()
 
@@ -119,6 +122,9 @@ class TestRegistrationAuditTest {
         val SKETCH_V2 = Regex("""/sketch/v2/""")
 
         /** Generated list of classes a per-module Bazel target runs instead of the set's suite (scripts/kmp-module-tests-sync.py). */
-        val MODULE_INDEX = mapOf("businessTest" to "businessTest/dev/stapler/stelekit/ModuleBusinessTests.kt")
+        val MODULE_INDEX = mapOf(
+            "businessTest" to "businessTest/dev/stapler/stelekit/ModuleBusinessTests.kt",
+            "jvmTest" to "jvmTest/dev/stapler/stelekit/ModuleJvmTests.kt",
+        )
     }
 }

@@ -1,5 +1,5 @@
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_test")
-load("//kmp:modules.bzl", "kmp_jvm_modules", "kmp_module_business_tests", "kmp_module_tests")
+load("//kmp:modules.bzl", "kmp_jvm_modules", "kmp_module_business_tests", "kmp_module_jvm_tests", "kmp_module_tests")
 
 # One kt_jvm_library per module of //kmp:modules_manifest.bzl.
 kmp_jvm_modules()
@@ -8,6 +8,9 @@ kmp_module_tests()
 
 # businessTest classes whose module references form one chain (scripts/kmp-module-tests-sync.py).
 kmp_module_business_tests()
+
+# jvmTest classes that need no display and whose module references form one chain (same script).
+kmp_module_jvm_tests()
 
 # G7 demonstration (W9): the `transfer` module's own tests depend on //kmp/modules:transfer, not on the
 # //kmp/src/jvmMain/kotlin:jvm_main_lib umbrella, so editing git/merge/ui code neither rebuilds nor reruns this target

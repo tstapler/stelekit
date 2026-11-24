@@ -12,7 +12,7 @@ See CLAUDE.md for the full Gradle → Bazel command equivalence table.
 """
 
 load("@rules_android//rules:rules.bzl", "android_library")
-load("//kmp:module_tests_manifest.bzl", "KMP_MODULE_BUSINESS_TESTS")
+load("//kmp:module_tests_manifest.bzl", "KMP_MODULE_BUSINESS_TESTS", "KMP_MODULE_JVM_TESTS")
 
 # ── Android KMP resources ─────────────────────────────────────────────────────
 # res/ lives in the kmp/ Bazel package (no BUILD in src/androidMain/), so the
@@ -45,10 +45,11 @@ alias(
 
 test_suite(
     name = "jvm_tests",
+    # Plus the jvmTest classes moved to per-module targets (scripts/kmp-module-tests-sync.py).
     tests = [
         "//kmp/src/jvmTest/kotlin:jvm_tests",
         "//kmp/src/jvmTest/kotlin:mermaid_jvm_tests",
-    ],
+    ] + ["//kmp/modules:%s_jvm_tests" % m for m in sorted(KMP_MODULE_JVM_TESTS)],
     visibility = ["//visibility:public"],
 )
 
