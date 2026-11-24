@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.ui.sketch.v2
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
@@ -71,7 +72,7 @@ class ToolSession(
         private set
 
     /** How many vertices the wall chain being drawn holds (0 when none, or another mode is active); observable, so the chain's chips follow it. */
-    var wallVertexCount: Int by mutableStateOf(0)
+    var wallVertexCount: Int by mutableIntStateOf(0)
         private set
 
     private val doubleClicks = DoubleClickDetector()

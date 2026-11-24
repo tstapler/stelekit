@@ -64,6 +64,7 @@ data class WallSpan(val lo: Double, val hi: Double) {
  * and the area of a room. A joint whose mitre would be longer than [MITRE_RATIO] times the face offset (a very sharp turn)
  * is bevelled instead, so a hairpin never throws a spike across the sheet.
  */
+@Suppress("TooManyFunctions")
 object WallGeometry {
     const val MITRE_RATIO = 3.0
     private const val ARC_STEPS = 12

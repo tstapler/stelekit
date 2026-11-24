@@ -51,6 +51,16 @@ object SketchHostStrings {
         const val LENGTH_SET = "Place wall"
         const val LENGTH_CANCEL = "Cancel"
 
+        const val FLIP_SWING = "Flip swing"
+        const val FLIP_SWING_DESCRIPTION = "Swing the door to the other side of the wall"
+        const val FLIP_HINGE = "Flip hinge"
+        const val FLIP_HINGE_DESCRIPTION = "Move the hinge to the other jamb"
+        const val JUSTIFY_DESCRIPTION = "Change which side of the drawn line the wall body is on"
+        const val LAST_LENGTH = "Last wall length"
+        const val LAST_LENGTH_DESCRIPTION = "Type the exact length of the wall's last segment"
+
+        fun justify(name: String) = "Line: $name"
+
         fun selected(label: String) = "$label (on)"
 
         fun modeDescription(label: String, on: Boolean) = if (on) "$label, drawing" else "Draw with $label"

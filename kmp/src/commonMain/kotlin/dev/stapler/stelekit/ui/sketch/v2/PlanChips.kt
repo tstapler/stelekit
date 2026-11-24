@@ -22,7 +22,14 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
+import dev.stapler.stelekit.sketch.v2.commands.FlipOpening
+import dev.stapler.stelekit.sketch.v2.commands.SetWallProperties
+import dev.stapler.stelekit.sketch.v2.commands.SetWallSegmentLength
 import dev.stapler.stelekit.sketch.v2.constraints.ConstraintKind
+import dev.stapler.stelekit.sketch.v2.scene.ElementId
+import dev.stapler.stelekit.sketch.v2.scene.OpeningElement
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
+import dev.stapler.stelekit.sketch.v2.scene.WallJustification
 import dev.stapler.stelekit.sketch.v2.constraints.SheetKind
 import dev.stapler.stelekit.sketch.v2.tools.PlanMode
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
@@ -37,6 +44,10 @@ object PlanTags {
     const val CHIP_DONE = "sketch.plan.done"
     const val CHIP_CLOSE = "sketch.plan.close"
     const val CHIP_LENGTH = "sketch.plan.chip.length"
+    const val CHIP_LAST_LENGTH = "sketch.plan.chip.lastlength"
+    const val CHIP_FLIP_SWING = "sketch.plan.flip.swing"
+    const val CHIP_FLIP_HINGE = "sketch.plan.flip.hinge"
+    const val CHIP_JUSTIFY = "sketch.plan.justify"
     fun mode(mode: PlanMode) = "sketch.plan.mode.${mode.name.lowercase()}"
 }
 
@@ -54,7 +65,9 @@ private fun PlanMode.label(): String = when (this) {
  * keypad for the exact length of the next wall. The Line tool and a technical sheet only; nothing for a read-only sheet.
  */
 internal fun planChips(controller: SketchEditorController): List<ActionChip> {
-    if (controller.sheetKind != SheetKind.Technical || controller.readOnly || controller.ui.activeTool != ToolId.Line) return emptyList()
+    if (controller.sheetKind != SheetKind.Technical || controller.readOnly) return emptyList()
+    if (controller.ui.activeTool == ToolId.Select) return selectionChips(controller)
+    if (controller.ui.activeTool != ToolId.Line) return emptyList()
     val tools = controller.tools
     val modes = PlanMode.entries.map { mode ->
         val on = tools.planMode == mode
@@ -67,6 +80,25 @@ internal fun planChips(controller: SketchEditorController): List<ActionChip> {
         ActionChip(PlanTags.CHIP_DONE, P.DONE, P.DONE_DESCRIPTION) { tools.finishWalls() },
         if (placed >= PlanLimits.CLOSE_FROM) ActionChip(PlanTags.CHIP_CLOSE, P.CLOSE_ROOM, P.CLOSE_ROOM_DESCRIPTION) { tools.closeRoom() } else null,
     )
+}
+
+/** Edits of a selected opening (flip its swing or hinge) or wall (cycle justification, type the last segment's length). */
+private fun selectionChips(controller: SketchEditorController): List<ActionChip> {
+    val id = controller.ui.selection.singleOrNull()?.let(::ElementId) ?: return emptyList()
+    return when (val e = controller.doc.scene[id]) {
+        is OpeningElement -> listOf(
+            ActionChip(PlanTags.CHIP_FLIP_SWING, P.FLIP_SWING, P.FLIP_SWING_DESCRIPTION) { controller.submit(FlipOpening(id)) },
+            ActionChip(PlanTags.CHIP_FLIP_HINGE, P.FLIP_HINGE, P.FLIP_HINGE_DESCRIPTION) { controller.submit(FlipOpening(id, swing = false, hinge = true)) },
+        )
+        is WallElement -> listOf(
+            ActionChip(PlanTags.CHIP_JUSTIFY, P.justify(e.justification.name), P.JUSTIFY_DESCRIPTION) {
+                val next = WallJustification.entries[(e.justification.ordinal + 1) % WallJustification.entries.size]
+                controller.submit(SetWallProperties(id, justification = next))
+            },
+            ActionChip(PlanTags.CHIP_LAST_LENGTH, P.LAST_LENGTH, P.LAST_LENGTH_DESCRIPTION) { controller.overlay = EditorOverlay.WallLength },
+        )
+        else -> emptyList()
+    }
 }
 
 internal object PlanLimits {
@@ -87,7 +119,8 @@ internal fun WallLengthDialog(controller: SketchEditorController, extras: Editor
         DimensionValueParser.parse(ConstraintKind.Distance, field.text, technical = true, format = format).fold(
             { message -> problem = message },
             { units ->
-                controller.tools.typeWallLength(units)
+                val selected = controller.ui.selection.singleOrNull()?.let { controller.doc.scene[ElementId(it)] } as? WallElement
+                if (selected != null) controller.submit(SetWallSegmentLength(selected.id, selected.segmentCount - 1, units)) else controller.tools.typeWallLength(units)
                 close()
             },
         )

@@ -90,8 +90,7 @@ data class SetWallSegmentLength(val id: ElementId, val segment: Int, val length:
             if (i in first..last) ScenePoint(sceneUnit(p.x.value + dx, scene.limits).bind(), sceneUnit(p.y.value + dy, scene.limits).bind()) else p
         }
         if (!WallGeometry.hasDistinctVertices(moved, wall.closed)) raise(CommandError.Unsupported(id.value, "wall segment length"))
-        val next = wall.copy(points = moved)
-        finish(doc, if (next == wall) scene else scene.replace(next.touched()).bind(), setOf(id))
+        SetWallPoints(id, moved).apply(doc).bind()
     }
 }
 
