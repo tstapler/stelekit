@@ -29,7 +29,7 @@ internal fun technicalChips(controller: SketchEditorController, extras: EditorEx
             S.Units.chipRowLabel(extras.lengthUnit.format.chipLabel),
             extras.lengthUnit.format.chipDescription,
             null,
-            extras.lengthUnit::cycle,
+            onClick = extras.lengthUnit::cycle,
         ),
     )
     val scopeChip = listOfNotNull(
