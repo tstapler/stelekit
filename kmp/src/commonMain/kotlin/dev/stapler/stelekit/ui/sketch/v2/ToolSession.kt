@@ -18,6 +18,9 @@ import dev.stapler.stelekit.sketch.v2.tools.SelectTool
 import dev.stapler.stelekit.sketch.v2.tools.SelectionAware
 import dev.stapler.stelekit.sketch.v2.tools.TextEditSession
 import dev.stapler.stelekit.sketch.v2.tools.TextTool
+import dev.stapler.stelekit.sketch.v2.tools.MultiPointerTool
+import dev.stapler.stelekit.sketch.v2.tools.UnderlayAdjustTool
+import dev.stapler.stelekit.sketch.v2.tools.UnderlayCalibrateTool
 import dev.stapler.stelekit.sketch.v2.tools.Tool
 import dev.stapler.stelekit.sketch.v2.tools.ToolCommand
 import dev.stapler.stelekit.sketch.v2.tools.ToolContext
@@ -29,6 +32,7 @@ import dev.stapler.stelekit.sketch.v2.tools.ToolPreview
  * holds. A finished gesture's [ToolCommand] goes to [onCommand]; the session itself never edits the document. The tool is an
  * immutable state machine, so this class only holds the current state and the preview it asked to show.
  */
+@Suppress("TooManyFunctions")
 class ToolSession(
     private val ui: SketchEditorState,
     private val ports: EditorPorts,
@@ -132,6 +136,18 @@ class ToolSession(
         configureAdapter()
     }
 
+    /** Hands the pointer to the underlay [next] tool (calibrate or adjust); it returns to Select when it ends. */
+    fun beginUnderlay(next: Tool) {
+        if (ui.activeTool != ToolId.Select) ui.chooseTool(ToolId.Select)
+        tool = next
+        preview = null
+        textSession = null
+        configureAdapter()
+    }
+
+    /** True while an underlay tool holds the pointer. */
+    val underlayActive: Boolean get() = tool is UnderlayCalibrateTool || tool is UnderlayAdjustTool
+
     /** Commits the open text edit (the overlay's Done, a tap outside, blur). */
     fun commitText() {
         val editing = tool as? TextTool.Editing ?: return
@@ -176,6 +192,8 @@ class ToolSession(
         adapter.selectTool = active == ToolId.Select
         adapter.touchTapsReachTool = active == ToolId.Select || active == ToolId.Eraser
         adapter.drawingTool = active != ToolId.Select && active != ToolId.Hand
+        adapter.underlayTool = tool is UnderlayCalibrateTool || tool is UnderlayAdjustTool
+        adapter.multiPointerTool = tool is MultiPointerTool
     }
 
     private fun feed(input: PointerAction.ToolInput) {
@@ -195,7 +213,10 @@ class ToolSession(
 
     /** Takes what the active tool answered: its next state, the preview, the selection, a text edit and what it committed. */
     private fun take(result: dev.stapler.stelekit.sketch.v2.tools.ToolResult) {
-        result.next?.let { tool = it }
+        result.next?.let {
+            tool = it
+            configureAdapter()
+        }
         preview = result.preview
         readSelection()
         textSession = (tool as? TextTool.Editing)?.session

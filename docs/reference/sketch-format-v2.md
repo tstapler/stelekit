@@ -38,7 +38,7 @@ ADR-001 and `StandaloneSketch.kt` define the embed: an image whose target is the
 - Scene unit = **1/16 inch**, a `Double`. 16 units = 1 in, 192 units = 1 ft. Absolute value limit 268435456.
 - Origin is arbitrary. **x increases to the right (east), y increases downward (south).** North is up on a plan.
 - Angles are radians. Box rotation is clockwise on screen about the box centre. Arc angles sweep toward increasing angle, which is clockwise on screen because y points down.
-- There is no separate "sheet scale" on a real-world sheet: the unit is already physical. Stroke width and font size are in scene units too (a 4 1/2 inch wall is stroke width 72; 96 is a 6 inch tall font).
+- There is no separate "sheet scale" on a real-world sheet: the unit is already physical. A photo underlay is brought to that scale by calibrating it (section 6a). Stroke width and font size are in scene units too (a 4 1/2 inch wall is stroke width 72; 96 is a 6 inch tall font).
 - **Abstract diagrams** use the same numbers but nothing is physical: `build` with `"mode": "diagram"` reads bare numbers as plain scene units and draws thin strokes and 20-unit text. Imported `.excalidraw` files map 1 Excalidraw pixel to 1 unit (ADR-002 scale addendum), so a 100 px box is 6 1/4 inches.
 - `project-model.json` records `scaleSixteenthsPerUnit` (16) and `unit` ("in") per sheet; they only describe this convention.
 
@@ -113,6 +113,33 @@ Every element has `id` (unique, non-empty) and `type`, plus optional base fields
 - **Constraints** (`constraints[]`: `{id, kind, targets:[{e, part}], value, ref}`) are persisted rules the app's solver keeps true when shapes move: `Distance`, `DistanceX`, `DistanceY`, `Angle` (radians), `Radius`, `Diameter` carry a `value` in scene units; `Coincident`, `Horizontal`, `Vertical`, `Parallel`, `Perpendicular`, `Equal`, `Tangent`, `Symmetric`, `Fixed` do not. `part` is `whole`, `start`, `end`, `centre`, `arcStart`, `arcEnd`, `vertex:N` or `edge:N`. Only rectangles, lines, points, arcs and circles are constrainable. A constraint naming a missing element, or a part the element lacks, is dropped on load. Writing constraints by hand is possible but easy to get wrong (an unsatisfiable set makes the solver move geometry on the next edit); prefer to draw to the right size. `describe` lists them.
 - **Dimension annotations** the app shows on a technical sheet (a dimension line with extension lines, ticks and the value for each shape) are computed from the shapes at draw time and are not stored as elements. The same layout code draws them in the editor, in SVG and PNG export, in the `.excalidraw` export (as lines and text on a `dimensions` layer), in page-embed previews and in `sketch-cli render`, so every picture shows the same values. Whether a sheet shows them is the optional sheet flag `extras.dimensionsOn` (boolean): when it is absent, a technical sheet shows them and a diagram does not. The editor writes it when the Dimensions chip is toggled. Exports follow the flag; the export dialog and the CLI (`--dimensions`, `--no-dimensions`) override it for one export. In an export the annotations are laid out on a fixed fit of the sheet, not the editor viewport, so panning or zooming never changes them; at most 200 shapes are annotated, and a shape too small to carry its text at that fit is left out. For a dimension that must survive in the file and in `preview.svg`, `build` writes plain elements on the layer `dimensions`: two extension lines, a two-headed arrow and a value text, all in one group with ids `<id>.ext1`, `.ext2`, `.line`, `.text`. `describe` reads them back and flags a label that disagrees with its line (`MISMATCH`). `render --dimensions` overlays the measured width and height of every shape without saving anything.
 
+### 6a. Photo underlay and calibration
+
+A **photo or plan underlay** is a picture to trace over. It is not a new element type: it is the `image` element with id `underlay` on the layer `underlay`, so a reader that knows images already reads it.
+
+- The layer `underlay` is created below every other layer (`order` lower than all), **locked**, with layer `opacity` 0.5 by default. A sheet holds one underlay. Lock, visibility and opacity are the layer's own (`locked`, `visible`, `opacity`), so the Layers panel and any layer-aware reader agree.
+- `fileId` is the sha256 of the photo bytes (ADR-001: never inline base64). The bytes live in the graph's asset store as `assets/<sha256>.<ext>`.
+- The element's `extras.underlay` is optional and holds the calibration. A sheet without an underlay contains none of it, so every existing sheet keeps its exact canonical bytes.
+
+```json
+{"id": "underlay", "type": "image", "layer": "underlay", "name": "Underlay photo", "x": 0, "y": 0, "w": 3840, "h": 2880, "fileId": "<sha256>",
+ "extras": {"underlay": {"px": [4000, 3000], "refs": [{"a": [1000, 1500], "b": [3000, 1500], "len": 1920}]}}}
+```
+
+| key | meaning |
+|---|---|
+| `px` | the photo's pixel size after EXIF orientation: `[width, height]` |
+| `refs[].a`, `refs[].b` | two points on the photo in **photo pixels** (origin top-left, v down) |
+| `refs[].len` | the real distance between them in scene units (1/16 inch, a whole number), so `1920` is 10 feet |
+
+**Calibration** is a single scale for the whole photo. One reference sets it (`len` divided by the pixel distance); with several references the scale is their mean and the largest disagreement is the *residual*. The app and `describe` call the photo calibrated and print `calibrated: 10' 0" ref`; a residual over 5 % is reported as perspective. The editor also turns the photo so the first reference runs along the nearest axis when it is within 20 degrees of one. A calibrated photo's scale is kept by the move gesture (it can be moved and turned, not pinched to another size), and if the photo is resized by other means the note says the scale changed and asks for a recalibration.
+
+**Perspective is not corrected.** A photo taken at an angle is not a plan: one scale is exact only near the reference. A homography (four-point rectification) is out of scope; measure on the plane you trace and add a second reference on another axis to see how far off the photo is.
+
+**Display size.** A photo within the asset store's limits (16 million pixels, 8192 px a side, 60 MB) is stored as picked. A larger one, such as a 50 megapixel phone photo, is reduced once on import to 3840 px on the longer side, upright, and the reduced copy is what the sheet references. Either way the editor never decodes the stored file whole: it draws from a copy reduced to **at most 2048 px on the longer side** (about 16 MiB as ARGB at worst), so a phone photo cannot exhaust an Android heap. `px` and the calibration are in the stored file's pixels, so the display cap never changes a measurement.
+
+**Exports leave the underlay out.** SVG, PNG, `.excalidraw`, the page-embed preview and `preview.svg` draw the sheet without the layer `underlay`, so a traced plan stays clean. The export dialog has an "Include photo underlay" option (off by default); the CLI draws it with `render --underlay <photo>`. The editor always shows it.
+
 ## 7. Authoring spec (what `build` reads)
 
 A small JSON document, version 1. `build` expands it into a valid sheet, so you write rooms and openings, not coordinates of door arcs. Unknown keys produce a warning; every error names its JSON path.
@@ -137,7 +164,7 @@ A small JSON document, version 1. `build` expands it into a valid sheet, so you 
 }
 ```
 
-Top level: `spec` (1), `mode` (`plan` default: real-world; `diagram`: abstract), `title`, `space` (`real` default or `photo`), `calibration` (photo space), `wall` (default wall thickness, default `4 1/2"`), `sheetUuid` (optional; default derived from `title`, so rebuilding an edited spec with the same title yields the same sheet and `place` replaces it; give each sketch its own title), and the lists below. Ids are letters, digits, `-`, `_`, `.`, at most 64 characters, unique across the spec (derived ids such as `<id>.label` count).
+Top level: `spec` (1), `mode` (`plan` default: real-world; `diagram`: abstract), `title`, `space` (`real` default or `photo`), `calibration` (photo space), `underlay` (photo space, see below), `wall` (default wall thickness, default `4 1/2"`), `sheetUuid` (optional; default derived from `title`, so rebuilding an edited spec with the same title yields the same sheet and `place` replaces it; give each sketch its own title), and the lists below. Ids are letters, digits, `-`, `_`, `.`, at most 64 characters, unique across the spec (derived ids such as `<id>.label` count).
 
 | list | keys |
 |---|---|
@@ -166,6 +193,8 @@ To trace a photo, write positions and sizes as **photo pixels** and give `build`
 ```
 
 `build` computes inches per pixel from each reference (`length` / distance between `a` and `b`), averages them, **warns when the references disagree by more than 5 %** (perspective or a misread point), converts every bare number from pixels to real length, and snaps converted values to `snap` (default 1 inch; `"none"` to keep exact values). Text-form lengths such as `"3'"` pass through unchanged. Use at least two references on different axes when you can. A photo taken at an angle is not a plan: calibration assumes the measured surface faces the camera.
+
+To keep the photo under the traced plan, add `"underlay": {"image": "kitchen.jpg", "opacity": 50}` (photo space only; `image` is a path relative to the spec file, `opacity` is a percent, default 50). `build` stores the photo's sha256 as `fileId`, places it at the sheet origin at the calibrated scale (so shapes traced in photo pixels land on the photo), writes the `calibration.refs` as `extras.underlay.refs` and puts it on the locked `underlay` layer. `build` does not copy the photo into a graph: `place --underlay-image <photo>` stores it in the graph's asset store. `describe` lists the underlay and its calibration; `render` hides it unless `--underlay <photo>` is given (section 6a).
 
 ## 8. Worked examples
 
@@ -209,13 +238,13 @@ RELATIONSHIPS
 | command | does | exit |
 |---|---|---|
 | `build <spec.json> --out <sheet.v2.json> [--render x.svg\|x.png] [--dimensions] [--width N]` | expand a spec; prints calibration, warnings, element count, sha256 | 1 on spec errors |
-| `render <sheet.v2.json\|.excalidraw\|spec.json> --out <x.svg\|x.png> [--dimensions\|--no-dimensions] [--width N] [--style clean\|sketchy] [--background #rrggbb\|transparent]` | SVG through the app's own SVG writer; PNG through its Compose painter. Defaults: PNG 400 to 1600 px wide, white background, Clean style. `--dimensions` draws the dimension annotations, `--no-dimensions` hides them, and with neither the sheet's own `dimensionsOn` flag decides (the editor's own layout, not saved) | 1 when the input is invalid |
+| `render <sheet.v2.json\|.excalidraw\|spec.json> --out <x.svg\|x.png> [--dimensions\|--no-dimensions] [--underlay <photo>] [--width N] [--style clean\|sketchy] [--background #rrggbb\|transparent]` | SVG through the app's own SVG writer; PNG through its Compose painter. Defaults: PNG 400 to 1600 px wide, white background, Clean style. `--dimensions` draws the dimension annotations, `--no-dimensions` hides them, `--underlay <photo>` draws the sheet's photo underlay from that file (its sha256 must equal the underlay's `fileId`; without the flag the underlay is left out), and with neither the sheet's own `dimensionsOn` flag decides (the editor's own layout, not saved) | 1 when the input is invalid |
 | `validate <file>` | sheet, spec or `.excalidraw`. Reports syntax errors with line and column, then per-element problems (id, line, expected keys, "did you mean", valid enum values), dangling references, then what the real codec says, then canonical form. Ends with `RESULT: OK` or `RESULT: FAILED (n errors)` | 1 on errors |
 | `canonicalize <sheet> [--out f \| --in-place]` | decode and re-encode: exact canonical bytes (stdout when neither flag); sha256 and "was already canonical" go to stderr | 1 if it does not load |
 | `describe <file>` | text: extent, layers, every element with sizes in feet-inches, labels, openings, dimensions, contains/touches/overlaps/connects relationships, constraints, a character map. Accepts a sheet, spec or `.excalidraw` | 1 if it does not load |
 | `from-excalidraw <in.excalidraw> --out <sheet.v2.json>` | the app's importer (pinned to Excalidraw v0.18.1) applied to an empty sheet (ids are kept); images are not carried over | 1 on refusal |
 | `to-excalidraw <sheet.v2.json> --out <x.excalidraw>` | the app's exporter; layers flatten, constraints are not carried | 1 on failure |
-| `place <sheet.v2.json> --graph <dir> [--slug proj-xxxxxx] [--name T]` | write `sheets/<uuid>.v2.json`, `project-model.json` (with sha256) and `preview.svg` into the bundle, creating it or replacing the same sheet uuid; prints the embed line | 1 on failure |
+| `place <sheet.v2.json> --graph <dir> [--slug proj-xxxxxx] [--name T] [--underlay-image <photo>]` | write `sheets/<uuid>.v2.json`, `project-model.json` (with sha256) and `preview.svg` into the bundle, creating it or replacing the same sheet uuid; prints the embed line; `--underlay-image` also stores the photo in `<graph>/assets/<sha256>.<ext>` and refuses a photo whose sha256 differs from the sheet's underlay `fileId` | 1 on failure |
 
 Exit code 2 is a usage problem or missing file. PNG needs no external rasterizer; if you only have an SVG, `rsvg-convert -w 1200 in.svg -o out.png` works too.
 

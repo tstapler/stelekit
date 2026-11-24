@@ -19,6 +19,8 @@ import dev.stapler.stelekit.projectbridge.SidecarCodec
 import dev.stapler.stelekit.sketch.v2.bridge.V2ToV1
 import dev.stapler.stelekit.sketch.v2.codec.SheetCodecV2
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
+import dev.stapler.stelekit.sketch.v2.image.ImageHeaderProbe
+import dev.stapler.stelekit.sketch.v2.scene.underlay
 import dev.stapler.stelekit.util.ContentHasher
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -39,7 +41,7 @@ internal object SketchBundle {
     private const val PREVIEW = "preview.svg"
     private const val STANDALONE = "standalone"
 
-    fun place(sheetBytes: ByteArray, graph: File, slugArg: String?, nameArg: String?, createdAt: Long): Either<String, PlacedSheet> {
+    fun place(sheetBytes: ByteArray, graph: File, slugArg: String?, nameArg: String?, createdAt: Long, underlayImage: ByteArray? = null): Either<String, PlacedSheet> {
         val doc = (SheetCodecV2.decode(sheetBytes) as? Either.Right)?.value
             ?: return Either.Left("the sheet does not load; run `validate` and fix its errors first")
         val canonical = (SheetCodecV2.encode(doc) as? Either.Right)?.value ?: return Either.Left("the sheet does not encode")
@@ -58,12 +60,26 @@ internal object SketchBundle {
         val sheet = sheetRow(doc, existing?.sheets?.size?.toLong() ?: 0L)
         val uuid = SheetUuid(doc.sheetUuid)
         val bundle = existing?.let { replaceSheet(it, sheet, canonical) } ?: newBundle(doc, sheet, canonical, slug, nameArg, createdAt)
+        val photo = underlayImage?.let { storePhoto(doc, it, graph) }
+        if (photo is Either.Left) return photo
         val files = SidecarCodec.encode(bundle)
         for ((path, bytes) in files) writeAtomic(File(dir, path), bytes)
         val preview = SketchRender.svg(doc, RenderRequest())
         writeAtomic(File(dir, PREVIEW), preview.encodeToByteArray())
         val replaced = existing?.sheets?.any { it.uuid == uuid } == true
         return Either.Right(PlacedSheet(slug, files.keys.sorted().map { "$ROOT/$slug/$it" } + "$ROOT/$slug/$PREVIEW", "![sketch](../$ROOT/$slug/$PREVIEW)", replaced))
+    }
+
+    /** Stores the underlay photo as `assets/<sha256>.<ext>` (the app's asset-store name) once it is known to be the one the sheet names. */
+    private fun storePhoto(doc: SketchDocumentV2, bytes: ByteArray, graph: File): Either<String, Unit> {
+        val named = doc.scene.underlay?.element?.fileId ?: return Either.Left("the sheet has no underlay, so --underlay-image has nothing to store")
+        val hash = ContentHasher.sha256(bytes)
+        if (hash != named) return Either.Left("--underlay-image has sha256 $hash but the sheet's underlay names $named")
+        val header = (ImageHeaderProbe.probe(bytes) as? Either.Right)?.value ?: return Either.Left("--underlay-image is not a PNG, JPEG, GIF or WebP image")
+        val target = File(graph, "assets/$hash.${header.format.extension}")
+        if (target.isFile && target.length() == bytes.size.toLong()) return Either.Right(Unit)
+        writeAtomic(target, bytes)
+        return Either.Right(Unit)
     }
 
     /** Right(null) means no bundle yet; a bundle that exists but cannot be read is an error, never "absent" (the app's own rule). */

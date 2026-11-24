@@ -9,6 +9,7 @@ import dev.stapler.stelekit.sketch.v2.index.Bounds
 import dev.stapler.stelekit.sketch.v2.index.SpatialIndex
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
+import dev.stapler.stelekit.sketch.v2.scene.UnderlayIds
 import dev.stapler.stelekit.sketch.v2.view.SceneBounds
 import kotlin.math.abs
 import kotlin.math.roundToLong
@@ -89,7 +90,7 @@ object ObjectSnap {
         if (disabled || base == null || !usableZoom) return SnapOutcome(dx, dy, emptyList())
         val tolerance = SNAP_RADIUS_PX * pxPerDp / zoom
         val proposed = SceneBounds(base.minX + dx, base.minY + dy, base.maxX + dx, base.maxY + dy)
-        val hidden = scene.layers.filter { !it.visible }.map { it.id }.toSet()
+        val hidden = scene.layers.filter { !it.visible }.map { it.id }.toSet() + UnderlayIds.LAYER
         val near = index.query(Bounds(proposed.minX, proposed.minY, proposed.maxX, proposed.maxY).inflated(SNAP_REACH_PX / zoom))
             .filter { it !in movingIds }.mapNotNull { scene[it] }.filter { it.base.layerId !in hidden }.mapNotNull { SceneBounds.of(it) }
 

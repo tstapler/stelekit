@@ -10,6 +10,10 @@ import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.index.Bounds
 import dev.stapler.stelekit.sketch.v2.index.ElementBounds
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
+import dev.stapler.stelekit.sketch.v2.scene.CalibrationNote
+import dev.stapler.stelekit.sketch.v2.scene.UnderlayCalibration
+import dev.stapler.stelekit.sketch.v2.scene.UnderlayIds
+import dev.stapler.stelekit.sketch.v2.scene.underlay
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.DiamondElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementNames
@@ -52,7 +56,7 @@ internal object SketchDescribe {
         val diagram = (agent?.get("mode") as? JsonPrimitive)?.contentOrNull == "diagram"
         val f = Fmt(diagram)
         val labels = all.filterIsInstance<TextElement>().filter { it.containerId != null }.groupBy { it.containerId!! }
-        val special = setOf(SketchLayers.OPENINGS, SketchLayers.DIMENSIONS)
+        val special = setOf(SketchLayers.OPENINGS, SketchLayers.DIMENSIONS, UnderlayIds.LAYER.value)
         val main = all.filter { it.base.layerId.value !in special && !(it is TextElement && it.containerId != null) }
         val out = StringBuilder()
         out.appendLine("SKETCH SHEET ${doc.sheetUuid} (schema 2)" + ((agent?.get("title") as? JsonPrimitive)?.contentOrNull?.let { ", title \"$it\"" } ?: ""))
@@ -72,6 +76,7 @@ internal object SketchDescribe {
         out.appendLine()
         out.appendLine("ELEMENTS (${main.size}, in paint order)")
         for (e in main) out.appendLine("- " + elementLine(e, labels[e.id].orEmpty(), f, all))
+        describeUnderlay(doc, f, out)
         describeOpenings(all, f, out)
         describeDimensions(all, f, out)
         describeRelations(main, f, out)
@@ -79,6 +84,25 @@ internal object SketchDescribe {
         describeMap(main, labels, f, out)
         return out.toString().trimEnd() + "\n"
     }
+
+    /** The photo underlay and its calibration, in words an agent can act on; nothing when the sheet has none. */
+    private fun describeUnderlay(doc: SketchDocumentV2, f: Fmt, out: StringBuilder) {
+        val state = doc.scene.underlay ?: return
+        out.appendLine()
+        out.appendLine("UNDERLAY (a photo to trace over; left out of exports and renders unless asked)")
+        val p = state.placement
+        val note = CalibrationNote.of(state)
+        val noteText = when (note) {
+            CalibrationNote.None -> "not calibrated (its size on the sheet is arbitrary)"
+            is CalibrationNote.Calibrated -> "calibrated: ${f.len(note.lengthUnits.toDouble())} ref" + if (note.perspective) ", but the references disagree by ${(UnderlayCalibration.residual(state.meta.refs) * PERCENT).roundToInt()}% (perspective: the scale is an average)" else ""
+            is CalibrationNote.OutOfDate -> "calibrated to ${f.len(note.lengthUnits.toDouble())}, then resized: recalibrate"
+        }
+        out.appendLine("- photo ${state.meta.widthPx} x ${state.meta.heightPx} px, sha256 ${state.element.fileId}, drawn ${f.len(p.width)} x ${f.len(p.height)} at ${f.pt(p.x, p.y)}, ${if (state.locked) "locked" else "unlocked"}, ${(state.layer.opacity * PERCENT).roundToInt()}% opacity${if (state.layer.visible) "" else ", hidden"}")
+        out.appendLine("- $noteText")
+        for (ref in state.meta.refs) out.appendLine("- reference: photo pixels (${ref.a.u.roundToInt()}, ${ref.a.v.roundToInt()}) to (${ref.b.u.roundToInt()}, ${ref.b.v.roundToInt()}) is ${f.len(ref.lengthUnits.toDouble())}")
+    }
+
+    private const val PERCENT = 100.0
 
     private class Fmt(val diagram: Boolean) {
         fun len(v: Double): String = if (diagram) SketchLengths.tidy(v).toString().removeSuffix(".0") else SketchLengths.feetInches(v)

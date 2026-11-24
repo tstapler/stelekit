@@ -23,6 +23,7 @@ import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
 import dev.stapler.stelekit.sketch.v2.scene.TextElement
+import dev.stapler.stelekit.sketch.v2.scene.UnderlayIds
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -40,7 +41,7 @@ import kotlin.math.sin
  * outline; a line, arrow or stroke hits near any segment; a text or image hits over its box; a frame hits only near
  * its border so the elements inside stay reachable; a point hits within the tolerance disc; an arc hits near the arc
  * itself, not the rest of its circle. Elements on a hidden or locked layer, and locked elements, are skipped.
- * The topmost hit (layer order, then z-key, then array order) wins.
+ * The topmost hit (layer order, then z-key, then array order) wins. The locked photo underlay is never reported by [hitLocked]: it sits under everything, so it would be "skipped" by every press.
  */
 class HitTester(private val scene: SketchSceneV2, private val index: SpatialIndex) {
     private val arrayIndex: Map<ElementId, Int> by lazy { scene.order.withIndex().associate { it.value to it.index } }
@@ -62,7 +63,7 @@ class HitTester(private val scene: SketchSceneV2, private val index: SpatialInde
         val layers = scene.layers.associateBy { it.id }
         return index.query(Bounds.around(px, py, tolerance))
             .mapNotNull { scene[it] }
-            .filter { e -> isVisible(e, layers) && isLocked(e, layers) == locked && hits(e, px, py, tolerance) }
+            .filter { e -> isVisible(e, layers) && isLocked(e, layers) == locked && !(locked && e.base.layerId == UnderlayIds.LAYER) && hits(e, px, py, tolerance) }
             .sortedWith(compareByDescending<SceneElement> { (layers[it.base.layerId] ?: Layer.DefaultLayer).order }
                 .thenByDescending { it.base.zKey }
                 .thenByDescending { arrayIndex.getValue(it.id) })

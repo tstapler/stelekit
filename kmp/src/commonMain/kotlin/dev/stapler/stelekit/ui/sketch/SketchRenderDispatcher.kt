@@ -33,6 +33,7 @@ import dev.stapler.stelekit.sketch.v2.render.DrawListBuilder
 import dev.stapler.stelekit.sketch.v2.render.RenderStyle
 import dev.stapler.stelekit.sketch.v2.scene.Layer
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
+import dev.stapler.stelekit.sketch.v2.scene.withoutUnderlay
 import dev.stapler.stelekit.sketch.v2.text.TextMetricsProvider
 import dev.stapler.stelekit.sketch.v2.view.SceneBounds
 import dev.stapler.stelekit.sketch.v2.view.SketchViewport
@@ -171,7 +172,9 @@ private fun NoteWithActions(text: String, buttons: List<NoteButton>, modifier: M
 }
 
 @Composable
-private fun ModernDrawingPreview(scene: SketchSceneV2, environment: ModernPreviewEnvironment, modifier: Modifier = Modifier, dimensionsOn: Boolean = false) {
+private fun ModernDrawingPreview(sheet: SketchSceneV2, environment: ModernPreviewEnvironment, modifier: Modifier = Modifier, dimensionsOn: Boolean = false) {
+    // A photo underlay is a tracing aid and is never part of a page's embed.
+    val scene = remember(sheet) { sheet.withoutUnderlay() }
     val ink = ExportInk.forBackground(MaterialTheme.colorScheme.surface.toCssHex())
     val dimensions = remember(scene, dimensionsOn) { if (dimensionsOn) DimensionExport.layout(scene) else emptyList() }
     val bounds = remember(scene, dimensions) { modernPreviewBounds(scene, dimensions) }

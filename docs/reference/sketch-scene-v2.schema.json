@@ -111,8 +111,30 @@
         "ver": { "type": "integer", "default": 1 },
         "ord": { "type": "integer", "default": 0, "description": "Auto-name ordinal (\"Rectangle 3\"); 0 = unassigned." },
         "name": { "type": "string", "maxLength": 80, "description": "User-visible name; must be unique among elements." },
-        "extras": { "type": "object" }
+        "extras": { "type": "object", "description": "Element keys the app does not interpret are kept as written. On the image with id \"underlay\" the key `underlay` holds its calibration (see $defs/underlayExtras).", "properties": { "underlay": { "$ref": "#/$defs/underlayExtras" } } }
       }
+    },
+    "underlayExtras": {
+      "type": "object",
+      "required": ["px"],
+      "description": "Optional. Marks the photo or plan underlay (epic E5): the image element with id \"underlay\" on the layer \"underlay\" (locked, below every other layer, layer opacity 0.5 by default). `px` is the photo's pixel size after EXIF orientation. `refs` are the known lengths it was scaled by: `a` and `b` are photo pixel coordinates (origin top-left, v down), `len` is the real distance in scene units (1/16 inch, a whole number). With refs the app and `sketch-cli` treat the photo as calibrated; one scale for the whole photo (no perspective correction). A sheet with no underlay carries none of this, so existing sheets keep their bytes.",
+      "properties": {
+        "px": { "type": "array", "prefixItems": [{ "type": "integer", "minimum": 1 }, { "type": "integer", "minimum": 1 }], "minItems": 2, "maxItems": 2 },
+        "refs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["a", "b", "len"],
+            "properties": {
+              "a": { "type": "array", "prefixItems": [{ "type": "number" }, { "type": "number" }], "minItems": 2, "maxItems": 2 },
+              "b": { "type": "array", "prefixItems": [{ "type": "number" }, { "type": "number" }], "minItems": 2, "maxItems": 2 },
+              "len": { "type": "integer", "minimum": 1 }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "box": {
       "type": "object",

@@ -17,6 +17,7 @@ import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
+import dev.stapler.stelekit.sketch.v2.scene.UnderlayIds
 import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.atan2
@@ -108,7 +109,7 @@ object PointSnap {
     ): PointSnapProbe {
         val usable = tolerance.isFinite() && tolerance > 0.0 && x.isFinite() && y.isFinite()
         if (!kinds.any || !usable) return PointSnapProbe(null, 0, 0)
-        val hidden = scene.layers.filter { !it.visible }.mapTo(HashSet()) { it.id }
+        val hidden = scene.layers.filter { !it.visible }.mapTo(HashSet()) { it.id } + UnderlayIds.LAYER
         val near = index.query(Bounds.around(x, y, tolerance)).filter { it !in exclude }.sortedBy { it.value }
             .mapNotNull { scene[it] }.filter { it.base.layerId !in hidden }
         val shapes = near.map(::shapeOf)

@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -35,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.sketch.v2.runtime.export.ExportFormat
 import dev.stapler.stelekit.sketch.v2.runtime.export.ExportRequest
 import dev.stapler.stelekit.sketch.v2.annotation.DimensionsChoice
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchUnderlayStrings
 import dev.stapler.stelekit.sketch.v2.runtime.export.ExportScope
 import dev.stapler.stelekit.sketch.v2.runtime.export.ExportStyle
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchImportExportStrings.Export as Strings
@@ -58,6 +60,7 @@ object ExportTags {
     fun style(style: ExportStyle) = "sketch.export.style.${style.name.lowercase()}"
     fun dimensions(choice: DimensionsChoice) = "sketch.export.dimensions.${choice.name.lowercase()}"
     fun frame(index: Int) = "sketch.export.frame.$index"
+    const val UNDERLAY = "sketch.export.underlay"
 }
 
 private const val TARGET_DP = 44
@@ -85,6 +88,7 @@ fun ExportDialog(controller: ExportDialogController) {
                 if (model.usesBackground(request.format)) BackgroundOption(request, controller::update)
                 if (model.usesStyle(request.format)) StyleOptions(request, controller::update)
                 if (model.usesDimensions(request.format)) DimensionOptions(request, controller::update)
+                if (model.usesUnderlay(request.format)) UnderlayOption(request, controller::update)
                 if (model.showsFlattenedNotice(request)) Text(Strings.LAYERS_FLATTENED, Modifier.testTag(ExportTags.FLATTEN), style = MaterialTheme.typography.bodySmall)
                 PreviewLine(open.preview)
                 LoadingGate(open.working, SketchLoadingStrings.EXPORT, progress = null, onCancel = controller::cancel)
@@ -166,6 +170,19 @@ private fun DimensionOptions(request: ExportRequest, update: (ExportRequest) -> 
         for (choice in DimensionsChoice.entries) {
             Option(dimensionsLabel(choice), request.dimensions == choice, null, ExportTags.dimensions(choice)) { update(request.copy(dimensions = choice)) }
         }
+    }
+}
+
+@Composable
+private fun UnderlayOption(request: ExportRequest, update: (ExportRequest) -> Unit) {
+    Row(
+        Modifier.defaultMinSize(minHeight = TARGET_DP.dp).testTag(ExportTags.UNDERLAY)
+            .semantics { contentDescription = SketchUnderlayStrings.INCLUDE_UNDERLAY_NAME }
+            .toggleable(value = request.includeUnderlay, role = Role.Checkbox) { update(request.copy(includeUnderlay = it)) },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = request.includeUnderlay, onCheckedChange = null)
+        Text(SketchUnderlayStrings.INCLUDE_UNDERLAY, Modifier.padding(start = 8.dp))
     }
 }
 

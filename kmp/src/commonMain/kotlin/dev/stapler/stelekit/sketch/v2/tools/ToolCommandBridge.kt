@@ -22,6 +22,7 @@ import dev.stapler.stelekit.sketch.v2.commands.RotateElement
 import dev.stapler.stelekit.sketch.v2.commands.SequenceCommand
 import dev.stapler.stelekit.sketch.v2.commands.SetLinePoints
 import dev.stapler.stelekit.sketch.v2.commands.SetTextBox
+import dev.stapler.stelekit.sketch.v2.commands.SetUnderlayPlacement
 
 /**
  * Maps what a finished gesture asked for to the undoable [Command] that does it (Story 1.3.2). A tool command with no
@@ -38,6 +39,7 @@ fun ToolCommand.toCommand(): Either<CommandError, Command> = when (this) {
     is AddFrameCommand -> SequenceCommand(listOfNotNull(AddElement(frame), memberIds.takeIf { it.isNotEmpty() }?.let { AssignToFrame(frame.id, it) })).right()
     is SetLinePointsCommand -> SetLinePoints(id, points).right()
     is BindArrowEndCommand -> BindArrowEnd(arrow, end, target).right()
+    is AdjustUnderlayCommand -> SetUnderlayPlacement(placement).right()
     else -> CommandError.Unsupported(this::class.simpleName.orEmpty(), "toCommand").left()
 }
 

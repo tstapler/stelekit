@@ -6,7 +6,20 @@
 
 package dev.stapler.stelekit.cli
 
+import arrow.core.Either
 import arrow.core.getOrElse
+import dev.stapler.stelekit.platform.image.ExifOrientationReader
+import dev.stapler.stelekit.sketch.v2.commands.SetUnderlay
+import dev.stapler.stelekit.sketch.v2.image.ImageHeaderProbe
+import dev.stapler.stelekit.sketch.v2.scene.CalibrationRef
+import dev.stapler.stelekit.sketch.v2.scene.ImagePx
+import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
+import dev.stapler.stelekit.sketch.v2.scene.UnderlayIds
+import dev.stapler.stelekit.sketch.v2.scene.UnderlayMetaCodec
+import dev.stapler.stelekit.sketch.v2.scene.UnderlayPlacement
+import dev.stapler.stelekit.sketch.v2.scene.underlay
+import java.io.File
+import kotlin.math.roundToLong
 import dev.stapler.stelekit.sketch.v2.commands.SheetKindExtras
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.commands.ZKeys
@@ -71,7 +84,7 @@ internal class Placed(val id: String, val kind: String, val x: Double, val y: Do
  * goes through the same `reconcile` pass and codec as an edited sheet, so a built sheet is valid by construction.
  * Entries are processed in the order of the keys below; every error names its JSON path.
  */
-internal class SketchSpecBuilder(private val root: JsonObject) {
+internal class SketchSpecBuilder(private val root: JsonObject, private val baseDir: File? = null) {
     private val issues = SpecIssues()
     private val elements = ArrayList<SceneElement>()
     private val names = HashSet<String>()
@@ -88,6 +101,10 @@ internal class SketchSpecBuilder(private val root: JsonObject) {
     private val defaultFont: Double get() = if (plan) 96.0 else 20.0
     private val dimFont: Double get() = if (plan) 64.0 else 14.0
     private var wall = 72.0
+    private var underlay: UnderlaySpec? = null
+
+    /** The photo the spec keeps under the plan, read and measured: its hash, pixel size and what the calibration says about it. */
+    private class UnderlaySpec(val fileId: String, val widthPx: Int, val heightPx: Int, val opacity: Double, val refs: List<CalibrationRef>)
 
     fun build(): SpecOutcome {
         checkKeys(root, "spec", TOP_KEYS)
@@ -113,6 +130,9 @@ internal class SketchSpecBuilder(private val root: JsonObject) {
             issues.warn("calibration", "ignored: calibration only applies when \"space\" is \"photo\"")
         }
         reader = SpecReader(issues, mode, inchesPerPx, snap)
+        root["underlay"]?.let { spec ->
+            if (photo) underlay(spec, root["calibration"] as? JsonObject, inchesPerPx) else issues.warn("underlay", "ignored: an underlay only applies when \"space\" is \"photo\"")
+        }
         // Thicknesses, font sizes, gaps and offsets are real lengths even in photo space: `reader` would read a bare number as pixels.
         real = SpecReader(issues, mode, null, null)
         root["wall"]?.let { w -> wall = real.length(w, "wall") ?: wall }
@@ -126,7 +146,55 @@ internal class SketchSpecBuilder(private val root: JsonObject) {
         (root["dimensions"] as? JsonArray)?.forEachIndexed { i, s -> dimension(s, "dimensions[$i]") }
         if (elements.isEmpty() && issues.errors.isEmpty()) issues.error("spec", "nothing to draw: add at least one of shapes, lines, arrows, labels")
         if (issues.errors.isNotEmpty()) return SpecOutcome(null, issues, inchesPerPx)
-        return SpecOutcome(assemble(), issues, inchesPerPx)
+        val doc = assemble()
+        val withPhoto = underlay?.let { spec -> inchesPerPx?.let { withUnderlay(doc, spec, it) } } ?: doc
+        if (issues.errors.isNotEmpty()) return SpecOutcome(null, issues, inchesPerPx)
+        return SpecOutcome(withPhoto, issues, inchesPerPx)
+    }
+
+    /** `{"image": "photo.jpg", "opacity": 50}`: the photo is read now so the sheet can name it by hash; the bytes are not stored in the sheet. */
+    private fun underlay(spec: JsonElement, calibration: JsonObject?, inchesPerPx: Double?) {
+        val o = spec as? JsonObject ?: return issues.error("underlay", "expected an object like {\"image\": \"photo.jpg\", \"opacity\": 50}, got ${SpecReader.describeJson(spec)}")
+        checkKeys(o, "underlay", UNDERLAY_KEYS)
+        val name = (o["image"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return issues.error("underlay.image", "expected the path of the photo, relative to the spec file")
+        val opacity = o["opacity"]?.let { (it as? JsonPrimitive)?.content?.toDoubleOrNull()?.takeIf { v -> v in 0.0..100.0 } ?: return issues.error("underlay.opacity", "expected a percent from 0 to 100") } ?: DEFAULT_UNDERLAY_PERCENT
+        val file = File(name).let { if (it.isAbsolute) it else File(baseDir, name) }
+        if (!file.isFile) return issues.error("underlay.image", "no such file: ${file.path}")
+        if (file.length() > SceneLimits.Default.maxImageBytes) return issues.error("underlay.image", "the photo is larger than ${SceneLimits.Default.maxImageBytes / BYTES_PER_MB} MB")
+        val bytes = file.readBytes()
+        val header = (ImageHeaderProbe.probe(bytes) as? Either.Right)?.value ?: return issues.error("underlay.image", "not a PNG, JPEG, GIF or WebP image")
+        val turned = ExifOrientationReader.read(bytes) in TRANSPOSING_ORIENTATIONS
+        val refs = (calibration?.get("refs") as? JsonArray).orEmpty().mapNotNull { r -> calibrationRef(r as? JsonObject) }
+        if (refs.isEmpty() || inchesPerPx == null) return issues.error("underlay", "an underlay needs a calibration with at least one reference")
+        underlay = UnderlaySpec(ContentHasher.sha256(bytes), if (turned) header.height else header.width, if (turned) header.width else header.height, opacity / 100.0, refs)
+    }
+
+    private fun calibrationRef(o: JsonObject?): CalibrationRef? {
+        fun point(e: JsonElement?): ImagePx? {
+            val arr = e as? JsonArray ?: return null
+            val u = (arr.getOrNull(0) as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return null
+            val v = (arr.getOrNull(1) as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return null
+            return if (u.isFinite() && v.isFinite()) ImagePx(u, v) else null
+        }
+        val a = point(o?.get("a")) ?: return null
+        val b = point(o?.get("b")) ?: return null
+        val length = (o?.get("length") as? JsonPrimitive)?.let { if (it.isString) SketchLengths.parseInches(it.content) else it.content.toDoubleOrNull() } ?: return null
+        val units = (length * SketchLengths.UNITS_PER_INCH).roundToLong()
+        return if (units > 0L) CalibrationRef(a, b, units) else null
+    }
+
+    /** The underlay as the app writes it: the image on its locked bottom layer at the calibrated scale, the references in its extras. */
+    private fun withUnderlay(doc: SketchDocumentV2, spec: UnderlaySpec, inchesPerPx: Double): SketchDocumentV2 {
+        val unitsPerPx = inchesPerPx * SketchLengths.UNITS_PER_INCH
+        val placement = UnderlayPlacement(0.0, 0.0, spec.widthPx * unitsPerPx, spec.heightPx * unitsPerPx, 0.0)
+        val placed = SetUnderlay(spec.fileId, spec.widthPx, spec.heightPx, placement).apply(doc).getOrElse { err ->
+            issues.error("underlay", "could not place the photo: $err")
+            return doc
+        }.doc
+        val state = placed.scene.underlay ?: return placed
+        val element = state.element.copy(base = state.element.base.copy(extras = UnderlayMetaCodec.write(state.element.base.extras, state.meta.copy(refs = spec.refs))))
+        val layers = placed.scene.layers.map { if (it.id == UnderlayIds.LAYER) it.copy(opacity = spec.opacity) else it }
+        return placed.copy(scene = placed.scene.replace(element).getOrElse { placed.scene }.withLayers(layers))
     }
 
     private fun fmtScale(v: Double): String = "%.4f".format(v)
@@ -573,7 +641,11 @@ internal class SketchSpecBuilder(private val root: JsonObject) {
             "black" to "#1e1e1e", "white" to "#ffffff", "gray" to "#868e96", "red" to "#e03131", "blue" to "#1971c2",
             "green" to "#2f9e44", "yellow" to "#f08c00", "orange" to "#e8590c", "lightblue" to "#a5d8ff", "lightgreen" to "#b2f2bb", "lightyellow" to "#ffec99",
         )
-        val TOP_KEYS = setOf("spec", "mode", "title", "space", "calibration", "wall", "sheetUuid", "shapes", "lines", "openings", "arrows", "labels", "dimensions")
+        val UNDERLAY_KEYS = setOf("image", "opacity")
+        const val DEFAULT_UNDERLAY_PERCENT = 50.0
+        const val BYTES_PER_MB = 1_048_576L
+        val TRANSPOSING_ORIENTATIONS = 5..8
+        val TOP_KEYS = setOf("spec", "mode", "title", "space", "calibration", "underlay", "wall", "sheetUuid", "shapes", "lines", "openings", "arrows", "labels", "dimensions")
         val SHAPE_KEYS = setOf("id", "kind", "x", "y", "w", "h", "rightOf", "below", "gap", "label", "fontSize", "fill", "stroke", "thickness", "dashed", "role")
         val LINE_KEYS = setOf("id", "points", "closed", "thickness", "stroke", "fill", "dashed", "label", "fontSize")
         val OPENING_KEYS = setOf("id", "type", "on", "wall", "offset", "width", "swing", "hinge")
