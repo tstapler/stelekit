@@ -57,7 +57,8 @@ fun DimensionField(
     // A unit switch changes [initial]; the text the user had typed is carried over, rewritten in the new units, instead of being wiped.
     var carry by remember { mutableStateOf<String?>(null) }
     var text by remember(initial) { mutableStateOf(carry ?: initial) }
-    LaunchedEffect(initial) { carry = null }
+    // The carry is for the recomposition the switch causes only; clearing it here stops it leaking into a later commit.
+    LaunchedEffect(initial, format) { carry = null }
     var error by remember(initial) { mutableStateOf<String?>(null) }
     val reading = if (text == initial) null else DimensionHint.reading(text, format)
     Row(modifier.padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {

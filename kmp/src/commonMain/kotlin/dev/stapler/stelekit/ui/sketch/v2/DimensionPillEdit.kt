@@ -58,10 +58,10 @@ class DimensionPillEdit(val element: SceneElement, start: PillKind) {
     }
 
     /** Shift+Tab: back to the previous field, keeping what was typed here when it is a valid length; false on the first field. */
-    fun back(text: String): Boolean {
+    fun back(text: String, untouched: Boolean = false): Boolean {
         val index = kinds.indexOf(current)
         if (index == 0) return false
-        (DimensionPillModel.parse(text) as? DimensionPillModel.ParsedLength.Valid)?.let { entered[current] = it.sixteenths }
+        if (!(untouched && current !in entered)) (DimensionPillModel.parse(text) as? DimensionPillModel.ParsedLength.Valid)?.let { entered[current] = it.sixteenths }
         current = kinds[index - 1]
         return true
     }

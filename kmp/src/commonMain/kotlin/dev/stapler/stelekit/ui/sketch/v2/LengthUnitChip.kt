@@ -37,13 +37,13 @@ private const val CHIP_PAD_DP = 10
 
 /** A touch-sized chip showing the current length display ("ft-in", "in", "in.dec"); one tap switches to the next one. */
 @Composable
-fun LengthUnitChip(format: LengthFormat, onCycle: () -> Unit, tag: String, modifier: Modifier = Modifier) {
+fun LengthUnitChip(format: LengthFormat, onCycle: () -> Unit, tag: String, modifier: Modifier = Modifier, keepFieldFocus: Boolean = false) {
     Box(
         modifier.testTag(tag)
             .defaultMinSize(minWidth = ChromeBudget.TOOL_TARGET_DP.dp, minHeight = ChromeBudget.TOOL_TARGET_DP.dp)
             .clip(RoundedCornerShape(CHIP_RADIUS_DP.dp))
             .background(MaterialTheme.colorScheme.secondaryContainer)
-            .focusProperties { canFocus = false }
+            .focusProperties { canFocus = !keepFieldFocus }
             .clickable(onClick = onCycle)
             .semantics { contentDescription = format.chipDescription; role = Role.Button }
             .padding(horizontal = CHIP_PAD_DP.dp),

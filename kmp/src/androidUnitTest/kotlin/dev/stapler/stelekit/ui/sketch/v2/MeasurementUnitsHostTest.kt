@@ -208,6 +208,22 @@ class MeasurementUnitsHostTest {
     }
 
     @Test
+    fun typingTheDisplayedValue_should_MakeAFractionalShapeExactlyThatSize() {
+        val fractional = rect.copy(width = dev.stapler.stelekit.sketch.v2.scene.SceneUnit.of(160.4).getOrNull()!!)
+        val session = mount(listOf(fractional))
+        pill(PillKind.Width).performClick()
+        rule.waitForIdle()
+        field().assertTextContains("10\"")
+        field().performTextReplacement("1")
+        field().performTextReplacement("10\"")
+        field().performImeAction()
+        rule.waitForIdle()
+        field().performImeAction()
+        rule.waitForIdle()
+        assertEquals(160.0, (session.controller.doc.scene[ElementId("r1")] as RectElement).width.value)
+    }
+
+    @Test
     fun typedRoundNumber_should_CommitExactly_ThroughTheRealField() {
         val session = openWidth()
         field().performTextReplacement("44")

@@ -76,6 +76,18 @@ class MeasurementInputTest {
     }
 
     @Test
+    fun backThenForward_should_NotApplyAnUntouchedPrefill() {
+        val fractional = filledRectEl("r", 0, 0, 100, 100).copy(width = SceneUnit.of(80.4).getOrNull()!!, height = SceneUnit.of(90.4).getOrNull()!!)
+        val edit = DimensionPillEdit(fractional, PillKind.Width)
+        edit.submit("5\"")
+        assertTrue(edit.back(edit.textOf(PillKind.Height), untouched = true))
+        edit.submit("5\"")
+        val done = assertIs<PillStep.Done>(edit.submit(edit.textOf(PillKind.Height), untouched = true))
+        val after = assertNotNull(done.command).apply(SketchDocumentV2(scene = sceneOfElements(fractional))).getOrNull()!!.doc.scene[fractional.id] as RectElement
+        assertEquals(90.4, after.height.value)
+    }
+
+    @Test
     fun radiusPill_should_RoundHalvesUp_And_ApplyATypedRadiusThatMatchesTheRoundedDisplay() {
         val circle = EllipseElement(ElementBase(ElementId("c")), SceneUnit.ofInt(50), SceneUnit.ofInt(50), SceneUnit.of(8.5).getOrNull()!!, SceneUnit.of(8.5).getOrNull()!!)
         assertEquals(9L, DimensionPillModel.specs(circle).first { it.kind == PillKind.Radius }.sixteenths)
