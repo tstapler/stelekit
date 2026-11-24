@@ -14,6 +14,7 @@ import dev.stapler.stelekit.sketch.v2.scene.LineElement
 import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.ui.sketch.lengthTextOf
+import dev.stapler.stelekit.units.LengthFormat
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchDimensionStrings as S
 import kotlin.math.abs
 import kotlin.math.cos
@@ -129,12 +130,12 @@ object DimensionAnnotationLayout {
         (text.length * CHAR_EM * TEXT_SP + 2 * PAD_H_DP) * fontScale to (TEXT_SP * LINE_FACTOR + 2 * PAD_V_DP) * fontScale
 
     /** The one place a value becomes text: it calls `lengthTextOf`, the formatter the pills and size fields use, so a change there applies here. */
-    fun valueText(kind: PillKind, sixteenths: Long): String =
-        (if (kind == PillKind.Diameter) S.Pill.DIAMETER_SYMBOL + " " else "") + lengthTextOf(sixteenths)
+    fun valueText(kind: PillKind, sixteenths: Long, format: LengthFormat = LengthFormat.FEET_INCHES): String =
+        (if (kind == PillKind.Diameter) S.Pill.DIAMETER_SYMBOL + " " else "") + lengthTextOf(sixteenths, format)
 
     /**
      * The annotations of [candidates] on [canvas]. [bodies] are every visible shape (the candidates included): an annotation never
-     * covers another shape. [reserved] are rectangles that stay free (the selected shape's pills). [tapMinDp] is the
+     * covers another shape. [reserved] are rectangles that stay free (the selected shape's pills); [textOnlyReserved] only keep text out (lines may cross). [tapMinDp] is the
      * touch floor for each annotation's [DimensionAnnotation.tapRect].
      */
     fun layout(
@@ -144,6 +145,8 @@ object DimensionAnnotationLayout {
         reserved: List<AnnotationRect>,
         fontScale: Double,
         tapMinDp: Double,
+        format: LengthFormat = LengthFormat.FEET_INCHES,
+        textOnlyReserved: List<AnnotationRect> = emptyList(),
     ): List<DimensionAnnotation> {
         if (canvas.width <= 0.0 || canvas.height <= 0.0) return emptyList()
         val centreX = canvas.width / 2
@@ -161,12 +164,12 @@ object DimensionAnnotationLayout {
             val name = ElementNames.nameOf(element)
             var annotated = false
             for (span in spansOf(element, canvas)) {
-                val text = valueText(span.label, span.sixteenths)
+                val text = valueText(span.label, span.sixteenths, format)
                 val (tw, th) = textSize(text, fontScale)
                 val extent = span.textExtent(tw, th)
                 val alpha = ((span.lengthDp() / extent - FADE_START_RATIO) / (FADE_FULL_RATIO - FADE_START_RATIO)).coerceIn(0.0, 1.0)
                 if (alpha < MIN_ALPHA) continue
-                val at = AnnotationPlacer.place(span, AnnotationPlacer.Fit(canvas, reserved, placed, bodyBoxes, element.id, selfBox, tw, th, extent)) ?: continue
+                val at = AnnotationPlacer.place(span, AnnotationPlacer.Fit(canvas, reserved, textOnlyReserved, placed, bodyBoxes, element.id, selfBox, tw, th, extent)) ?: continue
                 placed += at
                 annotated = true
                 out += DimensionAnnotation(element.id, name, span.label, span.sixteenths, text, at.line, at.extensions, at.text, at.text, alpha)
@@ -323,7 +326,7 @@ internal object AnnotationPlacer {
     private const val HALF = DimensionAnnotationLayout.HALF
 
     /** What a placement is checked against: the canvas, the free-space reservations, the annotations already placed and the other shapes' boxes. */
-    internal class Fit(val canvas: PillCanvas, val reserved: List<AnnotationRect>, val placed: List<AnnotationPlaced>, val bodies: List<AnnotationBody>, val self: ElementId, val selfBox: AnnotationRect, val tw: Double, val th: Double, val extent: Double)
+    internal class Fit(val canvas: PillCanvas, val reserved: List<AnnotationRect>, val textOnlyReserved: List<AnnotationRect>, val placed: List<AnnotationPlaced>, val bodies: List<AnnotationBody>, val self: ElementId, val selfBox: AnnotationRect, val tw: Double, val th: Double, val extent: Double)
 
     /**
      * The spot for [span]'s line and text: outside the shape on the preferred side, then the other, stacking outward in rows; else,
@@ -372,6 +375,7 @@ internal object AnnotationPlacer {
     private fun clear(text: AnnotationRect, strokes: List<AnnotationSegment>, fit: Fit): Boolean {
         val padded = text.inflated(DimensionAnnotationLayout.TEXT_GAP_DP)
         if (fit.bodies.any { it.id != fit.self && it.blocks(text, fit.selfBox) }) return false
+        if (fit.textOnlyReserved.any { it.overlaps(padded) }) return false
         if (fit.reserved.any { r -> r.overlaps(padded) || strokes.any { r.crosses(it) } }) return false
         return fit.placed.none { p ->
             val theirs = listOf(p.line) + p.extensions

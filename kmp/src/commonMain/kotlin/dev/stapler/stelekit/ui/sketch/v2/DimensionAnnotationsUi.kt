@@ -6,7 +6,6 @@ package dev.stapler.stelekit.ui.sketch.v2
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,6 +15,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -32,6 +33,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -44,6 +46,7 @@ import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
 import dev.stapler.stelekit.sketch.v2.tools.TouchFloor
+import dev.stapler.stelekit.units.LengthFormat
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchDimensionStrings as S
 import kotlin.math.hypot
 
@@ -54,6 +57,8 @@ object DimensionAnnotationTags {
 }
 
 private const val VIEW_MARGIN_DP = 48.0
+/** The top strip the empty-selection hint text occupies; no annotation goes there while nothing is selected. */
+private const val HINT_BAND_DP = 60.0
 private const val LINE_DP = 1f
 private const val TICK_DP = 4f
 private const val LINE_ALPHA = 0.75f
@@ -75,19 +80,25 @@ private data class AnnotationKey(
     val scope: DimensionScope,
     val pillsFor: ElementId?,
     val tapMinDp: Double,
+    val format: LengthFormat,
 )
 
 /**
  * The always-on dimensions of a technical sheet, drawn like an elevation: a thin dimension line with extension lines and ticks
  * outside each visible shape and its value centred on the line. The selected shape keeps its tappable pills instead. The lines
- * take no pointer input and are hidden from screen readers; only each value's finger-sized target is tappable, and a tap
+ * and values are not pointer nodes (so no canvas gesture is taken) and the lines are hidden from screen readers; each value's
+ * finger-sized target is tapped through [AnnotationTapTargets], and a clean tap
  * selects that shape and opens its size editor (the pills' own edit). Hidden while a tool gesture is in flight (the lines would
  * trail the shape); targets are off for a read-only sheet, another tool than Select, and a value still fading in; the layout is cached per revision, viewport and selection.
  */
 @Composable
 internal fun DimensionAnnotationsOverlay(controller: SketchEditorController, extras: EditorExtras, pointer: PointerClass) {
     val state = extras.pills
-    if (controller.sheetKind != SheetKind.Technical || !state.visible || controller.tools.preview != null) return
+    val taps = extras.annotationTaps
+    if (controller.sheetKind != SheetKind.Technical || !state.visible || controller.tools.preview != null) {
+        SideEffect { taps.targets = emptyList() }
+        return
+    }
     val viewport = controller.ui.viewport
     val density = LocalDensity.current
     val selection = controller.ui.selection
@@ -102,9 +113,12 @@ internal fun DimensionAnnotationsOverlay(controller: SketchEditorController, ext
         val pillsFor = single?.takeIf { DimensionPillModel.shown(true, controller.readOnly, true, selection.size, tool) }
         val key = AnnotationKey(
             controller.revision, viewport.zoom, viewport.panX, viewport.panY, density.density, density.fontScale, widthDp, heightDp,
-            selection, state.scope, pillsFor, TouchFloor.dp(pointer == PointerClass.TouchOrPen || controller.touchPresent),
+            selection, state.scope, pillsFor, TouchFloor.dp(pointer == PointerClass.TouchOrPen || controller.touchPresent), extras.lengthUnit.format,
         )
         val annotations = remember(key) { compute(controller, key) }
+        val active = if (tappable) annotations.filter { it.alpha >= DimensionAnnotationLayout.TAP_MIN_ALPHA } else emptyList()
+        SideEffect { taps.targets = active.map { a -> AnnotationTapTargets.Target(a.tapRect) { select(controller, state, a) } } }
+        DisposableEffect(taps) { onDispose { taps.targets = emptyList() } }
         if (annotations.isEmpty()) return@BoxWithConstraints
         Canvas(Modifier.fillMaxSize().clearAndSetSemantics { }) { drawLines(annotations, ink) }
         annotations.forEach { a ->
@@ -127,8 +141,9 @@ private fun compute(controller: SketchEditorController, key: AnnotationKey): Lis
     val visible: List<SceneElement> = controller.spatialIndex.query(view).mapNotNull { scene[it] }.filter { e -> scene.layer(e.base.layerId)?.visible != false }
     val selected = key.selection.mapTo(HashSet(), ::ElementId)
     val candidates = if (key.scope == DimensionScope.Selected) visible.filter { it.id in selected } else visible
+    val hint = if (key.selection.isEmpty()) listOf(AnnotationRect(0.0, 0.0, key.widthDp, HINT_BAND_DP)) else emptyList()
     val reserved = key.pillsFor?.let { scene[it] }?.let { e -> DimensionPillModel.layout(e, canvas).map { AnnotationRect(it.left, it.top, it.right, it.bottom).inflated(DimensionAnnotationLayout.TEXT_GAP_DP) } }.orEmpty()
-    return DimensionAnnotationLayout.layout(candidates.filter { it.id != key.pillsFor }, visible, canvas, reserved, key.fontScale.toDouble(), key.tapMinDp)
+    return DimensionAnnotationLayout.layout(candidates.filter { it.id != key.pillsFor }, visible, canvas, reserved, key.fontScale.toDouble(), key.tapMinDp, key.format, hint)
 }
 
 private fun select(controller: SketchEditorController, state: DimensionPillsState, a: DimensionAnnotation) {
@@ -173,7 +188,11 @@ private fun AnnotationValue(a: DimensionAnnotation, tappable: Boolean, ink: Colo
     val base = Modifier.offset(a.tapRect.left.dp, a.tapRect.top.dp).size(a.tapRect.width.dp, a.tapRect.height.dp).alpha(a.alpha.toFloat())
         .testTag(DimensionAnnotationTags.value(a.elementId.value, a.kind))
     val interactive = if (tappable) {
-        base.semantics(mergeDescendants = true) { contentDescription = description; role = Role.Button }.clickable(onClickLabel = S.Annotation.editAction(label), role = Role.Button, onClick = onTap)
+        base.semantics(mergeDescendants = true) {
+            contentDescription = description
+            role = Role.Button
+            onClick(label = S.Annotation.editAction(label)) { onTap(); true }
+        }
     } else {
         base.semantics(mergeDescendants = true) { contentDescription = description }
     }

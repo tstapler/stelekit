@@ -24,17 +24,6 @@ internal fun technicalChips(controller: SketchEditorController, extras: EditorEx
             StripIcon.Technical,
             extras.pills::toggle,
         ),
-        if (on) {
-            ActionChip(
-                DimensionPillTags.CHIP_DIMENSION_SCOPE,
-                if (allShapes) S.Chips.SCOPE_ALL else S.Chips.SCOPE_SELECTED,
-                if (allShapes) S.Chips.SCOPE_ALL_DESCRIPTION else S.Chips.SCOPE_SELECTED_DESCRIPTION,
-                StripIcon.Technical,
-                extras.pills::toggleScope,
-            )
-        } else {
-            null
-        },
         ActionChip(
             LengthUnitTags.CHIP_ROW,
             S.Units.chipRowLabel(extras.lengthUnit.format.chipLabel),
@@ -43,9 +32,22 @@ internal fun technicalChips(controller: SketchEditorController, extras: EditorEx
             extras.lengthUnit::cycle,
         ),
     )
-    if (controller.ui.selection.isEmpty()) return dimensions
+    val scopeChip = listOfNotNull(
+        if (on) {
+            ActionChip(
+                DimensionPillTags.CHIP_DIMENSION_SCOPE,
+                if (allShapes) S.Chips.SCOPE_ALL else S.Chips.SCOPE_SELECTED,
+                if (allShapes) S.Chips.SCOPE_ALL_DESCRIPTION else S.Chips.SCOPE_SELECTED_DESCRIPTION,
+                StripIcon.Select,
+                extras.pills::toggleScope,
+            )
+        } else {
+            null
+        },
+    )
+    if (controller.ui.selection.isEmpty()) return dimensions + scopeChip
     return dimensions + listOfNotNull(
         if (constraintsAvailable) ActionChip(DimensionPillTags.CHIP_CONSTRAINTS, S.Chips.CONSTRAINTS, S.Chips.CONSTRAINTS_DESCRIPTION, StripIcon.Constrain) { controller.ui.panelTab = PanelTab.Constraints } else null,
         if (technicalPanel) ActionChip(DimensionPillTags.CHIP_TECHNICAL, S.Chips.TECHNICAL, S.Chips.TECHNICAL_DESCRIPTION, StripIcon.Grid) { controller.ui.panelTab = PanelTab.Technical } else null,
-    )
+    ) + scopeChip
 }

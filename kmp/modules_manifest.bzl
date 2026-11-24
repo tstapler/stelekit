@@ -1613,6 +1613,7 @@ KMP_MODULES = {
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/WebStorageUx.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/YamlPickerAction.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/ActionChipRow.kt",
+   "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/AnnotationTaps.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/ArrangeBar.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/ArrangeModel.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/AutoConstrainToggle.kt",

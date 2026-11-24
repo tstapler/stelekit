@@ -94,6 +94,8 @@ class EditorExtras(
     }
 
     /** How lengths read on this technical sheet: pills, the size field, the Technical data panel and the Stats fields (per device when the host stores it). */
+    /** The tap targets of the dimension values, read by the canvas input chain. */
+    internal val annotationTaps = AnnotationTapTargets()
     val lengthUnit = LengthUnitState(services.platform.lengthFormat)
     val autoConstrain = AutoConstrainState({ controller.sheetKind })
     val loupe = LoupePreference(controller.ui, services.platform.fingerDrawing)

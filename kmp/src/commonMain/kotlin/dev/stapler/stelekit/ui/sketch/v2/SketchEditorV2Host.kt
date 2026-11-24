@@ -349,7 +349,8 @@ private fun BoxScope.SketchCanvasContent(
             .testTag(HostTags.CANVAS_INPUT)
             .onSizeChanged { controller.view.canvasSize = ScreenPx(it.width.toDouble(), it.height.toDouble()) }
             .platformPointerInput(controller, input)
-            .wheelInput(controller),
+            .wheelInput(controller)
+            .annotationTapInput(extras.annotationTaps),
     ) {
         SketchCanvasV2(layer, liveOps, viewport, painter)
         ConstraintPickerOverlay(controller, pointer)

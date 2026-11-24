@@ -16,7 +16,11 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.unit.dp
@@ -159,14 +163,45 @@ class DimensionAnnotationsHostTest {
     @Test
     fun tappingAValue_should_SelectTheShape_AndOpenItsEditor_WithAFingerSizedTarget() {
         val session = mount()
-        value("kitchen", PillKind.Width).assertWidthIsAtLeast(44.dp).assertHeightIsAtLeast(44.dp)
-        value("kitchen", PillKind.Width).performClick()
+        value("wall", PillKind.Length).assertWidthIsAtLeast(44.dp).assertHeightIsAtLeast(44.dp)
+        value("kitchen", PillKind.Width).performTouchInput { click() }
         rule.waitForIdle()
         assertEquals(setOf("kitchen"), session.controller.ui.selection)
         rule.onNodeWithTag(DimensionPillTags.FIELD).assertIsDisplayed()
         rule.onAllNodesWithTag(DimensionAnnotationTags.value("kitchen", PillKind.Width)).assertCountEquals(0)
         rule.onAllNodesWithTag(DimensionAnnotationTags.value("kitchen", PillKind.Height)).assertCountEquals(0)
         shot("6-editing")
+    }
+
+    @Test
+    fun aDragOnEmptyCanvas_should_Pan_SoTheValueDragTestMeansSomething() {
+        val session = mount(technical = false)
+        val before = session.controller.ui.viewport.panX
+        rule.onRoot().performTouchInput {
+            down(Offset(300f, 1500f))
+            moveBy(Offset(-120f, 0f))
+            moveBy(Offset(-120f, 0f))
+            up()
+        }
+        rule.waitForIdle()
+        assertTrue(session.controller.ui.viewport.panX != before)
+    }
+
+    @Test
+    fun aDragStartingOnAValue_should_StillReachTheCanvas_AndNeverOpenAnEditor() {
+        val session = mount()
+        val before = session.controller.ui.viewport.panX
+        val wallBefore = session.controller.doc.scene[ElementId("wall")]
+        value("wall", PillKind.Length).performTouchInput {
+            down(center)
+            moveBy(Offset(-120f, 0f))
+            moveBy(Offset(-120f, 0f))
+            up()
+        }
+        rule.waitForIdle()
+        rule.onAllNodesWithTag(DimensionPillTags.FIELD).assertCountEquals(0)
+        val reachedCanvas = session.controller.ui.viewport.panX != before || session.controller.doc.scene[ElementId("wall")] != wallBefore
+        assertTrue(reachedCanvas, "swallowed: pan ${session.controller.ui.viewport.panX} vs $before, sel ${session.controller.ui.selection}, tool ${session.controller.ui.activeTool}, preview ${session.controller.tools.preview}")
     }
 
     @Test
@@ -180,12 +215,12 @@ class DimensionAnnotationsHostTest {
     @Test
     fun theScopeChip_should_LimitTheDimensionsToTheSelection() {
         mount(select = listOf("kitchen"))
-        rule.onNodeWithTag(DimensionPillTags.CHIP_DIMENSION_SCOPE).performClick()
+        rule.onNodeWithTag(DimensionPillTags.CHIP_DIMENSION_SCOPE).performScrollTo().performClick()
         rule.waitForIdle()
         rule.onAllNodesWithTag(DimensionAnnotationTags.value("living", PillKind.Width)).assertCountEquals(0)
         rule.onNodeWithTag(DimensionPillTags.pill(PillKind.Width)).assertIsDisplayed()
         shot("7-selected-only")
-        rule.onNodeWithTag(DimensionPillTags.CHIP_DIMENSIONS).performClick()
+        rule.onNodeWithTag(DimensionPillTags.CHIP_DIMENSIONS).performScrollTo().performClick()
         rule.waitForIdle()
         rule.onAllNodesWithTag(DimensionPillTags.pill(PillKind.Width)).assertCountEquals(0)
     }
