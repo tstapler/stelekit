@@ -14,7 +14,12 @@ import dev.stapler.stelekit.sketch.v2.view.SceneBounds
  * elements' edges and centres; [grid] is the sheet's grid (sixteenth of an inch on technical sheets). [None] snaps nothing,
  * the default of every tool context, so a tool test sees raw geometry unless it asks for snapping.
  */
-data class SnapSettings(val objects: Boolean = false, val grid: GridSettings? = null) {
+data class SnapSettings(
+    val objects: Boolean = false,
+    val grid: GridSettings? = null,
+    /** The point kinds (endpoint, midpoint, intersection, ...) a drawn or dragged point locks onto; none by default. */
+    val points: PointSnapKinds = PointSnapKinds.None,
+) {
     /** The grid, or null when absent or switched off. */
     val activeGrid: GridSettings? get() = grid?.takeIf { it.enabled }
 

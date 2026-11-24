@@ -7,6 +7,7 @@ package dev.stapler.stelekit.sketch.v2.tools
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
+import dev.stapler.stelekit.sketch.v2.snap.PointSnapHit
 import dev.stapler.stelekit.sketch.v2.snap.SnapGuide
 
 /** The frozen tool inventory (requirements.md metric 1, 12 tools plus Point and Arc under OD-8); adding one is a requirements change. */
@@ -34,6 +35,8 @@ data class ToolPreview(
     val frame: SelectionFrame? = null,
     /** The point the touch loupe centres its crosshair on (the snapped one while a drag is snapped). */
     val cursor: ScenePoint? = null,
+    /** The endpoint, midpoint, intersection... the point locked onto; the host draws its glyph and name. */
+    val point: PointSnapHit? = null,
 )
 
 /** A short message a tool raises for the host's notice queue (UX-12, UX-101); the host owns the wording and the queue. */

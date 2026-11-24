@@ -4,6 +4,9 @@
 
 package dev.stapler.stelekit.ui.sketch.v2.strings
 
+import dev.stapler.stelekit.sketch.v2.snap.GridPreset
+import dev.stapler.stelekit.sketch.v2.snap.PointSnapKind
+
 /**
  * The strings of the editor host's own surfaces (Task 6.2.0d): the Library tab, the clipboard toasts, the view toggles and the
  * Align and Order menus. Part of the string table like [SketchEditorStrings]; composables read their text from here.
@@ -63,6 +66,42 @@ object SketchHostStrings {
         const val SNAP_RESUME_ACTION = "Resume snapping"
         const val GRID_KEY = "ViewGrid"
         const val SNAP_KEY = "ViewSnap"
+    }
+
+    /** The Snap section of the overflow menu and the names shown beside a snapped point. */
+    object Snap {
+        const val SECTION = "Snap to"
+        const val EXPANDED = "expanded"
+        const val COLLAPSED = "collapsed"
+        const val EXPAND_MARK = "+"
+        const val COLLAPSE_MARK = "-"
+        const val ALIGNMENT = "Edges and centres"
+        const val GRID_STEP = "Grid step"
+        const val ON = "on"
+        const val OFF = "off"
+
+        fun kindName(kind: PointSnapKind): String = when (kind) {
+            PointSnapKind.Endpoint -> "Endpoint"
+            PointSnapKind.Intersection -> "Intersection"
+            PointSnapKind.Midpoint -> "Midpoint"
+            PointSnapKind.Centre -> "Centre"
+            PointSnapKind.Perpendicular -> "Perpendicular"
+            PointSnapKind.Tangent -> "Tangent"
+        }
+
+        fun presetName(preset: GridPreset): String = when (preset) {
+            GridPreset.Sixteenth -> "1/16 in"
+            GridPreset.Quarter -> "1/4 in"
+            GridPreset.Inch -> "1 in"
+            GridPreset.SixInch -> "6 in"
+            GridPreset.Foot -> "1 ft"
+        }
+
+        fun gridRow(preset: GridPreset): String = "$GRID_STEP: ${presetName(preset)}"
+
+        fun gridRowDescription(preset: GridPreset): String = "$GRID_STEP ${presetName(preset)}, tap for ${presetName(preset.next())}"
+
+        fun toggleDescription(name: String, on: Boolean): String = "Snap to $name ${if (on) ON else OFF}"
     }
 
     object Align {

@@ -213,6 +213,7 @@ fun SketchEditorV2Host(
         onSnap = extras::toggleSnap,
         onSnapHold = { extras.snapHeld = it },
         snapHeld = extras.snapHeld,
+        snapChoices = extras.snapChoices,
         restore = restore,
         sheetKind = controller.sheetKind.takeIf { it != dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Converted && !controller.readOnly },
         onSheetKind = { controller.setSheetKind(it) },
@@ -355,11 +356,13 @@ private fun BoxScope.SketchCanvasContent(
         SketchCanvasV2(layer, liveOps, viewport, painter)
         ConstraintPickerOverlay(controller, pointer)
     }
+    GridOverlay(extras.visibleGrid, state.viewport)
     NameTagsOverlay(controller)
     // After the name tags, so a tiny shape's handles are drawn over its label and never hidden by it (the overlay takes no pointer input).
     SelectionVisuals(controller)
     TextSizeBadge(controller)
     SnapGuideOverlay(controller.tools.preview?.guides.orEmpty(), state.viewport, haptics = state.lastInput == InputKind.TouchOrPen)
+    SnapPointMarker(controller.tools.preview?.point, state.viewport)
     TouchLoupe(controller.tools.loupe, state.touchLoupe, { controller.view.canvasSize }, { loupeFocus(controller) }, pxPerDp) { region ->
         // Its own painter, so the loupe's cull and path cache never touch the main canvas's.
         val loupePainter = remember(environment) { ScenePainter(resources = environment.resources) }

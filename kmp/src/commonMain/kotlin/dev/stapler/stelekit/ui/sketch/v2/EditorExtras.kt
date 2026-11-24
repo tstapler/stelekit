@@ -30,6 +30,7 @@ import dev.stapler.stelekit.sketch.v2.runtime.export.SketchExportRunner
 import dev.stapler.stelekit.sketch.v2.runtime.image.ImageStoreError
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.snap.GridSettings
+import dev.stapler.stelekit.sketch.v2.snap.PointSnapKinds
 import dev.stapler.stelekit.sketch.v2.snap.SnapSettings
 import dev.stapler.stelekit.sketch.v2.tools.AddElementCommand
 import dev.stapler.stelekit.sketch.v2.tools.ToolCommand
@@ -100,6 +101,9 @@ class EditorExtras(
     val lengthUnit = LengthUnitState(services.platform.lengthFormat)
     val autoConstrain = AutoConstrainState({ controller.sheetKind })
     val loupe = LoupePreference(controller.ui, services.platform.fingerDrawing)
+
+    /** Which snap kinds are on and the coarse grid step (Snap menu), kept per device when the host stores it. */
+    val snapChoices = SnapChoices(services.platform.snapPrefs)
 
     var grid: Boolean by mutableStateOf(false)
         private set
@@ -233,10 +237,17 @@ class EditorExtras(
         else -> command
     }
 
-    /** Technical sheets snap to the sixteenth of an inch, diagram sheets to the diagram grid. */
+    /** Technical sheets use the chosen grid step (a sixteenth of an inch until changed), diagram sheets the diagram grid. */
+    private fun gridSettings(): GridSettings =
+        if (controller.sheetKind == SheetKind.Technical) snapChoices.gridPreset.settings(grid) else GridSettings.diagram(grid)
+
+    /** The grid to draw over the canvas: null while the Grid toggle is off. */
+    val visibleGrid: GridSettings? get() = gridSettings().takeIf { it.enabled }
+
     private fun snapSettings(): SnapSettings = SnapSettings(
-        objects = snap,
-        grid = if (controller.sheetKind == SheetKind.Technical) GridSettings.technical(grid) else GridSettings.diagram(grid),
+        objects = snap && snapChoices.alignment,
+        grid = gridSettings(),
+        points = if (snap) snapChoices.kinds else PointSnapKinds.None,
     ).whileHeld(snapHeld)
 
     private fun autoConstrained(command: AddElementCommand): ToolCommand? {

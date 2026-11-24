@@ -11,6 +11,8 @@ import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
  * cancel rules in one place (UX-08): a second pointer going down, Esc or a platform cancel abandons the gesture
  * with no command, no undo entry and a cleared preview, and the tool returns to Idle.
  *
+ * Pointer positions are first locked onto the drawing's points ([PointSnapper]) when the snap settings ask for it.
+ *
  * Subclasses supply [previewFor] (the shape between press and the current point) and [commandFor] (what to commit
  * on release); they never see a cancelled gesture.
  */
@@ -22,12 +24,11 @@ abstract class DragGestureTool : Tool {
 
     protected abstract fun commandFor(start: ScenePoint, end: ScenePoint, event: InputEvent, ctx: ToolContext): ToolCommand?
 
-    override fun onEvent(event: InputEvent, ctx: ToolContext): ToolResult =
-        if (event.type == InputType.Down) {
-            ToolResult(preview = null, next = Dragging(this, event.pointerId, event.point))
-        } else {
-            ToolResult.Nothing
-        }
+    override fun onEvent(event: InputEvent, ctx: ToolContext): ToolResult {
+        if (event.type != InputType.Down) return ToolResult.Nothing
+        val placed = PointSnapper.place(event.point, null, event, ctx)
+        return ToolResult(preview = placed.markerOnly(), next = Dragging(this, event.pointerId, placed.point))
+    }
 
     private class Dragging(
         private val owner: DragGestureTool,
@@ -40,8 +41,10 @@ abstract class DragGestureTool : Tool {
             event.type == InputType.Escape || event.type == InputType.Cancel -> cancel()
             event.type == InputType.Down && event.pointerId != pointerId -> cancel()
             event.pointerId != pointerId -> ToolResult.Nothing
-            event.type == InputType.Move -> ToolResult(preview = owner.previewFor(start, event.point, event, ctx))
-            event.type == InputType.Up -> ToolResult(owner.commandFor(start, event.point, event, ctx), null, owner.idle())
+            event.type == InputType.Move -> PointSnapper.place(event.point, null, event, ctx).let { at ->
+                ToolResult(preview = owner.previewFor(start, at.point, event, ctx)?.let(at::marked))
+            }
+            event.type == InputType.Up -> ToolResult(owner.commandFor(start, PointSnapper.place(event.point, null, event, ctx).point, event, ctx), null, owner.idle())
             else -> ToolResult.Nothing
         }
 
