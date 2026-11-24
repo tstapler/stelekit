@@ -328,7 +328,8 @@ def sync_registry(business, previous, existing):
             if fq in moved:
                 continue
         keep.append(l)
-    back = sorted((before - moved) & existing)
+    registered = {r for r in (s.strip().rstrip(",")[:-len("::class")] for s in keep if s.strip().rstrip(",").endswith("::class"))}
+    back = sorted(c for c in (before - moved) & existing if c not in registered and c.rsplit(".", 1)[1] not in registered)
     if back:
         close = max(i for i, l in enumerate(keep) if l.strip() == ")")
         keep[close:close] = ["    %s::class," % c for c in back]
