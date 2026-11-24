@@ -313,7 +313,7 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
             |  build <spec.json> --out <sheet.v2.json> [--render <x.svg|x.png>] [--dimensions|--no-dimensions] [--width N]
             |        expand an authoring spec (rooms, walls, doors, labels, dimensions; feet-inches; photo calibration) into a valid sheet
             |  render <sheet.v2.json|.excalidraw|spec.json> --out <x.svg|x.png> [--dimensions|--no-dimensions] [--width N] [--style clean|sketchy] [--background #rrggbb|transparent]
-            |        draw the sheet; --dimensions overlays the measured width and height of every shape
+            |        draw the sheet; --dimensions draws dimension annotations (--no-dimensions hides them; else the sheet flag decides)
             |  validate <file>          check a sheet, spec or .excalidraw and explain every problem (exit 1 on errors)
             |  canonicalize <sheet> [--out f | --in-place]   rewrite hand-written sheet JSON as the exact canonical bytes; prints the sha256
             |  describe <file>          text description: elements with sizes, labels, relationships, openings, dimensions, a character map

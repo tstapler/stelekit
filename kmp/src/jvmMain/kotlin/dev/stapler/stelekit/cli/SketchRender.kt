@@ -19,6 +19,7 @@ import dev.stapler.stelekit.platform.PngEncoder
 import dev.stapler.stelekit.sketch.v2.annotation.DimensionExport
 import dev.stapler.stelekit.sketch.v2.annotation.DimensionExportOptions
 import dev.stapler.stelekit.sketch.v2.annotation.ExportInk
+import dev.stapler.stelekit.sketch.v2.commands.SheetDimensionsExtras
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.commands.dimensionsOn
 import dev.stapler.stelekit.sketch.v2.export.SvgExportOptions
@@ -71,7 +72,11 @@ internal object SketchRender {
 
     /** How the annotations are drawn, or null for none: the request over the sheet's flag, the ink following the background. */
     fun dimensionOptions(doc: SketchDocumentV2, request: RenderRequest): DimensionExportOptions? =
-        if (request.dimensions ?: doc.dimensionsOn) DimensionExportOptions(ink = ExportInk.forBackground(request.background)) else null
+        if (request.dimensions ?: sheetShows(doc)) DimensionExportOptions(ink = ExportInk.forBackground(request.background)) else null
+
+    /** A spec-built plan already carries its authored dimension marks, so without a stored choice it is not annotated twice. */
+    private fun sheetShows(doc: SketchDocumentV2): Boolean =
+        SheetDimensionsExtras.read(doc.extras) ?: (doc.dimensionsOn && doc.extras["agent"] == null)
 
     fun svg(doc: SketchDocumentV2, request: RenderRequest): String {
         val scene = doc.scene

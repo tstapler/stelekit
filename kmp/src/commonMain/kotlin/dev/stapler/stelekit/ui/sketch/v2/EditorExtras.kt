@@ -17,7 +17,6 @@ import dev.stapler.stelekit.sketch.constraints.SolverTier
 import dev.stapler.stelekit.sketch.v2.commands.Applied
 import dev.stapler.stelekit.sketch.v2.commands.Command
 import dev.stapler.stelekit.sketch.v2.commands.CommandError
-import dev.stapler.stelekit.sketch.v2.commands.dimensionsOn
 import dev.stapler.stelekit.sketch.v2.constraints.AutoConstrain
 import dev.stapler.stelekit.sketch.v2.constraints.ConstraintId
 import dev.stapler.stelekit.sketch.v2.constraints.SheetKind
@@ -286,7 +285,7 @@ class EditorExtras(
         selection = controller.ui.selection.mapTo(LinkedHashSet(), ::ElementId),
         images = services.imageSource,
         library = library.items,
-        sheetDimensions = controller.doc.dimensionsOn,
+        sheetDimensions = controller.creation.dimensionsOn ?: (controller.sheetKind == SheetKind.Technical && pills.visible),
         lengthFormat = lengthUnit.format,
     )
 
