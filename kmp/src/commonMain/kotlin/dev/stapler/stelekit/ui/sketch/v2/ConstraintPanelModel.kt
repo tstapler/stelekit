@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.ui.sketch.v2
 
+import dev.stapler.stelekit.sketch.MetricScene
 import dev.stapler.stelekit.sketch.constraints.SolverTier
 import dev.stapler.stelekit.sketch.v2.commands.Command
 import dev.stapler.stelekit.sketch.v2.commands.SequenceCommand
@@ -36,6 +37,7 @@ import dev.stapler.stelekit.ui.sketch.v2.strings.SketchConstraintStrings
 import dev.stapler.stelekit.units.Inches
 import dev.stapler.stelekit.units.LengthFormat
 import dev.stapler.stelekit.units.LengthFormatter
+import dev.stapler.stelekit.units.MetricLength
 import kotlin.math.PI
 import kotlin.math.roundToLong
 
@@ -96,7 +98,7 @@ object ConstraintPanelModel {
         return ConstraintStatus(kind, DofWording.statusWithDetail(dof), dof)
     }
 
-    fun rows(doc: SketchDocumentV2, analysis: ConstraintAnalysis, technical: Boolean): List<ConstraintRow> = doc.constraints.map { c ->
+    fun rows(doc: SketchDocumentV2, analysis: ConstraintAnalysis, technical: Boolean, format: LengthFormat = LengthFormat.INCHES_MIXED): List<ConstraintRow> = doc.constraints.map { c ->
         val state = when (c.id) {
             in analysis.conflicts -> ConstraintRowState.Conflict
             in analysis.redundant -> ConstraintRowState.Redundant
@@ -105,7 +107,7 @@ object ConstraintPanelModel {
         val names = c.elementIds.mapNotNull { doc.scene[it] }.map { ElementNames.nameOf(it) }
         val stateText = state.stateText.takeIf { state != ConstraintRowState.Ok }
         val label = SketchConstraintStrings.Panel.kindLabel(c.kind)
-        val text = SketchConstraintStrings.Panel.rowText(label, ConstraintValueText.of(c, technical), names.joinToString(", "), stateText)
+        val text = SketchConstraintStrings.Panel.rowText(label, ConstraintValueText.of(c, technical, format), names.joinToString(", "), stateText)
         ConstraintRow(c.id, text, state, c.reference, c.isDimensional, names, c.elementIds)
     }
 
@@ -120,11 +122,12 @@ object ConstraintPanelModel {
 object ConstraintValueText {
     private const val HALF_TURN_DEGREES = 180.0
 
-    fun of(c: Constraint, technical: Boolean): String? {
+    /** [format] only matters for a metric display: the inch sheet keeps its mixed-inch spelling here whatever the pills show. */
+    fun of(c: Constraint, technical: Boolean, format: LengthFormat = LengthFormat.INCHES_MIXED): String? {
         val value = c.value ?: return null
         return when {
             c.kind == ConstraintKind.Angle -> "${(value * HALF_TURN_DEGREES / PI).roundToLong()}°"
-            technical -> LengthFormatter.format(Inches(value.roundToLong()), LengthFormat.INCHES_MIXED)
+            technical -> if (MetricLength.isMetric(format)) MetricScene.formatUnits(value, format) else LengthFormatter.format(Inches(value.roundToLong()), LengthFormat.INCHES_MIXED)
             else -> value.roundToLong().toString()
         }
     }

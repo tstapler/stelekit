@@ -6,9 +6,12 @@
 
 package dev.stapler.stelekit.cli
 
+import dev.stapler.stelekit.sketch.MetricScene
 import dev.stapler.stelekit.units.Inches
 import dev.stapler.stelekit.units.LengthFormat
 import dev.stapler.stelekit.units.LengthFormatter
+import dev.stapler.stelekit.units.MetricLength
+import dev.stapler.stelekit.units.MetricParse
 import dev.stapler.stelekit.units.ParsedLength
 import dev.stapler.stelekit.units.parseLength
 import kotlinx.serialization.json.JsonArray
@@ -49,12 +52,18 @@ internal class SpecIssues {
 internal object SketchLengths {
     const val UNITS_PER_INCH = 16.0
     const val INCHES_PER_FOOT = 12.0
+    private const val MM_TENTHS_PER_INCH = 254.0
     val UUID_SHAPE = Regex("[A-Za-z0-9-]{8,64}")
 
-    /** Exact inches of [text] (`12' 6"`, `3 1/2"`, `144`), or null when it is not a length. */
+    /** Tenths of a millimetre of [text] when it is a metric length with an explicit unit (`25.4 mm`, `1,5 m`, `30cm`); null otherwise. A bare number is never metric here: it keeps its sheet-mode meaning. */
+    fun parseMetricTenths(text: String): Long? =
+        (MetricLength.parse(text, bare = null) as? MetricParse.Ok)?.reading?.tenthsMm
+
+    /** Exact inches of [text] (`12' 6"`, `3 1/2"`, `144`, `25.4 mm`), or null when it is not a length. */
     fun parseInches(text: String): Double? {
         val trimmed = text.trim()
         trimmed.toDoubleOrNull()?.let { return it.takeIf(Double::isFinite) }
+        parseMetricTenths(trimmed)?.let { return it / MM_TENTHS_PER_INCH }
         val parsed = parseLength(trimmed).getOrNull() as? ParsedLength.Measured ?: return null
         return parsed.value.num.toDouble() / parsed.value.den.toDouble()
     }
@@ -86,9 +95,17 @@ internal class SpecReader(
             return null
         }
         if (p.isString) {
+            SketchLengths.parseMetricTenths(p.content)?.let { tenths ->
+                // Metric text keeps its 0.1 mm precision: scene units are a Double, so it is not snapped to a sixteenth.
+                val exact = MetricScene.toUnits(tenths)
+                if ((MetricLength.parse(p.content, null) as? MetricParse.Ok)?.reading?.rounded == true) {
+                    issues.warn(path, "\"${p.content}\" is finer than 0.1 mm; rounded to ${MetricLength.formatMm(tenths)}")
+                }
+                return exact
+            }
             val inches = SketchLengths.parseInches(p.content)
             if (inches == null) {
-                issues.error(path, "\"${p.content}\" is not a length; write it like 12', 12' 6\", 3 1/2\" or a plain number")
+                issues.error(path, "\"${p.content}\" is not a length; write it like 12', 12' 6\", 3 1/2\", 25.4 mm, 1.2 m or a plain number")
                 return null
             }
             val bare = p.content.trim().toDoubleOrNull() != null

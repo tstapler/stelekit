@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.ui.sketch.v2
 
+import dev.stapler.stelekit.sketch.MetricScene
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.Key
@@ -235,5 +236,58 @@ class MeasurementUnitsHostTest {
         val after = session.controller.doc.scene[ElementId("r1")] as RectElement
         assertEquals(704.0, after.width.value)
         assertEquals(1440.0, after.height.value)
+    }
+
+    private fun chipTo(format: dev.stapler.stelekit.units.LengthFormat) {
+        var guard = 0
+        while (guard++ < dev.stapler.stelekit.units.LengthFormat.entries.size && !chipShows(format)) {
+            rule.onNodeWithTag(LengthUnitTags.INLINE_CHIP).performClick()
+            rule.waitForIdle()
+        }
+    }
+
+    private fun chipShows(format: dev.stapler.stelekit.units.LengthFormat): Boolean =
+        runCatching { rule.onNodeWithTag(LengthUnitTags.INLINE_CHIP).assertContentDescriptionContains("Length units: ${format.displayName}.", substring = true) }.isSuccess
+
+    @Test
+    fun metricField_should_ShowMetricKeys_ReadTheValueBack_AndSayWhenItRounds() {
+        openWidth()
+        chipTo(dev.stapler.stelekit.units.LengthFormat.METRIC_MM)
+        rule.onAllNodesWithTag(LengthKeyTags.ROW).assertCountEquals(0)
+        for (key in MeasureKey.METRIC) rule.onNodeWithTag(LengthKeyTags.key(key)).assertIsDisplayed().assertWidthIsAtLeast(44.dp).assertHeightIsAtLeast(44.dp)
+        rule.onNodeWithTag(LengthKeyTags.key(MeasureKey.Millimetre)).assertContentDescriptionEquals("millimetres")
+        rule.onNodeWithTag(LengthKeyTags.key(MeasureKey.Comma)).assertContentDescriptionEquals("decimal comma")
+        rule.onNodeWithTag(LengthKeyTags.ADVANCE).assertIsDisplayed().assertWidthIsAtLeast(44.dp).assertHeightIsAtLeast(44.dp).assertContentDescriptionEquals("Next field")
+        field().performTextReplacement("12,34")
+        rule.waitForIdle()
+        rule.onNodeWithTag(DimensionPillTags.READING, useUnmergedTree = true).assertTextContains("= 12.3 mm (about 1/2\")")
+        rule.onNodeWithTag(DimensionPillTags.ROUNDED, useUnmergedTree = true).assertTextContains("12,34 is finer than 0.1 mm. Rounded to 12.3 mm")
+        shot("8-metric-field")
+    }
+
+    @Test
+    fun fractionKeys_should_TypeAMixedNumber_AtTheTouchFloor() {
+        openWidth()
+        field().performTextReplacement("3")
+        for (key in MeasureKey.FRACTIONS) rule.onNodeWithTag(LengthKeyTags.key(key)).assertIsDisplayed().assertWidthIsAtLeast(44.dp).assertHeightIsAtLeast(44.dp)
+        rule.onNodeWithTag(LengthKeyTags.key(MeasureKey.Half)).assertContentDescriptionEquals("one half").performClick()
+        rule.waitForIdle()
+        field().assertTextContains("3 1/2")
+        shot("9-fraction-keys")
+    }
+
+    @Test
+    fun metricEntry_should_StoreTenthsOfAMillimetreExactly_StickAUnit_AndAdvanceWithTheKey() {
+        val session = openWidth()
+        chipTo(dev.stapler.stelekit.units.LengthFormat.METRIC_MM)
+        field().performTextReplacement("1,23 cm")
+        rule.onNodeWithTag(LengthKeyTags.ADVANCE).performClick()
+        rule.waitForIdle()
+        field().performTextReplacement("4")
+        rule.onNodeWithTag(LengthKeyTags.ADVANCE).assertContentDescriptionEquals("Done, apply the size").performClick()
+        rule.waitForIdle()
+        val after = session.controller.doc.scene[ElementId("r1")] as RectElement
+        assertEquals(dev.stapler.stelekit.sketch.MetricScene.toUnits(123), after.width.value)
+        assertEquals(dev.stapler.stelekit.sketch.MetricScene.toUnits(400), after.height.value)
     }
 }

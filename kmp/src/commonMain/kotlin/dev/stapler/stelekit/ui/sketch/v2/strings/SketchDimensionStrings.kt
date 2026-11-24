@@ -81,6 +81,26 @@ object SketchDimensionStrings {
         const val POINT = "decimal point"
         const val FEET_WORD = "ft, feet"
         const val INCH_WORD = "in, inches"
+        const val HALF_LABEL = "1/2"
+        const val QUARTER_LABEL = "1/4"
+        const val EIGHTH_LABEL = "1/8"
+        const val SIXTEENTH_LABEL = "1/16"
+        const val HALF = "one half"
+        const val QUARTER = "one quarter"
+        const val EIGHTH = "one eighth"
+        const val SIXTEENTH = "one sixteenth"
+        const val MM_LABEL = "mm"
+        const val CM_LABEL = "cm"
+        const val M_LABEL = "m"
+        const val COMMA_LABEL = ","
+        const val MM = "millimetres"
+        const val CM = "centimetres"
+        const val M = "metres"
+        const val COMMA = "decimal comma"
+        const val NEXT = "Next"
+        const val DONE = "Done"
+        const val NEXT_DESCRIPTION = "Next field"
+        const val DONE_DESCRIPTION = "Done, apply the size"
     }
 
     /** The length display switch (feet and inches, inches, decimal inches) and the live reading of typed text. */
@@ -91,6 +111,10 @@ object SketchDimensionStrings {
         const val NAME_FEET_INCHES = "Feet and inches"
         const val NAME_INCHES = "Inches"
         const val NAME_DECIMAL = "Decimal inches"
+        const val CHIP_METRIC_MM = "mm"
+        const val CHIP_METRIC_CM_M = "cm/m"
+        const val NAME_METRIC_MM = "Millimetres"
+        const val NAME_METRIC_CM_M = "Centimetres and metres"
         const val MENU_LABEL = "Length units"
         const val MENU_CHOOSE = "Length units, tap to change"
 
@@ -106,6 +130,19 @@ object SketchDimensionStrings {
         fun reading(primary: String, other: String?) = if (other == null) "= $primary" else "= $primary ($other)"
 
         fun rounded(written: String, nearest: String) = "$written is between sixteenths. Rounded to $nearest"
+
+        /** The value is metric and finer than the 0.1 mm it is kept to: [stored] is what the sheet holds. */
+        fun roundedMetric(written: String, stored: String) = "$written is finer than 0.1 mm. Rounded to $stored"
+
+        /** The inch spelling of a metric value, which the sheet does not hold exactly. */
+        fun approx(inches: String) = "about $inches"
+
+        /** A metric length in words for a screen reader: `12.3 millimetres`. */
+        fun spokenMetric(number: String, unitWord: String) = "$number $unitWord"
+
+        const val SPOKEN_MM = "millimetres"
+        const val SPOKEN_CM = "centimetres"
+        const val SPOKEN_M = "metres"
 
         fun roundedShort(nearest: String) = "Rounded to $nearest"
     }

@@ -28,6 +28,8 @@ import dev.stapler.stelekit.sketch.v2.runtime.constraints.SolveRunner
 import dev.stapler.stelekit.sketch.v2.scene.ElementNames
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchConstraintStrings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchDimensionStrings
+import dev.stapler.stelekit.units.LengthFormat
+import dev.stapler.stelekit.units.MetricLength
 import kotlin.math.PI
 
 /** Turns what the user typed into a dimension's value in scene units (a length in sixteenths of an inch, an angle in radians). */
@@ -42,9 +44,12 @@ object DimensionValueParser {
     }
 
     /** The value, or the inline message to show with the old value kept ("Not a length. Try 12 3/16\""). */
-    fun parse(kind: ConstraintKind, text: String, technical: Boolean): Either<String, Double> = when {
+    fun parse(kind: ConstraintKind, text: String, technical: Boolean, format: LengthFormat = LengthFormat.INCHES_MIXED): Either<String, Double> = when {
         kind == ConstraintKind.Angle -> angle(text)
-        technical -> DimensionInput.parse(text).fold({ SketchConstraintStrings.Dimension.notALength().left() }, { it.sixteenths.toDouble().right() })
+        technical -> DimensionInput.interpretUnits(text, format).fold(
+            { SketchConstraintStrings.Dimension.notALength().left() },
+            { if (it.wasRounded) SketchConstraintStrings.Dimension.notALength().left() else it.units.right() },
+        )
         else -> text.trim().toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 }?.right() ?: SketchConstraintStrings.Dimension.notALength().left()
     }
 
@@ -55,13 +60,17 @@ object DimensionValueParser {
      * Like [parse], but on a technical sheet a length between two sixteenths (`0.3"`) is rounded to the nearest sixteenth and
      * reported in [Interpreted.roundedNotice] instead of being refused. [parse] stays strict for its own callers.
      */
-    fun interpret(kind: ConstraintKind, text: String, technical: Boolean): Either<String, Interpreted> {
-        if (kind == ConstraintKind.Angle || !technical) return parse(kind, text, technical).map { Interpreted(it) }
-        return DimensionInput.interpret(text).fold(
+    fun interpret(kind: ConstraintKind, text: String, technical: Boolean, format: LengthFormat = LengthFormat.INCHES_MIXED): Either<String, Interpreted> {
+        if (kind == ConstraintKind.Angle || !technical) return parse(kind, text, technical, format).map { Interpreted(it) }
+        return DimensionInput.interpretUnits(text, format).fold(
             { SketchConstraintStrings.Dimension.notALength().left() },
             { typed ->
-                val notice = typed.roundedFrom?.let { SketchDimensionStrings.Units.rounded(it, DimensionInput.roundedNoticeText(typed.inches)) }
-                Interpreted(typed.inches.sixteenths.toDouble(), notice).right()
+                val tenths = typed.metricTenthsMm
+                val notice = typed.roundedFrom?.let {
+                    if (tenths != null) SketchDimensionStrings.Units.roundedMetric(it, MetricLength.format(tenths, if (MetricLength.isMetric(format)) format else LengthFormat.METRIC_MM))
+                    else SketchDimensionStrings.Units.rounded(it, DimensionInput.roundedNoticeText(typed.nearestInches, format))
+                }
+                Interpreted(typed.units, notice).right()
             },
         )
     }
@@ -106,10 +115,11 @@ sealed interface DimensionEditState {
  * typed value commits through the same [SolveRunner] path as every edit, so the new value and the solver-moved geometry are ONE
  * undo step, and a value the solver refuses leaves the document untouched. Esc cancels and commits nothing.
  */
-class DimensionEditor(private val technicalNow: () -> Boolean) {
+class DimensionEditor(private val technicalNow: () -> Boolean, private val formatNow: () -> LengthFormat = { LengthFormat.INCHES_MIXED }) {
     constructor(technical: Boolean) : this({ technical })
 
     private val technical: Boolean get() = technicalNow()
+    private val format: LengthFormat get() = formatNow()
 
     var state: DimensionEditState by mutableStateOf(DimensionEditState.Closed)
         private set
@@ -129,7 +139,7 @@ class DimensionEditor(private val technicalNow: () -> Boolean) {
         state = if (c.reference) {
             DimensionEditState.ReadOnly(id, SketchConstraintStrings.Dimension.REFERENCE_READ_ONLY, SketchConstraintStrings.Dimension.MAKE_DRIVING)
         } else {
-            DimensionEditState.Editing(DimensionSubject(c, isNew = false), ConstraintValueText.of(c, technical).orEmpty())
+            DimensionEditState.Editing(DimensionSubject(c, isNew = false), ConstraintValueText.of(c, technical, format).orEmpty())
         }
         return true
     }
@@ -171,7 +181,7 @@ class DimensionEditor(private val technicalNow: () -> Boolean) {
         val editing = state as? DimensionEditState.Editing ?: return null
         val subject = editing.subject
         roundedNotice = null
-        val interpreted = DimensionValueParser.interpret(subject.constraint.kind, editing.text, technical).fold(
+        val interpreted = DimensionValueParser.interpret(subject.constraint.kind, editing.text, technical, format).fold(
             { message -> state = editing.copy(error = message); return null },
             { it },
         )
@@ -227,8 +237,8 @@ class DimensionEditor(private val technicalNow: () -> Boolean) {
     private fun failureMessage(base: SketchDocumentV2, subject: DimensionSubject, attempted: Constraint, reason: SolveRejection): String {
         val strings = SketchConstraintStrings.Dimension
         if (subject.isNew) return strings.CANNOT_ADD
-        val old = base.constraints.firstOrNull { it.id == subject.constraint.id }?.let { ConstraintValueText.of(it, technical) }.orEmpty()
-        val new = ConstraintValueText.of(attempted, technical).orEmpty()
+        val old = base.constraints.firstOrNull { it.id == subject.constraint.id }?.let { ConstraintValueText.of(it, technical, format) }.orEmpty()
+        val new = ConstraintValueText.of(attempted, technical, format).orEmpty()
         val ids = conflictIdsOf(reason)
         val partner = base.constraints.firstOrNull { it.id.value in ids && it.id != subject.constraint.id } ?: return strings.cannotSolve(old, new)
         val shared = partner.elementIds.firstOrNull { it in subject.constraint.elementIds } ?: partner.elementIds.firstOrNull()

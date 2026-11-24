@@ -19,11 +19,14 @@ object PillResize {
      * grows right and down and does not jump. A line keeps its direction and is scaled to the new length. Null when the
      * element has no pills or [values] names none of its kinds.
      */
-    fun command(element: SceneElement, values: Map<PillKind, Long>): ResizeElement? {
+    fun command(element: SceneElement, values: Map<PillKind, Long>): ResizeElement? = commandExact(element, values.mapValues { it.value.toDouble() })
+
+    /** [command] for sizes in fractional scene units: a metric length typed to 0.1 mm is not rounded to a sixteenth. */
+    fun commandExact(element: SceneElement, values: Map<PillKind, Double>): ResizeElement? {
         val stats = ElementStats.of(element) ?: return null
         val specs = DimensionPillModel.specs(element)
         if (specs.none { it.kind in values }) return null
-        fun size(kind: PillKind, current: Double): Double = values[kind]?.toDouble() ?: current
+        fun size(kind: PillKind, current: Double): Double = values[kind] ?: current
         return when (element) {
             is LineElement -> {
                 val len = DimensionPillModel.lineLength(element) ?: return null
@@ -40,15 +43,15 @@ object PillResize {
         }
     }
 
-    private fun diameterOf(values: Map<PillKind, Long>): Double? = values[PillKind.Diameter]?.toDouble() ?: values[PillKind.Radius]?.let { 2.0 * it }
+    private fun diameterOf(values: Map<PillKind, Double>): Double? = values[PillKind.Diameter] ?: values[PillKind.Radius]?.let { 2.0 * it }
 
     /** The unrotated origin that keeps the visible top-left corner of a rotated box where it is (the unrotated one when the angle is 0). */
-    private fun anchorKeepingTopLeft(element: SceneElement, stats: ElementStats, values: Map<PillKind, Long>): Pair<Double, Double> {
+    private fun anchorKeepingTopLeft(element: SceneElement, stats: ElementStats, values: Map<PillKind, Double>): Pair<Double, Double> {
         val angle = (element as? BoxElement)?.angle ?: (element as? EllipseElement)?.angle ?: 0.0
         if (angle == 0.0) return stats.x to stats.y
         val diameter = diameterOf(values)
-        val w = diameter ?: values[PillKind.Width]?.toDouble() ?: stats.width
-        val h = diameter ?: values[PillKind.Height]?.toDouble() ?: stats.height
+        val w = diameter ?: values[PillKind.Width] ?: stats.width
+        val h = diameter ?: values[PillKind.Height] ?: stats.height
         val c = cos(angle)
         val s = sin(angle)
         val cx = stats.x + stats.width / 2

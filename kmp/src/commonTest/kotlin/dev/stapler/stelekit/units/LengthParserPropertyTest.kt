@@ -28,7 +28,7 @@ class LengthParserPropertyTest {
     fun parseOfFormat_should_RoundTripEverySixteenthInBothFormats() = runTest {
         checkAll(sixteenths) { n ->
             val expected = Rational(n, 16)
-            for (format in LengthFormat.entries) {
+            for (format in LengthFormat.entries.filter { !MetricLength.isMetric(it) }) {
                 val text = LengthFormatter.format(Inches(n), format)
                 assertEquals(expected, valueOf(text), "$format $text")
             }
@@ -39,7 +39,7 @@ class LengthParserPropertyTest {
     fun formattedFractions_should_BeInLowestTerms() = runTest {
         val fraction = Regex("""(\d+)/(\d+)""")
         checkAll(sixteenths) { n ->
-            for (format in LengthFormat.entries) {
+            for (format in LengthFormat.entries.filter { !MetricLength.isMetric(it) }) {
                 val text = LengthFormatter.format(Inches(n), format)
                 fraction.findAll(text).forEach { m ->
                     assertEquals(1L, CheckedMath.gcd(m.groupValues[1].toLong(), m.groupValues[2].toLong()), text)

@@ -50,6 +50,7 @@ import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.constraints.ConstraintId
 import dev.stapler.stelekit.sketch.v2.constraints.DofWording
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
+import dev.stapler.stelekit.units.LengthFormat
 import dev.stapler.stelekit.ui.components.typedItems
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchConstraintStrings
 
@@ -79,6 +80,8 @@ data class ConstraintPanelInput(
     val selection: List<SceneElement>,
     val tier: SolverTier = SolverTier.Full,
     val card: ConflictCard? = null,
+    /** The sheet's length display; a metric one makes the value column read in mm or cm and m. */
+    val format: LengthFormat = LengthFormat.INCHES_MIXED,
 )
 
 /** What the panel asks its host to do; the host commits any command through `SolveRunner` and updates the highlight. */
@@ -108,7 +111,7 @@ fun ConstraintPanel(
     val flyout = ConstrainFlyoutModel.of(input.selection, input.tier, selectionHasDimension = selectionHasDimension(doc, input.selection))
     if (flyout == ConstrainFlyout.Hidden) return
     var selectedId by remember { mutableStateOf<ConstraintId?>(null) }
-    val rows = ConstraintPanelModel.rows(doc, input.analysis, input.technical)
+    val rows = ConstraintPanelModel.rows(doc, input.analysis, input.technical, input.format)
     val card = input.card
     Column(
         modifier.testTag(ConstraintPanelTags.ROOT).padding(horizontal = 16.dp).onPreviewKeyEvent { e ->

@@ -108,6 +108,7 @@ private fun ConstraintsTab(controller: SketchEditorController, extras: EditorExt
             selection = controller.selectedElements(),
             tier = extras.tier,
             card = extras.dimension.card ?: controller.constraintState.card,
+            format = extras.lengthUnit.format,
         ),
         actions = ConstraintPanelActions(
             onConstrain = { item ->

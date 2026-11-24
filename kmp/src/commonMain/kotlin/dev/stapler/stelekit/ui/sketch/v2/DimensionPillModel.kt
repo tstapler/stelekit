@@ -14,8 +14,11 @@ import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
 import dev.stapler.stelekit.sketch.v2.tools.TouchFloor
 import dev.stapler.stelekit.ui.sketch.lengthTextOf
+import dev.stapler.stelekit.ui.sketch.lengthTextOfUnits
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchDimensionStrings
 import dev.stapler.stelekit.units.LengthFormat
+import dev.stapler.stelekit.units.MetricLength
+import dev.stapler.stelekit.units.MetricUnit
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -109,7 +112,8 @@ object DimensionPillModel {
     }
 
     /** The text on a pill: a one-letter name and the value in feet, inches and sixteenths. */
-    fun pillText(spec: PillSpec, format: LengthFormat = LengthFormat.FEET_INCHES): String = symbol(spec.kind) + " " + lengthTextOf(spec.sixteenths, format)
+    fun pillText(spec: PillSpec, format: LengthFormat = LengthFormat.FEET_INCHES): String =
+        symbol(spec.kind) + " " + if (MetricLength.isMetric(format)) lengthTextOfUnits(spec.exact, format) else lengthTextOf(spec.sixteenths, format)
 
     fun pillWidthDp(text: String): Double = max(TouchFloor.TOUCH_DP, PAD_DP + CHAR_DP * text.length)
 
@@ -201,8 +205,18 @@ object DimensionPillModel {
     fun parse(text: String): ParsedLength =
         DimensionInput.interpret(text).fold({ ParsedLength.Invalid(it.message) }, { ParsedLength.Valid(it.inches.sixteenths, it.roundedFrom) })
 
+    /**
+     * [parse] for a sheet showing [format]: metric text (`25 mm`, `1,5 cm`, or a plain number in the display's unit or in [bare]) is
+     * kept exact to 0.1 mm in [ParsedLength.Valid.units]; its [ParsedLength.Valid.sixteenths] is the nearest sixteenth.
+     */
+    fun parse(text: String, format: LengthFormat, bare: MetricUnit? = null): ParsedLength =
+        DimensionInput.interpretUnits(text, format, bare).fold(
+            { ParsedLength.Invalid(it.message(format)) },
+            { ParsedLength.Valid(it.nearestInches.sixteenths, it.roundedFrom, it.units) },
+        )
+
     sealed interface ParsedLength {
-        data class Valid(val sixteenths: Long, val roundedFrom: String? = null) : ParsedLength
+        data class Valid(val sixteenths: Long, val roundedFrom: String? = null, val units: Double = sixteenths.toDouble()) : ParsedLength
 
         data class Invalid(val message: String) : ParsedLength
     }

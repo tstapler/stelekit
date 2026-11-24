@@ -40,6 +40,7 @@ KMP_MODULES = {
    "commonMain/kotlin/dev/stapler/stelekit/units/Inches.kt",
    "commonMain/kotlin/dev/stapler/stelekit/units/LengthFormatter.kt",
    "commonMain/kotlin/dev/stapler/stelekit/units/LengthParser.kt",
+   "commonMain/kotlin/dev/stapler/stelekit/units/MetricLength.kt",
    "commonMain/kotlin/dev/stapler/stelekit/units/ParsedLength.kt",
    "commonMain/kotlin/dev/stapler/stelekit/units/Rational.kt",
    "commonMain/kotlin/dev/stapler/stelekit/util/ContentHasher.kt",
@@ -516,6 +517,7 @@ KMP_MODULES = {
   "srcs": [
    "commonMain/kotlin/dev/stapler/stelekit/platform/SketchPlatformInput.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/DimensionInput.kt",
+   "commonMain/kotlin/dev/stapler/stelekit/sketch/MetricScene.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/SketchCommands.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/SketchHistory.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/SketchPointer.kt",
