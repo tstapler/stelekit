@@ -10,6 +10,8 @@ import dev.stapler.stelekit.sketch.v2.scene.ElementStyle
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
+import dev.stapler.stelekit.sketch.v2.scene.TextElement
+import dev.stapler.stelekit.sketch.v2.text.TextSizeLimits
 import dev.stapler.stelekit.sketch.v2.tools.Box
 import dev.stapler.stelekit.sketch.v2.tools.ElementIdSource
 import dev.stapler.stelekit.sketch.v2.tools.ElementTransform
@@ -18,6 +20,7 @@ import dev.stapler.stelekit.sketch.v2.tools.Handle
 import dev.stapler.stelekit.sketch.v2.tools.MoveSelectionCommand
 import dev.stapler.stelekit.sketch.v2.tools.Selectability
 import dev.stapler.stelekit.sketch.v2.tools.SelectTool
+import dev.stapler.stelekit.sketch.v2.tools.TextResize
 import dev.stapler.stelekit.sketch.v2.tools.ToolCommand
 import dev.stapler.stelekit.sketch.v2.tools.ToolContext
 import dev.stapler.stelekit.sketch.v2.tools.ToolPreview
@@ -49,6 +52,9 @@ enum class NudgeStep(val label: String) {
 enum class NonDragNotice(val text: String) {
     /** Resize hit the smallest side; the result is clamped to it. */
     MinimumSize(SketchStrings.NonDrag.MINIMUM_SIZE),
+
+    /** A text resize hit the largest font size; the result is clamped to it. */
+    MaximumSize(SketchStrings.NonDrag.MAXIMUM_SIZE),
 
     /** Nothing in the selection can be edited from the canvas (all locked, or on a locked or hidden layer). */
     Locked(SketchStrings.NonDrag.LOCKED),
@@ -117,7 +123,7 @@ class NonDragTransformMode private constructor(
     /** "x +30, y 0", "width 120 → 150, height 80 → 80" or "angle 0° → 15°": what Apply would do. */
     fun previewText(): String = when (action) {
         NonDragAction.MoveElement -> SketchStrings.NonDrag.movePreview(Readout.signed(offsetX), Readout.signed(offsetY))
-        NonDragAction.Resize -> resized().let {
+        NonDragAction.Resize -> (textResize()?.transform?.let { Box(it.x, it.y, it.width, it.height) } ?: resized()).let {
             SketchStrings.NonDrag.resizePreview(Readout.number(frame.width), Readout.number(it.width), Readout.number(frame.height), Readout.number(it.height))
         }
         NonDragAction.Rotate -> SketchStrings.NonDrag.rotatePreview(
@@ -126,9 +132,12 @@ class NonDragTransformMode private constructor(
         )
     }
 
-    /** The "Minimum size reached" notice when the pending resize is clamped. */
-    fun pendingNotice(): NonDragNotice? =
-        if (action == NonDragAction.Resize && (frame.width + offsetX < TransformMath.MIN_SIDE || frame.height + offsetY < TransformMath.MIN_SIDE)) NonDragNotice.MinimumSize else null
+    /** The "Minimum size reached" notice when the pending resize is clamped (for a text, the "Maximum size" one when its font limit stops it). */
+    fun pendingNotice(): NonDragNotice? {
+        if (action != NonDragAction.Resize || !pending) return null
+        textResize()?.let { return it.hit?.let { hit -> if (hit == TextSizeLimits.Bound.Min) NonDragNotice.MinimumSize else NonDragNotice.MaximumSize } }
+        return if (frame.width + offsetX < TransformMath.MIN_SIDE || frame.height + offsetY < TransformMath.MIN_SIDE) NonDragNotice.MinimumSize else null
+    }
 
     /** The edited elements as they would look, for the live preview. */
     fun preview(ids: ElementIdSource): ToolPreview? =
@@ -139,7 +148,7 @@ class NonDragTransformMode private constructor(
 
     private fun command(): ToolCommand? = if (!pending) null else when (action) {
         NonDragAction.MoveElement -> move()
-        NonDragAction.Resize -> TransformSelectionCommand(resizeSteps())
+        NonDragAction.Resize -> resizeSteps()?.let(::TransformSelectionCommand)
         NonDragAction.Rotate -> TransformSelectionCommand(rotateSteps())
     }
 
@@ -151,12 +160,24 @@ class NonDragTransformMode private constructor(
     /** The joint box after pulling the east and south edges by the offset (the same maths as the east, south-east and south handles). */
     private fun resized(): Box = TransformMath.resize(frame, frameAngle, Handle.SE, offsetX, offsetY, keepAspect = false, fromCentre = false)
 
-    private fun resizeSteps(): List<ElementTransform> {
+    /** A single text scales its font ([TextResize.nudge]) instead of stretching its box; null otherwise. */
+    private fun textResize(): TextResize.Nudged? = (items.singleOrNull() as? TextElement)?.let {
+        val box = ownBox(it)
+        TextResize.nudge(it, box, TransformMath.resize(box, it.angle, Handle.SE, offsetX, offsetY, keepAspect = false, fromCentre = false))
+    }
+
+    /** Null when a single text's font cannot move (at its limit), so Apply commits nothing. */
+    private fun resizeSteps(): List<ElementTransform>? {
+        textResize()?.let { n -> return listOf(n.transform).takeIf { n.transform.fontSize != (items.single() as TextElement).fontSize } }
         val next = resized()
         if (items.size == 1) return listOf(fit(items.single(), next, null))
         return items.map { e ->
             val mapped = TransformMath.mapBox(ownBox(e), frame, next)
-            if (e is PointElement || e is ArcElement) shift(e, mapped) else fit(e, mapped, null)
+            when (e) {
+                is PointElement, is ArcElement -> shift(e, mapped)
+                is TextElement -> TextResize.groupScale(e, ownBox(e), mapped)
+                else -> fit(e, mapped, null)
+            }
         }
     }
 

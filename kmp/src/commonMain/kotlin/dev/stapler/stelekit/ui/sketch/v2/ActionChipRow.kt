@@ -32,7 +32,15 @@ import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 import kotlinx.coroutines.launch
 
 /** One chip of the action chip row: a touch or pen user's control for the active tool or operation (UX-126). */
-data class ActionChip(val tag: String, val label: String, val accessibleName: String = label, val icon: StripIcon? = null, val onClick: () -> Unit)
+data class ActionChip(
+    val tag: String,
+    val label: String,
+    val accessibleName: String = label,
+    val icon: StripIcon? = null,
+    /** Narrower than the usual chip for a one- or two-glyph label such as "A+", so two of them leave room for the zoom chip on a phone. */
+    val minWidthDp: Int = CHIP_MIN_WIDTH_DP,
+    val onClick: () -> Unit,
+)
 
 object ActionChipTags {
     const val CHEVRON = "sketch.chips.chevron"
@@ -53,7 +61,7 @@ fun ActionChipRow(chips: List<ActionChip>, modifier: Modifier = Modifier) {
             for (chip in chips) {
                 Box(
                     Modifier.testTag(chip.tag)
-                        .defaultMinSize(minWidth = CHIP_MIN_WIDTH_DP.dp, minHeight = ChromeBudget.TOOL_TARGET_DP.dp)
+                        .defaultMinSize(minWidth = chip.minWidthDp.dp, minHeight = ChromeBudget.TOOL_TARGET_DP.dp)
                         .clip(RoundedCornerShape(CHIP_RADIUS_DP.dp))
                         .background(MaterialTheme.colorScheme.secondaryContainer)
                         .clickable(onClick = chip.onClick)

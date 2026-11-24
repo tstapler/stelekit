@@ -285,6 +285,8 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/view/SketchViewportTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/SketchPointerAdapterTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/TextToolTest.kt",
+        "dev/stapler/stelekit/sketch/v2/tools/TextAutoSizeTest.kt",
+        "dev/stapler/stelekit/ui/sketch/v2/TextSizeModelTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/ImageToolTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/ToolSceneSupport.kt",
         "dev/stapler/stelekit/sketch/v2/tools/SelectToolTest.kt",

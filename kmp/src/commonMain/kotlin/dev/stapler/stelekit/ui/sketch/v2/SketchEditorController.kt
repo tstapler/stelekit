@@ -40,6 +40,7 @@ import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
 import dev.stapler.stelekit.sketch.v2.tools.AddElementCommand
 import dev.stapler.stelekit.sketch.v2.tools.ElementIdSource
 import dev.stapler.stelekit.sketch.v2.tools.ToolCommand
+import dev.stapler.stelekit.sketch.v2.text.TextMetricsProvider
 import dev.stapler.stelekit.sketch.v2.snap.SnapSettings
 import dev.stapler.stelekit.sketch.v2.tools.ToolContext
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
@@ -81,6 +82,8 @@ class EditorPorts(
     val quality: QualitySignals? = null,
     /** Where a new shape's Sketchy seed comes from; null folds the clock with the sheet. */
     val seeds: SeedSource? = null,
+    /** The bundled-font measurer: a side-handle drag on text re-wraps with it and a font-size change re-fits the box. */
+    val textMetrics: TextMetricsProvider? = null,
 )
 
 /**
@@ -158,6 +161,9 @@ class SketchEditorController(
     val constraintState = ConstraintState(runner, ports.diagnostics, notifier) { history.present }
     val saves = EditorSaves(ports.saver, scope, notifier, ::reloaded) { creation.forSave(history.present) }
 
+    /** The text measurer of this sheet, for panels that change a text size; null in a session built without one. */
+    val textMetrics: TextMetricsProvider? get() = ports.textMetrics
+
     val tools = ToolSession(ui, ports, ::toolContext, notifier, readOnly, ::commitToolCommand)
     val view = EditorView(ui, { history.present }, tools::select, notifier)
     val keys = EditorKeys(
@@ -205,7 +211,7 @@ class SketchEditorController(
     /** What drags snap to, read at every pointer event; the extras host wires the toggles and the sheet's grid. */
     var snapSettings: () -> SnapSettings = { SnapSettings.None }
 
-    private fun toolContext(): ToolContext = ToolContext(history.present.scene, ui.viewport.zoom, defaultStyle, ports.ids, index, view.pxPerDp, snapSettings())
+    private fun toolContext(): ToolContext = ToolContext(history.present.scene, ui.viewport.zoom, defaultStyle, ports.ids, index, view.pxPerDp, snapSettings(), ports.textMetrics)
 
     /** A fresh idle tool for [id], for the keyboard path (Crosshair mode) that runs a tool beside the pointer's. */
     internal val newTool: (ToolId) -> Tool? = { id -> ports.tools.create(id) }

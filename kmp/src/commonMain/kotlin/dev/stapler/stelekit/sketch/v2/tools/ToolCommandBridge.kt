@@ -21,6 +21,7 @@ import dev.stapler.stelekit.sketch.v2.commands.ResizeElement
 import dev.stapler.stelekit.sketch.v2.commands.RotateElement
 import dev.stapler.stelekit.sketch.v2.commands.SequenceCommand
 import dev.stapler.stelekit.sketch.v2.commands.SetLinePoints
+import dev.stapler.stelekit.sketch.v2.commands.SetTextBox
 
 /**
  * Maps what a finished gesture asked for to the undoable [Command] that does it (Story 1.3.2). A tool command with no
@@ -53,5 +54,6 @@ private fun MoveSelectionCommand.moveCommand(): Command {
 
 private fun ElementTransform.toCommands(): List<Command> = when (this) {
     is ElementTransform.Fit -> listOfNotNull(ResizeElement(id, x, y, width, height), angle?.let { RotateElement(id, it) })
+    is ElementTransform.TextBox -> listOf(SetTextBox(id, x, y, width, height, fontSize, text, autoResize))
     is ElementTransform.Shift -> listOf(MoveElements(listOf(id), dx, dy))
 }

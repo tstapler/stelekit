@@ -22,14 +22,14 @@ internal fun technicalChips(controller: SketchEditorController, extras: EditorEx
             if (on) S.Chips.DIMENSIONS else S.Chips.DIMENSIONS_OFF,
             if (on) S.Chips.DIMENSIONS_HIDE else S.Chips.DIMENSIONS_SHOW,
             StripIcon.Technical,
-            extras.pills::toggle,
+            onClick = extras.pills::toggle,
         ),
         ActionChip(
             LengthUnitTags.CHIP_ROW,
             S.Units.chipRowLabel(extras.lengthUnit.format.chipLabel),
             extras.lengthUnit.format.chipDescription,
             null,
-            extras.lengthUnit::cycle,
+            onClick = extras.lengthUnit::cycle,
         ),
     )
     val scopeChip = listOfNotNull(
@@ -39,7 +39,7 @@ internal fun technicalChips(controller: SketchEditorController, extras: EditorEx
                 if (allShapes) S.Chips.SCOPE_ALL else S.Chips.SCOPE_SELECTED,
                 if (allShapes) S.Chips.SCOPE_ALL_DESCRIPTION else S.Chips.SCOPE_SELECTED_DESCRIPTION,
                 StripIcon.Select,
-                extras.pills::toggleScope,
+                onClick = extras.pills::toggleScope,
             )
         } else {
             null

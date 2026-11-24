@@ -310,6 +310,7 @@ class V2EditorOpener(
                 touchPresent = deps.touchPresent,
                 sequencer = deps.onboarding,
                 quality = deps.quality,
+                textMetrics = metrics,
             ),
             context,
             readOnly = readOnly != null,

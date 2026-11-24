@@ -26,6 +26,18 @@ sealed interface ElementTransform {
         val angle: Double? = null,
     ) : ElementTransform
 
+    /** A text element's new box and font size after a handle drag; see [TextResize]. */
+    data class TextBox(
+        override val id: ElementId,
+        val x: Double,
+        val y: Double,
+        val width: Double,
+        val height: Double,
+        val fontSize: Double,
+        val text: String,
+        val autoResize: Boolean,
+    ) : ElementTransform
+
     /** Translates an element that cannot be resized or rotated (a point or an arc) with the rest of the selection. */
     data class Shift(override val id: ElementId, val dx: Double, val dy: Double) : ElementTransform
 }

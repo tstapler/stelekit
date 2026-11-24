@@ -65,6 +65,8 @@ private fun StylePanelContent(controller: SketchEditorController) {
         onCommand = { controller.submit(it) },
         onDefaults = controller::setDefaults,
         modifier = Modifier.fillMaxWidth(),
+        metrics = controller.textMetrics,
+        onTextSize = { applyTextSize(controller, it) },
     )
 }
 

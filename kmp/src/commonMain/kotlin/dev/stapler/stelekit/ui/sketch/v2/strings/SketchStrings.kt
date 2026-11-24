@@ -95,6 +95,8 @@ object SketchStrings {
 
     object Style {
         const val ELBOW_NOTE = "Elbow routing isn't supported; drawn as a polyline"
+        const val FONT = "Font"
+        const val FONT_SIZE = "Font size"
         const val TEXT_ALIGN = "Text align"
         const val VERTICAL_ALIGN = "Vertical align"
         const val ARROW_TYPE = "Arrow type"
@@ -226,6 +228,7 @@ object SketchStrings {
         const val STEP_PERCENT = "1%"
 
         const val MINIMUM_SIZE = "Minimum size reached"
+        const val MAXIMUM_SIZE = "Maximum size reached"
         const val LOCKED = "Locked: unlock it to edit."
         const val NOTHING_SELECTED = "Select an element first."
         const val NOT_ROTATABLE = "This selection cannot be rotated."

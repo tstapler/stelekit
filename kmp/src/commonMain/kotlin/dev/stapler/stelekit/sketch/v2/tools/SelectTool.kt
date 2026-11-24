@@ -15,6 +15,7 @@ import dev.stapler.stelekit.sketch.v2.scene.LineElement
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
+import dev.stapler.stelekit.sketch.v2.scene.TextElement
 import dev.stapler.stelekit.sketch.v2.snap.GuideAxis
 import dev.stapler.stelekit.sketch.v2.snap.QuarterTurn
 import dev.stapler.stelekit.sketch.v2.snap.ResizeSides
@@ -335,8 +336,9 @@ class SelectTool(
         /** The pointer with the resize snap applied (a rotate has none), so the loupe's crosshair sits on the edge that will land. */
         private fun snappedCursor(event: InputEvent, ctx: ToolContext): ScenePoint {
             if (handle == Handle.Rotate) return event.point
-            // Shift (aspect) and Alt (from centre) move the landing edge beyond the snap offset, so the crosshair follows the finger.
-            if (event.modifiers.shift || event.modifiers.alt) return event.point
+            // Aspect (Shift, or any text corner) and Alt (from centre) move the landing edge beyond the snap offset, so the crosshair follows the finger.
+            val textCorner = items.singleOrNull() is TextElement && handle.sx != 0 && handle.sy != 0
+            if (event.modifiers.shift || event.modifiers.alt || textCorner) return event.point
             val rawDx = event.point.x.value - start.x.value
             val rawDy = event.point.y.value - start.y.value
             val out = snappedDelta(rawDx, rawDy, event.modifiers, ctx)
@@ -366,14 +368,34 @@ class SelectTool(
         }
 
         private fun resizeSteps(rawDx: Double, rawDy: Double, mods: Modifiers, ctx: ToolContext): Steps {
+            val single = items.singleOrNull()
+            if (single is TextElement) return textResizeSteps(single, rawDx, rawDy, mods, ctx)
             val out = snappedDelta(rawDx, rawDy, mods, ctx)
             val next = TransformMath.resize(frame.box, frame.angle, handle, out.dx, out.dy, keepAspect = mods.shift, fromCentre = mods.alt)
-            if (items.size == 1) return Steps(listOf(fit(items.single(), next, null)), out.guides)
+            if (single != null) return Steps(listOf(fit(single, next, null)), out.guides)
             val moved = items.map { e ->
                 val mapped = TransformMath.mapBox(ownBox(e), frame.box, next)
-                if (e is PointElement || e is ArcElement) shift(e, mapped) else fit(e, mapped, null)
+                when {
+                    e is PointElement || e is ArcElement -> shift(e, mapped)
+                    e is TextElement -> TextResize.groupScale(e, ownBox(e), mapped)
+                    else -> fit(e, mapped, null)
+                }
             }
             return Steps(moved, out.guides)
+        }
+
+        /**
+         * A text corner always keeps its aspect ([TextResize]), so the snap picks its primary axis as for Shift. The guides are
+         * dropped when the font limit stops the dragged edge short of the snapped line, so a guide only shows a snap that landed.
+         */
+        private fun textResizeSteps(e: TextElement, rawDx: Double, rawDy: Double, mods: Modifiers, ctx: ToolContext): Steps {
+            val corner = handle.sx != 0 && handle.sy != 0
+            val out = snappedDelta(rawDx, rawDy, mods.copy(shift = mods.shift || corner), ctx)
+            val box = ownBox(e)
+            val t = TextResize.handleDrag(e, box, handle, out.dx, out.dy, mods.alt, ctx.textMetrics)
+            val wanted = TransformMath.resize(box, e.angle, handle, out.dx, out.dy, keepAspect = corner, fromCentre = mods.alt)
+            val landed = (handle.sx == 0 || abs(t.width - wanted.width) < LANDED_EPSILON) && (handle.sy == 0 || abs(t.height - wanted.height) < LANDED_EPSILON)
+            return Steps(listOf(t), if (landed) out.guides else emptyList())
         }
 
         private fun rotateSteps(event: InputEvent): List<ElementTransform> {
@@ -451,6 +473,9 @@ class SelectTool(
 
         /** Ctrl+D copies land this many scene units (one inch) down and to the right of the originals. */
         const val DUPLICATE_OFFSET = 16.0
+
+        /** How far, in scene units, a resized text side may fall from the snapped drag and still count as landed on its guide. */
+        private const val LANDED_EPSILON = 1e-6
     }
 }
 
