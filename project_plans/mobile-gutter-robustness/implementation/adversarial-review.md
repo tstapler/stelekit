@@ -1,0 +1,33 @@
+# Adversarial Review: mobile-gutter-robustness
+
+**Date**: 2026-11-23
+**Verdict**: BLOCKED
+
+## Blockers
+
+- [ ] **`isDragging` state is scoped to `BlockGutter`, not `BlockItem`** — Story 4.2.2 declares `LaunchedEffect(isDragging) { if (isDragging) showQuickActionSheet = false }` inside `BlockItem`, citing "(isDragging is a state derived from the drag gesture callbacks already in BlockItem — confirm it is accessible here)." It is not. `isDragging` is a local `var` at `BlockGutter.kt:74`; it does not propagate up. `BlockItem` has `onDragStart`/`onDragEnd` callbacks that it passes into `BlockGutter`, but it does not derive a `isDragging` state from them. The dismiss guard will not compile as written. Resolution requires either (a) hoisting `isDragging` into `BlockItem` by tracking it from the passed-in `onDragStart`/`onDragEnd` wrappers, or (b) adding an `onDraggingChanged: (Boolean) -> Unit` callback on `BlockGutter`. Neither is specified in the plan, forcing an unplanned architecture decision mid-implementation.
+
+- [ ] **Bullet secondary tap is undocumented scope drift with no AC and an untested gesture conflict** — The last paragraph of Story 4.2.1 adds `clickable { onTapDragHandle?.invoke() }` to the bullet `Box` as "a second entry point (Notion/Logseq convention)." The requirements say "tap drag handle in view mode" only; the bullet's tap behavior is nowhere in the requirements, the ACs, or the glossary. No acceptance criterion covers bullet-triggered sheet (AC-3 is drag-handle-only). On mobile, the bullet already uses `detectDragGesturesAfterLongPress` via `dragGesture(useLongPress = true)`. When a `clickable` modifier sits before `detectDragGesturesAfterLongPress` in the modifier chain, a quick tap fires the `clickable` immediately, but the pointer event is also still being evaluated by the long-press detector. Whether the long-press detector then cancels or fires is platform-dependent and not tested. No story in Phase 4 covers this interaction (AC-5 covers only the drag-handle long-press). Remove the bullet secondary tap or promote it to a named requirement with its own AC and gesture-conflict test.
+
+---
+
+## Concerns
+
+- [ ] **`copyBlockRef` clipboard access is unresolvable from a ViewModel** — The plan places clipboard write inside `StelekitViewModel.copyBlockRef()` ("keeping it in ViewModel avoids threading clipboard access through composable callbacks"). But `ClipboardManager` is a Compose composition local. The existing `ClipboardProvider` port (`PlatformClipboardProvider.kt`) is constructed via `rememberClipboardProvider(clipboard: ClipboardManager)` inside a composable — it cannot be injected into a ViewModel without adding a new constructor dependency and wiring it in composition roots. All existing clipboard usages in this codebase are composable-level (`ScreenRouter.kt:379`, `BlockList.kt:304`, `ShareInboxPanel.kt:151`). The plan does not specify how the ViewModel gains clipboard access. Either keep `copyBlockRef` as a composable-level lambda (consistent with the codebase) or add the clipboard port to `StelekitViewModel`'s constructor and document the new DI wiring.
+
+- [ ] **`deleteBlockWithUndo` undo re-insertion path is unverified** — `undoDeleteBlock` calls `blockRepository.saveBlocks(snapshot)`. After `deleteBlock(deleteChildren = true)` removes the block and its descendants from the DB and from disk (via `GraphWriter`), `saveBlocks(snapshot)` must re-insert them. The plan does not verify that `saveBlocks` performs INSERT (not UPDATE-only) for rows that no longer exist, or that `GraphWriter` re-writes the markdown file on undo. The existing ViewModel delete paths (`StelekitViewModel.kt:1234–1244`) have no undo at all — this is entirely new territory. The plan's GWT scenario passes, but the full disk-write path after undo is unproven.
+
+- [ ] **`deleteBlockWithUndo` uses `deleteChildren = true` — undocumented behavioral difference from all existing deletes** — All three existing `blockRepository.deleteBlock` calls in `StelekitViewModel` use `deleteChildren = false` (the default). The plan silently introduces a new delete path where tapping "Delete" in the quick-action sheet destroys the block's entire subtree. Users of an outliner expect a delete to demote or preserve children, not silently wipe them. The 5-second undo window is the only safety net. The plan should state this choice explicitly, confirm it matches product intent, and consider showing the child count in the confirmation label ("Delete block and 3 children").
+
+- [ ] **`canMoveUp` gating may suppress a valid operation** — Story 3.1.1 sets `canMoveUp = idx > 0` and `canIndent = idx > 0`. But the existing `blockRepository.moveBlockUp` implementation (`StelekitViewModel.kt:1087`) is not documented here, and in outliners "move up" on a first child often means "outdent and become the previous sibling of the parent" — a cross-level promotion, not a same-level swap. If `moveBlockUp` supports that semantic, disabling at `idx == 0` incorrectly hides a valid structural action. Verify what `moveBlockUp` does at the boundary before gating.
+
+- [ ] **Spacer width mismatch in no-children caret case on mobile** — Story 2.1.1 replaces `Spacer(18.dp) + Spacer(4.dp)` (22dp total) with `Spacer(48.dp)` for the no-children case on mobile. But the caret `Box` on mobile uses `Modifier.padding(end = 4.dp).size(48.dp)`, giving it a total layout footprint of 52dp. Using `Spacer(48.dp)` for the absent-caret case creates a 4dp width discrepancy between rows with children and rows without on mobile. The spacer should be 52dp (or `Spacer(Modifier.width(48.dp).padding(end = 4.dp))`). Left as-is, every leaf-block row will be 4dp narrower than its parent rows on mobile, causing visible left-edge misalignment.
+
+---
+
+## Minors
+
+- `GutterMenuHintStore` PlatformSettings key `"gutter_menu_hint_shown"` is not checked for collision with any existing key in the settings namespace. Add a grep for the key before implementing.
+- The plan alternates between calling the flag a "DataStore flag" (plan summary) and a "PlatformSettings boolean" (Story 6.1.1). These are different APIs. The plan summary should be corrected to "PlatformSettings boolean" to avoid a wrong implementation choice.
+- `PlainTooltip` visual behavior on the web target (`wasmJsMain`) is unvalidated — Material3's tooltip implementation on WASM/JS may render an invisible element with no popup. The discoverability feature could silently no-op on the web build.
+- Wave 7 in the effort estimate describes Roborazzi golden recording as a "device/emulator run." Roborazzi runs entirely in JVM/Robolectric — no device or emulator is involved. The description will confuse whoever monitors CI.
