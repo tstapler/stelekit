@@ -149,6 +149,15 @@ class PointSnapToolsTest {
         assertEquals(sp(704, 592), assertIs<SetLinePointsCommand>(v.commands.single()).points[2])
     }
 
+    @Test
+    fun clickOnASnappedLastVertex_should_FinishTheLine_WithoutADuplicateVertex() {
+        val c = ctx(sceneOfElements(diagonalA, diagonalB))
+        val r = runScenario(LineTool(), c) {
+            down(300, 300); up(300, 300); down(103, 98); up(103, 98); down(104, 97); up(104, 97)
+        }
+        assertEquals(listOf(sp(300, 300), sp(100, 100)), committedLine(r).points)
+    }
+
     // ---- shape drags -----------------------------------------------------------------------------------------------
 
     @Test

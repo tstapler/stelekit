@@ -96,8 +96,12 @@ class LineTool private constructor(
 
     private fun isSecondClickOfFinish(event: InputEvent, ctx: ToolContext): Boolean {
         val f = finished ?: return false
-        return event.timestamp - f.timestamp <= DOUBLE_CLICK_MS && near(f.at, event.point, ctx)
+        return event.timestamp - f.timestamp <= DOUBLE_CLICK_MS && nearSnapped(f.at, event.point, event, ctx)
     }
+
+    /** [vertex] is where [raw] is, or where it would snap to: a click on a snapped vertex lands off it by up to the snap reach. */
+    private fun nearSnapped(vertex: ScenePoint, raw: ScenePoint, event: InputEvent, ctx: ToolContext): Boolean =
+        near(vertex, raw, ctx) || near(vertex, snapped(points.lastOrNull(), raw, event, ctx).point, ctx)
 
     private fun near(a: ScenePoint, b: ScenePoint, ctx: ToolContext): Boolean =
         hypot(a.x.value - b.x.value, a.y.value - b.y.value) * ctx.zoom <= SelectTool.DRAG_THRESHOLD_PX
@@ -117,7 +121,7 @@ class LineTool private constructor(
                 val start = snapped(null, down, event, ctx).point
                 finish(listOf(start, snapped(start, event.point, event, ctx).point), ctx, event.timestamp)
             }
-            points.isNotEmpty() && near(points.last(), down, ctx) -> finish(points, ctx, event.timestamp)
+            points.isNotEmpty() && nearSnapped(points.last(), down, event, ctx) -> finish(points, ctx, event.timestamp)
             else -> addVertex(snapped(points.lastOrNull(), down, event, ctx).point, ctx, event)
         }
     }
