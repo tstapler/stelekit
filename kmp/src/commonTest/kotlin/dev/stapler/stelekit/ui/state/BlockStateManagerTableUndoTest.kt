@@ -6,6 +6,11 @@ import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
+import arrow.core.Either
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.repository.BlockRepository
+import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlinx.coroutines.CoroutineScope
@@ -27,13 +32,21 @@ class BlockStateManagerTableUndoTest {
     private val c0 = "| a | b |\n|---|---|\n| 1 | 2 |"
     private val c1 = "| a | b |\n|---|---|\n| 1 | 3 |"
 
-    private suspend fun TestScope.manager(): BlockStateManager {
-        val blockRepo = InMemoryBlockRepository()
+    // Swallows content writes so the repository flow cannot re-deliver content and mask the
+    // in-memory version guard under test.
+    private class SwallowContentWrites(private val d: BlockRepository) : BlockRepository by d {
+        @OptIn(DirectRepositoryWrite::class)
+        override suspend fun updateBlockContentOnly(blockUuid: BlockUuid, content: String): Either<DomainError, Unit> = Unit.right()
+    }
+
+    private suspend fun TestScope.manager(swallowWrites: Boolean = false): BlockStateManager {
+        val backing = InMemoryBlockRepository()
+        val blockRepo: BlockRepository = if (swallowWrites) SwallowContentWrites(backing) else backing
         val pageRepo = InMemoryPageRepository()
         val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
         val m = BlockStateManager(blockRepo, GraphLoader(FakeFileSystem(), pageRepo, blockRepo), scope)
         pageRepo.savePage(Page(uuid = PageUuid(pageUuid), name = "P", createdAt = now, updatedAt = now))
-        blockRepo.saveBlock(
+        backing.saveBlock(
             Block(uuid = uuid, pageUuid = PageUuid(pageUuid), content = c0, position = "a0",
                 blockType = BlockType.Table, version = 1, createdAt = now, updatedAt = now)
         )
@@ -60,7 +73,7 @@ class BlockStateManagerTableUndoTest {
 
     @Test
     fun commit_should_BeApplied_When_StaleLowerBoundVersionAfterUndo() = runTest {
-        val m = manager()
+        val m = manager(swallowWrites = true)
         val c2 = "| a | b |\n|---|---|\n| 9 | 9 |"
         m.updateBlockContent(uuid, c1, 2, restoreEditFocus = false)
         m.undo()
