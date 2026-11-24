@@ -7,7 +7,6 @@
 package dev.stapler.stelekit.cli
 
 import arrow.core.getOrElse
-import dev.stapler.stelekit.sketch.v2.codec.CanonicalJson
 import dev.stapler.stelekit.sketch.v2.commands.SheetKindExtras
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.commands.ZKeys
@@ -95,7 +94,9 @@ internal class SketchSpecBuilder(private val root: JsonObject) {
         if ((root["spec"] as? JsonPrimitive)?.content?.toIntOrNull() != 1) issues.error("spec", "must be the number 1 (this tool reads spec version 1)")
         val modeWire = (root["mode"] as? JsonPrimitive)?.content ?: "plan"
         mode = SpecMode.of(modeWire) ?: SpecMode.Plan.also { issues.error("mode", "must be \"plan\" or \"diagram\", got \"$modeWire\"") }
-        val photo = (root["space"] as? JsonPrimitive)?.content == "photo"
+        val spaceWire = (root["space"] as? JsonPrimitive)?.content ?: "real"
+        if (spaceWire != "photo" && spaceWire != "real") issues.error("space", "must be \"real\" or \"photo\", got \"$spaceWire\"")
+        val photo = spaceWire == "photo"
         var inchesPerPx: Double? = null
         var snap: Double? = null
         if (photo) {
@@ -107,6 +108,7 @@ internal class SketchSpecBuilder(private val root: JsonObject) {
             }
             val snapText = (cal?.get("snap") as? JsonPrimitive)?.content ?: "1\""
             snap = if (snapText == "none") null else SketchLengths.parseInches(snapText)?.times(SketchLengths.UNITS_PER_INCH)
+            if (snapText != "none" && snap == null) issues.error("calibration.snap", "\"$snapText\" is not a length; use something like 1\" or \"none\"")
         } else if (root["calibration"] != null) {
             issues.warn("calibration", "ignored: calibration only applies when \"space\" is \"photo\"")
         }
@@ -127,7 +129,7 @@ internal class SketchSpecBuilder(private val root: JsonObject) {
         return SpecOutcome(assemble(), issues, inchesPerPx)
     }
 
-    private fun fmtScale(v: Double): String = (round4(v * 1000) / 1000).toString()
+    private fun fmtScale(v: Double): String = "%.4f".format(v)
 
     private fun round4(v: Double): Double = SketchLengths.tidy(v)
 
@@ -148,7 +150,7 @@ internal class SketchSpecBuilder(private val root: JsonObject) {
         if (role != null && role != "room" && role != "furniture") return issues.error("$path.role", "must be room or furniture, got \"$role\"")
         val stroke = color(o["stroke"], "$path.stroke", if (furniture(o)) "#495057" else "#1e1e1e")
         val fill = color(o["fill"], "$path.fill", "transparent")
-        val dashed = (o["dashed"] as? JsonPrimitive)?.content == "true"
+        val dashed = flag(o, "dashed", path)
         val base = base(id, LayerId.Default.value, ElementStyle(stroke, fill, FillStyle.Solid, thickness, if (dashed) StrokeStyle.Dashed else StrokeStyle.Solid, 0), named = true)
         val (x, y) = xy
         val e: SceneElement = when (kind) {
@@ -199,10 +201,10 @@ internal class SketchSpecBuilder(private val root: JsonObject) {
         val o = el as? JsonObject ?: return issues.error(path, "expected an object, got ${SpecReader.describeJson(el)}")
         checkKeys(o, path, LINE_KEYS)
         val id = idOf(o, path, "line") ?: return
-        val closed = (o["closed"] as? JsonPrimitive)?.content == "true"
+        val closed = flag(o, "closed", path)
         val pts = reader.points(o["points"], "$path.points", if (closed) 3 else 2) ?: return
         val thickness = if (o["thickness"] != null) real.length(o["thickness"], "$path.thickness") ?: wall else if (plan) wall else 2.0
-        val dashed = (o["dashed"] as? JsonPrimitive)?.content == "true"
+        val dashed = flag(o, "dashed", path)
         val style = ElementStyle(
             color(o["stroke"], "$path.stroke", "#1e1e1e"), color(o["fill"], "$path.fill", "transparent"), FillStyle.Solid,
             thickness, if (dashed) StrokeStyle.Dashed else StrokeStyle.Solid, 0,
@@ -248,8 +250,12 @@ internal class SketchSpecBuilder(private val root: JsonObject) {
             add(LineElement(base("$id.glass", onLayer, ElementStyle("#1e1e1e", "transparent", FillStyle.Solid, thin, StrokeStyle.Solid, 0), groups = group), listOf(pt(c.ax to c.ay), pt(c.bx to c.by))))
             return
         }
-        val inward = (o["swing"] as? JsonPrimitive)?.content != "out"
-        val hingeStart = (o["hinge"] as? JsonPrimitive)?.content != "end"
+        val swing = (o["swing"] as? JsonPrimitive)?.content ?: "in"
+        val hinge = (o["hinge"] as? JsonPrimitive)?.content ?: "start"
+        if (swing != "in" && swing != "out") return issues.error("$path.swing", "must be in or out, got \"$swing\"")
+        if (hinge != "start" && hinge != "end") return issues.error("$path.hinge", "must be start (the low-offset end of the opening) or end, got \"$hinge\"")
+        val inward = swing == "in"
+        val hingeStart = hinge == "start"
         val gap = geometry.box(th + 2.0)
         add(RectElement(base("$id.gap", onLayer, gapStyle, groups = group), u(gap.x), u(gap.y), u(gap.w), u(gap.h)))
         val leaf = geometry.leaf(inward, hingeStart)
@@ -259,6 +265,12 @@ internal class SketchSpecBuilder(private val root: JsonObject) {
         val cross = (leaf.closedX - leaf.hx) * (leaf.tipY - leaf.hy) - (leaf.closedY - leaf.hy) * (leaf.tipX - leaf.hx)
         val sweep = if (cross > 0) a0 to a1 else a1 to a0
         add(ArcElement(base("$id.swing", onLayer, ElementStyle("#868e96", "transparent", FillStyle.Solid, thin, StrokeStyle.Dashed, 0), groups = group), u(leaf.hx), u(leaf.hy), u(width), sweep.first, sweep.second))
+    }
+
+    private fun flag(o: JsonObject, key: String, path: String): Boolean {
+        val v = (o[key] as? JsonPrimitive)?.content ?: return false
+        if (v != "true" && v != "false") issues.error("$path.$key", "must be true or false, got \"$v\"")
+        return v == "true"
     }
 
     private fun defaultOpeningWidth(type: String): Double = (if (type == "door") DOOR_INCHES else WINDOW_INCHES) * SketchLengths.UNITS_PER_INCH
@@ -287,7 +299,7 @@ internal class SketchSpecBuilder(private val root: JsonObject) {
         }
         val head = (o["head"] as? JsonPrimitive)?.content ?: "end"
         if (head !in setOf("end", "start", "both", "none")) return issues.error("$path.head", "must be end, start, both or none, got \"$head\"")
-        val dashed = (o["dashed"] as? JsonPrimitive)?.content == "true"
+        val dashed = flag(o, "dashed", path)
         val style = ElementStyle(color(o["stroke"], "$path.stroke", "#1e1e1e"), "transparent", FillStyle.Solid, if (plan) thin * 2 else 2.0, if (dashed) StrokeStyle.Dashed else StrokeStyle.Solid, 0)
         val arrow = ArrowElement(
             base(id, LayerId.Default.value, style, named = true), pts.map(::pt),
@@ -466,7 +478,7 @@ internal class SketchSpecBuilder(private val root: JsonObject) {
     private fun pt(p: Pair<Double, Double>) = ScenePoint(u(p.first), u(p.second))
 
     private fun u(d: Double): SceneUnit = SceneUnit.of(round4(d)).getOrElse {
-        issues.error("coordinates", "the value ${fmt(d)} is outside the sheet's range (about +-16.7 million units); check the units and the calibration")
+        issues.error("coordinates", "the value ${fmt(d)} is outside the sheet's range (+-268435456 units); check the units and the calibration")
         SceneUnit.ZERO
     }
 
@@ -498,12 +510,15 @@ internal class SketchSpecBuilder(private val root: JsonObject) {
         }
         var extras = JsonObject(mapOf("agent" to agent))
         if (plan) extras = SheetKindExtras.write(extras, SheetKind.Technical)
-        val uuid = (root["sheetUuid"] as? JsonPrimitive)?.content ?: uuidOf(root)
+        val given = (root["sheetUuid"] as? JsonPrimitive)?.content
+        if (given != null && !SketchLengths.UUID_SHAPE.matches(given)) issues.error("sheetUuid", "must look like a UUID (letters, digits and '-', 8 to 64 characters)")
+        val uuid = given ?: uuidOf(root)
         return SketchDocumentV2(reconcile(scene).scene, uuid, emptyList(), extras, counters)
     }
 
     private fun uuidOf(spec: JsonObject): String {
-        val hex = ContentHasher.sha256(CanonicalJson.encode(spec).getOrElse { spec.toString().encodeToByteArray() }.decodeToString())
+        // Stable across edits: derived from the title only, so rebuilding an edited spec replaces the same sheet.
+        val hex = ContentHasher.sha256("sketch:" + ((spec["title"] as? JsonPrimitive)?.content ?: "untitled"))
         return "${hex.substring(0, 8)}-${hex.substring(8, 12)}-4${hex.substring(13, 16)}-8${hex.substring(17, 20)}-${hex.substring(20, 32)}"
     }
 

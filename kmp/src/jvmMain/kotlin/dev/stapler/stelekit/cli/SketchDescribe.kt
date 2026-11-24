@@ -182,7 +182,7 @@ internal object SketchDescribe {
             val stem = l.id.value.substringBeforeLast('.')
             val measured = pathLength(l.points, false)
             val shown = (dims.firstOrNull { it.id.value == "$stem.text" } as? TextElement)?.originalText
-            val agrees = shown?.let { SketchLengths.parseInches(it) }?.let { abs(it * SketchLengths.UNITS_PER_INCH - measured) <= MISMATCH_INCHES * SketchLengths.UNITS_PER_INCH }
+            val agrees = shown?.let { SketchLengths.parseInches(it) }?.let { abs(it * (if (f.diagram) 1.0 else SketchLengths.UNITS_PER_INCH) - measured) <= MISMATCH_INCHES * SketchLengths.UNITS_PER_INCH }
             val note = when (agrees) {
                 false -> " MISMATCH: the label says \"$shown\" but the line measures ${f.len(measured)}"
                 else -> ""

@@ -137,7 +137,7 @@ A small JSON document, version 1. `build` expands it into a valid sheet, so you 
 }
 ```
 
-Top level: `spec` (1), `mode` (`plan` default: real-world; `diagram`: abstract), `title`, `space` (`real` default or `photo`), `calibration` (photo space), `wall` (default wall thickness, default `4 1/2"`), `sheetUuid` (optional; default derived from the spec so rebuilding is stable), and the lists below. Ids are letters, digits, `-`, `_`, `.`, at most 64 characters, unique across the spec (derived ids such as `<id>.label` count).
+Top level: `spec` (1), `mode` (`plan` default: real-world; `diagram`: abstract), `title`, `space` (`real` default or `photo`), `calibration` (photo space), `wall` (default wall thickness, default `4 1/2"`), `sheetUuid` (optional; default derived from `title`, so rebuilding an edited spec with the same title yields the same sheet and `place` replaces it; give each sketch its own title), and the lists below. Ids are letters, digits, `-`, `_`, `.`, at most 64 characters, unique across the spec (derived ids such as `<id>.label` count).
 
 | list | keys |
 |---|---|
@@ -148,7 +148,7 @@ Top level: `spec` (1), `mode` (`plan` default: real-world; `diagram`: abstract),
 | `labels` | `text`, `at` `[x,y]` (the centre of the text), `size`, `align`, `color`, optional `id` |
 | `dimensions` | `shape` + `side`, or `from` + `to`; `offset` (default 24" in plan mode; for a free `from`/`to`, positive moves the line south for a mostly horizontal span and east for a mostly vertical one); `text` overrides the measured value |
 
-Colours: `#rrggbb`, `transparent`, or `black white gray red blue green yellow orange lightblue lightgreen lightyellow`. In plan mode **shape coordinates are wall centre lines**: a room `w` of `14'` is 14 feet between the centres of its walls. Thicknesses, font sizes, gaps and offsets are always real lengths, even in photo space.
+Colours: `#rrggbb`, `transparent`, or `black white gray red blue green yellow orange lightblue lightgreen lightyellow`. In plan mode **shape coordinates are wall centre lines**: a room `w` of `14'` is 14 feet between the centres of its walls. Thicknesses, font sizes, gaps and dimension offsets are always real lengths, even in photo space; positions, sizes and opening `offset`/`width` are pixels there when written as bare numbers. Room labels are centred in their shape, so keep furniture out of the centre or leave its label to a `labels` entry. `rightOf` aligns the new shape's vertical centre with the reference, `below` its horizontal centre, unless you give `x`/`y`. `labels.at` is the text centre for `align: center`, the left edge for `left`, the right edge for `right`.
 
 ### Photo space and calibration
 
@@ -174,7 +174,7 @@ Files in [`sketch-examples/`](sketch-examples/): `room.spec.json` (the spec abov
 **Room, as `describe` reads it back**
 
 ```
-SKETCH SHEET 96bd0e9a-1920-45e1-8bc5-f55ca59274b2 (schema 2), title "Living room"
+SKETCH SHEET 33f4892a-45c6-4f65-8720-cf98945e0f99 (schema 2), title "Living room"
 Units: 1 scene unit = 1/16 inch (192 units per foot). x grows east (right), y grows south (down).
 Extent (shapes, lines and text; not openings or dimension marks): 14' 4 1/2" wide x 12' 4 1/2" tall, ...
 - living: rectangle 14' 0" x 12' 0", top-left (0", 0"), centre (7' 0", 6' 0"), label "Living room", line 4 1/2"

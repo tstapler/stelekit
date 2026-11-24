@@ -47,7 +47,11 @@ internal object SketchBundle {
         val slug = slugArg ?: ProjectSlugs.fromBits(doc.sheetUuid.hashCode())
         if (!ProjectSlugs.isValid(slug)) return Either.Left("the slug \"$slug\" must look like proj-1a2b3c (proj- and six hex digits)")
         val dir = File(graph, "$ROOT/$slug")
-        val existing = readBundle(dir)
+        if (!SketchLengths.UUID_SHAPE.matches(doc.sheetUuid)) return Either.Left("the sheetUuid is not UUID-like; it becomes a file name")
+        val existing = when (val read = readBundle(dir)) {
+            is Either.Left -> return read
+            is Either.Right -> read.value
+        }
         if (slugArg == null && existing != null && existing.sheets.none { it.uuid.value == doc.sheetUuid }) {
             return Either.Left("the derived slug $slug already holds a different project; pass --slug proj-xxxxxx (a new one to create, or this one to add the sheet to it)")
         }
@@ -62,13 +66,17 @@ internal object SketchBundle {
         return Either.Right(PlacedSheet(slug, files.keys.sorted().map { "$ROOT/$slug/$it" } + "$ROOT/$slug/$PREVIEW", "![sketch](../$ROOT/$slug/$PREVIEW)", replaced))
     }
 
-    private fun readBundle(dir: File): ProjectBundle? {
+    /** Right(null) means no bundle yet; a bundle that exists but cannot be read is an error, never "absent" (the app's own rule). */
+    private fun readBundle(dir: File): Either<String, ProjectBundle?> {
         val model = File(dir, SidecarCodec.MODEL_PATH)
-        if (!model.isFile) return null
+        if (!model.isFile) return Either.Right(null)
         val files = HashMap<String, ByteArray>()
         files[SidecarCodec.MODEL_PATH] = model.readBytes()
         File(dir, SidecarCodec.SHEETS_DIR).listFiles()?.filter { it.isFile }?.forEach { files["${SidecarCodec.SHEETS_DIR}/${it.name}"] = it.readBytes() }
-        return (SidecarCodec.decode(files) as? Either.Right)?.value
+        return when (val decoded = SidecarCodec.decode(files)) {
+            is Either.Right -> Either.Right(decoded.value)
+            is Either.Left -> Either.Left("the existing bundle ${dir.path} cannot be read (${decoded.value}); not touching it. Fix or restore it first")
+        }
     }
 
     private fun sheetRow(doc: SketchDocumentV2, position: Long): SketchSheet = SketchSheet(

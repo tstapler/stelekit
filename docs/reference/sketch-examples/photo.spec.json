@@ -12,7 +12,7 @@
   },
   "shapes": [
     {"id": "kitchen", "x": 100, "y": 100, "w": 1200, "h": 800, "label": "Kitchen"},
-    {"id": "island", "role": "furniture", "x": 500, "y": 400, "w": 400, "h": 150, "label": "Island"}
+    {"id": "island", "role": "furniture", "x": 500, "y": 650, "w": 400, "h": 150, "label": "Island"}
   ],
   "openings": [
     {"id": "door1", "type": "door", "on": "kitchen", "wall": "south", "offset": 150, "width": 300}

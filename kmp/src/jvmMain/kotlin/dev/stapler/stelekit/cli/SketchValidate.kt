@@ -128,7 +128,7 @@ internal object SketchValidate {
     private fun rootChecks(root: JsonObject, errors: MutableList<String>, warnings: MutableList<String>) {
         if ((root["schema"] as? JsonPrimitive)?.content?.toDoubleOrNull() != 2.0) errors += "\"schema\" must be the number 2, got ${SpecReader.describeJson(root["schema"])}"
         val uuid = root["sheetUuid"]
-        if (uuid !is JsonPrimitive || !uuid.isString || uuid.content.isBlank()) errors += "\"sheetUuid\" must be a non-empty string (a UUID); `canonicalize` does not invent one, copy it from `build` output or generate one"
+        if (uuid !is JsonPrimitive || !uuid.isString || !SketchLengths.UUID_SHAPE.matches(uuid.content)) errors += "\"sheetUuid\" must be a UUID-like string (letters, digits, '-', 8 to 64 characters; it becomes a file name); `canonicalize` does not invent one, copy it from `build` output or generate one"
         if (root["elements"] != null && root["elements"] !is JsonArray) errors += "\"elements\" must be a list"
         for (k in root.keys) if (k !in ROOT_KEYS) warnings += "top-level key \"$k\" is not part of schema 2 and will be dropped (allowed: ${ROOT_KEYS.joinToString()})"
         (root["layers"] as? JsonArray)?.forEachIndexed { i, l ->

@@ -208,6 +208,35 @@ class SketchAgentCliTest {
     }
 
     @Test
+    fun `hostile and sloppy spec values are refused with a message`() {
+        fun errors(spec: String) = outcome(spec).issues.errors
+        val base = """"shapes":[{"id":"r","x":0,"y":0,"w":"10'","h":"8'"}]"""
+        assertTrue(errors("""{"spec":1,"sheetUuid":"../../escape",$base}""").any { it.startsWith("sheetUuid:") })
+        assertTrue(errors("""{"spec":1,"space":"photo","calibration":{"refs":[{"a":[0,0],"b":[1,0],"length":"NaN"}]},$base}""").isNotEmpty())
+        assertTrue(errors("""{"spec":1,$base,"openings":[{"id":"d","type":"door","on":"r","wall":"north","offset":"1'","swing":"outward"}]}""").any { it.contains("openings[0].swing") })
+        assertTrue(errors("""{"spec":1,"space":"Photo",$base}""").any { it.startsWith("space:") })
+        assertTrue(errors("""{"spec":1,"shapes":[{"id":"r","x":0,"y":0,"w":"10'","h":"8'","dashed":"yes"}]}""").any { it.contains("shapes[0].dashed") })
+    }
+
+    @Test
+    fun `place refuses an unreadable bundle and an edited spec keeps its sheet uuid`() {
+        val dir = tempDir()
+        try {
+            val first = (SketchBundle.place(encode(built(ROOM_SPEC)), dir, null, null, 1L) as Either.Right).value
+            val edited = encode(built(ROOM_SPEC.replace("Sofa", "Couch")))
+            val again = (SketchBundle.place(edited, dir, null, null, 2L) as Either.Right).value
+            assertEquals(first.slug, again.slug)
+            assertTrue(again.replaced, "same title must replace the same sheet")
+            val sheet = File(dir, "assets/stelekit-sketch/${first.slug}/sheets").listFiles()!!.single()
+            sheet.appendText(" ")
+            val refused = SketchBundle.place(edited, dir, first.slug, null, 3L)
+            assertTrue(refused is Either.Left && "cannot be read" in refused.value, refused.toString())
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `png render draws ink and honours the requested width`() {
         val doc = built(ROOM_SPEC)
         val bytes = assertNotNull(SketchRender.png(doc, RenderRequest(width = 800)))
@@ -265,7 +294,7 @@ class SketchAgentCliTest {
     private fun propertyKeys(o: JsonObject): Set<String> = (o["properties"] as? JsonObject)?.keys ?: emptySet()
 
     private companion object {
-        const val ROOM_SHA256 = "6ea8a2a133347425ae8231700dee0414d81cf8ce3767ce317484fc40f9c4f1cc"
+        const val ROOM_SHA256 = "3394c7263924563657d5046575127b6e3c1c203ffd5a78a848ae95da40b3c8cb"
 
         val ROOM_SPEC = """{
   "spec": 1,
@@ -330,7 +359,7 @@ class SketchAgentCliTest {
 }
 """
 
-        val ROOM_DESCRIBE = """SKETCH SHEET 96bd0e9a-1920-45e1-8bc5-f55ca59274b2 (schema 2), title "Living room"
+        val ROOM_DESCRIBE = """SKETCH SHEET 33f4892a-45c6-4f65-8720-cf98945e0f99 (schema 2), title "Living room"
 Units: 1 scene unit = 1/16 inch (192 units per foot). x grows east (right), y grows south (down).
 Extent (shapes, lines and text; not openings or dimension marks): 14' 4 1/2" wide x 12' 4 1/2" tall, from (-2 1/4", -2 1/4") to (14' 2 1/4", 12' 2 1/4").
 Layers: default "Plan" (visible, 4 elements); openings "Openings" (visible, 5 elements); dimensions "Dimensions" (visible, 8 elements)

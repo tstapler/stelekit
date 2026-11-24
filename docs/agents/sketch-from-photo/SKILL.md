@@ -20,11 +20,11 @@ You can see images and edit files; you cannot open the app. The `sketch-cli` clo
 2. **Find reference lengths.** Best: a dimension written on the drawing, or a tape measure in frame. Otherwise known objects: interior door 80" tall and 30 to 36" wide, kitchen counter 36" high, base cabinet 24" deep, standard stud 3 1/2" wide, outlet plate 4 1/2" tall, A4 sheet 8.27 x 11.69". Pick **at least two references on different axes** and write down each as two pixel points plus the real length. Never invent a dimension: if a length has no reference, mark it as an estimate in the label and tell the owner.
 3. **Read pixel coordinates from a grid.** Run `python3 grid.py photo.jpg photo.grid.png --step 50`, open `photo.grid.png`, and read coordinates off the labelled lines (they are original-image pixels). Write down corners of rooms, door and window spans, furniture boxes. Round to the nearest 10 px; precision beyond that is noise.
 4. **Write the spec** (`space: "photo"`, `calibration.refs`, shapes in pixels). Start with the outer walls (they are wall centre lines), then openings, furniture, labels, dimensions. Use the owner's names for rooms. See "Spec skeleton" below.
-5. **Build and render.**
+5. **Build and render.** Rebuilding an edited spec keeps the same sheet uuid (it comes from `title`, or set `sheetUuid`), so `place` replaces the sheet; give different sketches different titles.
    ```bash
-   $STELEKIT/scripts/sketch-cli build kitchen.spec.json --out kitchen.v2.json --render kitchen.png --dimensions
+   $STELEKIT/scripts/sketch-cli build kitchen.spec.json --out kitchen.v2.json --render kitchen.png
    ```
-   Read the printed `INFO` and `WARNING` lines: the calibration scale (inches per pixel), disagreement between references, labels too big for their shape.
+   To see measured sizes next to your authored ones run `render --dimensions` separately. Read the printed `INFO` and `WARNING` lines: the calibration scale (inches per pixel), disagreement between references, labels too big for their shape.
 6. **Look and compare.** Open `kitchen.png` and the original photo, one after the other. Check shape, proportions, positions of doors and windows, which wall each is on, labels. The `--dimensions` overlay prints the measured width and height of every shape: compare each with any length written on the photo or known from the owner. Fix the spec, rebuild, look again. Two or three rounds is normal.
 7. **Read it as text.** `sketch-cli describe kitchen.v2.json` lists every element in feet-inches, which room contains or touches which, and which wall each opening is on. Use it to catch what pictures hide (a window on the south wall that you meant north, a `MISMATCH` in a dimension).
 8. **Validate.** `sketch-cli validate kitchen.v2.json` must end `RESULT: OK` with no warnings you cannot explain.
@@ -44,7 +44,7 @@ You can see images and edit files; you cannot open the app. The `sketch-cli` clo
                              {"a": [1010, 200], "b": [1010, 560], "length": "7'"} ] },
   "shapes": [
     {"id": "kitchen", "x": 200, "y": 150, "w": 800, "h": 550, "label": "Kitchen"},
-    {"id": "island", "role": "furniture", "x": 480, "y": 330, "w": 240, "h": 90, "label": "Island"}
+    {"id": "island", "role": "furniture", "x": 480, "y": 560, "w": 240, "h": 90, "label": "Island"}
   ],
   "openings": [
     {"id": "door1", "type": "door", "on": "kitchen", "wall": "south", "offset": 500, "width": 150},

@@ -9,7 +9,7 @@ Prints the image size; look at the output, never guess the size.
 """
 import argparse
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 
 def main() -> None:
@@ -18,7 +18,7 @@ def main() -> None:
     ap.add_argument("dst")
     ap.add_argument("--step", type=int, default=100, help="grid spacing in original pixels (default 100)")
     args = ap.parse_args()
-    img = Image.open(args.src).convert("RGB")
+    img = ImageOps.exif_transpose(Image.open(args.src)).convert("RGB")  # phone photos carry a rotation tag
     w, h = img.size
     draw = ImageDraw.Draw(img, "RGBA")
     font = ImageFont.load_default(size=max(12, min(w, h) // 60))

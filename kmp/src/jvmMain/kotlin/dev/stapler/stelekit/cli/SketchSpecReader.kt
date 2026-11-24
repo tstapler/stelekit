@@ -49,11 +49,12 @@ internal class SpecIssues {
 internal object SketchLengths {
     const val UNITS_PER_INCH = 16.0
     const val INCHES_PER_FOOT = 12.0
+    val UUID_SHAPE = Regex("[A-Za-z0-9-]{8,64}")
 
     /** Exact inches of [text] (`12' 6"`, `3 1/2"`, `144`), or null when it is not a length. */
     fun parseInches(text: String): Double? {
         val trimmed = text.trim()
-        trimmed.toDoubleOrNull()?.let { return it }
+        trimmed.toDoubleOrNull()?.let { return it.takeIf(Double::isFinite) }
         val parsed = parseLength(trimmed).getOrNull() as? ParsedLength.Measured ?: return null
         return parsed.value.num.toDouble() / parsed.value.den.toDouble()
     }
@@ -164,7 +165,7 @@ internal class SpecReader(
             }
             val a = pixelPoint(ref["a"], "$path.a", issues)
             val b = pixelPoint(ref["b"], "$path.b", issues)
-            val length = (ref["length"] as? JsonPrimitive)?.let { if (it.isString) SketchLengths.parseInches(it.content) else it.content.toDoubleOrNull() }
+            val length = (ref["length"] as? JsonPrimitive)?.let { if (it.isString) SketchLengths.parseInches(it.content) else it.content.toDoubleOrNull() }?.takeIf { it.isFinite() }
             if (length == null || length <= 0.0) {
                 issues.error("$path.length", "expected the real length between a and b, like \"3'\" or 36 (inches)")
                 return null
