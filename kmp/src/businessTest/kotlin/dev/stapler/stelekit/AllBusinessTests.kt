@@ -373,6 +373,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.units.LengthParserGoldenTest::class,
     dev.stapler.stelekit.units.LengthParserPropertyTest::class,
     dev.stapler.stelekit.units.MetricLengthTest::class,
+    dev.stapler.stelekit.sketch.v2.MetricExportTest::class,
     dev.stapler.stelekit.sketchimport.LabelBinderPropertyTest::class,
     dev.stapler.stelekit.sketchimport.SvgReaderInlineTest::class,
     dev.stapler.stelekit.sketchimport.SvgReaderPropertyTest::class,

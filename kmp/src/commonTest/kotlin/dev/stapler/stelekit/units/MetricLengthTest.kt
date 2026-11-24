@@ -180,8 +180,8 @@ class MetricLengthTest {
 
     @Test
     fun spoken_should_UseUnitWords() {
-        assertEquals("12.3 millimetres", dev.stapler.stelekit.ui.sketch.v2.SpokenLength.ofMetric(MetricLength.toUnits(123), LengthFormat.METRIC_MM))
-        assertEquals("1.2 metres", dev.stapler.stelekit.ui.sketch.v2.SpokenLength.ofMetric(MetricLength.toUnits(12_000), LengthFormat.METRIC_CM_M))
-        assertEquals("2.54 centimetres", dev.stapler.stelekit.ui.sketch.v2.SpokenLength.ofMetric(16.0, LengthFormat.METRIC_CM_M))
+        assertEquals("12.3 millimetres", dev.stapler.stelekit.ui.sketch.v2.SpokenLength.ofMetricText("12.3 mm"))
+        assertEquals("1.2 metres", dev.stapler.stelekit.ui.sketch.v2.SpokenLength.ofMetricText("1.2 m"))
+        assertEquals("2.54 centimetres", dev.stapler.stelekit.ui.sketch.v2.SpokenLength.ofMetricText("2.54 cm"))
     }
 }

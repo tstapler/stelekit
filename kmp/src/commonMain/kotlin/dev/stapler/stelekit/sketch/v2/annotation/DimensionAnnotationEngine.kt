@@ -18,6 +18,7 @@ import dev.stapler.stelekit.sketch.v2.view.SceneBounds
 import dev.stapler.stelekit.units.Inches
 import dev.stapler.stelekit.units.LengthFormat
 import dev.stapler.stelekit.units.LengthFormatter
+import dev.stapler.stelekit.units.MetricLength
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.floor
@@ -131,8 +132,10 @@ data class ElementFrame(val x: Double, val y: Double, val width: Double, val hei
 object AnnotationText {
     const val DIAMETER_SYMBOL = "\u00D8"
 
-    fun value(kind: MeasureKind, sixteenths: Long, format: LengthFormat = LengthFormat.FEET_INCHES): String =
-        (if (kind == MeasureKind.Diameter) "$DIAMETER_SYMBOL " else "") + LengthFormatter.format(Inches(abs(sixteenths)), format)
+    /** [exact] is the unrounded size in scene units: a metric display shows it to 0.1 mm instead of the rounded sixteenth. */
+    fun value(kind: MeasureKind, sixteenths: Long, format: LengthFormat = LengthFormat.FEET_INCHES, exact: Double = sixteenths.toDouble()): String =
+        (if (kind == MeasureKind.Diameter) "$DIAMETER_SYMBOL " else "") +
+            if (MetricLength.isMetric(format)) LengthFormatter.formatUnits(abs(exact), format) else LengthFormatter.format(Inches(abs(sixteenths)), format)
 }
 
 /**
@@ -202,8 +205,8 @@ object DimensionAnnotationEngine {
         (text.length * CHAR_EM * TEXT_SP + 2 * PAD_H_DP) * fontScale to (TEXT_SP * LINE_FACTOR + 2 * PAD_V_DP) * fontScale
 
     /** The one place a value becomes text: it calls `lengthTextOf`, the formatter the pills and size fields use, so a change there applies here. */
-    fun valueText(kind: MeasureKind, sixteenths: Long, format: LengthFormat = LengthFormat.FEET_INCHES): String =
-        AnnotationText.value(kind, sixteenths, format)
+    fun valueText(kind: MeasureKind, sixteenths: Long, format: LengthFormat = LengthFormat.FEET_INCHES, exact: Double = sixteenths.toDouble()): String =
+        AnnotationText.value(kind, sixteenths, format, exact)
 
     /**
      * The annotations of [candidates] on [canvas]. [bodies] are every visible shape (the candidates included): an annotation never
@@ -236,7 +239,7 @@ object DimensionAnnotationEngine {
             val name = ElementNames.nameOf(element)
             var annotated = false
             for (span in spansOf(element, canvas)) {
-                val text = valueText(span.label, span.sixteenths, format)
+                val text = valueText(span.label, span.sixteenths, format, span.exact)
                 val (tw, th) = textSize(text, fontScale)
                 val extent = span.textExtent(tw, th)
                 val alpha = ((span.lengthDp() / extent - FADE_START_RATIO) / (FADE_FULL_RATIO - FADE_START_RATIO)).coerceIn(0.0, 1.0)
@@ -280,11 +283,11 @@ object DimensionAnnotationEngine {
             if (spec.kind == MeasureKind.Height) {
                 val p = AnnotationPoint(cx - v.x * hh, cy - v.y * hh)
                 val q = AnnotationPoint(cx + v.x * hh, cy + v.y * hh)
-                AnnotationSpan(spec.kind, spec.sixteenths, p, q, preferred(listOf(u, neg(u)), wantRight = true), hw, if (rect) hw else 0.0)
+                AnnotationSpan(spec.kind, spec.sixteenths, p, q, preferred(listOf(u, neg(u)), wantRight = true), hw, if (rect) hw else 0.0, spec.exact)
             } else {
                 val p = AnnotationPoint(cx - u.x * hw, cy - u.y * hw)
                 val q = AnnotationPoint(cx + u.x * hw, cy + u.y * hw)
-                AnnotationSpan(spec.kind, spec.sixteenths, p, q, preferred(listOf(neg(v), v), wantRight = false), hh, if (rect) hh else 0.0)
+                AnnotationSpan(spec.kind, spec.sixteenths, p, q, preferred(listOf(neg(v), v), wantRight = false), hh, if (rect) hh else 0.0, spec.exact)
             }
         }
     }
@@ -298,7 +301,7 @@ object DimensionAnnotationEngine {
         val len = hypot(dx, dy).takeIf { it > 0.0 } ?: return null
         val n = AnnotationPoint(dy / len, -dx / len)
         val sixteenths = max(1L, kotlin.math.round(length).toLong())
-        return AnnotationSpan(MeasureKind.Length, sixteenths, AnnotationPoint(a.first, a.second), AnnotationPoint(b.first, b.second), preferred(listOf(n, neg(n)), wantRight = true), 0.0, 0.0)
+        return AnnotationSpan(MeasureKind.Length, sixteenths, AnnotationPoint(a.first, a.second), AnnotationPoint(b.first, b.second), preferred(listOf(n, neg(n)), wantRight = true), 0.0, 0.0, length)
     }
 
     private fun neg(p: AnnotationPoint) = AnnotationPoint(-p.x, -p.y)
@@ -380,7 +383,7 @@ internal class AnnotationBody(val id: ElementId, val box: AnnotationRect, val se
 /** A placed annotation before its target is sized: the text rectangle, the dimension line and its extension lines. */
 internal class AnnotationPlaced(val text: AnnotationRect, val line: AnnotationSegment, val extensions: List<AnnotationSegment>)
 
-internal class AnnotationSpan(val label: MeasureKind, val sixteenths: Long, val p: AnnotationPoint, val q: AnnotationPoint, val normals: List<AnnotationPoint>, val reach: Double, val extStart: Double) {
+internal class AnnotationSpan(val label: MeasureKind, val sixteenths: Long, val p: AnnotationPoint, val q: AnnotationPoint, val normals: List<AnnotationPoint>, val reach: Double, val extStart: Double, val exact: Double = sixteenths.toDouble()) {
     fun lengthDp(): Double = hypot(q.x - p.x, q.y - p.y)
 
     /** How much of the line the text covers: its width along a horizontal run, its height along a vertical one. */

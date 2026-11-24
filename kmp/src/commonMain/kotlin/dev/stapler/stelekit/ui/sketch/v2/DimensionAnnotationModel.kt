@@ -11,6 +11,7 @@ import dev.stapler.stelekit.sketch.v2.annotation.PlacedDimension
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.units.LengthFormat
+import dev.stapler.stelekit.units.MetricUnit
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchDimensionStrings as S
 import kotlin.math.abs
 
@@ -64,8 +65,8 @@ object DimensionAnnotationLayout {
     fun textSize(text: String, fontScale: Double): Pair<Double, Double> = DimensionAnnotationEngine.textSize(text, fontScale)
 
     /** The one place a value becomes text: the engine's [DimensionAnnotationEngine.valueText], the formatter the pills and size fields use. */
-    fun valueText(kind: PillKind, sixteenths: Long, format: LengthFormat = LengthFormat.FEET_INCHES): String =
-        DimensionAnnotationEngine.valueText(kind.measure(), sixteenths, format)
+    fun valueText(kind: PillKind, sixteenths: Long, format: LengthFormat = LengthFormat.FEET_INCHES, exact: Double = sixteenths.toDouble()): String =
+        DimensionAnnotationEngine.valueText(kind.measure(), sixteenths, format, exact)
 
     /**
      * The annotations of [candidates] on [canvas]. [bodies] are every visible shape (the candidates included): an annotation never
@@ -88,7 +89,7 @@ object DimensionAnnotationLayout {
         ).map { it.toAnnotation() }
 
     /** "Width of Rectangle 1: 3 feet 7 inches" for a screen reader. */
-    fun description(a: DimensionAnnotation): String = S.Annotation.description(DimensionPillModel.label(a.kind), a.elementName, SpokenLength.of(a.sixteenths))
+    fun description(a: DimensionAnnotation): String = S.Annotation.description(DimensionPillModel.label(a.kind), a.elementName, SpokenLength.ofMetricText(a.text) ?: SpokenLength.of(a.sixteenths))
 
     private fun PlacedDimension.toAnnotation() = DimensionAnnotation(elementId, elementName, kind.pill(), sixteenths, text, line, extensions, textRect, tapRect, alpha)
 }
@@ -100,6 +101,18 @@ internal fun MeasureKind.pill(): PillKind = PillKind.valueOf(name)
 
 /** A length in words ("3 feet 7 and 3 eighths inches") for a screen reader; a scene unit is a sixteenth of an inch. */
 object SpokenLength {
+    /** A written metric value (`12.3 mm`, `Ø 1.2 m`) in words, or null when [text] is not metric. */
+    fun ofMetricText(text: String): String? {
+        val number = text.substringBeforeLast(' ', "").substringAfterLast(' ')
+        val word = when (text.substringAfterLast(' ')) {
+            MetricUnit.MM.suffix -> S.Units.SPOKEN_MM
+            MetricUnit.CM.suffix -> S.Units.SPOKEN_CM
+            MetricUnit.M.suffix -> S.Units.SPOKEN_M
+            else -> return null
+        }
+        return S.Units.spokenMetric(number, word)
+    }
+
     private const val SIXTEENTHS_PER_INCH = 16L
     private const val INCHES_PER_FOOT = 12L
 
