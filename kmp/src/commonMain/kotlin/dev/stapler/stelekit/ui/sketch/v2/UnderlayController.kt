@@ -38,6 +38,7 @@ import dev.stapler.stelekit.ui.sketch.v2.strings.SketchUnderlayStrings
 import dev.stapler.stelekit.units.Inches
 import dev.stapler.stelekit.units.LengthFormat
 import dev.stapler.stelekit.units.LengthFormatter
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -82,6 +83,7 @@ class UnderlayController(
     private val scope: CoroutineScope,
     private val limits: SceneLimits,
     private val downscaler: ImageDownscalerPort = PlatformImageDownscaler,
+    private val io: CoroutineDispatcher = PlatformDispatcher.IO,
     private val format: () -> LengthFormat,
 ) {
     var mode: UnderlayMode by mutableStateOf(UnderlayMode.Idle)
@@ -131,7 +133,7 @@ class UnderlayController(
                     controller.notifier.toast(SketchUnderlayStrings.STORE_FAILED_KEY, ImageStoreError.TooLarge(picked.source.size, limits.maxImageBytes).message)
                     return@launch
                 }
-                val (original, bytes, storing) = withContext(PlatformDispatcher.IO) {
+                val (original, bytes, storing) = withContext(io) {
                     val raw = picked.source.read(0, picked.source.size.toInt())
                     val reduced = reducedForStore(raw)
                     Triple(raw, reduced, store.store(reduced))
