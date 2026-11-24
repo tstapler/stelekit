@@ -228,6 +228,7 @@ object SketchStrings {
         const val STEP_PERCENT = "1%"
 
         const val MINIMUM_SIZE = "Minimum size reached"
+        const val MAXIMUM_SIZE = "Maximum size reached"
         const val LOCKED = "Locked: unlock it to edit."
         const val NOTHING_SELECTED = "Select an element first."
         const val NOT_ROTATABLE = "This selection cannot be rotated."

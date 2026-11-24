@@ -121,4 +121,22 @@ class TextSizeModelTest {
         assertEquals(TextSizeChange.Apply(4.0, null), TextSizeModel.typed(" 4 ", current = 4.0))
         assertEquals(256.0, assertIs<TextSizeChange.Apply>(TextSizeModel.typed("400", current = 300.0)).size, "a different size is still clamped")
     }
+
+    /** The sizes after [change] is applied the way the controls apply it (first text is the reference). */
+    private fun sizesAfter(sizes: List<Double>, change: (Double) -> TextSizeChange): List<Double> {
+        val texts = sizes.mapIndexed { i, size -> text("t$i", size) }
+        val doc = SketchDocumentV2(texts.fold(SketchSceneV2.empty()) { s, t -> s.add(t).getOrNull()!! })
+        val apply = assertIs<TextSizeChange.Apply>(change(texts.first().fontSize))
+        val after = TextSizeModel.commandFor(texts, apply, null)?.apply(doc)?.getOrNull()?.doc ?: doc
+        return texts.map { assertIs<TextElement>(after.scene[it.id]).fontSize }
+    }
+
+    @Test
+    fun mixedSelection_should_NeverPushAnInRangeTextOutOfRange_WhenTheFirstIsImportedOutsideTheLimits() {
+        assertEquals(listOf(300.0, 12.0), sizesAfter(listOf(300.0, 12.0)) { TextSizeModel.larger(it) }, "A+ at the limit changes nothing")
+        assertEquals(listOf(4.0, 20.0), sizesAfter(listOf(4.0, 20.0)) { TextSizeModel.smaller(it) }, "A- at the limit changes nothing")
+        assertEquals(listOf(300.0, 12.0), sizesAfter(listOf(300.0, 12.0)) { TextSizeModel.typed("300", it) }, "re-typing the shown size changes nothing")
+        assertEquals(listOf(256.0, 256.0), sizesAfter(listOf(300.0, 12.0)) { TextSizeModel.smaller(it) }, "a real step still applies to all")
+        assertEquals(listOf(24.0, 24.0), sizesAfter(listOf(20.0, 12.0)) { TextSizeModel.larger(it) })
+    }
 }

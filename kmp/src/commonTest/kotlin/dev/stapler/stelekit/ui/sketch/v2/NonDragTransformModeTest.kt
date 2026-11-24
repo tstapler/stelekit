@@ -11,7 +11,9 @@ import dev.stapler.stelekit.sketch.v2.scene.BoundKind
 import dev.stapler.stelekit.sketch.v2.scene.BoundRef
 import dev.stapler.stelekit.sketch.v2.scene.ElementBase
 import dev.stapler.stelekit.sketch.v2.scene.RectElement
+import dev.stapler.stelekit.sketch.v2.scene.TextElement
 import dev.stapler.stelekit.sketch.v2.scene.reconcile
+import dev.stapler.stelekit.sketch.v2.tools.ElementTransform
 import dev.stapler.stelekit.sketch.v2.tools.MoveSelectionCommand
 import dev.stapler.stelekit.sketch.v2.tools.RectSpec
 import dev.stapler.stelekit.sketch.v2.tools.TransformSelectionCommand
@@ -19,9 +21,11 @@ import dev.stapler.stelekit.sketch.v2.tools.commitToolCommand
 import dev.stapler.stelekit.sketch.v2.tools.elId
 import dev.stapler.stelekit.sketch.v2.tools.filledRectEl
 import dev.stapler.stelekit.sketch.v2.tools.sceneOfElements
+import dev.stapler.stelekit.sketch.v2.tools.su
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -135,18 +139,53 @@ class NonDragTransformModeTest {
     }
 
     /** "Door opening" at size 20: 120 x 25, like a text box the pointer resize test uses. */
-    private val label = dev.stapler.stelekit.sketch.v2.scene.TextElement(
-        ElementBase(elId("t1")), dev.stapler.stelekit.sketch.v2.tools.su(0), dev.stapler.stelekit.sketch.v2.tools.su(0),
-        dev.stapler.stelekit.sketch.v2.tools.su(120), dev.stapler.stelekit.sketch.v2.tools.su(25),
-        text = "Door opening", originalText = "Door opening", fontSize = 20.0,
+    private fun label(size: Double = 20.0, w: Int = 120, h: Int = 25) = TextElement(
+        ElementBase(elId("t1")), su(0), su(0), su(w), su(h), text = "Door opening", originalText = "Door opening", fontSize = size,
     )
+
+    private val label = label()
+
+    /** The single text's step after [nudges] Resize nudges of ([dx], [dy]) at step One (null: Apply commits nothing), and what Apply reported. */
+    private fun resizedText(text: TextElement, nudges: Int, dx: Int, dy: Int): Pair<ElementTransform.TextBox?, NonDragApplied> {
+        val start = started(NonDragAction.Resize, NudgeStep.One, sceneOfElements(text), listOf(elId("t1")))
+        val mode = (0 until nudges).fold(start) { m, _ -> m.nudge(dx, dy) }
+        val applied = mode.apply()
+        assertEquals(applied.notice, mode.pendingNotice(), "the live notice matches what Apply reports")
+        val step = (applied.command as TransformSelectionCommand?)?.steps?.single()
+        return step?.let { assertIs<ElementTransform.TextBox>(it) } to applied
+    }
+
+    @Test
+    fun resize_of_text_should_Shrink_When_LeftOrUpIsNudged_AndGrow_When_RightOrDownIs() {
+        val left = assertNotNull(resizedText(label, 12, -1, 0).first, "Left shrinks")
+        assertEquals(20.0 * 108.0 / 120.0, left.fontSize, 1e-9)
+        val up = assertNotNull(resizedText(label, 5, 0, -1).first, "Up shrinks")
+        assertEquals(20.0 * 20.0 / 25.0, up.fontSize, 1e-9)
+        assertTrue(assertNotNull(resizedText(label, 12, 1, 0).first).fontSize > 20.0, "Right grows")
+        assertTrue(assertNotNull(resizedText(label, 5, 0, 1).first).fontSize > 20.0, "Down grows")
+        assertNull(resizedText(label, 5, 0, -1).second.notice, "a shrink inside the limits says nothing")
+    }
+
+    @Test
+    fun resize_of_text_should_StopAtTheFontLimit_AndSaySo_ButCommitNothingWhenNothingChanges() {
+        val (atMin, minApplied) = resizedText(label(size = 8.0), 10, 0, -1)
+        assertNull(atMin, "size 8 cannot shrink, so nothing is committed")
+        assertEquals(NonDragNotice.MinimumSize, minApplied.notice)
+        val (stopped, stoppedApplied) = resizedText(label, 20, 0, -1)
+        assertEquals(8.0, assertNotNull(stopped).fontSize, "20 * 5/25 = 4 stops at 8")
+        assertEquals(NonDragNotice.MinimumSize, stoppedApplied.notice)
+        val (huge, hugeApplied) = resizedText(label(size = 300.0, w = 1800, h = 375), 10, 1, 1)
+        assertNull(huge, "an imported 300 cannot grow, so nothing is committed")
+        assertEquals(NonDragNotice.MaximumSize, hugeApplied.notice)
+        assertTrue(assertNotNull(resizedText(label(size = 300.0, w = 1800, h = 375), 10, -1, -1).first).fontSize < 300.0, "but it can shrink")
+    }
 
     @Test
     fun resize_of_text_should_ScaleTheFont_LikeAPointerCornerDrag_NotStretchTheBox() {
         val one = sceneOfElements(label)
         val mode = started(NonDragAction.Resize, scene = one, selection = listOf(elId("t1"))).nudge(1, 1)
         val step = assertIs<TransformSelectionCommand>(mode.apply().command).steps.single()
-        val box = assertIs<dev.stapler.stelekit.sketch.v2.tools.ElementTransform.TextBox>(step, "text resizes through TextResize, got $step")
+        val box = assertIs<ElementTransform.TextBox>(step, "text resizes through TextResize, got $step")
         assertEquals(28.0, box.fontSize, 1e-9, "35/25 grows most, so the font scales by 1.4")
         assertEquals(box.width / box.height, 120.0 / 25.0, 1e-9, "the aspect is kept")
         assertEquals("width 120 → 168, height 25 → 35", mode.previewText())
@@ -157,7 +196,7 @@ class NonDragTransformModeTest {
         val two = sceneOfElements(label, filledRectEl("r2", 200, 0, 40, 25))
         val mode = (0 until TEN).fold(started(NonDragAction.Resize, scene = two, selection = listOf(elId("t1"), elId("r2")))) { m, _ -> m.nudge(1, 1) }
         val steps = assertIs<TransformSelectionCommand>(mode.apply().command).steps
-        val text = assertIs<dev.stapler.stelekit.sketch.v2.tools.ElementTransform.TextBox>(steps.single { it.id == elId("t1") })
+        val text = assertIs<ElementTransform.TextBox>(steps.single { it.id == elId("t1") })
         assertTrue(text.fontSize > 20.0, "the group grew, so the text font grows: ${text.fontSize}")
     }
 

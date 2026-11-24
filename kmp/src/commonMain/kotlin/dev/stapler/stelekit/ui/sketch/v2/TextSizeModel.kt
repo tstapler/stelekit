@@ -57,6 +57,16 @@ object TextSizeModel {
 
     fun command(ids: List<ElementId>, size: Double, metrics: TextMetricsProvider?): Command = StyleText(ids, fontSize = size, metrics = metrics)
 
+    /**
+     * The command that applies [change] to the targets of [selection], or null when it leaves the reference (first) text's
+     * size as it is: a step at a limit or a re-typed size changes nothing, so no other text is set to an out-of-range size.
+     */
+    fun commandFor(selection: List<SceneElement>, change: TextSizeChange.Apply, metrics: TextMetricsProvider?): Command? {
+        val texts = targets(selection)
+        if (texts.isEmpty() || change.size == texts.first().fontSize) return null
+        return command(texts.map { it.id }, change.size, metrics)
+    }
+
     private fun limited(c: TextSizeLimits.Clamped): TextSizeChange.Apply = TextSizeChange.Apply(
         c.size,
         when (c.hit) {

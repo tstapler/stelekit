@@ -67,10 +67,9 @@ internal fun applyTextSize(controller: SketchEditorController, change: TextSizeC
         is TextSizeChange.Reject -> controller.notifier.toast(S.TOAST_KEY, change.message)
         is TextSizeChange.Apply -> {
             val selection = controller.ui.selection.mapNotNull { controller.doc.scene[ElementId(it)] }
-            val ids = TextSizeModel.targets(selection).map { it.id }
-            if (ids.isEmpty()) return
-            controller.submit(TextSizeModel.command(ids, change.size, controller.textMetrics))
-            controller.notifier.toast(S.TOAST_KEY, change.notice ?: S.size(TextSizeModel.format(change.size)))
+            val command = TextSizeModel.commandFor(selection, change, controller.textMetrics)
+            if (command != null) controller.submit(command)
+            (change.notice ?: S.size(TextSizeModel.format(change.size)).takeIf { command != null })?.let { controller.notifier.toast(S.TOAST_KEY, it) }
         }
     }
 }

@@ -9,7 +9,9 @@ import dev.stapler.stelekit.sketch.v2.text.TextAutoSize
 import dev.stapler.stelekit.sketch.v2.text.TextMetricsProvider
 import dev.stapler.stelekit.sketch.v2.text.TextSizeLimits
 import dev.stapler.stelekit.sketch.v2.text.TextStyle
+import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.ln
 import kotlin.math.min
 import kotlin.math.sin
 
@@ -40,8 +42,26 @@ object TextResize {
         return ElementTransform.TextBox(e.id, mapped.x, mapped.y, from.width * k, from.height * k, size, e.text, e.autoResize)
     }
 
-    private fun scaled(e: TextElement, box: Box, handle: Handle, k: Double, fromCentre: Boolean): ElementTransform.TextBox {
-        val size = TextSizeLimits.clampChange(e.fontSize, e.fontSize * k).size
+    /** A text scaled by a keyboard resize, and the font limit that stopped it, if any. */
+    data class Nudged(val transform: ElementTransform.TextBox, val hit: TextSizeLimits.Bound?)
+
+    /**
+     * [e] (box [box]) scaled about its top-left for a keyboard resize that would stretch the box to [stretched]. The font
+     * follows the axis that changed most, signed, so a shrink on one axis shrinks the text (a corner drag's "larger axis"
+     * rule would keep it at its size).
+     */
+    fun nudge(e: TextElement, box: Box, stretched: Box): Nudged {
+        val kx = ratio(stretched.width, box.width)
+        val ky = ratio(stretched.height, box.height)
+        val k = if (abs(ln(kx)) >= abs(ln(ky))) kx else ky
+        val c = TextSizeLimits.clampChange(e.fontSize, e.fontSize * k)
+        return Nudged(scaledTo(e, box, Handle.SE, c.size, fromCentre = false), c.hit)
+    }
+
+    private fun scaled(e: TextElement, box: Box, handle: Handle, k: Double, fromCentre: Boolean): ElementTransform.TextBox =
+        scaledTo(e, box, handle, TextSizeLimits.clampChange(e.fontSize, e.fontSize * k).size, fromCentre)
+
+    private fun scaledTo(e: TextElement, box: Box, handle: Handle, size: Double, fromCentre: Boolean): ElementTransform.TextBox {
         val b = TransformMath.scaleFromHandle(box, e.angle, handle, ratio(size, e.fontSize), fromCentre)
         return ElementTransform.TextBox(e.id, b.x, b.y, b.width, b.height, size, e.text, e.autoResize)
     }
