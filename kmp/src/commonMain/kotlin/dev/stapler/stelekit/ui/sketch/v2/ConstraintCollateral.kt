@@ -15,7 +15,7 @@ import dev.stapler.stelekit.ui.sketch.v2.strings.SketchConstraintStrings
  * The shapes a solved edit changed that the edit did not ask for: constrained shapes the solver moved or resized to keep a
  * constraint true. A typed size or dimension names what it targets; anything else a constraint pulled along is reported.
  */
-internal object ConstraintCollateral {
+object ConstraintCollateral {
     /** Names of the shapes [step] changed beyond what [command] (a typed resize, or null for a dimension label edit) targeted. */
     fun adjusted(command: Command?, step: Committed): List<String> {
         val after = step.after

@@ -84,7 +84,7 @@ private const val PAN_REUSE_DP = 24f
 private const val PAN_SETTLE_MS = 150L
 
 /** The annotation colours, all read from the theme so a dark scheme gets light ink on a dark chip; the contrast helpers let a test hold them to the WCAG bars. */
-internal object AnnotationInk {
+object AnnotationInk {
     fun chip(scheme: ColorScheme): Color = scheme.surface.copy(alpha = CHIP_ALPHA)
 
     fun line(scheme: ColorScheme): Color = scheme.onSurface.copy(alpha = LINE_ALPHA)
