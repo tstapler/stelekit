@@ -427,6 +427,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.view.SketchViewportTest::class,
     dev.stapler.stelekit.ui.sketch.v2.SketchPointerAdapterTest::class,
     dev.stapler.stelekit.sketch.v2.tools.TextToolTest::class,
+    dev.stapler.stelekit.sketch.v2.tools.TextAutoSizeTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.TextSizeModelTest::class,
     dev.stapler.stelekit.sketch.v2.tools.ImageToolTest::class,
     dev.stapler.stelekit.sketch.v2.tools.SelectToolTest::class,
     dev.stapler.stelekit.sketch.v2.tools.ResizeSnapTest::class,

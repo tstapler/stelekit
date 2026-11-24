@@ -10,6 +10,7 @@ import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.ElementStyle
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
 import dev.stapler.stelekit.sketch.v2.snap.SnapSettings
+import dev.stapler.stelekit.sketch.v2.text.TextMetricsProvider
 
 /** Source of fresh element ids; a seam so scenario tests are deterministic. */
 fun interface ElementIdSource {
@@ -33,6 +34,8 @@ data class ToolContext(
     val pxPerDp: Double = 1.0,
     /** What drags snap to (object edges, the grid); none by default so a tool sees raw geometry unless the host asks. */
     val snap: SnapSettings = SnapSettings.None,
+    /** Measures text for a gesture that re-wraps it (a side-handle drag on a text box); null keeps the box change only. */
+    val textMetrics: TextMetricsProvider? = null,
 ) {
     /** How far from an outline a press still hits it, in screen px: a finger-sized reach for touch, the fine mouse reach otherwise. */
     fun hitTolerancePx(touch: Boolean): Double = if (touch) maxOf(TOUCH_HIT_DP * pxPerDp, HitTester.HIT_TOLERANCE_PX) else HitTester.HIT_TOLERANCE_PX

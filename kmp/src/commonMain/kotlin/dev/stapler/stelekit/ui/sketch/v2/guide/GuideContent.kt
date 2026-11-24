@@ -95,6 +95,7 @@ object GuideContent {
         HelpTopic(TECHNICAL, S.Help.TECHNICAL, S.Help.TECHNICAL_BODY, listOf("technical", "inches", "dimension", "zone", "grid", "size"), TECHNICAL),
         HelpTopic(DIMENSIONS, S.Help.DIMENSIONS, S.Help.DIMENSIONS_BODY, listOf("dimension", "width", "height", "size", "pill", "type", "measure", "inches", "length", "diameter", "technical"), DIMENSIONS),
         HelpTopic("dimensions.all", S.Help.DIMENSIONS_ALL, S.Help.DIMENSIONS_ALL_BODY, listOf("dimension", "elevation", "annotation", "persistent", "all", "show", "hide", "extension", "line")),
+        HelpTopic("text-size", S.Help.TEXT_SIZE, S.Help.TEXT_SIZE_BODY, listOf("text", "font", "size", "resize", "autosize", "wrap", "scale", "a+", "a-", "bigger", "smaller")),
         HelpTopic(POINT_DRAG, S.Help.POINT_DRAG, S.Help.POINT_DRAG_BODY, listOf("point", "vertex", "drag", "snap", "corner", "endpoint"), POINT_DRAG),
         HelpTopic("snapping", S.Help.SNAPPING, S.Help.SNAPPING_BODY, listOf("snap", "guide", "align", "magnet", "grid", "ctrl", "hold", "resize", "move", "pause", "bypass")),
         HelpTopic("gestures", S.Help.GESTURES, S.Help.GESTURES_BODY, listOf("touch", "pinch", "zoom", "pan", "tap", "drag", "loupe", "magnifier", "finger")),

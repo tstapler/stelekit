@@ -204,7 +204,7 @@ fun SketchEditorV2Host(
         importDisabledReason = extras.importDisabledReason,
         onExport = if (extras.exportAvailable) extras.exporter::open else null,
         extraChips = solveChips(controller, solving) + extras.access.chips(),
-        priorityChips = technicalChips(controller, extras, extras.constraintsAvailable, technical != null),
+        priorityChips = textSizeChips(controller) + technicalChips(controller, extras, extras.constraintsAvailable, technical != null),
         edgeStripAtEnd = extras.input.stripAtEnd,
         durabilityCue = cue,
         grid = extras.grid,
@@ -358,6 +358,7 @@ private fun BoxScope.SketchCanvasContent(
     NameTagsOverlay(controller)
     // After the name tags, so a tiny shape's handles are drawn over its label and never hidden by it (the overlay takes no pointer input).
     SelectionVisuals(controller)
+    TextSizeBadge(controller)
     SnapGuideOverlay(controller.tools.preview?.guides.orEmpty(), state.viewport, haptics = state.lastInput == InputKind.TouchOrPen)
     TouchLoupe(controller.tools.loupe, state.touchLoupe, { controller.view.canvasSize }, { loupeFocus(controller) }, pxPerDp) { region ->
         // Its own painter, so the loupe's cull and path cache never touch the main canvas's.

@@ -22,7 +22,7 @@ internal fun technicalChips(controller: SketchEditorController, extras: EditorEx
             if (on) S.Chips.DIMENSIONS else S.Chips.DIMENSIONS_OFF,
             if (on) S.Chips.DIMENSIONS_HIDE else S.Chips.DIMENSIONS_SHOW,
             StripIcon.Technical,
-            extras.pills::toggle,
+            onClick = extras.pills::toggle,
         ),
         ActionChip(
             LengthUnitTags.CHIP_ROW,

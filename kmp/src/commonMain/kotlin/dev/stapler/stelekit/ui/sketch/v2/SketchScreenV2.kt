@@ -610,7 +610,7 @@ private fun CanvasArea(
         canvas()
         if (config.banner?.emptyStateVisible == true) EmptyState(config.emptyActions, Modifier.align(Alignment.Center))
         Column(Modifier.align(Alignment.TopStart).padding(8.dp)) {
-            if (hintShown && (state.selection.isEmpty() || cue != null)) Text(cueHint(cue, hintLine(state, config.pointer), canvasPx.width / density.density), Modifier.testTag(ShellTags.HINT), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (hintShown && (state.selection.isEmpty() || cue != null)) Text(cueHint(cue, hintLine(state, config.pointer), canvasPx.width / density.density), Modifier.testTag(ShellTags.HINT).background(MaterialTheme.colorScheme.surface.copy(alpha = HINT_SCRIM_ALPHA), RoundedCornerShape(HINT_RADIUS)).padding(horizontal = 8.dp, vertical = 2.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         // Above the chip row, not under the hint: the top of the canvas is where a finger drags and a toast there hides the shape being moved.
         val chipsRaised = canvasPx.width / density.density < CHIPS_BESIDE_CLUSTER_MIN_DP
@@ -652,6 +652,10 @@ private fun CanvasArea(
         }
     }
 }
+
+/** The hint sits on a soft panel so a drawn line behind it never runs through the words. */
+private const val HINT_SCRIM_ALPHA = 0.85f
+private val HINT_RADIUS = 8.dp
 
 private fun cueHint(cue: ShownCue?, hint: String, widthDp: Float): String =
     DurabilityCueHost.hintText(cue, hint, DurabilityCue.charsThatFit(widthDp.toInt(), 1.0))

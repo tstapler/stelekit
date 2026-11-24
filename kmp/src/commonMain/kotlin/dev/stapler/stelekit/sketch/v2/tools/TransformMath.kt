@@ -50,6 +50,19 @@ object TransformMath {
             w = max(MIN_SIDE, box.width * k)
             h = max(MIN_SIDE, box.height * k)
         }
+        return place(box, angle, handle, w, h, fromCentre)
+    }
+
+    /**
+     * [box] scaled by [k] about the handle opposite [handle] (about the centre when [fromCentre]), rotation unchanged: the
+     * box a text element takes when its font is scaled by [k]. [k] must be positive.
+     */
+    fun scaleFromHandle(box: Box, angle: Double, handle: Handle, k: Double, fromCentre: Boolean): Box =
+        place(box, angle, handle, box.width * k, box.height * k, fromCentre)
+
+    private fun place(box: Box, angle: Double, handle: Handle, w: Double, h: Double, fromCentre: Boolean): Box {
+        val c = cos(angle)
+        val s = sin(angle)
         if (fromCentre) return Box(box.cx - w / HALF, box.cy - h / HALF, w, h)
         // The opposite point (the anchor) in world space stays fixed; the new centre is one half-box from it.
         val ax = -handle.sx * box.width / HALF

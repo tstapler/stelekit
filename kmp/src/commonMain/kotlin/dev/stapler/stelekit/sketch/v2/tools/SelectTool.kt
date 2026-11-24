@@ -15,6 +15,7 @@ import dev.stapler.stelekit.sketch.v2.scene.LineElement
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
+import dev.stapler.stelekit.sketch.v2.scene.TextElement
 import dev.stapler.stelekit.sketch.v2.snap.GuideAxis
 import dev.stapler.stelekit.sketch.v2.snap.QuarterTurn
 import dev.stapler.stelekit.sketch.v2.snap.ResizeSides
@@ -367,11 +368,19 @@ class SelectTool(
 
         private fun resizeSteps(rawDx: Double, rawDy: Double, mods: Modifiers, ctx: ToolContext): Steps {
             val out = snappedDelta(rawDx, rawDy, mods, ctx)
+            val single = items.singleOrNull()
+            if (single is TextElement) {
+                return Steps(listOf(TextResize.handleDrag(single, ownBox(single), handle, out.dx, out.dy, mods.alt, ctx.textMetrics)), out.guides)
+            }
             val next = TransformMath.resize(frame.box, frame.angle, handle, out.dx, out.dy, keepAspect = mods.shift, fromCentre = mods.alt)
-            if (items.size == 1) return Steps(listOf(fit(items.single(), next, null)), out.guides)
+            if (single != null) return Steps(listOf(fit(single, next, null)), out.guides)
             val moved = items.map { e ->
                 val mapped = TransformMath.mapBox(ownBox(e), frame.box, next)
-                if (e is PointElement || e is ArcElement) shift(e, mapped) else fit(e, mapped, null)
+                when {
+                    e is PointElement || e is ArcElement -> shift(e, mapped)
+                    e is TextElement -> TextResize.groupScale(e, ownBox(e), mapped)
+                    else -> fit(e, mapped, null)
+                }
             }
             return Steps(moved, out.guides)
         }

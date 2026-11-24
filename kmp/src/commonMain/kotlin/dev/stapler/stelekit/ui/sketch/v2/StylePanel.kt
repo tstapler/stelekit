@@ -50,6 +50,7 @@ import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
 import dev.stapler.stelekit.sketch.v2.scene.StrokeStyle
 import dev.stapler.stelekit.sketch.v2.scene.TextAlign
 import dev.stapler.stelekit.sketch.v2.scene.VerticalAlign
+import dev.stapler.stelekit.sketch.v2.text.TextMetricsProvider
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
 
@@ -86,6 +87,8 @@ fun StylePanel(
     onCommand: (Command) -> Unit,
     onDefaults: (StylePatch) -> Unit,
     modifier: Modifier = Modifier,
+    metrics: TextMetricsProvider? = null,
+    onTextSize: (TextSizeChange) -> Unit = {},
 ) {
     val model = StylePanelModel.of(selection, defaults, tool, scene)
     val ids = selection.map { it.id }
@@ -103,8 +106,11 @@ fun StylePanel(
         ChoiceRow("Sloppiness", SloppinessChoice.entries.map { it to it.label }, model.sloppiness) { send(StyleActions.sloppiness(it)) }
         ChoiceRow("Edges", EdgesChoice.entries.map { it to it.label }, model.edges) { send(StyleActions.edges(it)) }
         model.fontFamily?.let { family ->
-            ChoiceRow("Font", FontChoice.entries.map { it to it.label }, family.asChoice { FontChoice.of(it) }) { onCommand(StyleActions.font(ids, it)) }
-            model.fontSize?.let { size -> ChoiceRow("Font size", FontSizeChoice.entries.map { it to it.label }, size.asChoice { FontSizeChoice.of(it) }) { onCommand(StyleActions.fontSize(ids, it)) } }
+            ChoiceRow("Font", FontChoice.entries.map { it to it.label }, family.asChoice { FontChoice.of(it) }) { onCommand(StyleActions.font(ids, it, metrics)) }
+            model.fontSize?.let { size ->
+                TextSizeRow(TextSizeModel.current(selection), onTextSize)
+                ChoiceRow("Font size", FontSizeChoice.entries.map { it to it.label }, size.asChoice { FontSizeChoice.of(it) }) { onCommand(StyleActions.fontSize(ids, it, metrics)) }
+            }
         }
         TextAlignRows(model, ids, onCommand)
         ArrowRows(model, ids, onCommand)

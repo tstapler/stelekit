@@ -27,6 +27,7 @@ import dev.stapler.stelekit.sketch.v2.scene.TextAlign
 import dev.stapler.stelekit.sketch.v2.scene.TextElement
 import dev.stapler.stelekit.sketch.v2.scene.VerticalAlign
 import dev.stapler.stelekit.sketch.v2.scene.arrowType
+import dev.stapler.stelekit.sketch.v2.text.TextMetricsProvider
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
 
 /** A property value that is the same across the selection, or the "Mixed" chip (ux.md section 7). */
@@ -212,9 +213,9 @@ object StyleActions {
 
     fun opacity(percent: Int) = StylePatch(opacity = percent.coerceIn(0, ElementBase.FULL_OPACITY))
 
-    fun font(ids: List<ElementId>, v: FontChoice): Command = StyleText(ids, fontFamily = v.family)
+    fun font(ids: List<ElementId>, v: FontChoice, metrics: TextMetricsProvider? = null): Command = StyleText(ids, fontFamily = v.family, metrics = metrics)
 
-    fun fontSize(ids: List<ElementId>, v: FontSizeChoice): Command = StyleText(ids, fontSize = v.size)
+    fun fontSize(ids: List<ElementId>, v: FontSizeChoice, metrics: TextMetricsProvider? = null): Command = StyleText(ids, fontSize = v.size, metrics = metrics)
 
     fun textAlign(ids: List<ElementId>, v: TextAlign): Command = StyleText(ids, textAlign = v)
 
