@@ -25,6 +25,7 @@ import dev.stapler.stelekit.sketch.v2.library.LibraryStorage
 import dev.stapler.stelekit.sketch.v2.runtime.image.ImageAssetStore
 import dev.stapler.stelekit.sketch.v2.runtime.settings.EdgePanSettings
 import dev.stapler.stelekit.sketch.v2.runtime.settings.FingerDrawingSettings
+import dev.stapler.stelekit.sketch.v2.runtime.settings.LengthFormatSettings
 import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
 import dev.stapler.stelekit.ui.sketch.v2.guide.TourProgress
 
@@ -50,6 +51,8 @@ class HostPlatform(
     val canvasDrop: CanvasFileDropHost? = null,
     /** The Finger drawing setting and the per-device stylus flag; null leaves Finger drawing off and shows no hint. */
     val fingerDrawing: FingerDrawingSettings? = null,
+    /** The length display (feet and inches, inches, decimal) kept per device; null keeps the choice for the session only. */
+    val lengthFormat: LengthFormatSettings? = null,
     /** What the user has already been shown of the feature tours; null shows no tours. */
     val tourProgress: TourProgress? = null,
 )

@@ -15,18 +15,19 @@ import dev.stapler.stelekit.sketch.v2.tools.ToolId
 import dev.stapler.stelekit.sketch.v2.tools.TouchFloor
 import dev.stapler.stelekit.ui.sketch.lengthTextOf
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchDimensionStrings
+import dev.stapler.stelekit.units.LengthFormat
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.max
-import kotlin.math.round
+import kotlin.math.floor
 import kotlin.math.sin
 
 /** What one on-canvas dimension pill measures. */
 enum class PillKind { Width, Height, Diameter, Radius, Length }
 
 /** One measurable of the selected element: [sixteenths] is its current size (a scene unit is a sixteenth of an inch). */
-data class PillSpec(val kind: PillKind, val sixteenths: Long)
+data class PillSpec(val kind: PillKind, val sixteenths: Long, val exact: Double = sixteenths.toDouble())
 
 /** A pill after layout: [text] is what it shows, the rest is its rectangle in the canvas's dp space. */
 data class PlacedPill(val kind: PillKind, val text: String, val centreX: Double, val centreY: Double, val widthDp: Double, val heightDp: Double) {
@@ -79,14 +80,17 @@ object DimensionPillModel {
     fun specs(element: SceneElement): List<PillSpec> = when (element) {
         is RectElement -> boxSpecs(element.width.value, element.height.value)
         is DiamondElement -> boxSpecs(element.width.value, element.height.value)
-        is EllipseElement -> if (element.isCircle) listOf(PillSpec(PillKind.Diameter, sixteenths(2 * element.rx.value)), PillSpec(PillKind.Radius, sixteenths(element.rx.value))) else boxSpecs(2 * element.rx.value, 2 * element.ry.value)
-        is LineElement -> lineLength(element)?.let { listOf(PillSpec(PillKind.Length, sixteenths(it))) }.orEmpty()
+        is EllipseElement -> if (element.isCircle) listOf(PillSpec(PillKind.Diameter, sixteenths(2 * element.rx.value), 2 * element.rx.value), PillSpec(PillKind.Radius, sixteenths(element.rx.value), element.rx.value)) else boxSpecs(2 * element.rx.value, 2 * element.ry.value)
+        is LineElement -> lineLength(element)?.let { listOf(PillSpec(PillKind.Length, sixteenths(it), it)) }.orEmpty()
         else -> emptyList()
     }
 
-    private fun boxSpecs(w: Double, h: Double) = listOf(PillSpec(PillKind.Width, sixteenths(w)), PillSpec(PillKind.Height, sixteenths(h)))
+    private fun boxSpecs(w: Double, h: Double) = listOf(PillSpec(PillKind.Width, sixteenths(w), w), PillSpec(PillKind.Height, sixteenths(h), h))
 
-    private fun sixteenths(v: Double): Long = max(1L, round(v).toLong())
+    /** The nearest sixteenth, halves up (not to even: a radius of 8.5 reads 9, not 8). */
+    private fun sixteenths(v: Double): Long = max(1L, floor(v + HALF_UNIT).toLong())
+
+    private const val HALF_UNIT = 0.5
 
     internal fun lineLength(e: LineElement): Double? {
         if (e.polygon || e.points.size != TWO_POINT_LINE) return null
@@ -124,7 +128,7 @@ object DimensionPillModel {
     }
 
     /** The text on a pill: a one-letter name and the value in feet, inches and sixteenths. */
-    fun pillText(spec: PillSpec): String = symbol(spec.kind) + " " + lengthTextOf(spec.sixteenths)
+    fun pillText(spec: PillSpec, format: LengthFormat = LengthFormat.FEET_INCHES): String = symbol(spec.kind) + " " + lengthTextOf(spec.sixteenths, format)
 
     fun pillWidthDp(text: String): Double = max(TouchFloor.TOUCH_DP, PAD_DP + CHAR_DP * text.length)
 
@@ -133,12 +137,12 @@ object DimensionPillModel {
      * rotate handle), Height and Radius outside the right edge; a pill that would leave the canvas flips to the opposite side, and one with no room on either side is clamped inside. A pill that
      * lands on another is moved along its own edge.
      */
-    fun layout(element: SceneElement, canvas: PillCanvas): List<PlacedPill> {
+    fun layout(element: SceneElement, canvas: PillCanvas, format: LengthFormat = LengthFormat.FEET_INCHES): List<PlacedPill> {
         val specs = specs(element)
         if (specs.isEmpty() || canvas.width <= 0.0 || canvas.height <= 0.0) return emptyList()
         val placed = ArrayList<PlacedPill>(specs.size)
         for (spec in specs) {
-            val text = pillText(spec)
+            val text = pillText(spec, format)
             val w = pillWidthDp(text)
             val raw = if (element is LineElement) linePill(element, spec, text, w, canvas) else boxPill(element, spec, text, w, canvas)
             placed += separate(raw, placed, canvas)
@@ -209,11 +213,15 @@ object DimensionPillModel {
         return moves.map(canvas::clamp).firstOrNull { c -> others.none { c.overlaps(it) } } ?: start
     }
 
-    /** The sixteenths of a typed length, or the parser's message; the same grammar and messages as the Style tab's size fields. */
-    fun parse(text: String): ParsedLength = DimensionInput.parse(text).fold({ ParsedLength.Invalid(it.message) }, { ParsedLength.Valid(it.sixteenths) })
+    /**
+     * The sixteenths of a typed length, or the parser's message; the same grammar and messages as the Style tab's size fields. A
+     * length between two sixteenths is rounded and says so ([ParsedLength.Valid.roundedFrom]); nothing else changes the typed value.
+     */
+    fun parse(text: String): ParsedLength =
+        DimensionInput.interpret(text).fold({ ParsedLength.Invalid(it.message) }, { ParsedLength.Valid(it.inches.sixteenths, it.roundedFrom) })
 
     sealed interface ParsedLength {
-        data class Valid(val sixteenths: Long) : ParsedLength
+        data class Valid(val sixteenths: Long, val roundedFrom: String? = null) : ParsedLength
 
         data class Invalid(val message: String) : ParsedLength
     }

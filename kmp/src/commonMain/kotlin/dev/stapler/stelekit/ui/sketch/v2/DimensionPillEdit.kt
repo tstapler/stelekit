@@ -11,6 +11,7 @@ import dev.stapler.stelekit.sketch.v2.commands.ResizeElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.ui.sketch.lengthTextOf
+import dev.stapler.stelekit.units.LengthFormat
 
 /** What a submitted field does: show the parser's message, move to the next field, or finish with one command (null when nothing changed). */
 sealed interface PillStep {
@@ -38,13 +39,15 @@ class DimensionPillEdit(val element: SceneElement, start: PillKind) {
     val isLast: Boolean get() = current == kinds.last()
 
     /** The text a field starts with: what was typed there already, else the current size. */
-    fun textOf(kind: PillKind): String = lengthTextOf(entered[kind] ?: specs.first { it.kind == kind }.sixteenths)
+    fun textOf(kind: PillKind, format: LengthFormat = LengthFormat.FEET_INCHES): String =
+        lengthTextOf(entered[kind] ?: specs.first { it.kind == kind }.sixteenths, format)
 
     /** The field's text is submitted: Next goes on to the following field, Done on the last. Invalid keeps the edit open and every value as it was. */
-    fun submit(text: String): PillStep = when (val parsed = DimensionPillModel.parse(text)) {
+    fun submit(text: String, untouched: Boolean = false): PillStep = when (val parsed = DimensionPillModel.parse(text)) {
         is DimensionPillModel.ParsedLength.Invalid -> PillStep.Invalid(parsed.message)
         is DimensionPillModel.ParsedLength.Valid -> {
-            entered[current] = parsed.sixteenths
+            // The prefill passed on untouched is not a typed value: a shape of 80.4 units keeps it rather than becoming 80.
+            if (!(untouched && current !in entered)) entered[current] = parsed.sixteenths
             if (isLast) {
                 PillStep.Done(finish())
             } else {
@@ -55,16 +58,17 @@ class DimensionPillEdit(val element: SceneElement, start: PillKind) {
     }
 
     /** Shift+Tab: back to the previous field, keeping what was typed here when it is a valid length; false on the first field. */
-    fun back(text: String): Boolean {
+    fun back(text: String, untouched: Boolean = false): Boolean {
         val index = kinds.indexOf(current)
         if (index == 0) return false
-        (DimensionPillModel.parse(text) as? DimensionPillModel.ParsedLength.Valid)?.let { entered[current] = it.sixteenths }
+        if (!(untouched && current !in entered)) (DimensionPillModel.parse(text) as? DimensionPillModel.ParsedLength.Valid)?.let { entered[current] = it.sixteenths }
         current = kinds[index - 1]
         return true
     }
 
     private fun finish(): ResizeElement? {
-        val changed = entered.filter { (kind, value) -> specs.first { it.kind == kind }.sixteenths != value }
+        // Against the exact size, not the rounded pill: typing "5\"" on a 5.025" shape makes it exactly 5".
+        val changed = entered.filter { (kind, value) -> specs.first { it.kind == kind }.exact != value.toDouble() }
         return if (changed.isEmpty()) null else PillResize.command(element, changed)
     }
 }

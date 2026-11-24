@@ -44,6 +44,8 @@ kt_android_library(
             "**/SnapToastHostTest.kt",
             "**/CanvasPressHostTest.kt",
             "**/ResizeSnapHostTest.kt",
+            "**/MeasurementUnitsHostTest.kt",
+            "**/MeasurementUnitsHostTest.kt",
             "**/SnapGuidesHostTest.kt",
             "**/ChromeTargetSizeTest.kt",
             "**/StripIconsTest.kt",

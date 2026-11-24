@@ -79,6 +79,7 @@ object GuideContent {
         listOf(
             TourStep("pill", TabStop.Canvas, S.Dimensions.PILL_TITLE, S.Dimensions.PILL_BODY),
             TourStep("chip", TabStop.Canvas, S.Dimensions.CHIP_TITLE, S.Dimensions.CHIP_BODY),
+            TourStep("units", TabStop.Canvas, S.Dimensions.UNITS_TITLE, S.Dimensions.UNITS_BODY),
         ),
         setOf(GuideFeatures.TECHNICAL_SHAPE),
     )

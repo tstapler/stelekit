@@ -92,6 +92,9 @@ class EditorExtras(
             if (controller.sheetKind == SheetKind.Technical && pills.visible && command.element is dev.stapler.stelekit.sketch.v2.scene.RectElement) pills.autoOpenFor = command.element.id
         }
     }
+
+    /** How lengths read on this technical sheet: pills, the size field, the Technical data panel and the Stats fields (per device when the host stores it). */
+    val lengthUnit = LengthUnitState(services.platform.lengthFormat)
     val autoConstrain = AutoConstrainState({ controller.sheetKind })
     val loupe = LoupePreference(controller.ui, services.platform.fingerDrawing)
 

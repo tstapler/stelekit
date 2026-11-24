@@ -38,4 +38,47 @@ object SketchDimensionStrings {
         const val TECHNICAL = "Tech data"
         const val TECHNICAL_DESCRIPTION = "Open the Technical data panel"
     }
+
+    /** The symbol keys above the soft keyboard of the size field. */
+    object Keys {
+        const val FEET_MARK_LABEL = "'"
+        const val INCH_MARK_LABEL = "\""
+        const val SLASH_LABEL = "/"
+        const val POINT_LABEL = "."
+        const val FEET_WORD_LABEL = "ft"
+        const val INCH_WORD_LABEL = "in"
+        const val FEET_MARK = "feet mark"
+        const val INCH_MARK = "inch mark"
+        const val SLASH = "fraction slash"
+        const val POINT = "decimal point"
+        const val FEET_WORD = "ft, feet"
+        const val INCH_WORD = "in, inches"
+    }
+
+    /** The length display switch (feet and inches, inches, decimal inches) and the live reading of typed text. */
+    object Units {
+        const val CHIP_FEET_INCHES = "ft-in"
+        const val CHIP_INCHES = "in"
+        const val CHIP_DECIMAL = "in.dec"
+        const val NAME_FEET_INCHES = "Feet and inches"
+        const val NAME_INCHES = "Inches"
+        const val NAME_DECIMAL = "Decimal inches"
+        const val MENU_LABEL = "Length units"
+        const val MENU_CHOOSE = "Length units, tap to change"
+
+        fun chipRowLabel(chip: String) = "Units: $chip"
+
+        fun chipDescription(current: String, next: String) = "Length units: $current. Tap to switch to $next."
+
+        fun menuText(current: String) = "$MENU_LABEL: $current"
+
+        fun menuDescription(current: String, next: String) = "$MENU_LABEL: $current. Tap to switch to $next."
+
+        /** The live reading under a field: the typed text as the app will commit it, in the chosen units first. */
+        fun reading(primary: String, other: String?) = if (other == null) "= $primary" else "= $primary ($other)"
+
+        fun rounded(written: String, nearest: String) = "$written is between sixteenths. Rounded to $nearest"
+
+        fun roundedShort(nearest: String) = "Rounded to $nearest"
+    }
 }

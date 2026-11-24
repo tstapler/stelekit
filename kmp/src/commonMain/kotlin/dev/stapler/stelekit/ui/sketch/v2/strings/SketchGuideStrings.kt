@@ -62,6 +62,8 @@ object SketchGuideStrings {
         const val PILL_BODY = "Select a shape on a technical sheet and its sizes appear beside it. Tap one, type a length such as 12 3/16\", then tap Next or Done. Next moves from Width to Height; tap outside to cancel."
         const val CHIP_TITLE = "Show or hide the sizes"
         const val CHIP_BODY = "The Dimensions chip at the bottom turns the size pills on or off. Constraints and Technical data open their panels from the same row."
+        const val UNITS_TITLE = "Switch units"
+        const val UNITS_BODY = "The Units chip cycles feet and inches, inches and decimal inches for every size. A plain number is inches; 3'7, 43 3/4 and 3.5' all work."
     }
 
     /** Dragging one point of a line. */

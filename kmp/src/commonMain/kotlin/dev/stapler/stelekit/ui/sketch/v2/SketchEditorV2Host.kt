@@ -199,6 +199,7 @@ fun SketchEditorV2Host(
         constraintsAvailable = extras.constraintsAvailable,
         autoConstrain = extras.autoConstrain,
         loupe = extras.loupe,
+        lengthUnit = extras.lengthUnit.takeIf { controller.sheetKind == dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical },
         onImport = { extras.importer.chooseFile() },
         importDisabledReason = extras.importDisabledReason,
         onExport = if (extras.exportAvailable) extras.exporter::open else null,

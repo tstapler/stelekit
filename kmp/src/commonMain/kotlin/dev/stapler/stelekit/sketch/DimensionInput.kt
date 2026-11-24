@@ -4,9 +4,12 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.units.Inches
+import dev.stapler.stelekit.units.LengthFormat
+import dev.stapler.stelekit.units.LengthFormatter
 import dev.stapler.stelekit.units.InchesError
 import dev.stapler.stelekit.units.ParsedLength
 import dev.stapler.stelekit.units.parseLength
+import dev.stapler.stelekit.units.roundToInches
 import dev.stapler.stelekit.units.toInches
 
 enum class DimensionInputError(val reason: String) {
@@ -20,6 +23,14 @@ enum class DimensionInputError(val reason: String) {
 
     /** Inline text for the field: the reason plus a working example. */
     val message: String get() = "$reason Try ${DimensionInput.EXAMPLES}."
+}
+
+/**
+ * A typed length ready to commit. [roundedFrom] is the written text when the sheet's sixteenth-inch resolution could not hold it
+ * exactly and [inches] is the nearest sixteenth; null when the value is exact.
+ */
+data class TypedLength(val inches: Inches, val roundedFrom: String? = null) {
+    val wasRounded: Boolean get() = roundedFrom != null
 }
 
 /** Turns what the user typed into a sheet length, through the wiki length grammar. */
@@ -42,4 +53,26 @@ object DimensionInput {
             else -> inches.right()
         }
     }
+
+    /**
+     * Like [parse], but a length between two sixteenths (`0.3"`, `37.9"`) is rounded to the nearest sixteenth and reported in
+     * [TypedLength.roundedFrom] so the caller can say so, instead of being refused. A value that rounds to zero stays an error.
+     * Never applies a grid or neighbour snap: the result is the typed value or its nearest sixteenth, nothing else.
+     */
+    fun interpret(text: String): Either<DimensionInputError, TypedLength> {
+        when (val exact = parse(text)) {
+            is Either.Right -> return TypedLength(exact.value).right()
+            is Either.Left -> if (exact.value != DimensionInputError.NOT_WHOLE_SIXTEENTH) return exact.value.left()
+        }
+        val measured = parseLength(text).getOrNull() as? ParsedLength.Measured ?: return DimensionInputError.NOT_A_LENGTH.left()
+        val rounded = measured.value.roundToInches().getOrNull() ?: return DimensionInputError.TOO_LARGE.left()
+        return when {
+            rounded.sixteenths <= 0L -> DimensionInputError.NOT_POSITIVE.left()
+            rounded.sixteenths > MAX_SIXTEENTHS -> DimensionInputError.TOO_LARGE.left()
+            else -> TypedLength(rounded, text.trim()).right()
+        }
+    }
+
+    /** `5/16"` or `3' 7 3/4"`: the rounded length as shown in the "Rounded to" notice, always the form that re-parses to the same value. */
+    fun roundedNoticeText(inches: Inches): String = LengthFormatter.format(inches, LengthFormat.FEET_INCHES)
 }

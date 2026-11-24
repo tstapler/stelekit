@@ -11,6 +11,10 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -67,9 +71,11 @@ import dev.stapler.stelekit.sketch.v2.commands.ResizeElement
 import dev.stapler.stelekit.sketch.v2.constraints.SheetKind
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
+import dev.stapler.stelekit.ui.sketch.lengthTextOf
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchDimensionStrings as S
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
 
 object DimensionPillTags {
     fun pill(kind: PillKind) = "sketch.pill.${kind.name.lowercase()}"
@@ -78,14 +84,16 @@ object DimensionPillTags {
     const val ERROR = "sketch.pill.error"
     const val CANCEL = "sketch.pill.cancel"
     const val LOCKED = "sketch.pill.locked"
+    const val READING = "sketch.pill.reading"
+    const val ROUNDED = "sketch.pill.rounded"
     const val CHIP_DIMENSIONS = "sketch.chip.dimensions"
     const val CHIP_CONSTRAINTS = "sketch.chip.constraints"
     const val CHIP_TECHNICAL = "sketch.chip.technicaldata"
 }
 
 private const val PILL_RADIUS_DP = 22
-private const val EDITOR_WIDTH_DP = 232.0
-private const val EDITOR_HEIGHT_DP = 128.0
+private const val EDITOR_WIDTH_DP = 304.0
+private const val EDITOR_HEIGHT_DP = 212.0
 private const val EDITOR_RADIUS_DP = 12
 private const val EDITOR_PAD_DP = 8
 
@@ -137,7 +145,8 @@ internal fun DimensionPillsOverlay(controller: SketchEditorController, extras: E
             width = maxWidth.value.toDouble(),
             height = visibleH,
         )
-        val pills = remember(element, viewport, density, canvas.width, canvas.height) { DimensionPillModel.layout(element, canvas) }
+        val format = extras.lengthUnit.format
+        val pills = remember(element, viewport, density, canvas.width, canvas.height, format) { DimensionPillModel.layout(element, canvas, format) }
         val requesters = remember { PillKind.entries.associateWith { FocusRequester() } }
         pills.forEach { pill -> PillButton(pill, element.base.locked, requesters.getValue(pill.kind)) { state.open(element, pill.kind) } }
         LaunchedEffect(state.refocus) {
@@ -146,11 +155,12 @@ internal fun DimensionPillsOverlay(controller: SketchEditorController, extras: E
         }
         if (editing != null) {
             val shape = PillEditorPlacement.shapeBounds(element, canvas)
-            val plan = shape?.let { PillEditorPlacement.plan(it, pills.firstOrNull { p -> p.kind == editing.current }, canvas.width, visibleH, EDITOR_WIDTH_DP, EDITOR_HEIGHT_DP * max(1f, LocalDensity.current.fontScale)) }
+            val editorWidth = min(EDITOR_WIDTH_DP, canvas.width - 2 * DimensionPillModel.EDGE_DP)
+            val plan = shape?.let { PillEditorPlacement.plan(it, pills.firstOrNull { p -> p.kind == editing.current }, canvas.width, visibleH, editorWidth, EDITOR_HEIGHT_DP * max(1f, LocalDensity.current.fontScale)) }
             LaunchedEffect(plan?.panDy) {
                 if (plan != null && abs(plan.panDy) > 0.5) controller.ui.viewport = controller.ui.viewport.panBy(0.0, plan.panDy * density)
             }
-            PillEditorBox(editing, element, plan, controller, state)
+            PillEditorBox(editing, element, plan, controller, state, extras.lengthUnit, editorWidth, visibleH - 2 * DimensionPillModel.EDGE_DP)
         }
     }
 }
@@ -179,11 +189,11 @@ private fun PillButton(pill: PlacedPill, locked: Boolean, focus: FocusRequester,
  * changes the selection, which ends the edit (Esc does too).
  */
 @Composable
-private fun PillEditorBox(edit: DimensionPillEdit, element: SceneElement, plan: EditorPlan?, controller: SketchEditorController, state: DimensionPillsState) {
+private fun PillEditorBox(edit: DimensionPillEdit, element: SceneElement, plan: EditorPlan?, controller: SketchEditorController, state: DimensionPillsState, units: LengthUnitState, widthDp: Double, maxHeightDp: Double) {
     val left = plan?.left ?: DimensionPillModel.EDGE_DP
     val top = plan?.top ?: DimensionPillModel.EDGE_DP
     Surface(
-        Modifier.offset(left.dp, top.dp).width(EDITOR_WIDTH_DP.dp).testTag(DimensionPillTags.EDITOR),
+        Modifier.offset(left.dp, top.dp).width(widthDp.dp).heightIn(max = maxHeightDp.dp).testTag(DimensionPillTags.EDITOR),
         shape = RoundedCornerShape(EDITOR_RADIUS_DP.dp),
         tonalElevation = 6.dp,
         shadowElevation = 4.dp,
@@ -191,7 +201,7 @@ private fun PillEditorBox(edit: DimensionPillEdit, element: SceneElement, plan: 
         if (element.base.locked) {
             LockedNote(state::close)
         } else {
-            PillField(edit, onDone = { command -> controller.submit(command) }, onClose = state::finish, onFocus = { state.fieldFocused = it })
+            PillField(edit, units, onDone = { command -> controller.submit(command) }, onClose = state::finish, onFocus = { state.fieldFocused = it })
         }
     }
 }
@@ -206,11 +216,28 @@ private fun LockedNote(onClose: () -> Unit) {
 }
 
 @Composable
-private fun PillField(edit: DimensionPillEdit, onDone: (ResizeElement) -> CommandError?, onClose: () -> Unit, onFocus: (Boolean) -> Unit) {
+private fun PillField(edit: DimensionPillEdit, units: LengthUnitState, onDone: (ResizeElement) -> CommandError?, onClose: () -> Unit, onFocus: (Boolean) -> Unit) {
     val kind = edit.current
+    val format = units.format
     // The text is owned here and keyed on the field only, so a pan, a zoom or a pointer move never rewrites what was typed.
-    val initial = remember(edit, kind) { edit.textOf(kind) }
+    val initial = remember(edit, kind) { edit.textOf(kind, format) }
     var field by remember(edit, kind) { mutableStateOf(TextFieldValue(initial, TextRange(0, initial.length))) }
+    // The text the app itself wrote last (the prefill, or a unit switch's rewrite): while it is on screen the whole field is selected so typing replaces it.
+    var generated by remember(edit, kind) { mutableStateOf(initial) }
+    // Set by any change of the text (a typed identical value still passes through its first keystroke), so "untouched" means the prefill was never edited.
+    var touched by remember(edit, kind) { mutableStateOf(false) }
+    val reading = DimensionHint.reading(field.text, format)
+    fun cycleUnits() {
+        units.cycle()
+        // A text that reads as a length is rewritten in the new units; one that does not is left for the user to finish.
+        // A text that had to be rounded keeps its wording, so the notice stays honest until Next or Done.
+        DimensionHint.reading(field.text, units.format)?.takeIf { it.roundedNotice == null }?.let {
+            val rewritten = lengthTextOf(it.typed.inches.sixteenths, units.format)
+            val untouched = field.text == generated
+            generated = rewritten
+            field = TextFieldValue(rewritten, if (untouched) TextRange(0, rewritten.length) else TextRange(rewritten.length))
+        }
+    }
     var error by remember(edit, kind) { mutableStateOf<String?>(null) }
     val focus = remember { FocusRequester() }
     var shiftDown by remember { mutableStateOf(false) }
@@ -218,7 +245,7 @@ private fun PillField(edit: DimensionPillEdit, onDone: (ResizeElement) -> Comman
     val latestFocus by rememberUpdatedState(onFocus)
     DisposableEffect(Unit) { onDispose { latestFocus(false) } }
     fun submit() {
-        when (val step = edit.submit(field.text)) {
+        when (val step = edit.submit(field.text, untouched = !touched)) {
             is PillStep.Invalid -> error = step.message
             is PillStep.Next -> Unit
             is PillStep.Done -> {
@@ -229,10 +256,15 @@ private fun PillField(edit: DimensionPillEdit, onDone: (ResizeElement) -> Comman
     }
     val label = DimensionPillModel.label(kind)
     val hint = if (edit.isLast) S.Pill.APPLY_HINT else S.Pill.nextHint(DimensionPillModel.label(edit.kinds[edit.kinds.indexOf(kind) + 1]))
-    Column(Modifier.padding(EDITOR_PAD_DP.dp)) {
+    // Scrolls when a large font or a short window leaves less room than the field, hint and keys need.
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(EDITOR_PAD_DP.dp)) {
         OutlinedTextField(
             value = field,
-            onValueChange = { field = it; error = null },
+            onValueChange = { next ->
+                touched = touched || next.text != field.text
+                field = next
+                error = null
+            },
             label = { Text(label) },
             trailingIcon = {
                 Box(
@@ -242,7 +274,16 @@ private fun PillField(edit: DimensionPillEdit, onDone: (ResizeElement) -> Comman
             },
             singleLine = true,
             isError = error != null,
-            supportingText = { Text(error ?: hint, Modifier.testTag(if (error != null) DimensionPillTags.ERROR else DimensionPillTags.EDITOR + ".hint").semantics { liveRegion = LiveRegionMode.Polite }, color = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) },
+            supportingText = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        reading?.let { Text(it.text, Modifier.testTag(DimensionPillTags.READING), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface) }
+                        reading?.roundedNotice?.let { Text(it, Modifier.testTag(DimensionPillTags.ROUNDED), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary) }
+                        Text(error ?: hint, Modifier.testTag(if (error != null) DimensionPillTags.ERROR else DimensionPillTags.EDITOR + ".hint").semantics { liveRegion = LiveRegionMode.Polite }, color = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    LengthUnitChip(format, ::cycleUnits, LengthUnitTags.INLINE_CHIP, keepFieldFocus = true)
+                }
+            },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = if (edit.isLast) ImeAction.Done else ImeAction.Next),
             keyboardActions = KeyboardActions(onNext = { submit() }, onDone = { submit() }),
             modifier = Modifier.fillMaxWidth().focusRequester(focus).testTag(DimensionPillTags.FIELD).onFocusChanged { onFocus(it.isFocused) }.onPreviewKeyEvent { event ->
@@ -251,11 +292,22 @@ private fun PillField(edit: DimensionPillEdit, onDone: (ResizeElement) -> Comman
                 when {
                     event.type != KeyEventType.KeyDown -> false
                     event.key == Key.Escape -> { onClose(); true }
-                    event.key == Key.Tab && (event.isShiftPressed || shiftDown) -> { edit.back(field.text); true }
+                    event.key == Key.Tab && (event.isShiftPressed || shiftDown) -> { edit.back(field.text, untouched = !touched); true }
                     event.key == Key.Tab -> { submit(); true }
                     else -> false
                 }
             },
         )
+        LengthKeyRow(
+            onKey = { key ->
+                val typed = LengthKeyInsertion.apply(CaretText(field.text, field.selection.start, field.selection.end), key)
+                touched = true
+                field = TextFieldValue(typed.text, TextRange(typed.caret))
+                error = null
+            },
+            modifier = Modifier.padding(top = KEY_ROW_GAP_DP.dp),
+        )
     }
 }
+
+private const val KEY_ROW_GAP_DP = 4
