@@ -260,7 +260,11 @@ private fun PillField(edit: DimensionPillEdit, units: LengthUnitState, onDone: (
     Column(Modifier.verticalScroll(rememberScrollState()).padding(EDITOR_PAD_DP.dp)) {
         OutlinedTextField(
             value = field,
-            onValueChange = { if (it.text != field.text) touched = true; field = it; error = null },
+            onValueChange = { next ->
+                touched = touched || next.text != field.text
+                field = next
+                error = null
+            },
             label = { Text(label) },
             trailingIcon = {
                 Box(
