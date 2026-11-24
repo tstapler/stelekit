@@ -83,6 +83,9 @@ class ExportDialogModel(private val source: ExportSource, private val runner: Sk
 
     fun usesStyle(format: ExportFormat): Boolean = format == ExportFormat.Png || format == ExportFormat.Svg
 
+    /** The dimension annotations ride in every drawing format; the library and CSV have none. */
+    fun usesDimensions(format: ExportFormat): Boolean = format == ExportFormat.Png || format == ExportFormat.Svg || format == ExportFormat.Excalidraw
+
     /** UX-58: shown only for the `.excalidraw` format and only when the sheet has more than one layer. */
     fun showsFlattenedNotice(request: ExportRequest): Boolean = request.format == ExportFormat.Excalidraw && source.scene.layers.size > 1
 

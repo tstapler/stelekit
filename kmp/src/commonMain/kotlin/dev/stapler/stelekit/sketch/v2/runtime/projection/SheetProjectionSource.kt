@@ -20,6 +20,7 @@ import dev.stapler.stelekit.sketch.v2.bridge.DimensionMismatch
 import dev.stapler.stelekit.sketch.v2.bridge.ProjectionReports
 import dev.stapler.stelekit.sketch.v2.bridge.V2ToV1
 import dev.stapler.stelekit.sketch.v2.codec.SheetCodecV2
+import dev.stapler.stelekit.sketch.v2.commands.dimensionsOn
 import dev.stapler.stelekit.sketch.v2.codec.SheetError
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
 import dev.stapler.stelekit.util.ContentHasher
@@ -39,6 +40,8 @@ class SheetProjection(
     val scene: SketchSceneV2 = SketchSceneV2.empty(),
     /** How many projected elements were rounded to sixteenths (Story 4.2.4); the primitives are rounded once, here and nowhere else. */
     val roundedCount: Int = 0,
+    /** Whether the sheet shows its dimensions (its own flag); the embed preview draws them when it does. */
+    val dimensionsOn: Boolean = false,
 ) {
     /** The named dimensions this projection no longer measures exactly; reported, never snapped (fusion shows "off by 1/16"). */
     fun mismatches(expectations: List<DimensionExpectation>): List<DimensionMismatch> = ProjectionReports.mismatches(primitives, expectations)
@@ -101,7 +104,7 @@ class SheetProjectionSource(private val storeProvider: () -> ProjectSidecarStore
             { doc ->
                 val projection = V2ToV1.projectScene(doc.scene)
                 SheetProjectionRead.Loaded(
-                    SheetProjection(sha, projection.primitives, projection.layers, projection.droppedCount, doc.scene, ProjectionReports.of(projection, doc.scene.elementsInOrder.toList(), emptyList()).rounded),
+                    SheetProjection(sha, projection.primitives, projection.layers, projection.droppedCount, doc.scene, ProjectionReports.of(projection, doc.scene.elementsInOrder.toList(), emptyList()).rounded, doc.dimensionsOn),
                 )
             },
         )

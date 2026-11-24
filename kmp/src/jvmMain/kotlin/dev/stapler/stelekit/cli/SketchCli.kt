@@ -64,7 +64,7 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
         fun input(): File = File(positional.firstOrNull() ?: throw UsageProblem("give the input file"))
 
         companion object {
-            private val SWITCHES = setOf("dimensions", "in-place")
+            private val SWITCHES = setOf("dimensions", "no-dimensions", "in-place")
 
             fun of(args: List<String>): Parsed? {
                 val positional = ArrayList<String>()
@@ -183,7 +183,12 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
     }
 
     private fun requestOf(p: Parsed) = RenderRequest(
-        dimensions = p.has("dimensions"),
+        dimensions = when {
+            p.has("dimensions") && p.has("no-dimensions") -> throw UsageProblem("--dimensions and --no-dimensions cannot be combined")
+            p.has("dimensions") -> true
+            p.has("no-dimensions") -> false
+            else -> null
+        },
         width = p.flag("width")?.let { it.toIntOrNull()?.takeIf { w -> w in 16..16_000 } ?: throw UsageProblem("--width must be a whole number of pixels from 16 to 16000") },
         style = when (p.flag("style") ?: "clean") {
             "clean" -> RenderStyle.Clean
@@ -210,7 +215,7 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
             }
             else -> throw UsageProblem("--out must end in .svg or .png")
         }
-        out("rendered ${target.path} (${target.length()} bytes${if (request.dimensions) ", with measured dimensions overlaid" else ""})")
+        out("rendered ${target.path} (${target.length()} bytes${if (SketchRender.dimensionOptions(doc, request) != null) ", with dimension annotations" else ""})")
         return 0
     }
 
@@ -305,10 +310,10 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
         val USAGE = """
             |Usage: sketch-cli <command> [args]
             |
-            |  build <spec.json> --out <sheet.v2.json> [--render <x.svg|x.png>] [--dimensions] [--width N]
+            |  build <spec.json> --out <sheet.v2.json> [--render <x.svg|x.png>] [--dimensions|--no-dimensions] [--width N]
             |        expand an authoring spec (rooms, walls, doors, labels, dimensions; feet-inches; photo calibration) into a valid sheet
-            |  render <sheet.v2.json|.excalidraw|spec.json> --out <x.svg|x.png> [--dimensions] [--width N] [--style clean|sketchy] [--background #rrggbb|transparent]
-            |        draw the sheet; --dimensions overlays the measured width and height of every shape
+            |  render <sheet.v2.json|.excalidraw|spec.json> --out <x.svg|x.png> [--dimensions|--no-dimensions] [--width N] [--style clean|sketchy] [--background #rrggbb|transparent]
+            |        draw the sheet; --dimensions draws dimension annotations (--no-dimensions hides them; else the sheet flag decides)
             |  validate <file>          check a sheet, spec or .excalidraw and explain every problem (exit 1 on errors)
             |  canonicalize <sheet> [--out f | --in-place]   rewrite hand-written sheet JSON as the exact canonical bytes; prints the sha256
             |  describe <file>          text description: elements with sizes, labels, relationships, openings, dimensions, a character map

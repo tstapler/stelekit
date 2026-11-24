@@ -88,6 +88,7 @@ class EditorExtras(
 
     /** The on-canvas dimension pills of a technical sheet: whether they show and the size edit in progress. */
     val pills = DimensionPillsState(services.platform.fingerDrawing).also { pills ->
+        pills.adopt(controller.creation.dimensionsOn)
         controller.tools.onShapeCreated = { command ->
             if (controller.sheetKind == SheetKind.Technical && pills.visible && command.element is dev.stapler.stelekit.sketch.v2.scene.RectElement) pills.autoOpenFor = command.element.id
         }
@@ -284,6 +285,8 @@ class EditorExtras(
         selection = controller.ui.selection.mapTo(LinkedHashSet(), ::ElementId),
         images = services.imageSource,
         library = library.items,
+        sheetDimensions = controller.creation.dimensionsOn ?: (controller.sheetKind == SheetKind.Technical && pills.visible),
+        lengthFormat = lengthUnit.format,
     )
 
     private fun viewportCentre(): Pair<Double, Double> {

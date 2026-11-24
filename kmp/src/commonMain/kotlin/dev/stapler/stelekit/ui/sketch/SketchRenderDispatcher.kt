@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -18,11 +19,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.projectbridge.SheetPaths
+import dev.stapler.stelekit.sketch.v2.annotation.DimensionExport
+import dev.stapler.stelekit.sketch.v2.annotation.ExportInk
+import dev.stapler.stelekit.sketch.v2.annotation.ExportedDimension
 import dev.stapler.stelekit.sketch.v2.render.DrawListBuilder
 import dev.stapler.stelekit.sketch.v2.render.RenderStyle
 import dev.stapler.stelekit.sketch.v2.scene.Layer
@@ -90,10 +96,19 @@ internal fun modernPreviewAspect(bounds: SceneBounds?): Float {
 }
 
 /** The extent of what a v2 preview shows: every element on a visible layer. */
-internal fun modernPreviewBounds(scene: SketchSceneV2): SceneBounds? {
+internal fun modernPreviewBounds(scene: SketchSceneV2, dimensions: List<ExportedDimension> = emptyList()): SceneBounds? {
     val layers = scene.layers.associateBy { it.id }
-    return SceneBounds.of(scene.elementsInOrder.filter { (layers[it.base.layerId] ?: Layer.DefaultLayer).visible })
+    val shapes = SceneBounds.of(scene.elementsInOrder.filter { (layers[it.base.layerId] ?: Layer.DefaultLayer).visible })
+    val extra = DimensionExport.bounds(dimensions)?.let { SceneBounds(it.minX, it.minY, it.maxX, it.maxY) } ?: return shapes
+    return shapes?.let { SceneBounds(minOf(it.minX, extra.minX), minOf(it.minY, extra.minY), maxOf(it.maxX, extra.maxX), maxOf(it.maxY, extra.maxY)) } ?: extra
 }
+
+/** `#rrggbb` of a theme colour, the form the export ink picker reads. */
+private fun Color.toCssHex(): String = "#" + (toArgb() and RGB_MASK).toString(HEX_RADIX).padStart(HEX_DIGITS, '0')
+
+private const val RGB_MASK = 0xFFFFFF
+private const val HEX_RADIX = 16
+private const val HEX_DIGITS = 6
 
 /** The environment a real screen uses: the bundled-font text measurer and the font families, loaded once per composition. */
 @Composable
@@ -138,7 +153,7 @@ internal fun SketchRenderDispatcher(
             modifier.testTag(SKETCH_PREVIEW_UNAVAILABLE_TAG),
         )
         is SketchPreview.Drawing -> ClassicPreviewContent(preview, modifier)
-        is SketchPreview.ModernDrawing -> ModernDrawingPreview(preview.scene, modern ?: rememberModernPreviewEnvironment(), modifier.testTag(SKETCH_PREVIEW_MODERN_TAG))
+        is SketchPreview.ModernDrawing -> ModernDrawingPreview(preview.scene, modern ?: rememberModernPreviewEnvironment(), modifier.testTag(SKETCH_PREVIEW_MODERN_TAG), preview.dimensionsOn)
     }
 }
 
@@ -156,10 +171,14 @@ private fun NoteWithActions(text: String, buttons: List<NoteButton>, modifier: M
 }
 
 @Composable
-private fun ModernDrawingPreview(scene: SketchSceneV2, environment: ModernPreviewEnvironment, modifier: Modifier = Modifier) {
-    val bounds = remember(scene) { modernPreviewBounds(scene) }
+private fun ModernDrawingPreview(scene: SketchSceneV2, environment: ModernPreviewEnvironment, modifier: Modifier = Modifier, dimensionsOn: Boolean = false) {
+    val ink = ExportInk.forBackground(MaterialTheme.colorScheme.surface.toCssHex())
+    val dimensions = remember(scene, dimensionsOn) { if (dimensionsOn) DimensionExport.layout(scene) else emptyList() }
+    val bounds = remember(scene, dimensions) { modernPreviewBounds(scene, dimensions) }
     val fontStatus = environment.metrics.fontStatus
-    val ops = remember(scene, environment, fontStatus) { DrawListBuilder(environment.metrics).build(scene, RenderStyle.Sketchy) }
+    val ops = remember(scene, environment, fontStatus, dimensions, ink) {
+        DrawListBuilder(environment.metrics).build(scene, RenderStyle.Sketchy) + DimensionExport.drawOps(dimensions, ink)
+    }
     val painter = remember(environment) { ScenePainter(resources = environment.resources) }
     val density = LocalDensity.current.density
     Canvas(modifier.fillMaxWidth().aspectRatio(modernPreviewAspect(bounds)).heightIn(max = MODERN_MAX_HEIGHT).clipToBounds()) {

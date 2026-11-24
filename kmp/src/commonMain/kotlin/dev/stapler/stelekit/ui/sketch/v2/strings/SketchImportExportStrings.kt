@@ -121,6 +121,7 @@ object SketchImportExportStrings {
         const val SCOPE = "Scope"
         const val SCALE = "Scale"
         const val STYLE = "Style"
+        const val DIMENSIONS = "Dimensions"
         const val PREVIEW = "Preview"
         const val BACKGROUND = "Background"
         const val CANCEL = "Cancel"
@@ -146,6 +147,10 @@ object SketchImportExportStrings {
 
         const val STYLE_AS_DRAWN = "As drawn"
         const val STYLE_CLEAN = "Clean"
+
+        const val DIMENSIONS_SHEET = "Sheet setting"
+        const val DIMENSIONS_ON = "Show"
+        const val DIMENSIONS_OFF = "Hide"
 
         const val SELECTION_DISABLED = "Select elements first"
         const val FRAME_DISABLED = "This sketch has no frames"

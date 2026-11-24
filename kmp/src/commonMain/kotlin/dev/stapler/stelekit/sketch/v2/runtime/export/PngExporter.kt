@@ -15,6 +15,9 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.platform.PngEncoder
+import dev.stapler.stelekit.sketch.v2.annotation.DimensionExport
+import dev.stapler.stelekit.sketch.v2.annotation.DimensionExportOptions
+import dev.stapler.stelekit.sketch.v2.annotation.ExportedDimension
 import dev.stapler.stelekit.sketch.v2.export.SvgExportOptions
 import dev.stapler.stelekit.sketch.v2.index.Bounds
 import dev.stapler.stelekit.sketch.v2.index.ElementBounds
@@ -33,7 +36,8 @@ import kotlin.math.min
 
 /**
  * What to export. [scale] is the pixel density (1 to [MAX_SCALE]); [background] is a CSS colour or null for transparent;
- * [selection] limits the export to those elements; [bounds] overrides the content bounds (a frame crop, Story 5.2.3).
+ * [selection] limits the export to those elements; [bounds] overrides the content bounds (a frame crop, Story 5.2.3); [dimensions],
+ * when set, draws the dimension annotations and grows the image to hold them.
  */
 data class PngExportOptions(
     val scale: Int = 1,
@@ -41,6 +45,7 @@ data class PngExportOptions(
     val padding: Double = SvgExportOptions.DEFAULT_PADDING,
     val selection: Set<ElementId>? = null,
     val bounds: Bounds? = null,
+    val dimensions: DimensionExportOptions? = null,
 ) {
     companion object {
         const val MAX_SCALE = 3
@@ -86,7 +91,7 @@ class PngExporter(
             panX = -(content.minX - options.padding) * options.scale,
             panY = -(content.minY - options.padding) * options.scale,
         )
-        val ops = builder.build(plan.subject, style)
+        val ops = builder.build(plan.subject, style) + options.dimensions?.let { DimensionExport.drawOps(plan.dimensions, it.ink) }.orEmpty()
         CanvasDrawScope().draw(Density(1f), LayoutDirection.Ltr, Canvas(bitmap), Size(bitmap.width.toFloat(), bitmap.height.toFloat())) {
             options.background?.let { drawRect(CssColor.parse(it)) }
             ScenePainter(resources = resources).paint(this, ops, viewport, null)
@@ -95,25 +100,25 @@ class PngExporter(
         return if (bytes.isEmpty()) PngExportError.EncodeFailed.left() else bytes.right()
     }
 
-    private class Plan(val subject: SketchSceneV2, val content: Bounds, val widthPx: Long, val heightPx: Long)
+    private class Plan(val subject: SketchSceneV2, val content: Bounds, val widthPx: Long, val heightPx: Long, val dimensions: List<ExportedDimension>)
 
     private fun plan(scene: SketchSceneV2, options: PngExportOptions): Either<PngExportError, Plan> {
         if (options.scale !in 1..PngExportOptions.MAX_SCALE) return PngExportError.InvalidScale.left()
         val subject = options.selection?.let { keep -> scene.order.filter { it !in keep }.fold(scene) { s, id -> s.remove(id).getOrNull() ?: s } } ?: scene
-        val content = options.bounds ?: contentBounds(subject) ?: return PngExportError.NothingToExport.left()
+        val dimensions = options.dimensions?.let { DimensionExport.layout(subject, it) }.orEmpty()
+        val content = options.bounds ?: contentBounds(subject)?.let { b -> DimensionExport.bounds(dimensions)?.let { union(b, it) } ?: b } ?: return PngExportError.NothingToExport.left()
         val widthPx = pixels(content.maxX - content.minX + 2 * options.padding, options.scale)
         val heightPx = pixels(content.maxY - content.minY + 2 * options.padding, options.scale)
         if (widthPx > limits.maxPngSidePx || heightPx > limits.maxPngSidePx || widthPx * heightPx > limits.maxPngPixels) {
             return PngExportError.TooLarge(widthPx, heightPx, limits.maxPngSidePx).left()
         }
-        return Plan(subject, content, widthPx, heightPx).right()
+        return Plan(subject, content, widthPx, heightPx, dimensions).right()
     }
 
     /** The pixel width or height of [sceneUnits] at [scale], at least one pixel. */
     private fun pixels(sceneUnits: Double, scale: Int): Long = max(1.0, ceil(sceneUnits * scale)).toLong()
 
-    private fun contentBounds(scene: SketchSceneV2): Bounds? =
-        scene.elementsInOrder.map { ElementBounds.of(it) }.reduceOrNull { a, b ->
-            Bounds(min(a.minX, b.minX), min(a.minY, b.minY), max(a.maxX, b.maxX), max(a.maxY, b.maxY))
-        }
+    private fun contentBounds(scene: SketchSceneV2): Bounds? = scene.elementsInOrder.map { ElementBounds.of(it) }.reduceOrNull(::union)
+
+    private fun union(a: Bounds, b: Bounds) = Bounds(min(a.minX, b.minX), min(a.minY, b.minY), max(a.maxX, b.maxX), max(a.maxY, b.maxY))
 }

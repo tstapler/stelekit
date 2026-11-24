@@ -10,7 +10,7 @@
     "sheetUuid": { "type": "string", "minLength": 1, "description": "UUID of the sheet; also the file name stem." },
     "constraints": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/constraint" } },
     "elements": { "type": "array", "maxItems": 5000, "items": { "$ref": "#/$defs/element" }, "description": "In paint order: later entries draw on top (within a layer, ordered by z)." },
-    "extras": { "type": "object", "description": "Sheet-level keys the app does not interpret are kept as written. Known: sheetKind = \"technical\"; agent = {mode, title, spec} written by `sketch-cli build`." },
+    "extras": { "type": "object", "description": "Sheet-level keys the app does not interpret are kept as written. Known: sheetKind = \"technical\"; dimensionsOn = true|false (optional: whether the sheet shows dimension annotations; absent means on for a technical sheet, off for a diagram); agent = {mode, title, spec} written by `sketch-cli build`." },
     "layers": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/layer" }, "description": "The layer \"default\" always exists; it is added when absent." },
     "nameCounters": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 1 }, "description": "Highest auto-name ordinal issued per kind (rectangle, line, arrow, text, ...)." }
   },
