@@ -1737,7 +1737,6 @@ KMP_MODULES = {
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/RestoreBackupAction.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/ScenePainter.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/SceneSemantics.kt",
-   "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/SegmentChainEdit.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/SelectionMenu.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/SelectionOverlay.kt",
    "commonMain/kotlin/dev/stapler/stelekit/ui/sketch/v2/ShellEscape.kt",

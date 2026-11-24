@@ -7,7 +7,6 @@ package dev.stapler.stelekit.ui.sketch.v2
 import dev.stapler.stelekit.sketch.v2.commands.ResizeElement
 import dev.stapler.stelekit.sketch.v2.constraints.ConstraintKind
 import dev.stapler.stelekit.sketch.v2.tools.filledRectEl
-import dev.stapler.stelekit.sketch.v2.tools.sp
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchDimensionStrings
 import dev.stapler.stelekit.units.LengthFormat
 import dev.stapler.stelekit.units.MetricLength
@@ -163,38 +162,6 @@ class MetricEntryTest {
         assertEquals(MetricLength.toUnits(254), DimensionValueParser.parse(ConstraintKind.Distance, "25.4 mm", technical = true).getOrNull())
         assertEquals("12.3 mm", ConstraintValueTextCompat.of(MetricLength.toUnits(123), LengthFormat.METRIC_MM))
         assertEquals(SketchDimensionStrings.Units.CHIP_METRIC_MM, LengthFormat.METRIC_MM.chipLabel)
-    }
-
-    private fun chain() = dev.stapler.stelekit.sketch.v2.scene.LineElement(
-        dev.stapler.stelekit.sketch.v2.scene.ElementBase(dev.stapler.stelekit.sketch.v2.scene.ElementId("p")),
-        listOf(sp(0, 0), sp(160, 0), sp(160, 80)),
-    )
-
-    @Test
-    fun chainEntry_should_WalkTheSegmentsAndFinishWithOneConnectedCommand() {
-        val line = chain()
-        assertTrue(SegmentChainEdit.handles(line))
-        val edit = SegmentChainEdit(line, LengthFormat.METRIC_MM)
-        assertEquals(2, edit.count)
-        assertEquals("254 mm", edit.textOf())
-        assertEquals(SegmentStep.Next(1), edit.submit("30 cm"))
-        assertEquals(MetricUnit.CM, edit.stickyUnit)
-        val done = assertIs<SegmentStep.Done>(edit.submit("10"))
-        val points = assertIs<dev.stapler.stelekit.sketch.v2.commands.SetLinePoints>(done.command).points
-        assertEquals(MetricLength.toUnits(3000), points[1].x.value, 1e-9)
-        assertEquals(0.0, points[1].y.value)
-        assertEquals(points[1].x.value, points[2].x.value)
-        assertEquals(MetricLength.toUnits(1000), points[2].y.value - points[1].y.value, 1e-9)
-    }
-
-    @Test
-    fun chainEntry_should_KeepEverythingOnAnInvalidSegment_AndChangeNothingWhenUntouched() {
-        val edit = SegmentChainEdit(chain())
-        assertIs<SegmentStep.Invalid>(edit.submit("nonsense"))
-        assertEquals(0, edit.index)
-        assertIs<SegmentStep.Next>(edit.submit(edit.textOf(), untouched = true))
-        assertNull(assertIs<SegmentStep.Done>(edit.submit(edit.textOf(), untouched = true)).command)
-        assertTrue(!SegmentChainEdit.handles(dev.stapler.stelekit.sketch.v2.scene.LineElement(dev.stapler.stelekit.sketch.v2.scene.ElementBase(dev.stapler.stelekit.sketch.v2.scene.ElementId("l")), listOf(sp(0, 0), sp(5, 0)))))
     }
 }
 
