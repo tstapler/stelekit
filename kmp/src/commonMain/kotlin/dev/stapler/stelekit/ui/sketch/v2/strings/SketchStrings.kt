@@ -95,6 +95,8 @@ object SketchStrings {
 
     object Style {
         const val ELBOW_NOTE = "Elbow routing isn't supported; drawn as a polyline"
+        const val FONT = "Font"
+        const val FONT_SIZE = "Font size"
         const val TEXT_ALIGN = "Text align"
         const val VERTICAL_ALIGN = "Vertical align"
         const val ARROW_TYPE = "Arrow type"

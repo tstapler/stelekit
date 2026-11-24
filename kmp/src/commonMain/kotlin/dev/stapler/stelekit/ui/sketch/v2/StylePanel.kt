@@ -106,10 +106,10 @@ fun StylePanel(
         ChoiceRow("Sloppiness", SloppinessChoice.entries.map { it to it.label }, model.sloppiness) { send(StyleActions.sloppiness(it)) }
         ChoiceRow("Edges", EdgesChoice.entries.map { it to it.label }, model.edges) { send(StyleActions.edges(it)) }
         model.fontFamily?.let { family ->
-            ChoiceRow("Font", FontChoice.entries.map { it to it.label }, family.asChoice { FontChoice.of(it) }) { onCommand(StyleActions.font(ids, it, metrics)) }
+            ChoiceRow(SketchStrings.Style.FONT, FontChoice.entries.map { it to it.label }, family.asChoice { FontChoice.of(it) }) { onCommand(StyleActions.font(ids, it, metrics)) }
             model.fontSize?.let { size ->
                 TextSizeModel.current(selection)?.let { TextSizeRow(it, onTextSize) }
-                ChoiceRow("Font size", FontSizeChoice.entries.map { it to it.label }, size.asChoice { FontSizeChoice.of(it) }) { onCommand(StyleActions.fontSize(ids, it, metrics)) }
+                ChoiceRow(SketchStrings.Style.FONT_SIZE, FontSizeChoice.entries.map { it to it.label }, size.asChoice { FontSizeChoice.of(it) }) { onCommand(StyleActions.fontSize(ids, it, metrics)) }
             }
         }
         TextAlignRows(model, ids, onCommand)

@@ -202,7 +202,6 @@ ui/sketch/v2/ShortcutsSheetModel.kt :: const val VIEW = "View"
 ui/sketch/v2/SketchFontResources.kt :: logger.warn("bundled sketch fonts did not load: ${e::class.simpleName}")
 ui/sketch/v2/StylePanel.kt :: ChoiceRow("Edges", EdgesChoice.entries.map { it to it.label }, model.edges) { send(StyleActions.edges(it)) }
 ui/sketch/v2/StylePanel.kt :: ChoiceRow("Fill style", FillStyle.entries.map { it to it.name }, model.fillStyle) { send(StyleActions.fillStyle(it)) }
-ui/sketch/v2/StylePanel.kt :: ChoiceRow("Font", FontChoice.entries.map { it to it.label }, family.asChoice { FontChoice.of(it) }) { onCommand(StyleActions.font(ids, it)) }
 ui/sketch/v2/StylePanel.kt :: ChoiceRow("Sloppiness", SloppinessChoice.entries.map { it to it.label }, model.sloppiness) { send(StyleActions.sloppiness(it)) }
 ui/sketch/v2/StylePanel.kt :: ChoiceRow("Stroke style", StrokeStyle.entries.map { it to it.name }, model.strokeStyle) { send(StyleActions.strokeStyle(it)) }
 ui/sketch/v2/StylePanel.kt :: ChoiceRow("Stroke width", StrokeWidthChoice.entries.map { it to it.label }, model.strokeWidth.asChoice { StrokeWidthChoice.of(it) }, enabled = widthReason == null) { send(StyleActions.strokeWidth(it)) }
@@ -210,7 +209,6 @@ ui/sketch/v2/StylePanel.kt :: SwatchRow("Fill", ColorPalette.background, model.b
 ui/sketch/v2/StylePanel.kt :: SwatchRow("Stroke", ColorPalette.stroke, model.strokeColor) { send(StyleActions.strokeColor(it)) }
 ui/sketch/v2/StylePanel.kt :: Text("Opacity", Modifier.widthIn(min = 72.dp))
 ui/sketch/v2/StylePanel.kt :: if (opacity is StyleValue.Mixed) MixedChip("Opacity")
-ui/sketch/v2/StylePanel.kt :: model.fontSize?.let { size -> ChoiceRow("Font size", FontSizeChoice.entries.map { it to it.label }, size.asChoice { FontSizeChoice.of(it) }) { onCommand(StyleActions.fontSize(ids, it)) } }
 ui/sketch/v2/StylePanelModel.kt :: Clean("Clean", 0), Sketchy("Sketchy", 1);
 ui/sketch/v2/StylePanelModel.kt :: HandDrawn("Hand-drawn", 1), Normal("Normal", 2), Code("Code", 3);
 ui/sketch/v2/StylePanelModel.kt :: NamedColor("#1971c2", "Blue 700"), NamedColor("#f08c00", "Orange 600"),
