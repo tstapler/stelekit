@@ -16,6 +16,7 @@ import dev.stapler.stelekit.sketch.v2.commands.Command
 import dev.stapler.stelekit.sketch.v2.commands.CommandError
 import dev.stapler.stelekit.sketch.v2.commands.Committed
 import dev.stapler.stelekit.sketch.v2.commands.HistoryV2
+import dev.stapler.stelekit.sketch.v2.commands.ResizeElement
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.commands.SequenceCommand
 import dev.stapler.stelekit.sketch.v2.commands.StylePatch
@@ -278,6 +279,7 @@ class SketchEditorController(
             undoLabels = undoLabels.recorded(CommandLabels.of(SequenceCommand(emptyList()), history.present.scene))
             commitStep(outcome.step)
             constraintState.solved(SequenceCommand(emptyList()), outcome)
+            notifier.announceAdjusted(null, outcome.step)
         }
         outcome
     }
@@ -288,6 +290,7 @@ class SketchEditorController(
                 undoLabels = undoLabels.recorded(CommandLabels.of(command, history.present.scene))
                 commitStep(outcome.step)
                 constraintState.solved(command, outcome)
+                if (command is ResizeElement) notifier.announceAdjusted(command, outcome.step)
             }
             is SolveOutcome.Rejected -> constraintState.refused(command, outcome)
             is SolveOutcome.Unchanged, is SolveOutcome.Posed, is SolveOutcome.Cancelled -> Unit

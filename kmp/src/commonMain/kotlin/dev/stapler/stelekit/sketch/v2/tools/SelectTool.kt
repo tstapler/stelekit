@@ -14,6 +14,7 @@ import dev.stapler.stelekit.sketch.v2.scene.EllipseElement
 import dev.stapler.stelekit.sketch.v2.scene.LineElement
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
+import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
 import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
 import dev.stapler.stelekit.sketch.v2.scene.TextElement
 import dev.stapler.stelekit.sketch.v2.snap.GuideAxis
@@ -150,35 +151,9 @@ class SelectTool(
         if (handle != null) return ToolResult(next = Transforming(this, event.pointerId, handle, event.point, ctx))
         val hit = ctx.hitTester.hit(event.point, ctx.zoom, ctx.hitTolerancePx(touch))
         if (hit == null) return ToolResult(next = Marquee(this, event.pointerId, event.point, if (event.modifiers.shift) selection else emptyList()))
-        val group = groupOf(hit, ctx)
-        val next = when {
-            event.modifiers.shift -> if (hit in selection) selection - group.toSet() else selection + group.filter { it !in selection }
-            event.clickCount >= DOUBLE_CLICK -> descend(hit, ctx) ?: if (hit in selection) selection else group
-            hit in selection -> selection
-            else -> group
-        }
+        val next = clickSelection(hit, selection, event.modifiers.shift, event.clickCount, ctx.scene)
         val duplicate = altDragDuplicates && event.modifiers.alt && hit in next
         return ToolResult(next = Pressed(withSelection(next), event.pointerId, event.point, duplicate, event.modifiers.shift, ctx))
-    }
-
-    private fun groupOf(hit: ElementId, ctx: ToolContext): List<ElementId> {
-        val outer = ctx.scene[hit]?.base?.groupIds?.lastOrNull() ?: return listOf(hit)
-        return ctx.scene.elementsInOrder.filter { outer in it.base.groupIds && Selectability.isSelectable(ctx.scene, it) }.map { it.id }
-    }
-
-    /**
-     * Double-click on a grouped element (UX-11): when the selection is exactly one group level of [hit], the next level
-     * in (or [hit] alone below the innermost group); null when the selection is not a group level of [hit].
-     */
-    private fun descend(hit: ElementId, ctx: ToolContext): List<ElementId>? {
-        val outermostFirst = ctx.scene[hit]?.base?.groupIds?.asReversed().orEmpty()
-        val levels = outermostFirst.map { g -> ctx.scene.elementsInOrder.filter { g in it.base.groupIds && Selectability.isSelectable(ctx.scene, it) }.map { it.id } }
-        val at = levels.indexOfFirst { it.toSet() == selection.toSet() }
-        return when {
-            at < 0 -> null
-            at + 1 < levels.size -> levels[at + 1]
-            else -> listOf(hit)
-        }
     }
 
     // ---- states ----------------------------------------------------------------------------------------------------
@@ -465,6 +440,41 @@ class SelectTool(
     }
 
     companion object {
+        /**
+         * The selection after a click on [hit] with [selection] already held: Shift toggles the whole group, a double click descends one
+         * group level, a click on a selected element keeps the selection and any other click selects the topmost group. The one rule the
+         * canvas and the dimension values share.
+         */
+        fun clickSelection(hit: ElementId, selection: List<ElementId>, shift: Boolean, clickCount: Int, scene: SketchSceneV2): List<ElementId> {
+            val group = groupOf(hit, scene)
+            return when {
+                shift -> if (hit in selection) selection - group.toSet() else selection + group.filter { it !in selection }
+                clickCount >= DOUBLE_CLICK -> descend(hit, selection, scene) ?: if (hit in selection) selection else group
+                hit in selection -> selection
+                else -> group
+            }
+        }
+
+        private fun groupOf(hit: ElementId, scene: SketchSceneV2): List<ElementId> {
+            val outer = scene[hit]?.base?.groupIds?.lastOrNull() ?: return listOf(hit)
+            return scene.elementsInOrder.filter { outer in it.base.groupIds && Selectability.isSelectable(scene, it) }.map { it.id }
+        }
+
+        /**
+         * Double-click on a grouped element (UX-11): when the selection is exactly one group level of [hit], the next level
+         * in (or [hit] alone below the innermost group); null when the selection is not a group level of [hit].
+         */
+        private fun descend(hit: ElementId, selection: List<ElementId>, scene: SketchSceneV2): List<ElementId>? {
+            val outermostFirst = scene[hit]?.base?.groupIds?.asReversed().orEmpty()
+            val levels = outermostFirst.map { g -> scene.elementsInOrder.filter { g in it.base.groupIds && Selectability.isSelectable(scene, it) }.map { it.id } }
+            val at = levels.indexOfFirst { it.toSet() == selection.toSet() }
+            return when {
+                at < 0 -> null
+                at + 1 < levels.size -> levels[at + 1]
+                else -> listOf(hit)
+            }
+        }
+
         /** Pointer travel, in screen pixels, below which a press and release is a click rather than a drag. */
         const val DRAG_THRESHOLD_PX = 4.0
 

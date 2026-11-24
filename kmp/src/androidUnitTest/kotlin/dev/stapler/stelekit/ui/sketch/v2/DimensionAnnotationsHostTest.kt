@@ -20,6 +20,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -174,6 +175,38 @@ class DimensionAnnotationsHostTest {
     }
 
     @Test
+    fun aSmallPan_should_ShiftTheCachedLayout_AndLayItOutOnceItSettles() {
+        val session = mount()
+        rule.mainClock.autoAdvance = false
+        val before = AnnotationLayoutStats.computed
+        val x0 = value("living", PillKind.Width).fetchSemanticsNode().boundsInRoot.left
+        repeat(PAN_FRAMES) { i ->
+            rule.runOnUiThread { session.controller.ui.viewport = session.controller.ui.viewport.panBy(-PAN_STEP_PX, 0.0) }
+            rule.mainClock.advanceTimeByFrame()
+            rule.waitForIdle()
+            assertEquals(before, AnnotationLayoutStats.computed, "frame $i of a pan inside the reuse reach laid out again")
+        }
+        val moved = value("living", PillKind.Width).fetchSemanticsNode().boundsInRoot.left
+        assertTrue(moved < x0 - 1f, "the value followed the pan: $x0 -> $moved")
+        rule.mainClock.advanceTimeBy(SETTLE_WAIT_MS)
+        rule.waitForIdle()
+        assertEquals(before + 1, AnnotationLayoutStats.computed, "one exact layout once the pan rests")
+        assertEquals(moved, value("living", PillKind.Width).fetchSemanticsNode().boundsInRoot.left, 2f, "the settled layout lands where the shifted one was")
+    }
+
+    @Test
+    fun tappingAnotherValue_should_ApplyTheSizeTypedInTheOpenField() {
+        val session = mount()
+        value("kitchen", PillKind.Width).performTouchInput { click() }
+        rule.waitForIdle()
+        rule.onNodeWithTag(DimensionPillTags.FIELD).performTextReplacement("12\"")
+        value("wall", PillKind.Length).performTouchInput { click() }
+        rule.waitForIdle()
+        assertEquals(setOf("wall"), session.controller.ui.selection)
+        assertEquals(192.0, (session.controller.doc.scene[ElementId("kitchen")] as dev.stapler.stelekit.sketch.v2.scene.RectElement).width.value, "12 inches typed, not dropped")
+    }
+
+    @Test
     fun aDragOnEmptyCanvas_should_Pan_SoTheValueDragTestMeansSomething() {
         val session = mount(technical = false)
         val before = session.controller.ui.viewport.panX
@@ -236,5 +269,11 @@ class DimensionAnnotationsHostTest {
         mount()
         rule.onNodeWithTag(DimensionPillTags.CHIP_DIMENSIONS).assertIsDisplayed()
         rule.onNodeWithTag(DimensionPillTags.CHIP_DIMENSION_SCOPE).assertIsDisplayed()
+    }
+
+    private companion object {
+        const val PAN_FRAMES = 4
+        const val PAN_STEP_PX = 12.0
+        const val SETTLE_WAIT_MS = 400L
     }
 }

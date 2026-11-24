@@ -57,7 +57,7 @@ internal fun LabelDialog(engine: EngineSurfaces) {
     AlertDialog(
         onDismissRequest = engine::cancelLabel,
         modifier = Modifier.testTag(EngineTags.LABEL_DIALOG),
-        title = { Text(if (edit.arrow) SketchEngineStrings.Label.TITLE_ARROW else SketchEngineStrings.Label.TITLE_SHAPE) },
+        title = { Text(if (edit.standalone) SketchEngineStrings.Label.TITLE_TEXT else if (edit.arrow) SketchEngineStrings.Label.TITLE_ARROW else SketchEngineStrings.Label.TITLE_SHAPE) },
         text = {
             OutlinedTextField(
                 value = edit.text,

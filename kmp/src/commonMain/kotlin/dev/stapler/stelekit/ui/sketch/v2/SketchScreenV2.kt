@@ -18,6 +18,8 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.toggleableState
@@ -705,7 +707,7 @@ private fun ViewCluster(state: SketchEditorState, config: SketchShellConfig, mod
             snap -> SketchHostStrings.View.SNAP_ON
             else -> SketchHostStrings.View.SNAP_OFF
         }
-        ClusterButton(state, "sketch.snap", snapName, SketchChromeStrings.SNAP_HINT, StripIcon.Snap, null, target, snap && !held, act { config.onSnap?.invoke() ?: run { localSnap = !localSnap } }, config.onSnapHold)
+        ClusterButton(state, "sketch.snap", snapName, SketchChromeStrings.SNAP_HINT, StripIcon.Snap, null, target, snap && !held, act { config.onSnap?.invoke() ?: run { localSnap = !localSnap } }, config.onSnapHold, holdActive = held)
         if (PanPadPolicy.buttonShown(config.panArrows, state.fingerDrawing, config.pointer == PointerClass.TouchOrPen)) {
             PanButton(state.panPadOpen, { state.panPadOpen = !state.panPadOpen })
         }
@@ -719,7 +721,7 @@ private fun ViewCluster(state: SketchEditorState, config: SketchShellConfig, mod
 @Composable
 private fun ClusterButton(
     state: SketchEditorState, tag: String, description: String, hint: String, icon: StripIcon?, label: String?, size: Dp, on: Boolean?, onClick: () -> Unit,
-    onHold: ((Boolean) -> Unit)? = null,
+    onHold: ((Boolean) -> Unit)? = null, holdActive: Boolean = false,
 ) {
     val entry = HelpEntry(tag, description, hint)
     val scheme = MaterialTheme.colorScheme
@@ -728,7 +730,12 @@ private fun ClusterButton(
         Modifier.height(size).defaultMinSize(minWidth = size).testTag(tag)
             .helpOnFocus(state.help, entry).helpOnHover(state.help, entry)
             .holdReporting(onHold)
-            .semantics { contentDescription = description; if (on != null) { role = Role.Switch; toggleableState = ToggleableState(on) } }
+            .semantics {
+                contentDescription = description
+                if (on != null) { role = Role.Switch; toggleableState = ToggleableState(on) }
+                // A held second finger is no path for Switch Access or TalkBack, so the same pause is offered as an action.
+                if (onHold != null) customActions = listOf(CustomAccessibilityAction(if (holdActive) SketchHostStrings.View.SNAP_RESUME_ACTION else SketchHostStrings.View.SNAP_PAUSE_ACTION) { onHold(!holdActive); true })
+            }
             .combinedClickable(onLongClick = { state.help.show(entry) }, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {

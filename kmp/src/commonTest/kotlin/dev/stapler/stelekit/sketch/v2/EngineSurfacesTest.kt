@@ -42,9 +42,11 @@ import dev.stapler.stelekit.ui.sketch.v2.setSheetStyle
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -109,6 +111,25 @@ class EngineSurfacesTest {
         extras.engine.commitLabel()
         assertEquals("sends", assertNotNull(ContainerText.labelOf(controller.doc.scene, ElementId("a1"))).originalText)
         assertEquals(false, extras.engine.openLabel(ElementId("t1")), "plain text is not a container")
+        controller.close()
+        extras.close()
+    }
+
+    @Test
+    fun standaloneText_should_BeEditedInPlace_AndRemeasured_WhereLabelsStillRefuseIt() = runTest {
+        val text = TextElement(ElementBase(ElementId("t1")), u(0), u(50), u(16), u(25), text = "hi", originalText = "hi")
+        val (controller, extras) = rig(text)
+        assertTrue(extras.engine.openText(ElementId("t1")))
+        assertEquals("hi", extras.engine.labelEdit?.text)
+        extras.engine.typeLabel("hello there")
+        extras.engine.commitLabel()
+        val edited = assertIs<TextElement>(controller.doc.scene[ElementId("t1")])
+        assertEquals("hello there", edited.originalText)
+        assertEquals(11 * 8.0, edited.width.value, "re-measured at 8 units per character")
+        assertEquals(false, extras.engine.openText(ElementId("missing")))
+        controller.undo()
+        advanceUntilIdle()
+        assertEquals("hi", assertIs<TextElement>(controller.doc.scene[ElementId("t1")]).originalText, "one undo restores the old words")
         controller.close()
         extras.close()
     }

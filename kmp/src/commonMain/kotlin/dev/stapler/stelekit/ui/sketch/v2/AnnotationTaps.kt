@@ -11,6 +11,7 @@ import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
+import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlin.math.hypot
 
@@ -20,14 +21,14 @@ import kotlin.math.hypot
  * [annotationTapInput] and the matching value's action runs. Drags, marquees, pinches and handle grabs never reach this.
  */
 internal class AnnotationTapTargets {
-    class Target(val rect: AnnotationRect, val onTap: () -> Unit)
+    class Target(val rect: AnnotationRect, val onTap: (shift: Boolean) -> Unit)
 
     var targets: List<Target> = emptyList()
 
-    /** Runs the target containing ([xDp], [yDp]); true when one did. Targets never overlap, so at most one contains the point. */
-    fun tapAt(xDp: Double, yDp: Double): Boolean {
+    /** Runs the target containing ([xDp], [yDp]), with whether Shift was held; true when one did. Targets never overlap, so at most one contains the point. */
+    fun tapAt(xDp: Double, yDp: Double, shift: Boolean = false): Boolean {
         val hit = targets.firstOrNull { xDp >= it.rect.left && xDp <= it.rect.right && yDp >= it.rect.top && yDp <= it.rect.bottom } ?: return false
-        hit.onTap()
+        hit.onTap(shift)
         return true
     }
 }
@@ -37,18 +38,21 @@ internal class AnnotationTapTargets {
  * [AnnotationTapTargets.tapAt] for one pointer that went down and up within the touch slop. It consumes nothing.
  */
 internal fun Modifier.annotationTapInput(taps: AnnotationTapTargets): Modifier = pointerInput(taps) {
-    val tracker = TapTracker(viewConfiguration.touchSlop) { x, y -> taps.tapAt((x / density).toDouble(), (y / density).toDouble()) }
+    val tracker = TapTracker(viewConfiguration.touchSlop) { x, y, shift -> taps.tapAt((x / density).toDouble(), (y / density).toDouble(), shift) }
     awaitPointerEventScope {
-        while (true) tracker.onEvent(awaitPointerEvent(PointerEventPass.Final).changes)
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Final)
+            tracker.onEvent(event.changes, event.keyboardModifiers.isShiftPressed)
+        }
     }
 }
 
 /** One pointer's down-to-up path; a second pointer, or travel past [slop], voids the tap. */
-private class TapTracker(private val slop: Float, private val onTap: (Float, Float) -> Unit) {
+private class TapTracker(private val slop: Float, private val onTap: (Float, Float, Boolean) -> Unit) {
     private var downId: PointerId? = null
     private var downAt = Offset.Zero
 
-    fun onEvent(changes: List<PointerInputChange>) {
+    fun onEvent(changes: List<PointerInputChange>, shift: Boolean) {
         val change = changes.firstOrNull() ?: return
         if (changes.size > 1) downId = null
         val moved = hypot(change.position.x - downAt.x, change.position.y - downAt.y) > slop
@@ -59,7 +63,7 @@ private class TapTracker(private val slop: Float, private val onTap: (Float, Flo
             }
             change.changedToUpIgnoreConsumed() && change.id == downId -> {
                 downId = null
-                if (!moved) onTap(change.position.x, change.position.y)
+                if (!moved) onTap(change.position.x, change.position.y, shift)
             }
             change.pressed && change.id == downId && moved -> downId = null
         }
