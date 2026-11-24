@@ -23,10 +23,14 @@ import dev.stapler.stelekit.table.TabularTextPropertyTest
 import dev.stapler.stelekit.table.TabularTextTest
 import dev.stapler.stelekit.table.formula.DependencyGraphTest
 import dev.stapler.stelekit.table.formula.EvaluatorTest
+import dev.stapler.stelekit.table.formula.FormulaFuzzTest
 import dev.stapler.stelekit.table.formula.FormulaParserTest
+import dev.stapler.stelekit.table.formula.FormulaPropertyTest
+import dev.stapler.stelekit.table.formula.GoldenCorpusTest
 import dev.stapler.stelekit.table.formula.PointModeRuleTest
 import dev.stapler.stelekit.table.formula.RefRewriterTest
 import dev.stapler.stelekit.table.formula.TableCalcTest
+import dev.stapler.stelekit.table.formula.TableEngineTest
 import dev.stapler.stelekit.util.ContentHasherRawBytesTest
 import dev.stapler.stelekit.util.ContentHasherTest
 import dev.stapler.stelekit.util.FileUtilsPropertyTest
@@ -60,10 +64,14 @@ import org.junit.runners.Suite
     TabularTextTest::class,
     DependencyGraphTest::class,
     EvaluatorTest::class,
+    FormulaFuzzTest::class,
     FormulaParserTest::class,
+    FormulaPropertyTest::class,
+    GoldenCorpusTest::class,
     PointModeRuleTest::class,
     RefRewriterTest::class,
     TableCalcTest::class,
+    TableEngineTest::class,
     ContentHasherRawBytesTest::class,
     ContentHasherTest::class,
     FileUtilsPropertyTest::class,

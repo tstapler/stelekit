@@ -64,6 +64,7 @@ KMP_MODULES = {
    "commonMain/kotlin/dev/stapler/stelekit/table/formula/PointModeRule.kt",
    "commonMain/kotlin/dev/stapler/stelekit/table/formula/RefRewriter.kt",
    "commonMain/kotlin/dev/stapler/stelekit/table/formula/TableCalc.kt",
+   "commonMain/kotlin/dev/stapler/stelekit/table/formula/TableEngine.kt",
    "commonMain/kotlin/dev/stapler/stelekit/table/formula/Tokenizer.kt",
    "commonMain/kotlin/dev/stapler/stelekit/units/CheckedMath.kt",
    "commonMain/kotlin/dev/stapler/stelekit/units/Inches.kt",
