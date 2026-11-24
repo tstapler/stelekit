@@ -51,7 +51,7 @@ def test_classes(src):
     found = []
     for i, h in enumerate(heads):
         body = src[h.end(): heads[i + 1].start() if i + 1 < len(heads) else len(src)]
-        if "abstract" not in h.group(1) and "private" not in h.group(1) and "@Test" in body:
+        if "abstract" not in h.group(1) and "private" not in h.group(1) and re.search(r"@(?:[\w.]+\.)?Test\b", body):
             found.append(h.group(2))
     return found
 
@@ -63,7 +63,7 @@ DECL = re.compile(r"^(?:internal |public |private |data |sealed |abstract |open 
 def fixture_index():
     """pkg -> {declared top-level name -> commonTest file}, for helper files that are not themselves *Test.kt."""
     idx = collections.defaultdict(dict)
-    for f in glob.glob("kmp/src/commonTest/kotlin/**/*.kt", recursive=True):
+    for f in sorted(glob.glob("kmp/src/commonTest/kotlin/**/*.kt", recursive=True)):
         src = open(f, encoding="utf-8").read()
         m = re.search(r"^package ([\w.]+)", src, re.M)
         if m:

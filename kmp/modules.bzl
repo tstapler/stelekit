@@ -244,7 +244,7 @@ def kmp_module_business_tests():
             kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
             test_class = "dev.stapler.stelekit.modules." + spec["suite"],
             # Same as //kmp:business_tests: DriverFactory resolves its data dir from user.home, read-only in the sandbox.
-            jvm_flags = ["-Duser.home=$$TEST_TMPDIR"],
+            jvm_flags = ["-Duser.home=$$TEST_TMPDIR", "-Xmx4g"],  # -Xmx4g: as the jvm_tests cap; ~18 uncapped JVMs would otherwise run at once
             deps = [_module_label(m) for m in sorted(reach[module]) if m in KMP_PREBUILT_MODULES] + KMP_JVM_EXTERNAL_DEPS + [
                 "@maven//:com_squareup_okio_okio_fakefilesystem_jvm",
                 "@maven//:io_kotest_kotest_property_jvm",
