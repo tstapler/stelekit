@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.124.0](https://github.com/tstapler/stelekit/compare/v0.123.0...v0.124.0) (2026-11-24)
+
+
+### Features
+
+* **sketch:** persistent dimension annotations on technical sheets ([#726](https://github.com/tstapler/stelekit/issues/726)) ([b165ad0](https://github.com/tstapler/stelekit/commit/b165ad062be74c43af26c6dd2228ff6d0332377f))
+
+
+### Bug Fixes
+
+* **sketch:** text auto-size, corner resize scales font, size controls ([#727](https://github.com/tstapler/stelekit/issues/727)) ([bfc916c](https://github.com/tstapler/stelekit/commit/bfc916c5121b8076e9a64fc7c050a5ba95d07139))
+
 ## [0.123.0](https://github.com/tstapler/stelekit/compare/v0.122.0...v0.123.0) (2026-11-24)
 
 
