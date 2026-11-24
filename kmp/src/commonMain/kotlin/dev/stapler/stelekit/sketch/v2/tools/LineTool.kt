@@ -67,7 +67,8 @@ class LineTool private constructor(
      */
     private fun snapped(from: ScenePoint?, to: ScenePoint, event: InputEvent, ctx: ToolContext): PointSnapper.Placed {
         val placed = PointSnapper.place(to, from, event, ctx)
-        if (placed.hit != null || from == null || !(options.angleSnap || event.modifiers.shift)) return placed
+        val stepping = options.angleSnap || event.modifiers.shift
+        if (placed.hit != null || from == null || !stepping) return placed
         return PointSnapper.Placed(AngleSnap.snap(from, to), null)
     }
 
