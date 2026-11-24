@@ -6,7 +6,6 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-// Doc-untouched and serialized-output cases (REQ-9/12/26) need TableDoc and land with the doc worker's types.
 class TableViewStateTest {
     @Test
     fun setWidth_should_StoreDpAndLeaveDocUntouched_When_ColumnResized() {
@@ -40,5 +39,29 @@ class TableViewStateTest {
         assertEquals(SortIndicator(2, false), v.sort)
         assertNull(v.onRowOrderChanged().sort)
         assertEquals(v.withSort(2, false), v)
+    }
+
+    private val content = "|  a  | b |\n|:-|-:|\n| 1 | =A2*2 |\n"
+
+    private fun parsed(): TableDoc = (TableParser.parse(content) as TableParseResult.Parsed).doc
+
+    @Test
+    fun freeze_should_NeverTouchDoc_When_Toggled() {
+        val doc = parsed()
+        val before = TableSerializer.serialize(doc)
+        // Every TableViewState mutator returns a TableViewState, so no TableEdit can be produced; the doc stays identical.
+        val v = TableViewState().withFreezeHeaderRow(false).withFreezeFirstColumn(true).withFreezeHeaderRow(true)
+        assertTrue(v.freezeFirstColumn)
+        assertEquals(before, TableSerializer.serialize(doc))
+    }
+
+    @Test
+    fun viewState_should_NeverAppearInSerializedOutput_When_WidthFreezeSortSet() {
+        val doc = parsed()
+        val before = TableSerializer.serialize(doc)
+        val v = TableViewState().setWidth(1, 300f).setWidth(2, 80f).withFreezeFirstColumn(true).withSort(2, true)
+        assertEquals(300f, v.widthOf(1))
+        assertEquals(before, TableSerializer.serialize(doc))
+        assertEquals(content.trimEnd('\n'), before.trimEnd('\n'))
     }
 }

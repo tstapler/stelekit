@@ -8,7 +8,10 @@ import dev.stapler.stelekit.table.GridNavigatorTest
 import dev.stapler.stelekit.table.GridSelectionPropertyTest
 import dev.stapler.stelekit.table.LogseqCompatFixtureTest
 import dev.stapler.stelekit.table.NoticeQueueTest
+import dev.stapler.stelekit.table.SelectionStatsTest
 import dev.stapler.stelekit.table.TableBackLadderTest
+import dev.stapler.stelekit.table.TableEditorPropertyTest
+import dev.stapler.stelekit.table.TableEditorTest
 import dev.stapler.stelekit.table.TableParserTest
 import dev.stapler.stelekit.table.TableRoundTripPropertyTest
 import dev.stapler.stelekit.table.TableSerializerTest
@@ -22,6 +25,8 @@ import dev.stapler.stelekit.table.formula.DependencyGraphTest
 import dev.stapler.stelekit.table.formula.EvaluatorTest
 import dev.stapler.stelekit.table.formula.FormulaParserTest
 import dev.stapler.stelekit.table.formula.PointModeRuleTest
+import dev.stapler.stelekit.table.formula.RefRewriterTest
+import dev.stapler.stelekit.table.formula.TableCalcTest
 import dev.stapler.stelekit.util.ContentHasherRawBytesTest
 import dev.stapler.stelekit.util.ContentHasherTest
 import dev.stapler.stelekit.util.FileUtilsPropertyTest
@@ -40,7 +45,10 @@ import org.junit.runners.Suite
     GridSelectionPropertyTest::class,
     LogseqCompatFixtureTest::class,
     NoticeQueueTest::class,
+    SelectionStatsTest::class,
     TableBackLadderTest::class,
+    TableEditorPropertyTest::class,
+    TableEditorTest::class,
     TableParserTest::class,
     TableRoundTripPropertyTest::class,
     TableSerializerTest::class,
@@ -54,6 +62,8 @@ import org.junit.runners.Suite
     EvaluatorTest::class,
     FormulaParserTest::class,
     PointModeRuleTest::class,
+    RefRewriterTest::class,
+    TableCalcTest::class,
     ContentHasherRawBytesTest::class,
     ContentHasherTest::class,
     FileUtilsPropertyTest::class,
