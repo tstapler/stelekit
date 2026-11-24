@@ -48,7 +48,7 @@ class TestRegistrationAuditTest {
                     val name = path.substringAfterLast('/').removeSuffix(".kt")
                     // A moved class is excluded through the generated manifest, which the BUILD file reads by variable.
                     !Regex("""\b$name::class\b""").containsMatchIn(suiteCode) && !buildCode.contains("$name.kt") &&
-                        !moduleIndex.contains(".$name\"")
+                        !moduleIndex.contains("\"" + path.removePrefix("$set/").removeSuffix(".kt").replace('/', '.') + "\"")
                 }
         }.sorted()
 

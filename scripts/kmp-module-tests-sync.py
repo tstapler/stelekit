@@ -470,7 +470,12 @@ def jvm_tests(mods, cls2mod, pkg2mods, only):
         write_suite(m, "Jvm", v["classes"], "jvmTest")
         jvm[m] = {"suite": suite_name(m, "Jvm"), "classes": v["classes"],
                   "tests": sorted(x[strip:] for x in v["tests"]), "srcs": sorted(x[strip:] for x in v["srcs"])}
-    existing = {re.search(r"^package ([\w.]+)", s, re.M).group(1) + "." + c for s in text.values() for c in test_classes(s)}
+    existing = set()  # every test class that could run, including registered ones whose @Tests are inherited
+    for s in text.values():
+        pkg = re.search(r"^package ([\w.]+)", s, re.M).group(1)
+        existing |= {pkg + "." + c for c in test_classes(s)}
+        existing |= {pkg + "." + n for n in re.findall(r"^(?:(?:internal|public|open|final)\s+)*class\s+(\w+)", s, re.M)
+                     if pkg + "." + n in runnable}
     sync_registry(jvm, previous, existing, JVM_REGISTRY)
     write_index(jvm, JVM_INDEX, "jvmTest", "jvm_tests", "AllJvmTests")
     return jvm
