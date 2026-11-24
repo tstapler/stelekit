@@ -39,7 +39,7 @@ internal fun technicalChips(controller: SketchEditorController, extras: EditorEx
                 if (allShapes) S.Chips.SCOPE_ALL else S.Chips.SCOPE_SELECTED,
                 if (allShapes) S.Chips.SCOPE_ALL_DESCRIPTION else S.Chips.SCOPE_SELECTED_DESCRIPTION,
                 StripIcon.Select,
-                extras.pills::toggleScope,
+                onClick = extras.pills::toggleScope,
             )
         } else {
             null
