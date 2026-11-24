@@ -74,7 +74,7 @@ class DimensionAnnotationsHostTest {
     private val living = filledRectEl("living", 30, 60, 160, 120)
     private val kitchen = filledRectEl("kitchen", 190, 60, 120, 70)
     private val hall = filledRectEl("hall", 190, 130, 120, 50)
-    private val table = EllipseElement(ElementBase(ElementId("table")), su(90), su(280), su(34), su(34))
+    private val table = EllipseElement(ElementBase(ElementId("table")), su(90), su(290), su(50), su(50))
     private val bed = filledRectEl("bed", 190, 240, 120, 110)
     private val wall = LineElement(ElementBase(ElementId("wall")), listOf(sp(30, 400), sp(310, 430)))
     private val plan: List<SceneElement> = listOf(living, kitchen, hall, table, bed, wall)
@@ -139,12 +139,14 @@ class DimensionAnnotationsHostTest {
     fun zoomedOut_should_DropTheAnnotationsThatWouldBeUnreadable() {
         mount(zoom = 1.2)
         shot("3-zoomed-out")
+        value("living", PillKind.Width).assertIsDisplayed()
         rule.onAllNodesWithTag(DimensionAnnotationTags.value("table", PillKind.Diameter)).assertCountEquals(0)
     }
 
     @Test
     fun zoomedIn_should_ShowTheShapesThatStillFit() {
         mount(zoom = 6.0, panX = -60.0, panY = -120.0)
+        value("living", PillKind.Width).assertIsDisplayed()
         shot("4-zoomed-in")
     }
 
@@ -181,6 +183,7 @@ class DimensionAnnotationsHostTest {
         rule.onNodeWithTag(DimensionPillTags.CHIP_DIMENSION_SCOPE).performClick()
         rule.waitForIdle()
         rule.onAllNodesWithTag(DimensionAnnotationTags.value("living", PillKind.Width)).assertCountEquals(0)
+        rule.onNodeWithTag(DimensionPillTags.pill(PillKind.Width)).assertIsDisplayed()
         shot("7-selected-only")
         rule.onNodeWithTag(DimensionPillTags.CHIP_DIMENSIONS).performClick()
         rule.waitForIdle()

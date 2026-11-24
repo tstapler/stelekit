@@ -82,8 +82,7 @@ class DimensionAnnotationModelTest {
     }
 
     @Test
-    fun theText_should_NeverBeSmallerThanTheLegibleFloor_AtAnyFontScale() {
-        assertTrue(DimensionAnnotationLayout.TEXT_SP >= DimensionAnnotationLayout.MIN_TEXT_SP)
+    fun theTextBox_should_GrowWithTheFontScale() {
         val (w1, h1) = DimensionAnnotationLayout.textSize("3' 7\"", 1.0)
         val (w2, h2) = DimensionAnnotationLayout.textSize("3' 7\"", 1.5)
         assertTrue(w2 > w1 && h2 > h1)
@@ -99,10 +98,11 @@ class DimensionAnnotationModelTest {
 
     @Test
     fun anAnnotation_should_KeepClearOfTheReservedPills() {
-        val reserved = listOf(AnnotationRect(100.0, 140.0, 260.0, 190.0))
+        val reserved = listOf(AnnotationRect(170.0, 150.0, 190.0, 195.0))
         val a = layout(listOf(filledRectEl("r", 100, 200, 160, 90)), reserved = reserved)
+        assertTrue(a.isNotEmpty())
         assertTrue(a.none { it.textRect.overlaps(reserved.first()) })
-        assertTrue(a.none { an -> reserved.first().crosses(an.line) })
+        assertTrue(a.none { an -> (listOf(an.line) + an.extensions).any { reserved.first().crosses(it) } })
     }
 
     @Test
@@ -121,9 +121,23 @@ class DimensionAnnotationModelTest {
 
     @Test
     fun aLongAnnotatedList_should_BeCappedAtTheNamedLimit() {
-        val many = (0 until DimensionAnnotationLayout.MAX_ANNOTATED_SHAPES * 2).map { filledRectEl("r$it", (it % 20) * 16, (it / 20) * 30, 14, 14) }
-        val shapes = layout(many, canvas(zoom = 40.0, w = 5000.0, h = 5000.0)).map { it.elementId }.toSet()
+        val many = (0 until DimensionAnnotationLayout.MAX_ANNOTATED_SHAPES * 2).map { filledRectEl("r$it", (it % 20) * 120, (it / 20) * 120, 80, 80) }
+        val shapes = layout(many, canvas(w = 5000.0, h = 5000.0)).map { it.elementId }.toSet()
         assertTrue(shapes.size <= DimensionAnnotationLayout.MAX_ANNOTATED_SHAPES)
+        assertTrue(shapes.size > DimensionAnnotationLayout.MAX_ANNOTATED_SHAPES / 2, "the cap, not a failure to place, is what limits it: ${shapes.size}")
+    }
+
+    @Test
+    fun theCap_should_CountLegibleShapesOnly_SoTinyShapesNearTheCentreDoNotHideABigOne() {
+        val tiny = (0 until DimensionAnnotationLayout.MAX_ANNOTATED_SHAPES + 20).map { filledRectEl("t$it", 170 + (it % 10) * 2, 330 + (it / 10) * 2, 1, 1) }
+        val big = filledRectEl("big", 10, 10, 120, 80)
+        assertTrue(layout(tiny + big).any { it.elementId.value == "big" })
+    }
+
+    @Test
+    fun aNeighboursExtensionLine_should_NeverCrossAnotherText() {
+        val shapes = listOf(filledRectEl("n", 148, 300, 64, 60), filledRectEl("a", 190, 300, 160, 90))
+        assertNoOverlap(layout(shapes))
     }
 
     @Test
@@ -135,15 +149,18 @@ class DimensionAnnotationModelTest {
 
     @Test
     fun noTwoAnnotations_should_Overlap_AndEveryTextShouldStayInsideTheCanvas_Property() = runTest {
-        checkAll(Arb.int(0, 5000), Arb.int(1, 8), Arb.int(0, 400)) { seed, zoomTenths, count ->
-            val zoom = zoomTenths / 2.0
-            val c = canvas(zoom = zoom, panX = (seed % 90).toDouble(), panY = (seed % 50).toDouble())
-            val shapes = randomShapes(Random(seed), count % 40 + 1)
-            val a = layout(shapes, c)
+        checkAll(Arb.int(0, 5000), Arb.int(1, 8), Arb.int(0, 400)) { seed, zoomHalves, count ->
+            val r = Random(seed)
+            val c = canvas(zoom = zoomHalves / 2.0, panX = (seed % 90).toDouble(), panY = (seed % 50).toDouble())
+            val shapes = randomShapes(r, count % 40 + 1)
+            val reserved = if (seed % 2 == 0) listOf(AnnotationRect(r.nextDouble(0.0, 300.0), r.nextDouble(0.0, 600.0), 330.0, 650.0)) else emptyList()
+            val font = 1.0 + (seed % 3) * 0.25
+            val a = layout(shapes, c, reserved, font)
             assertNoOverlap(a)
             assertInside(a, c)
             assertTapRects(a)
-            assertEquals(a, layout(shapes, c), "deterministic")
+            a.forEach { an -> reserved.forEach { res -> assertTrue(!res.overlaps(an.textRect) && (listOf(an.line) + an.extensions).none { res.crosses(it) }, "reserved rectangle hit") } }
+            assertEquals(a, layout(shapes.shuffled(Random(seed + 1)), c, reserved, font), "the order the shapes come in does not matter")
         }
     }
 
@@ -169,7 +186,7 @@ class DimensionAnnotationModelTest {
         val x = r.nextInt(-100, 500)
         val y = r.nextInt(-100, 800)
         when (r.nextInt(3)) {
-            0 -> filledRectEl("s$i", x, y, r.nextInt(10, 300), r.nextInt(10, 300))
+            0 -> filledRectEl("s$i", x, y, r.nextInt(10, 300), r.nextInt(10, 300)).copy(angle = if (r.nextBoolean()) 0.0 else r.nextDouble(0.0, 6.28))
             1 -> ellipse("s$i", x, y, r.nextInt(8, 100), r.nextInt(8, 100))
             else -> line("s$i", x, y, x + r.nextInt(-300, 300), y + r.nextInt(-300, 300))
         }
@@ -178,7 +195,9 @@ class DimensionAnnotationModelTest {
     private fun assertNoOverlap(a: List<DimensionAnnotation>) {
         for (i in a.indices) for (j in i + 1 until a.size) {
             assertTrue(!a[i].textRect.overlaps(a[j].textRect), "texts of ${a[i].elementId.value} and ${a[j].elementId.value} overlap")
-            assertTrue(!a[i].textRect.crosses(a[j].line) && !a[j].textRect.crosses(a[i].line), "a line crosses another text")
+            val ti = listOf(a[i].line) + a[i].extensions
+            val tj = listOf(a[j].line) + a[j].extensions
+            assertTrue(ti.none { a[j].textRect.crosses(it) } && tj.none { a[i].textRect.crosses(it) }, "a line crosses another text")
         }
     }
 

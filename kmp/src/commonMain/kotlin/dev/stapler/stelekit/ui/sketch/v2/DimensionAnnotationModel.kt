@@ -9,6 +9,7 @@ import dev.stapler.stelekit.sketch.v2.scene.BoxElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.ElementNames
 import dev.stapler.stelekit.sketch.v2.scene.EllipseElement
+import dev.stapler.stelekit.sketch.v2.scene.FrameElement
 import dev.stapler.stelekit.sketch.v2.scene.LineElement
 import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
@@ -98,8 +99,11 @@ object DimensionAnnotationLayout {
     const val MAX_ROWS = 3
 
     /** A line shorter than this many text widths is hidden; it is fully drawn from [FADE_FULL_RATIO] on and fades in between. */
-    const val FADE_START_RATIO = 1.1
-    const val FADE_FULL_RATIO = 1.6
+    const val FADE_START_RATIO = 1.3
+    const val FADE_FULL_RATIO = 1.8
+
+    /** An annotation fainter than this is dropped, so nothing nearly invisible keeps a target or a screen-reader node. */
+    const val MIN_ALPHA = 0.2
 
     const val TEXT_GAP_DP = 2.0
     const val EXT_GAP_DP = 3.0
@@ -119,7 +123,7 @@ object DimensionAnnotationLayout {
     fun textSize(text: String, fontScale: Double): Pair<Double, Double> =
         (text.length * CHAR_EM * TEXT_SP + 2 * PAD_H_DP) * fontScale to (TEXT_SP * LINE_FACTOR + 2 * PAD_V_DP) * fontScale
 
-    /** The one place a value becomes text: the same formatter the pills and the size fields use, so a display mode set there applies here. */
+    /** The one place a value becomes text: it calls `lengthTextOf`, the formatter the pills and size fields use, so a change there applies here. */
     fun valueText(kind: PillKind, sixteenths: Long): String =
         (if (kind == PillKind.Diameter) S.Pill.DIAMETER_SYMBOL + " " else "") + lengthTextOf(sixteenths)
 
@@ -139,25 +143,29 @@ object DimensionAnnotationLayout {
         if (canvas.width <= 0.0 || canvas.height <= 0.0) return emptyList()
         val centreX = canvas.width / 2
         val centreY = canvas.height / 2
-        val bodyBoxes = bodies.map { it.id to screenBox(it, canvas) }
+        val bodyBoxes = bodies.filter { it !is FrameElement }.map { it.id to screenBox(it, canvas) }
         val ordered = candidates
             .map { it to screenBox(it, canvas) }
             .sortedWith(compareBy({ hypot(it.second.centreX - centreX, it.second.centreY - centreY) }, { it.first.id.value }))
-            .take(MAX_ANNOTATED_SHAPES)
         val placed = ArrayList<AnnotationPlaced>()
         val out = ArrayList<DimensionAnnotation>()
+        var shapes = 0
         for ((element, _) in ordered) {
+            if (shapes >= MAX_ANNOTATED_SHAPES) break
             val name = ElementNames.nameOf(element)
-            val others = bodyBoxes.filter { it.first != element.id }.map { it.second }
+            var annotated = false
             for (span in spansOf(element, canvas)) {
                 val text = valueText(span.label, span.sixteenths)
                 val (tw, th) = textSize(text, fontScale)
-                val alpha = ((span.lengthDp() / span.textExtent(tw, th) - FADE_START_RATIO) / (FADE_FULL_RATIO - FADE_START_RATIO)).coerceIn(0.0, 1.0)
-                if (alpha <= 0.0) continue
-                val at = AnnotationPlacer.place(span, AnnotationPlacer.Fit(canvas, reserved, placed, others, tw, th)) ?: continue
+                val extent = span.textExtent(tw, th)
+                val alpha = ((span.lengthDp() / extent - FADE_START_RATIO) / (FADE_FULL_RATIO - FADE_START_RATIO)).coerceIn(0.0, 1.0)
+                if (alpha < MIN_ALPHA) continue
+                val at = AnnotationPlacer.place(span, AnnotationPlacer.Fit(canvas, reserved, placed, bodyBoxes, element.id, tw, th, extent)) ?: continue
                 placed += at
-                out += DimensionAnnotation(element.id, name, span.label, span.sixteenths, text, at.line, if (at.inner) emptyList() else extensionsOf(span, at.line), at.text, at.text, alpha)
+                annotated = true
+                out += DimensionAnnotation(element.id, name, span.label, span.sixteenths, text, at.line, at.extensions, at.text, at.text, alpha)
             }
+            if (annotated) shapes++
         }
         return withTapRects(out, reserved, canvas, tapMinDp)
     }
@@ -218,7 +226,7 @@ object DimensionAnnotationLayout {
 
     private const val TIE = 0.001
 
-    private fun extensionsOf(span: AnnotationSpan, line: AnnotationSegment): List<AnnotationSegment> {
+    internal fun extensionsOf(span: AnnotationSpan, line: AnnotationSegment): List<AnnotationSegment> {
         val dir = unit(line.a.x - span.p.x, line.a.y - span.p.y)
         return listOf(span.p to line.a, span.q to line.b).map { (from, to) ->
             val start = EXT_GAP_DP + span.extStart
@@ -277,7 +285,7 @@ object DimensionAnnotationLayout {
 }
 
 /** A placed annotation before its target is sized: the text rectangle, the dimension line, and whether it sits inside its own shape. */
-internal class AnnotationPlaced(val text: AnnotationRect, val line: AnnotationSegment, val inner: Boolean = false)
+internal class AnnotationPlaced(val text: AnnotationRect, val line: AnnotationSegment, val extensions: List<AnnotationSegment>)
 
 internal class AnnotationSpan(val label: PillKind, val sixteenths: Long, val p: AnnotationPoint, val q: AnnotationPoint, val normals: List<AnnotationPoint>, val reach: Double, val extStart: Double) {
     fun lengthDp(): Double = hypot(q.x - p.x, q.y - p.y)
@@ -294,22 +302,17 @@ internal object AnnotationPlacer {
     private const val HALF = DimensionAnnotationLayout.HALF
 
     /** What a placement is checked against: the canvas, the free-space reservations, the annotations already placed and the other shapes' boxes. */
-    internal class Fit(val canvas: PillCanvas, val reserved: List<AnnotationRect>, val placed: List<AnnotationPlaced>, val others: List<AnnotationRect>, val tw: Double, val th: Double)
+    internal class Fit(val canvas: PillCanvas, val reserved: List<AnnotationRect>, val placed: List<AnnotationPlaced>, val bodies: List<Pair<ElementId, AnnotationRect>>, val self: ElementId, val tw: Double, val th: Double, val extent: Double)
 
     /**
-     * The best spot for [span]'s line and text: outside the shape on the preferred side, then the other, stacking outward in rows;
-     * else, for a rectangle, just inside its own edge; a spot that lands on another shape is taken only when nothing else is left.
+     * The spot for [span]'s line and text: outside the shape on the preferred side, then the other, stacking outward in rows; else,
+     * for a rectangle, just inside its own edge. A spot that lands on another shape is never used, so a value cannot read as that
+     * shape's; null means the annotation is dropped.
      */
     internal fun place(span: AnnotationSpan, fit: Fit): AnnotationPlaced? {
         val outside = span.normals.flatMap { n -> (0 until DimensionAnnotationLayout.MAX_ROWS).map { row -> offsetOf(span, n, row, fit) to false } }
         val inner = if (span.extStart > 0.0) listOf(innerOffset(span, fit) to true) else emptyList()
-        var fallback: AnnotationPlaced? = null
-        for ((line, isInner) in outside + inner) {
-            val found = firstFree(line, isInner, fit) ?: continue
-            if (fit.others.none { it.overlaps(found.text) }) return found
-            if (fallback == null) fallback = found
-        }
-        return fallback
+        return (outside + inner).firstNotNullOfOrNull { (line, isInner) -> firstFree(span, line, isInner, fit) }
     }
 
     private fun offsetOf(span: AnnotationSpan, n: AnnotationPoint, row: Int, fit: Fit): AnnotationSegment {
@@ -328,13 +331,16 @@ internal object AnnotationPlacer {
     private fun shifted(span: AnnotationSpan, n: AnnotationPoint, off: Double) =
         AnnotationSegment(AnnotationPoint(span.p.x + n.x * off, span.p.y + n.y * off), AnnotationPoint(span.q.x + n.x * off, span.q.y + n.y * off))
 
-    private fun firstFree(line: AnnotationSegment, isInner: Boolean, fit: Fit): AnnotationPlaced? {
+    private fun firstFree(span: AnnotationSpan, line: AnnotationSegment, isInner: Boolean, fit: Fit): AnnotationPlaced? {
         if (line.a.x.isNaN()) return null
+        val length = span.lengthDp()
+        val extensions = if (isInner) emptyList() else DimensionAnnotationLayout.extensionsOf(span, line)
         for (t in DimensionAnnotationLayout.TEXT_POSITIONS) {
+            if (t * length < fit.extent / HALF || (1 - t) * length < fit.extent / HALF) continue
             val cx = line.a.x + (line.b.x - line.a.x) * t
             val cy = line.a.y + (line.b.y - line.a.y) * t
             val text = AnnotationRect(cx - fit.tw / HALF, cy - fit.th / HALF, cx + fit.tw / HALF, cy + fit.th / HALF)
-            if (inside(text, fit.canvas) && clear(text, line, fit.reserved, fit.placed)) return AnnotationPlaced(text, line, isInner)
+            if (inside(text, fit.canvas) && clear(text, listOf(line) + extensions, fit)) return AnnotationPlaced(text, line, extensions)
         }
         return null
     }
@@ -342,10 +348,14 @@ internal object AnnotationPlacer {
     private fun inside(text: AnnotationRect, canvas: PillCanvas): Boolean =
         text.left >= DimensionAnnotationLayout.EDGE_DP && text.top >= DimensionAnnotationLayout.EDGE_DP && text.right <= canvas.width - DimensionAnnotationLayout.EDGE_DP && text.bottom <= canvas.height - DimensionAnnotationLayout.EDGE_DP
 
-    private fun clear(text: AnnotationRect, line: AnnotationSegment, reserved: List<AnnotationRect>, placed: List<AnnotationPlaced>): Boolean {
+    private fun clear(text: AnnotationRect, strokes: List<AnnotationSegment>, fit: Fit): Boolean {
         val padded = text.inflated(DimensionAnnotationLayout.TEXT_GAP_DP)
-        return reserved.none { it.overlaps(padded) } &&
-            placed.none { p -> p.text.overlaps(padded) || p.text.inflated(DimensionAnnotationLayout.TEXT_GAP_DP).crosses(line) || padded.crosses(p.line) }
+        if (fit.bodies.any { (id, box) -> id != fit.self && box.overlaps(text) }) return false
+        if (fit.reserved.any { r -> r.overlaps(padded) || strokes.any { r.crosses(it) } }) return false
+        return fit.placed.none { p ->
+            val theirs = listOf(p.line) + p.extensions
+            p.text.overlaps(padded) || theirs.any { padded.crosses(it) } || strokes.any { p.text.inflated(DimensionAnnotationLayout.TEXT_GAP_DP).crosses(it) }
+        }
     }
 }
 

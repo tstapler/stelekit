@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,6 +59,7 @@ private const val TICK_DP = 4f
 private const val LINE_ALPHA = 0.75f
 private const val TEXT_COLOR_ALPHA = 0.9f
 private const val CHIP_ALPHA = 0.85f
+private const val TAP_MIN_ALPHA = 0.6
 private const val CHIP_RADIUS_DP = 3
 
 /** What one layout depends on; two equal keys mean the cached layout is still right. */
@@ -80,8 +82,8 @@ private data class AnnotationKey(
  * The always-on dimensions of a technical sheet, drawn like an elevation: a thin dimension line with extension lines and ticks
  * outside each visible shape and its value centred on the line. The selected shape keeps its tappable pills instead. The lines
  * take no pointer input and are hidden from screen readers; only each value's finger-sized target is tappable, and a tap
- * selects that shape and opens its size editor (the pills' own edit). Hidden while a gesture is in flight (the lines would
- * trail the shape) and for a locked sheet's targets; the layout is cached per revision, viewport and selection.
+ * selects that shape and opens its size editor (the pills' own edit). Hidden while a tool gesture is in flight (the lines would
+ * trail the shape); targets are off for a read-only sheet, another tool than Select, and a value still fading in; the layout is cached per revision, viewport and selection.
  */
 @Composable
 internal fun DimensionAnnotationsOverlay(controller: SketchEditorController, extras: EditorExtras, pointer: PointerClass) {
@@ -106,7 +108,9 @@ internal fun DimensionAnnotationsOverlay(controller: SketchEditorController, ext
         val annotations = remember(key) { compute(controller, key) }
         if (annotations.isEmpty()) return@BoxWithConstraints
         Canvas(Modifier.fillMaxSize().clearAndSetSemantics { }) { drawLines(annotations, ink) }
-        annotations.forEach { AnnotationValue(it, tappable, ink, chip) { select(controller, state, it) } }
+        annotations.forEach { a ->
+            key(a.elementId.value, a.kind) { AnnotationValue(a, tappable && a.alpha >= TAP_MIN_ALPHA, ink, chip) { select(controller, state, a) } }
+        }
     }
 }
 
