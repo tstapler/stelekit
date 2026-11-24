@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.123.0](https://github.com/tstapler/stelekit/compare/v0.122.0...v0.123.0) (2026-11-24)
+
+
+### Features
+
+* **sketch:** measurement units switch, live reading, exact typed lengths, symbol keys ([#725](https://github.com/tstapler/stelekit/issues/725)) ([cc22178](https://github.com/tstapler/stelekit/commit/cc22178b53c153e1d9ad07b06fe498ceba950f1c))
+
+
+### Bug Fixes
+
+* **tables:** drop archive right-click on tables; open links in the headerless fallback ([#724](https://github.com/tstapler/stelekit/issues/724)) ([472f293](https://github.com/tstapler/stelekit/commit/472f2932b1b981cb67fbf202ae94e2f0f39058a5))
+
 ## [0.122.0](https://github.com/tstapler/stelekit/compare/v0.121.0...v0.122.0) (2026-11-23)
 
 
