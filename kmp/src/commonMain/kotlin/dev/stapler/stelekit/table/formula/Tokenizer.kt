@@ -95,11 +95,15 @@ object Tokenizer {
         if (text.regionMatches(start, "#REF!", 0, 5, ignoreCase = true)) Token.RefErr(start, start + 5)
         else Token.Invalid(start, start + 1)
 
+    private fun isNameChar(c: Char) = c.isAsciiLetter() || c.isDigit() || c == '_' || c == '.'
+
+    private fun isNameStart(c: Char) = c.isAsciiLetter() || c == '_' || c == '.'
+
     private fun word(text: String, start: Int): Token {
         cellRef(text, start)?.let { return it }
         if (text[start] == '$') return Token.Invalid(start, start + 1)
         var i = start
-        while (i < text.length && (text[i].isAsciiLetter() || text[i].isDigit() || text[i] == '_' || text[i] == '.')) i++
+        while (i < text.length && isNameChar(text[i])) i++
         return Token.Ident(text.substring(start, i), start, i)
     }
 
@@ -117,7 +121,7 @@ object Tokenizer {
         val rowStart = i
         while (i < text.length && text[i].isDigit()) i++
         if (i == rowStart || i - rowStart > 9) return null
-        if (i < text.length && (text[i].isAsciiLetter() || text[i] == '_' || text[i] == '.' || text[i] == '(')) return null
+        if (i < text.length && (isNameStart(text[i]) || text[i] == '(')) return null
         val row = text.substring(rowStart, i).toInt()
         if (row < 1) return null
         var col = 0

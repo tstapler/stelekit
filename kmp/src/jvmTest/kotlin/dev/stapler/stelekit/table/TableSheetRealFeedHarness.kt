@@ -18,7 +18,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
@@ -28,6 +31,7 @@ import kotlin.time.Clock
  * over the SQLDelight repositories on in-memory SQLite, with one Table block.
  * Records every `getBlockByUuid` emission in arrival order.
  */
+@OptIn(FlowPreview::class)
 class TableSheetRealFeedHarness(initialContent: String) {
     data class Emission(val index: Int, val content: String, val dbVersion: Long)
 
@@ -50,6 +54,7 @@ class TableSheetRealFeedHarness(initialContent: String) {
     )
 
     private val lock = Any()
+    private val ticks = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 64)
     private val _emissions = mutableListOf<Emission>()
     val emissions: List<Emission> get() = synchronized(lock) { _emissions.toList() }
     private val _events = mutableListOf<String>()
@@ -74,6 +79,7 @@ class TableSheetRealFeedHarness(initialContent: String) {
                 synchronized(lock) {
                     val e = Emission(_emissions.size + 1, b.content, b.version)
                     _emissions += e
+                    ticks.tryEmit(Unit)
                     _events += "EMISSION #${e.index} content=${labelOf(b.content)} (dbVersion=${b.version})"
                 }
             }
@@ -88,14 +94,9 @@ class TableSheetRealFeedHarness(initialContent: String) {
 
     /** Waits until no new emission has arrived for [quietMs] (bounded by [maxMs]). */
     suspend fun settle(quietMs: Long = 400, maxMs: Long = 6000) {
-        var waited = 0L
-        var last = emissions.size
-        var quiet = 0L
-        while (quiet < quietMs && waited < maxMs) {
-            delay(50)
-            waited += 50
-            val n = emissions.size
-            if (n != last) { last = n; quiet = 0 } else quiet += 50
+        // Quiet-period wait on the emission ticks (debounce), not a polling delay loop.
+        withTimeoutOrNull(maxMs) {
+            ticks.onStart { emit(Unit) }.debounce(quietMs).first()
         }
     }
 

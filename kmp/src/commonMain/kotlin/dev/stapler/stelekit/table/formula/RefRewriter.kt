@@ -36,7 +36,7 @@ object RefRewriter {
         }
         if (splices.isEmpty()) return null
         val sb = StringBuilder(text)
-        for ((start, end, repl) in splices.sortedByDescending { it.first }) sb.replace(start, end, repl)
+        for ((start, end, repl) in splices.sortedByDescending { it.first }) sb.deleteRange(start, end).insert(start, repl)
         return sb.toString()
     }
 

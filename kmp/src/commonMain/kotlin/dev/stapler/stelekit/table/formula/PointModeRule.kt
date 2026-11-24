@@ -17,8 +17,11 @@ object PointModeRule {
     private val triggers = setOf("+", "-", "*", "/", "^", "<", ">", "<=", ">=", "<>", "=", "(", ",")
     private val binaryOps = setOf("+", "-", "*", "/", "^", "<", ">", "<=", ">=", "<>", "=")
 
+    private fun startsFormulaWithCaretInside(draft: String, caret: Int) =
+        draft.startsWith('=') && caret in 1..draft.length
+
     fun allows(draft: String, caret: Int): Boolean {
-        if (draft.isEmpty() || draft[0] != '=' || caret < 1 || caret > draft.length) return false
+        if (!startsFormulaWithCaretInside(draft, caret)) return false
         val whole = Tokenizer.tokenize(draft, from = 1)
         if (whole.any { it !is Token.End && it.start < caret && caret < it.end }) return false
         val prefix = Tokenizer.tokenize(draft.substring(0, caret), from = 1).filter { it !is Token.End }

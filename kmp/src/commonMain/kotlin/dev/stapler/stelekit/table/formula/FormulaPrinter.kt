@@ -58,13 +58,15 @@ object FormulaPrinter {
                     parts.add(a)
                 }
                 parts.add(")")
-                push(stack, *parts.toTypedArray())
+                pushAll(stack, parts)
             }
         }
     }
 
     /** Pushes [parts] so they pop in the given order. */
-    private fun push(stack: ArrayList<Any>, vararg parts: Any) {
+    private fun push(stack: ArrayList<Any>, vararg parts: Any) = pushAll(stack, parts.asList())
+
+    private fun pushAll(stack: ArrayList<Any>, parts: List<Any>) {
         for (i in parts.indices.reversed()) {
             when (val p = parts[i]) {
                 is Operand -> {

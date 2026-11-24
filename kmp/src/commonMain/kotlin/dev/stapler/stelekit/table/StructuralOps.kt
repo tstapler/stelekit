@@ -167,9 +167,12 @@ internal class StructuralOps(private val reference: FormulaReferenceTransform) {
         return applied(rewrite(next, edit) { _, r -> EditSummary.ColsDeleted(edit.count, r.broken) })
     }
 
+    private fun moveColsInRange(edit: MoveCols, w: Int): Boolean =
+        edit.count >= 1 && edit.from >= 1 && edit.from + edit.count - 1 <= w && edit.before in 1..w + 1
+
     fun moveCols(doc: TableDoc, edit: MoveCols): TableEditOutcome {
         val w = doc.columnCount
-        if (edit.count < 1 || edit.from < 1 || edit.before < 1 || edit.from + edit.count - 1 > w || edit.before > w + 1) {
+        if (!moveColsInRange(edit, w)) {
             return refused(RefusalReason.OutOfRange)
         }
         if (edit.before in edit.from..edit.from + edit.count) return applied(doc, EditSummary.NoChange)

@@ -117,7 +117,7 @@ class DependencyGraph {
     /** Appends [nodes] to [order] in dependency order and returns those that could not be ordered. */
     private fun drain(nodes: Set<CellAddress>, order: MutableList<CellAddress>): Set<CellAddress> {
         val indegree = HashMap<CellAddress, Int>(nodes.size)
-        for (n in nodes) indegree.putIfAbsent(n, 0)
+        for (n in nodes) if (n !in indegree) indegree[n] = 0
         for (u in nodes) for (v in dependentsOf(u)) if (v in nodes) indegree[v] = indegree.getValue(v) + 1
         val ready = ArrayList<CellAddress>()
         for ((n, d) in indegree) if (d == 0) ready.add(n)
