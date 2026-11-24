@@ -12,6 +12,7 @@ import dev.stapler.stelekit.sketch.v2.codec.CanonicalJsonError
 import dev.stapler.stelekit.sketch.v2.commands.ZKeys
 import dev.stapler.stelekit.sketch.v2.export.SvgImageSource
 import dev.stapler.stelekit.sketch.v2.image.ReferencedAssets
+import dev.stapler.stelekit.sketch.v2.scene.WallScene
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.ImageElement
@@ -53,10 +54,11 @@ class ExcalidrawExporter(private val limits: SceneLimits = SceneLimits.Default) 
     private val writer = ExcalidrawElementWriter(limits)
 
     fun export(
-        scene: SketchSceneV2,
+        source: SketchSceneV2,
         images: SvgImageSource = SvgImageSource.None,
         options: ExcalidrawExportOptions = ExcalidrawExportOptions(),
     ): Either<CanonicalJsonError, ExportedDrawing> {
+        val scene = WallScene.lowered(source)
         val visible = visibleInPaintOrder(scene)
         val ctx = ElementContext(scene, visible.mapTo(HashSet()) { it.id }, labelsOfArrows(visible))
         val keys = ZKeys.sequence(visible.size)

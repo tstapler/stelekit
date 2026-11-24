@@ -6,6 +6,7 @@
 
 package dev.stapler.stelekit.cli
 
+import dev.stapler.stelekit.sketch.v2.annotation.RoomArea
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.index.Bounds
 import dev.stapler.stelekit.sketch.v2.index.ElementBounds
@@ -22,11 +23,16 @@ import dev.stapler.stelekit.sketch.v2.scene.FrameElement
 import dev.stapler.stelekit.sketch.v2.scene.FreedrawElement
 import dev.stapler.stelekit.sketch.v2.scene.ImageElement
 import dev.stapler.stelekit.sketch.v2.scene.LineElement
+import dev.stapler.stelekit.sketch.v2.scene.OpeningElement
+import dev.stapler.stelekit.sketch.v2.scene.OpeningKind
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
+import dev.stapler.stelekit.sketch.v2.scene.WallGeometry
 import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
 import dev.stapler.stelekit.sketch.v2.scene.TextElement
+import dev.stapler.stelekit.units.LengthFormat
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -108,6 +114,8 @@ internal object SketchDescribe {
         fun len(v: Double): String = if (diagram) SketchLengths.tidy(v).toString().removeSuffix(".0") else SketchLengths.feetInches(v)
 
         fun pt(x: Double, y: Double) = "(${len(x)}, ${len(y)})"
+
+        fun area(v: Double): String = if (diagram) "${SketchLengths.tidy(v).toString().removeSuffix(".0")} square units" else RoomArea.text(v, LengthFormat.FEET_INCHES)
     }
 
     private fun union(a: Bounds, b: Bounds) = Bounds(min(a.minX, b.minX), min(a.minY, b.minY), max(a.maxX, b.maxX), max(a.maxY, b.maxY))
@@ -139,6 +147,8 @@ internal object SketchDescribe {
             is PointElement -> "${nameOf(e)}: point at ${f.pt(e.x.value, e.y.value)}"
             is ArcElement -> "${nameOf(e)}: arc radius ${f.len(e.radius.value)} centred ${f.pt(e.cx.value, e.cy.value)}"
             is FreedrawElement -> "${nameOf(e)}: freehand stroke of ${e.points.size} points"
+            is WallElement -> "${nameOf(e)}: wall${if (e.closed) " (closed room)" else ""} through ${pointsText(e.points, f)}, length ${f.len(WallGeometry.length(e))}, thickness ${f.len(e.thickness.value)}, ${e.justification.name.lowercase()} justified${WallGeometry.interiorArea(e)?.let { ", clear area ${f.area(it)}" } ?: ""}, ${styleBits(e, f)}"
+            is OpeningElement -> "${nameOf(e)}: ${e.kind.name.lowercase()} ${f.len(e.width.value)} wide on ${e.hostId.value} segment ${e.segment + 1}, ${f.len(e.offset.value)} from the segment start${if (e.kind == OpeningKind.Door) ", swings ${if (e.flipSide) "right" else "left"} of the wall direction, hinge at the ${if (e.flipHinge) "far" else "near"} jamb" else ""}"
             is ImageElement -> "${nameOf(e)}: image ${f.len(e.width.value)} x ${f.len(e.height.value)} at ${f.pt(e.x.value, e.y.value)}"
         }
     }

@@ -39,7 +39,12 @@ data class DimensionAnnotation(
     val textRect: AnnotationRect,
     val tapRect: AnnotationRect,
     val alpha: Double,
-)
+    /** Which of the shape's annotations this is (a wall's segment, a room's area); empty for the usual one per kind. */
+    val tag: String = "",
+) {
+    /** True for a closed room's floor-area label, which has no dimension line. */
+    val isArea: Boolean get() = tag == DimensionAnnotationEngine.AREA_TAG
+}
 
 /**
  * The editor's view of the shared annotation engine ([DimensionAnnotationEngine], below the UI so SVG, PNG, previews and the CLI
@@ -89,9 +94,9 @@ object DimensionAnnotationLayout {
         ).map { it.toAnnotation() }
 
     /** "Width of Rectangle 1: 3 feet 7 inches" for a screen reader. */
-    fun description(a: DimensionAnnotation): String = S.Annotation.description(DimensionPillModel.label(a.kind), a.elementName, SpokenLength.ofMetricText(a.text) ?: SpokenLength.of(a.sixteenths))
+    fun description(a: DimensionAnnotation): String = if (a.isArea) S.Annotation.areaDescription(a.elementName, a.text) else S.Annotation.description(DimensionPillModel.label(a.kind), a.elementName, SpokenLength.ofMetricText(a.text) ?: SpokenLength.of(a.sixteenths))
 
-    private fun PlacedDimension.toAnnotation() = DimensionAnnotation(elementId, elementName, kind.pill(), sixteenths, text, line, extensions, textRect, tapRect, alpha)
+    private fun PlacedDimension.toAnnotation() = DimensionAnnotation(elementId, elementName, kind.pill(), sixteenths, text, line, extensions, textRect, tapRect, alpha, tag)
 }
 
 /** The pill kind and the engine's measure kind are the same five names. */

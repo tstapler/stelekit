@@ -50,6 +50,7 @@ kt_android_library(
             "**/MeasurementUnitsHostTest.kt",
             "**/SnapGuidesHostTest.kt",
             "**/PointSnapHostTest.kt",
+            "**/WallPlanHostTest.kt",
             "**/ChromeTargetSizeTest.kt",
             "**/StripIconsTest.kt",
             "**/SketchEmbedUiTest.kt",

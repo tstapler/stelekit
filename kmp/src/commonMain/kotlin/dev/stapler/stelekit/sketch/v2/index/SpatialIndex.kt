@@ -4,6 +4,8 @@
 
 package dev.stapler.stelekit.sketch.v2.index
 
+import dev.stapler.stelekit.sketch.v2.scene.WallGeometry
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.BoxElement
@@ -57,6 +59,7 @@ object ElementBounds {
         is FreedrawElement -> Bounds.ofPoints(e.points)
         is PointElement -> Bounds(e.x.value, e.y.value, e.x.value, e.y.value)
         is ArcElement -> Bounds.around(e.cx.value, e.cy.value, e.radius.value)
+        is WallElement -> WallGeometry.bounds(e).let { Bounds(it[0], it[1], it[2], it[3]) }
     }
 
     private fun square(v: Double) = v * v

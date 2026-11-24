@@ -12,6 +12,7 @@ import dev.stapler.stelekit.sketch.v2.scene.DiamondElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.EllipseElement
 import dev.stapler.stelekit.sketch.v2.scene.LineElement
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
 import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
@@ -187,6 +188,7 @@ object PointSnap {
         when (e) {
             is LineElement -> polyline(s, e.points, e.polygon)
             is ArrowElement -> polyline(s, e.points, false)
+            is WallElement -> polyline(s, e.points, e.closed)
             is PointElement -> s.vertices += doubleArrayOf(e.x.value, e.y.value)
             is RectElement -> polygon(s, boxCorners(e.x.value, e.y.value, e.width.value, e.height.value, e.angle))
             is DiamondElement -> polygon(s, diamondCorners(e.x.value, e.y.value, e.width.value, e.height.value, e.angle))

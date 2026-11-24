@@ -7,6 +7,8 @@ package dev.stapler.stelekit.sketch.v2.commands
 import arrow.core.Either
 import arrow.core.raise.either
 import dev.stapler.stelekit.sketch.v2.index.ElementBounds
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
+import dev.stapler.stelekit.sketch.v2.scene.OpeningElement
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.BoxElement
@@ -75,6 +77,8 @@ data class FlipElements(val ids: List<ElementId>, val horizontal: Boolean) : Com
                 is ArrowElement -> e.copy(points = e.points.map(::point))
                 is FreedrawElement -> e.copy(points = e.points.map(::point))
                 is ArcElement -> flippedArc(e, horizontal, ::mirror, ::unit)
+                is WallElement -> e.copy(points = e.points.map(::point))
+                is OpeningElement -> e
             }
             if (flipped != e) out = out.replace(flipped.touched()).bind()
         }

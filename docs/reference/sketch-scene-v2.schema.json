@@ -153,7 +153,8 @@
       "oneOf": [
         { "$ref": "#/$defs/rect" }, { "$ref": "#/$defs/diamond" }, { "$ref": "#/$defs/frame" }, { "$ref": "#/$defs/ellipse" },
         { "$ref": "#/$defs/line" }, { "$ref": "#/$defs/arrow" }, { "$ref": "#/$defs/freedraw" }, { "$ref": "#/$defs/text" },
-        { "$ref": "#/$defs/image" }, { "$ref": "#/$defs/point" }, { "$ref": "#/$defs/arc" }
+        { "$ref": "#/$defs/image" }, { "$ref": "#/$defs/point" }, { "$ref": "#/$defs/arc" },
+        { "$ref": "#/$defs/wall" }, { "$ref": "#/$defs/opening" }
       ]
     },
     "rect": {
@@ -261,6 +262,38 @@
       "allOf": [{ "$ref": "#/$defs/base" }],
       "required": ["x", "y"],
       "properties": { "type": { "const": "point" }, "x": { "$ref": "#/$defs/coord" }, "y": { "$ref": "#/$defs/coord" } },
+      "unevaluatedProperties": false
+    },
+    "wall": {
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "required": ["pts", "t"],
+      "properties": {
+        "type": { "const": "wall" },
+        "pts": { "$ref": "#/$defs/points", "minItems": 2, "description": "The drawn centreline; no two consecutive points may coincide (a closed wall also joins the last point back to the first). A closed wall needs at least 3 points." },
+        "t": { "$ref": "#/$defs/coord", "exclusiveMinimum": 0, "description": "Thickness in scene units (1 unit = 1/16 inch); 72 is 4 1/2 inches." },
+        "just": { "enum": ["Inside", "Centre", "Outside"], "default": "Centre", "description": "Where the body sits relative to the drawn line. Inside: the line is the room-side face, the body grows outward. Outside: the line is the outer face. Inside is the polygon interior of a closed wall, or the left of travel of an open one (y grows downward)." },
+        "closed": { "type": "boolean", "default": false, "description": "true is a room: the last point joins back to the first." }
+      },
+      "unevaluatedProperties": false,
+      "description": "A wall drawn as a double line with mitred joints (a joint sharper than a 3:1 mitre is bevelled). The wall's style: `stroke`/`sw` draw the faces, `bg` fills the body. Openings that name this wall as their host cut the body."
+    },
+    "opening": {
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "required": ["host", "off", "w"],
+      "properties": {
+        "type": { "const": "opening" },
+        "host": { "type": "string", "description": "Id of the wall element this opening sits on. An opening whose host is missing or is not a wall is kept but draws nothing; `validate` reports it." },
+        "seg": { "type": "integer", "minimum": 0, "default": 0, "description": "Index of the wall segment (the segment from point `seg` to the next point)." },
+        "off": { "type": "number", "minimum": 0, "description": "Distance in scene units from that segment's start point to the opening's start, along the centreline." },
+        "w": { "type": "number", "exclusiveMinimum": 0, "description": "Width along the wall. Moved and narrowed on load so the opening lies inside the free span of the segment (between the joint mitres)." },
+        "kind": { "enum": ["Door", "Window", "Opening"], "default": "Door", "description": "A door cuts the body and draws a leaf with a swing arc, a window leaves the body and draws a frame with a pane line, an opening only cuts the body." },
+        "flipSide": { "type": "boolean", "default": false, "description": "false swings a door to the left of the wall's direction of travel, true to the right." },
+        "flipHinge": { "type": "boolean", "default": false, "description": "false hinges at the segment-start jamb, true at the far jamb." },
+        "x": { "type": "number", "description": "Derived footprint (top-left of the unrotated box), rewritten from the host on every load and edit; omit when writing by hand." },
+        "y": { "type": "number", "description": "Derived footprint, see x." },
+        "h": { "type": "number", "description": "Derived footprint height: the wall thickness." },
+        "angle": { "type": "number", "default": 0, "description": "Derived footprint angle: the segment direction in radians." }
+      },
       "unevaluatedProperties": false
     },
     "arc": {

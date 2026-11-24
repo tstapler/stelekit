@@ -15,6 +15,8 @@ import dev.stapler.stelekit.sketch.v2.scene.FrameElement
 import dev.stapler.stelekit.sketch.v2.scene.LineElement
 import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
+import dev.stapler.stelekit.sketch.v2.scene.WallGeometry
 import dev.stapler.stelekit.sketch.v2.view.SceneBounds
 import dev.stapler.stelekit.units.Inches
 import dev.stapler.stelekit.units.LengthFormat
@@ -155,6 +157,8 @@ data class PlacedDimension(
     val textRect: AnnotationRect,
     val tapRect: AnnotationRect,
     val alpha: Double,
+    /** Which of an element's several annotations this is: a wall's segment (`s0`, `s1`, ...) or its room area ([DimensionAnnotationEngine.AREA_TAG]); empty for a shape's only one of its kind. */
+    val tag: String = "",
 )
 
 /**
@@ -188,6 +192,9 @@ object DimensionAnnotationEngine {
     const val MIN_ALPHA = 0.2
 
     const val TEXT_GAP_DP = 2.0
+
+    /** The [PlacedDimension.tag] of a closed room's floor-area label. */
+    const val AREA_TAG = "area"
     const val EXT_GAP_DP = 3.0
     const val EXT_OVERSHOOT_DP = 4.0
     const val ROW_GAP_DP = 3.0
@@ -248,10 +255,12 @@ object DimensionAnnotationEngine {
                 val at = AnnotationPlacer.place(span, AnnotationPlacer.Fit(canvas, reserved, textOnlyReserved, placed, bodyBoxes, element.id, selfBox, tw, th, extent)) ?: continue
                 placed += at
                 annotated = true
-                out += PlacedDimension(element.id, name, span.label, span.sixteenths, text, at.line, at.extensions, at.text, at.text, alpha)
+                out += PlacedDimension(element.id, name, span.label, span.sixteenths, text, at.line, at.extensions, at.text, at.text, alpha, span.tag)
             }
             if (annotated) shapes++
         }
+        val taken = placed.map { it.text } + reserved + textOnlyReserved
+        out += RoomAreaLabels.layout(candidates, canvas, fontScale, format, taken)
         return withTapRects(out, reserved, canvas, tapMinDp)
     }
 
@@ -270,6 +279,7 @@ object DimensionAnnotationEngine {
 
     private fun spansOf(element: SceneElement, canvas: AnnotationCanvas): List<AnnotationSpan> {
         if (element is LineElement) return lineSpan(element, canvas)?.let { listOf(it) }.orEmpty()
+        if (element is WallElement) return wallSpans(element, canvas)
         val s = ElementFrame.of(element) ?: return emptyList()
         val specs = Measurements.of(element).filter { it.kind != MeasureKind.Radius }
         if (specs.isEmpty()) return emptyList()
@@ -290,6 +300,30 @@ object DimensionAnnotationEngine {
                 val q = AnnotationPoint(cx + u.x * hw, cy + u.y * hw)
                 AnnotationSpan(spec.kind, spec.sixteenths, p, q, preferred(listOf(neg(v), v), wantRight = false), hh, if (rect) hh else 0.0, spec.exact)
             }
+        }
+    }
+
+    /**
+     * One length per segment of [wall], measured along its drawn line and placed on the outer side (the side away from the room) so the
+     * value does not sit inside the room; its extension lines start beyond the wall body.
+     */
+    private fun wallSpans(wall: WallElement, canvas: AnnotationCanvas): List<AnnotationSpan> {
+        val offsets = WallGeometry.offsets(wall)
+        val interiorLeft = WallGeometry.interiorIsLeft(wall.points, wall.closed)
+        val reach = max(offsets.left, offsets.right) * canvas.dpPerUnit
+        return WallGeometry.segments(wall).mapNotNull { seg ->
+            val a = canvas.toScreenDp(seg.a.x, seg.a.y)
+            val b = canvas.toScreenDp(seg.b.x, seg.b.y)
+            val dx = b.first - a.first
+            val dy = b.second - a.second
+            val len = hypot(dx, dy).takeIf { it > 0.0 } ?: return@mapNotNull null
+            val left = AnnotationPoint(dy / len, -dx / len)
+            val outer = if (interiorLeft) neg(left) else left
+            val sixteenths = max(1L, kotlin.math.round(seg.length).toLong())
+            AnnotationSpan(
+                MeasureKind.Length, sixteenths, AnnotationPoint(a.first, a.second), AnnotationPoint(b.first, b.second), listOf(outer, neg(outer)),
+                reach, reach, seg.length, "s${seg.index}",
+            )
         }
     }
 
@@ -384,7 +418,7 @@ internal class AnnotationBody(val id: ElementId, val box: AnnotationRect, val se
 /** A placed annotation before its target is sized: the text rectangle, the dimension line and its extension lines. */
 internal class AnnotationPlaced(val text: AnnotationRect, val line: AnnotationSegment, val extensions: List<AnnotationSegment>)
 
-internal class AnnotationSpan(val label: MeasureKind, val sixteenths: Long, val p: AnnotationPoint, val q: AnnotationPoint, val normals: List<AnnotationPoint>, val reach: Double, val extStart: Double, val exact: Double = sixteenths.toDouble()) {
+internal class AnnotationSpan(val label: MeasureKind, val sixteenths: Long, val p: AnnotationPoint, val q: AnnotationPoint, val normals: List<AnnotationPoint>, val reach: Double, val extStart: Double, val exact: Double = sixteenths.toDouble(), val tag: String = "") {
     fun lengthDp(): Double = hypot(q.x - p.x, q.y - p.y)
 
     /** How much of the line the text covers: its width along a horizontal run, its height along a vertical one. */

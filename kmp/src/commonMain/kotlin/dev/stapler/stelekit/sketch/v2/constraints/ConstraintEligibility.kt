@@ -5,6 +5,8 @@
 package dev.stapler.stelekit.sketch.v2.constraints
 
 import dev.stapler.stelekit.sketch.constraints.SolverTier
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
+import dev.stapler.stelekit.sketch.v2.scene.OpeningElement
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.DiamondElement
@@ -21,7 +23,7 @@ import dev.stapler.stelekit.sketch.v2.scene.TextElement
 /** The element kinds the constraint rules distinguish; an ellipse is split into circle and unequal ellipse (OD-8). */
 enum class ElementKind {
     Line, Rect, Circle, Ellipse, Arc, Point,
-    Diamond, Arrow, Freedraw, Text, Image, Frame;
+    Diamond, Arrow, Freedraw, Text, Image, Frame, Wall, Opening;
 
     companion object {
         fun of(element: SceneElement): ElementKind = when (element) {
@@ -36,6 +38,8 @@ enum class ElementKind {
             is TextElement -> Text
             is ImageElement -> Image
             is FrameElement -> Frame
+            is WallElement -> Wall
+            is OpeningElement -> Opening
         }
     }
 }

@@ -12,6 +12,7 @@ import dev.stapler.stelekit.sketch.v2.clipboard.PasteRoute
 import dev.stapler.stelekit.sketch.v2.clipboard.SceneClipboard
 import dev.stapler.stelekit.sketch.v2.library.ElementLibrary
 import dev.stapler.stelekit.sketch.v2.library.LibraryItem
+import dev.stapler.stelekit.sketch.v2.library.StarterLibrary
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchHostStrings
@@ -82,6 +83,9 @@ class LibraryHost(
 
     val items: List<LibraryItem> get() = library.items
 
+    /** The built-in floor-plan symbols: insertable like any item, never stored, never deleted. */
+    val starterItems: List<LibraryItem> get() = StarterLibrary.library.items
+
     fun saveSelection() {
         val ids = controller.ui.selection.map(::ElementId)
         val elements = SceneClipboard.copy(controller.doc.scene, ids).elements
@@ -97,7 +101,8 @@ class LibraryHost(
     }
 
     fun insert(itemId: String) {
-        val command = library.insert(itemId, controller.ids, INSERT_OFFSET_UNITS, INSERT_OFFSET_UNITS) ?: return
+        val source = if (StarterLibrary.isStarter(itemId)) StarterLibrary.library else library
+        val command = source.insert(itemId, controller.ids, INSERT_OFFSET_UNITS, INSERT_OFFSET_UNITS) ?: return
         controller.submit(command)
         controller.notifier.toast(SketchHostStrings.Library.INSERTED_KEY, SketchHostStrings.Library.INSERTED)
     }

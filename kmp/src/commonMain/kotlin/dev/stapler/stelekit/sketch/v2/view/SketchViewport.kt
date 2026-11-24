@@ -4,6 +4,8 @@
 
 package dev.stapler.stelekit.sketch.v2.view
 
+import dev.stapler.stelekit.sketch.v2.scene.WallGeometry
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.BoxElement
@@ -47,6 +49,7 @@ data class SceneBounds(val minX: Double, val minY: Double, val maxX: Double, val
             is ArrowElement -> ofPoints(element.points)
             is FreedrawElement -> ofPoints(element.points)
             is PointElement -> SceneBounds(element.x.value, element.y.value, element.x.value, element.y.value)
+            is WallElement -> WallGeometry.bounds(element).let { SceneBounds(it[0], it[1], it[2], it[3]) }
             is ArcElement -> element.radius.value.let { r -> SceneBounds(element.cx.value - r, element.cy.value - r, element.cx.value + r, element.cy.value + r) }
         }
 

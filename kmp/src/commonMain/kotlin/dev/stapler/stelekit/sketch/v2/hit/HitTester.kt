@@ -6,6 +6,10 @@ package dev.stapler.stelekit.sketch.v2.hit
 
 import dev.stapler.stelekit.sketch.v2.index.Bounds
 import dev.stapler.stelekit.sketch.v2.index.SpatialIndex
+import dev.stapler.stelekit.sketch.v2.scene.OpeningElement
+import dev.stapler.stelekit.sketch.v2.scene.WallVec
+import dev.stapler.stelekit.sketch.v2.scene.WallGeometry
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.DiamondElement
@@ -89,6 +93,19 @@ class HitTester(private val scene: SketchSceneV2, private val index: SpatialInde
         is FreedrawElement -> polylineHit(e.points, false, false, px, py, tol)
         is PointElement -> hypot(px - e.x.value, py - e.y.value) <= tol
         is ArcElement -> arcDistance(e, px, py) <= tol
+        is WallElement -> wallHit(e, px, py, tol)
+        is OpeningElement -> boxHit(e.x.value, e.y.value, e.width.value, e.height.value, e.angle, px, py, tol, true)
+    }
+
+    /** A wall is hit anywhere on its body (both faces and between them), within the tolerance. */
+    private fun wallHit(e: WallElement, px: Double, py: Double, tol: Double): Boolean {
+        val o = WallGeometry.offsets(e)
+        val p = WallVec(px, py)
+        return WallGeometry.segments(e).any { seg ->
+            val s = (p - seg.a).dot(seg.u)
+            val across = (p - seg.a).dot(seg.n)
+            s >= -tol && s <= seg.length + tol && across <= o.left + tol && across >= -(o.right + tol)
+        }
     }
 
     private fun filled(e: SceneElement): Boolean = e.base.style.backgroundColor.let { it.isNotEmpty() && it != TRANSPARENT }

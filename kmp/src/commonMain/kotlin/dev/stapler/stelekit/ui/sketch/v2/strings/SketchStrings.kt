@@ -530,6 +530,10 @@ object SketchStrings {
 
         fun frame(name: String, members: Int) = "$name, $members $ELEMENTS_NOUN"
 
+        fun wall(name: String, length: Long, thickness: Long) = "$name, length $length, thickness $thickness"
+
+        fun opening(name: String, width: Long) = "$name, width $width"
+
         fun pointAt(name: String, x: Long, y: Long) = "$name, at $x, $y"
 
         fun arrowBetween(from: String, to: String) = "Arrow from $from to $to"

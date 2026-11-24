@@ -22,6 +22,7 @@ object SketchHostStrings {
         const val REFUSED_KEY = "LibraryRefused"
         const val INSERTED_KEY = "LibraryInserted"
         const val INSERTED = "Inserted from the library"
+        const val STARTER_TITLE = "Starter symbols (true size)"
 
         fun defaultName(number: Int): String = "Item $number"
 
@@ -30,6 +31,29 @@ object SketchHostStrings {
         fun insertName(name: String): String = "Insert $name"
 
         fun deleteName(name: String): String = "Delete $name from the library"
+    }
+
+    /** The floor-plan modes of the Line tool and the typed wall length. */
+    object Plan {
+        const val MODE_LINE = "Line"
+        const val MODE_WALL = "Wall"
+        const val MODE_DOOR = "Door"
+        const val MODE_WINDOW = "Window"
+        const val MODE_OPENING = "Opening"
+        const val DONE = "Done"
+        const val DONE_DESCRIPTION = "Finish the wall"
+        const val CLOSE_ROOM = "Close room"
+        const val CLOSE_ROOM_DESCRIPTION = "Join the last wall back to the first to close the room"
+        const val LENGTH = "Length"
+        const val LENGTH_DESCRIPTION = "Type the exact length of the next wall"
+        const val LENGTH_TITLE = "Length of the next wall"
+        const val LENGTH_LABEL = "Length"
+        const val LENGTH_SET = "Place wall"
+        const val LENGTH_CANCEL = "Cancel"
+
+        fun selected(label: String) = "$label (on)"
+
+        fun modeDescription(label: String, on: Boolean) = if (on) "$label, drawing" else "Draw with $label"
     }
 
     object Clipboard {

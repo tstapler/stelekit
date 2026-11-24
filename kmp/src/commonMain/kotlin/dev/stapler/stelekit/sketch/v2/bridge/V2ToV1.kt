@@ -18,7 +18,9 @@ import dev.stapler.stelekit.sketch.v2.scene.FreedrawElement
 import dev.stapler.stelekit.sketch.v2.scene.ImageElement
 import dev.stapler.stelekit.sketch.v2.scene.LayerId
 import dev.stapler.stelekit.sketch.v2.scene.LineElement
+import dev.stapler.stelekit.sketch.v2.scene.OpeningElement
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
 import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneUnit
@@ -71,7 +73,7 @@ object V2ToV1 {
             is RectElement -> projectRect(element, layer)
             is LineElement -> projectLine(element, layer)
             is ArrowElement, is DiamondElement, is EllipseElement, is FrameElement, is FreedrawElement,
-            is ImageElement, is TextElement, is PointElement, is ArcElement,
+            is ImageElement, is TextElement, is PointElement, is ArcElement, is WallElement, is OpeningElement,
             -> ProjectionResult.Dropped(DropReason.UnsupportedKind)
         }
     }

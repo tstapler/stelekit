@@ -101,6 +101,7 @@ import dev.stapler.stelekit.cli.ArgParserTest
 import dev.stapler.stelekit.cli.SketchAgentCliTest
 import dev.stapler.stelekit.cli.SketchUnderlayCliTest
 import dev.stapler.stelekit.ui.sketch.v2.SheetImageBitmapsTest
+import dev.stapler.stelekit.cli.SketchWallsCliTest
 import dev.stapler.stelekit.cli.SketchSpecRoundTripPropertyTest
 import dev.stapler.stelekit.cli.SyncCommandsTest
 import dev.stapler.stelekit.cli.SyncMainClaimTest
@@ -315,6 +316,7 @@ import org.junit.runners.Suite
     SketchAgentCliTest::class,
     SketchUnderlayCliTest::class,
     SheetImageBitmapsTest::class,
+    SketchWallsCliTest::class,
     SketchSpecRoundTripPropertyTest::class,
     SyncCommandsTest::class,
     SyncMainClaimTest::class,

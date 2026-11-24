@@ -5,6 +5,8 @@
 package dev.stapler.stelekit.sketch.v2.importer
 
 import dev.stapler.stelekit.sketch.v2.codec.CanonicalJson
+import dev.stapler.stelekit.sketch.v2.scene.OpeningElement
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.Arrowhead
@@ -77,6 +79,9 @@ internal class ExcalidrawElementWriter(private val limits: SceneLimits) {
         is FreedrawElement -> freedraw(d, e)
         is PointElement -> point(d, e)
         is ArcElement -> arc(d, e)
+        // WallScene.lowered replaces these before export; the fallback keeps the writer total.
+        is WallElement -> linear(d, "line", e.points, null) { put("polygon", JsonPrimitive(e.closed)) }
+        is OpeningElement -> shape(d, "rectangle", Box(e.x.value, e.y.value, e.width.value, e.height.value, e.angle), emptyList())
     }
 
     private fun shape(d: ElementDraw, type: String, box: Box, bound: List<BoundRef>): JsonObject {

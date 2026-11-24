@@ -47,6 +47,9 @@ sealed interface ReconcileReason {
 
     /** A group that only one element belongs to is no group; the id was removed from that element. */
     data class SingletonGroup(override val elementId: ElementId, val group: GroupId) : ReconcileReason
+
+    /** An opening did not fit inside the free span of its wall segment (the wall changed); it was moved or narrowed to fit. */
+    data class OpeningRefit(override val elementId: ElementId) : ReconcileReason
 }
 
 /** [scene] satisfies every invariant; [reasons] says what was repaired and [changed] which elements were touched. */
@@ -62,6 +65,8 @@ data class ReconcileResult(val scene: SketchSceneV2, val reasons: List<Reconcile
  *   exists but no longer points back is kept: Excalidraw files in the wild contain them and the next rebind drops them;
  * - a label's `containerId` must name an existing rectangle, diamond, ellipse or arrow;
  * - `frameId` must name an existing frame other than the element itself, and frames do not nest;
+ * - an opening's footprint (box fields) is re-derived from its host wall, and its offset and width are fitted inside the
+ *   wall segment's free span, so openings follow their wall; an opening with a missing host is left alone (it draws nothing);
  * - `groupIds` has no duplicates and no group of one.
  * A changed element's `version` is bumped once. The pass is idempotent: running it on its own output reports nothing.
  */
@@ -106,8 +111,20 @@ private fun repairOwnReferences(e: SceneElement, byId: Map<ElementId, SceneEleme
             endBinding = out.endBinding?.takeIf { validTarget(out, BindingEnd.End, it, byId, reasons) },
         )
         is TextElement -> out.copy(containerId = out.containerId?.takeIf { validContainer(out, it, byId, reasons) })
+        is OpeningElement -> refitOpening(out, byId, reasons)
         else -> out
     }
+}
+
+/** The opening fitted to its host wall with its derived footprint rewritten; unchanged when the host is missing, not a wall, or has no free span there. */
+private fun refitOpening(o: OpeningElement, byId: Map<ElementId, SceneElement>, reasons: MutableList<ReconcileReason>): OpeningElement {
+    val wall = byId[o.hostId] as? WallElement ?: return o
+    val (offset, width) = WallGeometry.fit(wall, o.segment, o.offset.value, o.width.value) ?: return o
+    val foot = WallGeometry.footprint(wall, o.copy(offset = SceneUnit.of(offset).getOrNull() ?: o.offset, width = SceneUnit.of(width).getOrNull() ?: o.width)) ?: return o
+    val units = listOf(offset, width, foot.centre.x - foot.width / 2.0, foot.centre.y - foot.thickness / 2.0, foot.thickness).map { SceneUnit.of(it).getOrNull() ?: return o }
+    val moved = units[0] != o.offset || units[1] != o.width
+    if (moved) reasons += ReconcileReason.OpeningRefit(o.id)
+    return o.copy(offset = units[0], width = units[1], x = units[2], y = units[3], height = units[4], angle = foot.angle)
 }
 
 private fun repairFrame(e: SceneElement, frame: ElementId, byId: Map<ElementId, SceneElement>, reasons: MutableList<ReconcileReason>): ElementId? {
