@@ -26,6 +26,7 @@ import dev.stapler.stelekit.sketch.v2.render.RenderStyle
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.FrameElement
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
+import dev.stapler.stelekit.sketch.v2.scene.withoutUnderlay
 import dev.stapler.stelekit.units.LengthFormat
 import kotlinx.coroutines.CancellationException
 
@@ -52,6 +53,8 @@ data class ExportRequest(
     val style: ExportStyle = ExportStyle.AsDrawn,
     /** Whether dimension annotations are drawn: the sheet's own setting unless this export says otherwise. */
     val dimensions: DimensionsChoice = DimensionsChoice.Sheet,
+    /** Whether the photo underlay is drawn. Off by default: a photo under a plan is a tracing aid, not part of the drawing. */
+    val includeUnderlay: Boolean = false,
 )
 
 /** The sheet as the dialog sees it. [csv] is null when the sheet has no dimensions; [sheetDimensions] is the sheet's own "dimensions shown" flag and [lengthFormat] the notation they are written in. */
@@ -159,7 +162,7 @@ class SketchExportRunner(
     private class Subject(val scene: SketchSceneV2, val bounds: Bounds?)
 
     private fun subject(source: ExportSource, request: ExportRequest): Subject? {
-        val scene = source.scene
+        val scene = if (request.includeUnderlay) source.scene else source.scene.withoutUnderlay()
         return when (request.scope) {
             ExportScope.Whole -> Subject(scene, null).takeIf { scene.size > 0 }
             ExportScope.Selection -> keeping(scene, withMembers(scene, source.selection))?.let { Subject(it, null) }

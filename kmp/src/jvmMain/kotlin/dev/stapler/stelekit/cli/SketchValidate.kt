@@ -47,7 +47,7 @@ internal class ValidationReport(val kind: String, val errors: List<String>, val 
 internal object SketchValidate {
     private val json = Json
 
-    fun validate(bytes: ByteArray): ValidationReport {
+    fun validate(bytes: ByteArray, baseDir: java.io.File? = null): ValidationReport {
         val text = bytes.decodeToString()
         val root = try {
             json.parseToJsonElement(text)
@@ -57,7 +57,7 @@ internal object SketchValidate {
         val obj = root as? JsonObject ?: return ValidationReport("unknown", listOf("the top level must be a JSON object, got ${SpecReader.describeJson(root)}"), emptyList(), emptyList())
         return when {
             obj["schema"] != null -> sheet(bytes, text, obj)
-            obj["spec"] != null -> spec(obj)
+            obj["spec"] != null -> spec(obj, baseDir)
             (obj["type"] as? JsonPrimitive)?.content == "excalidraw" -> excalidraw(bytes)
             else -> ValidationReport(
                 "unknown",
@@ -77,8 +77,8 @@ internal object SketchValidate {
 
     private fun columnOf(text: String, offset: Int) = 1 + offset.coerceIn(0, text.length) - (text.lastIndexOf('\n', offset.coerceIn(0, text.length) - 1) + 1)
 
-    private fun spec(obj: JsonObject): ValidationReport {
-        val outcome = SketchSpecBuilder(obj).build()
+    private fun spec(obj: JsonObject, baseDir: java.io.File?): ValidationReport {
+        val outcome = SketchSpecBuilder(obj, baseDir).build()
         val info = ArrayList(outcome.issues.notes)
         outcome.doc?.let { info += "builds to ${it.scene.size} elements; run `build` to write the sheet" }
         return ValidationReport("authoring spec", outcome.issues.errors, outcome.issues.warnings, info)

@@ -30,7 +30,11 @@ import dev.stapler.stelekit.sketch.v2.render.DrawListBuilder
 import dev.stapler.stelekit.sketch.v2.render.DrawOp
 import dev.stapler.stelekit.sketch.v2.render.RenderStyle
 import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
+import dev.stapler.stelekit.sketch.v2.export.SvgImage
+import dev.stapler.stelekit.sketch.v2.export.SvgImageSource
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
+import dev.stapler.stelekit.sketch.v2.scene.withoutUnderlay
+import dev.stapler.stelekit.ui.sketch.v2.SheetImageBitmaps
 import dev.stapler.stelekit.sketch.v2.text.FontStatus
 import dev.stapler.stelekit.sketch.v2.text.TextMetricsProvider
 import dev.stapler.stelekit.sketch.v2.text.TextStyle
@@ -49,7 +53,12 @@ internal data class RenderRequest(
     val width: Int? = null,
     val style: RenderStyle = RenderStyle.Clean,
     val background: String? = "#ffffff",
+    /** The photo to draw as the sheet's underlay; null leaves the underlay out, which is what an export does by default. */
+    val underlay: UnderlayImage? = null,
 )
+
+/** A photo file given to `render --underlay`: its sha256 (which must equal the underlay's `fileId`), type and bytes. */
+internal class UnderlayImage(val fileId: String, val mime: String, val bytes: ByteArray)
 
 /** Headless rendering of a v2 sheet through the app's own draw list, SVG writer and Compose painter. */
 internal object SketchRender {
@@ -78,10 +87,14 @@ internal object SketchRender {
     private fun sheetShows(doc: SketchDocumentV2): Boolean =
         SheetDimensionsExtras.read(doc.extras) ?: (doc.dimensionsOn && doc.extras["agent"] == null)
 
+    /** The sheet as drawn: without the photo underlay unless [RenderRequest.underlay] supplies it. */
+    private fun sceneOf(doc: SketchDocumentV2, request: RenderRequest): SketchSceneV2 = if (request.underlay != null) doc.scene else doc.scene.withoutUnderlay()
+
     fun svg(doc: SketchDocumentV2, request: RenderRequest): String {
-        val scene = doc.scene
+        val scene = sceneOf(doc, request)
         val pad = padding(scene)
-        val raw = SvgExporter.export(scene, DrawListBuilder(metrics), request.style, options = SvgExportOptions(request.background, pad, dimensions = dimensionOptions(doc, request)))
+        val photo = request.underlay?.let { u -> SvgImageSource { id -> if (id == u.fileId) SvgImage(u.mime, u.bytes) else null } } ?: SvgImageSource.None
+        val raw = SvgExporter.export(scene, DrawListBuilder(metrics), request.style, photo, SvgExportOptions(request.background, pad, dimensions = dimensionOptions(doc, request)))
         return request.width?.let { resize(raw, it) } ?: raw
     }
 
@@ -96,7 +109,7 @@ internal object SketchRender {
     }
 
     fun png(doc: SketchDocumentV2, request: RenderRequest): ByteArray? {
-        val scene = doc.scene
+        val scene = sceneOf(doc, request)
         val dimensions = dimensionOptions(doc, request)?.let { DimensionExport.layout(scene, it) }.orEmpty()
         val shapes = contentBounds(scene) ?: return null
         val content = DimensionExport.bounds(dimensions)?.let { union(shapes, it) } ?: shapes
@@ -112,7 +125,8 @@ internal object SketchRender {
         val ops: List<DrawOp> = DrawListBuilder(metrics).build(scene, request.style) + DimensionExport.drawOps(dimensions, ExportInk.forBackground(request.background))
         val bitmap = ImageBitmap(widthPx, heightPx, ImageBitmapConfig.Argb8888)
         val viewport = SketchViewport.of(zoom = zoom, panX = -(content.minX - pad) * zoom, panY = -(content.minY - pad) * zoom)
-        val resources = PainterResources(textMeasurer = TextMeasurer(createFontFamilyResolver(), Density(1f), LayoutDirection.Ltr))
+        val photo = request.underlay?.let { u -> SheetImageBitmaps.reduceAndDecode(u.bytes)?.let { u.fileId to it } }
+        val resources = PainterResources(textMeasurer = TextMeasurer(createFontFamilyResolver(), Density(1f), LayoutDirection.Ltr), image = { id -> photo?.takeIf { it.first == id }?.second })
         // Text is laid out against the draw scope's size but positioned in scene units, so the scope must cover the scene's far corner or text beyond it vanishes.
         val reach = Size(max(widthPx.toDouble(), content.maxX + unitsWide).toFloat(), max(heightPx.toDouble(), content.maxY + unitsHigh).toFloat())
         CanvasDrawScope().draw(Density(1f), LayoutDirection.Ltr, Canvas(bitmap), reach) {

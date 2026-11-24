@@ -83,6 +83,12 @@ class SketchPointerAdapter(
     /** The edge-pan strips' hit rectangles; with Finger drawing ON a one-finger drag that starts inside one pans (UX-121). */
     var edgeStrips: List<ScreenRect> = emptyList()
 
+    /** True while a tool that takes every finger (the underlay adjust) is active: touches then reach it, a second finger included, instead of panning. */
+    var multiPointerTool: Boolean = false
+
+    /** True while any underlay tool is active: a touch goes to it even with Finger drawing off, so the loupe works. */
+    var underlayTool: Boolean = false
+
     var listener: PointerGestureListener? = null
 
     /** Told of the kind of every pointer that touches the canvas, so the host learns when a touch or pen first shows up (UX-46). */
@@ -93,7 +99,7 @@ class SketchPointerAdapter(
 
     private sealed interface Mode {
         data object Idle : Mode
-        data class Tool(val id: Int, val kind: PointerKind, val override: ToolId?, val announced: Boolean = false) : Mode
+        data class Tool(val id: Int, val kind: PointerKind, val override: ToolId?, val announced: Boolean = false, val others: Set<Int> = emptySet()) : Mode
         data class Pan(
             val id: Int,
             val start: ScreenPx,
@@ -159,6 +165,10 @@ class SketchPointerAdapter(
             Mode.Idle -> startGesture(p)
             is Mode.Tool -> when {
                 p.kind != PointerKind.Touch || m.kind != PointerKind.Touch -> emptyList()
+                multiPointerTool -> {
+                    mode = m.copy(others = m.others + p.id)
+                    listOf(toolInput(p, InputType.Down, m.override))
+                }
                 else -> {
                     // A second finger during a one-finger draw: the tool cancels on seeing it, then the pair navigates.
                     val cancel = toolInput(p, InputType.Down, m.override)
@@ -191,6 +201,10 @@ class SketchPointerAdapter(
                 mode = Mode.Pan(p.id, p.position, kind = p.kind, fromStrip = true)
                 emptyList()
             }
+            p.kind == PointerKind.Touch && underlayTool -> {
+                mode = Mode.Tool(p.id, p.kind, null)
+                listOf(toolInput(p, InputType.Down, null))
+            }
             (p.kind == PointerKind.Touch && (!fingerDrawing || (selectTool && isEmptyCanvas(p.position)))) || handTool -> {
                 mode = Mode.Pan(p.id, p.position, kind = p.kind)
                 emptyList()
@@ -206,7 +220,7 @@ class SketchPointerAdapter(
         val previous = down[p.id] ?: return emptyList()
         down[p.id] = p.position
         return when (val m = mode) {
-            is Mode.Tool -> if (p.id == m.id) {
+            is Mode.Tool -> if (p.id == m.id || p.id in m.others) {
                 if (!m.announced && announceFingerDrag(m.kind)) mode = m.copy(announced = true)
                 listOf(toolInput(p, InputType.Move, m.override))
             } else {
@@ -258,7 +272,15 @@ class SketchPointerAdapter(
     private fun onEnd(p: RawPointer, type: InputType): List<PointerAction> {
         down.remove(p.id) ?: return emptyList()
         val out = when (val m = mode) {
-            is Mode.Tool -> if (p.id == m.id) {
+            is Mode.Tool -> if (p.id in m.others) {
+                mode = m.copy(others = m.others - p.id)
+                listOf(toolInput(p, type, m.override))
+            } else if (p.id == m.id && m.others.isNotEmpty()) {
+                // The first finger lifted while a second still holds the photo: the second carries on as the gesture's pointer.
+                val heir = m.others.first()
+                mode = m.copy(id = heir, others = m.others - heir)
+                listOf(toolInput(p, type, m.override))
+            } else if (p.id == m.id) {
                 mode = Mode.Idle
                 if (m.kind == PointerKind.Stylus && type == InputType.Up) listener?.onStylusStrokeEnd()
                 listOf(toolInput(p, type, m.override))

@@ -49,6 +49,7 @@ import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.LineElement
+import dev.stapler.stelekit.sketch.v2.scene.UnderlayIds
 import dev.stapler.stelekit.ui.sketch.v2.guide.GuideEffects
 import dev.stapler.stelekit.ui.sketch.v2.guide.GuideRunner
 import dev.stapler.stelekit.ui.sketch.v2.guide.TourTriggers
@@ -203,7 +204,7 @@ fun SketchEditorV2Host(
         onImport = { extras.importer.chooseFile() },
         importDisabledReason = extras.importDisabledReason,
         onExport = if (extras.exportAvailable) extras.exporter::open else null,
-        extraChips = solveChips(controller, solving) + extras.access.chips(),
+        extraChips = solveChips(controller, solving) + extras.access.chips() + listOfNotNull(extras.underlay.chip()),
         priorityChips = textSizeChips(controller) + technicalChips(controller, extras, extras.constraintsAvailable, technical != null),
         edgeStripAtEnd = extras.input.stripAtEnd,
         durabilityCue = cue,
@@ -233,6 +234,7 @@ fun SketchEditorV2Host(
                 SketchCanvasContent(controller, environment, pointer, extras, largeScene.degradation)
                 ExtrasCanvasOverlays(controller, extras, pointer, glyphsHidden = largeScene.degradation.has(DegradationStep.ConstraintGlyphsHidden))
                 PlatformInputOverlays(extras.input)
+                UnderlayBar(extras.underlay)
                 CanvasAccessLayer(controller, canvasAccess)
                 CrosshairLayer(extras.access, state.viewport, canvasAccess.regions)
                 largeScene.hardCap?.let { HardCapNotice(it, largeScene::answer, Modifier.align(Alignment.TopCenter)) }
@@ -333,12 +335,14 @@ private fun BoxScope.SketchCanvasContent(
     val state = controller.ui
     val fontStatus = environment.metrics.fontStatus
     val builder = remember(environment) { DrawListBuilder(environment.metrics) }
-    val painter = remember(environment) { ScenePainter(resources = environment.resources) }
+    val painter = remember(extras) { ScenePainter(resources = extras.painterResources) }
     val layer = remember { StaticLayerHandle() }
     val style = degradation.effectiveStyle(RenderStyle.Sketchy)
     val ops = remember(controller.revision, fontStatus, style) { builder.build(controller.doc.scene, style) }
-    SideEffect { layer.set(ops, controller.spatialIndex) }
     val shown = controller.tools.preview ?: extras.access.preview
+    // While the photo is being moved its preview shows the new place, so the committed copy must not also show the old one.
+    val underlayMoving = shown?.elements?.any { it.id == UnderlayIds.ELEMENT } == true
+    SideEffect { layer.set(if (underlayMoving) splitForGesture(ops, setOf(UnderlayIds.ELEMENT)).static else ops, controller.spatialIndex) }
     val liveOps = remember(shown, fontStatus, style) {
         shown?.let { preview -> LivePreviewOps.build(environment.metrics, preview.elements, style) }.orEmpty()
     }
@@ -356,6 +360,7 @@ private fun BoxScope.SketchCanvasContent(
         SketchCanvasV2(layer, liveOps, viewport, painter)
         ConstraintPickerOverlay(controller, pointer)
     }
+    UnderlayReferences(controller, extras.underlay)
     GridOverlay(extras.visibleGrid, state.viewport)
     NameTagsOverlay(controller)
     // After the name tags, so a tiny shape's handles are drawn over its label and never hidden by it (the overlay takes no pointer input).
@@ -365,7 +370,7 @@ private fun BoxScope.SketchCanvasContent(
     SnapPointMarker(controller.tools.preview?.point, state.viewport)
     TouchLoupe(controller.tools.loupe, state.touchLoupe, { controller.view.canvasSize }, { loupeFocus(controller) }, pxPerDp) { region ->
         // Its own painter, so the loupe's cull and path cache never touch the main canvas's.
-        val loupePainter = remember(environment) { ScenePainter(resources = environment.resources) }
+        val loupePainter = remember(extras) { ScenePainter(resources = extras.painterResources) }
         SketchCanvasV2(layer, liveOps, viewport, loupePainter, region = region)
         // The copy takes no clicks: the Zoom chip is left out so nothing inside the bubble can be hit.
         SelectionVisuals(controller, interactive = false)

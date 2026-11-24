@@ -11,7 +11,9 @@ import dev.stapler.stelekit.sketch.excalidraw.ImportSource
 import dev.stapler.stelekit.sketch.v2.codec.SheetCodecV2
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.importer.ExcalidrawExporter
+import dev.stapler.stelekit.sketch.v2.image.ImageHeaderProbe
 import dev.stapler.stelekit.sketch.v2.importer.ExcalidrawImporter
+import dev.stapler.stelekit.sketch.v2.scene.underlay
 import dev.stapler.stelekit.sketch.v2.render.RenderStyle
 import dev.stapler.stelekit.util.ContentHasher
 import kotlinx.coroutines.runBlocking
@@ -117,7 +119,7 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
             root == null || (root["schema"] == null && root["spec"] == null && (root["type"] as? JsonPrimitive)?.content != "excalidraw") ->
                 Loaded.Failed(SketchValidate.validate(bytes).render())
             root["spec"] != null && root["schema"] == null -> {
-                val outcome = SketchSpecBuilder(root).build()
+                val outcome = SketchSpecBuilder(root, file.absoluteFile.parentFile).build()
                 outcome.doc?.let { Loaded.Doc(it, outcome.issues.warnings.map { w -> "warning: $w" } + outcome.issues.notes) }
                     ?: Loaded.Failed(specReport(outcome))
             }
@@ -167,7 +169,7 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
             return 1
         }
         val outPath = p.flag("out") ?: throw UsageProblem("build needs --out <sheet.v2.json>")
-        val outcome = SketchSpecBuilder(root).build()
+        val outcome = SketchSpecBuilder(root, file.absoluteFile.parentFile).build()
         outcome.issues.warnings.forEach { out("WARNING $it") }
         outcome.issues.notes.forEach { out("INFO    $it") }
         val doc = outcome.doc
@@ -199,9 +201,30 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
             "transparent" -> null
             else -> b.takeIf { HEX_COLOR.matches(it) } ?: throw UsageProblem("--background must be #rrggbb or transparent")
         },
+        underlay = p.flag("underlay")?.let { photoOf(File(it)) },
     )
 
+    private fun photoOf(file: File): UnderlayImage {
+        val bytes = read(file)
+        val header = (ImageHeaderProbe.probe(bytes) as? Either.Right)?.value ?: throw UsageProblem("--underlay ${file.path} is not a PNG, JPEG, GIF or WebP image")
+        return UnderlayImage(ContentHasher.sha256(bytes), header.format.mime, bytes)
+    }
+
+    /** True when the photo given to `--underlay` is the one the sheet's underlay names; says why not otherwise. */
+    private fun photoMatches(doc: SketchDocumentV2, request: RenderRequest): Boolean {
+        val photo = request.underlay ?: return true
+        val state = doc.scene.underlay
+        if (state == null) {
+            out("WARNING the sheet has no underlay; --underlay is ignored")
+            return true
+        }
+        if (state.element.fileId == photo.fileId) return true
+        out("ERROR   --underlay is not the sheet's photo: its sha256 is ${photo.fileId}, the underlay names ${state.element.fileId}")
+        return false
+    }
+
     private fun renderTo(doc: SketchDocumentV2, target: File, request: RenderRequest): Int {
+        if (!photoMatches(doc, request)) return 1
         target.absoluteFile.parentFile?.mkdirs()
         when (target.extension.lowercase()) {
             "svg" -> target.writeText(SketchRender.svg(doc, request))
@@ -227,7 +250,7 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
     }
 
     private fun validate(p: Parsed): Int {
-        val report = SketchValidate.validate(read(p.input()))
+        val report = SketchValidate.validate(read(p.input()), p.input().absoluteFile.parentFile)
         out(report.render())
         return if (report.ok) 0 else 1
     }
@@ -289,7 +312,8 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
     private fun place(p: Parsed): Int {
         val file = p.input()
         val graph = File(p.flag("graph") ?: throw UsageProblem("place needs --graph <graph folder>"))
-        val placed = SketchBundle.place(read(file), graph, p.flag("slug"), p.flag("name"), System.currentTimeMillis())
+        val photo = p.flag("underlay-image")?.let { read(File(it)) }
+        val placed = SketchBundle.place(read(file), graph, p.flag("slug"), p.flag("name"), System.currentTimeMillis(), photo)
         return when (placed) {
             is Either.Left -> { out("ERROR   ${placed.value}"); 1 }
             is Either.Right -> {
@@ -312,15 +336,16 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
             |
             |  build <spec.json> --out <sheet.v2.json> [--render <x.svg|x.png>] [--dimensions|--no-dimensions] [--width N]
             |        expand an authoring spec (rooms, walls, doors, labels, dimensions; feet-inches; photo calibration) into a valid sheet
-            |  render <sheet.v2.json|.excalidraw|spec.json> --out <x.svg|x.png> [--dimensions|--no-dimensions] [--width N] [--style clean|sketchy] [--background #rrggbb|transparent]
-            |        draw the sheet; --dimensions draws dimension annotations (--no-dimensions hides them; else the sheet flag decides)
+            |  render <sheet.v2.json|.excalidraw|spec.json> --out <x.svg|x.png> [--dimensions|--no-dimensions] [--underlay <photo>] [--width N] [--style clean|sketchy] [--background #rrggbb|transparent]
+            |        draw the sheet; --dimensions draws dimension annotations (--no-dimensions hides them; else the sheet flag decides);
+            |        the photo underlay is left out unless --underlay <photo> gives its file (the sha256 must match the sheet's)
             |  validate <file>          check a sheet, spec or .excalidraw and explain every problem (exit 1 on errors)
             |  canonicalize <sheet> [--out f | --in-place]   rewrite hand-written sheet JSON as the exact canonical bytes; prints the sha256
             |  describe <file>          text description: elements with sizes, labels, relationships, openings, dimensions, a character map
             |  from-excalidraw <in.excalidraw> --out <sheet.v2.json>
             |  to-excalidraw <sheet.v2.json> --out <x.excalidraw>
-            |  place <sheet.v2.json> --graph <graph dir> [--slug proj-xxxxxx] [--name "Title"]
-            |        add the sheet to the graph's sketch bundle and print the markdown embed line
+            |  place <sheet.v2.json> --graph <graph dir> [--slug proj-xxxxxx] [--name "Title"] [--underlay-image <photo>]
+            |        add the sheet to the graph's sketch bundle and print the markdown embed line; --underlay-image stores the photo in assets/
             |
             |Exit codes: 0 ok, 1 the input has errors (read the report), 2 usage or missing file.
         """.trimMargin() + "\n"

@@ -99,6 +99,8 @@ import dev.stapler.stelekit.capture.PendingCapturePollerTest
 import dev.stapler.stelekit.capture.PendingCaptureWriterTest
 import dev.stapler.stelekit.cli.ArgParserTest
 import dev.stapler.stelekit.cli.SketchAgentCliTest
+import dev.stapler.stelekit.cli.SketchUnderlayCliTest
+import dev.stapler.stelekit.ui.sketch.v2.SheetImageBitmapsTest
 import dev.stapler.stelekit.cli.SketchSpecRoundTripPropertyTest
 import dev.stapler.stelekit.cli.SyncCommandsTest
 import dev.stapler.stelekit.cli.SyncMainClaimTest
@@ -311,6 +313,8 @@ import org.junit.runners.Suite
     PendingCaptureWriterTest::class,
     ArgParserTest::class,
     SketchAgentCliTest::class,
+    SketchUnderlayCliTest::class,
+    SheetImageBitmapsTest::class,
     SketchSpecRoundTripPropertyTest::class,
     SyncCommandsTest::class,
     SyncMainClaimTest::class,

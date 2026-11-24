@@ -15,6 +15,7 @@ import dev.stapler.stelekit.sketch.v2.runtime.export.ExportScope
 import dev.stapler.stelekit.sketch.v2.runtime.export.ExportSource
 import dev.stapler.stelekit.sketch.v2.runtime.export.PixelSize
 import dev.stapler.stelekit.sketch.v2.runtime.export.SketchExportRunner
+import dev.stapler.stelekit.sketch.v2.scene.underlay
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.FrameElement
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchImportExportStrings.Export as Strings
@@ -85,6 +86,9 @@ class ExportDialogModel(private val source: ExportSource, private val runner: Sk
 
     /** The dimension annotations ride in every drawing format; the library and CSV have none. */
     fun usesDimensions(format: ExportFormat): Boolean = format == ExportFormat.Png || format == ExportFormat.Svg || format == ExportFormat.Excalidraw
+
+    /** The "include photo underlay" option: only for a sheet that has an underlay, in the drawing formats (off unless chosen). */
+    fun usesUnderlay(format: ExportFormat): Boolean = source.scene.underlay != null && usesDimensions(format)
 
     /** UX-58: shown only for the `.excalidraw` format and only when the sheet has more than one layer. */
     fun showsFlattenedNotice(request: ExportRequest): Boolean = request.format == ExportFormat.Excalidraw && source.scene.layers.size > 1

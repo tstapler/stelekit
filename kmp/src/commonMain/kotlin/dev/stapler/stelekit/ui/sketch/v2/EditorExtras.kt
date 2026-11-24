@@ -33,6 +33,8 @@ import dev.stapler.stelekit.sketch.v2.snap.GridSettings
 import dev.stapler.stelekit.sketch.v2.snap.PointSnapKinds
 import dev.stapler.stelekit.sketch.v2.snap.SnapSettings
 import dev.stapler.stelekit.sketch.v2.tools.AddElementCommand
+import dev.stapler.stelekit.sketch.v2.tools.CalibrationPointsCommand
+import dev.stapler.stelekit.sketch.v2.tools.EndUnderlayModeCommand
 import dev.stapler.stelekit.sketch.v2.tools.ToolCommand
 import dev.stapler.stelekit.sketch.v2.view.ScreenPx
 import dev.stapler.stelekit.ui.sketch.ModernPreviewEnvironment
@@ -100,6 +102,20 @@ class EditorExtras(
     internal val annotationTaps = AnnotationTapTargets()
     val lengthUnit = LengthUnitState(services.platform.lengthFormat)
     val autoConstrain = AutoConstrainState({ controller.sheetKind })
+
+    /** Decoded images the canvas and an export that includes the underlay paint; large photos are reduced first (see [SheetImageBitmaps]). */
+    val imageBitmaps = SheetImageBitmaps({ fileId -> services.images?.read(fileId) }, services.limits.maxDecodedImageBytesPerSheet, onFailure = { t -> controller.log.persistFailed(t::class.simpleName.orEmpty()) })
+
+    /** The environment's painter resources with the image lookup filled in. */
+    val painterResources = PainterResources(environment.resources.textMeasurer, environment.resources.fontFamily, imageBitmaps::image)
+
+    /** For export, which runs off the main thread: decodes on demand and keeps nothing, so it never touches the canvas's cache. */
+    private val exportResources = PainterResources(environment.resources.textMeasurer, environment.resources.fontFamily) { fileId ->
+        services.images?.read(fileId)?.let { SheetImageBitmaps.reduceAndDecode(it) }
+    }
+
+    /** The photo underlay: pick, place, calibrate, move (epic E5). */
+    val underlay = UnderlayController(controller, services.files, services.images, scope, services.limits) { lengthUnit.format }
     val loupe = LoupePreference(controller.ui, services.platform.fingerDrawing)
 
     /** Which snap kinds are on and the coarse grid step (Snap menu), kept per device when the host stores it. */
@@ -149,7 +165,7 @@ class EditorExtras(
 
     val exporter = ExportDialogController(
         sourceOf = ::exportSource,
-        runner = SketchExportRunner(PngExporter(services.png, environment.resources, services.limits), DrawListBuilder(environment.metrics)),
+        runner = SketchExportRunner(PngExporter(services.png, exportResources, services.limits), DrawListBuilder(environment.metrics)),
         files = filePort,
         postNotice = postNotice,
     )
@@ -184,6 +200,7 @@ class EditorExtras(
         (if (dimension.state == DimensionEditState.Closed && pills.edit == null) emptySet() else setOf(EscRow.TextOverlayOrDimensionField)) + access.escRows()
 
     fun close() {
+        imageBitmaps.close()
         importer.close()
         exporter.close()
         scope.cancel()
@@ -233,6 +250,7 @@ class EditorExtras(
      * Moves and resizes snap inside the Select tool (see [snapSettings]) so the preview matches the commit. Returns the command to commit as usual, or null when it was committed here.
      */
     private fun intercept(command: ToolCommand): ToolCommand? = when (command) {
+        is CalibrationPointsCommand, EndUnderlayModeCommand -> underlay.intercept(command)
         is AddElementCommand -> if (autoConstrain.enabled && constraintsAvailable) autoConstrained(command) else command
         else -> command
     }
