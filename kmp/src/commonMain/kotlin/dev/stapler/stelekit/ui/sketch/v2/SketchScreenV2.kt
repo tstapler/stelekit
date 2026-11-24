@@ -165,6 +165,8 @@ data class SketchShellConfig(
     /** Told when a finger rests on the Snap button (true) and when it lifts (false): the touch way to skip snapping for one drag; null disables it. */
     val onSnapHold: ((Boolean) -> Unit)? = null,
     val snapHeld: Boolean = false,
+    /** The Snap menu section (point kinds, grid step); null hides it. */
+    val snapChoices: SnapChoices? = null,
     /** The overflow entry "Restore original (v1) sheet"; null hides it (no restore action wired). */
     val restore: RestoreMenuEntry? = null,
     /** The persistent cue of a suspected private window or a temporary graph (UX-153); null shows none. */
@@ -453,6 +455,7 @@ private fun SheetMenuItems(state: SketchEditorState, config: SketchShellConfig, 
         }
         config.autoConstrain?.takeIf { config.constraintsAvailable }?.let { AutoConstrainToggle(it, Modifier.padding(horizontal = MENU_TEXT_INSET)) }
         config.loupe?.let { LoupeToggle(it, Modifier.padding(horizontal = MENU_TEXT_INSET)) }
+        config.snapChoices?.let { SnapMenuSection(it, technical = config.sheetKind == dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Technical, modifier = Modifier.padding(horizontal = MENU_TEXT_INSET)) }
         config.lengthUnit?.let { units ->
             val current = units.format
             DropdownMenuItem(

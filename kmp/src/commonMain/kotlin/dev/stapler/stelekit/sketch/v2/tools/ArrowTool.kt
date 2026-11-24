@@ -80,7 +80,7 @@ class ArrowTool private constructor(
     private fun arrowPreview(preview: ToolPreview, ctx: ToolContext, drop: Drop): ToolPreview {
         val drawn = preview.elements.singleOrNull() as? LineElement ?: return preview
         val built = arrowFrom(drawn, ctx, drop)
-        return ToolPreview(listOf(built.element), built.highlight)
+        return preview.copy(elements = listOf(built.element), highlight = built.highlight)
     }
 
     /** Whether the ends of this drop may bind. */

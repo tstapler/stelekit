@@ -28,9 +28,10 @@ data class SnapOutcome(val dx: Double, val dy: Double, val guides: List<SnapGuid
 }
 
 /** Grid settings of a sheet (Task 3.5.5b): technical sheets snap to the sixteenth of an inch, diagram sheets to the grid. */
-data class GridSettings(val enabled: Boolean, val stepUnits: Double) {
+data class GridSettings(val enabled: Boolean, val stepUnits: Double, val majorEvery: Int = 0) {
     init {
         require(stepUnits.isFinite() && stepUnits > 0.0) { "grid step must be positive" }
+        require(majorEvery >= 0) { "major interval cannot be negative" }
     }
 
     fun snap(value: Double): Double = if (enabled) (value / stepUnits).roundToLong() * stepUnits else value

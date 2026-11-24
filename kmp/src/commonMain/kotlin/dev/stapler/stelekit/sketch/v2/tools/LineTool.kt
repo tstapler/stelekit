@@ -61,8 +61,16 @@ class LineTool private constructor(
 
     private fun idle(finish: Finished? = null) = LineTool(options, emptyList(), null, finish)
 
-    private fun snapped(from: ScenePoint?, to: ScenePoint, event: InputEvent): ScenePoint =
-        if (from != null && (options.angleSnap || event.modifiers.shift)) AngleSnap.snap(from, to) else to
+    /**
+     * [to] locked onto the drawing's points when one is in reach (a feature of the drawing beats the 15 degree step: the
+     * user pointed at it), else onto the angle step about [from] when that is on.
+     */
+    private fun snapped(from: ScenePoint?, to: ScenePoint, event: InputEvent, ctx: ToolContext): PointSnapper.Placed {
+        val placed = PointSnapper.place(to, from, event, ctx)
+        if (placed.hit != null) return placed
+        val angled = if (from != null && (options.angleSnap || event.modifiers.shift)) AngleSnap.snap(from, to) else to
+        return PointSnapper.Placed(angled, null)
+    }
 
     /** Finishes the line with what was placed (the Done chip and Enter); nothing is committed with fewer than two vertices. */
     fun done(ctx: ToolContext, timestamp: Long = 0L): ToolResult = finish(points, ctx, timestamp)
@@ -95,19 +103,22 @@ class LineTool private constructor(
         hypot(a.x.value - b.x.value, a.y.value - b.y.value) * ctx.zoom <= SelectTool.DRAG_THRESHOLD_PX
 
     private fun previewTo(event: InputEvent, ctx: ToolContext): ToolPreview? {
-        val from = points.lastOrNull() ?: press?.at
-        val to = snapped(from, event.point, event)
-        val shown = if (points.isEmpty()) listOf(press?.at ?: return null, to) else points + to
-        return line(shown, ElementBase(PREVIEW_ID, style = ctx.style))?.let { ToolPreview(listOf(it)) }
+        val from = points.lastOrNull() ?: press?.let { snapped(null, it.at, event, ctx).point }
+        val placed = snapped(from, event.point, event, ctx)
+        val shown = if (points.isEmpty()) listOf(from ?: return null, placed.point) else points + placed.point
+        return line(shown, ElementBase(PREVIEW_ID, style = ctx.style))?.let { placed.marked(ToolPreview(listOf(it))) }
     }
 
     private fun onUp(event: InputEvent, ctx: ToolContext): ToolResult {
         val down = checkNotNull(press) { "an Up is only handled with a press" }.at
         val dragged = !near(down, event.point, ctx)
         return when {
-            points.isEmpty() && dragged -> finish(listOf(down, snapped(down, event.point, event)), ctx, event.timestamp)
+            points.isEmpty() && dragged -> {
+                val start = snapped(null, down, event, ctx).point
+                finish(listOf(start, snapped(start, event.point, event, ctx).point), ctx, event.timestamp)
+            }
             points.isNotEmpty() && near(points.last(), down, ctx) -> finish(points, ctx, event.timestamp)
-            else -> addVertex(snapped(points.lastOrNull(), down, event), ctx, event)
+            else -> addVertex(snapped(points.lastOrNull(), down, event, ctx).point, ctx, event)
         }
     }
 

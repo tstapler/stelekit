@@ -22,6 +22,7 @@ import dev.stapler.stelekit.sketch.v2.snap.QuarterTurn
 import dev.stapler.stelekit.sketch.v2.snap.ResizeSides
 import dev.stapler.stelekit.sketch.v2.snap.SnapGuide
 import dev.stapler.stelekit.sketch.v2.snap.SnapOutcome
+import dev.stapler.stelekit.sketch.v2.snap.SnapSettings
 import kotlin.math.abs
 import kotlin.math.hypot
 
@@ -258,16 +259,24 @@ class SelectTool(
             event.type == InputType.Escape || event.type == InputType.Cancel -> ToolResult(preview = null, next = owner)
             event.type == InputType.Down && event.pointerId != pointerId -> ToolResult(preview = null, next = owner)
             event.pointerId != pointerId -> ToolResult.Nothing
-            event.type == InputType.Move -> ToolResult(preview = if (travelled(event, ctx)) moved(event, ctx).let { points -> previewOf(SetLinePointsCommand(line.id, points), ctx, listOf(line.id), points[index]) } else null)
+            event.type == InputType.Move -> ToolResult(preview = if (travelled(event, ctx)) moved(event, ctx).let { m -> previewOf(SetLinePointsCommand(line.id, m.points), ctx, listOf(line.id), m.points[index])?.let(m.placed::marked) } else null)
             event.type == InputType.Up ->
-                if (travelled(event, ctx)) ToolResult(SetLinePointsCommand(line.id, moved(event, ctx)), null, owner) else ToolResult(preview = null, next = owner)
+                if (travelled(event, ctx)) ToolResult(SetLinePointsCommand(line.id, moved(event, ctx).points), null, owner) else ToolResult(preview = null, next = owner)
             else -> ToolResult.Nothing
         }
 
         private fun travelled(event: InputEvent, ctx: ToolContext): Boolean =
             hypot(event.point.x.value - start.x.value, event.point.y.value - start.y.value) * ctx.zoom > DRAG_THRESHOLD_PX
 
-        private fun moved(event: InputEvent, ctx: ToolContext): List<ScenePoint> {
+        private class Moved(val points: List<ScenePoint>, val placed: PointSnapper.Placed)
+
+        /**
+         * The vertex where the drag has put it. With point snaps on (Snap button) it locks onto the drawing's features, the
+         * line's own other vertices included, perpendicular and tangent measured from the previous vertex. Settings that
+         * are [SnapSettings.None] (a bare tool context) keep the older nearest-vertex snap; any other settings snap only
+         * as they say.
+         */
+        private fun moved(event: InputEvent, ctx: ToolContext): Moved {
             val grabbed = line.points[index]
             val raw = ScenePoint(
                 unitOrZero(event.point.x.value + grabbed.x.value - start.x.value),
@@ -275,9 +284,15 @@ class SelectTool(
             )
             val touch = owner.touchPresent || event.pointerKind != PointerKind.Mouse
             val previous = line.points.getOrNull(index - 1)
-            val to = VertexSnap.nearest(raw, line, index, owner.vertexTolerance(ctx, touch), ctx)
-                ?: if (event.modifiers.shift && previous != null) AngleSnap.snap(previous, raw) else raw
-            return line.points.toMutableList().also { it[index] = to }
+            val others = line.points.filterIndexed { i, _ -> i != index }
+            val placed = PointSnapper.place(raw, previous, event, ctx, exclude = setOf(line.id), extraVertices = others)
+            val plain = if (event.modifiers.shift && previous != null) AngleSnap.snap(previous, raw) else raw
+            val to = when {
+                placed.hit != null -> placed.point
+                ctx.snap == SnapSettings.None -> VertexSnap.nearest(raw, line, index, owner.vertexTolerance(ctx, touch), ctx) ?: plain
+                else -> plain
+            }
+            return Moved(line.points.toMutableList().also { it[index] = to }, placed)
         }
     }
 

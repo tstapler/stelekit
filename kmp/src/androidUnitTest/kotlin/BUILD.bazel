@@ -48,6 +48,7 @@ kt_android_library(
             "**/MeasurementUnitsHostTest.kt",
             "**/MeasurementUnitsHostTest.kt",
             "**/SnapGuidesHostTest.kt",
+            "**/PointSnapHostTest.kt",
             "**/ChromeTargetSizeTest.kt",
             "**/StripIconsTest.kt",
             "**/SketchEmbedUiTest.kt",
