@@ -54,7 +54,16 @@ class AllBusinessTestsCompletenessTest {
                 "a false pass rather than a real one."
         )
 
-        val missing = discovered - registered
+        val moved = MODULE_BUSINESS_TESTS.keys
+        val twice = registered intersect moved
+        assertTrue(
+            twice.isEmpty(),
+            "These classes run in a //kmp/modules:<module>_business_tests target AND in AllBusinessTests; " +
+                "rerun scripts/kmp-module-tests-sync.py:\n  ${twice.sorted().joinToString("\n  ")}"
+        )
+
+        // Under Gradle the moved classes are on disk; under Bazel they are not on this target's classpath at all.
+        val missing = discovered - registered - moved
         assertTrue(
             missing.isEmpty(),
             "The following businessTest classes compile under kmp/src/businessTest but are NOT " +

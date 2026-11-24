@@ -154,7 +154,10 @@ jobs:
           command: |
             set -euo pipefail
             scripts/kmp-module-tests-sync.py
-            git diff --exit-code -- kmp/module_tests_manifest.bzl kmp/modules ':!kmp/modules/BUILD.bazel'
+            git diff --exit-code -- kmp/module_tests_manifest.bzl kmp/modules ':!kmp/modules/BUILD.bazel' \
+              kmp/src/businessTest/kotlin/dev/stapler/stelekit/AllBusinessTests.kt \
+              kmp/src/businessTest/kotlin/dev/stapler/stelekit/ModuleBusinessTests.kt
+            test -z "$(git status --porcelain -- kmp/modules)"  # a new generated suite is untracked, which diff misses
             bazel test //kmp:business_tests //kmp/modules:all --build_tests_only \
               --config=remote-cache \
               --test_env=LFS_DIFFERENTIAL_REQUIRED=true \
