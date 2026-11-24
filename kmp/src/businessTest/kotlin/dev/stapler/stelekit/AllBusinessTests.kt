@@ -493,6 +493,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.ElementCommandsTest::class,
     dev.stapler.stelekit.sketch.v2.ConstraintAdapterTest::class,
     dev.stapler.stelekit.sketch.v2.SvgExporterGoldenTest::class,
+    dev.stapler.stelekit.sketch.v2.DimensionExportTest::class,
     dev.stapler.stelekit.sketch.v2.SvgEscapingPropertyTest::class,
     dev.stapler.stelekit.sketch.v2.SpatialIndexPropertyTest::class,
     dev.stapler.stelekit.sketch.v2.HitTesterTest::class,

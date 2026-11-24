@@ -5,11 +5,11 @@
 package dev.stapler.stelekit.ui.sketch.v2
 
 import dev.stapler.stelekit.sketch.DimensionInput
+import dev.stapler.stelekit.sketch.v2.annotation.DimensionAnnotationEngine
+import dev.stapler.stelekit.sketch.v2.annotation.Measurements
 import dev.stapler.stelekit.sketch.v2.scene.BoxElement
-import dev.stapler.stelekit.sketch.v2.scene.DiamondElement
 import dev.stapler.stelekit.sketch.v2.scene.EllipseElement
 import dev.stapler.stelekit.sketch.v2.scene.LineElement
-import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
 import dev.stapler.stelekit.sketch.v2.tools.TouchFloor
@@ -20,7 +20,6 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.max
-import kotlin.math.floor
 import kotlin.math.sin
 
 /** What one on-canvas dimension pill measures. */
@@ -67,36 +66,18 @@ data class PillFrame(val cx: Double, val cy: Double, val halfW: Double, val half
 object DimensionPillModel {
     /** Space between a shape's edge and its pill, and the keep-out from the canvas edge, in dp. */
     const val GAP_DP = 6.0
-    const val EDGE_DP = 4.0
+    const val EDGE_DP = DimensionAnnotationEngine.EDGE_DP
 
     /** A pill is at least as tall as a finger-sized target (UX-46) so a tap always lands. */
     val PILL_HEIGHT_DP: Double = TouchFloor.TOUCH_DP
 
-    private const val TWO_POINT_LINE = 2
     private const val CHAR_DP = 9.0
     private const val PAD_DP = 28.0
 
-    /** The pills the element gets, in edit order (Width then Height); none for kinds with no single size to type. */
-    fun specs(element: SceneElement): List<PillSpec> = when (element) {
-        is RectElement -> boxSpecs(element.width.value, element.height.value)
-        is DiamondElement -> boxSpecs(element.width.value, element.height.value)
-        is EllipseElement -> if (element.isCircle) listOf(PillSpec(PillKind.Diameter, sixteenths(2 * element.rx.value), 2 * element.rx.value), PillSpec(PillKind.Radius, sixteenths(element.rx.value), element.rx.value)) else boxSpecs(2 * element.rx.value, 2 * element.ry.value)
-        is LineElement -> lineLength(element)?.let { listOf(PillSpec(PillKind.Length, sixteenths(it), it)) }.orEmpty()
-        else -> emptyList()
-    }
+    /** The pills the element gets, in edit order (Width then Height); none for kinds with no single size to type. The sizes come from the shared [Measurements], so an export reads the same values. */
+    fun specs(element: SceneElement): List<PillSpec> = Measurements.of(element).map { PillSpec(it.kind.pill(), it.sixteenths, it.exact) }
 
-    private fun boxSpecs(w: Double, h: Double) = listOf(PillSpec(PillKind.Width, sixteenths(w), w), PillSpec(PillKind.Height, sixteenths(h), h))
-
-    /** The nearest sixteenth, halves up (not to even: a radius of 8.5 reads 9, not 8). */
-    private fun sixteenths(v: Double): Long = max(1L, floor(v + HALF_UNIT).toLong())
-
-    private const val HALF_UNIT = 0.5
-
-    internal fun lineLength(e: LineElement): Double? {
-        if (e.polygon || e.points.size != TWO_POINT_LINE) return null
-        val (a, b) = e.points
-        return hypot(b.x.value - a.x.value, b.y.value - a.y.value).takeIf { it > 0.0 }
-    }
+    internal fun lineLength(e: LineElement): Double? = Measurements.lineLength(e)
 
     /** Whether pills show at all: a technical sheet that can be edited, pills switched on, one shape selected and the Select tool (a drawing tool would lose its drag to a pill). */
     fun shown(technical: Boolean, readOnly: Boolean, visible: Boolean, selected: Int, tool: ToolId): Boolean =

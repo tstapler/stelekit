@@ -34,6 +34,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.sketch.v2.runtime.export.ExportFormat
 import dev.stapler.stelekit.sketch.v2.runtime.export.ExportRequest
+import dev.stapler.stelekit.sketch.v2.annotation.DimensionsChoice
 import dev.stapler.stelekit.sketch.v2.runtime.export.ExportScope
 import dev.stapler.stelekit.sketch.v2.runtime.export.ExportStyle
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchImportExportStrings.Export as Strings
@@ -55,6 +56,7 @@ object ExportTags {
     fun scope(scope: ExportScope) = "sketch.export.scope.${scope.name.lowercase()}"
     fun scale(scale: Int) = "sketch.export.scale.$scale"
     fun style(style: ExportStyle) = "sketch.export.style.${style.name.lowercase()}"
+    fun dimensions(choice: DimensionsChoice) = "sketch.export.dimensions.${choice.name.lowercase()}"
     fun frame(index: Int) = "sketch.export.frame.$index"
 }
 
@@ -82,6 +84,7 @@ fun ExportDialog(controller: ExportDialogController) {
                 if (model.usesScale(request.format)) ScaleOptions(request, controller::update)
                 if (model.usesBackground(request.format)) BackgroundOption(request, controller::update)
                 if (model.usesStyle(request.format)) StyleOptions(request, controller::update)
+                if (model.usesDimensions(request.format)) DimensionOptions(request, controller::update)
                 if (model.showsFlattenedNotice(request)) Text(Strings.LAYERS_FLATTENED, Modifier.testTag(ExportTags.FLATTEN), style = MaterialTheme.typography.bodySmall)
                 PreviewLine(open.preview)
                 LoadingGate(open.working, SketchLoadingStrings.EXPORT, progress = null, onCancel = controller::cancel)
@@ -158,6 +161,15 @@ private fun StyleOptions(request: ExportRequest, update: (ExportRequest) -> Unit
 }
 
 @Composable
+private fun DimensionOptions(request: ExportRequest, update: (ExportRequest) -> Unit) {
+    OptionGroup(Strings.DIMENSIONS) {
+        for (choice in DimensionsChoice.entries) {
+            Option(dimensionsLabel(choice), request.dimensions == choice, null, ExportTags.dimensions(choice)) { update(request.copy(dimensions = choice)) }
+        }
+    }
+}
+
+@Composable
 private fun PreviewLine(preview: ExportPreview) {
     val text = (preview as? ExportPreview.Size)?.text ?: return
     Text("${Strings.PREVIEW}: $text", Modifier.testTag(ExportTags.PREVIEW), style = MaterialTheme.typography.bodySmall)
@@ -226,6 +238,12 @@ private fun scaleLabel(scale: Int): String = when (scale) {
     1 -> Strings.SCALE_1X
     2 -> Strings.SCALE_2X
     else -> Strings.SCALE_3X
+}
+
+private fun dimensionsLabel(choice: DimensionsChoice): String = when (choice) {
+    DimensionsChoice.Sheet -> Strings.DIMENSIONS_SHEET
+    DimensionsChoice.On -> Strings.DIMENSIONS_ON
+    DimensionsChoice.Off -> Strings.DIMENSIONS_OFF
 }
 
 private fun styleLabel(style: ExportStyle): String = when (style) {

@@ -112,6 +112,13 @@ class DimensionPillsState(private val settings: FingerDrawingSettings? = null) {
         persist()
     }
 
+    /** Takes the sheet's own choice when the file holds one; it overrides the per-device default and is not written back to it. */
+    fun adopt(sheetChoice: Boolean?) {
+        if (sheetChoice == null || sheetChoice == visible) return
+        visible = sheetChoice
+        if (!visible) edit = null
+    }
+
     fun toggleScope() {
         scope = if (scope == DimensionScope.All) DimensionScope.Selected else DimensionScope.All
         persist()

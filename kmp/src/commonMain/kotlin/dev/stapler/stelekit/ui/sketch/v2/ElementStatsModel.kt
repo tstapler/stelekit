@@ -4,14 +4,12 @@
 
 package dev.stapler.stelekit.ui.sketch.v2
 
+import dev.stapler.stelekit.sketch.v2.annotation.ElementFrame
 import dev.stapler.stelekit.sketch.v2.commands.Command
 import dev.stapler.stelekit.sketch.v2.commands.MoveElements
 import dev.stapler.stelekit.sketch.v2.commands.ResizeElement
 import dev.stapler.stelekit.sketch.v2.commands.RotateElement
-import dev.stapler.stelekit.sketch.v2.scene.BoxElement
-import dev.stapler.stelekit.sketch.v2.scene.EllipseElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
-import dev.stapler.stelekit.sketch.v2.view.SceneBounds
 import kotlin.math.PI
 
 /** The numbers of the Stats section for one selected element (Task 3.5.4b): position, size and angle in degrees. */
@@ -23,16 +21,8 @@ data class ElementStats(val x: Double, val y: Double, val width: Double, val hei
          * Null for an element with no extent (an empty line). A box or ellipse reports its own unrotated box, the one
          * [ResizeElement] writes, so a rotated element's width and height are not its rotated bounds. The angle is 0 for a kind that cannot rotate.
          */
-        fun of(element: SceneElement): ElementStats? {
-            val own = when (element) {
-                is BoxElement -> listOf(element.x.value, element.y.value, element.width.value, element.height.value, element.angle)
-                is EllipseElement -> listOf(element.cx.value - element.rx.value, element.cy.value - element.ry.value, 2 * element.rx.value, 2 * element.ry.value, element.angle)
-                else -> null
-            }
-            if (own != null) return ElementStats(own[0], own[1], own[2], own[3], own[4] * HALF_TURN_DEGREES / PI)
-            val b = SceneBounds.of(element) ?: return null
-            return ElementStats(b.minX, b.minY, b.width, b.height, 0.0)
-        }
+        fun of(element: SceneElement): ElementStats? =
+            ElementFrame.of(element)?.let { ElementStats(it.x, it.y, it.width, it.height, it.angle * HALF_TURN_DEGREES / PI) }
 
         fun radians(degrees: Double): Double = degrees * PI / HALF_TURN_DEGREES
     }

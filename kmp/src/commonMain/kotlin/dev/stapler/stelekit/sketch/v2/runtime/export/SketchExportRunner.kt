@@ -7,6 +7,10 @@ package dev.stapler.stelekit.sketch.v2.runtime.export
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
+import dev.stapler.stelekit.sketch.v2.annotation.DimensionExport
+import dev.stapler.stelekit.sketch.v2.annotation.DimensionExportOptions
+import dev.stapler.stelekit.sketch.v2.annotation.DimensionsChoice
+import dev.stapler.stelekit.sketch.v2.annotation.ExportInk
 import dev.stapler.stelekit.sketch.v2.export.SvgExportOptions
 import dev.stapler.stelekit.sketch.v2.export.SvgExporter
 import dev.stapler.stelekit.sketch.v2.export.SvgImageSource
@@ -22,6 +26,7 @@ import dev.stapler.stelekit.sketch.v2.render.RenderStyle
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.FrameElement
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
+import dev.stapler.stelekit.units.LengthFormat
 import kotlinx.coroutines.CancellationException
 
 enum class ExportFormat(val extension: String, val mimeType: String) {
@@ -45,9 +50,11 @@ data class ExportRequest(
     val scale: Int = 2,
     val background: Boolean = true,
     val style: ExportStyle = ExportStyle.AsDrawn,
+    /** Whether dimension annotations are drawn: the sheet's own setting unless this export says otherwise. */
+    val dimensions: DimensionsChoice = DimensionsChoice.Sheet,
 )
 
-/** The sheet as the dialog sees it. [csv] is null when the sheet has no dimensions. */
+/** The sheet as the dialog sees it. [csv] is null when the sheet has no dimensions; [sheetDimensions] is the sheet's own "dimensions shown" flag and [lengthFormat] the notation they are written in. */
 class ExportSource(
     val scene: SketchSceneV2,
     val selection: Set<ElementId>,
@@ -55,6 +62,8 @@ class ExportSource(
     val library: List<LibraryItem> = emptyList(),
     val csv: (() -> ByteArray)? = null,
     val baseName: String = DEFAULT_BASE_NAME,
+    val sheetDimensions: Boolean = false,
+    val lengthFormat: LengthFormat = LengthFormat.FEET_INCHES,
 ) {
     companion object {
         const val DEFAULT_BASE_NAME = "sketch"
@@ -88,7 +97,7 @@ class SketchExportRunner(
     fun measure(source: ExportSource, request: ExportRequest): Either<ExportFailure, PixelSize>? {
         if (request.format != ExportFormat.Png) return null
         val subject = subject(source, request) ?: return ExportFailure.NothingToExport.left()
-        return png.measure(subject.scene, pngOptions(request, subject)).mapLeft(::failure)
+        return png.measure(subject.scene, pngOptions(request, subject, source)).mapLeft(::failure)
     }
 
     fun run(source: ExportSource, request: ExportRequest): Either<ExportFailure, ExportFile> = try {
@@ -107,13 +116,13 @@ class SketchExportRunner(
     private fun inScope(subject: Subject, source: ExportSource, request: ExportRequest): Either<ExportFailure, ExportFile> {
         val missing = ReferencedAssets.placeholders(subject.scene) { source.images.load(it) != null }.size
         return when (request.format) {
-            ExportFormat.Png -> png.export(subject.scene, builder, request.style.render, pngOptions(request, subject)).mapLeft(::failure)
+            ExportFormat.Png -> png.export(subject.scene, builder, request.style.render, pngOptions(request, subject, source)).mapLeft(::failure)
                 .map { file(it, source, request, missing) }
             ExportFormat.Svg -> {
-                val options = SvgExportOptions(background = background(request), bounds = subject.bounds)
+                val options = SvgExportOptions(background = background(request), bounds = subject.bounds, dimensions = dimensions(source, request))
                 text(SvgExporter.export(subject.scene, builder, request.style.render, source.images, options), source, request, missing)
             }
-            else -> excalidraw.export(subject.scene, source.images, ExcalidrawExportOptions()).fold(
+            else -> excalidraw.export(withDimensions(subject.scene, source, request), source.images, ExcalidrawExportOptions()).fold(
                 { ExportFailure.EncodeFailed.left() },
                 { drawing -> text(drawing.text, source, request, drawing.missingFileIds.size) },
             )
@@ -134,8 +143,17 @@ class SketchExportRunner(
 
     private fun background(request: ExportRequest): String? = if (request.background) WHITE else null
 
-    private fun pngOptions(request: ExportRequest, subject: Subject) =
-        PngExportOptions(scale = request.scale, background = background(request), bounds = subject.bounds)
+    private fun pngOptions(request: ExportRequest, subject: Subject, source: ExportSource) =
+        PngExportOptions(scale = request.scale, background = background(request), bounds = subject.bounds, dimensions = dimensions(source, request))
+
+    /** How the annotations are drawn, or null for none: the request's choice over the sheet's flag; the ink follows the background so a dark one stays readable. */
+    private fun dimensions(source: ExportSource, request: ExportRequest): DimensionExportOptions? =
+        if (request.dimensions.resolve(source.sheetDimensions)) DimensionExportOptions(source.lengthFormat, ExportInk.forBackground(background(request))) else null
+
+    private fun withDimensions(scene: SketchSceneV2, source: ExportSource, request: ExportRequest): SketchSceneV2 {
+        val options = dimensions(source, request) ?: return scene
+        return DimensionExport.withElements(scene, DimensionExport.layout(scene, options), options.ink)
+    }
 
     /** The scene a scope exports and, for a frame, the crop. Null when the scope selects nothing. */
     private class Subject(val scene: SketchSceneV2, val bounds: Bounds?)

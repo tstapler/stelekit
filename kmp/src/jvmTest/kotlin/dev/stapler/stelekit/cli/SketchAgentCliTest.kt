@@ -239,7 +239,7 @@ class SketchAgentCliTest {
     @Test
     fun `png render draws ink and honours the requested width`() {
         val doc = built(ROOM_SPEC)
-        val bytes = assertNotNull(SketchRender.png(doc, RenderRequest(width = 800)))
+        val bytes = assertNotNull(SketchRender.png(doc, RenderRequest(width = 800, dimensions = false)))
         val image = ImageIO.read(ByteArrayInputStream(bytes))
         assertEquals(800, image.width)
         var dark = 0

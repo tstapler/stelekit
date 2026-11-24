@@ -15,7 +15,7 @@ Decisions behind the format: `project_plans/excalidraw-sketch-engine/decisions/A
 ```bash
 scripts/sketch-cli build spec.json --out sheet.v2.json --render preview.png   # spec -> sheet, plus a picture
 scripts/sketch-cli describe sheet.v2.json                                       # read a sheet as text
-scripts/sketch-cli render sheet.v2.json --out look.png --dimensions            # draw it; overlay measured sizes
+scripts/sketch-cli render sheet.v2.json --out look.png --dimensions            # draw it with dimension annotations
 scripts/sketch-cli validate sheet.v2.json                                       # errors with element id and line
 scripts/sketch-cli canonicalize hand-edited.json --in-place                     # exact canonical bytes + sha256
 scripts/sketch-cli place sheet.v2.json --graph ~/notes                          # put it in the graph, print the embed line
@@ -75,7 +75,7 @@ Top level (all keys but `schema` and `sheetUuid` optional):
 | `elements` | list, **paint order**: later entries draw over earlier ones (within a layer by `z`, then array order) |
 | `layers` | list of `{id, name, visible, locked, opacity 0..1, order}`; layer `default` always exists; lower `order` paints first; hidden layers are not drawn or exported |
 | `constraints` | list of solver constraints (section 6) |
-| `extras` | free JSON kept as written. Known keys: `sheetKind: "technical"` (marks a real-world sheet: constraints on by default), `agent: {mode, title, spec}` written by `build` |
+| `extras` | free JSON kept as written. Known keys: `sheetKind: "technical"` (marks a real-world sheet: constraints on by default), `dimensionsOn: true|false` (optional; whether the sheet shows dimension annotations, see section 6; absent until someone chooses, so existing sheets keep their exact bytes), `agent: {mode, title, spec}` written by `build` |
 | `nameCounters` | `{kind: highest ordinal}` |
 
 Every element has `id` (unique, non-empty) and `type`, plus optional base fields:
@@ -111,7 +111,7 @@ Every element has `id` (unique, non-empty) and `type`, plus optional base fields
 ## 6. Constraints and dimensions
 
 - **Constraints** (`constraints[]`: `{id, kind, targets:[{e, part}], value, ref}`) are persisted rules the app's solver keeps true when shapes move: `Distance`, `DistanceX`, `DistanceY`, `Angle` (radians), `Radius`, `Diameter` carry a `value` in scene units; `Coincident`, `Horizontal`, `Vertical`, `Parallel`, `Perpendicular`, `Equal`, `Tangent`, `Symmetric`, `Fixed` do not. `part` is `whole`, `start`, `end`, `centre`, `arcStart`, `arcEnd`, `vertex:N` or `edge:N`. Only rectangles, lines, points, arcs and circles are constrainable. A constraint naming a missing element, or a part the element lacks, is dropped on load. Writing constraints by hand is possible but easy to get wrong (an unsatisfiable set makes the solver move geometry on the next edit); prefer to draw to the right size. `describe` lists them.
-- **Dimension annotations** the app shows on a technical sheet are computed from the shapes at draw time and are not stored. For a dimension that must survive in the file and in `preview.svg`, `build` writes plain elements on the layer `dimensions`: two extension lines, a two-headed arrow and a value text, all in one group with ids `<id>.ext1`, `.ext2`, `.line`, `.text`. `describe` reads them back and flags a label that disagrees with its line (`MISMATCH`). `render --dimensions` overlays the measured width and height of every shape without saving anything.
+- **Dimension annotations** the app shows on a technical sheet (a dimension line with extension lines, ticks and the value for each shape) are computed from the shapes at draw time and are not stored as elements. The same layout code draws them in the editor, in SVG and PNG export, in the `.excalidraw` export (as lines and text on a `dimensions` layer), in page-embed previews and in `sketch-cli render`, so every picture shows the same values. Whether a sheet shows them is the optional sheet flag `extras.dimensionsOn` (boolean): when it is absent, a technical sheet shows them and a diagram does not. The editor writes it when the Dimensions chip is toggled. Exports follow the flag; the export dialog and the CLI (`--dimensions`, `--no-dimensions`) override it for one export. In an export the annotations are laid out on a fixed fit of the sheet, not the editor viewport, so panning or zooming never changes them; at most 200 shapes are annotated, and a shape too small to carry its text at that fit is left out. For a dimension that must survive in the file and in `preview.svg`, `build` writes plain elements on the layer `dimensions`: two extension lines, a two-headed arrow and a value text, all in one group with ids `<id>.ext1`, `.ext2`, `.line`, `.text`. `describe` reads them back and flags a label that disagrees with its line (`MISMATCH`). `render --dimensions` overlays the measured width and height of every shape without saving anything.
 
 ## 7. Authoring spec (what `build` reads)
 
@@ -209,7 +209,7 @@ RELATIONSHIPS
 | command | does | exit |
 |---|---|---|
 | `build <spec.json> --out <sheet.v2.json> [--render x.svg\|x.png] [--dimensions] [--width N]` | expand a spec; prints calibration, warnings, element count, sha256 | 1 on spec errors |
-| `render <sheet.v2.json\|.excalidraw\|spec.json> --out <x.svg\|x.png> [--dimensions] [--width N] [--style clean\|sketchy] [--background #rrggbb\|transparent]` | SVG through the app's own SVG writer; PNG through its Compose painter. Defaults: PNG 400 to 1600 px wide, white background, Clean style. `--dimensions` overlays measured width and height of every rect, ellipse and diamond (not saved) | 1 when the input is invalid |
+| `render <sheet.v2.json\|.excalidraw\|spec.json> --out <x.svg\|x.png> [--dimensions\|--no-dimensions] [--width N] [--style clean\|sketchy] [--background #rrggbb\|transparent]` | SVG through the app's own SVG writer; PNG through its Compose painter. Defaults: PNG 400 to 1600 px wide, white background, Clean style. `--dimensions` draws the dimension annotations, `--no-dimensions` hides them, and with neither the sheet's own `dimensionsOn` flag decides (the editor's own layout, not saved) | 1 when the input is invalid |
 | `validate <file>` | sheet, spec or `.excalidraw`. Reports syntax errors with line and column, then per-element problems (id, line, expected keys, "did you mean", valid enum values), dangling references, then what the real codec says, then canonical form. Ends with `RESULT: OK` or `RESULT: FAILED (n errors)` | 1 on errors |
 | `canonicalize <sheet> [--out f \| --in-place]` | decode and re-encode: exact canonical bytes (stdout when neither flag); sha256 and "was already canonical" go to stderr | 1 if it does not load |
 | `describe <file>` | text: extent, layers, every element with sizes in feet-inches, labels, openings, dimensions, contains/touches/overlaps/connects relationships, constraints, a character map. Accepts a sheet, spec or `.excalidraw` | 1 if it does not load |

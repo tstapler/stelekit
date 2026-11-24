@@ -4,6 +4,8 @@
 
 package dev.stapler.stelekit.sketch.v2.export
 
+import dev.stapler.stelekit.sketch.v2.annotation.DimensionExport
+import dev.stapler.stelekit.sketch.v2.annotation.DimensionExportOptions
 import dev.stapler.stelekit.sketch.v2.codec.CanonicalJson
 import dev.stapler.stelekit.sketch.v2.index.Bounds
 import dev.stapler.stelekit.sketch.v2.index.ElementBounds
@@ -29,11 +31,15 @@ fun interface SvgImageSource {
     }
 }
 
-/** [background] is a CSS colour or null for a transparent export; [bounds] overrides the scene bounds (a frame crop). */
+/**
+ * [background] is a CSS colour or null for a transparent export; [bounds] overrides the scene bounds (a frame crop); [dimensions],
+ * when set, draws every shape's dimension annotations (the editor's own layout) and widens the viewBox to hold them.
+ */
 data class SvgExportOptions(
     val background: String? = null,
     val padding: Double = DEFAULT_PADDING,
     val bounds: Bounds? = null,
+    val dimensions: DimensionExportOptions? = null,
 ) {
     companion object {
         const val DEFAULT_PADDING = 16.0
@@ -59,8 +65,11 @@ object SvgExporter {
         images: SvgImageSource = SvgImageSource.None,
         options: SvgExportOptions = SvgExportOptions(),
     ): String {
-        val ops = builder.build(scene, style)
-        val bounds = options.bounds ?: (scene.elementsInOrder.map { ElementBounds.of(it) } + textExtents(ops)).reduceOrNull(::union) ?: Bounds(0.0, 0.0, 0.0, 0.0)
+        val drawn = builder.build(scene, style)
+        val dimensions = options.dimensions?.let { DimensionExport.layout(scene, it) }.orEmpty()
+        val ops = drawn + options.dimensions?.let { DimensionExport.drawOps(dimensions, it.ink) }.orEmpty()
+        val extra = listOfNotNull(DimensionExport.bounds(dimensions))
+        val bounds = options.bounds ?: (scene.elementsInOrder.map { ElementBounds.of(it) } + textExtents(drawn) + extra).reduceOrNull(::union) ?: Bounds(0.0, 0.0, 0.0, 0.0)
         return write(ops, bounds, images, options)
     }
 

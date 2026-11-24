@@ -132,13 +132,16 @@ class ScenePainter(val paths: PathCache = PathCache(), private val resources: Pa
         )
         withTransform({ rotateRad(run.angle.toFloat(), Offset(run.pivotX.toFloat(), run.pivotY.toFloat())) }) {
             for (line in run.lines) {
-                val width = measurer.measure(line.text, style, softWrap = false, maxLines = 1).size.width
+                // Draw the measured layout itself: drawText(measurer, ...) sizes the text against the draw scope, so a line anchored
+                // past the scope's pixel size (a wide plan in sixteenths of an inch) would vanish.
+                val layout = measurer.measure(line.text, style, softWrap = false, maxLines = 1)
+                val width = layout.size.width
                 val left = when (run.align) {
                     TextAlign.Left -> line.x
                     TextAlign.Center -> line.x - width / 2.0
                     TextAlign.Right -> line.x - width
                 }
-                drawText(measurer, line.text, Offset(left.toFloat(), line.y.toFloat()), style, softWrap = false, maxLines = 1)
+                drawText(layout, topLeft = Offset(left.toFloat(), line.y.toFloat()))
             }
         }
         drawnOps++

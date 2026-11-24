@@ -24,7 +24,7 @@ sealed interface SketchPreview {
     data object StorageUnavailable : SketchPreview
 
     /** A v2 sheet drawn from its own scene by the v2 draw list (Story 6.1.1); [scene] is the whole sheet, nothing is dropped. */
-    class ModernDrawing(val scene: SketchSceneV2) : SketchPreview
+    class ModernDrawing(val scene: SketchSceneV2, val dimensionsOn: Boolean = false) : SketchPreview
 
     /** [notShownCount] is the elements of a v2 sheet this preview cannot draw ("N elements not shown in this preview"). */
     class Drawing(val document: SketchDocument, val notShownCount: Int = 0) : SketchPreview
@@ -75,7 +75,7 @@ class SketchPreviewLoader(
         return when (val read = source.read(slug, sheet.uuid)) {
             SheetProjectionRead.NewerSchema -> SketchPreview.NewerSchema
             is SheetProjectionRead.Failed -> SketchPreview.Empty
-            is SheetProjectionRead.Loaded -> read.projection.scene.takeIf { it.size > 0 }?.let { SketchPreview.ModernDrawing(it) } ?: SketchPreview.Empty
+            is SheetProjectionRead.Loaded -> read.projection.scene.takeIf { it.size > 0 }?.let { SketchPreview.ModernDrawing(it, read.projection.dimensionsOn) } ?: SketchPreview.Empty
         }
     }
 
