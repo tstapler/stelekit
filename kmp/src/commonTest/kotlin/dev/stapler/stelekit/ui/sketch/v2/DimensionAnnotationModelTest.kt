@@ -137,7 +137,29 @@ class DimensionAnnotationModelTest {
     @Test
     fun aNeighboursExtensionLine_should_NeverCrossAnotherText() {
         val shapes = listOf(filledRectEl("n", 148, 300, 64, 60), filledRectEl("a", 190, 300, 160, 90))
-        assertNoOverlap(layout(shapes))
+        val a = layout(shapes)
+        assertTrue(a.any { it.elementId.value == "n" } && a.any { it.elementId.value == "a" })
+        assertNoOverlap(a)
+    }
+
+    @Test
+    fun aShapeInsideARoom_should_StillBeAnnotated() {
+        val room = filledRectEl("room", 10, 10, 330, 600)
+        val a = layout(listOf(room, filledRectEl("desk", 100, 200, 160, 90)))
+        assertTrue(a.any { it.elementId.value == "desk" })
+    }
+
+    @Test
+    fun aDiagonalLine_should_NotBlockAShapeFarFromItsSegment() {
+        val a = layout(listOf(filledRectEl("r", 200, 500, 140, 90), line("d", 0, 0, 100, 700)))
+        assertTrue(a.any { it.elementId.value == "r" })
+    }
+
+    @Test
+    fun aLoneLegibleShape_should_AlwaysBeAnnotated_Property() = runTest {
+        checkAll(Arb.int(100, 200), Arb.int(100, 200), Arb.int(40, 160), Arb.int(40, 160)) { w, h, x, y ->
+            assertTrue(layout(listOf(filledRectEl("solo", x, y, w, h))).any { it.kind == PillKind.Width })
+        }
     }
 
     @Test

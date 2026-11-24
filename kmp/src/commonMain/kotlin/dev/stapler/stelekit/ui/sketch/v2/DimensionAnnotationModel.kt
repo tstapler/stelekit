@@ -88,9 +88,8 @@ data class DimensionAnnotation(
  * smaller than [TEXT_SP], so a shape too small to carry it loses its annotation instead of shrinking the text.
  */
 object DimensionAnnotationLayout {
-    /** The text size in sp; never scaled down with the zoom, and at least [MIN_TEXT_SP]. */
+    /** The text size in sp; never scaled down with the zoom, and at least 10. */
     const val TEXT_SP = 11.0
-    const val MIN_TEXT_SP = 10.0
 
     /** The most shapes annotated in one layout, nearest the canvas centre first. */
     const val MAX_ANNOTATED_SHAPES = 200
@@ -101,6 +100,12 @@ object DimensionAnnotationLayout {
     /** A line shorter than this many text widths is hidden; it is fully drawn from [FADE_FULL_RATIO] on and fades in between. */
     const val FADE_START_RATIO = 1.3
     const val FADE_FULL_RATIO = 1.8
+
+    /** At most this many times the shape cap of candidates are tried, so a crowded sheet where most fail stays cheap. */
+    const val ATTEMPT_FACTOR = 3
+
+    /** A value fainter than this gets no finger-sized target (it is still read out). */
+    const val TAP_MIN_ALPHA = 0.6
 
     /** An annotation fainter than this is dropped, so nothing nearly invisible keeps a target or a screen-reader node. */
     const val MIN_ALPHA = 0.2
@@ -128,8 +133,8 @@ object DimensionAnnotationLayout {
         (if (kind == PillKind.Diameter) S.Pill.DIAMETER_SYMBOL + " " else "") + lengthTextOf(sixteenths)
 
     /**
-     * The annotations of [candidates] on [canvas]. [bodies] are every visible shape (the candidates included): an annotation is kept
-     * off other shapes when it can be. [reserved] are rectangles that stay free (the selected shape's pills). [tapMinDp] is the
+     * The annotations of [candidates] on [canvas]. [bodies] are every visible shape (the candidates included): an annotation never
+     * covers another shape. [reserved] are rectangles that stay free (the selected shape's pills). [tapMinDp] is the
      * touch floor for each annotation's [DimensionAnnotation.tapRect].
      */
     fun layout(
@@ -143,15 +148,16 @@ object DimensionAnnotationLayout {
         if (canvas.width <= 0.0 || canvas.height <= 0.0) return emptyList()
         val centreX = canvas.width / 2
         val centreY = canvas.height / 2
-        val bodyBoxes = bodies.filter { it !is FrameElement }.map { it.id to screenBox(it, canvas) }
+        val bodyBoxes = bodies.filter { it !is FrameElement }.map { AnnotationBody(it.id, screenBox(it, canvas), (it as? LineElement)?.let { l -> lineSegment(l, canvas) }) }
         val ordered = candidates
             .map { it to screenBox(it, canvas) }
             .sortedWith(compareBy({ hypot(it.second.centreX - centreX, it.second.centreY - centreY) }, { it.first.id.value }))
         val placed = ArrayList<AnnotationPlaced>()
         val out = ArrayList<DimensionAnnotation>()
         var shapes = 0
-        for ((element, _) in ordered) {
-            if (shapes >= MAX_ANNOTATED_SHAPES) break
+        var attempts = 0
+        for ((element, selfBox) in ordered) {
+            if (shapes >= MAX_ANNOTATED_SHAPES || attempts++ >= MAX_ANNOTATED_SHAPES * ATTEMPT_FACTOR) break
             val name = ElementNames.nameOf(element)
             var annotated = false
             for (span in spansOf(element, canvas)) {
@@ -160,7 +166,7 @@ object DimensionAnnotationLayout {
                 val extent = span.textExtent(tw, th)
                 val alpha = ((span.lengthDp() / extent - FADE_START_RATIO) / (FADE_FULL_RATIO - FADE_START_RATIO)).coerceIn(0.0, 1.0)
                 if (alpha < MIN_ALPHA) continue
-                val at = AnnotationPlacer.place(span, AnnotationPlacer.Fit(canvas, reserved, placed, bodyBoxes, element.id, tw, th, extent)) ?: continue
+                val at = AnnotationPlacer.place(span, AnnotationPlacer.Fit(canvas, reserved, placed, bodyBoxes, element.id, selfBox, tw, th, extent)) ?: continue
                 placed += at
                 annotated = true
                 out += DimensionAnnotation(element.id, name, span.label, span.sixteenths, text, at.line, at.extensions, at.text, at.text, alpha)
@@ -168,6 +174,12 @@ object DimensionAnnotationLayout {
             if (annotated) shapes++
         }
         return withTapRects(out, reserved, canvas, tapMinDp)
+    }
+
+    private fun lineSegment(line: LineElement, canvas: PillCanvas): AnnotationSegment? {
+        if (line.points.size != TWO_POINT_LINE) return null
+        val pts = line.points.map { canvas.toScreenDp(it.x.value, it.y.value) }
+        return AnnotationSegment(AnnotationPoint(pts[0].first, pts[0].second), AnnotationPoint(pts[1].first, pts[1].second))
     }
 
     private fun screenBox(e: SceneElement, canvas: PillCanvas): AnnotationRect {
@@ -246,6 +258,7 @@ object DimensionAnnotationLayout {
     private fun withTapRects(annotations: List<DimensionAnnotation>, reserved: List<AnnotationRect>, canvas: PillCanvas, tapMinDp: Double): List<DimensionAnnotation> {
         val taps = annotations.map { a ->
             val t = a.textRect
+            if (a.alpha < TAP_MIN_ALPHA) return@map t
             val halfW = max(t.width, tapMinDp) / HALF
             val halfH = max(t.height, tapMinDp) / HALF
             AnnotationRect(
@@ -257,8 +270,8 @@ object DimensionAnnotationLayout {
             for (j in i + 1 until taps.size) {
                 if (!taps[i].overlaps(taps[j])) continue
                 val (ci, cj) = cut(taps[i], annotations[i].textRect, taps[j], annotations[j].textRect)
-                taps[i] = ci
-                taps[j] = cj
+                if (annotations[i].alpha >= TAP_MIN_ALPHA) taps[i] = ci
+                if (annotations[j].alpha >= TAP_MIN_ALPHA) taps[j] = cj
             }
             for (r in reserved) if (taps[i].overlaps(r)) taps[i] = cut(taps[i], annotations[i].textRect, r, r).first
         }
@@ -284,7 +297,15 @@ object DimensionAnnotationLayout {
     fun description(a: DimensionAnnotation): String = S.Annotation.description(DimensionPillModel.label(a.kind), a.elementName, SpokenLength.of(a.sixteenths))
 }
 
-/** A placed annotation before its target is sized: the text rectangle, the dimension line, and whether it sits inside its own shape. */
+/** Another shape an annotation keeps off: a line blocks only along its segment, any other shape by its box unless that box encloses the annotated shape. */
+internal class AnnotationBody(val id: ElementId, val box: AnnotationRect, val segment: AnnotationSegment?) {
+    fun blocks(text: AnnotationRect, self: AnnotationRect): Boolean = when {
+        segment != null -> text.crosses(segment)
+        else -> box.overlaps(text) && !box.contains(self)
+    }
+}
+
+/** A placed annotation before its target is sized: the text rectangle, the dimension line and its extension lines. */
 internal class AnnotationPlaced(val text: AnnotationRect, val line: AnnotationSegment, val extensions: List<AnnotationSegment>)
 
 internal class AnnotationSpan(val label: PillKind, val sixteenths: Long, val p: AnnotationPoint, val q: AnnotationPoint, val normals: List<AnnotationPoint>, val reach: Double, val extStart: Double) {
@@ -297,12 +318,12 @@ internal class AnnotationSpan(val label: PillKind, val sixteenths: Long, val p: 
     }
 }
 
-/** Chooses where one span's line and text go: outside on the preferred side in stacked rows, else inside a rectangle, else onto a neighbour. */
+/** Chooses where one span's line and text go: outside on the preferred side in stacked rows, else inside a rectangle; null when neither is free of other shapes. */
 internal object AnnotationPlacer {
     private const val HALF = DimensionAnnotationLayout.HALF
 
     /** What a placement is checked against: the canvas, the free-space reservations, the annotations already placed and the other shapes' boxes. */
-    internal class Fit(val canvas: PillCanvas, val reserved: List<AnnotationRect>, val placed: List<AnnotationPlaced>, val bodies: List<Pair<ElementId, AnnotationRect>>, val self: ElementId, val tw: Double, val th: Double, val extent: Double)
+    internal class Fit(val canvas: PillCanvas, val reserved: List<AnnotationRect>, val placed: List<AnnotationPlaced>, val bodies: List<AnnotationBody>, val self: ElementId, val selfBox: AnnotationRect, val tw: Double, val th: Double, val extent: Double)
 
     /**
      * The spot for [span]'s line and text: outside the shape on the preferred side, then the other, stacking outward in rows; else,
@@ -350,7 +371,7 @@ internal object AnnotationPlacer {
 
     private fun clear(text: AnnotationRect, strokes: List<AnnotationSegment>, fit: Fit): Boolean {
         val padded = text.inflated(DimensionAnnotationLayout.TEXT_GAP_DP)
-        if (fit.bodies.any { (id, box) -> id != fit.self && box.overlaps(text) }) return false
+        if (fit.bodies.any { it.id != fit.self && it.blocks(text, fit.selfBox) }) return false
         if (fit.reserved.any { r -> r.overlaps(padded) || strokes.any { r.crosses(it) } }) return false
         return fit.placed.none { p ->
             val theirs = listOf(p.line) + p.extensions

@@ -59,7 +59,6 @@ private const val TICK_DP = 4f
 private const val LINE_ALPHA = 0.75f
 private const val TEXT_COLOR_ALPHA = 0.9f
 private const val CHIP_ALPHA = 0.85f
-private const val TAP_MIN_ALPHA = 0.6
 private const val CHIP_RADIUS_DP = 3
 
 /** What one layout depends on; two equal keys mean the cached layout is still right. */
@@ -109,7 +108,7 @@ internal fun DimensionAnnotationsOverlay(controller: SketchEditorController, ext
         if (annotations.isEmpty()) return@BoxWithConstraints
         Canvas(Modifier.fillMaxSize().clearAndSetSemantics { }) { drawLines(annotations, ink) }
         annotations.forEach { a ->
-            key(a.elementId.value, a.kind) { AnnotationValue(a, tappable && a.alpha >= TAP_MIN_ALPHA, ink, chip) { select(controller, state, a) } }
+            key(a.elementId.value, a.kind) { AnnotationValue(a, tappable && a.alpha >= DimensionAnnotationLayout.TAP_MIN_ALPHA, ink, chip) { select(controller, state, a) } }
         }
     }
 }
