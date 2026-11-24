@@ -18,7 +18,6 @@ import dev.stapler.stelekit.git.registerGitSync
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.GitHostConfig
 import dev.stapler.stelekit.git.resolve
-import dev.stapler.stelekit.platform.DemoFileSystem
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.HostAccessState
 import dev.stapler.stelekit.platform.EphemeralSettingsMode
@@ -151,7 +150,7 @@ fun main() {
 
     scope.launch(CoroutineExceptionHandler { _, throwable ->
         println("[SteleKit] Fatal startup error: ${throwable.message}")
-        // ComposeViewport will not be mounted — the loading overlay remains visible
+        showBootError()
     }) {
         // The "open temporarily" flow (Sidebar's GraphSwitcher → startEphemeralSession()) reloads
         // into this exact URL — a fresh page load is required because DriverFactory caches exactly
@@ -246,51 +245,27 @@ fun main() {
         val isNewUser = !opfsFileSystem.directoryExists(opfsGraphPath)
 
         val driverFactory = DriverFactory()
-        var useDemoFallback = false
         val backend = try {
-            val driver = driverFactory.createDriverAsync(graphId)
-            if (driver.actualBackend == "memory") {
-                // OPFS VFS unavailable — SQLite in-memory still works, show demo content.
-                println("[SteleKit] OPFS worker fell back to :memory: — loading demo graph")
-                markDriverBackend("memory")
-                useDemoFallback = true
-                GraphBackend.SQLDELIGHT
-            } else {
-                markDriverBackend("opfs")
-                GraphBackend.SQLDELIGHT
-            }
+            driverFactory.createDriverAsync(graphId)
+            markDriverBackend("opfs")
+            GraphBackend.SQLDELIGHT
         } catch (e: GraphLockedElsewhereException) {
-            // Do NOT fall back to the demo graph here — that would silently hide a real,
-            // recoverable "open it in that other tab instead" situation from the user.
             println("[SteleKit] ${e.message}")
             showBootRefusal(driverLockName(graphId))
             return@launch
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Throwable) {
-            println("[SteleKit] SQLite driver init failed, loading demo graph: ${e.message}")
-            markDriverBackend("memory")
-            useDemoFallback = true
-            GraphBackend.IN_MEMORY
+            println("[SteleKit] SQLite driver init failed: ${e.message}")
+            showBootError()
+            return@launch
         }
 
-        val fileSystem: FileSystem
-        val graphPath: String
-        if (useDemoFallback) {
-            fileSystem = DemoFileSystem()
-            graphPath = fileSystem.getDefaultGraphPath()
-            // Clear persisted registry so GraphManager starts fresh in memory-only mode.
-            val settings = PlatformSettings()
-            settings.putBoolean("onboardingCompleted", true)
-            localStorage.removeItem("graph_registry")
-            localStorage.removeItem("cached_graph_path")
-        } else {
-            fileSystem = opfsFileSystem
-            graphPath = opfsGraphPath
-            // lastNotesPath feeds the single-graph → multi-graph migration in loadRegistry().
-            // Only write it for returning users; new users start fresh and have no old registry
-            // to migrate, so leaving lastNotesPath unset is correct.
-            if (!isNewUser) {
-                PlatformSettings().writeLastNotesPath(EffectiveNotesPath(graphPath))
-            }
+        val fileSystem: FileSystem = opfsFileSystem
+        val graphPath = opfsGraphPath
+        // Preserve the registry on startup failure; only successful persistent boots reach here.
+        if (!isNewUser) {
+            PlatformSettings().writeLastNotesPath(EffectiveNotesPath(graphPath))
         }
 
         val graphManager = GraphManager(
@@ -300,27 +275,20 @@ fun main() {
             defaultBackend = backend,
         )
 
-        // Always register the demo graph in the switcher.
-        // New users and fallback mode start on it so the app isn't blank on first load.
+        // Always register the demo graph; new users start on it.
         graphManager.addDemoGraph()
-        if (isNewUser || useDemoFallback) {
+        if (isNewUser) {
             graphManager.switchGraph(DEMO_GRAPH_ID)
         }
 
-        // Bug fix: opfsFileSystem's graphId/hostDirectorySync were only ever wired to the boot-time
-        // graph above (opfsGraphPath/reconnectHostDirectory) — GraphManager's multi-graph switcher
-        // (the sidebar graph dropdown) can activate a different graph at any time afterward, and
-        // nothing told opfsFileSystem. Keep it in sync for the life of the session; skips the demo
-        // graph (never OPFS-backed) and no-ops in demo-fallback mode (no real fileSystem to update).
-        if (!useDemoFallback) {
-            scope.launch {
-                graphManager.graphRegistry.collect { registry ->
-                    val activeId = registry.activeGraphId ?: return@collect
-                    if (activeId == DEMO_GRAPH_ID) return@collect
-                    val info = registry.graphs.firstOrNull { it.id == activeId } ?: return@collect
-                    @OptIn(dev.stapler.stelekit.model.RegistryRootPath::class) val opfsGraphKey = info.path // OPFS keys graphs by registry path
-                    opfsFileSystem.switchActiveGraph(opfsGraphKey)
-                }
+        // Keep the file-system target in sync with graph switches; the demo is never OPFS-backed.
+        scope.launch {
+            graphManager.graphRegistry.collect { registry ->
+                val activeId = registry.activeGraphId ?: return@collect
+                if (activeId == DEMO_GRAPH_ID) return@collect
+                val info = registry.graphs.firstOrNull { it.id == activeId } ?: return@collect
+                @OptIn(dev.stapler.stelekit.model.RegistryRootPath::class) val opfsGraphKey = info.path // OPFS keys graphs by registry path
+                opfsFileSystem.switchActiveGraph(opfsGraphKey)
             }
         }
 
@@ -359,31 +327,18 @@ fun main() {
                         sketchDurability = dev.stapler.stelekit.projectbridge.FileSystemSketchDurability(fileSystem, graphRoot = { graphPath }),
                         pageLifecycle = dev.stapler.stelekit.platform.WasmPageLifecycle(),
                         platformCaps = dev.stapler.stelekit.asset.pipeline.PlatformCaps.NONE,
-                        // Demo-fallback mode has no persistent OPFS content to write attachments
-                        // into (matches graphMoveQuiesceStrategy/hostLinkStep/insufficientSpaceCheck's
-                        // gate below), so the attach-image affordance is hidden entirely there.
-                        attachmentService = if (useDemoFallback) null else wasmAttachmentService,
+                        attachmentService = wasmAttachmentService,
                         gitRepository = wasmGitRepository,
-                        // Phase 3 (Epic 3.3): relocate has no meaning in demo-fallback mode (no
-                        // persistent OPFS content to move), so both are left null there.
-                        graphMoveQuiesceStrategy = if (useDemoFallback) null else
+                        graphMoveQuiesceStrategy =
                             dev.stapler.stelekit.db.createWasmJsGraphMoveQuiesceStrategy(opfsFileSystem),
-                        // Epic 4.1 (Task 4.1.1a): forwards straight to connectHostDirectory —
-                        // reuses the same "no persistent OPFS content in demo-fallback mode" gate
-                        // graphMoveQuiesceStrategy above already applies.
-                        hostLinkStep = if (useDemoFallback) null else
+                        hostLinkStep =
                             dev.stapler.stelekit.db.createWasmJsHostLinkStep(opfsFileSystem.hostDirectorySync),
-                        storageLocationResolver = if (useDemoFallback) null else
+                        storageLocationResolver =
                             dev.stapler.stelekit.db.createWasmJsStorageLocationResolver(
                                 graphManager = graphManager,
                                 hostAccessState = { opfsFileSystem.hostAccessStateFlow.value },
                             ),
-                        // MAJOR finding (PR #327 review): real pre-flight free-space check —
-                        // previously never wired, so GraphRelocationCoordinator's default
-                        // BulkCopyVerifier always used InsufficientSpaceCheck.NONE. Same
-                        // demo-fallback gate as graphMoveQuiesceStrategy/hostLinkStep above (no
-                        // persistent OPFS content to check space for in that mode).
-                        insufficientSpaceCheck = if (useDemoFallback) null else
+                        insufficientSpaceCheck =
                             dev.stapler.stelekit.db.WasmJsInsufficientSpaceCheck(),
                     ),
                     webSyncDeps = dev.stapler.stelekit.ui.StelekitAppWebSyncDeps(

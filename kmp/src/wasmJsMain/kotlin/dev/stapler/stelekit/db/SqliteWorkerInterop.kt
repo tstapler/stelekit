@@ -6,9 +6,6 @@ internal fun createSqliteWorker(scriptPath: String): JsAny =
 internal fun workerPostMessage(worker: JsAny, message: JsAny): Unit =
     js("worker.postMessage(message)")
 
-internal fun buildInitMessage(dbPath: String, mode: String): JsAny =
-    js("({ type: 'init', dbPath: dbPath, mode: mode })")
-
 internal fun buildExecMessage(id: Int, sql: String, bindArray: JsAny): JsAny =
     js("({ type: 'exec', id: id, sql: sql, bind: bindArray })")
 
@@ -50,15 +47,46 @@ internal fun jsValueIsNull(v: JsAny?): Boolean = js("v === null || v === undefin
 internal fun jsValueIsNumber(v: JsAny): Boolean = js("typeof v === 'number'")
 internal fun jsValueIsString(v: JsAny): Boolean = js("typeof v === 'string'")
 
-internal fun createWorkerReadyPromise(worker: JsAny): kotlin.js.Promise<JsAny> = js("""
-    new Promise(function(resolve) {
-        function onReady(e) {
-            if (e.data.type === 'ready') {
-                worker.removeEventListener('message', onReady);
-                resolve(e.data);
+internal fun terminateSqliteWorker(worker: JsAny): Unit = js("worker.terminate()")
+
+internal fun createWorkerReadyPromise(worker: JsAny, dbPath: String, mode: String): kotlin.js.Promise<JsAny> = js("""
+    new Promise(function(resolve, reject) {
+        var settled = false;
+        function cleanup() {
+            clearTimeout(timer);
+            worker.removeEventListener('message', onMessage);
+            worker.removeEventListener('error', onError);
+            worker.removeEventListener('messageerror', onMessageError);
+        }
+        function fail(message) {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            worker.terminate();
+            reject(new Error(message));
+        }
+        function onMessage(e) {
+            var data = e.data;
+            if (!data) return;
+            if (data.type === 'ready') {
+                settled = true;
+                cleanup();
+                resolve(data);
+            } else if (data.type === 'error') {
+                fail(data.message || 'SQLite worker initialization failed');
             }
         }
-        worker.addEventListener('message', onReady);
+        function onError(e) {
+            e.preventDefault();
+            fail(e.message || 'SQLite worker module failed to load');
+        }
+        function onMessageError() { fail('SQLite worker initialization message could not be read'); }
+        var timer = setTimeout(function() { fail('SQLite worker initialization timed out. Please retry.'); }, 30000);
+        worker.addEventListener('message', onMessage);
+        worker.addEventListener('error', onError);
+        worker.addEventListener('messageerror', onMessageError);
+        try { worker.postMessage({ type: 'init', dbPath: dbPath, mode: mode }); }
+        catch (e) { fail(e.message || 'SQLite worker initialization could not be sent'); }
     })
 """)
 

@@ -37,9 +37,7 @@ class WasmOpfsSqlDriver(private val workerScriptPath: String) : SqlDriver {
      * through but unused by the worker in that mode.
      */
     suspend fun init(dbPath: String, mode: String = "persistent") {
-        val readyPromise = createWorkerReadyPromise(worker)
-        workerPostMessage(worker, buildInitMessage(dbPath, mode))
-        val readyMsg: JsAny = readyPromise.await()
+        val readyMsg: JsAny = createWorkerReadyPromise(worker, dbPath, mode).await()
         actualBackend = getMessageBackend(readyMsg)
         val warning = getMessageWarning(readyMsg)
         if (warning != null) {
@@ -130,6 +128,9 @@ class WasmOpfsSqlDriver(private val workerScriptPath: String) : SqlDriver {
     override fun notifyListeners(vararg queryKeys: String) {
         queryKeys.forEach { key -> listeners[key]?.toSet()?.forEach { it.queryResultsChanged() } }
     }
+
+    // DriverFactory reuses this worker across repository lifetimes; only failed boot disposes it.
+    internal fun terminate() = terminateSqliteWorker(worker)
 
     override fun close() {}
 }

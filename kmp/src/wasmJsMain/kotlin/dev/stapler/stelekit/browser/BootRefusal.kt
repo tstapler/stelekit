@@ -69,7 +69,7 @@ private fun jsRenderBootRefusal(
         other.style.cssText = 'display:inline-flex;align-items:center;min-height:2.75rem;min-width:2.75rem;color:#8ab4f8;margin:0 0 1rem 0;';
         var row = document.createElement('div');
         row.appendChild(reload);
-        row.appendChild(other);
+        if (secondary) row.appendChild(other);
         section.appendChild(h);
         section.appendChild(msg);
         section.appendChild(row);
@@ -126,10 +126,21 @@ internal fun renderBootRefusal(retryAvailable: Boolean) {
     )
 }
 
-/**
- * Replaces the plain `<p>` of the boot error with the boot-refusal screen of ux.md 14.9 (UX-152, D-149). With the Web Locks
- * API the page waits on [lockName] and reloads when it frees; without it the `message-no-retry` text is shown and nothing waits.
- */
+/** Shows a retryable startup error without opening a graph or changing saved settings. */
+internal fun showBootError() {
+    jsRenderBootRefusal(
+        heading = "SteleKit couldn’t start",
+        message = "Browser storage could not be opened. Your saved graphs have not been removed. Reload to try again. If this continues, check your connection and browser storage settings.",
+        waiting = "",
+        action = "Reload",
+        actionName = "Reload SteleKit to retry startup",
+        secondary = "",
+        secondaryName = "",
+        target = "",
+        showWaiting = false,
+    )
+}
+
 internal fun showBootRefusal(lockName: String) {
     val retryAvailable = jsCanWaitOnLock()
     renderBootRefusal(retryAvailable)

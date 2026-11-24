@@ -30,28 +30,33 @@ actual class DriverFactory actual constructor() {
 
     suspend fun createDriverAsync(graphId: String): WasmOpfsSqlDriver {
         check(cachedDriver == null) { "createDriverAsync() called twice for graph '$graphId'" }
-        // Tab-lifetime leader election: the OPFS SQLite SyncAccessHandle Pool VFS is exclusive to
-        // one tab. Without this gate, a second tab opening the same graph would fail to acquire the
-        // pool and the worker would silently fall back to a disconnected :memory: database
-        // (sqlite-stelekit-worker.js) — this tab's edits would then vanish on reload, since they
-        // never touched OPFS. Held for the lifetime of this tab; never explicitly released.
-        if (!WebLock.tryAcquireLeader("stelekit-sqlite-driver-$graphId")) {
-            throw GraphLockedElsewhereException(
+        // Retain successful ownership for the tab, but release failed startup attempts.
+        val leaderLock = WebLock.tryAcquireHeld("stelekit-sqlite-driver-$graphId")
+            ?: throw GraphLockedElsewhereException(
                 "This graph is already open in another browser tab. Close or switch to that tab " +
                     "to continue editing there, or close it before reopening this graph here."
             )
-        }
-        val opfsPath = "/graph-${graphId}.sqlite3"
-        val driver = WasmOpfsSqlDriver(workerScriptPath = "./sqlite-stelekit-worker.js")
-        driver.init(opfsPath)
+        var driver: WasmOpfsSqlDriver? = null
         try {
-            SteleDatabase.Schema.create(driver).await()
-        } catch (_: Throwable) {
-            // Tables already exist on a persisted OPFS database — treat as benign.
+            val opened = WasmOpfsSqlDriver(workerScriptPath = "./sqlite-stelekit-worker.js")
+            driver = opened
+            opened.init("/graph-${graphId}.sqlite3")
+            check(opened.actualBackend != "memory") { "Persistent SQLite storage is unavailable. Please retry." }
+            try {
+                SteleDatabase.Schema.create(opened).await()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+                // Tables already exist on a persisted OPFS database — treat as benign.
+            }
+            MigrationRunner.applyAll(opened)
+            cachedDriver = opened
+            return opened
+        } catch (e: Throwable) {
+            driver?.terminate()
+            leaderLock.release()
+            throw e
         }
-        MigrationRunner.applyAll(driver)
-        cachedDriver = driver
-        return driver
     }
 
     /**
@@ -64,11 +69,16 @@ actual class DriverFactory actual constructor() {
     suspend fun createEphemeralDriverAsync(): WasmOpfsSqlDriver {
         check(cachedDriver == null) { "createEphemeralDriverAsync() called twice" }
         val driver = WasmOpfsSqlDriver(workerScriptPath = "./sqlite-stelekit-worker.js")
-        driver.init(dbPath = "", mode = "ephemeral")
-        SteleDatabase.Schema.create(driver).await()
-        MigrationRunner.applyAll(driver)
-        cachedDriver = driver
-        return driver
+        try {
+            driver.init(dbPath = "", mode = "ephemeral")
+            SteleDatabase.Schema.create(driver).await()
+            MigrationRunner.applyAll(driver)
+            cachedDriver = driver
+            return driver
+        } catch (e: Throwable) {
+            driver.terminate()
+            throw e
+        }
     }
 }
 
