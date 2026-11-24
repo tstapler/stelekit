@@ -11,12 +11,18 @@ import dev.stapler.stelekit.sketch.v2.snap.PointSnapHit
 
 /**
  * Locks a pointer position onto the drawing's endpoints, midpoints, intersections, centres and, from an [anchor], the
- * perpendicular and tangent points. Reads `ToolContext.snap.points`; Ctrl, a finger resting on the Snap button (which makes
- * the settings empty) and an empty kind set all leave the position alone. Typed sizes never come through here.
+ * perpendicular and tangent points. Reads `ToolContext.snap`: a feature within reach wins, else the point rounds onto the grid when it is on. Ctrl, and a finger
+ * resting on the Snap button (which makes the settings empty), leave the position alone. Typed sizes never come through here.
  */
 object PointSnapper {
-    /** A pointer position after snapping: [point] is what the tool acts on and [hit] says why it moved (null when it did not). */
-    class Placed(val point: ScenePoint, val hit: PointSnapHit?) {
+    /**
+     * A pointer position after snapping: [point] is what the tool acts on, [hit] the feature it locked onto (null when none),
+     * and [gridded] says it was rounded onto the grid instead.
+     */
+    class Placed(val point: ScenePoint, val hit: PointSnapHit?, val gridded: Boolean = false) {
+        /** True when snapping moved the point at all. */
+        val snapped: Boolean get() = hit != null || gridded
+
         /** A preview carrying only the marker, for a press that has drawn nothing yet; null when nothing was snapped. */
         fun markerOnly(): ToolPreview? = hit?.let { ToolPreview(emptyList(), cursor = point, point = it) }
 
@@ -35,9 +41,11 @@ object PointSnapper {
         exclude: Set<ElementId> = emptySet(),
         extraVertices: List<ScenePoint> = emptyList(),
     ): Placed {
-        if (event.modifiers.ctrl || !ctx.snap.points.any) return Placed(raw, null)
+        if (event.modifiers.ctrl) return Placed(raw, null)
         val probe = PointSnap.probe(ctx.scene, ctx.snapIndex, raw.x.value, raw.y.value, tolerance(event, ctx), ctx.snap.points, anchor, exclude, extraVertices)
-        val hit = probe.hit ?: return Placed(raw, null)
-        return Placed(ScenePoint(unitOrZero(hit.x), unitOrZero(hit.y)), hit)
+        val hit = probe.hit
+        if (hit != null) return Placed(ScenePoint(unitOrZero(hit.x), unitOrZero(hit.y)), hit)
+        val grid = ctx.snap.activeGrid ?: return Placed(raw, null)
+        return Placed(ScenePoint(unitOrZero(grid.snap(raw.x.value)), unitOrZero(grid.snap(raw.y.value))), null, gridded = true)
     }
 }

@@ -286,11 +286,11 @@ class SelectTool(
             val previous = line.points.getOrNull(index - 1)
             val others = line.points.filterIndexed { i, _ -> i != index }
             val placed = PointSnapper.place(raw, previous, event, ctx, exclude = setOf(line.id), extraVertices = others)
-            val plain = if (event.modifiers.shift && previous != null) AngleSnap.snap(previous, raw) else raw
             val to = when {
                 placed.hit != null -> placed.point
-                ctx.snap == SnapSettings.None -> VertexSnap.nearest(raw, line, index, owner.vertexTolerance(ctx, touch), ctx) ?: plain
-                else -> plain
+                ctx.snap == SnapSettings.None -> VertexSnap.nearest(raw, line, index, owner.vertexTolerance(ctx, touch), ctx) ?: if (event.modifiers.shift && previous != null) AngleSnap.snap(previous, raw) else raw
+                event.modifiers.shift && previous != null -> AngleSnap.snap(previous, raw)
+                else -> placed.point
             }
             return Moved(line.points.toMutableList().also { it[index] = to }, placed)
         }

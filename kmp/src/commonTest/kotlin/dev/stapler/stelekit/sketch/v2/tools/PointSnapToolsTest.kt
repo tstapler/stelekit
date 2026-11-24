@@ -9,13 +9,16 @@ import dev.stapler.stelekit.sketch.v2.scene.EllipseElement
 import dev.stapler.stelekit.sketch.v2.scene.LineElement
 import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
+import dev.stapler.stelekit.sketch.v2.snap.GridPreset
 import dev.stapler.stelekit.sketch.v2.snap.PointSnapKind
 import dev.stapler.stelekit.sketch.v2.snap.PointSnapKinds
 import dev.stapler.stelekit.sketch.v2.snap.SnapSettings
+import kotlin.math.PI
 import kotlin.math.acos
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.tan
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -111,6 +114,39 @@ class PointSnapToolsTest {
         val c = ctx(sceneOfElements(diagonalA, diagonalB))
         val r = runScenario(LineTool(), c) { down(101, 99); up(101, 99); down(300, 300); up(300, 300); down(300, 300); up(300, 300) }
         assertEquals(listOf(sp(100, 100), sp(300, 300)), committedLine(r).points)
+    }
+
+    // ---- the grid under the same tools -------------------------------------------------------------------------------
+
+    private val gridOnly = SnapSettings(grid = GridPreset.Inch.settings(enabled = true))
+
+    @Test
+    fun line_should_RoundOntoTheGrid_When_NoFeatureIsNear_AndLeaveItWhenGridIsOffOrCtrlIsHeld() {
+        val raw = listOf(sp(37, 41), sp(105, 71))
+        val drawn = runScenario(LineTool(), ctx(sceneOfElements(), gridOnly)) { down(37, 41); up(105, 71) }
+        assertEquals(listOf(sp(32, 48), sp(112, 64)), committedLine(drawn).points)
+        val off = runScenario(LineTool(), ctx(sceneOfElements(), SnapSettings(grid = GridPreset.Inch.settings(enabled = false)))) { down(37, 41); up(105, 71) }
+        assertEquals(raw, committedLine(off).points)
+        val ctrl = runScenario(LineTool(), ctx(sceneOfElements(), gridOnly)) { down(37, 41); up(105, 71, mods = Modifiers(ctrl = true)) }
+        assertEquals(raw, committedLine(ctrl).points, "Ctrl held at release bypasses the grid for the whole line")
+    }
+
+    @Test
+    fun feature_should_BeatTheGrid_AndTheAngleStepShouldBeatTheGrid() {
+        val both = snapAll.copy(grid = GridPreset.Foot.settings(enabled = true))
+        assertEquals(sp(100, 100), committedLine(drawLine(ctx(sceneOfElements(diagonalA, diagonalB), both))).points.last())
+        val angled = runScenario(LineTool(LineOptions(angleSnap = true)), ctx(sceneOfElements(), gridOnly)) { down(16, 16); up(100, 3) }
+        val end = committedLine(angled).points.last()
+        assertEquals(-tan(PI / 12.0), (end.y.value - 16.0) / (end.x.value - 16.0), 1e-9, "the 15 degree step about the start, not a grid corner")
+    }
+
+    @Test
+    fun rectangle_and_vertexDrag_should_RoundOntoTheGrid() {
+        val r = runScenario(RectangleTool(), ctx(sceneOfElements(), gridOnly)) { down(35, 50); up(150, 79) }
+        val rect = assertIs<RectElement>(assertIs<AddElementCommand>(r.commands.single()).element)
+        assertEquals(listOf(32.0, 48.0, 112.0, 32.0), listOf(rect.x.value, rect.y.value, rect.width.value, rect.height.value))
+        val v = runScenario(selected(), ctx(sceneOfElements(polyline), gridOnly)) { down(650, 560); move(700, 600); up(701, 599) }
+        assertEquals(sp(704, 592), assertIs<SetLinePointsCommand>(v.commands.single()).points[2])
     }
 
     // ---- shape drags -----------------------------------------------------------------------------------------------

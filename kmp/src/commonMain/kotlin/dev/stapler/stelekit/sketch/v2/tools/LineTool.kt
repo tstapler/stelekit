@@ -63,13 +63,12 @@ class LineTool private constructor(
 
     /**
      * [to] locked onto the drawing's points when one is in reach (a feature of the drawing beats the 15 degree step: the
-     * user pointed at it), else onto the angle step about [from] when that is on.
+     * user pointed at it), else onto the angle step about [from] when that is on, else onto the grid when that is on.
      */
     private fun snapped(from: ScenePoint?, to: ScenePoint, event: InputEvent, ctx: ToolContext): PointSnapper.Placed {
         val placed = PointSnapper.place(to, from, event, ctx)
-        if (placed.hit != null) return placed
-        val angled = if (from != null && (options.angleSnap || event.modifiers.shift)) AngleSnap.snap(from, to) else to
-        return PointSnapper.Placed(angled, null)
+        if (placed.hit != null || from == null || !(options.angleSnap || event.modifiers.shift)) return placed
+        return PointSnapper.Placed(AngleSnap.snap(from, to), null)
     }
 
     /** Finishes the line with what was placed (the Done chip and Enter); nothing is committed with fewer than two vertices. */
