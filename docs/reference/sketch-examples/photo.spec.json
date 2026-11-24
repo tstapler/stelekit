@@ -1,0 +1,24 @@
+{
+  "spec": 1,
+  "mode": "plan",
+  "title": "Kitchen from photo",
+  "space": "photo",
+  "calibration": {
+    "refs": [
+      {"a": [112, 640], "b": [412, 640], "length": "3'"},
+      {"a": [900, 120], "b": [900, 420], "length": "36\""}
+    ],
+    "snap": "1\""
+  },
+  "shapes": [
+    {"id": "kitchen", "x": 100, "y": 100, "w": 1200, "h": 800, "label": "Kitchen"},
+    {"id": "island", "role": "furniture", "x": 500, "y": 400, "w": 400, "h": 150, "label": "Island"}
+  ],
+  "openings": [
+    {"id": "door1", "type": "door", "on": "kitchen", "wall": "south", "offset": 150, "width": 300}
+  ],
+  "dimensions": [
+    {"shape": "kitchen", "side": "north"},
+    {"shape": "kitchen", "side": "east"}
+  ]
+}

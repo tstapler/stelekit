@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Headless SteleKit sketch tool: render, validate, describe, canonicalize, build, place.
+# Usage: scripts/sketch-cli <command> [args]      (scripts/sketch-cli help)
+# Builds once through Gradle (a few seconds when up to date), then runs the JVM directly so quoting and paths stay exact.
+# SKETCH_CLI_SKIP_BUILD=1 skips the Gradle step when the classes are already built.
+set -euo pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cp_file="$root/kmp/build/sketch-cli/classpath.txt"
+if [[ "${SKETCH_CLI_SKIP_BUILD:-0}" != "1" || ! -f "$cp_file" ]]; then
+  (cd "$root" && ./gradlew -q --console=plain :kmp:sketchCliClasspath >&2)
+fi
+java_bin="${JAVA_HOME:+$JAVA_HOME/bin/}java"
+java_major="$("$java_bin" -version 2>&1 | sed -n '1s/.*version "\([0-9]*\).*/\1/p')"
+if [[ -z "$java_major" || "$java_major" -lt 21 ]]; then
+  echo "sketch-cli: needs a JDK 21 or newer (found: ${java_major:-none}); set JAVA_HOME" >&2
+  exit 2
+fi
+exec "$java_bin" -Djava.awt.headless=true --add-opens=java.base/java.lang=ALL-UNNAMED \
+  -cp "$(cat "$cp_file")" dev.stapler.stelekit.cli.SketchCliKt "$@"

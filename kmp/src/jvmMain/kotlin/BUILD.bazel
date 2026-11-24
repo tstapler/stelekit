@@ -94,6 +94,19 @@ kt_jvm_binary(
     runtime_deps = [":jvm_main_lib"],
 )
 
+# Headless sketch CLI for agents (render, validate, describe, canonicalize, build, place); docs/reference/sketch-format-v2.md.
+# `bazel run` starts in the runfiles tree, so pass absolute paths: bazel run //kmp:sketch_cli -- render /abs/sheet.v2.json --out /abs/sheet.png
+kt_jvm_binary(
+    name = "sketch_cli",
+    jvm_flags = [
+        "-Djava.awt.headless=true",
+        "--add-opens=java.base/java.lang=ALL-UNNAMED",
+    ],
+    main_class = "dev.stapler.stelekit.cli.SketchCliKt",
+    visibility = ["//visibility:public"],
+    runtime_deps = [":jvm_main_lib"],
+)
+
 # Exposes JvmGitRepository.kt for LfsStagingCallSitesStructuralTest (see commonMain's git_sync_service_source).
 filegroup(
     name = "jvm_git_repository_source",
