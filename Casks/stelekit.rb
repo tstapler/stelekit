@@ -1,7 +1,7 @@
 # Cask managed by the release workflow — do not edit sha256/version manually.
 cask "stelekit" do
-  version "0.121.0"
-  sha256 "29cef813bdf7d3b39ac869e7dbc3a41f324a30deb426b4fd12c8f76de0951a6c"
+  version "0.122.0"
+  sha256 "d7a250576be4501f2aab13920508db960241f99465d1322a2d68e2f498e9ea07"
 
   url "https://github.com/tstapler/stelekit/releases/download/v#{version}/SteleKit-v#{version}-macos.dmg"
   name "SteleKit"
