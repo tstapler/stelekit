@@ -203,7 +203,7 @@ class UnderlayControllerTest {
         val (controller, extras) = rig()
         controller.commitNow(RemoveUnderlay)
         val store = ImageAssetStore(FakeFileSystem(), "/graph/assets")
-        val picker = UnderlayController(controller, Picker(photo), store, CoroutineScope(controller.adoption), SceneLimits.Default, downscaler, controller.adoption) { LengthFormat.FEET_INCHES }
+        val picker = UnderlayController(controller, Picker(photo), store, CoroutineScope(controller.adoption), SceneLimits.Default, downscaler, controller.adoption[kotlin.coroutines.ContinuationInterceptor] as kotlinx.coroutines.CoroutineDispatcher) { LengthFormat.FEET_INCHES }
         picker.choosePhoto()
         testScheduler.advanceUntilIdle()
         extras.close()
