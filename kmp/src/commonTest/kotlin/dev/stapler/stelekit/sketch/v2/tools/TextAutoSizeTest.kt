@@ -51,6 +51,8 @@ class TextAutoSizeTest {
         )
     }
 
+    private fun ownBox(e: TextElement) = Box(e.x.value, e.y.value, e.width.value, e.height.value)
+
     private fun unit(v: Double) = dev.stapler.stelekit.sketch.v2.scene.SceneUnit.of(v).getOrNull()!!
 
     private fun doc(e: SceneElement) = SketchDocumentV2(SketchSceneV2.empty().add(e).getOrNull()!!)

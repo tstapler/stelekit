@@ -18,7 +18,7 @@ import kotlin.math.sin
  * follow its font, so the drag scales the font (corner and top/bottom handles keep the aspect) or sets the wrap width (left and
  * right handles) instead of stretching a box the text does not fill. The font size is kept inside [TextSizeLimits].
  */
-internal object TextResize {
+object TextResize {
     /**
      * The transform for dragging [handle] of [e] (whose own box is [box]) by ([dx], [dy]). A side handle re-wraps with [metrics]
      * (without it, or while the font is loading, the side handle scales like a corner so the box never stops matching the glyphs).
