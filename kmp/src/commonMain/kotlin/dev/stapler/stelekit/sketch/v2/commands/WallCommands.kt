@@ -84,7 +84,7 @@ data class SetWallSegmentLength(val id: ElementId, val segment: Int, val length:
         val delta = length - seg.length
         val dx = seg.u.x * delta
         val dy = seg.u.y * delta
-        val first = segment + 1
+        val first = (segment + 1) % wall.points.size
         val last = if (wall.closed) first else wall.points.lastIndex
         val moved = wall.points.mapIndexed { i, p ->
             if (i in first..last) ScenePoint(sceneUnit(p.x.value + dx, scene.limits).bind(), sceneUnit(p.y.value + dy, scene.limits).bind()) else p

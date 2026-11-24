@@ -173,6 +173,19 @@ class WallModelTest {
     }
 
     @Test
+    fun setWallSegmentLength_should_MoveTheFirstVertexOfAClosedWall_ForItsLastSegment() {
+        val moved = docOf(room()).then(SetWallSegmentLength(ElementId("w1"), 3, 500.0)).wall()
+        assertEquals(WallGeometry.vec(pt(0.0, -200.0)), WallGeometry.vec(moved.points[0]))
+    }
+
+    @Test
+    fun flippingARoomWithItsDoor_should_KeepTheDoorSwingingTheSameWayRelativeToTheRoom() {
+        val doc = docOf(room(), door().copy(flipSide = true))
+        val flipped = doc.then(dev.stapler.stelekit.sketch.v2.commands.FlipElements(listOf(ElementId("w1"), ElementId("d1")), horizontal = true))
+        assertEquals(false, flipped.opening().flipSide, "mirroring reverses the winding, so the inward swing is the other side of travel")
+    }
+
+    @Test
     fun setWallSegmentLength_should_RefuseAMissingSegmentAndANonPositiveLength() {
         val doc = docOf(room())
         assertFalse(SetWallSegmentLength(ElementId("w1"), 9, 10.0).apply(doc).isRight())
