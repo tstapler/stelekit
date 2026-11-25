@@ -103,4 +103,36 @@ class SketchTextSearchTest {
         repos.searchText.deleteProject("p1")
         assertTrue(repos.searchText.findByText("kitchen", 5).getOrNull()!!.isEmpty())
     }
+
+    @Test
+    fun repository_should_BehaveTheSameOnBothBackends_ForSaveHashDeleteAndNameMatch() = runBlocking<Unit> {
+        for (b in SketchTestSupport.backends()) {
+            val r = b.repos
+            r.projects.saveProject(SketchTestSupport.project())
+            r.searchText.save(SketchSearchRow("p1", "s1", "kitchen wall", "h1", 1L))
+            r.searchText.save(SketchSearchRow("p1", "s2", "bath", "h2", 2L))
+            assertEquals(mapOf("s1" to "h1", "s2" to "h2"), r.searchText.hashesOf("p1").getOrNull(), b.name)
+            assertEquals(listOf("s1"), r.searchText.findByText("kitchen wall", 5).getOrNull()!!.map { it.sheetUuid }, b.name)
+            assertEquals(listOf("s2", "s1"), r.searchText.findByText("kitchen", 5).getOrNull()!!.map { it.sheetUuid }, "${b.name}: the project name (Kitchen) matches every sheet, newest first")
+            assertTrue(r.searchText.findByText("  ", 5).getOrNull()!!.isEmpty(), b.name)
+            assertTrue(r.searchText.findByText("kitchen", 0).getOrNull()!!.isEmpty(), b.name)
+            r.searchText.deleteSheet("s1")
+            assertEquals(setOf("s2"), r.searchText.hashesOf("p1").getOrNull()!!.keys, b.name)
+            r.searchText.deleteProject("p1")
+            assertTrue(r.searchText.hashesOf("p1").getOrNull()!!.isEmpty(), b.name)
+        }
+    }
+
+    @OptIn(dev.stapler.stelekit.db.DirectSqlWrite::class)
+    @Test
+    fun restrictedQueries_should_ForwardTheSearchTextWrites() = runBlocking<Unit> {
+        val b = SketchTestSupport.backends().first { it.name == "sqldelight" }
+        val q = dev.stapler.stelekit.db.RestrictedDatabaseQueries(b.database!!.steleDatabaseQueries)
+        q.upsertSketchSearchText("p1", "s1", "kitchen", "h", 1L)
+        assertEquals(1L, SketchTestSupport.countRows(b.driver!!, "sketch_search_text"))
+        q.deleteSketchSearchTextBySheet("s1")
+        q.upsertSketchSearchText("p1", "s2", "bath", "h", 1L)
+        q.deleteSketchSearchTextByProject("p1")
+        assertEquals(0L, SketchTestSupport.countRows(b.driver!!, "sketch_search_text"))
+    }
 }
