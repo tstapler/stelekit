@@ -10,6 +10,9 @@ import androidx.compose.runtime.setValue
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.commands.SheetStyleExtras
 import dev.stapler.stelekit.sketch.v2.commands.SheetDimensionsExtras
+import dev.stapler.stelekit.sketch.v2.commands.SheetSetupExtras
+import dev.stapler.stelekit.sketch.v2.commands.withSheetSetup
+import dev.stapler.stelekit.sketch.v2.export.SheetSetup
 import dev.stapler.stelekit.sketch.v2.commands.SheetKindExtras
 import dev.stapler.stelekit.sketch.v2.commands.withDimensionsOn
 import dev.stapler.stelekit.sketch.v2.commands.withSheetKind
@@ -38,6 +41,10 @@ class ElementCreation(initial: SketchDocumentV2, private val seeds: SeedSource) 
     var dimensionsOn: Boolean? by mutableStateOf(SheetDimensionsExtras.read(initial.extras))
         private set
 
+    /** The sheet's print setup (paper, drawing scale, title block); null until someone sets one. Export-only: the editor's canvas does not show it. */
+    var sheetSetup: SheetSetup? by mutableStateOf(SheetSetupExtras.read(initial.extras))
+        private set
+
     /** The style a new shape takes before the Style panel's defaults row changes it. */
     fun startingStyle(): ElementStyle = sheetStyle.styleForNewElement()
 
@@ -53,6 +60,11 @@ class ElementCreation(initial: SketchDocumentV2, private val seeds: SeedSource) 
         sheetStyle = SheetStyleExtras.read(doc.extras)
         sheetKind = SheetKindExtras.read(doc.extras)
         dimensionsOn = SheetDimensionsExtras.read(doc.extras)
+        sheetSetup = SheetSetupExtras.read(doc.extras)
+    }
+
+    fun chooseSheetSetup(setup: SheetSetup) {
+        sheetSetup = setup
     }
 
     fun choose(style: SheetStyleDefaults) {
@@ -68,7 +80,7 @@ class ElementCreation(initial: SketchDocumentV2, private val seeds: SeedSource) 
     }
 
     /** [doc] as it is saved: with the sheet's style in its extras. */
-    fun forSave(doc: SketchDocumentV2): SketchDocumentV2 = doc.withSheetStyle(sheetStyle).withSheetKind(sheetKind).withDimensionsOn(dimensionsOn)
+    fun forSave(doc: SketchDocumentV2): SketchDocumentV2 = doc.withSheetStyle(sheetStyle).withSheetKind(sheetKind).withDimensionsOn(dimensionsOn).withSheetSetup(sheetSetup)
 
     companion object {
         /** A seed source that differs per sheet and per session without a random source: the clock folded with the sheet. */
@@ -95,5 +107,12 @@ fun SketchEditorController.setSheetKind(kind: SheetKind) {
 fun SketchEditorController.setSheetDimensions(on: Boolean) {
     if (readOnly || on == creation.dimensionsOn) return
     creation.chooseDimensions(on)
+    saves.submit(creation.forSave(history.present))
+}
+
+/** Remembers the sheet's print setup (paper, drawing scale, title block) so the next export starts from it. Not an undo step. */
+fun SketchEditorController.setSheetSetup(setup: SheetSetup) {
+    if (readOnly || setup == creation.sheetSetup) return
+    creation.chooseSheetSetup(setup)
     saves.submit(creation.forSave(history.present))
 }

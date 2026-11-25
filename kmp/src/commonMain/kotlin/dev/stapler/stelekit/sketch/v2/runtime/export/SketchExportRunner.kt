@@ -11,6 +11,12 @@ import dev.stapler.stelekit.sketch.v2.annotation.DimensionExport
 import dev.stapler.stelekit.sketch.v2.annotation.DimensionExportOptions
 import dev.stapler.stelekit.sketch.v2.annotation.DimensionsChoice
 import dev.stapler.stelekit.sketch.v2.annotation.ExportInk
+import dev.stapler.stelekit.sketch.v2.export.PaperSize
+import dev.stapler.stelekit.sketch.v2.export.ScalePresets
+import dev.stapler.stelekit.sketch.v2.export.SheetPlan
+import dev.stapler.stelekit.sketch.v2.export.SheetPlanner
+import dev.stapler.stelekit.sketch.v2.export.SheetPrint
+import dev.stapler.stelekit.sketch.v2.export.SheetSetup
 import dev.stapler.stelekit.sketch.v2.export.SvgExportOptions
 import dev.stapler.stelekit.sketch.v2.export.SvgExporter
 import dev.stapler.stelekit.sketch.v2.export.SvgImageSource
@@ -33,6 +39,7 @@ import kotlinx.coroutines.CancellationException
 enum class ExportFormat(val extension: String, val mimeType: String) {
     Png("png", "image/png"),
     Svg("svg", "image/svg+xml"),
+    Pdf("pdf", "application/pdf"),
     Excalidraw("excalidraw", "application/json"),
     Library("excalidrawlib", "application/json"),
     Csv("csv", "text/csv"),
@@ -55,7 +62,24 @@ data class ExportRequest(
     val dimensions: DimensionsChoice = DimensionsChoice.Sheet,
     /** Whether the photo underlay is drawn. Off by default: a photo under a plan is a tracing aid, not part of the drawing. */
     val includeUnderlay: Boolean = false,
-)
+    /**
+     * The sheet on paper: for an SVG or PNG it turns the page layout on (the drawing at the sheet's scale on the chosen paper); a PDF
+     * is always on paper and falls back to the source's stored setup, then a suggested one, when this is null.
+     */
+    val sheet: SheetSetup? = null,
+    /** Pixels per inch of a PNG on paper. */
+    val dpi: Int = DEFAULT_DPI,
+    /** A PDF whose drawing is bigger than a page is written as several pages that tile it, instead of one clipped page. */
+    val tiled: Boolean = false,
+) {
+    /** True when the export lays the drawing out on a page at the sheet's scale. */
+    val onPaper: Boolean get() = format == ExportFormat.Pdf || (sheet != null && (format == ExportFormat.Svg || format == ExportFormat.Png))
+
+    companion object {
+        const val DEFAULT_DPI = 150
+        val DPIS: List<Int> = listOf(72, 150, 300)
+    }
+}
 
 /** The sheet as the dialog sees it. [csv] is null when the sheet has no dimensions; [sheetDimensions] is the sheet's own "dimensions shown" flag and [lengthFormat] the notation they are written in. */
 class ExportSource(
@@ -67,7 +91,13 @@ class ExportSource(
     val baseName: String = DEFAULT_BASE_NAME,
     val sheetDimensions: Boolean = false,
     val lengthFormat: LengthFormat = LengthFormat.FEET_INCHES,
+    /** The print setup stored on the sheet; null when it has none yet. */
+    val sheetSetup: SheetSetup? = null,
 ) {
+    /** Whether lengths read in metric, which picks the scale family, the paper and the scale bar's units. */
+    val metric: Boolean get() = lengthFormat == LengthFormat.METRIC_MM || lengthFormat == LengthFormat.METRIC_CM_M
+
+
     companion object {
         const val DEFAULT_BASE_NAME = "sketch"
     }
@@ -84,6 +114,9 @@ sealed interface ExportFailure {
     data object EncodeFailed : ExportFailure
 
     data object NothingToExport : ExportFailure
+
+    /** A tiled export would need [pages] pages, over the [budget] the writer takes; a smaller scale or bigger paper fits it. */
+    data class TooManyPages(val pages: Int, val budget: Int) : ExportFailure
 }
 
 /**
@@ -100,7 +133,46 @@ class SketchExportRunner(
     fun measure(source: ExportSource, request: ExportRequest): Either<ExportFailure, PixelSize>? {
         if (request.format != ExportFormat.Png) return null
         val subject = subject(source, request) ?: return ExportFailure.NothingToExport.left()
+        if (request.onPaper) {
+            val plan = planOf(subject, source, request)
+            return png.measurePage(plan.pageWidth, plan.pageHeight, request.dpi).mapLeft(::failure)
+        }
         return png.measure(subject.scene, pngOptions(request, subject, source)).mapLeft(::failure)
+    }
+
+    /** The page layout of a sheet-on-paper [request], or null for any other export or when there is nothing to export. */
+    fun plan(source: ExportSource, request: ExportRequest): SheetPlan? {
+        if (!request.onPaper) return null
+        val subject = subject(source, request) ?: return null
+        return planOf(subject, source, request)
+    }
+
+    /** The setup an export on paper starts with: the sheet's own, else paper by the unit family, the orientation of the drawing and the largest standard scale that fits. */
+    fun suggestedSetup(source: ExportSource, request: ExportRequest): SheetSetup {
+        source.sheetSetup?.let { return it }
+        val paper = if (source.metric) PaperSize.A4 else PaperSize.Letter
+        val base = SheetSetup(paper = paper, margin = SheetSetup.defaultMargin(paper))
+        val bounds = subject(source, request)?.let { content(it, source, request).bounds } ?: return base
+        val oriented = base.copy(orientation = SheetPlanner.orientationFor(bounds))
+        val scale = SheetPlanner.bestFit(oriented, bounds, source.metric) ?: ScalePresets.family(source.metric).last().scale
+        return oriented.copy(scale = scale)
+    }
+
+    private fun setupOf(source: ExportSource, request: ExportRequest): SheetSetup = request.sheet ?: suggestedSetup(source, request)
+
+    private fun content(subject: Subject, source: ExportSource, request: ExportRequest) = SvgExporter.content(
+        subject.scene, builder, request.style.render,
+        SvgExportOptions(bounds = subject.bounds, dimensions = dimensions(source, request)),
+    )
+
+    private fun planOf(subject: Subject, source: ExportSource, request: ExportRequest): SheetPlan =
+        SheetPlanner.plan(setupOf(source, request), content(subject, source, request).bounds, source.metric)
+
+    private fun printOf(subject: Subject, source: ExportSource, request: ExportRequest): SheetPrint {
+        val content = content(subject, source, request)
+        val plan = SheetPlanner.plan(setupOf(source, request), content.bounds, source.metric)
+        val ink = ExportInk.forBackground(background(request))
+        return SheetPrint(plan, content.ops, clip = !plan.fits || subject.bounds != null, ink = ink, background = background(request))
     }
 
     fun run(source: ExportSource, request: ExportRequest): Either<ExportFailure, ExportFile> = try {
@@ -118,6 +190,7 @@ class SketchExportRunner(
 
     private fun inScope(subject: Subject, source: ExportSource, request: ExportRequest): Either<ExportFailure, ExportFile> {
         val missing = ReferencedAssets.placeholders(subject.scene) { source.images.load(it) != null }.size
+        if (request.onPaper) return onPaper(subject, source, request, missing)
         return when (request.format) {
             ExportFormat.Png -> png.export(subject.scene, builder, request.style.render, pngOptions(request, subject, source)).mapLeft(::failure)
                 .map { file(it, source, request, missing) }
@@ -129,6 +202,18 @@ class SketchExportRunner(
                 { ExportFailure.EncodeFailed.left() },
                 { drawing -> text(drawing.text, source, request, drawing.missingFileIds.size) },
             )
+        }
+    }
+
+    private fun onPaper(subject: Subject, source: ExportSource, request: ExportRequest, missing: Int): Either<ExportFailure, ExportFile> {
+        val print = printOf(subject, source, request)
+        val tiled = request.tiled && request.format == ExportFormat.Pdf
+        if (tiled && print.plan.tooManyPages) return ExportFailure.TooManyPages(print.plan.pageCount, SheetPlanner.PAGE_BUDGET).left()
+        return when (request.format) {
+            ExportFormat.Pdf -> file(print.pdf(tiled, source.baseName), source, request, missing).right()
+            ExportFormat.Svg -> text(print.svg(source.images), source, request, missing)
+            else -> png.exportPage(print.pages(false).single(), print.plan.pageWidth, print.plan.pageHeight, request.dpi, background(request)).mapLeft(::failure)
+                .map { file(it, source, request, missing) }
         }
     }
 

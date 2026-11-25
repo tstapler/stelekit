@@ -22,6 +22,7 @@ import dev.stapler.stelekit.sketch.v2.export.SvgExportOptions
 import dev.stapler.stelekit.sketch.v2.index.Bounds
 import dev.stapler.stelekit.sketch.v2.index.ElementBounds
 import dev.stapler.stelekit.sketch.v2.render.DrawListBuilder
+import dev.stapler.stelekit.sketch.v2.render.DrawOp
 import dev.stapler.stelekit.sketch.v2.render.RenderStyle
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
@@ -100,6 +101,32 @@ class PngExporter(
         return if (bytes.isEmpty()) PngExportError.EncodeFailed.left() else bytes.right()
     }
 
+    /** The pixel size of a page of [widthUnits] by [heightUnits] (sixteenths of an inch) at [dpi], or why it would refuse. */
+    fun measurePage(widthUnits: Double, heightUnits: Double, dpi: Int): Either<PngExportError, PixelSize> {
+        if (dpi <= 0) return PngExportError.InvalidScale.left()
+        val widthPx = pagePixels(widthUnits, dpi)
+        val heightPx = pagePixels(heightUnits, dpi)
+        if (widthPx > limits.maxPngSidePx || heightPx > limits.maxPngSidePx || widthPx * heightPx > limits.maxPngPixels) {
+            return PngExportError.TooLarge(widthPx, heightPx, limits.maxPngSidePx).left()
+        }
+        return PixelSize(widthPx, heightPx).right()
+    }
+
+    /** A page already laid out in page units (the sheet on paper) drawn at [dpi]: one page unit is 1/16 inch, so the zoom is dpi / 16. */
+    fun exportPage(ops: List<DrawOp>, widthUnits: Double, heightUnits: Double, dpi: Int, background: String?): Either<PngExportError, ByteArray> {
+        val size = measurePage(widthUnits, heightUnits, dpi).fold({ return it.left() }, { it })
+        val bitmap = ImageBitmap(size.widthPx.toInt(), size.heightPx.toInt(), ImageBitmapConfig.Argb8888)
+        val viewport = SketchViewport.of(zoom = dpi.toDouble() / PAGE_UNITS_PER_INCH, panX = 0.0, panY = 0.0)
+        CanvasDrawScope().draw(Density(1f), LayoutDirection.Ltr, Canvas(bitmap), Size(bitmap.width.toFloat(), bitmap.height.toFloat())) {
+            background?.let { drawRect(CssColor.parse(it)) }
+            ScenePainter(resources = resources).paint(this, ops, viewport, null)
+        }
+        val bytes = encoder.encode(bitmap)
+        return if (bytes.isEmpty()) PngExportError.EncodeFailed.left() else bytes.right()
+    }
+
+    private fun pagePixels(units: Double, dpi: Int): Long = max(1.0, ceil(units * dpi / PAGE_UNITS_PER_INCH)).toLong()
+
     private class Plan(val subject: SketchSceneV2, val content: Bounds, val widthPx: Long, val heightPx: Long, val dimensions: List<ExportedDimension>)
 
     private fun plan(scene: SketchSceneV2, options: PngExportOptions): Either<PngExportError, Plan> {
@@ -117,6 +144,10 @@ class PngExporter(
 
     /** The pixel width or height of [sceneUnits] at [scale], at least one pixel. */
     private fun pixels(sceneUnits: Double, scale: Int): Long = max(1.0, ceil(sceneUnits * scale)).toLong()
+
+    private companion object {
+        const val PAGE_UNITS_PER_INCH = 16.0
+    }
 
     private fun contentBounds(scene: SketchSceneV2): Bounds? = scene.elementsInOrder.map { ElementBounds.of(it) }.reduceOrNull(::union)
 

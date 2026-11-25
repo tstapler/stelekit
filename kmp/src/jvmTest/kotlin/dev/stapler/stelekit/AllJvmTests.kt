@@ -314,6 +314,7 @@ import org.junit.runners.Suite
     PendingCaptureWriterTest::class,
     ArgParserTest::class,
     SketchAgentCliTest::class,
+    dev.stapler.stelekit.cli.SketchCliPaperTest::class,
     SketchUnderlayCliTest::class,
     SheetImageBitmapsTest::class,
     SketchWallsCliTest::class,

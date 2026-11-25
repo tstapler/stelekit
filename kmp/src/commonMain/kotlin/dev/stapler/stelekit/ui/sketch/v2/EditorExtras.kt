@@ -168,6 +168,7 @@ class EditorExtras(
         runner = SketchExportRunner(PngExporter(services.png, exportResources, services.limits), DrawListBuilder(environment.metrics)),
         files = filePort,
         postNotice = postNotice,
+        rememberSheet = { controller.setSheetSetup(it) },
     )
 
     /** Whether Import is offered, and why not: the entry is disabled with this text (UX-135). */
@@ -316,6 +317,7 @@ class EditorExtras(
         library = library.items,
         sheetDimensions = controller.creation.dimensionsOn ?: (controller.sheetKind == SheetKind.Technical && pills.visible),
         lengthFormat = lengthUnit.format,
+        sheetSetup = controller.creation.sheetSetup,
     )
 
     private fun viewportCentre(): Pair<Double, Double> {

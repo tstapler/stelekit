@@ -189,6 +189,8 @@ kt_android_library(
             # Compose host tests for the sketch import and export dialogs and their success toasts (Gradle-only, no Compose plugin or commonTest in this target)
             "**/ImportFlowTest.kt",
             "**/ExportDialogTest.kt",
+            "**/ExportDialogPageTest.kt",
+            "**/ExportPageFieldsTest.kt",
             "**/SuccessFeedbackTest.kt",
             # Mounts the v2 host over the commonTest rig for keyboard-only drawing and the Esc rows (Gradle-only, no Compose plugin or commonTest here)
             "**/KeyboardAccessHostTest.kt",

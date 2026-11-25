@@ -22,6 +22,15 @@ import dev.stapler.stelekit.sketch.v2.annotation.ExportInk
 import dev.stapler.stelekit.sketch.v2.commands.SheetDimensionsExtras
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.commands.dimensionsOn
+import dev.stapler.stelekit.sketch.v2.commands.sheetSetup
+import dev.stapler.stelekit.sketch.v2.export.DrawingScale
+import dev.stapler.stelekit.sketch.v2.export.Orientation
+import dev.stapler.stelekit.sketch.v2.export.PaperSize
+import dev.stapler.stelekit.sketch.v2.export.ScalePresets
+import dev.stapler.stelekit.sketch.v2.export.SheetPlanner
+import dev.stapler.stelekit.sketch.v2.export.SheetPrint
+import dev.stapler.stelekit.sketch.v2.export.SheetSetup
+import dev.stapler.stelekit.sketch.v2.export.TitleBlock
 import dev.stapler.stelekit.sketch.v2.export.SvgExportOptions
 import dev.stapler.stelekit.sketch.v2.export.SvgExporter
 import dev.stapler.stelekit.sketch.v2.index.Bounds
@@ -55,7 +64,45 @@ internal data class RenderRequest(
     val background: String? = "#ffffff",
     /** The photo to draw as the sheet's underlay; null leaves the underlay out, which is what an export does by default. */
     val underlay: UnderlayImage? = null,
+    /** Set when the output goes on a page at a drawing scale (`--paper`, `--scale`, a PDF); null keeps the picture's natural size. */
+    val sheet: SheetFlags? = null,
 )
+
+/**
+ * The page flags of `render`: each null field falls back to the sheet's stored setup, then to a default (Letter, the drawing's
+ * orientation, the largest standard scale that fits). [dpi] is the PNG resolution; [tiled] writes a PDF too big for a page as
+ * several pages.
+ */
+internal data class SheetFlags(
+    val paper: PaperSize? = null,
+    val orientation: Orientation? = null,
+    val scale: DrawingScale? = null,
+    val margin: Long? = null,
+    val scaleBar: Boolean? = null,
+    val north: Int? = null,
+    val title: TitleBlock? = null,
+    val dpi: Int = DEFAULT_DPI,
+    val tiled: Boolean = false,
+) {
+    fun resolve(stored: SheetSetup?, content: Bounds): SheetSetup {
+        val chosenPaper = paper ?: stored?.paper ?: PaperSize.Letter
+        val keptMargin = stored?.margin?.takeIf { chosenPaper == stored.paper }
+        val partial = SheetSetup(
+            paper = chosenPaper,
+            orientation = orientation ?: stored?.orientation ?: SheetPlanner.orientationFor(content),
+            margin = margin ?: keptMargin ?: SheetSetup.defaultMargin(chosenPaper),
+            scaleBar = scaleBar ?: stored?.scaleBar ?: true,
+            northDegrees = north ?: stored?.northDegrees,
+            titleBlock = title ?: stored?.titleBlock,
+        )
+        val chosen = scale ?: stored?.scale ?: SheetPlanner.bestFit(partial, content, !chosenPaper.imperial) ?: ScalePresets.family(!chosenPaper.imperial).last().scale
+        return partial.copy(scale = chosen)
+    }
+
+    companion object {
+        const val DEFAULT_DPI = 150
+    }
+}
 
 /** A photo file given to `render --underlay`: its sha256 (which must equal the underlay's `fileId`), type and bytes. */
 internal class UnderlayImage(val fileId: String, val mime: String, val bytes: ByteArray)
@@ -90,10 +137,48 @@ internal object SketchRender {
     /** The sheet as drawn: without the photo underlay unless [RenderRequest.underlay] supplies it. */
     private fun sceneOf(doc: SketchDocumentV2, request: RenderRequest): SketchSceneV2 = if (request.underlay != null) doc.scene else doc.scene.withoutUnderlay()
 
+    private fun photoSource(request: RenderRequest): SvgImageSource =
+        request.underlay?.let { u -> SvgImageSource { id -> if (id == u.fileId) SvgImage(u.mime, u.bytes) else null } } ?: SvgImageSource.None
+
+    /** The sheet laid out on a page for [request], or null when the sheet is empty. */
+    fun print(doc: SketchDocumentV2, request: RenderRequest, flags: SheetFlags): SheetPrint? {
+        val scene = sceneOf(doc, request)
+        if (scene.size == 0) return null
+        val options = SvgExportOptions(request.background, dimensions = dimensionOptions(doc, request))
+        val content = SvgExporter.content(scene, DrawListBuilder(metrics), request.style, options)
+        val setup = flags.resolve(doc.sheetSetup, content.bounds)
+        val plan = SheetPlanner.plan(setup, content.bounds, !setup.paper.imperial)
+        return SheetPrint(plan, content.ops, clip = !plan.fits, ink = ExportInk.forBackground(request.background), background = request.background)
+    }
+
+    fun pageSvg(doc: SketchDocumentV2, request: RenderRequest, flags: SheetFlags): String? = print(doc, request, flags)?.svg(photoSource(request))
+
+    fun pdf(doc: SketchDocumentV2, request: RenderRequest, flags: SheetFlags, title: String): ByteArray? = print(doc, request, flags)?.pdf(flags.tiled, title)
+
+    /** The page as a PNG at [SheetFlags.dpi]; null for an empty sheet or a page over the PNG size cap. */
+    fun pagePng(doc: SketchDocumentV2, request: RenderRequest, flags: SheetFlags): ByteArray? {
+        val print = print(doc, request, flags) ?: return null
+        val limits = SceneLimits.Default
+        val widthPx = ceil(print.plan.pageWidth * flags.dpi / PAGE_UNITS_PER_INCH).toInt()
+        val heightPx = ceil(print.plan.pageHeight * flags.dpi / PAGE_UNITS_PER_INCH).toInt()
+        if (widthPx > limits.maxPngSidePx || heightPx > limits.maxPngSidePx || widthPx.toLong() * heightPx > limits.maxPngPixels) return null
+        val bitmap = ImageBitmap(widthPx, heightPx, ImageBitmapConfig.Argb8888)
+        val viewport = SketchViewport.of(zoom = flags.dpi / PAGE_UNITS_PER_INCH, panX = 0.0, panY = 0.0)
+        val resources = PainterResources(textMeasurer = TextMeasurer(createFontFamilyResolver(), Density(1f), LayoutDirection.Ltr))
+        val reach = Size(widthPx.toFloat(), heightPx.toFloat())
+        CanvasDrawScope().draw(Density(1f), LayoutDirection.Ltr, Canvas(bitmap), reach) {
+            request.background?.let { drawRect(CssColor.parse(it)) }
+            ScenePainter(resources = resources).paint(this, print.pages(false).single(), viewport, null)
+        }
+        return PngEncoder().encode(bitmap).takeIf { it.isNotEmpty() }
+    }
+
+    private const val PAGE_UNITS_PER_INCH = 16.0
+
     fun svg(doc: SketchDocumentV2, request: RenderRequest): String {
         val scene = sceneOf(doc, request)
         val pad = padding(scene)
-        val photo = request.underlay?.let { u -> SvgImageSource { id -> if (id == u.fileId) SvgImage(u.mime, u.bytes) else null } } ?: SvgImageSource.None
+        val photo = photoSource(request)
         val raw = SvgExporter.export(scene, DrawListBuilder(metrics), request.style, photo, SvgExportOptions(request.background, pad, dimensions = dimensionOptions(doc, request)))
         return request.width?.let { resize(raw, it) } ?: raw
     }
