@@ -190,6 +190,12 @@ KMP_MODULE_TESTS = {
   ],
   "suite": "AllSchedModuleTests"
  },
+ "sketch_core": {
+  "srcs": [
+   "dev/stapler/stelekit/sketch/v2/ProvenanceTest.kt"
+  ],
+  "suite": "AllSketchCoreModuleTests"
+ },
  "sketch_runtime": {
   "srcs": [
    "dev/stapler/stelekit/db/sidecar/FakeFileSystem.kt",
