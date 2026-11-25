@@ -47,7 +47,7 @@ import dev.stapler.stelekit.clipboard.BlockTreeAlgorithms
 import dev.stapler.stelekit.clipboard.ClipboardOperation
 import dev.stapler.stelekit.model.EffectiveNotesPath
 
-private const val RECENT_OWN_CONTENT_LIMIT = 8
+private const val MAX_OUTSTANDING_CONTENTS = 16
 
 /**
  * Single source of truth for block state across all screens (JournalsView, PageView).
@@ -193,17 +193,37 @@ class BlockStateManager(
     private val _pendingContentWriteCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
 
     /**
-     * The last few contents this manager itself wrote per block, oldest first, so a duplicate or late confirmation of
-     * an older own write that arrives after every write was accounted for is not mistaken for a foreign edit.
+     * Per block, the table-shaped contents this manager wrote whose confirmation has not been seen yet, with counts.
+     * A confirmation that matches one is our own even when the pending count already drained (a late confirmation),
+     * while a patch that matches nothing outstanding is a foreign write. Only blocks with a write in flight have an
+     * entry, and one entry holds at most [MAX_OUTSTANDING_CONTENTS] contents.
      */
-    private val recentOwnContent = MutableStateFlow<Map<String, List<String>>>(emptyMap())
+    private val outstandingWrites = MutableStateFlow<Map<String, Map<String, Int>>>(emptyMap())
 
-    private fun rememberOwnContent(uuidStr: String, content: String) {
-        recentOwnContent.update { m ->
-            val kept = (m[uuidStr].orEmpty() - content + content).takeLast(RECENT_OWN_CONTENT_LIMIT)
-            m + (uuidStr to kept)
+    private fun noteWriteIssued(uuidStr: String, content: String) {
+        if ('|' !in content) return
+        outstandingWrites.update { m ->
+            val inner = (m[uuidStr] ?: emptyMap()).let { if (it.size >= MAX_OUTSTANDING_CONTENTS && content !in it) emptyMap() else it }
+            m + (uuidStr to (inner + (content to (inner[content] ?: 0) + 1)))
         }
     }
+
+    /** Consumes one outstanding confirmation of [content] for [uuidStr]; false when none was outstanding. */
+    private fun takeOutstanding(uuidStr: String, content: String): Boolean {
+        var took = false
+        outstandingWrites.update { m ->
+            val inner = m[uuidStr]
+            val n = inner?.get(content)
+            took = n != null
+            if (inner == null || n == null) return@update m
+            val next = if (n <= 1) inner - content else inner + (content to n - 1)
+            if (next.isEmpty()) m - uuidStr else m + (uuidStr to next)
+        }
+        return took
+    }
+
+    /** Foreign table edits that arrived while the raw editor had the block open: block -> (local content then, foreign content). */
+    private val deferredForeign = MutableStateFlow<Map<String, Pair<String, String>>>(emptyMap())
 
     /** Returns the remaining pending-write count for [uuidStr] after decrementing by one. */
     private fun decrementPendingContentWrite(uuidStr: String): Int {
@@ -765,6 +785,8 @@ class BlockStateManager(
             observationJobs.remove(pageUuidStr)?.cancel()
             val blockUuids = _blocks.value[pageUuidStr]?.map { it.uuid.value } ?: emptyList()
             _dirtyBlocks.update { m -> m - blockUuids.toSet() }
+            outstandingWrites.update { m -> m - blockUuids.toSet() }
+            deferredForeign.update { m -> m - blockUuids.toSet() }
         }
     }
 
@@ -812,11 +834,15 @@ class BlockStateManager(
     private fun applyContentPatch(pageUuidStr: String, blockUuid: BlockUuid, newContent: String) {
         val uuidStr = blockUuid.value
         // No local write in flight and no unconfirmed edit: this patch came from another writer.
-        val foreign = uuidStr !in _pendingContentWriteCounts.value && uuidStr !in _dirtyBlocks.value
-        if (foreign) {
+        val ownLate = takeOutstanding(uuidStr, newContent)
+        val pending = uuidStr in _pendingContentWriteCounts.value
+        val dirty = uuidStr in _dirtyBlocks.value
+        if (!ownLate && !pending && !dirty) {
             adoptForeignTableContent(pageUuidStr, blockUuid, newContent)
             return
         }
+        // Confirmation of one of our writes after the pending count drained: nothing left to account for.
+        if (ownLate && !pending && !dirty) return
         if (decrementPendingContentWrite(uuidStr) > 0) return
         _dirtyBlocks.update { it - uuidStr }
     }
@@ -824,13 +850,15 @@ class BlockStateManager(
     /**
      * A foreign write to a table block must reach [_blocks]: otherwise a later commit of content equal
      * to our stale copy is dropped by [applyBlockContentUpdate]'s equality guard (P5-3). Other block
-     * kinds keep ignoring patches they did not issue. Not adopted while the raw editor has the block open
-     * (it would swap text under the cursor), nor when the patch repeats an older write of our own: with no
-     * write pending, that is a duplicate or late confirmation, and adopting it would move the block backwards.
+     * kinds keep ignoring patches they did not issue. While the raw editor has the block open it is not swapped
+     * under the cursor; the edit is remembered and re-applied by [flushDeferredForeign] when editing ends.
      */
     private fun adoptForeignTableContent(pageUuidStr: String, blockUuid: BlockUuid, newContent: String) {
-        if (_editingBlockUuid.value == blockUuid) return
-        if (newContent in recentOwnContent.value[blockUuid.value].orEmpty()) return
+        if (_editingBlockUuid.value == blockUuid) {
+            val local = _blocks.value[pageUuidStr]?.firstOrNull { it.uuid == blockUuid }?.content ?: return
+            if (local != newContent) deferredForeign.update { it + (blockUuid.value to ((it[blockUuid.value]?.first ?: local) to newContent)) }
+            return
+        }
         _blocks.update { current ->
             val pageBlocks = current[pageUuidStr] ?: return@update current
             val idx = pageBlocks.indexOfFirst { it.uuid == blockUuid }
@@ -840,7 +868,6 @@ class BlockStateManager(
             val isTable = TableParser.parse(newContent) is TableParseResult.Parsed ||
                 TableParser.parse(local.content) is TableParseResult.Parsed
             if (!isTable) return@update current
-            recentOwnContent.update { it - blockUuid.value }
             current + (pageUuidStr to pageBlocks.toMutableList().also { it[idx] = local.copy(content = newContent) })
         }
     }
@@ -910,8 +937,24 @@ class BlockStateManager(
 
     override fun requestEditBlock(blockUuid: BlockUuid?, cursorIndex: Int?) {
         if (blockUuid == null || blockUuid != _editingBlockUuid.value) _editingSelectionRange.value = null
+        val previous = _editingBlockUuid.value
         _editingBlockUuid.value = blockUuid
         _editingCursorIndex.value = cursorIndex
+        if (previous != null && previous != blockUuid) flushDeferredForeign(previous)
+    }
+
+    /**
+     * Applies a foreign table edit that was held back while [blockUuid] was being edited, unless the user changed the
+     * block meanwhile (their text is then the last writer and the held edit is obsolete).
+     */
+    private fun flushDeferredForeign(blockUuid: BlockUuid) {
+        val held = deferredForeign.value[blockUuid.value] ?: return
+        deferredForeign.update { it - blockUuid.value }
+        val (pageUuidStr, local) = _blocks.value.entries
+            .firstNotNullOfOrNull { (page, blocks) -> blocks.firstOrNull { it.uuid == blockUuid }?.let { page to it } } ?: return
+        val untouched = local.content == held.first &&
+            blockUuid.value !in _pendingContentWriteCounts.value && blockUuid.value !in _dirtyBlocks.value
+        if (untouched) adoptForeignTableContent(pageUuidStr, blockUuid, held.second)
     }
 
     override fun updateEditingSelection(range: IntRange?) {
@@ -927,6 +970,7 @@ class BlockStateManager(
         if (_editingBlockUuid.value == blockUuid) {
             _editingBlockUuid.value = null
             _editingCursorIndex.value = null
+            flushDeferredForeign(blockUuid)
         }
     }
 
@@ -1193,7 +1237,7 @@ class BlockStateManager(
         // text jumping back / getting erased mid-edit.
         _dirtyBlocks.update { it + (uuidStr to maxOf(it[uuidStr] ?: 0L, version)) }
         _pendingContentWriteCounts.update { it + (uuidStr to ((it[uuidStr] ?: 0) + 1)) }
-        rememberOwnContent(uuidStr, content)
+        noteWriteIssued(uuidStr, content)
 
         val t0 = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
         val writeResult = writeContentOnly(blockUuid, content, block.pageUuid)
@@ -1204,6 +1248,7 @@ class BlockStateManager(
             // emits it on success) — account for it directly so the pending-write count doesn't
             // get stuck waiting for a confirmation that will never come.
             decrementPendingContentWrite(uuidStr)
+            takeOutstanding(uuidStr, content)
         }
 
         val updated = block.copy(content = content, version = version)

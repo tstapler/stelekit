@@ -433,10 +433,10 @@ class TableSyncPolicyTest {
         assertEquals(SyncDecision.Echo, p.classify(s2))
     }
 
-    // P5-5 gap 1 / P5-6: S2's echo was never observed, so S2 trailing the undo's Adopt is not an older late echo (the feed
-    // is ordered: S2 precedes the undo's S1); it is an external write. Only the expectation adopts.
+    // P5-5 gap 1 / round 2: S2's echo was never observed and S1 recurs (it was committed before), so the Adopt of S1
+    // cannot lift the floor: S2 trailing it stays Stale (a late echo is indistinguishable from an external write here).
     @Test
-    fun olderAckedEmission_should_Rebuild_When_ItTrailsUndoAdopt() {
+    fun olderAckedEmission_should_BeStale_When_ItTrailsUndoAdoptOfRecurringContent() {
         val p = policy()
         val q1 = p.registerCommit(s1)
         val q2 = p.registerCommit(s2)
@@ -444,7 +444,7 @@ class TableSyncPolicyTest {
         p.markDone(q2)
         p.expectAdopt(s1)
         assertEquals(p.adoptOf(s1), p.classify(s1))
-        assertEquals(SyncDecision.Rebuild(null), p.classify(s2))
+        assertEquals(SyncDecision.Stale, p.classify(s2))
     }
 
     // P5-5 gap 1: redo needs its own expectation; an unexpected superseded state is Stale.
@@ -457,5 +457,38 @@ class TableSyncPolicyTest {
         assertEquals(p.adoptOf(s1), p.classify(s1))
         p.expectAdopt(s2)
         assertEquals(p.adoptOf(s2), p.classify(s2))
+    }
+
+    // Round 2: recurring content A,B,A. The old A emission (still undelivered when B and A were committed) matches the
+    // displayed content, but it is not the newest commit's echo, so it must not lift the floor: B's late emission is Stale.
+    @Test
+    fun recurringContent_should_NotLiftTheFloor_When_AnOldEmissionOfTheSameContentArrives() {
+        val p = policy()
+        p.registerCommit(s1)
+        p.registerCommit(s0)
+        assertEquals(SyncDecision.Echo, p.classify(s0))
+        assertEquals(SyncDecision.Stale, p.classify(s1), "B's emission is still due; it is a late echo, not an external edit")
+        assertEquals(SyncDecision.Echo, p.classify(s0))
+    }
+
+    @Test
+    fun recurringContent_should_NotRaiseSpuriousConflict_When_DraftPendingAndOldEmissionArrives() {
+        val p = policy()
+        p.registerCommit(s1)
+        p.registerCommit(s0)
+        p.classify(s0)
+        assertEquals(SyncDecision.Stale, p.classify(s1, draftPending = true))
+    }
+
+    // Round 2: undoing to the content already displayed changes nothing, so the expectation must not leave the floor
+    // raised-and-unobservable (which would turn a later genuine revert into Stale).
+    @Test
+    fun expectAdopt_should_BeNoOp_When_ContentIsAlreadyDisplayed() {
+        val p = policy()
+        p.registerCommit(s1); p.classify(s1)
+        p.expectAdopt(s1)
+        assertEquals(SyncDecision.Echo, p.classify(s1))
+        assertEquals(SyncDecision.Rebuild(null), p.classify(s0), "the floor stayed observed, so a revert is external")
+        assertEquals(SyncDecision.Echo, p.classify(s0))
     }
 }

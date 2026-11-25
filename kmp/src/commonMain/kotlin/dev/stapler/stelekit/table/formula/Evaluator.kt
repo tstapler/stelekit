@@ -94,19 +94,16 @@ class FunctionRegistry(private val impls: Map<String, FunctionImpl>) {
             val d = if (args.size > 1) scalarNumber(args[1]) else CellValue.Num(0.0)
             if (d !is CellValue.Num) return d
             val digits = d.value.toInt().coerceIn(-1000, 1000) // truncates toward zero
+            if (digits > 15) return x
             if (x.value == 0.0) return CellValue.Num(0.0)
-            // Decimal rounding on the shortest digits (no binary scaling, so no overflow and no magnitude-dependent
-            // nudge): first to the 15 significant digits a spreadsheet keeps (2.675 and 1.0049999999999999 behave like
-            // 2.675 and 1.005), then half away from zero at [digits] decimals.
+            // One decimal rounding of the shortest round-trip digits (2.675 stays 2.675), half away from zero. No binary
+            // scaling, so no overflow and no magnitude-dependent nudge; no earlier rounding, so 0.49999999999999994 is 0.
             val (all, pos) = NumberDisplay.shortestDigits(abs(x.value))
-            val (sig, sigPos) = NumberDisplay.roundDigits(all, pos, SIGNIFICANT_DIGITS)
-            val (kept, keptPos) = NumberDisplay.roundDigits(sig, sigPos, sigPos + digits)
+            val (kept, keptPos) = NumberDisplay.roundDigits(all, pos, pos + digits)
             if (kept.isEmpty()) return CellValue.Num(0.0)
             val magnitude = (kept + "e" + (keptPos - kept.length)).toDouble()
             return finite(if (x.value < 0) -magnitude else magnitude)
         }
-
-        private const val SIGNIFICANT_DIGITS = 15
 
         private fun scalarNumber(arg: EvalArg): CellValue = when (arg) {
             is EvalArg.Block -> CellValue.Err(CellError.Value)

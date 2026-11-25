@@ -149,23 +149,62 @@ class BlockStateManagerTableUndoTest {
         m.unobservePage(PageUuid(pageUuid))
     }
 
+    private val c2 = "| a | b |\n|---|---|\n| 9 | 9 |"
+
     @Test
-    fun duplicateOrLatePatch_should_NotOverwriteNewerLocalContent_When_NoWritePending() = runTest {
+    fun externalRevertToAnOlderOwnWrite_should_BeAdopted_When_AllConfirmationsWereConsumed() = runTest {
         val pushed = MutableSharedFlow<BlockUpdateEvent>(extraBufferCapacity = 10)
         val m = manager(swallowWrites = true, pushed = pushed)
-        val c2 = "| a | b |\n|---|---|\n| 9 | 9 |"
         m.updateBlockContent(uuid, c1, 2, restoreEditFocus = false)
         m.updateBlockContent(uuid, c2, 3, restoreEditFocus = false)
         pushed.patch(c1)
         pushed.patch(c2)
         testScheduler.advanceUntilIdle()
         assertEquals(c2, m.content())
-        pushed.patch(c1) // duplicate of an already-confirmed older write: no write is pending any more
+        pushed.patch(c1) // sync restored an older state we once wrote: nothing is outstanding, so it is foreign
         testScheduler.advanceUntilIdle()
-        assertEquals(c2, m.content(), "a late duplicate of our own older write must not move the block backwards")
-        pushed.patch(foreign) // a genuinely foreign write is still adopted afterwards
+        assertEquals(c1, m.content())
+        m.unobservePage(PageUuid(pageUuid))
+    }
+
+    @Test
+    fun lateConfirmationOfAnOwnWrite_should_NotOverwriteNewerLocalContent_When_PendingCountAlreadyDrained() = runTest {
+        val pushed = MutableSharedFlow<BlockUpdateEvent>(extraBufferCapacity = 10)
+        val m = manager(swallowWrites = true, pushed = pushed)
+        m.updateBlockContent(uuid, c1, 2, restoreEditFocus = false)
+        m.updateBlockContent(uuid, c2, 3, restoreEditFocus = false)
+        pushed.patch(foreign) // consumes one pending slot although it is not one of our writes
+        pushed.patch(foreign)
         testScheduler.advanceUntilIdle()
-        assertEquals(foreign, m.content())
+        pushed.patch(c1) // c1's confirmation is still outstanding: late, not foreign
+        testScheduler.advanceUntilIdle()
+        assertEquals(c2, m.content())
+        m.unobservePage(PageUuid(pageUuid))
+    }
+
+    @Test
+    fun foreignEditSkippedWhileEditing_should_BeAdopted_When_EditingEndsWithoutLocalChange() = runTest {
+        val pushed = MutableSharedFlow<BlockUpdateEvent>(extraBufferCapacity = 10)
+        val m = manager(pushed = pushed)
+        m.requestEditBlock(uuid, 0)
+        pushed.patch(foreign)
+        testScheduler.advanceUntilIdle()
+        assertEquals(c0, m.content())
+        m.stopEditingBlock(uuid)
+        assertEquals(foreign, m.content(), "otherwise a later commit equal to the stale copy would be dropped")
+        m.unobservePage(PageUuid(pageUuid))
+    }
+
+    @Test
+    fun foreignEditSkippedWhileEditing_should_BeDropped_When_UserWroteDuringEditing() = runTest {
+        val pushed = MutableSharedFlow<BlockUpdateEvent>(extraBufferCapacity = 10)
+        val m = manager(swallowWrites = true, pushed = pushed)
+        m.requestEditBlock(uuid, 0)
+        pushed.patch(foreign)
+        m.updateBlockContent(uuid, c2, 2, restoreEditFocus = false)
+        testScheduler.advanceUntilIdle()
+        m.stopEditingBlock(uuid)
+        assertEquals(c2, m.content(), "the user's later text is the last writer")
         m.unobservePage(PageUuid(pageUuid))
     }
 

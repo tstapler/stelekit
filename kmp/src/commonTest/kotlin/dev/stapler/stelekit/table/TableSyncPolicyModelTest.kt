@@ -39,9 +39,22 @@ class TableSyncPolicyModelTest {
         val writes = HashMap<Int, String>()
         var ownIdx = 0
         var ownDelivered = true
+        var ownAmbiguous = false
+        val ownWriteIdxs = HashSet<Int>()
+        val outsideWriteIdxs = HashSet<Int>()
+        val pool = listOf("0", "1", "2")
         fun short(c: String) = c.lines().last().filter { it.isLetterOrDigit() }
 
-        init { policy.registerLoaded(truth); history.add(truth) }
+        // The feed delivers the loaded state first, possibly late (after commits were already registered).
+        init { policy.registerLoaded(truth); history.add(truth); feed.addLast(0 to truth) }
+
+        /** Content seen before while an earlier own emission is still due cannot tell its old emission from its new one. */
+        private fun beginOwnWrite(ambiguous: Boolean) {
+            ownAmbiguous = ambiguous
+            ownDelivered = false
+            ownIdx = latestWrite
+            ownWriteIdxs.add(latestWrite)
+        }
 
         fun write(content: String) {
             truth = content
@@ -51,27 +64,30 @@ class TableSyncPolicyModelTest {
             feed.addLast(latestWrite to content)
         }
 
-        fun commit() {
-            val c = table("${++counter}")
+        fun commit(pick: Int) {
+            val c = table(pool[pick % pool.size])
+            if (c == display || c == truth) return
             undo.add(truth); redo.clear()
             display = c
+            val ambiguousBefore = c in history && !ownDelivered
             write(c)
             displayIdx = latestWrite
-            ownIdx = latestWrite
-            ownDelivered = false
+            beginOwnWrite(ambiguousBefore)
             pendingDone.add(policy.registerCommit(c) to latestWrite)
             log.add("commit #$latestWrite ${short(c)}")
         }
 
-        fun deliverNext() {
+        fun deliverNext(dup: Boolean = false) {
             val (idx, content) = feed.removeFirstOrNull() ?: return
+            if (dup) feed.addFirst(idx to content)
             lastObserved = content
             lastObservedIdx = idx
-            if (idx == ownIdx) ownDelivered = true
+            if (idx == ownIdx && !ownAmbiguous) ownDelivered = true
             val before = display
             val d = policy.classify(content)
             log.add("deliver #$idx ${short(content)} -> ${d::class.simpleName} display=${short(display)}")
             apply(d, content, idx, before)
+            if (d is SyncDecision.Rebuild && idx in ownWriteIdxs) failures.add("own emission #$idx ${short(content)} treated as an external edit")
         }
 
         fun apply(decision: SyncDecision?, content: String, idx: Int, before: String) {
@@ -113,13 +129,16 @@ class TableSyncPolicyModelTest {
             val from = if (isUndo) undo else redo
             val to = if (isUndo) redo else undo
             if (from.isEmpty()) return
+            // An undo target that equals a still-undelivered outside write's content, or an older own write's content whose
+            // emission is still due, cannot be told apart on the feed (content is all the policy sees).
+            if (!ownDelivered || feed.any { it.first in outsideWriteIdxs }) return
             val target = from.removeAt(from.size - 1)
             to.add(truth)
             policy.expectAdopt(target)
             expected.add(target)
+            val ambiguousBefore = target in history && !ownDelivered
             write(target)
-            ownIdx = latestWrite
-            ownDelivered = false
+            beginOwnWrite(ambiguousBefore)
             log.add("undo/redo #$latestWrite -> ${short(target)}")
         }
 
@@ -133,12 +152,14 @@ class TableSyncPolicyModelTest {
             undo.clear(); redo.clear()
             val target = older[pick % older.size]
             write(target)
+            outsideWriteIdxs.add(latestWrite)
             log.add("revert #$latestWrite -> ${short(target)}")
         }
 
         fun foreign() {
             undo.clear(); redo.clear()
             write(table("F${++counter}"))
+            outsideWriteIdxs.add(latestWrite)
             log.add("foreign #$latestWrite F$counter")
         }
     }
@@ -153,8 +174,8 @@ class TableSyncPolicyModelTest {
             val sim = Sim()
             for (op in ops) {
                 when (op % 8) {
-                    0, 1 -> sim.commit()
-                    2, 3 -> sim.deliverNext()
+                    0, 1 -> sim.commit(op / 8)
+                    2, 3 -> sim.deliverNext(dup = op % 4 == 0)
                     4 -> sim.dropNext()
                     5 -> sim.markOne(op)
                     6 -> sim.undoOrRedo(isUndo = op % 3 != 0)
@@ -164,11 +185,11 @@ class TableSyncPolicyModelTest {
                         else -> sim.deliverNext()
                     }
                 }
-                assertEquals(emptyList<String>(), sim.failures)
+                assertEquals(emptyList<String>(), sim.failures, sim.log.joinToString("\n"))
             }
             sim.flush()
             sim.joinAll()
-            assertEquals(emptyList<String>(), sim.failures)
+            assertEquals(emptyList<String>(), sim.failures, sim.log.joinToString("\n"))
             assertEquals(sim.truth, sim.display, "display must equal the DB once the feed is drained\n" + sim.log.joinToString("\n"))
         }
     }

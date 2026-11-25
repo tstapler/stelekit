@@ -124,4 +124,30 @@ class DependencyGraphTest {
         assertEquals(n - 1, g.dependentsOf(a("A3")).size)
         assertEquals(setOf(a("B${n + 1}")), g.dependentsOf(a("A${n + 1}")))
     }
+
+    @Test
+    fun removeFormula_should_BeSubQuadratic_When_FiveThousandRangeOwnersAreRemoved() {
+        val n = 5_000
+        val g = graph(*(2..n + 1).map { "C$it" to "=SUM(A\$2:A$it)" }.toTypedArray())
+        val before = indexOps
+        for (i in 2..n + 1) {
+            g.removeFormula(a("C$i"))
+            if (i % 250 == 0) assertEquals(n + 1 - i, g.dependentsOf(a("A2")).size, "after removing through C$i")
+        }
+        assertTrue(g.dependentsOf(a("A2")).isEmpty())
+        // A scan or full rebuild per removal costs n * n / 2 = 12.5M; lazy tombstones plus amortized rebuilds stay linear-ish.
+        assertTrue(indexOps - before < 1_000_000L, "index work ${indexOps - before}")
+    }
+
+    @Test
+    fun setFormula_should_NotRebuildWholeIndex_When_QueriedAfterEveryAdd() {
+        val g = DependencyGraph()
+        val before = indexOps
+        val n = 3_000
+        for (i in 2..n + 1) {
+            g.setFormula(a("C$i"), (FormulaParser.parse("=SUM(A$i:A${i + 5})") as FormulaParse.Ok).expr.precedentRanges())
+            assertEquals(minOf(i - 1, 6), g.dependentsOf(a("A$i")).size)
+        }
+        assertTrue(indexOps - before + g.rectChecks < 3_000_000L, "index work ${indexOps - before} plus ${g.rectChecks} checks")
+    }
 }

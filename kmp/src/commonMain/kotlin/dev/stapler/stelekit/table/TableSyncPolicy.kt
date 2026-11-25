@@ -34,12 +34,17 @@ class TableSyncPolicy(val ledger: OwnCommitLedger = OwnCommitLedger()) {
 
     fun markDone(seq: Long, draftPending: Boolean = false, selection: CellAddress? = null): SyncDecision? {
         ledger.markDone(seq)
-        val held = ledger.takeDeferred() ?: return null
-        return classify(held, draftPending, selection)
+        val held = ledger.takeDeferred()
+        if (held != null) return classify(held, draftPending, selection)
+        val settled = ledger.takeSettled() ?: return null
+        return decide(ledger.settle(settled, draftPending), settled, selection)
     }
 
     fun classify(content: String, draftPending: Boolean = false, selection: CellAddress? = null): SyncDecision =
-        when (ledger.classify(content, draftPending)) {
+        decide(ledger.classify(content, draftPending), content, selection)
+
+    private fun decide(verdict: LedgerVerdict, content: String, selection: CellAddress?): SyncDecision =
+        when (verdict) {
             LedgerVerdict.Echo -> SyncDecision.Echo
             LedgerVerdict.Stale -> SyncDecision.Stale
             LedgerVerdict.Defer -> SyncDecision.Defer

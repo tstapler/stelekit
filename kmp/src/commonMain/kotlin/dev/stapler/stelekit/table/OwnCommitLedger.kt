@@ -20,18 +20,20 @@ enum class LedgerVerdict { Echo, Stale, Defer, Adopt, External, ExternalWithDraf
 class OwnCommitLedger(private val capacity: Int = DEFAULT_CAPACITY) {
     private enum class State { InFlight, Acked }
 
-    private class Entry(var seq: Long, var state: State)
+    private class Entry(var seq: Long, var state: State, var recommitted: Boolean = false)
     private class Expectation(val key: String, val seq: Long)
 
     private val entries = HashMap<String, Entry>()
     private var totalChars = 0L
     private var ownFloorObserved = false
+    private var floorAmbiguous = false
     private val expectations = ArrayList<Expectation>()
     private var nextSeq = 1L
     private var currentSeq = 0L
     private var ownFloor = 0L
     private var displayed: String? = null
     private var deferred: String? = null
+    private var lastStale: String? = null
 
     val size: Int get() = entries.size
 
@@ -40,22 +42,39 @@ class OwnCommitLedger(private val capacity: Int = DEFAULT_CAPACITY) {
 
     fun registerLoaded(content: String): Long = put(content, State.Acked, makeCurrent = true)
 
-    fun registerCommit(content: String): Long =
-        put(content, State.InFlight, makeCurrent = true).also { raiseFloor(it) }
+    fun registerCommit(content: String): Long {
+        val ambiguous = recurs(content)
+        return put(content, State.InFlight, makeCurrent = true, recommitted = content in entries)
+            .also { raiseFloor(it, ambiguous) }
+    }
+
+    /**
+     * Content already in the ledger while the previous floor's emission is still due: an emission of it cannot be told
+     * from an old one (A, B, A), so it must not lift the floor. The floor then stays armed until the next commit.
+     */
+    private fun recurs(content: String) = content in entries && !ownFloorObserved
 
     /** Declares the content the manager's undo/redo produced, reserving its `seq` now (R3-C1). */
     fun expectAdopt(content: String): Long {
         val seq = nextSeq++
-        raiseFloor(seq)
+        // Undo or redo to what is already displayed changes nothing: no expectation, no floor. Only when the ledger is
+        // settled (no expectation pending, nothing in flight, newest own emission seen): otherwise the display is about
+        // to move and "displayed" is not where the UI will be.
+        if (content == displayed && isSettled()) return seq
+        raiseFloor(seq, recurs(content))
         expectations.add(Expectation(content, seq))
         if (expectations.size > MAX_EXPECTATIONS) expectations.removeAt(0)
         return seq
     }
 
-    private fun raiseFloor(seq: Long) {
+    private fun isSettled() =
+        expectations.isEmpty() && ownFloorObserved && entries.values.none { it.state == State.InFlight }
+
+    private fun raiseFloor(seq: Long, ambiguous: Boolean) {
         if (seq > ownFloor) {
             ownFloor = seq
             ownFloorObserved = false
+            floorAmbiguous = ambiguous
         }
     }
 
@@ -73,7 +92,29 @@ class OwnCommitLedger(private val capacity: Int = DEFAULT_CAPACITY) {
     /** Any new emission supersedes held foreign content: the feed is ordered, so the DB has moved on. */
     fun classify(content: String, draftPending: Boolean): LedgerVerdict {
         deferred = null
-        return verdictFor(content, draftPending)
+        lastStale = null
+        return verdictFor(content, draftPending).also { if (it == LedgerVerdict.Stale) lastStale = content }
+    }
+
+    /**
+     * The newest emission, if it was judged `Stale`, once nothing is `InFlight` any more: every write has completed, so
+     * the DB holds that emission's content unless a newer one is still due (which then supersedes it). Content
+     * recurring across commits and undos can make a genuine last emission look like an old echo; this settles it.
+     * Clears it; null when nothing is pending or the display already shows it.
+     */
+    fun takeSettled(): String? {
+        if (entries.values.any { it.state == State.InFlight }) return null
+        return lastStale.also { lastStale = null }?.takeIf { it != displayed }
+    }
+
+    /** Shows [content] released by [takeSettled]: an external edit as far as the host is concerned. */
+    fun settle(content: String, draftPending: Boolean): LedgerVerdict {
+        if (draftPending) {
+            put(content, State.Acked, makeCurrent = false)
+            return LedgerVerdict.ExternalWithDraft
+        }
+        put(content, State.Acked, makeCurrent = true)
+        return LedgerVerdict.External
     }
 
     private fun verdictFor(content: String, draftPending: Boolean): LedgerVerdict {
@@ -89,7 +130,14 @@ class OwnCommitLedger(private val capacity: Int = DEFAULT_CAPACITY) {
         }
         expectations.firstOrNull { it.key == key }?.let { expected ->
             expectations.remove(expected)
-            put(key, State.Acked, makeCurrent = true, seq = expected.seq)
+            if (entry != null && entry.state == State.InFlight) {
+                // The same content is also a commit still in flight (A, B, A): keep that registration, only move the display.
+                currentSeq = entry.seq
+                displayed = key
+                entry.recommitted = true
+            } else {
+                put(key, State.Acked, makeCurrent = true, seq = expected.seq)
+            }
             observed(expected.seq)
             return LedgerVerdict.Adopt
         }
@@ -111,6 +159,7 @@ class OwnCommitLedger(private val capacity: Int = DEFAULT_CAPACITY) {
                 return LedgerVerdict.Defer
             }
             if (draftPending) return LedgerVerdict.AdoptWithDraft
+            observed(entry.seq)
             put(key, State.Acked, makeCurrent = true)
             return LedgerVerdict.Adopt
         }
@@ -128,20 +177,23 @@ class OwnCommitLedger(private val capacity: Int = DEFAULT_CAPACITY) {
 
     /** The emission of the state at `ownFloor` arrived: nothing older can follow it on an ordered feed. */
     private fun observed(seq: Long) {
-        if (seq == ownFloor) ownFloorObserved = true
+        if (seq == ownFloor && !floorAmbiguous) ownFloorObserved = true
     }
 
     private fun ack(e: Entry) {
+        // An emission of re-committed content may be the old state's: only the Job completing (`markDone`) retires it.
+        if (e.state == State.InFlight && e.recommitted) return
         val upTo = e.seq
         e.state = State.Acked
         for (other in entries.values) if (other.state == State.InFlight && other.seq < upTo) other.state = State.Acked
     }
 
-    private fun put(key: String, state: State, makeCurrent: Boolean, seq: Long = nextSeq++): Long {
+    private fun put(key: String, state: State, makeCurrent: Boolean, seq: Long = nextSeq++, recommitted: Boolean = false): Long {
         val existing = entries[key]
         if (existing != null) {
             existing.seq = seq
             existing.state = state
+            existing.recommitted = recommitted
         } else {
             entries[key] = Entry(seq, state)
             totalChars += key.length

@@ -186,7 +186,7 @@ class EvaluatorTest {
         assertEquals(num(-2.68), eval("=ROUND(-2.675,2)"))
         assertEquals(num(1.0), eval("=ROUND(0.5)"))
         assertEquals(num(-1.0), eval("=ROUND(-0.5)"))
-        assertEquals(num(1.01), eval("=ROUND(1.0049999999999999,2)")) // 15 significant digits, like a spreadsheet
+        assertEquals(num(1.0), eval("=ROUND(1.0049999999999997,2)"))
     }
 
     @Test
@@ -214,5 +214,18 @@ class EvaluatorTest {
         var r = 1L
         repeat(e) { r *= 10 }
         return r
+    }
+
+    @Test
+    fun round_should_ReturnInputUntouched_When_DigitsAbove15() {
+        assertEquals(eval("=1/3"), eval("=ROUND(1/3,20)"))
+        assertEquals(eval("=1/3"), eval("=ROUND(1/3,16)"))
+    }
+
+    @Test
+    fun round_should_NotDoubleRound_When_InputIsJustBelowHalf() {
+        assertEquals(num(0.0), eval("=ROUND(0.49999999999999994)"))
+        assertEquals(num(0.0), eval("=ROUND(0.49999999999999994,0)"))
+        assertEquals(0.0, (eval("=ROUND(-0.49999999999999994)") as CellValue.Num).value)
     }
 }
