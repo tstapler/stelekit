@@ -88,7 +88,7 @@ private const val TARGET_DP = 44
 /** Dashed ghost outlines and a small "AI" badge for every unreviewed agent element. Touch-transparent: it never takes the canvas's input. */
 @Composable
 fun ProvenanceMarks(marks: List<ProvenanceMark>, modifier: Modifier = Modifier) {
-    val ghost = MaterialTheme.colorScheme.tertiary
+    val ghost = MaterialTheme.colorScheme.primary
     Box(modifier.fillMaxSize().testTag(ProvenanceTags.LAYER)) {
         Canvas(Modifier.fillMaxSize()) {
             val dash = PathEffect.dashPathEffect(floatArrayOf(DASH_ON, DASH_OFF))
@@ -100,12 +100,12 @@ fun ProvenanceMarks(marks: List<ProvenanceMark>, modifier: Modifier = Modifier) 
             Text(
                 SketchProvenanceStrings.BADGE,
                 Modifier.offset { IntOffset((m.x + m.width).roundToInt(), m.y.roundToInt() - BADGE_RAISE_DP.dp.roundToPx()) }
-                    .background(MaterialTheme.colorScheme.tertiary, MaterialTheme.shapes.extraSmall)
+                    .background(MaterialTheme.colorScheme.primary, MaterialTheme.shapes.extraSmall)
                     .padding(horizontal = 4.dp)
                     .testTag(ProvenanceTags.badge(m.id))
                     .semantics { contentDescription = m.description },
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onTertiary,
+                color = MaterialTheme.colorScheme.onPrimary,
             )
         }
     }
