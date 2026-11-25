@@ -249,4 +249,69 @@ class SketchPointerAdapterTest {
         assertEquals(1, adapter.onPointer(raw(1, PointerKind.Mouse, RawPhase.Hover, 5.0, 5.0)).size)
         assertTrue(adapter.onPointer(raw(2, PointerKind.Touch, RawPhase.Hover, 5.0, 5.0)).isEmpty())
     }
+
+    private fun at(kind: PointerKind, phase: RawPhase, id: Int, t: Long, x: Double = 50.0, y: Double = 50.0) =
+        RawPointer(id, kind, phase, at(x, y), timestamp = t)
+
+    @Test
+    fun stylusHover_should_ReachTheTool_WithoutContact() {
+        val adapter = SketchPointerAdapter()
+        val out = adapter.onPointer(at(PointerKind.Stylus, RawPhase.Hover, 1, 0L))
+        assertEquals(InputType.Move, (out.single() as PointerAction.ToolInput).event.type)
+        assertEquals(PointerKind.Stylus, (out.single() as PointerAction.ToolInput).event.pointerKind)
+    }
+
+    @Test
+    fun touch_should_BeIgnored_While_ThePenHovers_And_PanAfterItLeaves() {
+        val adapter = SketchPointerAdapter()
+        adapter.onPointer(at(PointerKind.Stylus, RawPhase.Hover, 1, 100L))
+        val ignored = listOf(
+            at(PointerKind.Touch, RawPhase.Down, 2, 150L, 100.0, 100.0),
+            at(PointerKind.Touch, RawPhase.Move, 2, 160L, 140.0, 100.0),
+            at(PointerKind.Touch, RawPhase.Up, 2, 170L, 140.0, 100.0),
+        ).flatMap { adapter.onPointer(it) }
+        assertTrue(ignored.isEmpty())
+        assertEquals(0.0, adapter.viewport.panX)
+        adapter.onPointer(at(PointerKind.Stylus, RawPhase.Cancel, 1, 200L))
+        val pans = listOf(
+            at(PointerKind.Touch, RawPhase.Down, 3, 250L, 100.0, 100.0),
+            at(PointerKind.Touch, RawPhase.Move, 3, 260L, 140.0, 100.0),
+        ).flatMap { adapter.onPointer(it) }
+        assertTrue(pans.single() is PointerAction.ViewChange)
+        assertEquals(40.0, adapter.viewport.panX)
+    }
+
+    @Test
+    fun touch_should_Pan_When_ThePenWentSilentLongerThanTheRangeWindow() {
+        val adapter = SketchPointerAdapter()
+        adapter.onPointer(at(PointerKind.Stylus, RawPhase.Hover, 1, 0L))
+        adapter.onPointer(at(PointerKind.Touch, RawPhase.Down, 2, 10_000L, 100.0, 100.0))
+        adapter.onPointer(at(PointerKind.Touch, RawPhase.Move, 2, 10_010L, 120.0, 100.0))
+        assertEquals(20.0, adapter.viewport.panX)
+    }
+
+    @Test
+    fun touchAlreadyPanning_should_KeepPanning_When_ThePenArrives() {
+        val adapter = SketchPointerAdapter()
+        adapter.onPointer(at(PointerKind.Touch, RawPhase.Down, 2, 0L, 100.0, 100.0))
+        adapter.onPointer(at(PointerKind.Stylus, RawPhase.Hover, 1, 10L))
+        adapter.onPointer(at(PointerKind.Touch, RawPhase.Move, 2, 20L, 130.0, 100.0))
+        assertEquals(30.0, adapter.viewport.panX)
+    }
+
+    @Test
+    fun touch_should_BeIgnored_While_EraserEndHovers() {
+        val adapter = SketchPointerAdapter()
+        adapter.onPointer(at(PointerKind.Eraser, RawPhase.Hover, 1, 0L))
+        assertTrue(adapter.onPointer(at(PointerKind.Touch, RawPhase.Down, 2, 5L)).isEmpty())
+    }
+
+    @Test
+    fun mouseHover_should_NotRejectTouch() {
+        val adapter = SketchPointerAdapter()
+        adapter.onPointer(at(PointerKind.Mouse, RawPhase.Hover, 1, 0L))
+        adapter.onPointer(at(PointerKind.Touch, RawPhase.Down, 2, 5L, 100.0, 100.0))
+        adapter.onPointer(at(PointerKind.Touch, RawPhase.Move, 2, 6L, 110.0, 100.0))
+        assertEquals(10.0, adapter.viewport.panX)
+    }
 }

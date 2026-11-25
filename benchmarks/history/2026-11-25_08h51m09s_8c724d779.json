@@ -1,0 +1,122 @@
+{
+  "timestamp": "2026-11-25 08:51:09 UTC",
+  "gitSha": "8c724d779",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 0,
+  "phase2Ms": 0,
+  "phase3Ms": 3,
+  "totalMs": 3,
+  "jankBaselineP50Ms": 1,
+  "jankBaselineP95Ms": 31,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 1302,
+      "pct": 33.4
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 275,
+      "pct": 7.1
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 251,
+      "pct": 6.4
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 219,
+      "pct": 5.6
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 180,
+      "pct": 4.6
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 93,
+      "pct": 2.4
+    },
+    {
+      "frame": "java.nio.DirectByteBuffer_[k]",
+      "samples": 69,
+      "pct": 1.8
+    },
+    {
+      "frame": "org.jacoco.agent.rt.internal_aeaf9ab.asm.SymbolTable$Entry_[k]",
+      "samples": 64,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.util.regex.Matcher_[k]",
+      "samples": 63,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.lang.String[]_[k]",
+      "samples": 61,
+      "pct": 1.6
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 46275,
+      "pct": 97.9
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-25020900-32fd-49ec-92a8-74760f7a7230-libsqlitejdbc.so",
+      "samples": 425,
+      "pct": 0.9
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 82,
+      "pct": 0.2
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 77,
+      "pct": 0.2
+    },
+    {
+      "frame": "syscall",
+      "samples": 21,
+      "pct": 0.0
+    },
+    {
+      "frame": "__xstat64",
+      "samples": 16,
+      "pct": 0.0
+    },
+    {
+      "frame": "prctl",
+      "samples": 16,
+      "pct": 0.0
+    },
+    {
+      "frame": "free",
+      "samples": 8,
+      "pct": 0.0
+    },
+    {
+      "frame": "dev/stapler/stelekit/util/ContentHasher.sha256_[1]",
+      "samples": 7,
+      "pct": 0.0
+    },
+    {
+      "frame": "dev/stapler/stelekit/model/Validation.validateUuidString_[1]",
+      "samples": 5,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": []
+}

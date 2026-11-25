@@ -184,6 +184,7 @@ import org.junit.runners.Suite
     // V2EntryRouteTest (sketch v2 creation and conversion route, Task 6.2.0c) is excluded for the same reasons as SketchEditorHostTest below.
     // SketchEditorHostExtrasTest (sketch v2 editor host extras, Task 6.2.0d) is excluded for the same reason (1), composes @Composable lambdas and needs the commonTest rig (no Compose plugin or commonTest in this target).
     // SketchEditorHostTest and WiringV2AndroidEntryPointTest (sketch v2 editor host, Story 6.2.0b) are excluded for the same reason (1), compose @Composable lambdas and need the commonTest rig (no Compose plugin or commonTest in this target).
+    // OutlineAccessibilityTest (sketch v2, E12: outline, add-shape-at and chip-row semantics at large font scales) is excluded for the same reason (1), compose @Composable lambdas (no Compose plugin in this target).
     // GoToElementTest, UxA11yAcceptanceTest, WalkthroughKeyboardTest and LoadingStatesTest (sketch v2, Stories 3.6.5, 3.6.6 and 3.6.8) are excluded for the same reason (1), compose @Composable lambdas (no Compose plugin in this target) and the first two sample native-graphics renders.
     //
     // BackgroundTasksSectionTest, TaskRunLogRowsTest and ModelDownloadUiTest (background-task scheduling UI)

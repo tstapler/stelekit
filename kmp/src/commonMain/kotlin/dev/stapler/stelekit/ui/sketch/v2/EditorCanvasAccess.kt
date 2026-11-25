@@ -4,6 +4,8 @@
 
 package dev.stapler.stelekit.ui.sketch.v2
 
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchOutlineStrings
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -122,9 +124,15 @@ internal fun BoxScope.CanvasAccessLayer(controller: SketchEditorController, acce
         viewport = viewport,
         requesters = access.requestersFor(tree),
         onFocusElement = { id -> access.onFocusElement(id, ring, density) },
+        canvasActions = canvasActions(controller),
     )
     SkipCanvasLink(onSkip = access::skip, modifier = Modifier.align(Alignment.TopStart), requester = access.skipRequester)
     (access.focus as? CanvasFocus.Element)?.let { focused -> FocusedElementRing(controller, focused.id, ring) }
+}
+
+private fun canvasActions(controller: SketchEditorController): List<CustomAccessibilityAction> = buildList {
+    add(CustomAccessibilityAction(SketchOutlineStrings.ACTION_OUTLINE) { controller.overlay = EditorOverlay.Outline; true })
+    if (!controller.readOnly) add(CustomAccessibilityAction(SketchOutlineStrings.ACTION_ADD_SHAPE) { controller.overlay = EditorOverlay.AddShapeAt; true })
 }
 
 @Composable

@@ -19,8 +19,10 @@ import dev.stapler.stelekit.ui.screens.git.CloneFailureCopyTest
 import dev.stapler.stelekit.ui.screens.git.HunkBlockPickerTest
 import dev.stapler.stelekit.ui.screens.llm.ParseMcpClientNameTest
 import dev.stapler.stelekit.ui.state.BlockStateManagerCopyPasteTest
+import dev.stapler.stelekit.ui.state.BlockStateManagerDefaultPathTest
 import dev.stapler.stelekit.ui.state.BlockStateManagerPositionTest
 import dev.stapler.stelekit.ui.state.BlockStateManagerReorderTest
+import dev.stapler.stelekit.ui.state.BlockStateManagerTableUndoTest
 import dev.stapler.stelekit.ui.state.BlockStateManagerTest
 import dev.stapler.stelekit.ui.state.BlockStateManagerDirtyPageUuidsTest
 import dev.stapler.stelekit.ui.transfer.QrTransferContrastTest
@@ -49,8 +51,10 @@ import org.junit.runners.Suite
     HunkBlockPickerTest::class,
     ParseMcpClientNameTest::class,
     BlockStateManagerCopyPasteTest::class,
+    BlockStateManagerDefaultPathTest::class,
     BlockStateManagerPositionTest::class,
     BlockStateManagerReorderTest::class,
+    BlockStateManagerTableUndoTest::class,
     BlockStateManagerTest::class,
     BlockStateManagerDirtyPageUuidsTest::class,
     QrTransferContrastTest::class,

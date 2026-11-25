@@ -122,7 +122,21 @@ class SketchPointerAdapter(
         viewport = value
     }
 
+    /** Timestamp of the latest stylus or eraser-end sample (hover or contact), or null once the pen left range or was never seen. */
+    private var penLastSeen: Long? = null
+
+    /** True while a pen hovers over or touches the canvas: the resting hand is then not a gesture (stylus palm rejection). */
+    private fun penInRange(now: Long): Boolean = penLastSeen?.let { now - it <= PEN_RANGE_MS } == true
+
+    private fun trackPen(p: RawPointer) {
+        if (p.kind != PointerKind.Stylus && p.kind != PointerKind.Eraser) return
+        penLastSeen = if (p.phase == RawPhase.Cancel) null else p.timestamp
+    }
+
     fun onPointer(p: RawPointer): List<PointerAction> {
+        trackPen(p)
+        // A finger that lands while the pen is in range is a resting hand: it is dropped whole (its Move and Up find no Down to follow).
+        if (p.kind == PointerKind.Touch && p.phase == RawPhase.Down && penInRange(p.timestamp)) return emptyList()
         if (p.phase == RawPhase.Down && !p.palm) onKindSeen(p.kind)
         return when {
             // A palm never starts or moves a gesture; its Up and Cancel still run so a contact that turned into a palm cannot wedge the state.
@@ -318,6 +332,9 @@ class SketchPointerAdapter(
 
     private companion object {
         const val DEFAULT_PAGE_PX = 800.0
+
+        /** Hover samples arrive every frame, so a pen with no sample for this long has left range even if no Exit came. */
+        const val PEN_RANGE_MS = 500L
 
         /** A touch that moves no further than this many screen pixels is a tap, not a pan. */
         const val TAP_SLOP_PX = 10.0

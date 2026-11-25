@@ -92,6 +92,7 @@ import dev.stapler.stelekit.ui.sketch.v2.guide.TourController
 import dev.stapler.stelekit.ui.sketch.v2.guide.TourOverlay
 import dev.stapler.stelekit.ui.sketch.v2.guide.tourAnchor
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchGoToStrings
+import dev.stapler.stelekit.ui.sketch.v2.strings.SketchOutlineStrings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchHostStrings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchImportExportStrings
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchStrings
@@ -149,6 +150,9 @@ data class SketchShellConfig(
     val onExport: (() -> Unit)? = null,
     /** The overflow entry "Go to element..." (Story 3.6.5); null hides it, the host opens [GoToElementDialog]. */
     val onGoToElement: (() -> Unit)? = null,
+    /** The overflow entries "Sketch outline..." and "Add shape at..." (E12): the gesture-free ways to read and build a sheet; null hides the entry. */
+    val onOutline: (() -> Unit)? = null,
+    val onAddShapeAt: (() -> Unit)? = null,
     /** The rows of the one Esc order the host owns right now (a dialog, "Solving...", a picker, a mid-draw preview, Crosshair mode). */
     val escRows: () -> Set<EscRow> = { emptySet() },
     /** A key pressed while the canvas has focus; true when the host used it. */
@@ -210,6 +214,8 @@ object ShellTags {
     const val OVERFLOW_EXPORT = "sketch.overflow.export"
     const val OVERFLOW_RESTORE = "sketch.overflow.restore"
     const val OVERFLOW_GO_TO = "sketch.overflow.goto"
+    const val OVERFLOW_OUTLINE = "sketch.overflow.outline"
+    const val OVERFLOW_ADD_SHAPE_AT = "sketch.overflow.addshapeat"
     const val BANNER = "sketch.banner"
     const val HINT = "sketch.hint"
     const val DURABILITY_CUE = "sketch.cue.durability"
@@ -512,6 +518,20 @@ private fun OverflowItems(state: SketchEditorState, config: SketchShellConfig, g
                 text = { Text(SketchGoToStrings.MENU_ITEM) },
                 onClick = { close(); onGoTo() },
                 modifier = Modifier.testTag(ShellTags.OVERFLOW_GO_TO),
+            )
+        }
+        config.onOutline?.let { onOutline ->
+            DropdownMenuItem(
+                text = { Text(SketchOutlineStrings.OUTLINE_MENU_ITEM) },
+                onClick = { close(); onOutline() },
+                modifier = Modifier.testTag(ShellTags.OVERFLOW_OUTLINE),
+            )
+        }
+        config.onAddShapeAt?.let { onAdd ->
+            DropdownMenuItem(
+                text = { Text(SketchOutlineStrings.ADD_MENU_ITEM) },
+                onClick = { close(); onAdd() },
+                modifier = Modifier.testTag(ShellTags.OVERFLOW_ADD_SHAPE_AT),
             )
         }
         DropdownMenuItem(
