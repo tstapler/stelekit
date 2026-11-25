@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -25,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.tools.RotatePivot
@@ -64,8 +66,8 @@ internal fun RotateDialog(controller: SketchEditorController, autoFocus: Boolean
         val scene = controller.doc.scene
         val ids = controller.ui.selection.map(::ElementId).filter { id -> scene[id]?.let { Selectability.isSelectable(scene, it) } == true }
         val command = RotatePlan.command(scene, ids, degrees, pivot)
-        if (command != null) controller.submit(command)
-        close()
+        val failed = command != null && controller.submit(command) != null
+        if (failed) problem = true else close()
     }
     val apply = {
         val degrees = RotatePlan.parseDegrees(text)
@@ -84,6 +86,7 @@ internal fun RotateDialog(controller: SketchEditorController, autoFocus: Boolean
                     label = { Text(R.FIELD) },
                     singleLine = true,
                     isError = problem,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 )
                 if (problem) Text(R.INVALID, Modifier.testTag(RotateTags.ERROR))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

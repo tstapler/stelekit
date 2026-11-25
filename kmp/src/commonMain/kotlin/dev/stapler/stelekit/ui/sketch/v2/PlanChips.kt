@@ -86,7 +86,7 @@ internal fun planChips(controller: SketchEditorController): List<ActionChip> {
 /** "Rotate" for a selection of one or more elements: opens the angle dialog (typed degrees, quick steps, pivot). */
 private fun rotateChip(controller: SketchEditorController): List<ActionChip> {
     val scene = controller.doc.scene
-    val turnable = controller.ui.selection.mapNotNull { scene[ElementId(it)] }.any { it !is OpeningElement }
+    val turnable = controller.ui.selection.mapNotNull { scene[ElementId(it)] }.any { it !is OpeningElement && dev.stapler.stelekit.sketch.v2.tools.Selectability.isSelectable(scene, it) }
     if (!turnable) return emptyList()
     val strings = dev.stapler.stelekit.ui.sketch.v2.strings.SketchHostStrings.Rotate
     return listOf(ActionChip(RotateTags.CHIP, strings.CHIP, strings.CHIP_DESCRIPTION) { controller.overlay = EditorOverlay.Rotate })

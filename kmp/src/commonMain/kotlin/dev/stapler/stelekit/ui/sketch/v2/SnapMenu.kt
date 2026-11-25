@@ -68,8 +68,8 @@ class SnapChoices(private val prefs: SnapPreferences?) {
         prefs?.chooseAlignment(alignment)
     }
 
-    /** The rotate-drag snap (session only): 15, 45, 90 degrees or free. */
-    var rotateStep: RotateStep by mutableStateOf(RotateStep.Deg15)
+    /** The rotate-drag snap (session only): free by default, then 15, 45, 90 degrees. */
+    var rotateStep: RotateStep by mutableStateOf(RotateStep.Free)
         private set
 
     fun cycleRotateStep() {
