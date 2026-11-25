@@ -49,6 +49,8 @@ import dev.stapler.stelekit.ui.screens.copy.LocalCopyFlow
 import dev.stapler.stelekit.ui.screens.copy.conflictPagePersister
 import dev.stapler.stelekit.platform.defaultMeasurementUnit
 import dev.stapler.stelekit.ui.annotate.openInlineImage
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
@@ -359,6 +361,25 @@ internal fun GraphContentActiveShell(
             )
         }
 
+        val tableSheetFlushScope = remember { CoroutineScope(SupervisorJob() + dev.stapler.stelekit.coroutines.PlatformDispatcher.Default) }
+        val tableSheetController = remember(repos, scope) {
+            dev.stapler.stelekit.ui.components.sheet.TableSheetController(scope) { uuid ->
+                repos.blockRepository.getBlockByUuid(uuid).first().getOrNull()
+            }
+        }
+        val tableSheetPort = remember(blockStateManager, repos) {
+            dev.stapler.stelekit.ui.components.sheet.BlockStateManagerTablePort(blockStateManager) { uuid ->
+                repos.blockRepository.getBlockByUuid(uuid).first().getOrNull()?.content
+            }
+        }
+        val tableSheetEnabled = viewModel.tablePreferences.prefs.sheetEnabled
+        val openTableSheetAction = remember(tableSheetController, tableSheetEnabled) {
+            if (!tableSheetEnabled) null else {
+                val action: (dev.stapler.stelekit.model.BlockUuid) -> Unit = { tableSheetController.openSheet(it) }
+                action
+            }
+        }
+
         val openSketchAction = remember(repos, viewModel) {
             val action: (String) -> Unit = { slug ->
                 scope.launch {
@@ -386,6 +407,9 @@ internal fun GraphContentActiveShell(
             dev.stapler.stelekit.ui.components.LocalArchiveUrlAction provides archiveUrlAction,
             dev.stapler.stelekit.ui.components.LocalAnnotateImageAction provides annotateImageAction,
             dev.stapler.stelekit.ui.components.LocalTableCommitAction provides tableCommitAction,
+            dev.stapler.stelekit.ui.components.LocalOpenTableSheetAction provides openTableSheetAction,
+            dev.stapler.stelekit.ui.components.LocalTableSheetOwner provides tableSheetController.owner,
+            dev.stapler.stelekit.ui.components.sheet.LocalRecoveredDraftStore provides tableSheetController.recovered,
             dev.stapler.stelekit.ui.components.LocalTableUndoHost provides tableUndoHost,
             dev.stapler.stelekit.ui.components.sheet.LocalTableActivation provides tableActivation,
             dev.stapler.stelekit.ui.components.LocalTablePreferences provides viewModel.tablePreferences,
@@ -754,6 +778,22 @@ internal fun GraphContentActiveShell(
                 onRetry = storageMoveController.onRetry,
                 onSummaryAcknowledge = storageMoveController.onAcknowledge,
                 onReopenFailedAcknowledge = storageMoveController.onAcknowledge,
+            )
+        }
+
+        if (tableSheetEnabled || tableSheetController.open != null || tableSheetController.recovered.pinned != null) {
+            dev.stapler.stelekit.ui.components.sheet.TableSheetShell(
+                controller = tableSheetController,
+                sheetEnabled = tableSheetEnabled,
+                pageName = appState.currentPage?.name,
+                graphKey = activeGraphId?.value,
+                port = tableSheetPort,
+                feedFor = { uuid -> repos.blockRepository.getBlockByUuid(uuid).map { it.getOrNull() } },
+                context = dev.stapler.stelekit.coroutines.PlatformDispatcher.Main,
+                flushScope = tableSheetFlushScope,
+                flush = { blockStateManager.flush() },
+                showMessage = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } },
+                editAsMarkdown = { uuid -> blockStateManager.requestEditBlock(uuid) },
             )
         }
 

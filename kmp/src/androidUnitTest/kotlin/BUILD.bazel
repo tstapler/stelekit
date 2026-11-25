@@ -164,6 +164,12 @@ kt_android_library(
             "**/TableInlineAffordancesTest.kt",
             "**/TableHintsTest.kt",
             "**/TableInlineA11yTest.kt",
+            # Compose host tests for the maximized table sheet: host over a real manager, notice host, conflict banner, and their shared harness (Gradle-only)
+            "**/TableSheetTestSupport.kt",
+            "**/TableSheetHostTest.kt",
+            "**/TableNoticeHostTest.kt",
+            "**/TableConflictBannerTest.kt",
+            "**/TableInlineConflictTest.kt",
             # Compose host tests for the annotator status strip, pasteboard inset and gesture layer (Gradle-only)
             "**/StatusStripTest.kt",
             "**/PasteboardInsetTest.kt",

@@ -14,6 +14,7 @@ import dev.stapler.stelekit.ui.components.TableReviewFixesTest
 import dev.stapler.stelekit.ui.components.UuidKeysTest
 import dev.stapler.stelekit.ui.components.sheet.InlineTableRealManagerTest
 import dev.stapler.stelekit.ui.components.sheet.InlineTableStripStateTest
+import dev.stapler.stelekit.ui.components.sheet.TableCommitterTest
 import dev.stapler.stelekit.ui.screens.DiskConflictDiffTest
 import dev.stapler.stelekit.ui.screens.GlobalUnlinkedReferencesViewModelTest
 import dev.stapler.stelekit.ui.screens.ImportViewModelTest
@@ -51,6 +52,7 @@ import org.junit.runners.Suite
     UuidKeysTest::class,
     InlineTableRealManagerTest::class,
     InlineTableStripStateTest::class,
+    TableCommitterTest::class,
     DiskConflictDiffTest::class,
     GlobalUnlinkedReferencesViewModelTest::class,
     ImportViewModelTest::class,

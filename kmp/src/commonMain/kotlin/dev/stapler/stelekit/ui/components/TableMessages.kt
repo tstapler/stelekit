@@ -50,6 +50,40 @@ object TableMessages {
     const val NOTHING_TO_UNDO_CELL = "Nothing more to undo in this cell"
     const val NOTHING_TO_REDO_CELL = "Nothing more to redo in this cell"
 
+    // ---- sheet (PR-C 5.1) ----
+    const val TABLE_REMOVED = "This table was removed"
+    const val NOT_A_TABLE = "This block is no longer a table"
+    const val EDITED_ELSEWHERE = "The page was edited elsewhere"
+    const val RELOADED_TO_STAY_SAFE = "The table was reloaded from disk to stay safe"
+    const val EDITOR_OPENED = "The table was closed because the block is being edited"
+    const val SAVE_FAILED_REMOVED = "Your last edit could not be saved: the table was removed"
+    const val UPDATED_FROM_DISK = "Updated from disk"
+    const val COMMIT_FAILED = "Couldn't save the change"
+    const val RETRY = "Retry"
+    const val READ_ONLY = "This graph is read-only"
+    const val COLUMN_WIDTHS_RESET = "Column widths reset when you close the sheet"
+    const val COPY_AS_FORMULAS = "Copy as formulas"
+    const val SHORTCUTS = "Keyboard shortcuts"
+    const val MORE_OPTIONS = "More options"
+    const val SHEET_TITLE_FALLBACK = "Table"
+    const val CONFLICT_TITLE = "This table changed while you were editing"
+    const val KEEP_MINE = "Keep mine"
+    const val TAKE_THEIRS = "Take theirs"
+    const val RECOVERED_DRAFT = "Your unsaved edit was kept"
+    const val APPLY = "Apply"
+    const val DISCARD = "Discard"
+    const val DISMISS_NOTICE = "Dismiss notice"
+    const val SHEET_UNDO_SCOPE_NOTE = "Undo here only covers edits made in this sheet. Edits made inline earlier: close the sheet and use the page's Ctrl+Z."
+    const val RECOVERED_APPLY_DISABLED = "That cell no longer exists"
+
+    fun moreNotices(count: Int) = "$count more"
+
+    fun recoveredDraft(address: String) = "Your unsaved edit to $address was kept"
+
+    fun applyTo(address: String) = "Apply to $address"
+
+    fun conflictBannerDraft(address: String) = "Your edit to $address is not saved yet"
+
     fun extendLabel(choice: String) = "Extend selection $choice"
 
     fun editing(address: String, text: String) = "Editing $address, $text"
