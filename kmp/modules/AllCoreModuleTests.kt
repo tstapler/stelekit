@@ -3,6 +3,36 @@ package dev.stapler.stelekit.modules
 import dev.stapler.stelekit.error.DomainErrorStorageErrorTest
 import dev.stapler.stelekit.parsing.BlockParserTest
 import dev.stapler.stelekit.parsing.ParsingPropertyTest
+import dev.stapler.stelekit.table.CellDraftTest
+import dev.stapler.stelekit.table.GridNavigatorTest
+import dev.stapler.stelekit.table.GridSelectionPropertyTest
+import dev.stapler.stelekit.table.LogseqCompatFixtureTest
+import dev.stapler.stelekit.table.NoticeQueueTest
+import dev.stapler.stelekit.table.SelectionStatsTest
+import dev.stapler.stelekit.table.TableBackLadderTest
+import dev.stapler.stelekit.table.TableEditorPropertyTest
+import dev.stapler.stelekit.table.TableEditorTest
+import dev.stapler.stelekit.table.TableParserTest
+import dev.stapler.stelekit.table.TableRoundTripPropertyTest
+import dev.stapler.stelekit.table.TableSerializerTest
+import dev.stapler.stelekit.table.TableShortcutMapTest
+import dev.stapler.stelekit.table.TableSyncPolicyModelTest
+import dev.stapler.stelekit.table.TableSyncPolicyTest
+import dev.stapler.stelekit.table.TableUndoScopeTest
+import dev.stapler.stelekit.table.TableViewStatePropertyTest
+import dev.stapler.stelekit.table.TableViewStateTest
+import dev.stapler.stelekit.table.TabularTextPropertyTest
+import dev.stapler.stelekit.table.TabularTextTest
+import dev.stapler.stelekit.table.formula.DependencyGraphTest
+import dev.stapler.stelekit.table.formula.EvaluatorTest
+import dev.stapler.stelekit.table.formula.FormulaFuzzTest
+import dev.stapler.stelekit.table.formula.FormulaParserTest
+import dev.stapler.stelekit.table.formula.FormulaPropertyTest
+import dev.stapler.stelekit.table.formula.GoldenCorpusTest
+import dev.stapler.stelekit.table.formula.PointModeRuleTest
+import dev.stapler.stelekit.table.formula.RefRewriterTest
+import dev.stapler.stelekit.table.formula.TableCalcTest
+import dev.stapler.stelekit.table.formula.TableEngineTest
 import dev.stapler.stelekit.util.ContentHasherRawBytesTest
 import dev.stapler.stelekit.util.ContentHasherTest
 import dev.stapler.stelekit.util.FileUtilsPropertyTest
@@ -16,6 +46,36 @@ import org.junit.runners.Suite
     DomainErrorStorageErrorTest::class,
     BlockParserTest::class,
     ParsingPropertyTest::class,
+    CellDraftTest::class,
+    GridNavigatorTest::class,
+    GridSelectionPropertyTest::class,
+    LogseqCompatFixtureTest::class,
+    NoticeQueueTest::class,
+    SelectionStatsTest::class,
+    TableBackLadderTest::class,
+    TableEditorPropertyTest::class,
+    TableEditorTest::class,
+    TableParserTest::class,
+    TableRoundTripPropertyTest::class,
+    TableSerializerTest::class,
+    TableShortcutMapTest::class,
+    TableSyncPolicyModelTest::class,
+    TableSyncPolicyTest::class,
+    TableUndoScopeTest::class,
+    TableViewStatePropertyTest::class,
+    TableViewStateTest::class,
+    TabularTextPropertyTest::class,
+    TabularTextTest::class,
+    DependencyGraphTest::class,
+    EvaluatorTest::class,
+    FormulaFuzzTest::class,
+    FormulaParserTest::class,
+    FormulaPropertyTest::class,
+    GoldenCorpusTest::class,
+    PointModeRuleTest::class,
+    RefRewriterTest::class,
+    TableCalcTest::class,
+    TableEngineTest::class,
     ContentHasherRawBytesTest::class,
     ContentHasherTest::class,
     FileUtilsPropertyTest::class,

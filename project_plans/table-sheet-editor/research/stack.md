@@ -1,0 +1,64 @@
+# Research: technology stack (table-sheet-editor)
+
+Method: repo reads (Read/grep over kmp/); no web research, so platform clipboard/IME claims about Wasm/iOS are INFERRED from code and Compose knowledge unless marked VERIFIED. Confidence labels: VERIFIED = opened in repo this session.
+
+## 1. Versions in use (VERIFIED)
+- Kotlin 2.4.10, `kotlin("plugin.compose")` 2.4.10, `org.jetbrains.compose` 1.10.3 (`settings.gradle.kts:13,18`; `MODULE.bazel:203,245`). There is no `gradle/libs.versions.toml`; deps are inline in `kmp/build.gradle.kts`.
+- commonMain deps (`kmp/build.gradle.kts:98-120`): `compose.runtime/foundation/material3/materialIconsExtended/components.resources`, coroutines 1.10.2, kotlinx-datetime 0.7.1, serialization-json 1.10.0, JetBrains `markdown` 0.7.3, lifecycle-*-compose 2.8.4, coil3 3.2.0. Android pins androidx compose ui 1.10.6 / material3 1.4.0. Under Bazel material3 resolves to 1.9.0 (comment `MODULE.bazel:243`).
+- Test libs: kotlin-test, coroutines-test, kotest-assertions/property in commonTest (CLAUDE.md), Roborazzi 1.59.0.
+- Targets: JVM desktop, Android, wasmJs, iOS (`iosMain`).
+
+## 2. Existing table code (VERIFIED)
+- `ui/components/TableModel.kt`: `TableData(headers, alignments, rows, explicitAlignments)`, `parseTableContent`, `splitTableRow` (handles `\|`), `parseAlignmentCell`, `isNumericCell`, `numericColumns`, `effectiveAlignments`. Header fixes column count, rows padded/truncated.
+- GAP: there is NO serializer (`TableData` -> markdown) anywhere in commonMain (grep for serialize/toMarkdown found none). Lossless round trip therefore needs either (a) a new serializer that re-escapes `|` as `\|`, or (b) a cell-level splice over the original source lines. Parse trims cells and drops the original padding/delimiter spelling (`:--`, `---:`, compact `|-|`), so (a) alone breaks "untouched table byte-identical". Recommend: keep the raw source lines in the model and re-emit only edited rows/cells verbatim for the rest; if any structural edit occurs, re-emit the whole table normalized.
+- `ui/components/TableBlock.kt` (269 lines): custom `Layout`-based grid (`TableGrid`), cells via `WikiLinkText`, `combinedClickable` on the whole table -> `onStartEditing` (raw edit). Called from `BlockItem.kt:498` for `BlockType.Table`. Prefs in `TablePreferences.kt` (`TableDisplayPrefs`, `LocalTablePreferences`), widths in `TableColumnLayout.kt`.
+- `parsing/TableExtraction.kt` / `BlockParser` treat `\|` differently (it splits the cell) than `splitTableRow` — two parsers disagree; the editor must use `splitTableRow`.
+- Existing tests: `TableModelTest`, `TableColumnLayoutTest`, `TablePreferencesTest`, `TableRoundTripTest` (parser verbatim), `ParseTableContentTest`, androidUnitTest `TableBlockLayoutTest`, jvmTest `TableBlockScreenshotTest`.
+
+## 3. Compose foundation APIs that apply
+| Need | API | Notes |
+|---|---|---|
+| In-cell editing | `BasicTextField(value: TextFieldValue, ...)` | Same pattern as `BlockEditor.kt:118` (TextFieldValue + FocusRequester + `onPreviewKeyEvent` at :180). Reuse the IME-composition guard (`TextFieldValue.composition != null` -> do not transform; see `BlockEditor.kt:~67`). Only ONE live BasicTextField at a time (the active cell); non-active cells stay `WikiLinkText`/`Text`. |
+| Grid, small inline | existing custom `Layout` | Keep (shared column grid, tallest-cell row height). |
+| Grid, maximized | `LazyColumn` of rows, each row a `Row`/`Layout` with fixed column widths from `TableColumnLayout`; header via `stickyHeader` (frozen header) | Horizontal scroll: one shared `rememberScrollState()` + `horizontalScroll` on a wrapper of the LazyColumn (not per row). `TableBlock.kt:45` already notes a CMP-4279 TODO (horizontalScroll inside LazyColumn on iOS). A 2D lazy grid is not in foundation; row-lazy is enough for 200x12 and "a few thousand cells". |
+| Range selection | custom: `pointerInput` (`detectDragGestures` / tap with Shift modifier via key state) over cell bounds | Platform `SelectionContainer` cannot select across `Layout` cells reliably and conflicts with taps (recent #240 tap-vs-selection race). Recommend custom range-selection model with own copy path. `SelectionContainer` is only used today for logs/code fences (`CodeFenceBlock.kt:65`). |
+| Keyboard grid nav | `Modifier.onPreviewKeyEvent` / `onKeyEvent` + `focusable()` + `FocusRequester`; `KeyEvent.key == Key.DirectionUp/Tab/Enter/Escape`, `isShiftPressed`, `isCtrlPressed/isMetaPressed` | Tab must be consumed (wasm: `preventBrowserTabFocusTraversal()` already exists in `wasmJsMain/.../browser/Main.kt:125`). |
+| Clipboard | see 4 | |
+| Resize | `pointerInput` + `detectHorizontalDragGestures` on header divider; widths in dp via `LocalDensity` | CLAUDE.md: touch targets in dp; use >= 48dp hit areas on touch. |
+| Maximize | `androidx.compose.ui.window.Dialog(DialogProperties(usePlatformDefaultWidth=false))` or a route in `ScreenRouter.kt` | Both exist in repo patterns; Dialog is simplest and cross-platform. Decision for plan phase. |
+| A11y | `Modifier.semantics { contentDescription; role = Role...; selected }`, `testTag` | |
+
+## 4. Clipboard per platform
+Repo status (VERIFIED): the app uses the deprecated-but-working `LocalClipboardManager` / `ClipboardManager` (`App.kt:28,468`, `BlockList.kt:304`, `LogDashboard.kt:56`, ...) plus `ClipboardProvider` (`export/ClipboardProvider.kt`: `writeText`, `writeHtml(html, plainFallback)`) with `actual rememberClipboardProvider(clipboard: ClipboardManager)` in androidMain/jvmMain/wasmJsMain (android and wasm impls are identical: `setText`, HTML falls back to plain). Block-level clipboard is app-internal (`BlockClipboard`, `BlockStateManager.kt:279`).
+- `ClipboardManager.setText/getText` is synchronous AnnotatedString text only. In Compose 1.10 the replacement `LocalClipboard` (suspend `getClipEntry/setClipEntry`, `ClipEntry` platform type) exists; `ClipboardManager` is deprecated but still works. INFERRED: staying on `ClipboardManager` matches repo convention; migrating is out of scope but new code should isolate clipboard behind a tiny port (`TableClipboard { suspend copy(tsv, html?) ; suspend paste(): String? }`) so the swap is one file.
+- TSV/CSV pure logic (parse/format, quoting `"` / embedded tab/newline, CRLF, trailing newline Excel adds, `\t`-separated Sheets output) belongs in commonMain with property tests (round trip format(parse(x))). No dependency needed. Excel/Sheets put `text/plain` TSV on the clipboard (plus HTML); plain TSV text is sufficient for interop.
+- JVM (AWT): `Toolkit.systemClipboard`; works for text; HTML flavor possible (existing `writeHtml` on jvm). Must run on EDT. Copy and paste via Ctrl/Cmd+C/V key events work natively; in-cell BasicTextField handles its own copy/paste, so range copy must be handled at the grid level only when no cell is in edit mode.
+- Android: `ClipboardManager.setText` fine; reading the clipboard from background is blocked on Android 10+ (foreground app OK); Android 13 shows a toast on programmatic copy. Paste happens via user gesture (toolbar/menu or Ctrl+V on hardware keyboard).
+- Wasm/JS (INFERRED, not verified, spike needed): async Clipboard API requires secure context + user gesture; reads can prompt for permission (Firefox lacks `readText` without gesture/paste event). Compose wasm routes paste via the browser paste event; safest route is handling the keyboard Ctrl/Cmd+V inside a user gesture and reading through `ClipboardManager.getText()`. Large paste performance: parse off the UI thread is unnecessary below ~100k cells; apply as one undo entry.
+- iOS: `UIPasteboard`; iOS 16+ shows a "Allow Paste" prompt on programmatic reads from other apps. Best effort; no Bazel path (CLAUDE.md), compile via Gradle only.
+
+## 5. IME / text-editing constraints
+- Existing editing model (VERIFIED): `BlockEditor.kt` wraps `BasicTextField` + `TextFieldValue`; edits flow `onTextFieldValueChange` -> `BlockStateManager.updateBlockContent(uuid, text, version)` (`BlockEditorPorts.kt:19`), debounced 500 ms -> `GraphWriter`. `requestEditBlock/stopEditingBlock/updateEditingSelection`, `undo()/redo()` (`BlockStateManager.kt:598-605`) with `BlockUndoManager.record(undo, redo)` taking suspend lambdas. `BlockStateManager` snapshot-based undo (`restorePageToSnapshot`) exists for compound ops (:303, :504, :569).
+- Persisting: a table edit is a content replacement of one block: cell edit -> rebuild block markdown -> `updateBlockContent`. Per-keystroke writes would hit the debounce path and block undo; recommended: hold cell draft in local state, commit to the block on cell blur/Enter/Tab (single undo entry per commit); structural ops (row/col insert, sort, paste) = one `record(...)` each.
+- IME: Android and Wasm use composition; never rewrite text/selection while `value.composition != null`. Wasm hosts a hidden DOM input for IME; Tab handling already patched in Main.kt:125. Multi-line cell content must serialize as `<br>` (pipe tables cannot hold newlines): Enter must commit/move down, Shift+Enter inserts `<br>`. *(Superseded by ADR-009: Shift+Enter commits and moves up; Alt+Enter inserts `<br>`.)*
+- `WikiLinkText` (`BlockViewer.kt:105`): takes `text, textColor, linkColor, onLinkClick, onUrlClick, onClick, isInSelectionMode, textAlign, fontWeight, ...`; it already handles link tap vs click. Inline cell edit can reuse it for non-edit display and call `onClick` to activate the cell editor; it has no selection support itself (hence custom range selection).
+
+## 6. Formula engine (commonMain, no deps)
+- Hand-written tokenizer + recursive-descent/Pratt parser -> AST `sealed interface Expr` (Number, Text, CellRef, Range, BinOp, UnaryMinus, Call, Percent). Closed function set (SUM, AVERAGE, MIN, MAX, COUNT, IF + comparison ops), which satisfies the "closed arithmetic/aggregate set; no eval" security NFR by construction.
+- Evaluation: dependency graph (cell -> referenced cells), memoised evaluation with in-progress marking for cycle detection (`#CYCLE`), dirty-set propagation from an edited cell (incremental, avoids O(cells^2)); errors as `sealed` result (`#REF`, `#DIV/0`, `#PARSE`, `#VALUE`), never exceptions. Number parsing: use `String.toDoubleOrNull()` after stripping `,`/`$`/`%` per a fixed `.`-decimal rule (kotlin common has no Locale; locale-dependent parsing would need expect/actual, so decide a fixed rule and document it). Use `Double`; format via a small common formatter (no `String.format` in commonMain — verify per target before use).
+- Reference rewriting under row/column insert/delete/sort/move: pure function `shiftRefs(expr, op)`; property-testable.
+- Third-party options: none needed. KMP formula/expression libs (e.g. kotlin-eval-style) are either JVM-only or too small to be worth the supply-chain and wasm risk; consistent with requirement "custom Compose renderers" preference. INFERRED: no mature KMP spreadsheet-grid library exists (not exhaustively web-checked).
+
+## 7. Markdown round trip
+- Reuse `splitTableRow`/`parseAlignmentCell`; add `serializeTable` handling: escape `|` -> `\|` in cells; newlines -> `<br>`; delimiter row from `explicitAlignments` (`:---`, `:---:`, `---:`, `---`); preserve bullet prefix (`- | a |` seen by `TableExtraction`) and block properties lines (`id::`) that sit around the table in block content.
+- Formulas stay literal cell text (`=SUM(B2:B5)`); display value computed at render. A cell whose literal begins with `=` is a formula by rule; escaping for a literal text starting with `=` needs a decision (e.g. leading `'`  is NOT Logseq-safe; simplest: any `=`-leading cell is a formula).
+- View-only state (widths/freeze/sort) cannot live in GFM; keep per-session in memory, optionally persist in `Settings` keyed by block uuid (not in the file). Resolves Open Question 1 with zero Logseq risk.
+
+## 8. Dependencies
+None required. All of Compose foundation, coroutines and kotest-property are already on the classpath. No new Gradle/Bazel maven entries expected. New source files must be added to the module manifest rules, and new test classes registered (`AllBusinessTests`/`AllJvmTests`/`AllAndroidUnitTests`, `commonTest/BUILD.bazel`, `scripts/kmp-module-tests-sync.py`) per CLAUDE.md.
+
+## 9. Risks / spikes to run before plan lock
+1. Wasm paste/copy spike (permissions, Ctrl+V user-gesture path, IME in cell) — only item the repo cannot answer.
+2. Custom range-selection vs tap/long-press conflict with `WikiLinkText` and block-level selection mode (#240).
+3. Confirm no existing table serializer elsewhere (this research found none in commonMain).
+4. Performance numbers (NFR "set in research"): proposed SLO to adopt: cell commit < 16 ms for 200x12 on JVM test harness; formula recompute of a single-cell edit touches only transitive dependents (assert in a unit test via evaluation counter); LazyColumn row composition count <= visible rows + 2. These are proposals, not measured.

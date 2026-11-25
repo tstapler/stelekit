@@ -144,6 +144,9 @@ kt_android_library(
             "**/AnnotatorSettingsRowsTest.kt",
             # Compose host test for table layout/alignment and the Tables settings rows (Gradle-only, no Compose plugin here)
             "**/TableBlockLayoutTest.kt",
+            # Compose host tests for the table baseline render and the Tables settings flag rows (Gradle-only, same reason)
+            "**/TableBaselineRenderTest.kt",
+            "**/SettingsTableRowsTest.kt",
             # Compose host tests for the annotator status strip, pasteboard inset and gesture layer (Gradle-only)
             "**/StatusStripTest.kt",
             "**/PasteboardInsetTest.kt",

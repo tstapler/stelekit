@@ -630,6 +630,7 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.jobs.schedule.NoopTaskSchedulerTest::class,
     dev.stapler.stelekit.jobs.schedule.ScheduleLatenessTest::class,
     dev.stapler.stelekit.jobs.schedule.JobsScheduleImportDirectionTest::class,
+    dev.stapler.stelekit.table.TableEngineImportDirectionTest::class,
     dev.stapler.stelekit.jobs.schedule.TaskConfigCodecTest::class,
     dev.stapler.stelekit.jobs.schedule.TaskSettingsStoreMigrationTest::class,
     dev.stapler.stelekit.git.LegacyGitSyncMigrationTest::class,
