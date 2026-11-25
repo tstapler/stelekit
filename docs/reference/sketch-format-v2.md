@@ -238,6 +238,29 @@ To trace a photo, write positions and sizes as **photo pixels** and give `build`
 
 To keep the photo under the traced plan, add `"underlay": {"image": "kitchen.jpg", "opacity": 50}` (photo space only; `image` is a path relative to the spec file, `opacity` is a percent, default 50). `build` stores the photo's sha256 as `fileId`, places it at the sheet origin at the calibrated scale (so shapes traced in photo pixels land on the photo), writes the `calibration.refs` as `extras.underlay.refs` and puts it on the locked `underlay` layer. `build` does not copy the photo into a graph: `place --underlay-image <photo>` stores it in the graph's asset store. `describe` lists the underlay and its calibration; `render` hides it unless `--underlay <photo>` is given (section 6a).
 
+### 7a. Editing an existing sheet (`edit`)
+
+Do not rebuild a sheet the owner has already drawn on: `edit` changes it in place with the app's own commands, so the result is what the editor would have written. The edits file is `{"agent": "name", "edits": [ ... ]}` (or a bare array). Edits run in order, each on the sheet the earlier ones left. Lengths are real-world: a number is inches, text is `3' 6"` or `25.4 mm`. Name an element by `id` (its id, or its name, or the shown name such as `Rectangle 1`); a name that fits two elements is refused.
+
+| `op` | fields |
+|---|---|
+| `add` | `id`, `kind` (`rect`, `ellipse`, `text`, `line`), `x`, `y`, then `w` + `h` (rect, ellipse), `text` + `fontSize` (text) or `x2` + `y2` (line); optional `name`, `layer` |
+| `move` | `id`, `dx` and/or `dy` |
+| `resize` | `id`, `w` and/or `h` (the top-left corner stays) |
+| `relabel` | `id`, `text` (the shape's label or the text element), or `to` (rename the element) |
+| `delete` | `id` |
+| `set-dimension` | `id` of a constraint (it is solved) or of an authored dimension (its line and label are re-laid), `value` |
+| `set-reference` | `id` of a constraint, `reference` (`true`: it only reports the length; `false`: it drives the geometry). Use `true` for a dimension you only read off a photo |
+| `add-wall` | `id`, `points` `[[x, y], ...]`, `thickness` (default 4 1/2"), `closed`, `justify` |
+| `add-opening` | `id`, `type` (`door`, `window`, `opening`), `on` (a wall), `segment`, `offset`, `width`, `swing`, `hinge` |
+| `set-layer` | `id` or `ids`, `layer` (id or name), `create: true` to make it |
+
+Every edit may carry `confidence` (a whole percent, what the agent believes, not a measurement) and `note` (where the value came from). An edit that would break a constraint (the solver cannot satisfy them), put an opening where the wall has no room, or use an unknown id is **refused**, with the constraints it conflicts with, and nothing is written unless `--partial`.
+
+**Provenance.** Everything an edit adds or changes gets `extras.provenance` on the element: `{"source": "agent", "confidence": 70, "note": "...", "accepted": true}` (`confidence`, `note` and `accepted` are optional and absent when unset). A sheet without the key keeps its exact bytes; an older app keeps the key as an unknown extra. The editor draws unreviewed agent elements with a dashed ghost outline and an "AI" badge, and a bar offers Accept (the selection) and Accept all (one undo step); accepting sets `accepted: true` and keeps the marker. `describe` shows it as `[agent, needs review (70%): note]`. LLMs read lengths off photos badly, so review every dimension an agent wrote.
+
+**Audit trail** (`--audit`): `{tool, source: "agent", agent, at, input, dryRun, written, sheetSha256Before, sheetSha256After, applied: [{index, op, target, source, elements, before, after, note}], refused: [{index, op, reason, conflicts}]}`. `before` and `after` map each touched element id to `{kind, name, layer, box [x, y, w, h] in scene units, text, provenance}` (`null` where the element did not exist or was deleted).
+
 ## 8. Worked examples
 
 Files in [`sketch-examples/`](sketch-examples/): `room.spec.json` (the spec above), `diagram.spec.json` (labelled boxes and arrows), `photo.spec.json` (calibration), `handwritten.v2.json` (raw scene, deliberately not canonical).
@@ -284,6 +307,8 @@ RELATIONSHIPS
 | `validate <file>` | sheet, spec or `.excalidraw`. Reports syntax errors with line and column, then per-element problems (id, line, expected keys, "did you mean", valid enum values), dangling references, then what the real codec says, then canonical form. Ends with `RESULT: OK` or `RESULT: FAILED (n errors)` | 1 on errors |
 | `canonicalize <sheet> [--out f \| --in-place]` | decode and re-encode: exact canonical bytes (stdout when neither flag); sha256 and "was already canonical" go to stderr | 1 if it does not load |
 | `describe <file>` | text: extent, layers, every element with sizes in feet-inches, labels, openings, dimensions, contains/touches/overlaps/connects relationships, constraints, a character map. Accepts a sheet, spec or `.excalidraw` | 1 if it does not load |
+| `edit <sheet.v2.json> --edits <edits.json> (--out <sheet.v2.json> \| --in-place \| --dry-run) [--audit <audit.json>] [--partial] [--at <timestamp>]` | apply a list of command-level edits to an existing sheet (section 7a); prints one `ok` or `REFUSED` line per edit, then the textual diff; `--audit` writes who/what/before/after as JSON; nothing is written when any edit is refused (unless `--partial`) | 1 when an edit is refused or the result does not validate |
+| `diff <a.json> <b.json>` | unified diff of the two sheets' `describe` text (without the character map); `no differences` when they match | 1 if a file does not load |
 | `from-excalidraw <in.excalidraw> --out <sheet.v2.json>` | the app's importer (pinned to Excalidraw v0.18.1) applied to an empty sheet (ids are kept); images are not carried over | 1 on refusal |
 | `to-excalidraw <sheet.v2.json> --out <x.excalidraw>` | the app's exporter; layers flatten, constraints are not carried | 1 on failure |
 | `place <sheet.v2.json> --graph <dir> [--slug proj-xxxxxx] [--name T] [--underlay-image <photo>]` | write `sheets/<uuid>.v2.json`, `project-model.json` (with sha256) and `preview.svg` into the bundle, creating it or replacing the same sheet uuid; prints the embed line; `--underlay-image` also stores the photo in `<graph>/assets/<sha256>.<ext>` and refuses a photo whose sha256 differs from the sheet's underlay `fileId` | 1 on failure |

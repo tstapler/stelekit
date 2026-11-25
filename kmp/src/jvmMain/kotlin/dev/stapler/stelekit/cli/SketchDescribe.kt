@@ -27,6 +27,7 @@ import dev.stapler.stelekit.sketch.v2.scene.OpeningElement
 import dev.stapler.stelekit.sketch.v2.scene.OpeningKind
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
 import dev.stapler.stelekit.sketch.v2.scene.WallElement
+import dev.stapler.stelekit.sketch.v2.scene.provenance
 import dev.stapler.stelekit.sketch.v2.scene.WallGeometry
 import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
@@ -55,7 +56,7 @@ internal object SketchDescribe {
     private const val MAX_POINTS_SHOWN = 12
     private const val MISMATCH_INCHES = 0.5
 
-    fun describe(doc: SketchDocumentV2): String {
+    fun describe(doc: SketchDocumentV2, withMap: Boolean = true): String {
         val scene = doc.scene
         val all = scene.elementsInOrder
         val agent = doc.extras["agent"] as? JsonObject
@@ -81,14 +82,23 @@ internal object SketchDescribe {
         })
         out.appendLine()
         out.appendLine("ELEMENTS (${main.size}, in paint order)")
-        for (e in main) out.appendLine("- " + elementLine(e, labels[e.id].orEmpty(), f, all))
+        for (e in main) out.appendLine("- " + elementLine(e, labels[e.id].orEmpty(), f, all) + provenanceNote(e))
         describeUnderlay(doc, f, out)
         describeOpenings(all, f, out)
         describeDimensions(all, f, out)
         describeRelations(main, f, out)
         describeConstraints(doc, out)
-        describeMap(main, labels, f, out)
+        if (withMap) describeMap(main, labels, f, out)
         return out.toString().trimEnd() + "\n"
+    }
+
+    /** ` [agent, needs review (70%): note]` for an element an agent wrote; nothing for one a person drew, so old sheets read as before. */
+    private fun provenanceNote(e: SceneElement): String {
+        val p = e.base.provenance ?: return ""
+        val state = if (p.accepted) "accepted" else "needs review"
+        val confidence = p.confidence?.let { " ($it%)" }.orEmpty()
+        val note = p.note?.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty()
+        return " [${p.source}, $state$confidence$note]"
     }
 
     /** The photo underlay and its calibration, in words an agent can act on; nothing when the sheet has none. */

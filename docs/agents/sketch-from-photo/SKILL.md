@@ -59,12 +59,19 @@ Rules that matter: numbers are photo pixels, text lengths (`"3'"`) are real; `of
 
 ## Working on an existing sketch
 
+Use `edit`, not a rebuild: the owner may have drawn on the sheet since, and a rebuild from a guess would lose that.
+
 1. Find it: the page has `![sketch](../assets/stelekit-sketch/<slug>/preview.svg)`. List `<graph>/assets/stelekit-sketch/<slug>/sheets/` and take the `*.v2.json` (several sheets: `project-model.json` names them).
-2. `sketch-cli describe <sheet>` and `sketch-cli render <sheet> --out look.png`; look at it. Never edit blind.
-3. Edit a **copy**. Small change: edit the JSON (add or alter elements; see the format doc section 5), run `sketch-cli canonicalize copy.v2.json --in-place`, then `validate`. If the sheet came from the app it has no spec, and rebuilding from a guess would lose what the owner drew, so edit the elements.
-4. Render again and compare with the render from step 2.
-5. `place` the result with the same `--slug`: it replaces the sheet with that uuid and refreshes `preview.svg`. Check `git diff --stat` in the graph: only that bundle should change.
-6. If the owner may have the app open on that graph, say the file changed outside the app so it should reload before editing.
+2. `sketch-cli describe <sheet>` and `sketch-cli render <sheet> --out look.png`; look at it. Never edit blind. Copy the sheet to the scratch folder first.
+3. Write an edits file (`{"agent": "<your name>", "edits": [...]}`; ops are `add`, `move`, `resize`, `relabel`, `delete`, `set-dimension`, `add-wall`, `add-opening`, `set-layer`; see the format doc, section 7a). Name elements by the ids or names `describe` printed. Put `confidence` and `note` on anything you read off a photo.
+4. Try it: `sketch-cli edit copy.v2.json --edits edits.json --dry-run --audit audit.json`. Read the `ok` / `REFUSED` lines and the diff. A refused edit (it would break a constraint, a door does not fit its wall, a name is wrong) writes nothing: fix that edit and run again.
+5. Apply it: `sketch-cli edit copy.v2.json --edits edits.json --in-place --audit audit.json`, then `validate` and render again; compare with the render from step 2. `sketch-cli diff before.v2.json copy.v2.json` shows what changed in words.
+6. `place` the result with the same `--slug`: it replaces the sheet with that uuid and refreshes `preview.svg`. Check `git diff --stat` in the graph: only that bundle should change.
+7. If the owner may have the app open on that graph, say the file changed outside the app so it should reload before editing.
+
+### Review pass (provenance)
+
+Everything `edit` writes is marked `extras.provenance` (`source: agent`, your `confidence` and `note`). In the app the owner sees those elements with a dashed outline and an "AI" badge and can **Accept** the selected ones or **Accept all**; `describe` lists them as `[agent, needs review (70%): note]`. You are weak at dimensions read off a photo, so before you report: list every dimension you wrote, say which reference it came from, and give a low `confidence` to any you estimated. Tell the owner to review the badged elements, and never present a marked value as measured.
 
 ## Verification checklist (before you say it is done)
 
@@ -76,6 +83,7 @@ Rules that matter: numbers are photo pixels, text lengths (`"3'"`) are real; `of
 - [ ] `validate` ends `RESULT: OK`; `describe` shows no `MISMATCH`.
 - [ ] The embed line is in the right page, with `../assets/` and the printed slug.
 - [ ] Only the bundle folder and that page changed in the graph (`git status`).
+- [ ] For an existing sheet I used `edit` (not a rebuild), read the dry-run diff, and kept the audit file; every value I was unsure of carries a low `confidence` and a `note`.
 - [ ] I told the owner what was estimated and what was not visible.
 
 ## Pitfalls
@@ -84,6 +92,7 @@ Rules that matter: numbers are photo pixels, text lengths (`"3'"`) are real; `of
 - **Perspective.** A tilted photo of a floor makes far walls look short. If a reference near the camera and one far away disagree by more than 5 %, the build warns. Either use references at similar depth or tell the owner the plan is approximate.
 - **Which way is north.** The image's up is north on the sketch. If the owner says the photo is rotated, rotate the photo first (`magick in.jpg -rotate 90 out.jpg`) and rebuild the grid.
 - **Wall thickness.** Spec rectangles are wall centre lines; the drawn wall is 4 1/2" by default and the inside is `w` minus one thickness. If the photo shows measured inside dimensions, add a wall thickness to each.
+- **Rebuilding an owner-edited sheet.** `build` starts from the spec and discards what the owner drew; use `edit` on the sheet itself.
 - **Hand-written JSON.** Do not type canonical bytes or `fileSha256` by hand; use `build`, `canonicalize` and `place`.
 - **Overlapping labels.** A label longer than its box gives a build warning; shorten it or lower `fontSize`.
 - **Reusing ids.** Spec ids must be unique, including derived ones such as `<id>.label`.
