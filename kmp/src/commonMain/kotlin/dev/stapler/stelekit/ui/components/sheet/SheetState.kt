@@ -22,8 +22,13 @@ import dev.stapler.stelekit.table.LadderAction
 import dev.stapler.stelekit.table.LadderKey
 import dev.stapler.stelekit.table.LadderState
 import dev.stapler.stelekit.table.NavResult
+import dev.stapler.stelekit.table.NumberGrammar
+import dev.stapler.stelekit.table.RefusalReason
+import dev.stapler.stelekit.table.SelectionStats
+import dev.stapler.stelekit.table.SelectionStatsResult
 import dev.stapler.stelekit.table.TableBackLadder
 import dev.stapler.stelekit.table.TableDoc
+import dev.stapler.stelekit.table.EditSummary
 import dev.stapler.stelekit.table.TableEdit
 import dev.stapler.stelekit.table.TableEditOutcome
 import dev.stapler.stelekit.table.TableEditor
@@ -55,6 +60,26 @@ internal fun parseSheet(content: String): ParsedSheet = when (val parsed = Table
 /** The reference a point-mode tap just wrote into the draft: where it sits and which cells it spans. */
 internal data class PointRef(val start: Int, val end: Int, val anchor: CellAddress, val focus: CellAddress) {
     val text: String get() = if (anchor == focus) anchor.toString() else "$anchor:$focus"
+}
+
+/** What an edit did: applied (one host commit), refused by the engine, a no-op, or not taken by the host. */
+internal sealed interface EditAttempt {
+    data class Applied(val outcome: TableEditOutcome.Applied) : EditAttempt
+    data class Refused(val reason: RefusalReason, val count: Int) : EditAttempt
+    data object NoChange : EditAttempt
+
+    /** Read-only or a held conflict: the host already told the user. */
+    data object NotCommitted : EditAttempt
+}
+
+/** Numeric stats of a selection plus how many cells in it are errors; both null-ish means the status line stays empty. */
+internal data class SheetStats(val numbers: SelectionStatsResult?, val errors: Int) {
+    val text: String?
+        get() = when {
+            numbers != null -> TableMessages.selectionStats(numbers.count, numbers.sum, numbers.average, errors)
+            errors > 0 -> TableMessages.errorsOnly(errors)
+            else -> null
+        }
 }
 
 /** Plain-data parts of [SheetState] that survive a configuration change (UX-14); never an IME composition. */
@@ -106,6 +131,14 @@ internal class SheetState(
     var lastRef: PointRef? by mutableStateOf(null)
         private set
     var announcement: String? by mutableStateOf(null)
+        private set
+
+    /** Touch range mode (long-press): the two handles show and Back collapses the range first. */
+    var rangeMode: Boolean by mutableStateOf(false)
+        private set
+
+    /** The column, row or cell menu that is open, or null; opening one registers its closer on the Back ladder. */
+    var menu: SheetMenuTarget? by mutableStateOf(null)
         private set
     var announcementSeq: Int by mutableIntStateOf(0)
         private set
@@ -253,6 +286,7 @@ internal class SheetState(
         draftCol = at.col
         fieldValue = value
         selection = GridSelection.single(at, bounds)
+        rangeMode = false
         mode = GridMode.Edit
         lastRef = null
         pointMode = PointModeRule.onDraftChanged(PointModeRule.onEditStarted(), value.text, value.selection.end)
@@ -305,15 +339,40 @@ internal class SheetState(
      * Applies [edit] to the table and hands the serialized result to the host as one commit. Returns the outcome,
      * or null when it was refused, changed nothing, or the host would not take it (read-only, held conflict).
      */
-    fun applyEdit(edit: TableEdit, label: String, draft: DraftText? = null): TableEditOutcome.Applied? {
-        val before = doc ?: return null
-        val outcome = editor.apply(before, edit) as? TableEditOutcome.Applied ?: return null
-        if (outcome.doc == before) return null
+    fun applyEdit(edit: TableEdit, label: String, draft: DraftText? = null): TableEditOutcome.Applied? =
+        (attemptEdit(edit, label, draft) as? EditAttempt.Applied)?.outcome
+
+    /** Like [applyEdit] but says why nothing happened, so commands can show the refusal. */
+    fun attemptEdit(edit: TableEdit, label: String, draft: DraftText? = null): EditAttempt {
+        val before = doc ?: return EditAttempt.NoChange
+        val outcome = when (val result = editor.apply(before, edit)) {
+            is TableEditOutcome.Refused -> return EditAttempt.Refused(result.reason, result.count)
+            is TableEditOutcome.Applied -> result
+        }
+        if (outcome.doc == before) return EditAttempt.NoChange
         val text = TableSerializer.serialize(outcome.doc)
-        if (!host.commit(text, label, draft)) return null
+        if (!host.commit(text, label, draft)) return EditAttempt.NotCommitted
         adopt(outcome.doc, text, edit)
-        return outcome
+        return EditAttempt.Applied(outcome)
     }
+
+    /** Commits a document the caller built from an engine outcome (duplicate row); [tag] says which edit shaped it. */
+    fun commitPrepared(newDoc: TableDoc, tag: TableEdit, label: String): EditAttempt {
+        val before = doc ?: return EditAttempt.NoChange
+        if (newDoc == before) return EditAttempt.NoChange
+        val text = TableSerializer.serialize(newDoc)
+        if (!host.commit(text, label, null)) return EditAttempt.NotCommitted
+        adopt(newDoc, text, tag)
+        return EditAttempt.Applied(TableEditOutcome.Applied(newDoc, EditSummary.RowsInserted(1)))
+    }
+
+    /** Session-only width of [col]; nothing is written to the table (ADR-007). */
+    fun resizeColumn(col: Int, widthDp: Float) {
+        view = view.setWidth(col, widthDp)
+    }
+
+    /** The pure dry run of [edit] against the current table (the sort menu's helper text); commits nothing. */
+    fun previewEdit(edit: TableEdit): TableEditOutcome? = doc?.let { editor.apply(it, edit) }
 
     private fun adopt(newDoc: TableDoc, text: String, edit: TableEdit) {
         val before = rowKeys
@@ -330,6 +389,7 @@ internal class SheetState(
             newDoc.rowCount != oldCount -> freshKeys(newDoc.rowCount)
             else -> before
         }
+        view = ColumnWidths.afterEdit(view, edit, newDoc.columnCount)
         if (edit is TableEdit.InsertRows || edit is TableEdit.DeleteRows) shiftSelectionForRows(edit)
         selection = selection.clamp(bounds)
         if (mode == GridMode.Edit && rowKeys.indexOf(draftRowKey) < 0) leaveEdit()
@@ -377,6 +437,7 @@ internal class SheetState(
             GridCommand.EditAsMarkdown -> true.also { host.editAsMarkdown() }
             GridCommand.Copy, GridCommand.Cut, GridCommand.Paste, GridCommand.InsertRowOrColumn,
             GridCommand.DeleteRowOrColumn, GridCommand.OpenContextMenu, GridCommand.InsertLineBreak,
+            is GridCommand.MoveSelection,
             -> true.also { sink.onCommand(command, selection) }
             else -> navigate(d, command)
         }
@@ -441,12 +502,14 @@ internal class SheetState(
         onFieldChange(TextFieldValue(text, TextRange(v.selection.min + 1)))
     }
 
-    fun draftUndo() {
+    override val fieldScopedUndo: Boolean get() = mode == GridMode.Edit && draft != null
+
+    override fun draftUndo() {
         val d = draft?.takeIf { it.canUndo } ?: return announce(TableMessages.NOTHING_TO_UNDO_CELL)
         applyDraft(d.undo())
     }
 
-    fun draftRedo() {
+    override fun draftRedo() {
         val d = draft?.takeIf { it.canRedo } ?: return announce(TableMessages.NOTHING_TO_REDO_CELL)
         applyDraft(d.redo())
     }
@@ -460,9 +523,84 @@ internal class SheetState(
 
     // ---- selection and taps --------------------------------------------------------------------------------------
 
-    private fun select(next: GridSelection) {
+    private fun select(next: GridSelection, keepRange: Boolean = false) {
         if (next.anchor != selection.anchor) errorDismissedFor = null
         selection = next
+        rangeMode = rangeMode && keepRange
+    }
+
+    /** Replaces the selection (strip and menu commands); a draft is committed first. */
+    fun selectRange(next: GridSelection): Boolean {
+        if (!commitDraftAndLeave()) return false
+        select(next.clamp(bounds))
+        return true
+    }
+
+    /** Long-press: selects [address], shows the two handles and offers a haptic tick through [onRangeModeEntered]. */
+    fun enterRangeMode(address: CellAddress) {
+        if (doc == null || !commitDraftAndLeave()) return
+        gridFocusToken++
+        select(GridSelection.single(address, bounds))
+        rangeMode = true
+        onRangeModeEntered()
+    }
+
+    var onRangeModeEntered: () -> Unit = {}
+
+    /** A handle drag: the corner opposite the handle stays at [fixed], the moving end goes to [target]; range mode stays on. */
+    fun dragHandle(fixed: CellAddress, target: CellAddress) {
+        val b = bounds
+        select(GridSelection(b.clamp(fixed), b.clamp(target), GridSelection.Kind.Cells), keepRange = true)
+    }
+
+    /** A mouse drag from [start]: the range between it and [target]. */
+    fun dragRange(start: CellAddress, target: CellAddress) {
+        if (!commitDraftAndLeave()) return
+        select(GridSelection(bounds.clamp(start), bounds.clamp(target), GridSelection.Kind.Cells))
+    }
+
+    /** Shift+click and a mouse drag: the range from the anchor to [target]. */
+    fun shiftClick(target: CellAddress): Boolean {
+        if (doc == null) return false
+        extendSelectionTo(target)
+        return true
+    }
+
+    /** Numeric stats of [sel] by computed value; error cells are counted, not summed. */
+    fun statsOf(sel: GridSelection = selection): SheetStats {
+        calcVersion
+        val c = calc ?: return SheetStats(SelectionStats.compute(sel) { a -> doc?.cell(a)?.value?.let(NumberGrammar::parse) }, 0)
+        var errors = 0
+        val r = sel.range
+        for (row in r.topLeft.row..r.bottomRight.row) for (col in r.topLeft.col..r.bottomRight.col) {
+            if (c.valueAt(CellAddress(row, col)) is CellValue.Err) errors++
+        }
+        return SheetStats(SelectionStats.compute(sel, c::numberAt), errors)
+    }
+
+    /** What a resting cell shows as plain text: a formula's computed value, else its text (the TSV copy reads this). */
+    fun valueText(address: CellAddress): String = display(address).text
+
+    fun rawText(address: CellAddress): String = doc?.cell(address)?.value ?: ""
+
+    /** Bumped on every calc change; the status line keys on it. */
+    val statsRevision: Int get() = calcVersion
+
+    // ---- menus ---------------------------------------------------------------------------------------------------
+
+    private var menuRelease: (() -> Unit)? = null
+
+    fun openMenu(target: SheetMenuTarget) {
+        if (sink.menuFor(target) == null) return
+        closeMenu()
+        menu = target
+        menuRelease = registerMenu { closeMenu() }
+    }
+
+    fun closeMenu() {
+        menuRelease?.invoke()
+        menuRelease = null
+        menu = null
     }
 
     /** A tap or click on a cell, from the single gesture owner (ADR-005); the sheet taps SELECT, a tap on the selected cell edits. */
@@ -482,15 +620,17 @@ internal class SheetState(
     }
 
     /** Column letter tap: selects the whole column (the header menu is a later worker's). */
-    fun selectColumn(col: Int) {
+    fun selectColumn(col: Int, openMenu: Boolean = true) {
         if (!commitDraftAndLeave()) return
         select(GridSelection.single(CellAddress(1, col), bounds).selectColumns(bounds))
+        if (openMenu) openMenu(SheetMenuTarget.Column(col))
     }
 
     /** Row number tap: selects the whole row. */
-    fun selectRow(row: Int) {
+    fun selectRow(row: Int, openMenu: Boolean = true) {
         if (!commitDraftAndLeave()) return
         select(GridSelection.single(CellAddress(row, 1), bounds).selectRows(bounds))
+        if (openMenu) openMenu(SheetMenuTarget.Row(row))
     }
 
     private fun commitDraftAndLeave(): Boolean {
@@ -503,7 +643,12 @@ internal class SheetState(
     /** Extends the range from the focus; a header drag and the Extend picker both end here. */
     fun extendSelectionTo(target: CellAddress) {
         if (!commitDraftAndLeave()) return
-        select(selection.extendTo(target, bounds))
+        select(selection.extendTo(target, bounds), keepRange = rangeMode)
+    }
+
+    /** The Extend... picker on a range: grows the focus from where it is, without a drag. */
+    fun extendRange(choice: ExtendChoice) {
+        extendSelectionTo(choice.target(selection.focus, bounds))
     }
 
     // ---- point mode (5.8b, 5.8c) -------------------------------------------------------------------------------
@@ -533,16 +678,7 @@ internal class SheetState(
     fun extendReference(choice: ExtendChoice) {
         val ref = lastRef ?: return
         if (!PointModeRule.allowsReplace(pointMode)) return
-        val b = bounds
-        val focus = ref.focus
-        val next = when (choice) {
-            ExtendChoice.Right -> CellAddress(focus.row, focus.col + 1)
-            ExtendChoice.Down -> CellAddress(focus.row + 1, focus.col)
-            ExtendChoice.RowEnd -> CellAddress(focus.row, b.cols)
-            ExtendChoice.ColumnEnd -> CellAddress(b.rows, focus.col)
-            ExtendChoice.TableEnd -> CellAddress(b.rows, b.cols)
-        }
-        writeReference(ref.start, ref.end, ref.copy(focus = b.clamp(next)))
+        writeReference(ref.start, ref.end, ref.copy(focus = choice.target(ref.focus, bounds)))
     }
 
     /** "Stop inserting": a tap commits and moves for the rest of this edit. */
@@ -563,7 +699,7 @@ internal class SheetState(
             menuOpen = menuCount > 0,
             imeVisible = imeVisible && mode == GridMode.Edit,
             mode = mode,
-            selectionSize = selection.cellCount,
+            selectionSize = if (rangeMode) maxOf(selection.cellCount, 2) else selection.cellCount,
         )
         val action = TableBackLadder.next(TableSurface.Sheet, ladder, key)
         when (action) {
@@ -625,6 +761,7 @@ internal class SheetState(
         calcVersion++
         lastText = content
         if (!sameShape) rowKeys = freshKeys(newDoc.rowCount)
+        view = view.onRowOrderChanged()
         val anchor = bounds.clamp(keep ?: selection.anchor)
         selection = GridSelection.single(anchor, bounds)
         if (mode == GridMode.Edit) {

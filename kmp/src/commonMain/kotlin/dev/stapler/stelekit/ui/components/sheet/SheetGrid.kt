@@ -4,6 +4,8 @@
 package dev.stapler.stelekit.ui.components.sheet
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
@@ -34,6 +36,14 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -46,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import dev.stapler.stelekit.table.CellAddress
 import dev.stapler.stelekit.ui.components.LocalTablePreferences
+import dev.stapler.stelekit.ui.components.TableMessages
 import dev.stapler.stelekit.ui.components.TableColumnAlignment
 import dev.stapler.stelekit.ui.components.effectiveAlignments
 import kotlinx.coroutines.CancellationException
@@ -79,7 +90,13 @@ internal fun SheetGrid(state: SheetState, modifier: Modifier = Modifier) {
     val uriHandler = LocalUriHandler.current
 
     val gutterPx = with(density) { GUTTER_WIDTH.toPx() }
-    SideEffect { hits.shield = Rect(hScroll.value.toFloat(), 0f, hScroll.value + gutterPx, Float.MAX_VALUE) }
+    val frozenColumn = if (state.view.freezeFirstColumn) 1 else 0
+    val haptics = LocalHapticFeedback.current
+    SideEffect {
+        hits.shield = Rect(hScroll.value.toFloat(), 0f, hScroll.value + gutterPx, Float.MAX_VALUE)
+        hits.frozenColumn = frozenColumn
+        state.onRangeModeEntered = { runCatching { haptics.performHapticFeedback(HapticFeedbackType.LongPress) } }
+    }
     LaunchedEffect(listState, hScroll) {
         snapshotFlow { Triple(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, hScroll.value) }
             .collect { (i, o, h) ->
@@ -87,8 +104,9 @@ internal fun SheetGrid(state: SheetState, modifier: Modifier = Modifier) {
                 state.pageRows = (listState.layoutInfo.visibleItemsInfo.size - 1).coerceAtLeast(1)
             }
     }
-    LaunchedEffect(state.selection.anchor, viewportPx) {
-        revealCell(state.selection.anchor, firstLazyRow, listState, hScroll, widths.map { with(density) { it.toPx() }.toInt() }, with(density) { GUTTER_WIDTH.toPx() }.toInt(), viewportPx)
+    val revealTarget = if (state.rangeMode) state.selection.focus else state.selection.anchor
+    LaunchedEffect(revealTarget, viewportPx) {
+        revealCell(revealTarget, firstLazyRow, listState, hScroll, widths.map { with(density) { it.toPx() }.toInt() }, with(density) { GUTTER_WIDTH.toPx() }.toInt(), viewportPx)
     }
 
     Box(modifier.fillMaxSize().clipToBounds().onSizeChanged { viewportPx = it.width }.testTag("sheetGrid")) {
@@ -97,11 +115,11 @@ internal fun SheetGrid(state: SheetState, modifier: Modifier = Modifier) {
             if (freezeHeader) {
                 SheetRow(state, hits, 1, widths, alignments, colors, hScroll.value)
             }
+            Box(Modifier.width(total).weight(1f)) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier
-                    .width(total)
-                    .weight(1f)
+                    .fillMaxSize()
                     .tableGestureOwner(
                         hits = hits,
                         mode = GestureMode.Interactive,
@@ -120,12 +138,18 @@ internal fun SheetGrid(state: SheetState, modifier: Modifier = Modifier) {
                         },
                         onLongPressSelect = null,
                         onToggleSelect = {},
+                        onRangeDrag = state::dragRange,
+                        onShiftClick = state::shiftClick,
+                        onLongPressCell = state::enterRangeMode,
+                        onSecondaryClick = { state.openMenu(SheetMenuTarget.Cell(it)) },
                     ),
             ) {
                 val count = (state.rowCount - firstLazyRow + 1).coerceAtLeast(0)
                 items(count = count, key = { state.rowKeyOf(it + firstLazyRow) }) { index ->
                     SheetRow(state, hits, index + firstLazyRow, widths, alignments, colors, hScroll.value)
                 }
+            }
+            RangeHandles(state, hits)
             }
         }
     }
@@ -147,13 +171,40 @@ private fun LetterRow(state: SheetState, widths: List<androidx.compose.ui.unit.D
         Box(Modifier.width(GUTTER_WIDTH).fillMaxHeight().offset { IntOffset(hOffset, 0) }.zIndex(1f).background(colors.header))
         widths.forEachIndexed { i, w ->
             val col = i + 1
+            val label = CellAddress.columnLabel(col)
+            val indicator = state.view.sort?.takeIf { it.col == col }
+            val frozen = col == 1 && state.view.freezeFirstColumn
+            val pinned = if (frozen) Modifier.offset { IntOffset(hOffset, 0) }.zIndex(1f).background(colors.header) else Modifier
             Box(
-                Modifier.width(w).fillMaxHeight().clickable { state.selectColumn(col) }.testTag("letter-${CellAddress.columnLabel(col)}"),
+                pinned.width(w).fillMaxHeight()
+                    .clickable { state.selectColumn(col) }
+                    .secondaryClick { state.selectColumn(col) }
+                    .semantics {
+                        contentDescription = TableMessages.columnHeaderLabel(
+                            label,
+                            indicator?.let { if (it.ascending) TableMessages.SORTED_ASCENDING else TableMessages.SORTED_DESCENDING },
+                        )
+                    }
+                    .testTag("letter-$label"),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(CellAddress.columnLabel(col), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium)
+                Text(
+                    label + (indicator?.let { if (it.ascending) " \u25B2" else " \u25BC" } ?: ""),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Medium,
+                )
+                ColumnResizeHandle(state, col, w, Modifier.align(Alignment.CenterEnd))
+                SheetAnchoredMenu(state, SheetMenuTarget.Column(col))
             }
         }
+    }
+}
+
+/** A mouse right-click on this node; touch and primary clicks pass untouched. */
+private fun Modifier.secondaryClick(onClick: () -> Unit): Modifier = pointerInput(Unit) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        if (down.type == PointerType.Mouse && currentEvent.buttons.isSecondaryPressed) onClick()
     }
 }
 
@@ -172,10 +223,11 @@ private fun SheetRow(
         Box(
             Modifier.width(GUTTER_WIDTH).fillMaxHeight().offset { IntOffset(hOffset, 0) }.zIndex(1f)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                .clickable { state.selectRow(row) }.testTag("gutter-$row"),
+                .clickable { state.selectRow(row) }.secondaryClick { state.selectRow(row) }.testTag("gutter-$row"),
             contentAlignment = Alignment.Center,
         ) {
             Text("$row", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            SheetAnchoredMenu(state, SheetMenuTarget.Row(row))
         }
         widths.forEachIndexed { i, w ->
             val align = when (alignments.getOrElse(i) { TableColumnAlignment.LEFT }) {
@@ -183,7 +235,12 @@ private fun SheetRow(
                 TableColumnAlignment.CENTER -> TextAlign.Center
                 TableColumnAlignment.RIGHT -> TextAlign.End
             }
-            SheetCell(state, hits, CellAddress(row, i + 1), w, align, colors)
+            val pinned = if (i == 0 && state.view.freezeFirstColumn) {
+                Modifier.offset { IntOffset(hOffset, 0) }.zIndex(1f).background(MaterialTheme.colorScheme.surface)
+            } else {
+                Modifier
+            }
+            SheetCell(state, hits, CellAddress(row, i + 1), w, align, colors, pinned)
         }
     }
 }

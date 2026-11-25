@@ -402,15 +402,7 @@ internal class InlineTableState(
         val d = doc ?: return
         val current = selection ?: return
         val b = bounds(d)
-        val focus = current.focus
-        val target = when (choice) {
-            ExtendChoice.Right -> CellAddress(focus.row, focus.col + 1)
-            ExtendChoice.Down -> CellAddress(focus.row + 1, focus.col)
-            ExtendChoice.RowEnd -> CellAddress(focus.row, b.cols)
-            ExtendChoice.ColumnEnd -> CellAddress(b.rows, focus.col)
-            ExtendChoice.TableEnd -> CellAddress(b.rows, b.cols)
-        }
-        selection = current.extendTo(target, b)
+        selection = current.extendTo(choice.target(current.focus, b), b)
         openMenu = null
         menuFocusReturn = StripMenu.Extend
     }

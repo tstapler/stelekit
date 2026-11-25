@@ -12,9 +12,12 @@ import dev.stapler.stelekit.ui.components.QueryResultCountTextTest
 import dev.stapler.stelekit.ui.components.TableMessagesTest
 import dev.stapler.stelekit.ui.components.TableReviewFixesTest
 import dev.stapler.stelekit.ui.components.UuidKeysTest
+import dev.stapler.stelekit.ui.components.sheet.ColumnWidthsTest
 import dev.stapler.stelekit.ui.components.sheet.InlineTableRealManagerTest
 import dev.stapler.stelekit.ui.components.sheet.InlineTableStripStateTest
+import dev.stapler.stelekit.ui.components.sheet.SheetClipboardPureTest
 import dev.stapler.stelekit.ui.components.sheet.SheetKeyDecisionTest
+import dev.stapler.stelekit.ui.components.sheet.SheetRangeStateTest
 import dev.stapler.stelekit.ui.components.sheet.SheetStateTest
 import dev.stapler.stelekit.ui.components.sheet.TableCommitterTest
 import dev.stapler.stelekit.ui.screens.DiskConflictDiffTest
@@ -52,9 +55,12 @@ import org.junit.runners.Suite
     TableMessagesTest::class,
     TableReviewFixesTest::class,
     UuidKeysTest::class,
+    ColumnWidthsTest::class,
     InlineTableRealManagerTest::class,
     InlineTableStripStateTest::class,
+    SheetClipboardPureTest::class,
     SheetKeyDecisionTest::class,
+    SheetRangeStateTest::class,
     SheetStateTest::class,
     TableCommitterTest::class,
     DiskConflictDiffTest::class,

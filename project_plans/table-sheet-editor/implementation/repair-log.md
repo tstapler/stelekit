@@ -370,3 +370,10 @@ Bullet-typed (Logseq-indented) tables get the table UI by content, not by block 
 - `TableCommitter.pending` (new `StateFlow<Int>`) counts queued and running operations; the body shows "Saving..." after 300 ms of `pending > 0`. `TableSheetSession` implements the new `SheetHostPort` (commit, undo, redo, close, edit as markdown) so `SheetState` is testable without a session.
 - Rebuilds (undo, redo, external edit) re-parse on the caller's thread; only the first parse and first calc are off-thread (`SheetLoadingState.parsesOffThread`, more than 1 000 estimated cells).
 - Reachability baseline shrank by `PointModeRule`, `PointModeState`, `SortIndicator`, `TableViewState` (now referenced by `SheetState`).
+
+### PR-C worker 3 (5.4 to 5.7, 5.1e, 4.5d): range, clipboard, structure, view state, sort, undo controls, hints
+- Engine bug found by the real-manager structure test and fixed in `TableSerializer.delimiterText`: an inserted column kept an empty raw delimiter cell (`alignOf("")` is NONE, so the raw `""` was reused), writing `| --- | | --- |`, which no longer parses as a table. Fix: reuse a raw delimiter cell only when it is non-blank. `TableEditorTest.insertCols_...` had asserted the broken output and now expects `| :-- | --- | --: |`; `SheetRangeStateTest.everyStructuralEdit_...` guards the round trip.
+- "Show as text" and "Paste here" are panels inside the sheet window, not `AlertDialog`s: a text field in a nested dialog window never went idle under the Robolectric clock.
+- New `GridCommand.MoveSelection` plus four Alt+Shift+Arrow bindings (ADR-009 named them, the map lacked them); `SortTotals.hasTrailingTotals` is public so the menu can say "Totals row stays at the bottom".
+- Tests were written after the implementation (not failing-first); each area was then mutation-proved (see report).
+- Skipped: hinge avoidance (no common posture API); continuous edge auto-scroll while a handle is held still (only steps when pointer events arrive outside the grid); HTML flavour is plain `<table>`.

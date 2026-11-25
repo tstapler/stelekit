@@ -366,7 +366,7 @@ private fun isCompactLandscape(): Boolean {
 private val COMPACT_HEIGHT = 480.dp
 
 @Composable
-private fun defaultTableClipboard(): TableClipboard {
+internal fun defaultTableClipboard(): TableClipboard {
     val manager = LocalClipboardManager.current
     val provider = rememberClipboardProvider(manager)
     return remember(manager, provider) { ComposeTableClipboard(manager, provider) }

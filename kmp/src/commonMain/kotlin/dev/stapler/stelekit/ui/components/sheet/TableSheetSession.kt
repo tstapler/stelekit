@@ -63,6 +63,13 @@ internal interface SheetBodyHooks {
 
     /** One step of the Back and Esc ladder below the conflict banner; [LadderAction.NotHandled] when nothing is open. */
     fun onBack(key: LadderKey): LadderAction = LadderAction.NotHandled
+
+    /** True while a cell is in `Edit`: the Undo and Redo controls then act on that cell's draft, not on the table (UX-86). */
+    val fieldScopedUndo: Boolean get() = false
+
+    fun draftUndo() = Unit
+
+    fun draftRedo() = Unit
 }
 
 /** An unsaved edit that outlives its sheet (ux.md 3.11): session memory keyed by block and cell. */
@@ -171,6 +178,23 @@ internal class TableSheetSession(
     override fun undo() = committer.undo()
 
     override fun redo() = committer.redo()
+
+    /** True while the body's cell is in `Edit`; the Undo and Redo controls then say so and act on the field. */
+    val fieldScopedUndo: Boolean get() = hooks?.fieldScopedUndo == true
+
+    /** The Undo control's action: the cell draft in `Edit`, otherwise the depth-gated table undo (same as Ctrl+Z). */
+    fun undoControl() {
+        val h = hooks
+        if (h != null && h.fieldScopedUndo) h.draftUndo() else undo()
+    }
+
+    fun redoControl() {
+        val h = hooks
+        if (h != null && h.fieldScopedUndo) h.draftRedo() else redo()
+    }
+
+    /** The body's "Copy as formulas" for the overflow menu; null until the body provides it. */
+    var bodyCopyAsFormulas: (() -> Unit)? by mutableStateOf(null)
 
     override fun closeSheet() = close(SheetCloseReason.User)
 

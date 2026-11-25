@@ -31,6 +31,9 @@ sealed interface GridCommand {
     data object ToggleMaximize : GridCommand
     data object EditAsMarkdown : GridCommand
     data object OpenContextMenu : GridCommand
+
+    /** Alt+Shift+Arrow: moves the selected rows or columns one step (the non-drag reorder, ADR-009). */
+    data class MoveSelection(val dir: GridDirection) : GridCommand
 }
 
 sealed interface NavResult {

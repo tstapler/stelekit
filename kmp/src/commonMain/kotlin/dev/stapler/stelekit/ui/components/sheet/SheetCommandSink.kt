@@ -30,6 +30,9 @@ internal interface SheetHostPort {
 internal interface SheetCommandSink {
     /** True when the sink acted on [command]; the grid consumes the key either way. */
     fun onCommand(command: GridCommand, selection: GridSelection): Boolean = false
+
+    /** The entries of the menu for [target]; null (the default) shows no menu. */
+    fun menuFor(target: SheetMenuTarget): SheetMenuModel? = null
 }
 
 internal object NoOpSheetCommandSink : SheetCommandSink

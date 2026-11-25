@@ -6,6 +6,9 @@ package dev.stapler.stelekit.ui.components.sheet
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -13,6 +16,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
@@ -54,11 +58,29 @@ internal class CellHitRegistry {
     private val texts = HashMap<CellAddress, TextHit>()
     var owner: LayoutCoordinates? = null
 
+    /** Cells whose position the sheet's range handles follow; a change in their layout bumps [layoutVersion]. */
+    var tracked: Set<CellAddress> = emptySet()
+    var layoutVersion: Int by mutableIntStateOf(0)
+        private set
+
+    /** The column the sheet keeps visible (first-column freeze), or 0; its cells win a hit where they overlap scrolled ones. */
+    var frozenColumn: Int = 0
+
+    /** A composed cell's rectangle in the owner's coordinates, or null when it is off screen. */
+    fun boundsInOwner(address: CellAddress): Rect? {
+        layoutVersion
+        val ownerCoords = owner?.takeIf { it.isAttached } ?: return null
+        val coords = cells[address]?.takeIf { it.isAttached } ?: return null
+        val origin = ownerCoords.localPositionOf(coords, Offset.Zero)
+        return Rect(origin, androidx.compose.ui.geometry.Size(coords.size.width.toFloat(), coords.size.height.toFloat()))
+    }
+
     /** A strip of the owner's coordinates that sticky chrome covers (the sheet's gutter); taps there resolve to no cell. */
     var shield: Rect? = null
 
     fun setCell(address: CellAddress, coords: LayoutCoordinates) {
         cells[address] = coords
+        if (address in tracked) layoutVersion++
     }
 
     fun setText(address: CellAddress, text: AnnotatedString, layout: TextLayoutResult?, coords: LayoutCoordinates?) {
@@ -68,12 +90,20 @@ internal class CellHitRegistry {
     fun remove(address: CellAddress) {
         cells.remove(address)
         texts.remove(address)
+        if (address in tracked) layoutVersion++
     }
 
     /** [position] is in the owner's coordinates. */
     fun cellAt(position: Offset): CellAddress? {
         val ownerCoords = owner?.takeIf { it.isAttached } ?: return null
         if (shield?.contains(position) == true) return null
+        if (frozenColumn > 0) {
+            for ((address, coords) in cells) {
+                if (address.col != frozenColumn || !coords.isAttached) continue
+                val local = coords.localPositionOf(ownerCoords, position)
+                if (Rect(0f, 0f, coords.size.width.toFloat(), coords.size.height.toFloat()).contains(local)) return address
+            }
+        }
         for ((address, coords) in cells) {
             if (!coords.isAttached) continue
             val local = coords.localPositionOf(ownerCoords, position)
@@ -128,6 +158,8 @@ internal fun Modifier.tableGestureOwner(
     onToggleSelect: () -> Unit,
     onRangeDrag: ((CellAddress, CellAddress) -> Unit)? = null,
     onShiftClick: ((CellAddress) -> Boolean)? = null,
+    onLongPressCell: ((CellAddress) -> Unit)? = null,
+    onSecondaryClick: ((CellAddress) -> Unit)? = null,
 ): Modifier {
     val currentMode = rememberUpdatedState(mode)
     val currentEditing = rememberUpdatedState(editingCell)
@@ -137,15 +169,30 @@ internal fun Modifier.tableGestureOwner(
     val currentToggle = rememberUpdatedState(onToggleSelect)
     val currentRangeDrag = rememberUpdatedState(onRangeDrag)
     val currentShiftClick = rememberUpdatedState(onShiftClick)
+    val currentLongPressCell = rememberUpdatedState(onLongPressCell)
+    val currentSecondary = rememberUpdatedState(onSecondaryClick)
     return this
         .onGloballyPositioned { hits.owner = it }
         .pointerInput(hits) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                 val slop = (if (down.type == PointerType.Mouse) MOUSE_SLOP else TOUCH_SLOP).toPx()
+                val secondary = currentSecondary.value
+                if (secondary != null && down.type == PointerType.Mouse && currentEvent.buttons.isSecondaryPressed) {
+                    hits.cellAt(down.position)?.let(secondary)
+                    awaitRelease(down.id, down.position, Float.MAX_VALUE)
+                    return@awaitEachGesture
+                }
                 val release = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) { awaitRelease(down.id, down.position, slop) }
                 if (release == null) {
                     val onLong = currentLongPress.value
+                    val onLongCell = currentLongPressCell.value
+                    val pressed = if (down.type == PointerType.Mouse) null else hits.cellAt(down.position)
+                    if (currentMode.value == GestureMode.Interactive && onLongCell != null && pressed != null) {
+                        onLongCell(pressed)
+                        awaitRelease(down.id, down.position, Float.MAX_VALUE)
+                        return@awaitEachGesture
+                    }
                     if (currentMode.value == GestureMode.Interactive && onLong != null) {
                         onLong()
                         awaitRelease(down.id, down.position, Float.MAX_VALUE)

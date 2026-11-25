@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.ui.components.sheet
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
@@ -65,6 +67,7 @@ internal fun TableSheetScreen(
     var showShortcuts by remember { mutableStateOf(false) }
     Column(modifier = modifier.fillMaxSize().testTag("tableSheet")) {
         SheetTopBar(
+            session = session,
             title = title,
             onClose = { session.close(SheetCloseReason.User) },
             onEditAsMarkdown = session::editAsMarkdown,
@@ -96,6 +99,7 @@ internal fun TableSheetScreen(
 
 @Composable
 private fun SheetTopBar(
+    session: TableSheetSession,
     title: String,
     onClose: () -> Unit,
     onEditAsMarkdown: () -> Unit,
@@ -103,51 +107,75 @@ private fun SheetTopBar(
     onShortcuts: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 4.dp).testTag("sheetTopBar"),
-    ) {
-        IconButton(onClick = onClose, modifier = Modifier.size(48.dp).testTag("sheetClose")) {
-            Icon(Icons.Filled.Close, contentDescription = TableMessages.CLOSE)
-        }
-        Text(
-            title,
-            style = MaterialTheme.typography.titleMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f).testTag("sheetTitle"),
-        )
-        Box {
-            IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(48.dp).testTag("sheetOverflow")) {
-                Icon(Icons.Filled.MoreVert, contentDescription = TableMessages.MORE_OPTIONS)
+    val labels = rememberUndoRedoLabels(session)
+    val copyAsFormulas = overflow.copyAsFormulas ?: session.bodyCopyAsFormulas
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        // Below 360dp the two controls become the first two overflow items, still labelled and still dimmed with the same notice.
+        val narrow = maxWidth < NARROW_TOP_BAR
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 4.dp).testTag("sheetTopBar"),
+        ) {
+            IconButton(onClick = onClose, modifier = Modifier.size(48.dp).testTag("sheetClose")) {
+                Icon(Icons.Filled.Close, contentDescription = TableMessages.CLOSE)
             }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                DropdownMenuItem(
-                    text = { Text(TableMessages.EDIT_AS_MARKDOWN) },
-                    onClick = { menuOpen = false; onEditAsMarkdown() },
-                    modifier = Modifier.testTag("menuEditAsMarkdown"),
-                )
-                DropdownMenuItem(
-                    text = { Text(TableMessages.COPY_AS_FORMULAS) },
-                    enabled = overflow.copyAsFormulas != null,
-                    onClick = { menuOpen = false; overflow.copyAsFormulas?.invoke() },
-                    modifier = Modifier.testTag("menuCopyAsFormulas"),
-                )
-                DropdownMenuItem(
-                    text = { Text(TableMessages.SHORTCUTS) },
-                    onClick = { menuOpen = false; onShortcuts() },
-                    modifier = Modifier.testTag("menuShortcuts"),
-                )
-                DropdownMenuItem(
-                    text = { Text(TableMessages.COLUMN_WIDTHS_RESET, style = MaterialTheme.typography.bodySmall) },
-                    enabled = false,
-                    onClick = {},
-                    modifier = Modifier.semantics { contentDescription = TableMessages.COLUMN_WIDTHS_RESET }.testTag("menuColumnWidthsNote"),
-                )
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).testTag("sheetTitle"),
+            )
+            if (!narrow) {
+                UndoRedoButton(labels.undo, labels.undoDimmed, labels.undoNote, session::undoControl, Modifier.testTag("sheetUndo"))
+                UndoRedoButton(labels.redo, labels.redoDimmed, labels.redoNote, session::redoControl, Modifier.testTag("sheetRedo"))
+            }
+            Box {
+                IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(48.dp).testTag("sheetOverflow")) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = TableMessages.MORE_OPTIONS)
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    if (narrow) {
+                        DropdownMenuItem(
+                            text = { Text(labels.undo) },
+                            onClick = { menuOpen = false; session.undoControl() },
+                            modifier = Modifier.semantics { labels.undoNote?.let { stateDescription = it } }.testTag("menuUndo"),
+                        )
+                        DropdownMenuItem(
+                            text = { Text(labels.redo) },
+                            onClick = { menuOpen = false; session.redoControl() },
+                            modifier = Modifier.semantics { labels.redoNote?.let { stateDescription = it } }.testTag("menuRedo"),
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text(TableMessages.EDIT_AS_MARKDOWN) },
+                        onClick = { menuOpen = false; onEditAsMarkdown() },
+                        modifier = Modifier.testTag("menuEditAsMarkdown"),
+                    )
+                    DropdownMenuItem(
+                        text = { Text(TableMessages.COPY_AS_FORMULAS) },
+                        enabled = copyAsFormulas != null,
+                        onClick = { menuOpen = false; copyAsFormulas?.invoke() },
+                        modifier = Modifier.testTag("menuCopyAsFormulas"),
+                    )
+                    DropdownMenuItem(
+                        text = { Text(TableMessages.SHORTCUTS) },
+                        onClick = { menuOpen = false; onShortcuts() },
+                        modifier = Modifier.testTag("menuShortcuts"),
+                    )
+                    DropdownMenuItem(
+                        text = { Text(TableMessages.COLUMN_WIDTHS_RESET, style = MaterialTheme.typography.bodySmall) },
+                        enabled = false,
+                        onClick = {},
+                        modifier = Modifier.semantics { contentDescription = TableMessages.COLUMN_WIDTHS_RESET }.testTag("menuColumnWidthsNote"),
+                    )
+                }
             }
         }
     }
 }
+
+private val NARROW_TOP_BAR = 360.dp
 
 /** Every Navigate chord from the one shortcut map (ADR-009), plus the undo scope rule. */
 @Composable

@@ -42,7 +42,17 @@ internal class SheetFixture(
     /** Key events nobody inside the body consumed (they bubble out to this spy and on to the host). */
     var unconsumed = mutableListOf<androidx.compose.ui.input.key.Key>()
 
-    fun show(parse: (String) -> ParsedSheet = ::parseSheet, readOnly: Boolean = false) {
+    /** The clipboard the real commands use when [show] gets `realCommands = true`. */
+    val clipboard = FakeTableClipboard()
+
+    /** [realCommands] installs the real clipboard, structure and sort commands in place of the recording sink. */
+    fun show(
+        parse: (String) -> ParsedSheet = ::parseSheet,
+        readOnly: Boolean = false,
+        realCommands: Boolean = false,
+        sizeClass: dev.stapler.stelekit.ui.WindowSizeClass? = null,
+        preferences: TablePreferences? = null,
+    ) {
         h.show(
             readOnly = readOnly,
             bindFakeHooks = false,
@@ -52,7 +62,21 @@ internal class SheetFixture(
                         if (it.type == KeyEventType.KeyDown && it.key !in MODIFIERS) unconsumed += it.key
                         false
                     },
-                ) { SheetBodyContent(s, sink = sink, parse = parse, onState = { state = it }) }
+                ) {
+                    val body = @androidx.compose.runtime.Composable {
+                        SheetBodyContent(
+                            s,
+                            sink = if (realCommands) dev.stapler.stelekit.ui.components.sheet.NoOpSheetCommandSink else sink,
+                            parse = parse,
+                            onState = { state = it },
+                            clipboardPort = clipboard,
+                        )
+                    }
+                    val sized = @androidx.compose.runtime.Composable {
+                        if (sizeClass == null) body() else androidx.compose.runtime.CompositionLocalProvider(dev.stapler.stelekit.ui.LocalWindowSizeClass provides sizeClass) { body() }
+                    }
+                    if (preferences == null) sized() else androidx.compose.runtime.CompositionLocalProvider(LocalTablePreferences provides preferences) { sized() }
+                }
             },
         )
     }
@@ -92,3 +116,24 @@ private val MODIFIERS = setOf(
     androidx.compose.ui.input.key.Key.AltLeft, androidx.compose.ui.input.key.Key.AltRight,
     androidx.compose.ui.input.key.Key.MetaLeft, androidx.compose.ui.input.key.Key.MetaRight,
 )
+
+/** A clipboard in memory; [failCopy] and [failPaste] make the port throw, [text] is what the system clipboard holds. */
+internal class FakeTableClipboard : dev.stapler.stelekit.table.TableClipboard {
+    var text: String? = null
+    var html: String? = null
+    var failCopy = false
+    var failPaste = false
+    var copies = 0
+
+    override suspend fun copy(plainTsv: String, html: String?) {
+        if (failCopy) error("clipboard refused")
+        copies++
+        text = plainTsv
+        this.html = html
+    }
+
+    override suspend fun paste(): String? {
+        if (failPaste) error("clipboard unreadable")
+        return text
+    }
+}

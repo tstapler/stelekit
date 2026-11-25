@@ -108,6 +108,7 @@ internal fun SheetCell(
         } else {
             CellContent(display, address, hits, textColor, colors.link, textAlign, if (isHeader) FontWeight.Bold else null)
         }
+        SheetAnchoredMenu(state, SheetMenuTarget.Cell(address))
         if (hoverDetail != null) {
             Popup(
                 alignment = androidx.compose.ui.Alignment.BottomStart,

@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -26,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -41,9 +41,13 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.table.NoticeType
+import dev.stapler.stelekit.table.TableClipboard
+import dev.stapler.stelekit.ui.components.LocalTableClipboard
 import dev.stapler.stelekit.ui.components.TableMessages
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.ContinuationInterceptor
+import kotlin.coroutines.EmptyCoroutineContext
 
 /**
  * The sheet's body: the edit bar over the lazy grid. Large tables parse and run their first calc off the main
@@ -57,6 +61,7 @@ internal fun SheetBodyContent(
     sink: SheetCommandSink = NoOpSheetCommandSink,
     parse: (String) -> ParsedSheet = ::parseSheet,
     onState: (SheetState) -> Unit = {},
+    clipboardPort: TableClipboard? = null,
 ) {
     val initial = remember(session) { session.content }
     val inline = remember(session) { if (SheetLoadingState.parsesOffThread(initial)) null else parse(initial) }
@@ -78,8 +83,19 @@ internal fun SheetBodyContent(
         return
     }
     val state = rememberSaveable(parsed, session, saver = SheetState.saver(parsed, session, sink)) { SheetState(parsed, session, sink) }
+    val port = clipboardPort ?: LocalTableClipboard.current ?: defaultTableClipboard()
+    val context = rememberCoroutineScope().coroutineContext[ContinuationInterceptor] ?: EmptyCoroutineContext
+    val clipboard = remember(state, session, port) { SheetClipboard(state, session, port, context) }
+    val commands = remember(state, session, clipboard) { SheetCommands(state, session, clipboard) }
+    DisposableEffect(clipboard) {
+        session.bodyCopyAsFormulas = clipboard::copyAsFormulas
+        onDispose {
+            session.bodyCopyAsFormulas = null
+            clipboard.dispose()
+        }
+    }
     SideEffect {
-        state.sink = sink
+        state.sink = if (sink === NoOpSheetCommandSink) commands else sink
         onState(state)
     }
     DisposableEffect(state, session) {
@@ -93,7 +109,10 @@ internal fun SheetBodyContent(
         onDispose { }
     }
     SheetBackHandler(state)
-    SheetBodyLayout(state, session, modifier)
+    Box(modifier.fillMaxSize()) {
+        SheetBodyLayout(state, session, commands)
+        SheetClipboardDialogs(state, clipboard, LocalPasteEventSource.current)
+    }
 }
 
 @Composable
@@ -105,37 +124,35 @@ private fun OpeningTable(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SheetBodyLayout(state: SheetState, session: TableSheetSession, modifier: Modifier = Modifier) {
+private fun SheetBodyLayout(state: SheetState, session: TableSheetSession, commands: SheetCommands, modifier: Modifier = Modifier) {
     val gridFocus = remember { FocusRequester() }
     LaunchedEffect(state.gridFocusToken) { runCatching { gridFocus.requestFocus() } }
     val saving by rememberDelayedFlag(session.pending.collectAsState().value > 0, SheetLoadingState.SAVING_INDICATOR_MS)
     val applying by rememberDelayedFlag(state.applying, SheetLoadingState.APPLYING_INDICATOR_MS)
-    Column(modifier.fillMaxSize().testTag("sheetBodyContent")) {
-        FormulaBar(state)
-        Box(Modifier.weight(1f).fillMaxWidth().imePadding()) {
-            Box(Modifier.fillMaxSize().focusRequester(gridFocus).focusable().sheetGridKeys(state).testTag("sheetGridFocus")) {
-                SheetGrid(state)
+    var input by remember { mutableStateOf<SheetInput?>(null) }
+    Box(modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().testTag("sheetBodyContent")) {
+            FormulaBar(state)
+            Box(Modifier.weight(1f).fillMaxWidth().imePadding()) {
+                Box(
+                    Modifier.fillMaxSize().focusRequester(gridFocus).focusable()
+                        .sheetInputProfile { input = input ?: it }.sheetGridKeys(state).testTag("sheetGridFocus"),
+                ) {
+                    SheetGrid(state)
+                }
             }
+            SheetStatusRow(state, SheetLoadingState.statusText(saving, applying))
+            SheetHintHost(session, state, input)
+            SheetContextStrip(state, session, commands)
+            Box(
+                Modifier.size(0.dp).semantics {
+                    liveRegion = LiveRegionMode.Polite
+                    contentDescription = state.announcement ?: ""
+                }.testTag("announcement"),
+            )
         }
-        SheetBusyLine(SheetLoadingState.statusText(saving, applying))
-        Box(
-            Modifier.size(0.dp).semantics {
-                liveRegion = LiveRegionMode.Polite
-                contentDescription = state.announcement ?: ""
-            }.testTag("announcement"),
-        )
+        SheetBottomMenu(state)
     }
-}
-
-/** The status line's busy text ("Saving...", "Applying..."); the selection stats of Story 5.4 share this row. */
-@Composable
-private fun SheetBusyLine(text: String?) {
-    if (text == null) return
-    Text(
-        text,
-        style = MaterialTheme.typography.bodySmall,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).testTag("busyLine"),
-    )
 }
 
 /** True once [active] has held for [afterMs] without a break; flips back at once. Driven by `delay`, so a test clock moves it. */
