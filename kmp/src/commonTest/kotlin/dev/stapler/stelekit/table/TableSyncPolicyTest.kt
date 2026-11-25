@@ -65,21 +65,23 @@ class TableSyncPolicyTest {
         assertEquals(p.adoptOf(s1), p.classify(s1))
     }
 
-    // trace (c): undo and redo of Acked states with no expectation registered (all entries Acked, no InFlight).
+    // trace (c): an Acked state older than the newest own commit with no expectation registered is Stale (P5-5):
+    // only `expectAdopt` makes an undo/redo target an Adopt.
     @Test
-    fun undoRedo_should_AdoptAckedStates_When_NothingIsInFlight() {
+    fun undoRedo_should_BeStale_When_NoExpectationWasRegistered() {
         val p = policy()
         p.registerCommit(s1); p.classify(s1)
         p.registerCommit(s2); p.classify(s2)
-        assertEquals(p.adoptOf(s1), p.classify(s1))
-        assertEquals(p.adoptOf(s2), p.classify(s2))
+        assertEquals(SyncDecision.Stale, p.classify(s1))
+        assertEquals(SyncDecision.Echo, p.classify(s2))
     }
 
     @Test
-    fun undo_should_ConflictKeepDraft_When_DraftIsPending() {
+    fun repeatedForeignEmission_should_ConflictKeepDraft_When_DraftIsPending() {
         val p = policy()
         p.registerCommit(s1); p.classify(s1)
-        assertEquals(SyncDecision.ConflictKeepDraft, p.classify(s0, draftPending = true))
+        assertEquals(SyncDecision.ConflictKeepDraft, p.classify(f, draftPending = true))
+        assertEquals(SyncDecision.ConflictKeepDraft, p.classify(f, draftPending = true))
     }
 
     // trace (b) and (b2): the undo emission arrives before the re-commit is issued.
@@ -96,13 +98,13 @@ class TableSyncPolicyTest {
     // Story 3.2 R3 case, literal order (not seen in trace (b)/(b2), where S0 always precedes the re-commit):
     // the re-commit is issued before the S0 emission is delivered.
     @Test
-    fun undoThenImmediateRecommit_should_AdoptThenEcho_When_RecommitIssuedBeforeUndoEmission() {
+    fun undoThenImmediateRecommit_should_AdoptThenReAdopt_When_RecommitIssuedBeforeUndoEmission() {
         val p = policy()
         p.registerCommit(s1); p.classify(s1)
         p.expectAdopt(s0)
         p.registerCommit(s1)
         assertEquals(p.adoptOf(s0), p.classify(s0))
-        assertEquals(SyncDecision.Echo, p.classify(s1))
+        assertEquals(p.adoptOf(s1), p.classify(s1), "the display was moved to S0, so the re-commit must be re-shown")
     }
 
     // trace (c2): S1 and S2 committed, undo with no settle; S2 echoed, then the post-undo S1 emission.
@@ -144,15 +146,16 @@ class TableSyncPolicyTest {
         return classify(c)
     }
 
-    // trace (a2): Job completes; no echo delivered (manager dropped the commit).
+    // trace (a2): Job completes; no echo delivered (manager dropped the commit). A retired entry no longer holds
+    // foreign content back.
     @Test
     fun markDone_should_RetireDroppedCommit_When_NoEchoEverArrives() {
         val p = policy()
-        val seq = p.registerCommit(s1)
-        p.registerCommit(s2)
-        p.classify(s2)
-        p.markDone(seq)
-        assertEquals(p.adoptOf(s1), p.classify(s1))
+        val q1 = p.registerCommit(s1)
+        val q2 = p.registerCommit(s2)
+        p.markDone(q1)
+        p.markDone(q2)
+        assertTrue(p.classify(f) is SyncDecision.Rebuild, "no InFlight entry is left, so F is not deferred")
     }
 
     @Test
@@ -201,13 +204,14 @@ class TableSyncPolicyTest {
         assertEquals(SyncDecision.ConflictKeepDraft, p.classify(s2, draftPending = true, selection = CellAddress(3, 2)))
     }
 
-    // trace (d3): external content equal to an Acked state is a silent revert (Adopt), accepted.
+    // trace (d3): external content equal to a superseded Acked state is ignored (Stale), accepted: it is
+    // indistinguishable from a late echo. A foreign revert to an older state is lost until the next write (P5-5).
     @Test
-    fun externalEditEqualToAckedState_should_Adopt_When_NothingInFlight() {
+    fun externalEditEqualToSupersededAckedState_should_BeStale_When_NothingInFlight() {
         val p = policy()
         p.registerCommit(s1); p.classify(s1)
         p.registerCommit(s2); p.classify(s2)
-        assertEquals(p.adoptOf(s1), p.classify(s1))
+        assertEquals(SyncDecision.Stale, p.classify(s1))
     }
 
     // trace (d): external edit equal to an older InFlight entry is Stale (last writer wins on the next commit).
@@ -232,7 +236,8 @@ class TableSyncPolicyTest {
             }
             for (i in 99 downTo 0) {
                 if (withExpect) p.expectAdopt(states[i])
-                assertEquals(SyncDecision.Adopt(states[i]), p.classify(states[i]), "undo to $i expect=$withExpect")
+                val want = if (withExpect) SyncDecision.Adopt(states[i]) else SyncDecision.Stale
+                assertEquals(want, p.classify(states[i]), "undo to $i expect=$withExpect")
             }
         }
     }
@@ -297,21 +302,105 @@ class TableSyncPolicyTest {
         assertEquals(SyncDecision.Stale, ordered[0])
     }
 
-    // trace (d3) limit: a foreign Rebuild issued while a newer own commit is InFlight leaves the older foreign
-    // content displayed (the commit's echo reads Stale). Pinned as observed behavior, reported to the planner.
+    // P5-5 gap 2: a foreign emission while an own commit is InFlight is held, then dropped when the feed delivers the
+    // commit (the DB ends at S1), so the older foreign content never stays displayed.
     @Test
-    fun knownLimit_should_LeaveForeignDisplayed_When_ForeignRebuildOvertakesInFlightCommit() {
+    fun foreignEmission_should_BeDeferredThenSuperseded_When_OwnCommitEchoFollows() {
         val p = policy()
-        p.registerCommit(s1)
-        assertTrue(p.classify(f) is SyncDecision.Rebuild)
-        assertEquals(SyncDecision.Stale, p.classify(s1))
+        val q1 = p.registerCommit(s1)
+        assertEquals(SyncDecision.Defer, p.classify(f))
+        assertEquals(SyncDecision.Echo, p.classify(s1))
+        assertEquals(null, p.markDone(q1), "the superseded foreign content is not released")
     }
 
-    // trace (b2) shows a commit emission arriving after its Job joined. If an undo is issued before an older
-    // commit's emission is delivered, that old Acked emission reads Adopt after the undo's Adopt (rule 4) and
-    // regresses the display. Pinned as observed; reported to the planner, not redesigned here.
+    // P5-5 gap 2: the feed conflated the commit's echo away and the DB ends at F; markDone releases F as a Rebuild.
     @Test
-    fun knownLimit_should_RegressDisplay_When_OlderAckedEmissionTrailsUndoAdopt() {
+    fun markDone_should_ReleaseDeferredForeignAsRebuild_When_CommitJobCompletesWithoutEcho() {
+        val p = policy()
+        val q1 = p.registerCommit(s1)
+        assertEquals(SyncDecision.Defer, p.classify(f))
+        assertEquals(SyncDecision.Rebuild(CellAddress(2, 1)), p.markDone(q1, selection = CellAddress(2, 1)))
+        assertEquals(null, p.markDone(q1), "released once")
+    }
+
+    @Test
+    fun markDone_should_ReleaseDeferredForeignAsConflict_When_DraftPending() {
+        val p = policy()
+        val q1 = p.registerCommit(s1)
+        p.classify(f)
+        assertEquals(SyncDecision.ConflictKeepDraft, p.markDone(q1, draftPending = true))
+    }
+
+    @Test
+    fun foreignEmission_should_KeepOnlyNewest_When_TwoForeignEmissionsPrecedeMarkDone() {
+        val p = policy()
+        val q1 = p.registerCommit(s1)
+        p.classify(f)
+        assertEquals(SyncDecision.Defer, p.classify(table("G")))
+        assertEquals(SyncDecision.Rebuild(null), p.markDone(q1))
+        assertEquals(SyncDecision.Echo, p.classify(table("G")))
+    }
+
+    @Test
+    fun foreignEmission_should_StayDeferred_When_AnotherCommitIsStillInFlight() {
+        val p = policy()
+        val q1 = p.registerCommit(s1)
+        p.registerCommit(s2)
+        p.classify(f)
+        assertEquals(null, p.markDone(q1))
+    }
+
+    // P5-5 gap 2 ambiguity: undo then re-commit of the undone content before the undo emission arrives, in every
+    // delivery shape, ends with display == DB == the re-commit.
+    @Test
+    fun undoThenRecommit_should_EndAtRecommit_When_UndoEmissionDeliveredLate() {
+        val p = policy()
+        p.registerCommit(s1); p.classify(s1)
+        p.expectAdopt(s0)
+        val q = p.registerCommit(s1)
+        val displayed = ArrayList<String>()
+        for (c in listOf(s0, s1)) {
+            when (val d = p.classify(c)) {
+                is SyncDecision.Adopt -> displayed.add(d.content)
+                else -> Unit
+            }
+        }
+        p.markDone(q)
+        assertEquals(s1, displayed.last())
+        // conflated: only the re-commit is delivered
+        val p2 = policy()
+        p2.registerCommit(s1); p2.classify(s1)
+        p2.expectAdopt(s0)
+        p2.registerCommit(s1)
+        assertEquals(SyncDecision.Echo, p2.classify(s1))
+    }
+
+    @Test
+    fun undoThenDifferentCommit_should_EndAtCommit_When_UndoEmissionDeliveredLate() {
+        val p = policy()
+        p.registerCommit(s1); p.classify(s1)
+        p.expectAdopt(s0)
+        p.registerCommit(s2)
+        assertEquals(p.adoptOf(s0), p.classify(s0))
+        assertEquals(p.adoptOf(s2), p.classify(s2))
+    }
+
+    // P5-5 gap 1 (trace (b2)): the commits' Jobs completed before the older echo is delivered; the older echo is
+    // Stale (superseded by the newer own commit), never an Adopt that moves the display backwards.
+    @Test
+    fun olderEcho_should_BeStale_When_MarkDonePrecedesIt() {
+        val p = policy()
+        val q1 = p.registerCommit(s1)
+        val q2 = p.registerCommit(s2)
+        p.markDone(q1)
+        p.markDone(q2)
+        assertEquals(SyncDecision.Stale, p.classify(s1))
+        assertEquals(SyncDecision.Echo, p.classify(s2))
+    }
+
+    // P5-5 gap 1: an older acked emission trailing an undo's Adopt is Stale too; only the expectation adopts.
+    @Test
+    fun olderAckedEmission_should_BeStale_When_ItTrailsUndoAdopt() {
         val p = policy()
         val q1 = p.registerCommit(s1)
         val q2 = p.registerCommit(s2)
@@ -319,19 +408,18 @@ class TableSyncPolicyTest {
         p.markDone(q2)
         p.expectAdopt(s1)
         assertEquals(p.adoptOf(s1), p.classify(s1))
-        assertEquals(p.adoptOf(s2), p.classify(s2))
+        assertEquals(SyncDecision.Stale, p.classify(s2))
     }
 
-    // trace (b2): a commit's emission can trail its Job. markDone then acks the entry, so the late echo of an older
-    // state reads Adopt (rule 4, no InFlight left) and regresses the display until the newer echo arrives.
+    // P5-5 gap 1: redo needs its own expectation; an unexpected superseded state is Stale.
     @Test
-    fun knownLimit_should_RegressDisplay_When_MarkDonePrecedesOlderEcho() {
+    fun redo_should_AdoptOnlyWithExpectation_When_TargetIsNewerThanDisplayedAdopt() {
         val p = policy()
-        val q1 = p.registerCommit(s1)
-        val q2 = p.registerCommit(s2)
-        p.markDone(q1)
-        p.markDone(q2)
+        p.registerCommit(s1); p.classify(s1)
+        p.registerCommit(s2); p.classify(s2)
+        p.expectAdopt(s1)
         assertEquals(p.adoptOf(s1), p.classify(s1))
+        p.expectAdopt(s2)
         assertEquals(p.adoptOf(s2), p.classify(s2))
     }
 }

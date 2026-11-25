@@ -8,6 +8,9 @@ sealed interface SyncDecision {
     /** A late echo of an older state: ignored. */
     data object Stale : SyncDecision
 
+    /** A foreign emission held back while an own commit is `InFlight`; `markDone` releases it (P5-5). */
+    data object Defer : SyncDecision
+
     /** Undo or redo result: rebuild from [content], keeping the selection. */
     data class Adopt(val content: String) : SyncDecision
 
@@ -29,12 +32,17 @@ class TableSyncPolicy(val ledger: OwnCommitLedger = OwnCommitLedger()) {
 
     fun expectAdopt(content: String): Long = ledger.expectAdopt(content)
 
-    fun markDone(seq: Long) = ledger.markDone(seq)
+    fun markDone(seq: Long, draftPending: Boolean = false, selection: CellAddress? = null): SyncDecision? {
+        ledger.markDone(seq)
+        val held = ledger.takeDeferred() ?: return null
+        return classify(held, draftPending, selection)
+    }
 
     fun classify(content: String, draftPending: Boolean = false, selection: CellAddress? = null): SyncDecision =
         when (ledger.classify(content, draftPending)) {
             LedgerVerdict.Echo -> SyncDecision.Echo
             LedgerVerdict.Stale -> SyncDecision.Stale
+            LedgerVerdict.Defer -> SyncDecision.Defer
             LedgerVerdict.Adopt -> SyncDecision.Adopt(content)
             LedgerVerdict.External -> SyncDecision.Rebuild(clampToTable(selection, content))
             LedgerVerdict.AdoptWithDraft, LedgerVerdict.ExternalWithDraft -> SyncDecision.ConflictKeepDraft

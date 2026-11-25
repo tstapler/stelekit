@@ -9,12 +9,14 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * Randomized model for Story 3.2 (pre-mortem P1-1). The feed is ordered but may conflate (drop an emission that a
- * newer one supersedes); sheet actions interleave arbitrarily. Shape taken from emission-trace.md (a), (b2), (c2):
- * the undo/redo emission arrives before its Job completes, so those steps flush the feed first. Not generated
- * (`knownLimit_*` in TableSyncPolicyTest): an undo, or a `markDone`, before the commit's own emission was delivered.
- * Invariants: an `Echo` is only ever reported for the displayed content; the display is never moved by an emission older than the latest write (unless it carries the latest
- * content), and once the feed is drained the display equals the DB (no committed content lost).
+ * Randomized model for Story 3.2 (pre-mortem P1-1, P5-5). The feed is ordered but may conflate (drop an emission that a
+ * newer one supersedes); sheet actions interleave arbitrarily: `markDone` may precede an older echo, foreign writes land
+ * while commits are `InFlight`, and an undo or redo may be issued before older emissions were delivered. Undo/redo
+ * emissions still arrive before their Job completes (emission-trace.md (b), (c2)). Invariants: an `Echo` is only ever
+ * reported for the displayed content; an `Adopt` never moves the display to a write older than the one it shows (unless it is a
+ * registered undo/redo target; a foreign `Rebuild` that follows `markDone` may flash older content before the commit's own
+ * emission re-adopts it, accepted), and once the feed is drained and every Job joined the
+ * display equals the DB (no committed content lost).
  */
 class TableSyncPolicyModelTest {
     private class Sim {
@@ -27,8 +29,13 @@ class TableSyncPolicyModelTest {
         val undo = ArrayList<String>()
         val redo = ArrayList<String>()
         val pendingDone = ArrayList<Pair<Long, Int>>()
-        var handled = 0
+        var lastObserved = truth
+        var lastObservedIdx = 0
+        var displayIdx = 0
+        val expected = HashSet<String>()
         val failures = ArrayList<String>()
+        val log = ArrayList<String>()
+        fun short(c: String) = c.lines().last().filter { it.isLetterOrDigit() }
 
         init { policy.registerLoaded(truth) }
 
@@ -43,14 +50,23 @@ class TableSyncPolicyModelTest {
             undo.add(truth); redo.clear()
             display = c
             write(c)
+            displayIdx = latestWrite
             pendingDone.add(policy.registerCommit(c) to latestWrite)
+            log.add("commit #$latestWrite ${short(c)}")
         }
 
         fun deliverNext() {
             val (idx, content) = feed.removeFirstOrNull() ?: return
-            handled = idx
+            lastObserved = content
+            lastObservedIdx = idx
             val before = display
-            val decision = policy.classify(content)
+            val d = policy.classify(content)
+            log.add("deliver #$idx ${short(content)} -> ${d::class.simpleName} display=${short(display)}")
+            apply(d, content, idx, before)
+        }
+
+        fun apply(decision: SyncDecision?, content: String, idx: Int, before: String) {
+            if (decision == null) return
             if (decision == SyncDecision.Echo && content != display) {
                 failures.add("Echo for $content while the host displays $display")
             }
@@ -59,43 +75,47 @@ class TableSyncPolicyModelTest {
                 is SyncDecision.Rebuild -> display = content
                 else -> Unit
             }
-            if (idx < latestWrite && content != truth && display != before) {
-                failures.add("older emission #$idx ($content) moved display $before -> $display, truth=$truth")
+            if (display != before) {
+                if (idx < displayIdx && content !in expected && decision is SyncDecision.Adopt) {
+                    failures.add("older emission #$idx ($content) moved display $before -> $display (shown #$displayIdx)")
+                }
+                displayIdx = idx
             }
         }
 
-        fun dropNext() { if (feed.size > 1) handled = feed.removeFirst().first }
+        fun dropNext() { if (feed.size > 1) feed.removeFirst() }
 
         fun markOne(i: Int) {
-            val ready = pendingDone.filter { it.second <= handled }
-            if (ready.isEmpty()) return
-            val pick = ready[i % ready.size]
+            if (pendingDone.isEmpty()) return
+            val pick = pendingDone[i % pendingDone.size]
             pendingDone.remove(pick)
-            policy.markDone(pick.first)
+            val released = policy.markDone(pick.first)
+            log.add("markDone #${pick.second} -> ${released?.let { it::class.simpleName }}")
+            apply(released, lastObserved, lastObservedIdx, display)
         }
 
         fun flush() { while (feed.isNotEmpty()) deliverNext() }
 
-        fun joinAll() { pendingDone.forEach { policy.markDone(it.first) }; pendingDone.clear() }
+        fun joinAll() {
+            while (pendingDone.isNotEmpty()) markOne(0)
+        }
 
         fun undoOrRedo(isUndo: Boolean) {
             val from = if (isUndo) undo else redo
             val to = if (isUndo) redo else undo
             if (from.isEmpty()) return
-            flush()
-            joinAll()
             val target = from.removeAt(from.size - 1)
             to.add(truth)
             policy.expectAdopt(target)
+            expected.add(target)
             write(target)
-            flush()
+            log.add("undo/redo #$latestWrite -> ${short(target)}")
         }
 
         fun foreign() {
-            flush(); joinAll()
             undo.clear(); redo.clear()
             write(table("F${++counter}"))
-            flush()
+            log.add("foreign #$latestWrite F$counter")
         }
     }
 
@@ -119,8 +139,9 @@ class TableSyncPolicyModelTest {
                 assertEquals(emptyList<String>(), sim.failures)
             }
             sim.flush()
+            sim.joinAll()
             assertEquals(emptyList<String>(), sim.failures)
-            assertEquals(sim.truth, sim.display, "display must equal the DB once the feed is drained")
+            assertEquals(sim.truth, sim.display, "display must equal the DB once the feed is drained\n" + sim.log.joinToString("\n"))
         }
     }
 }
