@@ -135,6 +135,9 @@ internal class TableCommitter(
     private val undoTargets = ArrayDeque<String>()
     private val redoTargets = ArrayDeque<String>()
     private var current = initialContent
+
+    // Contents this committer wrote, undid or redid to: their late feed echoes are its own, never an outside write.
+    private val produced = LinkedHashSet<String>().also { it.add(initialContent) }
     private var knownRecords = port.undoRecordCount.value
     private var lastMinted = startVersion
     private var tail: Job? = null
@@ -185,6 +188,7 @@ internal class TableCommitter(
     fun foreignContent(content: String) {
         epoch++
         current = content
+        noteProduced(content)
         undoScope.foreignEntry()
         undoTargets.clear()
         redoTargets.clear()
@@ -203,7 +207,7 @@ internal class TableCommitter(
      * and it differs from what the committer expects, the table was replaced from outside (steps no longer apply).
      */
     fun adoptObserved(content: String) {
-        if (pendingOps.value == 0 && content != current) foreignContent(content)
+        if (pendingOps.value == 0 && content != current && content !in produced) foreignContent(content)
     }
 
     /** The host observed the manager's undo-record counter; a rise while idle is somebody else's entry (R3-C4). */
@@ -274,7 +278,14 @@ internal class TableCommitter(
         if (restore != null) recordStep(before, label)
         if (steps > 0) recordStep(restore ?: before, label)
         current = text
+        noteProduced(text)
         publish()
+    }
+
+    private fun noteProduced(content: String) {
+        produced.remove(content)
+        produced.add(content)
+        if (produced.size > PRODUCED_CAP) produced.remove(produced.first())
     }
 
     /** One manager write, joined; false when it threw. */
@@ -314,6 +325,7 @@ internal class TableCommitter(
             port.editingBlockUuid.value != uuid
         if (!consistent) return mustClose(SheetCloseReason.Degraded)
         current = target
+        noteProduced(target)
         publish()
         onEvent(if (redo) CommitterEvent.Redone(label) else CommitterEvent.Undone(label))
     }
@@ -340,3 +352,5 @@ internal class TableCommitter(
 
 /** A cell and its unsaved text, kept for failed commits, held conflicts and recovered drafts. */
 internal data class DraftText(val address: CellAddress, val text: String)
+
+private const val PRODUCED_CAP = 256

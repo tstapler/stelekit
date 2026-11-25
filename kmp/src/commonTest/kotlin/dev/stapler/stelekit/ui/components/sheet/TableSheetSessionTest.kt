@@ -273,7 +273,8 @@ class TableSheetSessionTest {
 
     @Test
     fun escGate_should_SwallowOneDismiss_AfterAnEscapeKeyDown() {
-        val gate = EscDismissGate()
+        var now = 0L
+        val gate = EscDismissGate { now }
         assertFalse(gate.swallowDismiss(), "Android Back is not an Esc key")
         gate.observe(isEscape = true, isDown = true)
         assertTrue(gate.swallowDismiss())
@@ -299,5 +300,62 @@ class TableSheetSessionTest {
         assertEquals(s1, r.body.rebuilt.last(), "and the re-commit put the grid back on the text it wrote")
         assertEquals(s1, r.port.content)
         assertEquals(s1, r.session.content)
+    }
+
+    @Test
+    fun lateUndoEchoes_should_NotBeTreatedAsAnOutsideWrite_And_TheNextCommitIsWritten() = runTest {
+        val r = rig()
+        val s1 = edit(start, a1, "one")
+        val s2 = edit(s1, a1, "two")
+        r.session.commit(s1, "edit A1", null)
+        r.session.commit(s2, "edit A1", null)
+        r.session.undo()
+        r.session.undo()
+        advanceUntilIdle()
+        assertEquals(2, r.session.history.value.redoDepth)
+        val seen = mutableListOf<dev.stapler.stelekit.table.SyncDecision>()
+        r.session.decisionObserver = { d, _ -> seen += d }
+        r.session.onContent(s1) // the feed's late emission of the first undo target
+        r.session.onContent(start) // and of the second
+        assertEquals(listOf<dev.stapler.stelekit.table.SyncDecision>(dev.stapler.stelekit.table.SyncDecision.Adopt(s1), dev.stapler.stelekit.table.SyncDecision.Adopt(start)), seen)
+        assertEquals(2, r.session.history.value.redoDepth, "the committer's own undo targets are not an outside write")
+        val s3 = edit(start, a1, "three")
+        val draft = DraftText(a1, "three")
+        r.body.dirty = draft
+        r.session.commit(s3, "edit A1", draft)
+        advanceUntilIdle()
+        assertEquals(emptyList(), r.body.restored, "the commit was not dropped")
+        assertEquals(s3, r.port.content)
+        assertEquals(0, r.session.history.value.redoDepth, "a new commit clears redo, so it ran")
+    }
+
+    @Test
+    fun aCommitQueuedBeforeLateUndoEchoes_should_NotBeDropped() = runTest {
+        val r = rig()
+        val s1 = edit(start, a1, "one")
+        r.session.commit(s1, "edit A1", null)
+        r.session.undo()
+        advanceUntilIdle()
+        val s3 = edit(start, a1, "three")
+        r.port.gate = CompletableDeferred()
+        r.session.commit(s3, "edit A1", DraftText(a1, "three"))
+        advanceUntilIdle()
+        r.session.onContent(start) // the undo's late emission, while the commit waits
+        r.port.gate!!.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(emptyList(), r.body.restored)
+        assertEquals(s3, r.port.content)
+    }
+
+    @Test
+    fun escGate_should_Expire_When_TheKeyUpWasLost() {
+        var now = 0L
+        val gate = EscDismissGate { now }
+        gate.observe(isEscape = true, isDown = true)
+        now = EscDismissGate.ARMED_FOR_MS + 1
+        assertFalse(gate.swallowDismiss(), "a Back long after the Esc must close the sheet")
+        gate.observe(isEscape = true, isDown = true)
+        now += EscDismissGate.ARMED_FOR_MS
+        assertTrue(gate.swallowDismiss())
     }
 }

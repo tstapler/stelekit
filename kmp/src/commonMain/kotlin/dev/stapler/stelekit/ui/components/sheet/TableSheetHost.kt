@@ -156,15 +156,31 @@ internal fun TableSheetHost(
  * the same call Android Back makes. The gate remembers an Esc key-down so that one dismiss request is ignored.
  * UNVERIFIED on a real desktop or browser window: whether the platform dialog reports Esc this way is pending the owner.
  */
-internal class EscDismissGate {
-    private var escapeDown = false
+internal class EscDismissGate(private val nowMs: () -> Long = monotonicClock()) {
+    private var armedAt: Long? = null
 
     fun observe(isEscape: Boolean, isDown: Boolean) {
-        if (isEscape) escapeDown = isDown
+        if (isEscape) armedAt = if (isDown) nowMs() else null
     }
 
-    /** True once per Esc press: the dismiss request that follows it is not a Back. */
-    fun swallowDismiss(): Boolean = escapeDown.also { escapeDown = false }
+    /**
+     * True once per Esc press: the dismiss request that follows it is not a Back. An arming older than
+     * [ARMED_FOR_MS] (a lost key-up) expires, so a later real Back is not swallowed.
+     */
+    fun swallowDismiss(): Boolean {
+        val at = armedAt ?: return false
+        armedAt = null
+        return nowMs() - at <= ARMED_FOR_MS
+    }
+
+    companion object {
+        const val ARMED_FOR_MS = 500L
+    }
+}
+
+private fun monotonicClock(): () -> Long {
+    val start = kotlin.time.TimeSource.Monotonic.markNow()
+    return { start.elapsedNow().inWholeMilliseconds }
 }
 
 /**

@@ -83,6 +83,7 @@ private fun RangeHandle(state: SheetState, hits: CellHitRegistry, corner: Handle
     val density = LocalDensity.current
     val half = with(density) { (HANDLE_HIT / 2).roundToPx() }
     var coords: LayoutCoordinates? by remember { mutableStateOf(null) }
+    DisposableEffect(hits, corner) { onDispose { hits.removeHandle(corner) } }
     val label = if (corner == HandleCorner.Start) TableMessages.RANGE_START_HANDLE else TableMessages.RANGE_END_HANDLE
     Box(
         modifier = Modifier
@@ -93,7 +94,10 @@ private fun RangeHandle(state: SheetState, hits: CellHitRegistry, corner: Handle
                 IntOffset(x.toInt() - half, y.toInt() - half)
             }
             .size(HANDLE_HIT)
-            .onGloballyPositioned { coords = it }
+            .onGloballyPositioned {
+                coords = it
+                hits.setHandle(corner, it)
+            }
             .semantics { contentDescription = label }
             .testTag(if (corner == HandleCorner.Start) "handleStart" else "handleEnd")
             .pointerInput(corner) {

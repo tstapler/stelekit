@@ -58,6 +58,25 @@ internal class CellHitRegistry {
     private val texts = HashMap<CellAddress, TextHit>()
     var owner: LayoutCoordinates? = null
 
+    // The range handles sit inside the owner's box; a press that lands on one is the handle's gesture, not the owner's.
+    private val handles = HashMap<HandleCorner, LayoutCoordinates>()
+
+    fun setHandle(corner: HandleCorner, coords: LayoutCoordinates) {
+        handles[corner] = coords
+    }
+
+    fun removeHandle(corner: HandleCorner) {
+        handles.remove(corner)
+    }
+
+    /** True when [position] (owner coordinates) is inside a handle's hit area. */
+    fun onHandle(position: Offset): Boolean {
+        val ownerCoords = owner?.takeIf { it.isAttached } ?: return false
+        return handles.values.any { c ->
+            c.isAttached && Rect(0f, 0f, c.size.width.toFloat(), c.size.height.toFloat()).contains(c.localPositionOf(ownerCoords, position))
+        }
+    }
+
     /** Cells whose position the sheet's range handles follow; a change in their layout bumps [layoutVersion]. */
     var tracked: Set<CellAddress> = emptySet()
     var layoutVersion: Int by mutableIntStateOf(0)
@@ -176,6 +195,10 @@ internal fun Modifier.tableGestureOwner(
         .pointerInput(hits) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                if (hits.onHandle(down.position)) {
+                    awaitRelease(down.id, down.position, Float.MAX_VALUE)
+                    return@awaitEachGesture
+                }
                 val slop = (if (down.type == PointerType.Mouse) MOUSE_SLOP else TOUCH_SLOP).toPx()
                 val secondary = currentSecondary.value
                 if (secondary != null && down.type == PointerType.Mouse && currentEvent.buttons.isSecondaryPressed) {

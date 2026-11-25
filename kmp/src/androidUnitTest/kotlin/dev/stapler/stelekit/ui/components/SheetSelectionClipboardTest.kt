@@ -312,6 +312,52 @@ class SheetSelectionClipboardTest {
     }
 
     @Test
+    fun tappingAHandle_should_LeaveTheRangeAsItIs() {
+        val f = open(gridContent(rows = 5, cols = 3))
+        select(f, "A2", "B4")
+        ui { f.s.enterRangeMode(addr("B4")) }
+        val before = f.s.selection
+        listOf("handleEnd", "handleStart").forEach { tag ->
+            rule.onNodeWithTag(tag).performTouchInput { down(this.center); up() }
+            rule.waitForIdle()
+            assertEquals(before, f.s.selection, "$tag tap must not select the cell under it")
+            assertTrue(f.s.rangeMode, "$tag tap must not leave range mode")
+        }
+    }
+
+    @Test
+    fun longPressingAHandle_should_NotEnterRangeModeAgain() {
+        val f = open(gridContent(rows = 5, cols = 3))
+        select(f, "A2", "B4")
+        ui { f.s.enterRangeMode(addr("B4")) }
+        val before = f.s.selection
+        rule.onNodeWithTag("handleEnd").performTouchInput { longClick() }
+        rule.waitForIdle()
+        assertEquals(before, f.s.selection)
+        assertTrue(f.s.rangeMode)
+    }
+
+    @Test
+    fun mouseDraggingAHandle_should_MoveOnlyThatCorner() {
+        val f = open(gridContent(rows = 5, cols = 3))
+        select(f, "A2", "B4")
+        ui { f.s.enterRangeMode(addr("B4")) }
+        val from = local("handleEnd")
+        val to = local("cell-A3")
+        rule.onNodeWithTag("sheetGridFocus").performMouseInput {
+            moveTo(from)
+            press()
+            moveTo((from + to) / 2f)
+            moveTo(to)
+            release()
+        }
+        rule.waitForIdle()
+        assertEquals(addr("B4"), f.s.selection.anchor, "the fixed corner stays; the owner's own range drag did not take over")
+        assertEquals(addr("A3"), f.s.selection.focus)
+        assertTrue(f.s.rangeMode)
+    }
+
+    @Test
     fun draggingTheStartHandle_should_KeepTheOppositeCornerFixed() {
         val f = open(gridContent(rows = 5, cols = 3))
         select(f, "A2", "B4")

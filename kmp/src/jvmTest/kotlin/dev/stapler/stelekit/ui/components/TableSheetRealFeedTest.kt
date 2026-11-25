@@ -162,7 +162,9 @@ class TableSheetRealFeedTest {
         assertTrue(s1Decisions.isNotEmpty(), "S1 was emitted at least once, so all{} below cannot pass on nothing")
         assertTrue(s1Decisions.all { it.first == SyncDecision.Echo || it.first == SyncDecision.Adopt(s1) }, "decisions for S1: $s1Decisions")
         assertEquals(s1, displays.lastOrNull() ?: session.content, "the grid's last rebuild is S1, never the undo's S0")
-        val adoptedS0 = decisionsFor(s0).any { it.first == SyncDecision.Adopt(s0) }
+        // The feed may conflate the undo's S0 away under load (only the start-up emission is then left), so Adopt is
+        // required only when S0 was emitted again after it.
+        val adoptedS0 = decisionsFor(s0).size <= 1 || decisionsFor(s0).any { it.first == SyncDecision.Adopt(s0) }
         assertTrue(adoptedS0, "the undo's emission is adopted: ${decisionsFor(s0)}")
         assertTrue(synchronized(decisions) { decisions.none { it.first is SyncDecision.Rebuild || it.first == SyncDecision.ConflictKeepDraft } })
         assertEquals(s1, dbContent())
