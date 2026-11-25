@@ -58,6 +58,8 @@ data class TransformSelectionCommand(val steps: List<ElementTransform>) : ToolCo
 
 /** Moves the middle segment of an elbow arrow to [coord]; see `SetElbowMid`. */
 data class SetElbowMidCommand(val id: ElementId, val coord: Double) : ToolCommand
+/** Rigid rotation of [ids] by [delta] radians about ([pivotX], [pivotY]) (any element kind, one undo step); see `RotateSelection`. */
+data class RotateSelectionCommand(val ids: List<ElementId>, val delta: Double, val pivotX: Double, val pivotY: Double) : ToolCommand
 
 data class FlipSelectionCommand(val ids: List<ElementId>, val horizontal: Boolean) : ToolCommand
 

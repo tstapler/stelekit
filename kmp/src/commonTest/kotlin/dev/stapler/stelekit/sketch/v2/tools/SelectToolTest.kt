@@ -258,11 +258,11 @@ class SelectToolTest {
     }
 
     @Test
-    fun rotation_should_BeUnavailable_When_SelectionHoldsALine() {
+    fun rotation_should_BeAvailable_When_SelectionHoldsALine() {
         val line = dev.stapler.stelekit.sketch.v2.scene.LineElement(ElementBase(elId("l")), listOf(sp(0, 0), sp(200, 100)))
         val ctx = testToolContext(sceneOfElements(a, line))
         val layout = assertNotNull(SelectTool(selection = listOf(elId("a"), elId("l"))).handleLayout(ctx))
-        assertTrue(layout.handles.none { it.handle == Handle.Rotate })
+        assertTrue(layout.handles.any { it.handle == Handle.Rotate })
     }
 
     // ---- host verbs ----------------------------------------------------------------------------------------------

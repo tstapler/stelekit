@@ -18,6 +18,7 @@ import dev.stapler.stelekit.sketch.v2.commands.FlipElements
 import dev.stapler.stelekit.sketch.v2.commands.MoveElements
 import dev.stapler.stelekit.sketch.v2.commands.RemoveFromFrame
 import dev.stapler.stelekit.sketch.v2.commands.ResizeElement
+import dev.stapler.stelekit.sketch.v2.commands.RotateSelection
 import dev.stapler.stelekit.sketch.v2.commands.RotateElement
 import dev.stapler.stelekit.sketch.v2.commands.SequenceCommand
 import dev.stapler.stelekit.sketch.v2.commands.SetElbowMid
@@ -34,6 +35,7 @@ fun ToolCommand.toCommand(): Either<CommandError, Command> = when (this) {
     is MoveSelectionCommand -> moveCommand().right()
     is TransformSelectionCommand -> SequenceCommand(steps.flatMap { it.toCommands() }).right()
     is SetElbowMidCommand -> SetElbowMid(id, coord).right()
+    is RotateSelectionCommand -> RotateSelection(ids, delta, pivotX, pivotY).right()
     is FlipSelectionCommand -> FlipElements(ids, horizontal).right()
     is DuplicateSelectionCommand -> DuplicateElements(ids, idMap, dx, dy).right()
     is DeleteSelectionCommand -> DeleteElements(ids).right()

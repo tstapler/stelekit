@@ -4,6 +4,7 @@
 
 package dev.stapler.stelekit.ui.sketch.v2
 
+import dev.stapler.stelekit.sketch.v2.scene.reconciled
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.Binding
@@ -115,12 +116,13 @@ class NonDragTransformModeTest {
     @Test
     fun nothingSelected_and_NonRotatable_should_BeRefusedWithAReason() {
         assertEquals(NonDragStart.Refused(NonDragNotice.NothingSelected), NonDragTransformMode.begin(NonDragAction.Resize, scene, emptyList()))
-        val line = dev.stapler.stelekit.sketch.v2.scene.LineElement(
-            ElementBase(elId("ln")),
-            listOf(dev.stapler.stelekit.sketch.v2.tools.sp(0, 0), dev.stapler.stelekit.sketch.v2.tools.sp(10, 10)),
+        // An opening turns with its wall, so it alone is refused; a line is rotatable now.
+        val wall = dev.stapler.stelekit.sketch.v2.scene.WallElement(
+            ElementBase(elId("w")), listOf(dev.stapler.stelekit.sketch.v2.tools.sp(0, 0), dev.stapler.stelekit.sketch.v2.tools.sp(400, 0)), dev.stapler.stelekit.sketch.v2.tools.su(72),
         )
-        val withLine = sceneOfElements(line)
-        assertEquals(NonDragStart.Refused(NonDragNotice.NotRotatable), NonDragTransformMode.begin(NonDragAction.Rotate, withLine, listOf(elId("ln"))))
+        val door = dev.stapler.stelekit.sketch.v2.scene.OpeningElement(ElementBase(elId("d")), elId("w"), 0, dev.stapler.stelekit.sketch.v2.tools.su(100), dev.stapler.stelekit.sketch.v2.tools.su(100))
+        val withDoor = sceneOfElements(wall, door).reconciled()
+        assertEquals(NonDragStart.Refused(NonDragNotice.NotRotatable), NonDragTransformMode.begin(NonDragAction.Rotate, withDoor, listOf(elId("d"))))
     }
 
     @Test
