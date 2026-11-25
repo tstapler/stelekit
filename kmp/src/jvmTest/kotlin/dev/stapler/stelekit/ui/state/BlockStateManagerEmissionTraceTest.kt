@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
 import java.io.File
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -171,5 +172,27 @@ class BlockStateManagerEmissionTraceTest {
         }
         println(out)
         assertTrue(counts.all { it >= 1 }, "every scenario must produce at least one emission: $counts")
+    }
+
+    @Test
+    fun foreignTableWriteReachesManagerAndLaterEqualRecommitIsPersisted() {
+        val h = TableSheetRealFeedHarness(s0)
+        try {
+            runBlocking {
+                h.start(s0)
+                h.manager.updateBlockContent(h.blockUuid, s1, 0, restoreEditFocus = false).join()
+                h.settle()
+                h.actor.updateBlockContentOnly(h.blockUuid, foreign, h.pageUuid)
+                h.settle()
+                assertEquals(foreign, h.managerContent(), "manager must follow a foreign table write")
+                h.manager.updateBlockContent(h.blockUuid, s1, 0, restoreEditFocus = false).join()
+                h.settle()
+                val dbRow = h.blockRepo.getBlockByUuid(h.blockUuid).first().getOrNull()?.content
+                assertEquals(s1, dbRow, "re-commit of the pre-foreign content must not be dropped")
+                assertEquals(s1, h.managerContent())
+            }
+        } finally {
+            h.close()
+        }
     }
 }

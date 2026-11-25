@@ -1,5 +1,7 @@
 package dev.stapler.stelekit.ui.state
 
+import dev.stapler.stelekit.table.TableParseResult
+import dev.stapler.stelekit.table.TableParser
 import dev.stapler.stelekit.db.BlockUpdateEvent
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphLoader
@@ -688,7 +690,7 @@ class BlockStateManager(
                                 }
                                 is BlockUpdateEvent.BlockContentPatched -> {
                                     if (event.pageUuid != pageUuid) return@collect
-                                    applyContentPatch(event.blockUuid)
+                                    applyContentPatch(pageUuidStr, event.blockUuid, event.newContent)
                                 }
                                 is BlockUpdateEvent.BlockReplaced -> {
                                     if (event.pageUuid != pageUuid) return@collect
@@ -792,9 +794,35 @@ class BlockStateManager(
      * this only clears the dirty flag, and only once every content write issued for the block has
      * been confirmed (or otherwise accounted for — see [decrementPendingContentWrite]'s callers).
      */
-    private fun applyContentPatch(blockUuid: BlockUuid) {
-        if (decrementPendingContentWrite(blockUuid.value) > 0) return
-        _dirtyBlocks.update { it - blockUuid.value }
+    private fun applyContentPatch(pageUuidStr: String, blockUuid: BlockUuid, newContent: String) {
+        val uuidStr = blockUuid.value
+        // No local write in flight and no unconfirmed edit: this patch came from another writer.
+        val foreign = uuidStr !in _pendingContentWriteCounts.value && uuidStr !in _dirtyBlocks.value
+        if (foreign) {
+            adoptForeignTableContent(pageUuidStr, blockUuid, newContent)
+            return
+        }
+        if (decrementPendingContentWrite(uuidStr) > 0) return
+        _dirtyBlocks.update { it - uuidStr }
+    }
+
+    /**
+     * A foreign write to a table block must reach [_blocks]: otherwise a later commit of content equal
+     * to our stale copy is dropped by [applyBlockContentUpdate]'s equality guard (P5-3). Other block
+     * kinds keep ignoring patches they did not issue.
+     */
+    private fun adoptForeignTableContent(pageUuidStr: String, blockUuid: BlockUuid, newContent: String) {
+        _blocks.update { current ->
+            val pageBlocks = current[pageUuidStr] ?: return@update current
+            val idx = pageBlocks.indexOfFirst { it.uuid == blockUuid }
+            if (idx < 0) return@update current
+            val local = pageBlocks[idx]
+            if (local.content == newContent) return@update current
+            val isTable = TableParser.parse(newContent) is TableParseResult.Parsed ||
+                TableParser.parse(local.content) is TableParseResult.Parsed
+            if (!isTable) return@update current
+            current + (pageUuidStr to pageBlocks.toMutableList().also { it[idx] = local.copy(content = newContent) })
+        }
     }
 
     /** Dirty-set conflict resolution shared by the block-replace and properties-patch merge paths:
