@@ -41,6 +41,7 @@ kt_android_library(
             "**/UnderlayPhoneRenderTest.kt",
             "**/ElbowPhoneRenderTest.kt",
             "**/RotatePhoneRenderTest.kt",
+            "**/BitmapOrienterAndroidTest.kt",
             "**/ProvenancePhoneRenderTest.kt",
             "**/TouchLoupeHostTest.kt",
             "**/MobileChromeRenderTest.kt",

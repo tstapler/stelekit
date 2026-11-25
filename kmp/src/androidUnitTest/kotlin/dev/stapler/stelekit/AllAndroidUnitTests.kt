@@ -198,6 +198,7 @@ import org.junit.runners.Suite
     // UnderlayPhoneRenderTest (the photo underlay on a phone: place, calibrate with the keypad row, a 12 MP photo held within the 2048 px display cap, with Roborazzi shots) mounts the real host over the commonTest rig (composeRule, no Compose plugin in this target); Gradle-only.
     // ElbowPhoneRenderTest (an elbow connector between two boxes stays orthogonal and bound when one moves, with Roborazzi shots) mounts the real host over the commonTest rig (composeRule); Gradle-only.
     // RotatePhoneRenderTest (the Rotate chip and angle dialog turn a rectangle and a line as one step, with Roborazzi shots) mounts the real host over the commonTest rig (composeRule); Gradle-only.
+    // BitmapOrienterAndroidTest (EXIF orientations turned upright by a real canvas under Robolectric native graphics) needs the Robolectric runtime; Gradle-only.
     // ProvenancePhoneRenderTest (agent-written elements on a phone: ghost, AI badge, review bar, Accept all and its undo, with Roborazzi shots) mounts the real host over the commonTest rig (composeRule, no Compose plugin in this target); Gradle-only.
     // PhoneMenuEntryTest (the phone-size overflow menu entries for panels and the sheet type) mounts the real host over the commonTest rig (composeRule, no Compose plugin in this target); Gradle-only.
     // TouchLoupeHostTest (the touch magnifier beside a dragging finger, phone renders) mounts the real host over the commonTest rig (composeRule, no Compose plugin in this target); Gradle-only.

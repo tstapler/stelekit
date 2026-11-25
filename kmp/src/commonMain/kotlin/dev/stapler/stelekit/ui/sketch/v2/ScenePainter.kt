@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
 import dev.stapler.stelekit.sketch.v2.index.Bounds
 import dev.stapler.stelekit.sketch.v2.index.SpatialIndex
+import dev.stapler.stelekit.sketch.v2.render.CropSourceRect
 import dev.stapler.stelekit.sketch.v2.render.DrawOp
 import dev.stapler.stelekit.sketch.v2.render.StrokePaint
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
@@ -163,9 +164,9 @@ class ScenePainter(val paths: PathCache = PathCache(), private val resources: Pa
 
     private fun DrawScope.drawBitmap(op: DrawOp.ImageOp, bitmap: ImageBitmap, centre: Offset) {
         val r = op.rect
-        val crop = op.crop
-        val srcSize = if (crop == null) IntSize(bitmap.width, bitmap.height) else IntSize(crop.width.toInt(), crop.height.toInt())
-        val srcOffset = if (crop == null) IntOffset.Zero else IntOffset(crop.x.toInt(), crop.y.toInt())
+        val src = CropSourceRect.map(op.crop, bitmap.width, bitmap.height)
+        val srcSize = IntSize(src.width, src.height)
+        val srcOffset = IntOffset(src.x, src.y)
         withTransform({ scale(if (op.flipX) -1f else 1f, if (op.flipY) -1f else 1f, centre) }) {
             drawImage(bitmap, srcOffset, srcSize, IntOffset(r.x.toInt(), r.y.toInt()), IntSize(r.width.toInt(), r.height.toInt()), alpha = op.opacity.toFloat())
         }

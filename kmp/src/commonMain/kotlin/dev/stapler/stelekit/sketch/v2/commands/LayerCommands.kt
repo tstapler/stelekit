@@ -11,6 +11,7 @@ import dev.stapler.stelekit.sketch.v2.scene.TextElement
 import dev.stapler.stelekit.sketch.v2.scene.Layer
 import dev.stapler.stelekit.sketch.v2.scene.LayerId
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
+import dev.stapler.stelekit.sketch.v2.scene.UnderlayIds
 import dev.stapler.stelekit.sketch.v2.scene.ValueError
 
 // Layer commands (Story 1.3.2c, ADR-006). Layers are a sheet-level list; an element names its layer through
@@ -66,12 +67,19 @@ data class SetLayerOpacity(val id: LayerId, val opacity: Double) : Command {
     }
 }
 
-/** Moves a layer to position [toIndex] (0 is the bottom) in layer order and renumbers `order` as 0, 1, 2 and so on. */
+/**
+ * Moves a layer to position [toIndex] (0 is the bottom) in layer order and renumbers `order` as 0, 1, 2 and so on. The photo
+ * underlay layer stays at the bottom: it is never moved off it and no other layer is moved below it.
+ */
 data class MoveLayer(val id: LayerId, val toIndex: Int) : Command {
     override fun apply(doc: SketchDocumentV2): Either<CommandError, Applied> = either {
         val layer = doc.scene.layerOrFail(id).bind()
         val sorted = doc.scene.layers.sortedBy { it.order }.filter { it.id != id }.toMutableList()
-        sorted.add(toIndex.coerceIn(0, sorted.size), layer)
+        // An underlay that is not lowest (an older sheet) is healed to the bottom by any layer move.
+        val underlay = sorted.firstOrNull { it.id == UnderlayIds.LAYER }
+        if (underlay != null) { sorted.remove(underlay); sorted.add(0, underlay) }
+        val pinned = if (underlay != null) 1 else 0
+        sorted.add(if (id == UnderlayIds.LAYER) 0 else toIndex.coerceIn(pinned, sorted.size), layer)
         val renumbered = sorted.mapIndexed { i, l -> l.copy(order = i) }
         val byId = renumbered.associateBy { it.id }
         // Keep the stored list order so a no-op move is an exact no-change.

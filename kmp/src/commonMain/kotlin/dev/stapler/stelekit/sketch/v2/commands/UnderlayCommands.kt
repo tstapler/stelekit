@@ -47,7 +47,11 @@ data class SetUnderlay(val fileId: String, val widthPx: Int, val heightPx: Int, 
     override fun apply(doc: SketchDocumentV2): Either<CommandError, Applied> = either {
         val scene = doc.scene
         val limits = scene.limits
-        val withLayer = if (scene.layer(UnderlayIds.LAYER) != null) scene else {
+        val existing = scene.layer(UnderlayIds.LAYER)
+        val lowestOther = scene.layers.filter { it.id != UnderlayIds.LAYER }.minOfOrNull { it.order }
+        val withLayer = if (existing != null) {
+            if (lowestOther != null && existing.order >= lowestOther) scene.withLayers(scene.layers.map { if (it.id == UnderlayIds.LAYER) it.copy(order = lowestOther - 1) else it }) else scene
+        } else {
             if (scene.layers.size >= limits.maxLayers) raise(CommandError.TooManyLayers(limits.maxLayers))
             val order = (scene.layers.minOfOrNull { it.order } ?: 0) - 1
             scene.withLayers(scene.layers + Layer(UnderlayIds.LAYER, UnderlayIds.LAYER_NAME, locked = true, opacity = UnderlayIds.DEFAULT_OPACITY, order = order))

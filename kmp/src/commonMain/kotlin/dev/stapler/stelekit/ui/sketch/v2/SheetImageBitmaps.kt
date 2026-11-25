@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.platform.ImageBitmapDecoder
+import dev.stapler.stelekit.platform.image.BitmapOrienter
 import dev.stapler.stelekit.platform.image.ExifOrientationReader
 import dev.stapler.stelekit.platform.image.ImageDownscalerPort
 import dev.stapler.stelekit.platform.image.PlatformImageDownscaler
@@ -107,8 +108,11 @@ class SheetImageBitmaps(
 
         /** [source] reduced to at most [DISPLAY_EDGE_PX] on its longer side (EXIF orientation applied), then decoded; null when it cannot be. */
         fun reduceAndDecode(source: ByteArray, downscaler: ImageDownscalerPort = PlatformImageDownscaler, decoder: (ByteArray) -> ImageBitmap? = ImageBitmapDecoder()::decode): ImageBitmap? {
-            val reduced = downscaler.downscale(source, listOf(DISPLAY_EDGE_PX))?.firstOrNull() ?: turnedCopy(source, downscaler) ?: source
-            return decoder(reduced)
+            val reduced = downscaler.downscale(source, listOf(DISPLAY_EDGE_PX))?.firstOrNull() ?: turnedCopy(source, downscaler)
+            if (reduced != null) return decoder(reduced)
+            // No downscaler (iOS, web) or it failed: the decoder ignores EXIF, so turn the decoded pixels upright instead.
+            val transform = ExifOrientationReader.transformFor(ExifOrientationReader.read(source))
+            return decoder(source)?.let { BitmapOrienter.orient(it, transform) }
         }
 
         /**

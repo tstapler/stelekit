@@ -435,6 +435,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.tools.ImageToolTest::class,
     dev.stapler.stelekit.sketch.v2.scene.UnderlayCalibrationTest::class,
     dev.stapler.stelekit.sketch.v2.scene.UnderlayCommandsTest::class,
+    dev.stapler.stelekit.sketch.v2.scene.UnderlayPinAndCropTest::class,
+    dev.stapler.stelekit.platform.image.BitmapOrienterModelTest::class,
     dev.stapler.stelekit.sketch.v2.tools.ElbowConnectorTest::class,
     dev.stapler.stelekit.sketch.v2.routing.ElbowRouterTest::class,
     dev.stapler.stelekit.sketch.v2.tools.RotateToolingTest::class,
