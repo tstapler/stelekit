@@ -42,8 +42,15 @@ import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.collectionInfo
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -81,6 +88,7 @@ internal fun SheetGrid(state: SheetState, modifier: Modifier = Modifier) {
     val density = LocalDensity.current
     val numericRight = LocalTablePreferences.current.prefs.numericRightAlign
     val alignments = remember(doc, numericRight) { doc.displayData().effectiveAlignments(numericRight) }
+    val explicitAlign = remember(doc) { doc.displayData().explicitAlignments }
     val cols = state.columnCount
     val widths = List(cols) { state.view.widthOf(it + 1).dp }
     val total = widths.fold(GUTTER_WIDTH) { acc, w -> acc + w }
@@ -92,8 +100,16 @@ internal fun SheetGrid(state: SheetState, modifier: Modifier = Modifier) {
     val gutterPx = with(density) { GUTTER_WIDTH.toPx() }
     val frozenColumn = if (state.view.freezeFirstColumn) 1 else 0
     val haptics = LocalHapticFeedback.current
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val totalPx = with(density) { total.toPx() }
     SideEffect {
-        hits.shield = Rect(hScroll.value.toFloat(), 0f, hScroll.value + gutterPx, Float.MAX_VALUE)
+        state.rtl = rtl
+        // The sticky gutter sits at the viewport's start edge: the left in LTR, the right (scrolling from the end) in RTL.
+        hits.shield = if (rtl) {
+            Rect(totalPx - hScroll.value - gutterPx, 0f, totalPx - hScroll.value, Float.MAX_VALUE)
+        } else {
+            Rect(hScroll.value.toFloat(), 0f, hScroll.value + gutterPx, Float.MAX_VALUE)
+        }
         hits.frozenColumn = frozenColumn
         state.onRangeModeEntered = { runCatching { haptics.performHapticFeedback(HapticFeedbackType.LongPress) } }
     }
@@ -109,11 +125,17 @@ internal fun SheetGrid(state: SheetState, modifier: Modifier = Modifier) {
         revealCell(revealTarget, firstLazyRow, listState, hScroll, widths.map { with(density) { it.toPx() }.toInt() }, with(density) { GUTTER_WIDTH.toPx() }.toInt(), viewportPx)
     }
 
-    Box(modifier.fillMaxSize().clipToBounds().onSizeChanged { viewportPx = it.width }.testTag("sheetGrid")) {
+    Box(
+        modifier.fillMaxSize().clipToBounds().onSizeChanged { viewportPx = it.width }.testTag("sheetGrid")
+            .semantics {
+                collectionInfo = SheetSemantics.gridInfo(state)
+                if (state.readOnly) stateDescription = TableMessages.READ_ONLY_STATE
+            },
+    ) {
         Column(Modifier.horizontalScroll(hScroll).width(total).fillMaxHeight()) {
             LetterRow(state, widths, hScroll.value, colors)
             if (freezeHeader) {
-                SheetRow(state, hits, 1, widths, alignments, colors, hScroll.value)
+                SheetRow(state, hits, 1, widths, alignments, explicitAlign, colors, hScroll.value)
             }
             Box(Modifier.width(total).weight(1f)) {
             LazyColumn(
@@ -146,7 +168,7 @@ internal fun SheetGrid(state: SheetState, modifier: Modifier = Modifier) {
             ) {
                 val count = (state.rowCount - firstLazyRow + 1).coerceAtLeast(0)
                 items(count = count, key = { state.rowKeyOf(it + firstLazyRow) }) { index ->
-                    SheetRow(state, hits, index + firstLazyRow, widths, alignments, colors, hScroll.value)
+                    SheetRow(state, hits, index + firstLazyRow, widths, alignments, explicitAlign, colors, hScroll.value)
                 }
             }
             RangeHandles(state, hits)
@@ -156,14 +178,23 @@ internal fun SheetGrid(state: SheetState, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun sheetColors() = SheetColors(
-    header = MaterialTheme.colorScheme.surfaceVariant,
-    zebra = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
-    divider = MaterialTheme.colorScheme.outlineVariant,
-    formulaTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-    outline = outlineColor(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.surface),
-    link = MaterialTheme.colorScheme.primary,
-)
+private fun sheetColors() = sheetColorsFor(MaterialTheme.colorScheme, LocalTableVisualPrefs.current)
+
+internal fun sheetColorsFor(scheme: androidx.compose.material3.ColorScheme, prefs: TableVisualPrefs): SheetColors {
+    if (!prefs.highContrast) {
+        return SheetColors(
+            header = scheme.surfaceVariant,
+            zebra = scheme.onSurface.copy(alpha = 0.06f),
+            divider = scheme.outlineVariant,
+            formulaTint = scheme.primary.copy(alpha = 0.08f),
+            outline = sheetOutlineColor(scheme.primary, cellBackgrounds(scheme)),
+            link = scheme.primary,
+        )
+    }
+    // Forced colors: no tints, ink on surface only; state is carried by outline width and glyphs.
+    val ink = highContrastInk(scheme.surface)
+    return SheetColors(header = scheme.surface, zebra = Color.Transparent, divider = ink, formulaTint = Color.Transparent, outline = ink, link = ink)
+}
 
 @Composable
 private fun LetterRow(state: SheetState, widths: List<androidx.compose.ui.unit.Dp>, hOffset: Int, colors: SheetColors) {
@@ -180,10 +211,12 @@ private fun LetterRow(state: SheetState, widths: List<androidx.compose.ui.unit.D
                     .clickable { state.selectColumn(col) }
                     .secondaryClick { state.selectColumn(col) }
                     .semantics {
+                        heading()
                         contentDescription = TableMessages.columnHeaderLabel(
                             label,
                             indicator?.let { if (it.ascending) TableMessages.SORTED_ASCENDING else TableMessages.SORTED_DESCENDING },
                         )
+                        customActions = SheetSemantics.headerActions(state, col)
                     }
                     .testTag("letter-$label"),
                 contentAlignment = Alignment.Center,
@@ -216,6 +249,7 @@ private fun SheetRow(
     row: Int,
     widths: List<androidx.compose.ui.unit.Dp>,
     alignments: List<TableColumnAlignment>,
+    explicitAlign: List<TableColumnAlignment?>,
     colors: SheetColors,
     hOffset: Int,
 ) {
@@ -230,11 +264,7 @@ private fun SheetRow(
             SheetAnchoredMenu(state, SheetMenuTarget.Row(row))
         }
         widths.forEachIndexed { i, w ->
-            val align = when (alignments.getOrElse(i) { TableColumnAlignment.LEFT }) {
-                TableColumnAlignment.LEFT -> TextAlign.Start
-                TableColumnAlignment.CENTER -> TextAlign.Center
-                TableColumnAlignment.RIGHT -> TextAlign.End
-            }
+            val align = cellTextAlign(alignments.getOrElse(i) { TableColumnAlignment.LEFT }, explicit = explicitAlign.getOrNull(i) != null)
             val pinned = if (i == 0 && state.view.freezeFirstColumn) {
                 Modifier.offset { IntOffset(hOffset, 0) }.zIndex(1f).background(MaterialTheme.colorScheme.surface)
             } else {
@@ -243,6 +273,13 @@ private fun SheetRow(
             SheetCell(state, hits, CellAddress(row, i + 1), w, align, colors, pinned)
         }
     }
+}
+
+/** An explicit GFM marker is physical (`:---` is left in any direction, UX-65); unmarked columns follow the layout direction. */
+private fun cellTextAlign(effective: TableColumnAlignment, explicit: Boolean): TextAlign = when (effective) {
+    TableColumnAlignment.LEFT -> if (explicit) TextAlign.Left else TextAlign.Start
+    TableColumnAlignment.CENTER -> TextAlign.Center
+    TableColumnAlignment.RIGHT -> if (explicit) TextAlign.Right else TextAlign.End
 }
 
 /** Scrolls just enough that [address] is on screen: a cell already inside the viewport is left alone. */

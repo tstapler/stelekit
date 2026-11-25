@@ -201,6 +201,8 @@ object TableMessages {
     fun columnWidth(column: String, dp: Int) = "Column $column set to $dp dp"
     fun columnMenuTitle(column: String) = "Column $column"
     fun rowMenuTitle(row: Int) = "Row $row"
+    fun formulaState(formula: String, value: String?) = "Formula $formula" + (value?.let { ", value $it" } ?: "")
+
     fun columnHeaderLabel(column: String, sortState: String?) = "Column $column" + (sortState?.let { ", $it" } ?: "")
 
     private fun brokenSuffix(broken: Int) = if (broken > 0) ". ${plural(broken, "formula")} now ${if (broken == 1) "shows" else "show"} #REF!" else ""

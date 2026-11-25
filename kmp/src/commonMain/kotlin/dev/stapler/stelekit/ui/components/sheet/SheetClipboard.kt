@@ -33,6 +33,7 @@ import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.table.CellAddress
 import dev.stapler.stelekit.table.CellRange
 import dev.stapler.stelekit.table.EditSummary
+import dev.stapler.stelekit.table.GridMode
 import dev.stapler.stelekit.table.GridSelection
 import dev.stapler.stelekit.table.NoticeType
 import dev.stapler.stelekit.table.RefusalReason
@@ -61,10 +62,13 @@ import kotlin.coroutines.CoroutineContext
 /**
  * Where DOM paste events reach the common sheet (ADR-008): the Wasm entry point provides one, everything else leaves
  * [LocalPasteEventSource] null and the sheet uses the clipboard port and the "Paste here" box. Each registered
- * listener gets the plain text of every paste event until the returned handle is called.
+ * listener gets the plain text of every paste event until the returned handle is called. UNVERIFIED in a real
+ * browser: whether Ctrl+V on the canvas fires a `paste` event at all is spike 0.3a/b; [SheetClipboard] therefore
+ * accepts both routes and applies a paste that arrives by both exactly once.
  */
 interface PasteEventSource {
-    fun register(onPaste: (String) -> Unit): () -> Unit
+    /** [onPaste] returns true when the sheet took the text; the source then cancels the browser's own paste. */
+    fun register(onPaste: (String) -> Boolean): () -> Unit
 }
 
 @Suppress("CompositionLocalAllowlist") // provided once by the wasm entry point; null everywhere else
@@ -102,6 +106,14 @@ internal fun tableHtml(grid: List<List<String>>): String = buildString {
 
 private fun escapeHtml(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("\n", "<br>")
 
+/** Both paste routes of one Ctrl+V land within this many milliseconds of each other. */
+internal const val DUPLICATE_PASTE_WINDOW_MS = 750L
+
+private fun monotonicNowMs(): () -> Long {
+    val start = kotlin.time.TimeSource.Monotonic.markNow()
+    return { start.elapsedNow().inWholeMilliseconds }
+}
+
 /** Pastes above this many cells parse off the main dispatcher (ADR-008). */
 internal const val PASTE_OFF_THREAD_CELLS = 2_000
 
@@ -125,6 +137,7 @@ internal class SheetClipboard(
     context: CoroutineContext,
     private val parseContext: CoroutineContext = PlatformDispatcher.Default,
     val slot: TableClipboardSlot = TableClipboardSlot(),
+    private val nowMs: () -> Long = monotonicNowMs(),
 ) {
     private val log = Logger("SheetClipboard")
     private val scope = CoroutineScope(
@@ -227,20 +240,65 @@ internal class SheetClipboard(
                 throw e
             } catch (e: Throwable) {
                 log.warn("clipboard read failed: ${e.message}")
-                pasteBoxOpen = true
+                if (!eventPasteIsRecent()) pasteBoxOpen = true
                 return@launch
             }
             if (text.isNullOrEmpty()) {
-                session.notices.withAction(NoticeType.Action, TableMessages.NOTHING_TO_PASTE, TableMessages.PASTE_HERE) { pasteBoxOpen = true }
+                if (!eventPasteIsRecent()) {
+                    session.notices.withAction(NoticeType.Action, TableMessages.NOTHING_TO_PASTE, TableMessages.PASTE_HERE) { pasteBoxOpen = true }
+                }
             } else {
-                pasteText(text)
+                deliver(text, PasteOrigin.Port)
             }
         }
     }
 
-    /** Text from a DOM paste event or the fallback box: one paste is one edit, one undo entry. */
+    /** Text from the "Paste here" box: one paste is one edit, one undo entry. */
     fun pasteText(text: String) {
+        deliver(text, PasteOrigin.Box)
+    }
+
+    /**
+     * Text from a DOM paste event. Taken only while the grid itself has the keys: in `Edit` or with the "Paste here"
+     * box open the browser's paste belongs to the text field, so it is left alone (false).
+     */
+    fun pasteFromEvent(text: String): Boolean {
+        if (state.mode != GridMode.Navigate || pasteBoxOpen) return false
+        deliver(text, PasteOrigin.Event)
+        return true
+    }
+
+    private enum class PasteOrigin { Port, Event, Box }
+
+    private class LastPaste(val text: String, val origin: PasteOrigin, val atMs: Long)
+
+    private var lastPaste: LastPaste? = null
+
+    private fun eventPasteIsRecent(): Boolean =
+        lastPaste?.let { it.origin == PasteOrigin.Event && nowMs() - it.atMs <= DUPLICATE_PASTE_WINDOW_MS } == true
+
+    /** A paste that reaches us by both the port (Ctrl+V keydown) and the DOM event within the window applies once. */
+    private fun deliver(text: String, origin: PasteOrigin) {
+        val now = nowMs()
+        if (isSecondRouteOfSamePaste(text, origin, now)) {
+            lastPaste = null
+            return
+        }
+        lastPaste = LastPaste(normalize(text), origin, now)
+        applyPaste(text)
+    }
+
+    private fun isSecondRouteOfSamePaste(text: String, origin: PasteOrigin, now: Long): Boolean {
+        val last = lastPaste ?: return false
+        val bothRoutes = origin != PasteOrigin.Box && last.origin != PasteOrigin.Box && last.origin != origin
+        return bothRoutes && last.text == normalize(text) && now - last.atMs <= DUPLICATE_PASTE_WINDOW_MS
+    }
+
+    private fun normalize(text: String) = text.replace("\r\n", "\n").replace('\r', '\n').trimEnd('\n')
+
+    private fun applyPaste(text: String) {
         pasteBoxOpen = false
+        state.pasteApplications++
         if (state.readOnly) return state.announce(TableMessages.READ_ONLY)
         scope.launch {
             val big = estimatePasteCells(text) > PASTE_OFF_THREAD_CELLS
@@ -315,7 +373,7 @@ internal class SheetClipboard(
 @Composable
 internal fun SheetClipboardDialogs(state: SheetState, clipboard: SheetClipboard, source: PasteEventSource?) {
     DisposableEffect(clipboard, source) {
-        val release = source?.register { clipboard.pasteText(it) }
+        val release = source?.register { clipboard.pasteFromEvent(it) }
         onDispose { release?.invoke() }
     }
     clipboard.shownText?.let { text -> ShowAsTextPanel(state, text, clipboard::closeShownText) }

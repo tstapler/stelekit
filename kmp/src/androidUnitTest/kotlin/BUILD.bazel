@@ -184,6 +184,10 @@ kt_android_library(
             "**/SheetViewStateTest.kt",
             "**/SheetSortTest.kt",
             "**/SheetUndoRedoControlsTest.kt",
+            # Compose host tests for sheet semantics, custom actions, Back ladder, forced colors, RTL and reflow (Gradle-only)
+            "**/SheetA11yTest.kt",
+            "**/SheetVisualPrefsTest.kt",
+            "**/SheetPasteEventTest.kt",
             # Compose host tests for the annotator status strip, pasteboard inset and gesture layer (Gradle-only)
             "**/StatusStripTest.kt",
             "**/PasteboardInsetTest.kt",

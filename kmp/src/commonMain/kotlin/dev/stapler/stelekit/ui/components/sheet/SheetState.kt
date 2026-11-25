@@ -158,6 +158,12 @@ internal class SheetState(
     var imeVisible: Boolean by mutableStateOf(false)
     var hideIme: () -> Unit = {}
 
+    /** Right-to-left layout: the grid reports it so Left/Right, Home/End and Tab mirror; addresses stay logical (UX-65). */
+    var rtl: Boolean = false
+
+    /** Pastes that reached the table; lets a test tell one delivered paste from the same paste delivered twice. */
+    var pasteApplications: Int by mutableIntStateOf(0)
+
     /** Rows the grid shows per page; Page Up and Down move by this. */
     var pageRows: Int = DEFAULT_PAGE_ROWS
 
@@ -444,9 +450,10 @@ internal class SheetState(
     }
 
     private fun navigate(d: TableDoc, command: GridCommand): Boolean {
-        val navigator = GridNavigator(bounds, pageRows = pageRows, isBlank = { a -> d.cell(a)?.value.isNullOrEmpty() })
+        val navigator = GridNavigator(bounds, rtl = rtl, pageRows = pageRows, isBlank = { a -> d.cell(a)?.value.isNullOrEmpty() })
         return when (val result = navigator.handle(selection, command)) {
-            is NavResult.Moved -> true.also { select(result.selection) }
+            // Tab at the last cell (Shift+Tab at the first) is not ours: focus traversal leaves the grid, no keyboard trap (UX-50).
+            is NavResult.Moved -> (command !is GridCommand.Tab || result.selection != selection).also { if (it) select(result.selection) }
             is NavResult.CommitStay -> true.also { select(result.selection) }
             NavResult.NotNavigation -> false
         }
@@ -469,7 +476,7 @@ internal class SheetState(
         if (doc == null || !commitDraft()) return
         val from = editingAddress?.let { GridSelection.single(it, bounds) } ?: selection
         leaveEdit()
-        when (val result = GridNavigator(bounds).handle(from, command)) {
+        when (val result = GridNavigator(bounds, rtl = rtl).handle(from, command)) {
             is NavResult.Moved -> select(result.selection)
             is NavResult.CommitStay -> {
                 select(result.selection)

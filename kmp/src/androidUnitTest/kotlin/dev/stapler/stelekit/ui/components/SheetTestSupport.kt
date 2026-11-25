@@ -16,7 +16,10 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.onNodeWithTag
 import dev.stapler.stelekit.table.CellAddress
+import androidx.compose.ui.graphics.toPixelMap
+import dev.stapler.stelekit.ui.components.sheet.OutlineEdges
 import dev.stapler.stelekit.ui.components.sheet.ParsedSheet
+import dev.stapler.stelekit.ui.components.sheet.drawSelectionOutline
 import dev.stapler.stelekit.ui.components.sheet.SheetBodyContent
 import dev.stapler.stelekit.ui.components.sheet.SheetCommandSink
 import dev.stapler.stelekit.ui.components.sheet.SheetState
@@ -31,7 +34,7 @@ internal fun gridContent(rows: Int, cols: Int): String = buildString {
 
 /** Mounts the real sheet body inside the real host; [state] is the grid's `SheetState` once composed. */
 internal class SheetFixture(
-    rule: ComposeContentTestRule,
+    private val rule: ComposeContentTestRule,
     content: String,
     wrapPort: (dev.stapler.stelekit.ui.components.sheet.TableManagerPort) -> dev.stapler.stelekit.ui.components.sheet.TableManagerPort = { it },
 ) {
@@ -52,6 +55,7 @@ internal class SheetFixture(
         realCommands: Boolean = false,
         sizeClass: dev.stapler.stelekit.ui.WindowSizeClass? = null,
         preferences: TablePreferences? = null,
+        wrap: @androidx.compose.runtime.Composable (@androidx.compose.runtime.Composable () -> Unit) -> Unit = { it() },
     ) {
         h.show(
             readOnly = readOnly,
@@ -75,10 +79,31 @@ internal class SheetFixture(
                     val sized = @androidx.compose.runtime.Composable {
                         if (sizeClass == null) body() else androidx.compose.runtime.CompositionLocalProvider(dev.stapler.stelekit.ui.LocalWindowSizeClass provides sizeClass) { body() }
                     }
-                    if (preferences == null) sized() else androidx.compose.runtime.CompositionLocalProvider(LocalTablePreferences provides preferences) { sized() }
+                    val prefd = @androidx.compose.runtime.Composable {
+                        if (preferences == null) sized() else androidx.compose.runtime.CompositionLocalProvider(LocalTablePreferences provides preferences) { sized() }
+                    }
+                    wrap(prefd)
                 }
             },
         )
+    }
+
+    /** Mounts the body in the activity window, without the host's `Dialog`, so pixels can be captured. */
+    fun showBare(
+        wrap: @androidx.compose.runtime.Composable (@androidx.compose.runtime.Composable () -> Unit) -> Unit = { it() },
+    ) {
+        h.showBare { session ->
+            wrap {
+                Box {
+                    SheetBodyContent(
+                        session,
+                        sink = dev.stapler.stelekit.ui.components.sheet.NoOpSheetCommandSink,
+                        onState = { state = it },
+                        clipboardPort = clipboard,
+                    )
+                }
+            }
+        }
     }
 
     val s: SheetState get() = state!!
@@ -136,4 +161,24 @@ internal class FakeTableClipboard : dev.stapler.stelekit.table.TableClipboard {
         if (failPaste) error("clipboard unreadable")
         return text
     }
+}
+
+/** The production outline drawn into a bitmap: the pixel width of its left edge and the color of that edge, on [surface]. */
+internal fun renderedOutline(color: androidx.compose.ui.graphics.Color, widthDp: Float, surface: androidx.compose.ui.graphics.Color, density: Float = 3f): Pair<Int, androidx.compose.ui.graphics.Color> {
+    val side = 120
+    val bitmap = androidx.compose.ui.graphics.ImageBitmap(side, side)
+    androidx.compose.ui.graphics.drawscope.CanvasDrawScope().draw(
+        androidx.compose.ui.unit.Density(density),
+        androidx.compose.ui.unit.LayoutDirection.Ltr,
+        androidx.compose.ui.graphics.Canvas(bitmap),
+        androidx.compose.ui.geometry.Size(side.toFloat(), side.toFloat()),
+    ) {
+        drawRect(surface)
+        drawSelectionOutline(OutlineEdges(top = true, bottom = true, left = true, right = true), color, widthDp)
+    }
+    val map = bitmap.toPixelMap()
+    val edge = map[0, side / 2]
+    var x = 0
+    while (x < side && map[x, side / 2] == edge) x++
+    return x to edge
 }

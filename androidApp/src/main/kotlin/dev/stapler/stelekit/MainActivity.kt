@@ -524,6 +524,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            androidx.compose.runtime.CompositionLocalProvider(
+                dev.stapler.stelekit.ui.components.sheet.LocalTableVisualPrefs provides androidx.compose.runtime.remember {
+                    dev.stapler.stelekit.ui.components.androidTableVisualPrefs(contentResolver)
+                },
+            ) {
             androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
             val copyHost = androidx.compose.runtime.remember {
                 dev.stapler.stelekit.ui.screens.copy.copyHostConfigFor(
@@ -613,6 +618,7 @@ class MainActivity : ComponentActivity() {
                 ),
             )
             RecentCaptureNotice(app, androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter))
+            }
             }
         }
     }

@@ -43,7 +43,7 @@ class SheetFormulaUxTest {
     @After
     fun tearDown() = f.close()
 
-    private fun fxIn(tag: String) = rule.onAllNodes(hasText("fx") and hasAnyAncestor(hasTestTag(tag))).fetchSemanticsNodes().isNotEmpty()
+    private fun fxIn(tag: String) = rule.onAllNodes(hasText("fx") and hasAnyAncestor(hasTestTag(tag)), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
 
     private fun editD3(text: String) {
         rule.runOnUiThread { f.s.startEdit(CellAddress(3, 4)) }

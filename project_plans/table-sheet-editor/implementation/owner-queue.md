@@ -38,3 +38,20 @@ Items an agent could not complete headlessly. Each needs the owner (Tyler) or a 
 | 5.4b clipboard on device and Wasm | PENDING-OWNER | System clipboard round trip with Sheets/Excel, and the DOM paste event: `LocalPasteEventSource` is defined, null until worker 4 / spike 0.3a provides it; until then Ctrl+V uses the port and the "Paste here" panel. UNVERIFIED. |
 | 5.5 to 5.7 menus and resize | PENDING-OWNER | Bottom sheet below 600dp vs popup, right-click and Shift+F10 on real hardware, resize drag on a touch device; auto-fit is a character-count estimate (96 to 240dp), not measured text. |
 | 4.5d H2/H3 hints | DONE headless | Input kind (touch vs key) is inferred from the first pointer or key event; verify on device. |
+
+## PR-C worker 4 additions (6.1, 7.1b; all PENDING, nothing verified on device or in a real browser)
+
+| Task | Status | What is needed |
+|---|---|---|
+| 6.1c Wasm accessibility-tree check | PENDING-OWNER | Open the web build with Chrome DevTools (Accessibility tab), focus the sheet and record whether the canvas grid, the edit bar field and the strip appear in the tree. Not run: no web build was inspected. If the grid is not exposed, "Edit as markdown" stays the supported path (ux.md 3.6). |
+| 6.1e screen-reader matrix, Web | PENDING-OWNER | Record NVDA (Windows) and VoiceOver (macOS) as verified, unverified or fails-with-fallback. Row is BLANK, so UX-81 blocks `table_sheet_enabled` default-on for Web. |
+| 6.1e screen-reader matrix, Desktop JVM | PENDING-OWNER | Record Orca (owner's Linux machine), NVDA/Narrator and VoiceOver if a machine exists. Row is BLANK, so UX-81 blocks default-on for Desktop. |
+| 6.1e Android TalkBack | PENDING-OWNER (Task 8.2a) | Verify the `collectionInfo` announcement, the header and cell custom actions of ux.md 3.6 and the inline actions of 3.6b on a device. Robolectric proves the semantics tree only. |
+| 6.1e iOS VoiceOver | NON-GOAL | No Bazel path and no verification reach (requirements.md Users); the shared semantics exist but are not claimed to work (ux.md 3.7, M-07). |
+| 6.1e JAWS | NON-GOAL | No licence and no test machine; NVDA is the proxy for Windows browsers (ux.md 3.7). Not a claim of support. |
+| 6.1d forced colors on Web | PENDING-OWNER | `matchMedia('(forced-colors: active)')` and `(prefers-reduced-motion: reduce)` are read in `WebTableEnvironment` (INFERRED mechanism). Toggle Windows High Contrast or Chrome's forced-colors emulation and confirm the sheet switches to ink-on-surface with the thicker outline. |
+| 6.1d Android settings | PENDING-OWNER | `AndroidTableVisualPrefs` reads `animator_duration_scale == 0` and the hidden `high_text_contrast_enabled` key once when the activity composes (not live). Verify both on a device; the key name is UNVERIFIED. |
+| 6.1d Windows High Contrast, Desktop JVM | PENDING-OWNER | Desktop never sets `TableVisualPrefs` (always off); Windows High Contrast is UNVERIFIED. |
+| 6.1d RTL pixels | PENDING-OWNER | Mirrored grid, gutter and sticky-gutter-after-scroll are asserted by bounds under Robolectric only; the hit shield for the sticky gutter under RTL scroll is derived, not observed. Add the 320dp and RTL phone-render PNGs to 8.1a and open them. |
+| 7.1b DOM paste event | PENDING-OWNER (spike 0.3a/b) | `WasmPasteEventBridge` is proven against a synthetic `paste` event in headless Chrome 146 only. Whether a real Ctrl+V or the context-menu Paste on the Compose canvas fires `paste` (Skiko may `preventDefault` the keydown) is UNVERIFIED; the clipboard port and the "Paste here" box remain the fallbacks and a paste that arrives by both routes applies once. |
+

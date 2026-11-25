@@ -25,7 +25,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -46,8 +45,6 @@ import dev.stapler.stelekit.ui.components.LocalTableClipboard
 import dev.stapler.stelekit.ui.components.TableMessages
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.ContinuationInterceptor
-import kotlin.coroutines.EmptyCoroutineContext
 
 /**
  * The sheet's body: the edit bar over the lazy grid. Large tables parse and run their first calc off the main
@@ -84,8 +81,7 @@ internal fun SheetBodyContent(
     }
     val state = rememberSaveable(parsed, session, saver = SheetState.saver(parsed, session, sink)) { SheetState(parsed, session, sink) }
     val port = clipboardPort ?: LocalTableClipboard.current ?: defaultTableClipboard()
-    val context = rememberCoroutineScope().coroutineContext[ContinuationInterceptor] ?: EmptyCoroutineContext
-    val clipboard = remember(state, session, port) { SheetClipboard(state, session, port, context) }
+    val clipboard = remember(state, session, port) { SheetClipboard(state, session, port, session.context) }
     val commands = remember(state, session, clipboard) { SheetCommands(state, session, clipboard) }
     DisposableEffect(clipboard) {
         session.bodyCopyAsFormulas = clipboard::copyAsFormulas

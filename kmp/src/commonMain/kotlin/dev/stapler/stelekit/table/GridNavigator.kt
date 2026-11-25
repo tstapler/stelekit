@@ -46,7 +46,8 @@ sealed interface NavResult {
 }
 
 /**
- * Pure spreadsheet navigation. [rtl] mirrors Left/Right, Home/End and Tab only; addresses stay logical.
+ * Pure spreadsheet navigation. [rtl] mirrors Left/Right only: column 1 is drawn rightmost, so Home (column 1) and
+ * Tab (toward higher columns) already run right to left on screen; addresses stay logical.
  * [isBlank] is consulted only by Ctrl+Arrow data-region jumps. Row 1 is the header, row 2 the first body row.
  */
 class GridNavigator(
@@ -62,8 +63,7 @@ class GridNavigator(
             is GridCommand.Tab -> NavResult.Moved(tab(s, cmd.back))
             is GridCommand.Enter -> enter(s, cmd.back)
             is GridCommand.LineEdge -> {
-                val toEnd = if (rtl) !cmd.end else cmd.end
-                val col = if (toEnd) bounds.cols else 1
+                val col = if (cmd.end) bounds.cols else 1
                 NavResult.Moved(go(s, CellAddress(s.focusRowFor(cmd.extend), col), cmd.extend))
             }
             is GridCommand.TableEdge -> {
@@ -122,8 +122,7 @@ class GridNavigator(
 
     private fun tab(s: GridSelection, back: Boolean): GridSelection {
         val a = s.anchor
-        val forward = if (rtl) back else !back
-        val target = if (forward) {
+        val target = if (!back) {
             when {
                 a.col < bounds.cols -> CellAddress(a.row, a.col + 1)
                 a.row < bounds.rows -> CellAddress(a.row + 1, 1)

@@ -101,7 +101,8 @@ internal class TableSheetSession(
     val blockUuid: BlockUuid,
     initialContent: String,
     port: TableManagerPort,
-    context: CoroutineContext,
+    /** The one context the host's callbacks run on; the body's own collaborators reuse it instead of taking a composition scope. */
+    val context: CoroutineContext,
     override val readOnly: Boolean = false,
     val recovered: RecoveredDraftStore = RecoveredDraftStore(),
     startVersion: Long = 0L,

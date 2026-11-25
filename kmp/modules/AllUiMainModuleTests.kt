@@ -13,9 +13,11 @@ import dev.stapler.stelekit.ui.components.TableMessagesTest
 import dev.stapler.stelekit.ui.components.TableReviewFixesTest
 import dev.stapler.stelekit.ui.components.UuidKeysTest
 import dev.stapler.stelekit.ui.components.sheet.ColumnWidthsTest
+import dev.stapler.stelekit.ui.components.sheet.InlineShortcutParityTest
 import dev.stapler.stelekit.ui.components.sheet.InlineTableRealManagerTest
 import dev.stapler.stelekit.ui.components.sheet.InlineTableStripStateTest
 import dev.stapler.stelekit.ui.components.sheet.SheetClipboardPureTest
+import dev.stapler.stelekit.ui.components.sheet.SheetContrastTest
 import dev.stapler.stelekit.ui.components.sheet.SheetKeyDecisionTest
 import dev.stapler.stelekit.ui.components.sheet.SheetRangeStateTest
 import dev.stapler.stelekit.ui.components.sheet.SheetStateTest
@@ -56,9 +58,11 @@ import org.junit.runners.Suite
     TableReviewFixesTest::class,
     UuidKeysTest::class,
     ColumnWidthsTest::class,
+    InlineShortcutParityTest::class,
     InlineTableRealManagerTest::class,
     InlineTableStripStateTest::class,
     SheetClipboardPureTest::class,
+    SheetContrastTest::class,
     SheetKeyDecisionTest::class,
     SheetRangeStateTest::class,
     SheetStateTest::class,

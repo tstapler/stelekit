@@ -27,7 +27,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -87,14 +86,11 @@ internal fun SheetCell(
                 drawLine(colors.divider, Offset(size.width - 0.5f, 0f), Offset(size.width - 0.5f, size.height), 1f)
                 drawLine(colors.divider, Offset(0f, size.height - 0.5f), Offset(size.width, size.height - 0.5f), 1f)
             }
-            .selectionOutline(edges, colors.outline)
+            .selectionOutline(edges, colors.outline, OutlineWidths.of(LocalTableVisualPrefs.current))
             .onGloballyPositioned { hits.setCell(address, it) }
             .hoverable(hover)
             .testTag("cell-$address")
-            .semantics {
-                markSelected(state.selection.contains(address))
-                if (display is CellDisplay.Failed) error(display.detail)
-            }
+            .semantics(mergeDescendants = !editing) { sheetCellSemantics(state, address, display) }
             .padding(horizontal = 8.dp, vertical = 6.dp),
     ) {
         val textColor = if (isHeader) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface

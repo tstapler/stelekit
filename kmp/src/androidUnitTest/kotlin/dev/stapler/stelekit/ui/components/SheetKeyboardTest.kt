@@ -175,6 +175,9 @@ class SheetKeyboardTest {
         val tested = mutableSetOf<GridCommand>()
         TableShortcutMap.bindings.filter { it.mode == GridMode.Navigate && it.command !in skipped }.forEach { b ->
             val key = KEYS.first { chordKeyName(it) == b.chord.key }
+            // Tab at the last cell is left to focus traversal (UX-50), so every chord starts from a middle cell.
+            rule.runOnUiThread { f.s.selectRange(dev.stapler.stelekit.table.GridSelection.single(CellAddress(3, 2), f.s.bounds)) }
+            rule.waitForIdle()
             press(key, ctrl = b.chord.mod, shift = b.chord.shift, alt = b.chord.alt)
             assertTrue(f.unconsumed.isEmpty(), "${b.chord} -> ${b.command} was not consumed: ${f.unconsumed}")
             tested += b.command

@@ -7,6 +7,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.SemanticsPropertyReceiver
@@ -44,20 +46,42 @@ internal fun contrastRatio(a: Color, b: Color): Double {
 internal const val OUTLINE_MIN_CONTRAST = 3.0
 
 /** Picks [preferred] when it clears [OUTLINE_MIN_CONTRAST] on [background], else the more contrasting of black and white. */
-internal fun outlineColor(preferred: Color, background: Color): Color {
-    if (contrastRatio(preferred, background) >= OUTLINE_MIN_CONTRAST) return preferred
-    return listOf(Color.Black, Color.White).maxBy { contrastRatio(it, background) }
+internal fun outlineColor(preferred: Color, background: Color): Color = readableOn(preferred, listOf(background), OUTLINE_MIN_CONTRAST)
+
+/** [preferred] when it clears [min] on every one of [backgrounds], else the black or white that clears it best on the worst one. */
+internal fun readableOn(preferred: Color, backgrounds: List<Color>, min: Double): Color {
+    if (backgrounds.all { contrastRatio(preferred, it) >= min }) return preferred
+    return listOf(Color.Black, Color.White).maxBy { ink -> backgrounds.minOf { contrastRatio(ink, it) } }
 }
 
-/** Draws the outline on the [edges] that border the range; fill alone never signals selection. */
-internal fun Modifier.selectionOutline(edges: OutlineEdges, color: Color, widthPx: Float = 2f): Modifier =
-    if (!edges.any) this else drawBehind {
-        val half = widthPx / 2f
-        if (edges.top) drawLine(color, Offset(0f, half), Offset(size.width, half), widthPx)
-        if (edges.bottom) drawLine(color, Offset(0f, size.height - half), Offset(size.width, size.height - half), widthPx)
-        if (edges.left) drawLine(color, Offset(half, 0f), Offset(half, size.height), widthPx)
-        if (edges.right) drawLine(color, Offset(size.width - half, 0f), Offset(size.width - half, size.height), widthPx)
-    }
+/** The outline color for a cell on any of [backgrounds] (surface, zebra, formula tint, header): 3:1 on all of them. */
+internal fun sheetOutlineColor(preferred: Color, backgrounds: List<Color>): Color = readableOn(preferred, backgrounds, OUTLINE_MIN_CONTRAST)
+
+/** Error text must reach 4.5:1 (ux.md 3.5) on every cell background it can sit on. */
+internal fun sheetErrorColor(preferred: Color, backgrounds: List<Color>): Color = readableOn(preferred, backgrounds, ERROR_TEXT_MIN_CONTRAST)
+
+internal const val ERROR_TEXT_MIN_CONTRAST = 4.5
+
+/** The cell backgrounds of a theme, translucent tints composited over the surface. */
+internal fun cellBackgrounds(scheme: androidx.compose.material3.ColorScheme): List<Color> = listOf(
+    scheme.surface,
+    scheme.onSurface.copy(alpha = 0.06f).compositeOver(scheme.surface),
+    scheme.primary.copy(alpha = 0.08f).compositeOver(scheme.surface),
+    scheme.surfaceVariant,
+)
+
+/** Draws the outline on the [edges] that border the range, [widthDp] wide (2dp floor, ux.md 3.5); fill alone never signals selection. */
+internal fun Modifier.selectionOutline(edges: OutlineEdges, color: Color, widthDp: Float = OutlineWidths.NORMAL_DP): Modifier =
+    if (!edges.any) this else drawBehind { drawSelectionOutline(edges, color, widthDp) }
+
+internal fun DrawScope.drawSelectionOutline(edges: OutlineEdges, color: Color, widthDp: Float) {
+    val widthPx = widthDp * density
+    val half = widthPx / 2f
+    if (edges.top) drawLine(color, Offset(0f, half), Offset(size.width, half), widthPx)
+    if (edges.bottom) drawLine(color, Offset(0f, size.height - half), Offset(size.width, size.height - half), widthPx)
+    if (edges.left) drawLine(color, Offset(half, 0f), Offset(half, size.height), widthPx)
+    if (edges.right) drawLine(color, Offset(size.width - half, 0f), Offset(size.width - half, size.height), widthPx)
+}
 
 /** `selected = true` on each selected cell, the non-visual half of "selection is visible without color alone". */
 internal fun SemanticsPropertyReceiver.markSelected(isSelected: Boolean) {

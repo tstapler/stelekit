@@ -204,7 +204,7 @@ internal fun InlineTableBlock(
         header = MaterialTheme.colorScheme.surfaceVariant,
         zebra = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
     )
-    val outline = outlineColor(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.surface)
+    val outline = sheetOutlineColor(MaterialTheme.colorScheme.primary, cellBackgrounds(MaterialTheme.colorScheme))
 
     val sheetOpen = onOpenSheet.takeIf { prefs.sheetEnabled }
     val recoveredStore = LocalRecoveredDraftStore.current
@@ -525,7 +525,7 @@ private fun InlineCell(
 }
 
 /** TalkBack and Switch Access path to everything the strip does (ux.md 3.6b); each acts on this cell. */
-private fun cellCustomActions(state: InlineTableState, address: CellAddress, sheetEnabled: Boolean, editing: Boolean): List<CustomAccessibilityAction> {
+internal fun cellCustomActions(state: InlineTableState, address: CellAddress, sheetEnabled: Boolean, editing: Boolean): List<CustomAccessibilityAction> {
     fun onCell(label: String, run: () -> Unit) = CustomAccessibilityAction(label) {
         run()
         true
@@ -535,6 +535,7 @@ private fun cellCustomActions(state: InlineTableState, address: CellAddress, she
         if (editing) {
             add(onCell(TableMessages.NEXT_COLUMN) { state.perform(StripAction.NextColumn) })
             add(onCell(TableMessages.LINE_BREAK) { state.perform(StripAction.LineBreak) })
+            if (state.conflictHeld) add(onCell(TableMessages.RESOLVE) { state.perform(StripAction.Resolve) })
             return@buildList
         }
         add(onCell(TableMessages.SELECT_ROW) { select(); state.perform(StripAction.SelectRow) })
@@ -548,6 +549,7 @@ private fun cellCustomActions(state: InlineTableState, address: CellAddress, she
         add(onCell(TableMessages.REDO) { state.perform(StripAction.Redo) })
         if (sheetEnabled) add(onCell(TableMessages.MAXIMIZE) { state.maximize() })
         add(onCell(TableMessages.EDIT_AS_MARKDOWN) { state.editAsMarkdown() })
+        if (state.conflictHeld) add(onCell(TableMessages.RESOLVE) { state.perform(StripAction.Resolve) })
     }
 }
 
@@ -563,10 +565,11 @@ internal fun CellContent(
 ) {
     val marker = when (display) {
         is CellDisplay.Formula -> "fx"
-        is CellDisplay.InvalidFormula -> "!"
+        is CellDisplay.InvalidFormula -> ERROR_GLYPH
+        is CellDisplay.Failed -> ERROR_GLYPH.takeIf { LocalTableVisualPrefs.current.highContrast }
         else -> null
     }
-    val color = if (display is CellDisplay.Failed) MaterialTheme.colorScheme.error else textColor
+    val color = if (display is CellDisplay.Failed) sheetErrorColor(MaterialTheme.colorScheme.error, cellBackgrounds(MaterialTheme.colorScheme)) else textColor
     Box {
         // An error token like `#DIV/0!` is not user text: parsed as markup it reads as a #tag link and steals the tap.
         if (display is CellDisplay.Failed) {
@@ -590,7 +593,7 @@ internal fun CellContent(
             Text(
                 text = marker,
                 fontSize = 9.sp,
-                color = if (display is CellDisplay.InvalidFormula) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                color = if (display is CellDisplay.Plain || display is CellDisplay.Formula) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                 modifier = Modifier.align(Alignment.TopEnd),
             )
         }

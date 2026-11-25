@@ -5,7 +5,9 @@ package dev.stapler.stelekit.ui.components
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -215,6 +217,33 @@ internal class SheetHarness(
                         content()
                     }
                 }
+            }
+        }
+        rule.waitForIdle()
+    }
+
+    /** The body without the host's `Dialog`: pixels of a dialog window cannot be captured under Robolectric. */
+    fun showBare(readOnly: Boolean = false, body: @androidx.compose.runtime.Composable (TableSheetSession) -> Unit) {
+        rule.setContent {
+            MaterialTheme {
+                val ctx = rememberCoroutineScope().coroutineContext[ContinuationInterceptor]!!
+                val bare = remember {
+                    TableSheetSession(
+                        blockUuid = uuid,
+                        initialContent = c0,
+                        port = port,
+                        context = ctx,
+                        readOnly = readOnly,
+                        recovered = recovered,
+                        startVersion = managerVersion(),
+                        flushScope = flushScope,
+                        flush = {},
+                        onCloseRequest = { closes += it },
+                    )
+                }
+                LaunchedEffect(bare) { feed().collect { bare.onBlock(it) } }
+                session = bare
+                body(bare)
             }
         }
         rule.waitForIdle()
