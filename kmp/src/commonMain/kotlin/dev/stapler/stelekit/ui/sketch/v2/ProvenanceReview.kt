@@ -144,9 +144,9 @@ fun BoxScope.ProvenanceBar(controller: SketchEditorController, modifier: Modifie
 
 /** The ghosts and badges over the canvas, recomputed when the scene or viewport changes. */
 @Composable
-fun BoxScope.ProvenanceMarksOverlay(controller: SketchEditorController) {
+fun BoxScope.ProvenanceMarksOverlay(controller: SketchEditorController, modifier: Modifier = Modifier) {
     val size = controller.view.canvasSize
     val viewport = controller.ui.viewport
     val marks = remember(controller.revision, viewport, size) { ProvenanceModel.marks(controller.doc.scene, viewport, size.x, size.y) }
-    if (marks.isNotEmpty()) ProvenanceMarks(marks, Modifier.align(Alignment.TopStart))
+    if (marks.isNotEmpty()) ProvenanceMarks(marks, modifier.align(Alignment.TopStart))
 }

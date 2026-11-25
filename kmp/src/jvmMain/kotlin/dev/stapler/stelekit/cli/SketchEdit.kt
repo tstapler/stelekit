@@ -19,7 +19,6 @@ import dev.stapler.stelekit.sketch.v2.commands.MoveElements
 import dev.stapler.stelekit.sketch.v2.commands.MoveElementsToLayer
 import dev.stapler.stelekit.sketch.v2.commands.RenameElement
 import dev.stapler.stelekit.sketch.v2.commands.ResizeElement
-import dev.stapler.stelekit.sketch.v2.commands.SequenceCommand
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.constraints.ConstraintId
 import dev.stapler.stelekit.sketch.v2.constraints.ConstraintKind
@@ -28,7 +27,6 @@ import dev.stapler.stelekit.sketch.v2.constraints.SceneToProblem
 import dev.stapler.stelekit.sketch.v2.constraints.SetConstraintReference
 import dev.stapler.stelekit.sketch.v2.constraints.SetDimensionValue
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
-import dev.stapler.stelekit.sketch.v2.scene.BoxElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementBase
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.ElementNames
