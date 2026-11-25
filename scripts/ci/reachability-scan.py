@@ -76,8 +76,9 @@ REGISTER = {
     34: ["InitializingDebugScreen"],
     35: ["OtelSpanElement"],
     37: ["BackgroundSyncScheduler"],
+    38: ["CellDraft", "Chord", "FormulaPrinter", "GridNavigator", "LadderAction", "LadderKey", "LadderState", "NavResult", "NoticeHeightLimit", "NoticeQueue", "OfferOutcome", "PointModeRule", "PointModeState", "SelectionStats", "SelectionStatsResult", "ShortcutBinding", "SortIndicator", "SyncDecision", "TableBackLadder", "TableEngine", "TableParseFailureLog", "TableSerializer", "TableShortcutMap", "TableSurface", "TableSyncPolicy", "TableUndoScope", "TableViewState", "TextSelection"],  # table-sheet-editor PR-A engine; PR-B/PR-C wire it and delete these
 }
-REGISTER_ROW_COUNT = 37
+REGISTER_ROW_COUNT = 38
 ROW_OF = {name: row for row, names in REGISTER.items() for name in names}
 # Rows 23 and 36 are registered by package, not by type name.
 ROW_BY_PATH = (("/stelekit/command/", 23), ("/stelekit/benchmarks/", 36))

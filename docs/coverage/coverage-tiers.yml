@@ -55,6 +55,7 @@ sketchimport: T1
 sketch: T2
 stats: T3
 sync: T2
+table: T1
 tags: T2
 transfer: T2
 ui: T3
