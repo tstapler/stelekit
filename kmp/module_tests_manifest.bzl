@@ -277,6 +277,8 @@ KMP_MODULE_TESTS = {
    "dev/stapler/stelekit/ui/components/QueryResultCountTextTest.kt",
    "dev/stapler/stelekit/ui/components/TableMessagesTest.kt",
    "dev/stapler/stelekit/ui/components/UuidKeysTest.kt",
+   "dev/stapler/stelekit/ui/components/sheet/InlineTableRealManagerTest.kt",
+   "dev/stapler/stelekit/ui/components/sheet/InlineTableStripStateTest.kt",
    "dev/stapler/stelekit/ui/screens/DiskConflictDiffTest.kt",
    "dev/stapler/stelekit/ui/screens/GlobalUnlinkedReferencesViewModelTest.kt",
    "dev/stapler/stelekit/ui/screens/ImportViewModelTest.kt",

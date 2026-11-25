@@ -13,6 +13,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -100,7 +101,7 @@ private val TOUCH_SLOP = 8.dp
 private val MOUSE_SLOP = 3.dp
 
 private sealed interface Release {
-    data class Up(val position: Offset) : Release
+    data class Up(val position: Offset, val shift: Boolean = false) : Release
     data object Moved : Release
     data object Cancelled : Release
 }
@@ -121,6 +122,8 @@ internal fun Modifier.tableGestureOwner(
     onLink: (CellLink) -> Unit,
     onLongPressSelect: (() -> Unit)?,
     onToggleSelect: () -> Unit,
+    onRangeDrag: ((CellAddress, CellAddress) -> Unit)? = null,
+    onShiftClick: ((CellAddress) -> Boolean)? = null,
 ): Modifier {
     val currentMode = rememberUpdatedState(mode)
     val currentEditing = rememberUpdatedState(editingCell)
@@ -128,6 +131,8 @@ internal fun Modifier.tableGestureOwner(
     val currentLink = rememberUpdatedState(onLink)
     val currentLongPress = rememberUpdatedState(onLongPressSelect)
     val currentToggle = rememberUpdatedState(onToggleSelect)
+    val currentRangeDrag = rememberUpdatedState(onRangeDrag)
+    val currentShiftClick = rememberUpdatedState(onShiftClick)
     return this
         .onGloballyPositioned { hits.owner = it }
         .pointerInput(hits) {
@@ -143,7 +148,19 @@ internal fun Modifier.tableGestureOwner(
                         return@awaitEachGesture
                     }
                 }
-                val up = (release ?: awaitRelease(down.id, down.position, slop)) as? Release.Up ?: return@awaitEachGesture
+                val resolved = release ?: awaitRelease(down.id, down.position, slop)
+                // A mouse drag past the slop selects a range; a touch drag never does (it scrolls or is the platform's).
+                val drag = currentRangeDrag.value
+                if (drag != null && startsMouseRangeDrag(resolved, down.type, currentMode.value)) {
+                    val start = hits.cellAt(down.position)
+                    if (start != null) dragRange(down.id, start, hits, drag)
+                    return@awaitEachGesture
+                }
+                val up = resolved as? Release.Up ?: return@awaitEachGesture
+                if (up.shift && down.type == PointerType.Mouse && currentMode.value == GestureMode.Interactive) {
+                    val target = hits.cellAt(up.position)
+                    if (target != null && currentShiftClick.value?.invoke(target) == true) return@awaitEachGesture
+                }
                 dispatchTap(up.position, down.type, hits, currentMode.value, currentEditing.value(), currentEdit.value, currentLink.value, currentToggle.value)
             }
         }
@@ -158,8 +175,25 @@ private suspend fun AwaitPointerEventScope.awaitRelease(
         val event = awaitPointerEvent(PointerEventPass.Initial)
         if (event.changes.size > 1) return Release.Cancelled
         val change = event.changes.firstOrNull { it.id == id } ?: return Release.Cancelled
-        if (change.changedToUpIgnoreConsumed()) return Release.Up(change.position)
+        if (change.changedToUpIgnoreConsumed()) return Release.Up(change.position, event.keyboardModifiers.isShiftPressed)
         if ((change.position - start).getDistance() > slop) return Release.Moved
+    }
+}
+
+private fun startsMouseRangeDrag(release: Release, type: PointerType, mode: GestureMode): Boolean =
+    release == Release.Moved && type == PointerType.Mouse && mode == GestureMode.Interactive
+
+private suspend fun AwaitPointerEventScope.dragRange(
+    id: androidx.compose.ui.input.pointer.PointerId,
+    start: CellAddress,
+    hits: CellHitRegistry,
+    onRange: (CellAddress, CellAddress) -> Unit,
+) {
+    while (true) {
+        val event = awaitPointerEvent(PointerEventPass.Initial)
+        val change = event.changes.firstOrNull { it.id == id } ?: return
+        hits.cellAt(change.position)?.let { onRange(start, it) }
+        if (change.changedToUpIgnoreConsumed() || !change.pressed) return
     }
 }
 

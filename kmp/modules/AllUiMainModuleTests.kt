@@ -10,6 +10,8 @@ import dev.stapler.stelekit.ui.components.HeadingScaleTest
 import dev.stapler.stelekit.ui.components.QueryResultCountTextTest
 import dev.stapler.stelekit.ui.components.TableMessagesTest
 import dev.stapler.stelekit.ui.components.UuidKeysTest
+import dev.stapler.stelekit.ui.components.sheet.InlineTableRealManagerTest
+import dev.stapler.stelekit.ui.components.sheet.InlineTableStripStateTest
 import dev.stapler.stelekit.ui.screens.DiskConflictDiffTest
 import dev.stapler.stelekit.ui.screens.GlobalUnlinkedReferencesViewModelTest
 import dev.stapler.stelekit.ui.screens.ImportViewModelTest
@@ -43,6 +45,8 @@ import org.junit.runners.Suite
     QueryResultCountTextTest::class,
     TableMessagesTest::class,
     UuidKeysTest::class,
+    InlineTableRealManagerTest::class,
+    InlineTableStripStateTest::class,
     DiskConflictDiffTest::class,
     GlobalUnlinkedReferencesViewModelTest::class,
     ImportViewModelTest::class,

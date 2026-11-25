@@ -21,6 +21,26 @@ val LocalTableCommitAction = staticCompositionLocalOf<((BlockUuid, String, Long)
 @Suppress("CompositionLocalAllowlist") // set by the sheet host (a later task); read by tables far below it
 val LocalTableSheetOwner = staticCompositionLocalOf<BlockUuid?> { null }
 
+/**
+ * The page's undo manager as the inline strip sees it. The flows let the strip dim Undo and Redo and notice an undo
+ * entry it did not make itself (UX-85); the actions run the manager's own undo and redo.
+ */
+internal class TableUndoHost(
+    val undo: () -> Unit,
+    val redo: () -> Unit,
+    val canUndo: kotlinx.coroutines.flow.StateFlow<Boolean>,
+    val canRedo: kotlinx.coroutines.flow.StateFlow<Boolean>,
+    val recordCount: kotlinx.coroutines.flow.StateFlow<Long>,
+)
+
+/** Null (default) leaves the strip's Undo and Redo dimmed; the shell provides the state manager's. */
+@Suppress("CompositionLocalAllowlist") // set once by GraphContentActiveShell; the table sits below BlockItem, which has no manager handle
+internal val LocalTableUndoHost = staticCompositionLocalOf<TableUndoHost?> { null }
+
+/** The table's copy port; null builds the default Compose-clipboard adapter at the table. */
+@Suppress("CompositionLocalAllowlist") // test seam and future platform override; one value per window
+internal val LocalTableClipboard = staticCompositionLocalOf<dev.stapler.stelekit.table.TableClipboard?> { null }
+
 /** True when [content] parses as a table with a header and delimiter row (also matches Bullet-typed, Logseq-indented tables). */
 fun isGridTableContent(content: String): Boolean =
     content.contains('|') && dev.stapler.stelekit.table.TableParser.parse(content) is dev.stapler.stelekit.table.TableParseResult.Parsed

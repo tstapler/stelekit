@@ -153,6 +153,14 @@ kt_android_library(
             # Compose host tests for the inline table gesture owner and in-cell editor (Gradle-only, same reason)
             "**/TableGestureOwnerTest.kt",
             "**/TableInlineEditTest.kt",
+            # Compose host tests for inline range selection, strip, back ladder, affordances, hints and a11y, plus their shared host (Gradle-only, same reason)
+            "**/TableInlineTestSupport.kt",
+            "**/TableInlineSelectionTest.kt",
+            "**/TableStripFlowTest.kt",
+            "**/TableInlineBackTest.kt",
+            "**/TableInlineAffordancesTest.kt",
+            "**/TableHintsTest.kt",
+            "**/TableInlineA11yTest.kt",
             # Compose host tests for the annotator status strip, pasteboard inset and gesture layer (Gradle-only)
             "**/StatusStripTest.kt",
             "**/PasteboardInsetTest.kt",

@@ -32,13 +32,27 @@ object TableMessages {
     const val MARKDOWN = "Markdown"
     const val EDIT_AS_MARKDOWN = "Edit as markdown"
     const val WHY = "Why?"
+    const val EDIT = "Edit"
+    const val DISMISS = "Dismiss"
+    const val MORE = "More"
     const val RESOLVE = "Resolve"
     const val DISCARDED_EDIT = "Discarded your edit"
+    const val EDIT_CELL = "Edit cell"
+    const val TIP_SELECT_ROW_COPY = "Select row, then Copy, copies a row"
+    const val SHOW_TIPS_AGAIN = "Show tips again"
+    const val FIRST_RUN_NOTE = "Tap a cell to edit it. Raw markdown editing is always available."
     const val UNDONE = "Undone"
     const val REDONE = "Redone"
     const val NOTHING_TO_UNDO_TABLE = "Nothing more to undo in this table"
     const val NOTHING_TO_REDO_TABLE = "Nothing more to redo in this table"
     const val NOTHING_TO_UNDO_CELL = "Nothing more to undo in this cell"
+    const val NOTHING_TO_REDO_CELL = "Nothing more to redo in this cell"
+
+    fun extendLabel(choice: String) = "Extend selection $choice"
+
+    fun editing(address: String, text: String) = "Editing $address, $text"
+
+    fun heldNotSaved(address: String) = "Your edit to $address is not saved. Resolve it first"
 
     fun undoLabel(step: String?): String = if (step == null) UNDO else "Undo: $step"
     fun redoLabel(step: String?): String = if (step == null) REDO else "Redo: $step"

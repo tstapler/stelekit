@@ -8,6 +8,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -79,6 +83,12 @@ internal fun TableBlock(
             onOpenSheet = onOpenSheet,
             inBlockSelectionMode = inBlockSelectionMode,
         )
+    } else if (prefs.sheetEnabled && onOpenSheet != null) {
+        // Flag matrix row "inline off, sheet on": the Maximize button is the only way into the sheet.
+        Column(modifier) {
+            FlagOffTableBlock(content, onStartEditing, isInSelectionMode, onToggleSelect, onLongPressSelect, linkColor, onLinkClick, prefs)
+            TextButton(onClick = onOpenSheet, modifier = Modifier.heightIn(min = 48.dp)) { Text(TableMessages.MAXIMIZE) }
+        }
     } else {
         FlagOffTableBlock(content, onStartEditing, isInSelectionMode, onToggleSelect, onLongPressSelect, linkColor, onLinkClick, prefs, modifier)
     }

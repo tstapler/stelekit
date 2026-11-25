@@ -339,6 +339,16 @@ internal fun GraphContentActiveShell(
             action
         }
 
+        val tableUndoHost = remember(blockStateManager) {
+            dev.stapler.stelekit.ui.components.TableUndoHost(
+                undo = { blockStateManager.undo() },
+                redo = { blockStateManager.redo() },
+                canUndo = blockStateManager.canUndo,
+                canRedo = blockStateManager.canRedo,
+                recordCount = blockStateManager.undoRecordCount,
+            )
+        }
+
         val openSketchAction = remember(repos, viewModel) {
             val action: (String) -> Unit = { slug ->
                 scope.launch {
@@ -366,6 +376,7 @@ internal fun GraphContentActiveShell(
             dev.stapler.stelekit.ui.components.LocalArchiveUrlAction provides archiveUrlAction,
             dev.stapler.stelekit.ui.components.LocalAnnotateImageAction provides annotateImageAction,
             dev.stapler.stelekit.ui.components.LocalTableCommitAction provides tableCommitAction,
+            dev.stapler.stelekit.ui.components.LocalTableUndoHost provides tableUndoHost,
             dev.stapler.stelekit.ui.components.LocalTablePreferences provides viewModel.tablePreferences,
             LocalWindowSizeClass provides windowSizeClass,
             LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) },

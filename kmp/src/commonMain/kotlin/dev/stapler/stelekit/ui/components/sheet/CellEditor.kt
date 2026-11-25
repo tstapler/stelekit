@@ -17,6 +17,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.isCtrlPressed
@@ -28,6 +29,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.table.Chord
 
 /** What a key press means inside the editing cell (ADR-009). */
 internal sealed interface CellEditorKey {
@@ -58,6 +60,26 @@ internal fun resolveCellEditorKey(
     }
 }
 
+/** The chord for a key press in `Navigate`, in the DOM-style names of `TableShortcutMap`; null for keys it does not bind. */
+internal fun navigateChord(key: Key, mod: Boolean, shift: Boolean, alt: Boolean): Chord? {
+    val name = when (key) {
+        Key.Enter, Key.NumPadEnter -> "Enter"
+        Key.Tab -> "Tab"
+        Key.Escape -> "Escape"
+        Key.DirectionUp -> "ArrowUp"
+        Key.DirectionDown -> "ArrowDown"
+        Key.DirectionLeft -> "ArrowLeft"
+        Key.DirectionRight -> "ArrowRight"
+        Key.F2 -> "F2"
+        Key.A -> "A"
+        Key.C -> "C"
+        Key.Y -> "Y"
+        Key.Z -> "Z"
+        else -> return null
+    }
+    return Chord(name, mod = mod, shift = shift, alt = alt)
+}
+
 /** The one live text field of an inline table: only the active cell composes it. */
 @Composable
 internal fun CellEditor(
@@ -83,6 +105,7 @@ internal fun CellEditor(
             .focusRequester(focusRequester)
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (state.fieldValue.composition == null && handleCellChord(state, event)) return@onPreviewKeyEvent true
                 val resolved = resolveCellEditorKey(
                     key = event.key,
                     shift = event.isShiftPressed,
@@ -94,4 +117,18 @@ internal fun CellEditor(
                 state.handleKey(resolved)
             },
     )
+}
+
+/** Ctrl or Cmd chords inside the cell: draft-scoped undo and redo (UX-86) and Ctrl+Shift+Enter to maximize. */
+private fun handleCellChord(state: InlineTableState, event: KeyEvent): Boolean {
+    val mod = event.isCtrlPressed || event.isMetaPressed
+    if (!mod) return false
+    return when {
+        event.key == Key.Z && event.isShiftPressed -> true.also { state.draftRedo() }
+        event.key == Key.Z -> true.also { state.draftUndo() }
+        event.key == Key.Y -> true.also { state.draftRedo() }
+        (event.key == Key.Enter || event.key == Key.NumPadEnter) && event.isShiftPressed ->
+            state.hooks.openSheet != null && true.also { state.maximize() }
+        else -> false
+    }
 }
