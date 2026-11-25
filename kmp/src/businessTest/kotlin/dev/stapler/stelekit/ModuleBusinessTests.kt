@@ -305,6 +305,7 @@ internal val MODULE_BUSINESS_TESTS: Map<String, String> = mapOf(
     "dev.stapler.stelekit.sketch.v2.SheetLeaseRegistryTest" to "sketch_runtime",
     "dev.stapler.stelekit.sketch.v2.SheetSaverConflictEditsTest" to "ui_sketch",
     "dev.stapler.stelekit.sketch.v2.SheetSaverConflictTest" to "ui_sketch",
+    "dev.stapler.stelekit.sketch.v2.SheetSaverMergeTest" to "ui_sketch",
     "dev.stapler.stelekit.sketch.v2.SheetSaverReconcileIntegrationTest" to "ui_sketch",
     "dev.stapler.stelekit.sketch.v2.SheetSplitterTest" to "ui_sketch",
     "dev.stapler.stelekit.sketch.v2.SketchStorageReviewRegressionTest" to "ui_sketch",

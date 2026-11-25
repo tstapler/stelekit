@@ -7,10 +7,12 @@ package dev.stapler.stelekit.ui.sketch.v2
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
+import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetMerge
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetSaver
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchEditorStrings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
@@ -23,10 +25,32 @@ class EditorSaves(
     private val scope: CoroutineScope,
     private val notifier: EditorNotifier,
     private val onReloaded: (SketchDocumentV2) -> Unit,
+    /** Takes another device's changes that the saver merged into the file; it must end by calling [acknowledgeMerge]. */
+    private val onMerged: (SheetMerge) -> Unit,
     /** The document the editor holds now, which "Keep mine" writes even when no edit is waiting. */
     private val current: () -> SketchDocumentV2,
 ) {
     val state: StateFlow<SaveState> = saver?.state ?: MutableStateFlow(SaveState.Saved)
+
+    init {
+        saver?.let { s -> scope.launch { s.merges.filterNotNull().collect { onMerged(it) } } }
+    }
+
+    /** True while [merge] is still the saver's pending merge (a reload or Keep mine since then cancels it). */
+    fun isPending(merge: SheetMerge): Boolean = saver?.merges?.value === merge
+
+    /** The editor holds [merge] now: submits its resulting scene [doc] and lets the saver stop rebasing onto the merge. */
+    fun submitAdopted(merge: SheetMerge, doc: SketchDocumentV2) {
+        saver?.let { s ->
+            s.submitAdopted(merge, doc)
+            scope.launch { s.acknowledgeMerge(merge) }
+        }
+    }
+
+    /** The editor could not apply [merge]: the saver raises the conflict prompt instead of leaving editor and file apart. */
+    fun mergeNotApplied(merge: SheetMerge) {
+        saver?.let { s -> scope.launch { s.mergeNotApplied(merge) } }
+    }
 
     /** Hands the latest document to the saver. */
     fun submit(doc: SketchDocumentV2) {

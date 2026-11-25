@@ -662,6 +662,8 @@ KMP_MODULES = {
    "commonMain/kotlin/dev/stapler/stelekit/sketch/v2/library/ElementLibrary.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/v2/library/LibraryCodec.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/v2/library/StarterLibrary.kt",
+   "commonMain/kotlin/dev/stapler/stelekit/sketch/v2/merge/MergeReport.kt",
+   "commonMain/kotlin/dev/stapler/stelekit/sketch/v2/merge/SceneMerge.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/v2/render/ArrowheadGeometry.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/v2/render/DrawListBuilder.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/v2/render/DrawOp.kt",

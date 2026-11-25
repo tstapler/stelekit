@@ -35,6 +35,13 @@ class EditorNotifier(val queue: SketchNoticeQueue, private val clockMillis: () -
 
     fun now(): Long = clockMillis()
 
+    private val primaryHandlers = HashMap<String, () -> Unit>()
+
+    /** Runs [handler] when the primary action of the toast with [key] is tapped (the "Show" of a merge notice); a later call for the same key replaces it. */
+    fun onPrimary(key: String, handler: () -> Unit) {
+        primaryHandlers[key] = handler
+    }
+
     /** A transient info toast; a later toast with the same key replaces this one (a toggle's "on" is gone when its "off" shows). */
     fun toast(key: String, text: String) {
         queue.postReplacing(SketchNotice(key, BannerTier.Info, text), now())
@@ -98,6 +105,7 @@ class EditorNotifier(val queue: SketchNoticeQueue, private val clockMillis: () -
     /** The primary button of a toast: the Undo of an undoable confirmation is the ordinary Undo command. */
     fun act(notice: SketchNotice, undo: () -> Unit) {
         if (notice.confirmsUndoableEdit) undo()
+        primaryHandlers[notice.key]?.invoke()
         queue.act(notice.key, now())
         revision += 1
     }

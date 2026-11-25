@@ -19,6 +19,12 @@ object SketchEditorStrings {
         const val KEY_NOTHING_DRAWN = "tool.nothing-drawn"
         const val KEY_REFUSED = "edit.refused"
         const val KEY_CONFLICT = "edit.conflict"
+        const val KEY_MERGED = "save.merged"
+        const val MERGED_SHOW = "Show"
+
+        fun merged(count: Int) = if (count == 1) "Merged changes from another device (1 element)" else "Merged changes from another device ($count elements)"
+        fun mergedRepairs(count: Int) = if (count == 1) "1 reference was repaired" else "$count references were repaired"
+        fun mergedConflicts(count: Int) = if (count == 1) "1 conflicting edit was settled." else "$count conflicting edits were settled."
 
         const val ZOOM_FOR_HANDLES = "Zoom in to use handles"
         const val NOTHING_DRAWN = "Nothing drawn"

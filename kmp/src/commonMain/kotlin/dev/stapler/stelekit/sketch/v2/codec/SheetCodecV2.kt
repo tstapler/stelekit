@@ -133,6 +133,22 @@ object SheetCodecV2 {
         out
     }
 
+    /** One element as the JSON object the sheet file holds for it (E14 merges per field on this form; the keys are the file's). */
+    fun elementJson(element: SceneElement): Either<SheetError, JsonObject> =
+        try {
+            ElementWriter().element(element)
+        } catch (e: SheetWriteFailure) {
+            SheetError.NonFinite(e.where).left()
+        }
+
+    /** The inverse of [elementJson], with the same bounds and validation as [decode]; never throws. */
+    fun elementFromJson(json: JsonObject, limits: SceneLimits = SceneLimits.Default): Either<SheetError, SceneElement> =
+        try {
+            either { with(ElementReader(limits)) { element(0, json) } }
+        } catch (e: RuntimeException) {
+            SheetError.Malformed(e::class.simpleName ?: "element").left()
+        }
+
     fun decode(bytes: ByteArray, limits: SceneLimits = SceneLimits.Default): Either<SheetError, SketchDocumentV2> {
         if (bytes.size > limits.maxSheetBytes) return SheetError.TooLarge(bytes.size.toLong(), limits.maxSheetBytes).left()
         return try {

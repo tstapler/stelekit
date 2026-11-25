@@ -25,6 +25,8 @@ import dev.stapler.stelekit.sketch.v2.codec.SheetError
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
 import dev.stapler.stelekit.sketch.v2.diagnostics.DiagnosticsPort
+import dev.stapler.stelekit.sketch.v2.merge.MergeReport
+import dev.stapler.stelekit.sketch.v2.merge.SceneMerge
 import dev.stapler.stelekit.sketch.v2.runtime.telemetry.SketchLog
 import dev.stapler.stelekit.sketch.v2.search.SketchTextExtractor
 import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
@@ -40,6 +42,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -91,7 +95,25 @@ private fun failureOf(t: Throwable): SaveFailure =
 private val SaveState.blocksSaving: Boolean get() = this is SaveState.Conflict || this == SaveState.LeaseConflict
 
 /** The sheet a saver owns: where its file lives and the sha of the bytes it loaded (null for a sheet never saved). */
-class SheetTarget(val slug: String, val projectUuid: ProjectUuid, val sheet: SheetUuid, val loadedSha: String? = null)
+class SheetTarget(
+    val slug: String,
+    val projectUuid: ProjectUuid,
+    val sheet: SheetUuid,
+    val loadedSha: String? = null,
+    /** The document decoded from the bytes of [loadedSha]: the base of an element-level merge. Null means a changed file is never merged. */
+    val loadedDoc: SketchDocumentV2? = null,
+)
+
+/**
+ * A changed file was merged with this device's scene and the result written (ADR-008). [ours] is the scene that was saved
+ * and [merged] what is on disk now; the editor takes `SceneMerge.merge(ours, itsCurrentScene, merged)` and calls
+ * [SheetSaver.acknowledgeMerge]. Until then every submitted scene is rebased the same way, so the editor can never write
+ * over the merge.
+ */
+class SheetMerge(val ours: SketchDocumentV2, val merged: SketchDocumentV2, val report: MergeReport) {
+    /** The version of the scene the editor submitted after taking this merge; saves of older versions are rebased onto it, newer ones are the editor's own. */
+    internal val adoptedAt = MutableStateFlow<Long?>(null)
+}
 
 /** Receives one measurement per encode: element count, milliseconds and bytes (`sketch.encode_ms_5000`, `sketch.save_bytes_5000`). */
 fun interface SaveSamples {
@@ -116,6 +138,8 @@ class SheetSaverPorts(
     val clockMillis: () -> Long = MonotonicClock::millis,
     val durability: SketchDurability = ImmediateSketchDurability,
     val lifecycle: PageLifecycle = NoPageLifecycle,
+    /** True merges a file that changed under the saver element by element (E14); false keeps the conflict copy of every such change. */
+    val mergeOnConflict: Boolean = false,
 )
 
 /** Timing knobs. The back-off steps apply after an encode slower than [encodeBudgetMs] and reset on a fast one. */
@@ -151,6 +175,7 @@ internal object MonotonicClock {
  * instead of reaching the platform's uncaught-exception handler (which kills an Android process). Call [close] when the
  * editor leaves; a closed saver ignores [submit].
  */
+@Suppress("TooManyFunctions") // one writer: submit, merge hand-off, reload, keep-mine and the save loop share its private state
 class SheetSaver(
     private val target: SheetTarget,
     private val ports: SheetSaverPorts,
@@ -170,6 +195,11 @@ class SheetSaver(
     private val persister = SheetPersister(target, ports)
     private val copies = ConflictCopyKeeper(target, ports, limits)
     private var baseSha: String? = target.loadedSha
+
+    /** The document of the bytes `baseSha` names, kept as bytes once this saver wrote or adopted a file so the decode happens only when a merge needs it. */
+    private var baseDoc: SketchDocumentV2? = target.loadedDoc
+    private var baseBytes: ByteArray? = null
+    private val pendingMerge = MutableStateFlow<SheetMerge?>(null)
     private var savedVersion = 0L
     private var backoffLevel = 0
     private var deferrals = 0
@@ -179,6 +209,9 @@ class SheetSaver(
     private var needsRewrite = false
 
     val state: StateFlow<SaveState> = mutableState
+
+    /** The latest merge of another device's changes that the editor has not taken yet; null when there is none. */
+    val merges: StateFlow<SheetMerge?> = pendingMerge
 
     init {
         scope.launch { runLoop() }
@@ -200,9 +233,49 @@ class SheetSaver(
     /** Records [doc] as the scene to persist and restarts the debounce. The latest call wins; earlier ones are never written. */
     fun submit(doc: SketchDocumentV2) {
         if (closed) return
-        latest.value = Submitted((latest.value?.version ?: 0L) + 1, doc)
+        latest.update { Submitted((it?.version ?: 0L) + 1, doc) }
         if (!mutableState.value.blocksSaving) mutableState.value = SaveState.Pending
         wake.trySend(false)
+    }
+
+    /**
+     * The editor took [merge] into its scene and has submitted that scene, so later submissions are its own again. It waits for
+     * a save in flight, which still rebases onto the merge, so no stale scene is written once the merge is acknowledged.
+     * A newer merge that arrived meanwhile is kept.
+     */
+    suspend fun acknowledgeMerge(merge: SheetMerge) = saveGate.withLock {
+        pendingMerge.compareAndSet(merge, null)
+    }
+
+    /**
+     * The editor took [merge] and submits its resulting scene [doc] as one step: scenes submitted before it are still rebased onto the
+     * merge, scenes submitted after it (the user's next edits) are the editor's own even before [acknowledgeMerge] lands.
+     */
+    fun submitAdopted(merge: SheetMerge, doc: SketchDocumentV2) {
+        if (closed || pendingMerge.value !== merge) return
+        val next = latest.updateAndGet { Submitted((it?.version ?: 0L) + 1, doc) }
+        merge.adoptedAt.value = next?.version
+        if (!mutableState.value.blocksSaving) mutableState.value = SaveState.Pending
+        wake.trySend(false)
+    }
+
+    /** The editor could not combine [merge] with its scene: the file holds the merge and the editor does not, so the user chooses (Use theirs or Keep mine). */
+    suspend fun mergeNotApplied(merge: SheetMerge) = saveGate.withLock {
+        if (!pendingMerge.compareAndSet(merge, null)) return@withLock
+        ports.log.saveConflict(target.sheet.value)
+        mutableState.value = SaveState.Conflict(null)
+        ports.diagnostics.raise(BannerRowId.SaveConflict)
+    }
+
+    /** [doc] with the changes of [merge] folded in, so a scene the editor drew before it took the merge cannot write over it. Null when that is refused. */
+    private fun rebased(merge: SheetMerge, doc: SketchDocumentV2): SketchDocumentV2? =
+        SceneMerge.merge(merge.ours, doc, merge.merged, limits).getOrNull()?.doc
+
+    /** The scene cannot be combined with the merged file: it is never written over it, goes to a conflict copy, and the user chooses. */
+    private suspend fun keepUnmerged(snap: Submitted) {
+        // The merge stays pending: if the copy cannot be written, a retry must be refused again, never written over the merged file.
+        val encoded = encode(snap.doc) ?: return
+        conflict(snap.version, encoded, baseSha)
     }
 
     /** Saves the latest document now, skipping the debounce, and returns where that left the sheet. */
@@ -232,7 +305,10 @@ class SheetSaver(
             { DomainError.FileSystemError.ReadFailed(sheetPath, "sheet not readable: ${it::class.simpleName}").left() },
             { doc ->
                 baseSha = SheetSaveGuard.sha(bytes)
-                latest.value = Submitted((latest.value?.version ?: 0L) + 1, doc)
+                baseDoc = doc
+                baseBytes = null
+                pendingMerge.value = null
+                latest.update { Submitted((it?.version ?: 0L) + 1, doc) }
                 savedVersion = latest.value?.version ?: 0L
                 ports.diagnostics.resolve(BannerRowId.SaveConflict)
                 mutableState.value = SaveState.Saved
@@ -255,10 +331,16 @@ class SheetSaver(
             mutableState.value = SaveState.Saved
             return@withLock
         }
-        ports.slugLock.withSlug(target.slug) { baseSha = persister.readDiskBytes()?.let(SheetSaveGuard::sha) }
+        ports.slugLock.withSlug(target.slug) {
+            val disk = persister.readDiskBytes()
+            baseSha = disk?.let(SheetSaveGuard::sha)
+            baseBytes = disk
+            baseDoc = null
+        }
+        pendingMerge.value = null
         ports.diagnostics.resolve(BannerRowId.SaveConflict)
         ports.store.pruneConflictCopies(target.slug, target.sheet.value, emptySet())
-        latest.value = Submitted((latest.value?.version ?: 0L) + 1, mine)
+        latest.update { Submitted((it?.version ?: 0L) + 1, mine) }
         mutableState.value = SaveState.Pending
         wake.trySend(true)
     }
@@ -317,12 +399,20 @@ class SheetSaver(
         }
     }
 
-    private suspend fun saveSnapshot(snap: Submitted) {
+    private suspend fun saveSnapshot(submitted: Submitted) {
+        val pending = pendingMerge.value
+        val stale = pending != null && (pending.adoptedAt.value?.let { submitted.version < it } ?: true)
+        val snap = if (pending == null || !stale) submitted else Submitted(submitted.version, rebased(pending, submitted.doc) ?: return keepUnmerged(submitted))
         val encoded = encode(snap.doc) ?: return
         if (encoded.sha == baseSha && !needsRewrite) return saved(snap)
-        when (val result = persister.persist(encoded, baseSha)) {
+        when (val result = persister.persist(encoded, baseSha, merge = mergeAttempt(snap.doc))) {
             Persist.Written -> {
-                baseSha = encoded.sha
+                adoptBase(encoded)
+                confirmPersisted(snap)
+            }
+            is Persist.Merged -> {
+                adoptBase(result.encoded)
+                if (!result.report.isEmpty) pendingMerge.value = SheetMerge(snap.doc, result.doc, result.report)
                 confirmPersisted(snap)
             }
             Persist.Deferred -> deferWrite()
@@ -335,6 +425,24 @@ class SheetSaver(
             }
         }
     }
+
+    private fun adoptBase(written: Encoded) {
+        baseSha = written.sha
+        baseBytes = written.bytes
+        baseDoc = null
+    }
+
+    /** What lets the persister merge a changed file; null when merging is off or this saver has no base to merge against. */
+    private fun mergeAttempt(ours: SketchDocumentV2): MergeAttempt? {
+        // A second merge before the editor took the first would rebase onto a base the editor does not hold yet: that case keeps the copy.
+        if (!ports.mergeOnConflict || pendingMerge.value != null) return null
+        val base = { baseDoc ?: baseBytes?.let { SheetCodecV2.decode(it, limits).getOrNull() } }
+        return MergeAttempt(base, ours, limits) { doc -> encodeNow(doc) }
+    }
+
+    private fun encodeNow(doc: SketchDocumentV2): Encoded? = ports.encoder(doc, limits).map { bytes ->
+        Encoded(bytes, SheetSaveGuard.sha(bytes), V2ToV1.projectScene(doc.scene).layers.map { it.encode() }, SketchTextExtractor.extract(doc))
+    }.getOrNull()
 
     private suspend fun encode(doc: SketchDocumentV2): Encoded? {
         val started = ports.clockMillis()
