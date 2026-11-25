@@ -110,7 +110,6 @@ internal val MODULE_JVM_TESTS: Map<String, String> = mapOf(
     "dev.stapler.stelekit.platform.OpenInBrowserJvmTest" to "platform",
     "dev.stapler.stelekit.platform.ReplaceFileAtomicallyTest" to "platform",
     "dev.stapler.stelekit.platform.image.PlatformImageDownscalerJvmTest" to "platform",
-    "dev.stapler.stelekit.platform.image.BitmapOrienterPixelTest" to "platform",
     "dev.stapler.stelekit.platform.security.JvmCredentialStoreTest" to "platform",
     "dev.stapler.stelekit.repository.BlockRepositoryClearTest" to "git",
     "dev.stapler.stelekit.repository.CacheInvalidationTest" to "git",
