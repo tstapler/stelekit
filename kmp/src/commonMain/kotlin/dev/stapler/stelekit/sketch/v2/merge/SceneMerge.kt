@@ -52,7 +52,6 @@ object SceneMerge {
     private const val VERSION_KEY = "ver"
     private const val FIRST_VERSION = 1
     private const val WHOLE = "*"
-    private const val EVERYTHING = "element"
 
     /** Keys that only make sense together; the merge never mixes one from each side. */
     private val FIELD_GROUPS: List<List<String>> = listOf(
@@ -78,7 +77,7 @@ object SceneMerge {
         }
         if (whole != null) return MergeResult(whole, reportAgainst(ours, whole, emptyList(), emptyList())).right()
         return try {
-            Run(base, ours, theirs, limits).run().right()
+            Run(base, ours, theirs, limits).execute().right()
         } catch (a: Abort) {
             a.refusal.left()
         }
@@ -144,7 +143,7 @@ object SceneMerge {
         private val conflicts = ArrayList<MergeConflict>()
         private val repairs = ArrayList<MergeRepair>()
 
-        fun run(): MergeResult {
+        fun execute(): MergeResult {
             val layers = mergeLayers()
             val extras = mergeExtras()
             val constraints = mergeConstraints()

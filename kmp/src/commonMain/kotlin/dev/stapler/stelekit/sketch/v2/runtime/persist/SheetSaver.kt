@@ -175,6 +175,7 @@ internal object MonotonicClock {
  * instead of reaching the platform's uncaught-exception handler (which kills an Android process). Call [close] when the
  * editor leaves; a closed saver ignores [submit].
  */
+@Suppress("TooManyFunctions") // one writer: submit, merge hand-off, reload, keep-mine and the save loop share its private state
 class SheetSaver(
     private val target: SheetTarget,
     private val ports: SheetSaverPorts,

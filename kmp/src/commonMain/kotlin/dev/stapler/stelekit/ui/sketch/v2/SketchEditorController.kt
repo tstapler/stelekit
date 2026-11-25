@@ -103,6 +103,7 @@ class EditorPorts(
  * the calling thread. Edits never overlap: while a solve is in flight later edits wait behind it. Everything that reads or
  * writes the state the canvas draws from runs on [adoption]; only the solver and the saver run on [context].
  */
+@Suppress("TooManyFunctions") // the editor facade: each command and adoption entry point is one function
 class SketchEditorController(
     initial: SketchDocumentV2,
     private val ports: EditorPorts,
