@@ -21,10 +21,18 @@ const val TABLE_NUMERIC_RIGHT_ALIGN_KEY = "table_numeric_right_align"
 /** String, default `comfortable`: `compact` or `comfortable` (see [TableDensity]). */
 const val TABLE_DENSITY_KEY = "table_density"
 
+/** Boolean, default off: tapping a table cell edits it in place. */
+const val TABLE_INLINE_EDIT_ENABLED_KEY = "table_inline_edit_enabled"
+
+/** Boolean, default off: tables offer the full-screen spreadsheet view. */
+const val TABLE_SHEET_ENABLED_KEY = "table_sheet_enabled"
+
 data class TableDisplayPrefs(
     val overflow: TableOverflow = TableOverflow.WRAP,
     val numericRightAlign: Boolean = true,
     val density: TableDensity = TableDensity.COMFORTABLE,
+    val inlineEditEnabled: Boolean = false,
+    val sheetEnabled: Boolean = false,
 )
 
 fun Settings?.tableDisplayPrefs(): TableDisplayPrefs {
@@ -35,6 +43,8 @@ fun Settings?.tableDisplayPrefs(): TableDisplayPrefs {
         numericRightAlign = getBoolean(TABLE_NUMERIC_RIGHT_ALIGN_KEY, true),
         density = TableDensity.entries.firstOrNull { it.name.lowercase() == getString(TABLE_DENSITY_KEY, "") }
             ?: TableDensity.COMFORTABLE,
+        inlineEditEnabled = getBoolean(TABLE_INLINE_EDIT_ENABLED_KEY, false),
+        sheetEnabled = getBoolean(TABLE_SHEET_ENABLED_KEY, false),
     )
 }
 
@@ -42,6 +52,8 @@ fun Settings.writeTableDisplayPrefs(prefs: TableDisplayPrefs) {
     putString(TABLE_OVERFLOW_KEY, prefs.overflow.name.lowercase())
     putBoolean(TABLE_NUMERIC_RIGHT_ALIGN_KEY, prefs.numericRightAlign)
     putString(TABLE_DENSITY_KEY, prefs.density.name.lowercase())
+    putBoolean(TABLE_INLINE_EDIT_ENABLED_KEY, prefs.inlineEditEnabled)
+    putBoolean(TABLE_SHEET_ENABLED_KEY, prefs.sheetEnabled)
 }
 
 /**

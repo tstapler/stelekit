@@ -27,3 +27,18 @@
 	- ### Screen readers
 		- Apple and Android mobile devices have build-in screen readers.
 		- For desktop, [NVDA](https://help.gnome.org/users/orca/stable/index.html.en) is the most popular choice. For linux, [Orca](https://help.gnome.org/users/orca/stable/index.html.en) is a good option.
+- ## Sketch editor: stylus input
+	- With Finger drawing OFF (the default once a stylus has been seen) a pen or mouse draws and a finger only pans and zooms.
+	- Palm rejection: a finger that lands while a pen is hovering or in contact (or its eraser end) is ignored whole, so a resting hand never pans or draws. A pen with no sample for 500 ms counts as out of range, so a missed hover-exit cannot lock out touch. A finger already panning keeps panning when the pen arrives. A mouse never rejects touch. Logic: `SketchPointerAdapter` (`PEN_RANGE_MS`).
+	- Pen hover without contact reaches the active tool as a move, so the snap marker follows the pen; pressure is captured only by the Freedraw tool.
+	- The eraser end erases for that stroke. The barrel button is the secondary click (context menu at the pen, UX-101), not an eraser: Erase stays on the Eraser tool and the eraser end.
+	- Barrel double-tap: Compose in `commonMain` exposes no pen gesture API (only `PointerType` and button state), so it is not handled.
+	- Not verified on stylus hardware: Android reports hover exit and the barrel bit per device; the web pen path relies on the raw DOM listener.
+- ## Sketch editor: non-visual and switch access
+	- **Sketch outline** (overflow menu, or the canvas's TalkBack action "Open sketch outline"): every element in reading order, top to bottom then left to right by its top-left corner (paint order breaks ties), as a list of rows "Item 3 of 12: Rectangle, 3 feet by 2 feet". A row selects the element and pans it into view; its custom actions are Select and Rename. Logic: `SketchOutlineModel`; UI: `SketchOutlineDialog`. Elements on hidden layers and labels bound to a container are left out, as in the canvas semantics.
+	- **Add shape at...** (overflow menu, or the canvas action "Add shape at coordinates"): a form that places a rectangle, ellipse or diamond from typed X, Y, Width and Height, with no drag. X and Y are the top-left corner from the sheet origin and may be zero or negative; Width and Height must be above zero. A technical sheet reads the sheet's unit and the full length grammar (`3' 7"`, `25 mm`); a diagram sheet reads scene units. The first bad field is named inline and announced. Logic: `ShapeAtModel`; UI: `AddShapeAtDialog`. The shape is added through the ordinary tool path, so it is one undo step and takes the active layer and seed.
+	- **Spoken dimensions**: a dimension annotation reads as "Width of Rectangle 1: 3 feet 7 inches" (`SpokenLength`, pinned by `DimensionAnnotationModelTest`).
+	- **Targets**: the action chips of the chip row (technical sheet included) are at least 48 dp tall and stay at least that at font scale 2.0 (`OutlineAccessibilityTest`); the new dialogs size every control to 48 dp. The tool strip and Handles keep the 44 dp chrome floor of `ChromeBudget`.
+	- **Large font**: `OutlineAccessibilityTest` composes the outline, the Add shape fields and the technical chip row at font scale 1.5 and 2.0 and asserts each control stays displayed (the form scrolls). A chip wider than the row at scale 2.0 scrolls under the row's chevron rather than wrapping.
+	- **Not covered by tests**: a text field inside a dialog window never idles under Robolectric, so the dialogs' field blocks (`RenameBar`, `AddShapeAtFields`) are tested outside a dialog; the dialog shell itself is not. TalkBack and Switch Access were not run on a device.
+

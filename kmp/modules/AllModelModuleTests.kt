@@ -32,6 +32,7 @@ import dev.stapler.stelekit.parser.ReproduceIssueTest
 import dev.stapler.stelekit.parser.ReproductionTest
 import dev.stapler.stelekit.parser.TimestampParserTest
 import dev.stapler.stelekit.parsing.OutlinerParserTest
+import dev.stapler.stelekit.parsing.TableBlockContentShapeTest
 import org.junit.runner.RunWith
 import org.junit.runners.Suite
 
@@ -70,5 +71,6 @@ import org.junit.runners.Suite
     ReproductionTest::class,
     TimestampParserTest::class,
     OutlinerParserTest::class,
+    TableBlockContentShapeTest::class,
 )
 class AllModelModuleTests

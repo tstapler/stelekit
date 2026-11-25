@@ -16,7 +16,7 @@ interface BlockEditingPort {
     val formatEvents: SharedFlow<FormatAction>
     fun requestEditBlock(blockUuid: BlockUuid?, cursorIndex: Int? = null)
     fun stopEditingBlock(blockUuid: BlockUuid)
-    fun updateBlockContent(blockUuid: BlockUuid, newContent: String, version: Long): Job
+    fun updateBlockContent(blockUuid: BlockUuid, newContent: String, version: Long, restoreEditFocus: Boolean = true): Job
     fun updateEditingSelection(range: IntRange?)
     fun insertTextAtCursor(blockUuid: BlockUuid, text: String, overrideCursorIndex: Int? = null)
     fun insertLinkAtCursor(blockUuid: BlockUuid, pageName: String, overrideCursorIndex: Int? = null)

@@ -46,4 +46,18 @@ class TablePreferencesTest {
         p.update { it.copy(density = TableDensity.COMPACT) }
         assertEquals(TableDensity.COMPACT, p.prefs.density)
     }
+
+    @Test
+    fun editFlagsDefaultOffAndPersist() {
+        val raw = MapSettings()
+        val defaults = raw.tableDisplayPrefs()
+        assertEquals(false, defaults.inlineEditEnabled)
+        assertEquals(false, defaults.sheetEnabled)
+        TablePreferences(raw).update { it.copy(inlineEditEnabled = true) }
+        val next = raw.tableDisplayPrefs()
+        assertTrue(next.inlineEditEnabled)
+        assertEquals(false, next.sheetEnabled)
+        TablePreferences(raw).update { it.copy(sheetEnabled = true) }
+        assertTrue(raw.tableDisplayPrefs().sheetEnabled)
+    }
 }
