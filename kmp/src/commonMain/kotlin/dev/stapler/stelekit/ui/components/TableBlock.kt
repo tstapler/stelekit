@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.ui.components
 
+import dev.stapler.stelekit.model.BlockUuid
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -55,6 +56,11 @@ internal fun TableBlock(
     linkColor: Color = MaterialTheme.colorScheme.primary,
     onLinkClick: (String) -> Unit = {},
     prefs: TableDisplayPrefs = LocalTablePreferences.current.prefs,
+    // Seam parameters for inline editing; unread until the cell editor lands (Task 4.3a).
+    @Suppress("UNUSED_PARAMETER") blockUuid: BlockUuid? = null,
+    @Suppress("UNUSED_PARAMETER") onCommit: ((String) -> Unit)? = null,
+    @Suppress("UNUSED_PARAMETER") onOpenSheet: (() -> Unit)? = null,
+    @Suppress("UNUSED_PARAMETER") inBlockSelectionMode: Boolean = false,
 ) {
     val uriHandler = LocalUriHandler.current
     val onUrlClick: (String) -> Unit = { url ->

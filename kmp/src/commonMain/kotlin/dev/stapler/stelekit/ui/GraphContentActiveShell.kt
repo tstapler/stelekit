@@ -332,6 +332,13 @@ internal fun GraphContentActiveShell(
             action
         }
 
+        val tableCommitAction = remember(blockStateManager) {
+            val action: (dev.stapler.stelekit.model.BlockUuid, String, Long) -> Unit = { uuid, text, version ->
+                blockStateManager.updateBlockContent(uuid, text, version, restoreEditFocus = false)
+            }
+            action
+        }
+
         val openSketchAction = remember(repos, viewModel) {
             val action: (String) -> Unit = { slug ->
                 scope.launch {
@@ -358,6 +365,7 @@ internal fun GraphContentActiveShell(
             dev.stapler.stelekit.ui.components.LocalOpenSketchAction provides openSketchAction,
             dev.stapler.stelekit.ui.components.LocalArchiveUrlAction provides archiveUrlAction,
             dev.stapler.stelekit.ui.components.LocalAnnotateImageAction provides annotateImageAction,
+            dev.stapler.stelekit.ui.components.LocalTableCommitAction provides tableCommitAction,
             dev.stapler.stelekit.ui.components.LocalTablePreferences provides viewModel.tablePreferences,
             LocalWindowSizeClass provides windowSizeClass,
             LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) },

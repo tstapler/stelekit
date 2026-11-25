@@ -17,6 +17,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.screens.FormatAction
@@ -38,6 +39,8 @@ private data class SuggestionState(
     val contentEnd: Int,
     val capturedContent: String,
 )
+
+private val tableUsageLogger = Logger("TableUsage")
 
 @Composable
 internal fun BlockItem(
@@ -395,6 +398,9 @@ internal fun BlockItem(
                 )
             } else {
                 // View mode — dispatch on block type
+                // Flag-gated (short-circuits when both are off): Logseq-indented tables parse as Bullet (ADR-010).
+                val tablePrefs = LocalTablePreferences.current.prefs
+                val tableAwareBlockType = if (tablePrefs.bulletMayBeTable(block)) BlockType.Table else block.blockType
                 val queryContext = LocalQueryBlockContext.current
                 // Content-based (not blockType-based) so a freshly typed query block goes live
                 // without a reload; whole-block-only, so inline mixes keep the literal rendering.
@@ -412,7 +418,7 @@ internal fun BlockItem(
                     onStartEditing = onStartEditing,
                     onLinkClick = onLinkClick,
                     modifier = Modifier.weight(1f),
-                ) else when (block.blockType) {
+                ) else when (tableAwareBlockType) {
                     is BlockType.ImageAnnotation -> ImageAnnotationBlockItem(
                         block = block,
                         onOpenAnnotationEditor = onOpenAnnotationEditor,
@@ -495,16 +501,33 @@ internal fun BlockItem(
                         onLongPressSelect = onLongPressSelect,
                         modifier = Modifier.weight(1f),
                     )
-                    is BlockType.Table -> TableBlock(
-                        content = block.content,
-                        onStartEditing = onStartEditing,
-                        linkColor = linkColor,
-                        onLinkClick = onLinkClick,
-                        isInSelectionMode = isInSelectionMode,
-                        onToggleSelect = onToggleSelect,
-                        onLongPressSelect = onLongPressSelect,
-                        modifier = Modifier.weight(1f),
-                    )
+                    is BlockType.Table -> {
+                        val tableCommit = LocalTableCommitAction.current
+                        val openSheet = LocalOpenTableSheetAction.current
+                        val tableFlagsOn = tablePrefs.inlineEditEnabled || tablePrefs.sheetEnabled
+                        TableBlock(
+                            content = block.content,
+                            onStartEditing = if (tableFlagsOn) {
+                                {
+                                    tableUsageLogger.info("via=raw")
+                                    onStartEditing()
+                                }
+                            } else onStartEditing,
+                            blockUuid = block.uuid,
+                            onCommit = { s ->
+                                if (tableCommit != null) tableCommit(block.uuid, s, localVersion)
+                                else onContentChange(s, maxOf(++localVersion, block.version + 1))
+                            },
+                            onOpenSheet = openSheet?.let { open -> { open(block.uuid) } },
+                            inBlockSelectionMode = isInSelectionMode,
+                            linkColor = linkColor,
+                            onLinkClick = onLinkClick,
+                            isInSelectionMode = isInSelectionMode,
+                            onToggleSelect = onToggleSelect,
+                            onLongPressSelect = onLongPressSelect,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                     is BlockType.RawHtml -> CodeFenceBlock(
                         // Rendered like a code fence (monospace, no inline-markdown parsing)
                         // per RawHtmlBlockNode's KDoc — raw HTML is passed through verbatim

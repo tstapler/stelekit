@@ -8,6 +8,7 @@ import dev.stapler.stelekit.ui.components.EditorToolbarCursorResolutionTest
 import dev.stapler.stelekit.ui.components.ExtractSuggestionsTest
 import dev.stapler.stelekit.ui.components.HeadingScaleTest
 import dev.stapler.stelekit.ui.components.QueryResultCountTextTest
+import dev.stapler.stelekit.ui.components.TableMessagesTest
 import dev.stapler.stelekit.ui.components.UuidKeysTest
 import dev.stapler.stelekit.ui.screens.DiskConflictDiffTest
 import dev.stapler.stelekit.ui.screens.GlobalUnlinkedReferencesViewModelTest
@@ -40,6 +41,7 @@ import org.junit.runners.Suite
     ExtractSuggestionsTest::class,
     HeadingScaleTest::class,
     QueryResultCountTextTest::class,
+    TableMessagesTest::class,
     UuidKeysTest::class,
     DiskConflictDiffTest::class,
     GlobalUnlinkedReferencesViewModelTest::class,

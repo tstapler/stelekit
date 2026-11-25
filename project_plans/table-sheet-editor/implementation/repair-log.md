@@ -335,3 +335,6 @@ Three limits were pinned as `knownLimit_*` tests: (1) after `markDone` (or after
 - Outstanding own-write tracking covers only table-shaped content (new or previous), evicts the oldest content past 16 instead of clearing all, expires after 64 newer writes, is cleared when a foreign edit is adopted, and is pruned for blocks that no longer exist or whose page is unobserved. `DatabaseWriteActor` emits confirmations with `tryEmit` on success only (no coalescing of `WriteBlockContent`), so a confirmation can be dropped when the shared buffer is full; that is why entries expire.
 - `OwnCommitLedger.takeSettled` releases a stale emission only when it equals the newest registration's content, so an older echo that trails a newer in-flight commit is never shown. A first commit (no floor yet) is not treated as recurring.
 
+
+### P5-9 / PR-B: P5-1 resolved by content detection in the renderer
+Bullet-typed (Logseq-indented) tables get the table UI by content, not by block type: `BlockItem` swaps the dispatch type to `Table` when a table flag is on, the block is a `Bullet` and `isGridTableContent(block.content)`; with both flags off the check is not evaluated (decision in ADR-010). `TableBlockFlagOffEquivalenceTest` covers flags off (Bullet stays a bullet, tap opens `onStartEditing`) and flag on (Bullet renders as the Table branch does).
