@@ -36,6 +36,9 @@ class EditorSaves(
         saver?.let { s -> scope.launch { s.merges.filterNotNull().collect { onMerged(it) } } }
     }
 
+    /** True while [merge] is still the saver's pending merge (a reload or Keep mine since then cancels it). */
+    fun isPending(merge: SheetMerge): Boolean = saver?.merges?.value === merge
+
     /** The editor holds [merge] now: submits its resulting scene [doc] and lets the saver stop rebasing onto the merge. */
     fun submitAdopted(merge: SheetMerge, doc: SketchDocumentV2) {
         saver?.let { s ->

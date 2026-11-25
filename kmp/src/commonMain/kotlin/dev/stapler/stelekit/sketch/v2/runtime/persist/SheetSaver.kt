@@ -251,7 +251,7 @@ class SheetSaver(
      * merge, scenes submitted after it (the user's next edits) are the editor's own even before [acknowledgeMerge] lands.
      */
     fun submitAdopted(merge: SheetMerge, doc: SketchDocumentV2) {
-        if (closed) return
+        if (closed || pendingMerge.value !== merge) return
         val next = latest.updateAndGet { Submitted((it?.version ?: 0L) + 1, doc) }
         merge.adoptedAt.value = next?.version
         if (!mutableState.value.blocksSaving) mutableState.value = SaveState.Pending
@@ -436,7 +436,7 @@ class SheetSaver(
         // A second merge before the editor took the first would rebase onto a base the editor does not hold yet: that case keeps the copy.
         if (!ports.mergeOnConflict || pendingMerge.value != null) return null
         val base = { baseDoc ?: baseBytes?.let { SheetCodecV2.decode(it, limits).getOrNull() } }
-        return MergeAttempt(base, ours) { doc -> encodeNow(doc) }
+        return MergeAttempt(base, ours, limits) { doc -> encodeNow(doc) }
     }
 
     private fun encodeNow(doc: SketchDocumentV2): Encoded? = ports.encoder(doc, limits).map { bytes ->

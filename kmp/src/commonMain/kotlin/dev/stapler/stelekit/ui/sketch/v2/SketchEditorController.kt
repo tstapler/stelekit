@@ -358,6 +358,7 @@ class SketchEditorController(
      * of writing over the merge.
      */
     internal fun mergedFromOtherDevice(merge: SheetMerge): Unit = queue.enqueue {
+        if (!saves.isPending(merge)) return@enqueue
         val rebased = SceneMerge.merge(merge.ours, creation.forSave(history.present), merge.merged, ports.limits).getOrNull()
             ?: return@enqueue saves.mergeNotApplied(merge)
         history = HistoryV2.of(rebased.doc, ports.limits)
@@ -368,7 +369,7 @@ class SketchEditorController(
         revision += 1
         if (rebased.doc.constraints.isNotEmpty()) analyze() else constraintState.cleared()
         saves.submitAdopted(merge, creation.forSave(rebased.doc))
-        if (merge.report.affectedCount > 0) announceMerge(merge)
+        if (!merge.report.isEmpty) announceMerge(merge)
     }
 
     private fun announceMerge(merge: SheetMerge) {
@@ -378,13 +379,17 @@ class SketchEditorController(
             shown.firstOrNull()?.let(view::reveal)
         }
         val repairs = merge.report.repairs.size
+        val conflicts = merge.report.conflicts.size
         notifier.post(
             SketchNotice(
                 SketchEditorStrings.Toasts.KEY_MERGED,
                 BannerTier.Info,
                 SketchEditorStrings.Toasts.merged(merge.report.affectedCount),
                 action = SketchEditorStrings.Toasts.MERGED_SHOW,
-                details = if (repairs > 0) SketchEditorStrings.Toasts.mergedRepairs(repairs) else null,
+                details = listOfNotNull(
+                    if (repairs > 0) SketchEditorStrings.Toasts.mergedRepairs(repairs) else null,
+                    if (conflicts > 0) SketchEditorStrings.Toasts.mergedConflicts(conflicts) else null,
+                ).joinToString(" ").ifEmpty { null },
             ),
         )
     }

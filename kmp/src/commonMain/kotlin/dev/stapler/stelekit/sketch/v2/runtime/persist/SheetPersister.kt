@@ -21,6 +21,7 @@ import dev.stapler.stelekit.sketch.v2.codec.SheetCodecV2
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.merge.MergeReport
 import dev.stapler.stelekit.sketch.v2.merge.SceneMerge
+import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
 import dev.stapler.stelekit.sketch.v2.search.SketchSearchText
 
 /** One encoded sheet: its bytes, their sha and the layer mirror the model carries. */
@@ -43,7 +44,7 @@ internal sealed interface Persist {
  * What the persister needs to merge a changed file instead of reporting a conflict: [base] yields the document whose bytes hash to the
  * saver's `baseSha` (null when unknown, which means no merge), [ours] is the scene being saved, [encode] writes a merged scene.
  */
-internal class MergeAttempt(val base: () -> SketchDocumentV2?, val ours: SketchDocumentV2, val encode: (SketchDocumentV2) -> Encoded?)
+internal class MergeAttempt(val base: () -> SketchDocumentV2?, val ours: SketchDocumentV2, val limits: SceneLimits, val encode: (SketchDocumentV2) -> Encoded?)
 
 /**
  * The locked read-check-write of [SheetSaver]: compares the file on disk with the sha the saver last saw, writes the sheet,
@@ -109,8 +110,8 @@ internal class SheetPersister(private val target: SheetTarget, private val ports
     private fun mergeWithDisk(merge: MergeAttempt?, diskBytes: ByteArray?): Persist.Merged? {
         if (merge == null || diskBytes == null) return null
         val base = merge.base() ?: return null
-        val theirs = SheetCodecV2.decode(diskBytes).getOrNull() ?: return null
-        val result = SceneMerge.merge(base, merge.ours, theirs).getOrNull() ?: return null
+        val theirs = SheetCodecV2.decode(diskBytes, merge.limits).getOrNull() ?: return null
+        val result = SceneMerge.merge(base, merge.ours, theirs, merge.limits).getOrNull() ?: return null
         val encoded = merge.encode(result.doc) ?: return null
         return Persist.Merged(result.doc, encoded, result.report)
     }

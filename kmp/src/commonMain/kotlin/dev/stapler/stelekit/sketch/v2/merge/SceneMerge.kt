@@ -182,7 +182,7 @@ object SceneMerge {
                 val kept = mergeOne(key, b[key], o[key], t[key]) ?: continue
                 out[kept.id] = kept
             }
-            val layerIds = layers.map { it.id }.toSet()
+            val layerIds = layers.map { it.id }.toSet() + LayerId.Default
             for ((id, e) in out.entries.toList()) {
                 if (e.base.layerId in layerIds) continue
                 repairs += MergeRepair.MovedToDefaultLayer(id)
@@ -313,7 +313,7 @@ object SceneMerge {
             val name = pick3(bl.name, o.name, t.name, naturalOrder())
             val visible = pick3(bl.visible, o.visible, t.visible, naturalOrder())
             val locked = pick3(bl.locked, o.locked, t.locked, naturalOrder())
-            val opacity = pick3(bl.opacity, o.opacity, t.opacity, naturalOrder())
+            val opacity = pick3(bl.opacity + 0.0, o.opacity + 0.0, t.opacity + 0.0, naturalOrder())
             val order = pick3(bl.order, o.order, t.order, naturalOrder())
             if (listOf(name.conflict, visible.conflict, locked.conflict, opacity.conflict, order.conflict).any { it }) {
                 conflicts += MergeConflict(o.id.value, ConflictKind.Other)
@@ -351,7 +351,7 @@ object SceneMerge {
             if (c == null) return ""
             val targets = c.targets.joinToString(",") { "${it.elementId.value}/${it.part.label}" }
             val value = c.value?.let { CanonicalJson.formatDouble(it).getOrNull() }.orEmpty()
-            return "${c.id.value}|${c.kind.name}|$targets|$value|${c.reference}"
+            return "${c.id.value.length}:${c.id.value}|${c.kind.name}|$targets|$value|${c.reference}"
         }
 
         private fun mergeExtras(): JsonObject {
