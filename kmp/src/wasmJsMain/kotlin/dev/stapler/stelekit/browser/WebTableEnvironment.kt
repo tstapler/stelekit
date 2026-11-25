@@ -57,4 +57,4 @@ private fun watchMedia(query: String, onChange: () -> Unit): JsAny? = js(
     """,
 )
 
-private fun unwatchMedia(handle: JsAny?): Unit = js("if (handle) handle.media.removeEventListener('change', handle.listener)")
+private fun unwatchMedia(handle: JsAny?): Unit = js("(handle ? handle.media.removeEventListener('change', handle.listener) : undefined)")
