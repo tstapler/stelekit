@@ -10,7 +10,7 @@
     "sheetUuid": { "type": "string", "minLength": 1, "description": "UUID of the sheet; also the file name stem." },
     "constraints": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/constraint" } },
     "elements": { "type": "array", "maxItems": 5000, "items": { "$ref": "#/$defs/element" }, "description": "In paint order: later entries draw on top (within a layer, ordered by z)." },
-    "extras": { "type": "object", "description": "Sheet-level keys the app does not interpret are kept as written. Known: sheetKind = \"technical\"; dimensionsOn = true|false (optional: whether the sheet shows dimension annotations; absent means on for a technical sheet, off for a diagram); agent = {mode, title, spec} written by `sketch-cli build`." },
+    "extras": { "type": "object", "description": "Sheet-level keys the app does not interpret are kept as written. Known: sheetKind = \"technical\"; dimensionsOn = true|false (optional: whether the sheet shows dimension annotations; absent means on for a technical sheet, off for a diagram); agent = {mode, title, spec} written by `sketch-cli build`; sheetSetup = the print setup (paper, drawing scale, title block; see $defs/sheetSetup), written only once someone sets one.", "properties": { "sheetSetup": { "$ref": "#/$defs/sheetSetup" } } },
     "layers": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/layer" }, "description": "The layer \"default\" always exists; it is added when absent." },
     "nameCounters": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 1 }, "description": "Highest auto-name ordinal issued per kind (rectangle, line, arrow, text, ...)." }
   },
@@ -113,6 +113,27 @@
         "name": { "type": "string", "maxLength": 80, "description": "User-visible name; must be unique among elements." },
         "extras": { "type": "object", "description": "Element keys the app does not interpret are kept as written. On the image with id \"underlay\" the key `underlay` holds its calibration (see $defs/underlayExtras).", "properties": { "underlay": { "$ref": "#/$defs/underlayExtras" } } }
       }
+    },
+    "sheetSetup": {
+      "type": "object",
+      "description": "Optional print setup (epic E7), a sheet property read only by the exports: SVG/PNG/PDF on a page at a drawing scale. The drawing scale is not the view zoom: at 1:48 a 10 ft line (1920 scene units) is 2.5 inch on the paper. Absent until someone sets one, so a sheet that never did keeps its exact bytes. The title block, scale bar and north arrow are export furniture: not elements, not drawn in the editor.",
+      "properties": {
+        "paper": { "type": "string", "description": "Letter, A4, A3, Tabloid, or a custom portrait size WxHmm / WxHin (for example 300x200mm, 8x10in). Default Letter.", "pattern": "^(Letter|A4|A3|Tabloid|[0-9]+(\\.[0-9]+)?x[0-9]+(\\.[0-9]+)?(mm|in))$" },
+        "orientation": { "enum": ["portrait", "landscape"], "description": "Default portrait." },
+        "margin": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?(mm|in)$", "description": "One length for every side. Default 0.5in (10mm on metric paper)." },
+        "scale": { "type": "string", "pattern": "^[1-9][0-9]*:[1-9][0-9]*$", "description": "Drawing scale as paper:real in lowest terms: 1:48 is 1/4 inch = 1 foot, 1:50 metric, 2:1 enlarges. Default 1:48." },
+        "scaleBar": { "type": "boolean", "description": "Draw a scale bar, true to the drawing scale. Default true." },
+        "north": { "type": "integer", "description": "Degrees clockwise from up; absent draws no north arrow." },
+        "titleBlock": {
+          "type": "object",
+          "description": "Absent draws no title block; notes adds a row.",
+          "properties": {
+            "title": { "type": "string" }, "author": { "type": "string" }, "date": { "type": "string" }, "sheet": { "type": "string" }, "notes": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": true
     },
     "underlayExtras": {
       "type": "object",

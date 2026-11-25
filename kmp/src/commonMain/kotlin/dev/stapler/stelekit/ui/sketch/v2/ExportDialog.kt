@@ -21,7 +21,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.focusable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,16 +80,20 @@ fun ExportDialog(controller: ExportDialogController) {
     val open = state as? ExportUiState.Open ?: return
     val model = controller.model() ?: return
     val request = open.request
+    // The dialog's first focus goes to the title, not to a text field of the page section (a focused field in the scroll column re-measures forever).
+    val titleFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { titleFocus.requestFocus() } }
     AlertDialog(
         onDismissRequest = controller::cancel,
         modifier = Modifier.testTag(ExportTags.DIALOG),
-        title = { Text(Strings.TITLE) },
+        title = { Text(Strings.TITLE, Modifier.focusRequester(titleFocus).focusable()) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 open.error?.let { ErrorPanel(it, controller) }
                 FormatOptions(model, request, controller::update)
                 if (model.usesScope(request.format)) ScopeOptions(model, request, controller::update)
-                if (model.usesScale(request.format)) ScaleOptions(request, controller::update)
+                if (model.usesScale(request.format) && !request.onPaper) ScaleOptions(request, controller::update)
+                PageSection(model, open, controller::update)
                 if (model.usesBackground(request.format)) BackgroundOption(request, controller::update)
                 if (model.usesStyle(request.format)) StyleOptions(request, controller::update)
                 if (model.usesDimensions(request.format)) DimensionOptions(request, controller::update)
@@ -108,7 +117,7 @@ private fun FormatOptions(model: ExportDialogModel, request: ExportRequest, upda
                 selected = request.format == format,
                 reason = model.disabledReason(format),
                 tag = ExportTags.format(format),
-                onSelect = { update(request.copy(format = format)) },
+                onSelect = { update(request.copy(format = format, sheet = if (request.format == ExportFormat.Pdf && format != ExportFormat.Pdf) null else request.sheet, tiled = false)) },
             )
         }
     }
@@ -202,14 +211,14 @@ private fun ErrorPanel(error: ExportError, controller: ExportDialogController) {
                 ExportError.Unwritable -> DialogButton(Strings.CHOOSE_ANOTHER_LOCATION, ExportTags.ANOTHER_LOCATION, controller::retry)
                 ExportError.Blocked -> DialogButton(Strings.TRY_AGAIN, ExportTags.TRY_AGAIN, controller::retry)
                 ExportError.EncodeFailed, ExportError.Unexpected -> DialogButton(Strings.RETRY, ExportTags.RETRY, controller::retry)
-                ExportError.NothingToExport -> Unit
+                ExportError.NothingToExport, is ExportError.TooManyPages -> Unit
             }
         }
     }
 }
 
 @Composable
-private fun OptionGroup(label: String, content: @Composable () -> Unit) {
+internal fun OptionGroup(label: String, content: @Composable () -> Unit) {
     Column {
         Text(label, style = MaterialTheme.typography.labelMedium)
         @OptIn(ExperimentalLayoutApi::class)
@@ -219,7 +228,7 @@ private fun OptionGroup(label: String, content: @Composable () -> Unit) {
 
 /** One radio option. A disabled one shows its [reason] beside it and in its state description, so the reason is never hover-only. */
 @Composable
-private fun Option(label: String, selected: Boolean, reason: String?, tag: String, onSelect: () -> Unit) {
+internal fun Option(label: String, selected: Boolean, reason: String?, tag: String, onSelect: () -> Unit) {
     val enabled = reason == null
     Row(
         Modifier.defaultMinSize(minHeight = TARGET_DP.dp).testTag(tag)
@@ -240,6 +249,7 @@ private val SCALES = listOf(1, 2, 3)
 private fun formatLabel(format: ExportFormat): String = when (format) {
     ExportFormat.Png -> Strings.FORMAT_PNG
     ExportFormat.Svg -> Strings.FORMAT_SVG
+    ExportFormat.Pdf -> Strings.FORMAT_PDF
     ExportFormat.Excalidraw -> Strings.FORMAT_EXCALIDRAW
     ExportFormat.Library -> Strings.FORMAT_LIBRARY
     ExportFormat.Csv -> Strings.FORMAT_CSV

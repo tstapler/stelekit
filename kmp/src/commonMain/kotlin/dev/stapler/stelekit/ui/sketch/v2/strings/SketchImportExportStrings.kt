@@ -133,6 +133,7 @@ object SketchImportExportStrings {
 
         const val FORMAT_PNG = "PNG"
         const val FORMAT_SVG = "SVG"
+        const val FORMAT_PDF = "PDF"
         const val FORMAT_EXCALIDRAW = ".excalidraw"
         const val FORMAT_LIBRARY = ".excalidrawlib"
         const val FORMAT_CSV = "CSV (technical)"
@@ -163,6 +164,55 @@ object SketchImportExportStrings {
         const val BLOCKED = "Your browser blocked the download."
         const val FAILED = "Export failed unexpectedly. Nothing was changed."
         const val FRAME_UNNAMED = "Frame"
+
+        const val PAGE = "Page"
+        const val PAGE_ON = "Print on a page at the sheet's scale"
+        const val PAPER = "Paper"
+        const val PAPER_CUSTOM = "Custom size (for example 300x200mm or 8x10in)"
+        const val ORIENTATION = "Orientation"
+        const val PORTRAIT = "Portrait"
+        const val LANDSCAPE = "Landscape"
+        const val MARGINS = "Margins"
+        const val MARGIN_NARROW = "Narrow"
+        const val MARGIN_NORMAL = "Normal"
+        const val MARGIN_WIDE = "Wide"
+        const val DRAWING_SCALE = "Drawing scale"
+        const val SCALE_CUSTOM = "Custom ratio (for example 1:37 or 1/4\" = 1')"
+        const val FIT_TO_PAGE = "Fit to page"
+        const val SCALE_BAR = "Scale bar"
+        const val NORTH_ARROW = "North arrow"
+        const val NORTH_ANGLE = "North direction (degrees clockwise from up)"
+        const val TITLE_BLOCK = "Title block"
+        const val FIELD_TITLE = "Title"
+        const val FIELD_AUTHOR = "Author"
+        const val FIELD_DATE = "Date"
+        const val FIELD_SHEET = "Sheet number"
+        const val FIELD_NOTES = "Notes"
+        const val RESOLUTION = "Resolution"
+        const val TILE_PAGES = "Tile across several pages"
+        const val USE_LOW_DPI = "Use 72 dpi"
+        const val CUSTOM_BUTTON = "Custom..."
+        const val TITLE_BLOCK_EDIT = "Edit title block..."
+        const val APPLY = "Apply"
+
+        fun degrees(value: Int): String = "$value deg"
+
+        fun dpi(value: Int): String = "$value dpi"
+
+        fun paperName(paper: String, landscape: dev.stapler.stelekit.sketch.v2.export.Orientation): String =
+            "$paper ${if (landscape == dev.stapler.stelekit.sketch.v2.export.Orientation.Landscape) LANDSCAPE.lowercase() else PORTRAIT.lowercase()}"
+
+        fun fits(scale: String, paper: String, need: String, room: String): String = "Fits at $scale on $paper. Drawing $need; drawing area $room."
+
+        fun overflow(scale: String, paper: String, need: String, room: String, columns: Int, rows: Int): String =
+            "Does not fit at $scale on $paper. Drawing $need; drawing area $room, so it overflows the page" +
+                " (it needs $columns by $rows pages). Without tiling it is cut off at the margins."
+
+        fun suggestion(scale: String): String = "Fits at $scale."
+
+        const val NO_FIT = "No standard scale fits this paper. Use bigger paper or a PDF tiled across pages."
+
+        fun tooManyPages(pages: Int, budget: Int): String = "Tiling would take $pages pages (the most is $budget). Choose a smaller scale or bigger paper."
 
         fun tooWide(widthPx: Long): String = "This image would be ${grouped(widthPx)} px wide. Choose 1x or export a frame."
 

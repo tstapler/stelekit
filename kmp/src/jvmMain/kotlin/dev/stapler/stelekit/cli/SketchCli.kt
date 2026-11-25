@@ -10,6 +10,12 @@ import arrow.core.Either
 import dev.stapler.stelekit.sketch.excalidraw.ImportSource
 import dev.stapler.stelekit.sketch.v2.codec.SheetCodecV2
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
+import dev.stapler.stelekit.sketch.v2.export.DrawingScale
+import dev.stapler.stelekit.sketch.v2.export.Micrometers
+import dev.stapler.stelekit.sketch.v2.export.Orientation
+import dev.stapler.stelekit.sketch.v2.export.PaperSize
+import dev.stapler.stelekit.sketch.v2.export.SheetPlanner
+import dev.stapler.stelekit.sketch.v2.export.TitleBlock
 import dev.stapler.stelekit.sketch.v2.importer.ExcalidrawExporter
 import dev.stapler.stelekit.sketch.v2.image.ImageHeaderProbe
 import dev.stapler.stelekit.sketch.v2.importer.ExcalidrawImporter
@@ -66,7 +72,7 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
         fun input(): File = File(positional.firstOrNull() ?: throw UsageProblem("give the input file"))
 
         companion object {
-            private val SWITCHES = setOf("dimensions", "no-dimensions", "in-place")
+            private val SWITCHES = setOf("dimensions", "no-dimensions", "in-place", "no-scale-bar", "tile")
 
             fun of(args: List<String>): Parsed? {
                 val positional = ArrayList<String>()
@@ -202,7 +208,35 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
             else -> b.takeIf { HEX_COLOR.matches(it) } ?: throw UsageProblem("--background must be #rrggbb or transparent")
         },
         underlay = p.flag("underlay")?.let { photoOf(File(it)) },
+        sheet = flagsOf(p),
     )
+
+    private val pageFlags = listOf("paper", "scale", "orientation", "margin", "north", "title", "author", "date", "sheet-number", "notes", "dpi", "no-scale-bar", "tile")
+
+    /** The page flags, or null when none was given (a PDF supplies defaults itself). */
+    private fun flagsOf(p: Parsed): SheetFlags? {
+        if (pageFlags.none { p.has(it) } && p.flag("format")?.lowercase() != "pdf") return null
+        val title = listOf("title", "author", "date", "sheet-number", "notes").takeIf { names -> names.any { p.has(it) } }?.let {
+            TitleBlock(p.flag("title").orEmpty(), p.flag("author").orEmpty(), p.flag("date").orEmpty(), p.flag("sheet-number").orEmpty(), p.flag("notes").orEmpty())
+        }
+        return SheetFlags(
+            paper = p.flag("paper")?.let { PaperSize.parse(it) ?: throw UsageProblem("--paper must be Letter, A4, A3, Tabloid or WxHmm / WxHin (for example 300x200mm)") },
+            orientation = p.flag("orientation")?.let {
+                when (it.lowercase()) {
+                    "portrait" -> Orientation.Portrait
+                    "landscape" -> Orientation.Landscape
+                    else -> throw UsageProblem("--orientation must be portrait or landscape")
+                }
+            },
+            scale = p.flag("scale")?.let { DrawingScale.parse(it) ?: throw UsageProblem("--scale must be a ratio like 1:50 or 2:1, or 1/4\" = 1'") },
+            margin = p.flag("margin")?.let { Micrometers.parseWithUnit(it) ?: throw UsageProblem("--margin must be a length like 0.5in or 10mm") },
+            scaleBar = if (p.has("no-scale-bar")) false else null,
+            north = p.flag("north")?.let { it.toIntOrNull() ?: throw UsageProblem("--north must be a whole number of degrees clockwise from up") },
+            title = title,
+            dpi = p.flag("dpi")?.let { it.toIntOrNull()?.takeIf { d -> d in 36..1200 } ?: throw UsageProblem("--dpi must be a whole number from 36 to 1200") } ?: SheetFlags.DEFAULT_DPI,
+            tiled = p.has("tile"),
+        )
+    }
 
     private fun photoOf(file: File): UnderlayImage {
         val bytes = read(file)
@@ -223,20 +257,42 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
         return false
     }
 
-    private fun renderTo(doc: SketchDocumentV2, target: File, request: RenderRequest): Int {
+    private fun renderTo(doc: SketchDocumentV2, target: File, request: RenderRequest, format: String = target.extension.lowercase()): Int {
         if (!photoMatches(doc, request)) return 1
         target.absoluteFile.parentFile?.mkdirs()
-        when (target.extension.lowercase()) {
-            "svg" -> target.writeText(SketchRender.svg(doc, request))
+        val flags = request.sheet ?: SheetFlags().takeIf { format == "pdf" }
+        if (flags != null) {
+            val print = SketchRender.print(doc, request, flags)
+            if (print == null) {
+                out("ERROR   the sheet is empty; nothing to put on a page")
+                return 1
+            }
+            val tiling = flags.tiled && format == "pdf"
+            if (tiling && print.plan.tooManyPages) {
+                out("ERROR   tiling would take ${print.plan.pageCount} pages (the most is ${SheetPlanner.PAGE_BUDGET}); use a smaller --scale or bigger --paper")
+                return 1
+            }
+            val setup = print.plan.setup
+            out("page ${setup.paper.label} ${setup.orientation.name.lowercase()}, scale ${setup.scale.ratio}, ${if (tiling) "${print.plan.pageCount} page(s)" else "1 page"}")
+            if (!print.plan.fits && !tiling) out("WARNING the drawing does not fit one page at ${setup.scale.ratio} and is cut off at the margins; use a smaller --scale${if (format == "pdf") " or --tile" else ""}")
+        }
+        when (format) {
+            "pdf" -> target.writeBytes(SketchRender.pdf(doc, request, flags ?: SheetFlags(), target.nameWithoutExtension) ?: return 1)
+            "svg" -> target.writeText(
+                (if (flags != null) SketchRender.pageSvg(doc, request, flags) else SketchRender.svg(doc, request)) ?: run {
+                    out("ERROR   the sheet is empty; nothing to put on a page")
+                    return 1
+                },
+            )
             "png" -> {
-                val bytes = SketchRender.png(doc, request)
+                val bytes = if (flags != null) SketchRender.pagePng(doc, request, flags) else SketchRender.png(doc, request)
                 if (bytes == null) {
                     out("ERROR   the PNG could not be produced (empty sheet, or larger than the PNG size cap); use an .svg or a smaller --width")
                     return 1
                 }
                 target.writeBytes(bytes)
             }
-            else -> throw UsageProblem("--out must end in .svg or .png")
+            else -> throw UsageProblem("--out must end in .svg, .png or .pdf (or give --format)")
         }
         out("rendered ${target.path} (${target.length()} bytes${if (SketchRender.dimensionOptions(doc, request) != null) ", with dimension annotations" else ""})")
         return 0
@@ -244,9 +300,11 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
 
     private fun render(p: Parsed): Int {
         val request = requestOf(p)
-        val target = File(p.flag("out") ?: throw UsageProblem("render needs --out <file.svg|file.png>"))
+        val target = File(p.flag("out") ?: throw UsageProblem("render needs --out <file.svg|file.png|file.pdf>"))
         val doc = docOrReport(p.input()) ?: return 1
-        return renderTo(doc, target, request)
+        val format = (p.flag("format") ?: target.extension).lowercase()
+        if (format !in setOf("svg", "png", "pdf")) throw UsageProblem("--format must be svg, png or pdf")
+        return renderTo(doc, target, request, format)
     }
 
     private fun validate(p: Parsed): Int {
@@ -336,9 +394,13 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
             |
             |  build <spec.json> --out <sheet.v2.json> [--render <x.svg|x.png>] [--dimensions|--no-dimensions] [--width N]
             |        expand an authoring spec (rooms, walls, doors, labels, dimensions; feet-inches; photo calibration) into a valid sheet
-            |  render <sheet.v2.json|.excalidraw|spec.json> --out <x.svg|x.png> [--dimensions|--no-dimensions] [--underlay <photo>] [--width N] [--style clean|sketchy] [--background #rrggbb|transparent]
+            |  render <sheet.v2.json|.excalidraw|spec.json> --out <x.svg|x.png|x.pdf> [--format svg|png|pdf] [--dimensions|--no-dimensions] [--underlay <photo>] [--width N] [--style clean|sketchy] [--background #rrggbb|transparent]
             |        draw the sheet; --dimensions draws dimension annotations (--no-dimensions hides them; else the sheet flag decides);
             |        the photo underlay is left out unless --underlay <photo> gives its file (the sha256 must match the sheet's)
+            |        on paper: --format pdf (or an .pdf --out) or any of --paper Letter|A4|A3|Tabloid|WxHmm  --scale 1:50|"1/4in=1ft"  --orientation portrait|landscape
+            |        --margin 10mm  --no-scale-bar  --north DEG  --title T --author A --date D --sheet-number N --notes X  --dpi N (png)  --tile (pdf: several pages)
+            |        lays the drawing out on the page at that scale (SVG: real-world width/height + data-sketch-scale; PNG at --dpi); flags left out fall back to the sheet's stored setup,
+            |        then Letter, the drawing's orientation and the largest standard scale that fits
             |  validate <file>          check a sheet, spec or .excalidraw and explain every problem (exit 1 on errors)
             |  canonicalize <sheet> [--out f | --in-place]   rewrite hand-written sheet JSON as the exact canonical bytes; prints the sha256
             |  describe <file>          text description: elements with sizes, labels, relationships, openings, dimensions, a character map

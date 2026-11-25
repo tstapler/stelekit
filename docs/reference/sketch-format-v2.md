@@ -38,7 +38,7 @@ ADR-001 and `StandaloneSketch.kt` define the embed: an image whose target is the
 - Scene unit = **1/16 inch**, a `Double`. 16 units = 1 in, 192 units = 1 ft. Absolute value limit 268435456.
 - Origin is arbitrary. **x increases to the right (east), y increases downward (south).** North is up on a plan.
 - Angles are radians. Box rotation is clockwise on screen about the box centre. Arc angles sweep toward increasing angle, which is clockwise on screen because y points down.
-- There is no separate "sheet scale" on a real-world sheet: the unit is already physical. A photo underlay is brought to that scale by calibrating it (section 6a). Stroke width and font size are in scene units too (a 4 1/2 inch wall is stroke width 72; 96 is a 6 inch tall font).
+- There is no separate "model scale" on a real-world sheet: the unit is already physical. The *drawing scale* of a print (1/4" = 1', 1:50) is a separate, optional sheet property that only the exports read (section 6b). A photo underlay is brought to that scale by calibrating it (section 6a). Stroke width and font size are in scene units too (a 4 1/2 inch wall is stroke width 72; 96 is a 6 inch tall font).
 - **Abstract diagrams** use the same numbers but nothing is physical: `build` with `"mode": "diagram"` reads bare numbers as plain scene units and draws thin strokes and 20-unit text. Imported `.excalidraw` files map 1 Excalidraw pixel to 1 unit (ADR-002 scale addendum), so a 100 px box is 6 1/4 inches.
 - `project-model.json` records `scaleSixteenthsPerUnit` (16) and `unit` ("in") per sheet; they only describe this convention.
 
@@ -75,7 +75,7 @@ Top level (all keys but `schema` and `sheetUuid` optional):
 | `elements` | list, **paint order**: later entries draw over earlier ones (within a layer by `z`, then array order) |
 | `layers` | list of `{id, name, visible, locked, opacity 0..1, order}`; layer `default` always exists; lower `order` paints first; hidden layers are not drawn or exported |
 | `constraints` | list of solver constraints (section 6) |
-| `extras` | free JSON kept as written. Known keys: `sheetKind: "technical"` (marks a real-world sheet: constraints on by default), `dimensionsOn: true|false` (optional; whether the sheet shows dimension annotations, see section 6; absent until someone chooses, so existing sheets keep their exact bytes), `agent: {mode, title, spec}` written by `build` |
+| `extras` | free JSON kept as written. Known keys: `sheetKind: "technical"` (marks a real-world sheet: constraints on by default), `dimensionsOn: true|false` (optional; whether the sheet shows dimension annotations, see section 6; absent until someone chooses, so existing sheets keep their exact bytes), `sheetSetup: {...}` (optional print setup, section 6b), `agent: {mode, title, spec}` written by `build` |
 | `nameCounters` | `{kind: highest ordinal}` |
 
 Every element has `id` (unique, non-empty) and `type`, plus optional base fields:
@@ -147,6 +147,39 @@ A **photo or plan underlay** is a picture to trace over. It is not a new element
 **Display size.** A photo within the asset store's limits (16 million pixels, 8192 px a side, 60 MB) is stored as picked. A larger one, such as a 50 megapixel phone photo, is reduced once on import to 3840 px on the longer side, upright, and the reduced copy is what the sheet references. Either way the editor never decodes the stored file whole: it draws from a copy reduced to **at most 2048 px on the longer side** (about 16 MiB as ARGB at worst), so a phone photo cannot exhaust an Android heap. `px` and the calibration are in the stored file's pixels, so the display cap never changes a measurement.
 
 **Exports leave the underlay out.** SVG, PNG, `.excalidraw`, the page-embed preview and `preview.svg` draw the sheet without the layer `underlay`, so a traced plan stays clean. The export dialog has an "Include photo underlay" option (off by default); the CLI draws it with `render --underlay <photo>`. The editor always shows it.
+
+## 6b. Paper, drawing scale and print (`sheetSetup`)
+
+A sheet may carry an optional **print setup** in `extras.sheetSetup`. It is *not* model data: no element changes with it, it is not an undo step, and a sheet that never set one keeps its exact bytes (the key is written only once someone chooses). Only the exports read it. Every field is a string, boolean or whole number so the canonical codec round-trips it:
+
+```json
+"extras": {"sheetSetup": {"paper": "A4", "orientation": "landscape", "margin": "10mm", "scale": "1:50", "scaleBar": true, "north": 20,
+  "titleBlock": {"title": "Kitchen", "author": "T. S.", "date": "2026-11-24", "sheet": "A-2", "notes": "Cabinets 36 in deep"}}}
+```
+
+| field | meaning |
+|---|---|
+| `paper` | `Letter`, `A4`, `A3`, `Tabloid`, or a custom size `WxHmm` / `WxHin` (for example `300x200mm`, `8x10in`), written in portrait; default `Letter` |
+| `orientation` | `portrait` (default) or `landscape` |
+| `margin` | one length for every side, `0.5in` or `10mm`; default a half inch (`10mm` on metric paper) |
+| `scale` | the **drawing scale** as `paper:real`, `1:48` (which `1/4" = 1'` is), `1:50`, `2:1`; also read as `1/4in=1ft` or `1/4" = 1'`; stored in lowest terms. Default `1:48` |
+| `scaleBar` | draw a scale bar (default true) |
+| `north` | whole degrees clockwise from up; absent draws no north arrow |
+| `titleBlock` | `title`, `author`, `date`, `sheet`, `notes` (all strings; `notes` adds a row); absent draws no title block |
+
+**The drawing scale is not the view zoom.** Zoom changes how big the canvas is on a screen; the drawing scale says how much real length one inch of paper stands for. A scene unit is 1/16 inch of real length, so at `1:48` a 10' line (1920 units) is 40 page units = 2.5 inches on the paper. Page units are also sixteenths of an inch, so `1:1` is the identity.
+
+**Where the page furniture lives: export only.** The title block, scale bar, north arrow and border are drawn when the sheet is exported on a page (SVG, PNG or PDF), not in the editor. They belong to the sheet of paper, not to the model: they are sized in paper inches whatever the drawing scale, a title block does not move or scale when you zoom, and keeping them out of the scene means they are never an element you can move, select, constrain or lose to a delete. The setup itself is saved with the sheet, so the next export (and the CLI) starts from it; the editor edits it in the export dialog.
+
+**What the exports write** (all deterministic: the same sheet and setup give the same bytes):
+
+- **SVG** on a page: the root has the physical size as CSS lengths in the paper's own unit (`width="8.5in" height="11in"`) and a `viewBox` in page units (`0 0 136 176`). Scale metadata: `data-sketch-scale="1:48"` (paper:real), `data-sketch-scene-unit="1/16in"` and `data-sketch-page-unit="1/16in"` (the real length one scene unit stands for, and the physical length one viewBox unit is), `data-sketch-paper` and `data-sketch-orientation`. A tool recovers a real length as `viewBox length * real / paper` sixteenths of an inch (a viewBox unit is already a sixteenth). Without a setup the SVG is the unchanged picture-sized one.
+- **PNG** on a page: the page at `--dpi` (dialog: 72, 150, 300).
+- **PDF** (always on a page): a PDF 1.4 written by the app itself (no library, no dependency). Everything is vector: paths with stroke, fill, dash and opacity, and text in the Base-14 fonts Helvetica, Helvetica-Oblique and Courier (not embedded). Streams are not compressed, nothing time-dependent is written. Photos (the underlay) are *not* embedded: an image prints as the dashed placeholder box. Text outside Latin-1 and the WinAnsi punctuation prints as `?`.
+- A drawing too big for one page is flagged. SVG and PNG are cut off at the margins; a **PDF can be tiled**: windows of the scaled drawing, one per page, that partition it (every point is on exactly one page), each page labelled `Page 2 of 6 (column 2, row 1)`. At most 64 pages.
+- A stroke is never thinner than 0.18 mm on the page, so a thin line of a 1:100 drawing is still printed.
+
+The dialog shows the page (margins, the drawing at the chosen scale, the tile grid) and a fit check, "Fits at 1/4\" = 1' on Letter portrait", or "Does not fit..." with the largest standard scale that does.
 
 ## 7. Authoring spec (what `build` reads)
 
@@ -247,7 +280,7 @@ RELATIONSHIPS
 | command | does | exit |
 |---|---|---|
 | `build <spec.json> --out <sheet.v2.json> [--render x.svg\|x.png] [--dimensions] [--width N]` | expand a spec; prints calibration, warnings, element count, sha256 | 1 on spec errors |
-| `render <sheet.v2.json\|.excalidraw\|spec.json> --out <x.svg\|x.png> [--dimensions\|--no-dimensions] [--underlay <photo>] [--width N] [--style clean\|sketchy] [--background #rrggbb\|transparent]` | SVG through the app's own SVG writer; PNG through its Compose painter. Defaults: PNG 400 to 1600 px wide, white background, Clean style. `--dimensions` draws the dimension annotations, `--no-dimensions` hides them, `--underlay <photo>` draws the sheet's photo underlay from that file (its sha256 must equal the underlay's `fileId`; without the flag the underlay is left out), and with neither the sheet's own `dimensionsOn` flag decides (the editor's own layout, not saved) | 1 when the input is invalid |
+| `render <sheet.v2.json\|.excalidraw\|spec.json> --out <x.svg\|x.png\|x.pdf> [--format svg\|png\|pdf] [--dimensions\|--no-dimensions] [--underlay <photo>] [--width N] [--style clean\|sketchy] [--background #rrggbb\|transparent]` | SVG through the app's own SVG writer; PNG through its Compose painter. Defaults: PNG 400 to 1600 px wide, white background, Clean style. `--dimensions` draws the dimension annotations, `--no-dimensions` hides them, `--underlay <photo>` draws the sheet's photo underlay from that file (its sha256 must equal the underlay's `fileId`; without the flag the underlay is left out), and with neither the sheet's own `dimensionsOn` flag decides (the editor's own layout, not saved) **On paper:** `--format pdf`, or any of `--paper Letter\|A4\|A3\|Tabloid\|WxHmm`, `--scale 1:50\|\"1/4in=1ft\"`, `--orientation portrait\|landscape`, `--margin 10mm`, `--no-scale-bar`, `--north DEG`, `--title/--author/--date/--sheet-number/--notes`, `--dpi N` (PNG), `--tile` (PDF: several pages) lay the drawing out on the page at that scale (section 6b); flags left out fall back to the sheet's stored `sheetSetup`, then Letter, the drawing's orientation and the largest standard scale that fits; a drawing that does not fit is reported. | 1 when the input is invalid |
 | `validate <file>` | sheet, spec or `.excalidraw`. Reports syntax errors with line and column, then per-element problems (id, line, expected keys, "did you mean", valid enum values), dangling references, then what the real codec says, then canonical form. Ends with `RESULT: OK` or `RESULT: FAILED (n errors)` | 1 on errors |
 | `canonicalize <sheet> [--out f \| --in-place]` | decode and re-encode: exact canonical bytes (stdout when neither flag); sha256 and "was already canonical" go to stderr | 1 if it does not load |
 | `describe <file>` | text: extent, layers, every element with sizes in feet-inches, labels, openings, dimensions, contains/touches/overlaps/connects relationships, constraints, a character map. Accepts a sheet, spec or `.excalidraw` | 1 if it does not load |

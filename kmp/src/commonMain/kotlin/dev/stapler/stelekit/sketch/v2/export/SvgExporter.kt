@@ -32,6 +32,16 @@ fun interface SvgImageSource {
 }
 
 /**
+ * The real-world size of a sheet's SVG: [width] and [height] are CSS lengths (`8.5in`, `210mm`) written to the root element's
+ * `width` and `height`, and [attributes] are extra root attributes (the `data-sketch-*` scale metadata). The viewBox stays in
+ * page units, so a viewer that honours the physical size shows the page at its printed size.
+ */
+data class SvgPhysical(val width: String, val height: String, val attributes: List<Pair<String, String>> = emptyList())
+
+/** A scene's draw ops (dimension annotations included) and the extent they occupy, both in scene units. */
+class SvgContent(val ops: List<DrawOp>, val bounds: Bounds)
+
+/**
  * [background] is a CSS colour or null for a transparent export; [bounds] overrides the scene bounds (a frame crop); [dimensions],
  * when set, draws every shape's dimension annotations (the editor's own layout) and widens the viewBox to hold them.
  */
@@ -40,6 +50,8 @@ data class SvgExportOptions(
     val padding: Double = DEFAULT_PADDING,
     val bounds: Bounds? = null,
     val dimensions: DimensionExportOptions? = null,
+    /** Set for a sheet on paper: the root element then carries real-world width and height and the scale attributes. */
+    val physical: SvgPhysical? = null,
 ) {
     companion object {
         const val DEFAULT_PADDING = 16.0
@@ -65,12 +77,18 @@ object SvgExporter {
         images: SvgImageSource = SvgImageSource.None,
         options: SvgExportOptions = SvgExportOptions(),
     ): String {
+        val content = content(scene, builder, style, options)
+        return write(content.ops, content.bounds, images, options)
+    }
+
+    /** What [export] draws and where, before it is written: shared with the sheet-on-paper exports, which place it on a page. */
+    fun content(scene: SketchSceneV2, builder: DrawListBuilder, style: RenderStyle, options: SvgExportOptions = SvgExportOptions()): SvgContent {
         val drawn = builder.build(scene, style)
         val dimensions = options.dimensions?.let { DimensionExport.layout(scene, it) }.orEmpty()
         val ops = drawn + options.dimensions?.let { DimensionExport.drawOps(dimensions, it.ink) }.orEmpty()
         val extra = listOfNotNull(DimensionExport.bounds(dimensions))
         val bounds = options.bounds ?: (scene.elementsInOrder.map { ElementBounds.of(it) } + textExtents(drawn) + extra).reduceOrNull(::union) ?: Bounds(0.0, 0.0, 0.0, 0.0)
-        return write(ops, bounds, images, options)
+        return SvgContent(ops, bounds)
     }
 
     /** Exports an already-built draw list inside [bounds]. */
@@ -84,7 +102,9 @@ object SvgExporter {
         val height = bounds.maxY - bounds.minY + pad * 2
         val sb = StringBuilder()
         sb.append("<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" version=\"1.1\"")
-        sb.append(" width=\"").append(num(width)).append("\" height=\"").append(num(height)).append('"')
+        val physical = options.physical
+        sb.append(" width=\"").append(physical?.width?.let(::attr) ?: num(width)).append("\" height=\"").append(physical?.height?.let(::attr) ?: num(height)).append('"')
+        physical?.attributes?.forEach { (name, value) -> sb.append(' ').append(name).append("=\"").append(attr(value)).append('"') }
         sb.append(" viewBox=\"").append(num(minX)).append(' ').append(num(minY)).append(' ').append(num(width)).append(' ').append(num(height)).append("\">\n")
         if (w.clips.isNotEmpty() || w.symbols.isNotEmpty()) {
             sb.append("<defs>")
