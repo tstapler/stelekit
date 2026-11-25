@@ -10,7 +10,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.ui.window.Dialog
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedTextField
@@ -47,6 +50,8 @@ object RotateTags {
 
 private const val BUTTON_MIN_DP = 48
 private const val PIVOTS_PER_ROW = 2
+private const val PAD_DP = 24
+private const val ELEVATION_DP = 6
 
 /** The sign and size of each quick-step button: +15, +45, +90 and -90 degrees. */
 internal val ROTATE_QUICK_STEPS: List<Pair<String, Double>> = listOf(R.PLUS_15 to 15.0, R.PLUS_45 to 45.0, R.PLUS_90 to 90.0, R.MINUS_90 to -90.0)
@@ -54,7 +59,14 @@ internal val ROTATE_QUICK_STEPS: List<Pair<String, Double>> = listOf(R.PLUS_15 t
 /** Rotates the selection by a typed angle or a quick step, about its centre or a corner of its box, as one undo step. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun RotateDialog(controller: SketchEditorController, autoFocus: Boolean = true) {
+internal fun RotateDialog(controller: SketchEditorController) {
+    Dialog(onDismissRequest = { controller.overlay = null }) { RotateDialogContent(controller, autoFocus = true) }
+}
+
+/** The dialog's card, apart from its window so a test can compose it directly. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun RotateDialogContent(controller: SketchEditorController, autoFocus: Boolean) {
     var text by remember { mutableStateOf("") }
     var problem by remember { mutableStateOf(false) }
     var pivot by remember { mutableStateOf(RotatePivot.Centre) }
@@ -73,12 +85,10 @@ internal fun RotateDialog(controller: SketchEditorController, autoFocus: Boolean
         val degrees = RotatePlan.parseDegrees(text)
         if (degrees == null) problem = true else turn(degrees)
     }
-    AlertDialog(
-        onDismissRequest = close,
-        modifier = Modifier.testTag(RotateTags.DIALOG),
-        title = { Text(R.TITLE) },
-        text = {
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    run {
+        Surface(Modifier.testTag(RotateTags.DIALOG), shape = MaterialTheme.shapes.extraLarge, tonalElevation = ELEVATION_DP.dp) {
+            Column(Modifier.padding(PAD_DP.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(R.TITLE, style = MaterialTheme.typography.headlineSmall)
                 OutlinedTextField(
                     text,
                     { text = it; problem = false },
@@ -102,9 +112,11 @@ internal fun RotateDialog(controller: SketchEditorController, autoFocus: Boolean
                         }
                     }
                 }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(close, Modifier.testTag(RotateTags.CANCEL)) { Text(R.CANCEL) }
+                    TextButton(apply, Modifier.testTag(RotateTags.SET)) { Text(R.SET) }
+                }
             }
-        },
-        confirmButton = { TextButton(apply, Modifier.testTag(RotateTags.SET)) { Text(R.SET) } },
-        dismissButton = { TextButton(close, Modifier.testTag(RotateTags.CANCEL)) { Text(R.CANCEL) } },
-    )
+        }
+    }
 }

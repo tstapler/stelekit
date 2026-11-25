@@ -7,6 +7,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextClearance
+import androidx.compose.ui.test.performTextInput
 import dev.stapler.stelekit.sketch.v2.tools.RotatePivot
 import dev.stapler.stelekit.sketch.v2.tools.RotatePlan
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -97,6 +99,28 @@ class RotatePhoneRenderTest {
         val dx = points[1].x.value - points[0].x.value
         val dy = points[1].y.value - points[0].y.value
         assertEquals(before, dx * dx + dy * dy, 1e-3)
+    }
+
+    @Test
+    fun typedAngle_should_TurnTheSelection_FromTheDialog_AndAnInvalidAngleIsRefused() {
+        val session = open().session
+        session.controller.ui.selection = setOf("r", "l")
+        session.controller.overlay = EditorOverlay.Rotate
+        rule.setContent { RotateDialogContent(session.controller, autoFocus = false) }
+        rule.waitForIdle()
+        rule.onNodeWithTag(RotateTags.FIELD).performTextInput("abc")
+        rule.onNodeWithTag(RotateTags.SET).performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag(RotateTags.ERROR).assertExists()
+        assertEquals(EditorOverlay.Rotate, session.controller.overlay)
+        rule.onNodeWithTag(RotateTags.DIALOG).captureRoboImage("build/outputs/roborazzi/rotate-3-dialog.png")
+        rule.onNodeWithTag(RotateTags.FIELD).performTextClearance()
+        rule.onNodeWithTag(RotateTags.FIELD).performTextInput("30")
+        rule.onNodeWithTag(RotateTags.pivot(RotatePivot.TopLeft)).performClick()
+        rule.onNodeWithTag(RotateTags.SET).performClick()
+        rule.waitForIdle()
+        assertEquals(null, session.controller.overlay)
+        assertEquals(PI / 6.0, (session.controller.doc.scene[ElementId("r")] as RectElement).angle, TOLERANCE)
     }
 
     private companion object {

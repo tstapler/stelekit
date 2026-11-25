@@ -114,6 +114,12 @@ class RotateToolingTest {
         assertEquals(0.0, corner.pivotX, eps)
         assertEquals(0.0, corner.pivotY, eps)
         assertNull(RotatePlan.command(scene, ids, 0.0, RotatePivot.Centre))
+        assertEquals(200.0 to 0.0, RotatePlan.pivotOf(scene, ids, RotatePivot.TopRight))
+        assertEquals(200.0 to 160.0, RotatePlan.pivotOf(scene, ids, RotatePivot.BottomRight))
+        assertEquals(0.0 to 160.0, RotatePlan.pivotOf(scene, ids, RotatePivot.BottomLeft))
+        assertNull(RotatePlan.pivotOf(scene, emptyList(), RotatePivot.Centre))
+        assertEquals(RotateStep.Free, RotateStep.Deg90.next())
+        assertEquals(RotateStep.Deg15, RotateStep.Free.next())
     }
 
     @Test

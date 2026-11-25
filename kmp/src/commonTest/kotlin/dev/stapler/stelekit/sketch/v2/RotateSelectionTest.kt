@@ -108,6 +108,29 @@ class RotateSelectionTest {
     }
 
     @Test
+    fun nonFiniteInput_should_BeRefused_AndAnOpeningAloneStaysPut() {
+        val doc = docOf(rect("r", 0.0, 0.0, 40.0, 20.0))
+        assertIs<CommandError.ValueRejected>(RotateSelection(listOf(id("r")), Double.NaN, 0.0, 0.0).apply(doc).leftOrNull())
+        assertIs<CommandError.ValueRejected>(RotateSelection(listOf(id("r")), 1.0, Double.POSITIVE_INFINITY, 0.0).apply(doc).leftOrNull())
+        assertIs<CommandError.ValueRejected>(RotateSelection(listOf(id("r")), 1.0, 0.0, Double.NaN).apply(doc).leftOrNull())
+        assertIs<CommandError.UnknownElement>(RotateSelection(listOf(id("missing")), 1.0, 0.0, 0.0).apply(doc).leftOrNull())
+        val wall = WallElement(ElementBase(id("w")), listOf(pt(0.0, 0.0), pt(400.0, 0.0)), su(72.0))
+        val door = OpeningElement(ElementBase(id("d")), id("w"), 0, su(100.0), su(100.0))
+        val both = docOf(wall, door)
+        val tx = Transaction.begin(both).apply(RotateSelection(listOf(id("d")), quarter, 0.0, 0.0)).getOrNull()
+        assertIs<CommandError.NoChange>(tx?.commit()?.leftOrNull())
+    }
+
+    @Test
+    fun anglesBeyondAHalfTurn_should_BeFoldedIntoTheStoredRange() {
+        val doc = docOf(rect("r", 0.0, 0.0, 40.0, 20.0, angle = 3.0))
+        val turned = run(doc, RotateSelection(listOf(id("r")), 1.0, 20.0, 10.0)).present.scene[id("r")] as RectElement
+        assertEquals(4.0 - 2.0 * PI, turned.angle, 1e-9)
+        val back = run(docOf(rect("q", 0.0, 0.0, 40.0, 20.0, angle = -3.0)), RotateSelection(listOf(id("q")), -1.0, 20.0, 10.0)).present.scene[id("q")] as RectElement
+        assertEquals(-4.0 + 2.0 * PI, back.angle, 1e-9)
+    }
+
+    @Test
     fun zeroTurn_should_ChangeNothing() {
         val doc = docOf(rect("r", 0.0, 0.0, 40.0, 20.0))
         val tx = Transaction.begin(doc).apply(RotateSelection(listOf(id("r")), 0.0, 5.0, 5.0)).getOrNull()
