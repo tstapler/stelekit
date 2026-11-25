@@ -207,6 +207,7 @@ internal fun InlineTableBlock(
     val outline = outlineColor(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.surface)
 
     val sheetOpen = onOpenSheet.takeIf { prefs.sheetEnabled }
+    val recoveredStore = LocalRecoveredDraftStore.current
     val clipboard = LocalTableClipboard.current ?: defaultTableClipboard()
     val copyScope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
@@ -214,6 +215,7 @@ internal fun InlineTableBlock(
     SideEffect {
         state.hooks.openSheet = sheetOpen
         state.hooks.editAsMarkdown = onStartEditing
+        state.hooks.recoverDraft = recoveredStore?.let { store -> blockUuid?.let { id -> { d -> store.add(RecoveredDraft(id, d)) } } }
         state.hooks.bindCellDisplay(calcMemo)
         state.hooks.copyToClipboard = { text, done ->
             copyScope.launch {
@@ -249,6 +251,18 @@ internal fun InlineTableBlock(
     }
 
     Column(modifier) {
+        if (state.conflictHeld) {
+            if (state.conflictBannerOpen) {
+                TableConflictBanner(
+                    draftAddress = state.draft?.address?.toString(),
+                    onKeepMine = state::keepMine,
+                    onTakeTheirs = state::takeTheirs,
+                    onEditAsMarkdown = state::editAsMarkdown,
+                )
+            } else {
+                ResolveChip(onClick = state::reopenBanner)
+            }
+        }
         doc.prefix.filter { it.isNotBlank() }.forEach { PlainLine(it, onStartEditing) }
         Box(
             modifier = Modifier

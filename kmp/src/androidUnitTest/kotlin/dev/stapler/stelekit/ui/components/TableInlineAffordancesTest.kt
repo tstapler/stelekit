@@ -219,7 +219,11 @@ class TableInlineAffordancesTest {
         }
         assertTrue(host.commits.isEmpty())
         editor().assertExists()
-        // Esc is Cancel edit with its Undo notice, as everywhere else.
+        // Esc first closes the banner (ladder rung 1, UX-68), then it is Cancel edit with its Undo notice.
+        editor().performKeyInput { pressKey(Key.Escape) }
+        rule.waitForIdle()
+        rule.onAllNodes(hasTestTag("conflictBanner")).assertCountEquals(0)
+        editor().assertExists()
         editor().performKeyInput { pressKey(Key.Escape) }
         rule.waitForIdle()
         rule.onAllNodes(hasSetTextAction()).assertCountEquals(0)

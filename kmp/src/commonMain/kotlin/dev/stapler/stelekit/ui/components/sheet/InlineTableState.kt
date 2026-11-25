@@ -76,8 +76,12 @@ internal class InlineTableState(
     var fieldValue: TextFieldValue by mutableStateOf(TextFieldValue())
         private set
 
-    /** A foreign edit met a pending draft: the draft stays and commits are held (the banner is PR-C). */
+    /** A foreign edit met a pending draft: the draft stays and commits are held until a choice is made. */
     var conflictHeld: Boolean by mutableStateOf(false)
+        private set
+
+    /** The banner is up; Back dismisses only it and leaves the Resolve chip while [conflictHeld] (UX-68). */
+    var conflictBannerOpen: Boolean by mutableStateOf(false)
         private set
 
     /** How `Edit` was entered, fixed for the whole edit; the strip policy (PR-B 4.4) reads it. */
@@ -142,6 +146,7 @@ internal class InlineTableState(
         mode = GridMode.Navigate
         selection = null
         conflictHeld = false
+        conflictBannerOpen = false
         heldContent = null
         frozen = false
         openMenu = null
@@ -178,7 +183,7 @@ internal class InlineTableState(
         if (doc == null || frozen) return
         if (mode == GridMode.Edit && draft?.address == address) return
         if (draft?.isDirty == true) {
-            if (conflictHeld) return
+            if (conflictHeld) return reshowBanner()
             commitDraft()
         }
         entryProfile = profile
@@ -215,7 +220,11 @@ internal class InlineTableState(
     fun commitDraft(): Boolean {
         val d = draft ?: return false
         val before = doc ?: return false
-        if (conflictHeld || !d.isDirty) return false
+        if (conflictHeld) {
+            if (d.isDirty) reshowBanner()
+            return false
+        }
+        if (!d.isDirty) return false
         val outcome = editor.apply(before, TableEdit.SetCell(d.address, CellText(d.text)))
         if (outcome !is TableEditOutcome.Applied || outcome.summary is EditSummary.NoChange) return false
         val serialized = TableSerializer.serialize(outcome.doc)
@@ -249,7 +258,8 @@ internal class InlineTableState(
         announcement = null
         if (conflictHeld) {
             conflictHeld = false
-            heldContent?.let { load(it) }
+            conflictBannerOpen = false
+            heldContent?.let { takeBase(it) }
             heldContent = null
         }
     }
@@ -307,7 +317,7 @@ internal class InlineTableState(
      */
     fun commitAndLeaveEdit(): Boolean {
         if (mode != GridMode.Edit) return true
-        if (conflictHeld && draft?.isDirty == true) return false
+        if (conflictHeld && draft?.isDirty == true) return false.also { reshowBanner() }
         commitDraft()
         draft = null
         fieldValue = TextFieldValue()
@@ -323,7 +333,8 @@ internal class InlineTableState(
             is CellEditorKey.Enter -> navigateAfterCommit(GridCommand.Enter(key.back))
             is CellEditorKey.Tab -> navigateAfterCommit(GridCommand.Tab(key.back))
             CellEditorKey.Cancel -> {
-                cancelEdit()
+                // Rung 1 of the ladder: Esc closes the banner before it cancels the edit (UX-68).
+                if (conflictBannerOpen) dismissBanner() else cancelEdit()
                 true
             }
             CellEditorKey.LineBreak -> {
@@ -336,8 +347,7 @@ internal class InlineTableState(
     private fun navigateAfterCommit(command: GridCommand): Boolean {
         val d = doc ?: return true
         val from = selection ?: return true
-        // Held: consume the key and stay put; the conflict banner that explains why is PR-C.
-        if (conflictHeld) return true
+        if (conflictHeld) return true.also { if (draft?.isDirty == true) reshowBanner() }
         commitDraft()
         val latest = doc ?: d
         when (val result = GridNavigator(bounds(latest)).handle(from, command)) {
@@ -447,8 +457,7 @@ internal class InlineTableState(
             StripAction.Undo -> undo()
             StripAction.Redo -> redo()
             StripAction.Why -> showWhy()
-            // Resolve opens TableConflictBanner, which lands with PR-C (tasks 5.1b/5.1d); the slot renders disabled.
-            StripAction.Resolve -> Unit
+            StripAction.Resolve -> reopenBanner()
             else -> if (commitAndLeaveEdit()) performAfterCommit(action)
         }
     }
@@ -473,9 +482,55 @@ internal class InlineTableState(
         if (commitAndLeaveEdit()) hooks.openSheet?.invoke()
     }
 
-    /** "Edit as markdown": commit first, then the raw editor. */
+    /** "Edit as markdown": commit first, then the raw editor; a held draft goes to the recovered-draft notice instead. */
     fun editAsMarkdown() {
+        if (conflictHeld && draft?.isDirty == true) {
+            val d = draft
+            hooks.recoverDraft?.let { recover -> d?.let { recover(DraftText(it.address, it.text)) } }
+            cancel()
+            hooks.editAsMarkdown()
+            return
+        }
         if (commitAndLeaveEdit()) hooks.editAsMarkdown()
+    }
+
+    // ---- conflict banner (4.5e) ---------------------------------------------------------------------------------
+
+    private fun reshowBanner() {
+        conflictBannerOpen = true
+        draft?.let { announcement = TableMessages.heldNotSaved(it.address.toString()) }
+    }
+
+    fun dismissBanner() {
+        conflictBannerOpen = false
+    }
+
+    fun reopenBanner() {
+        if (conflictHeld) conflictBannerOpen = true
+    }
+
+    /** Theirs becomes the base and the draft is committed on top of it as one undo step. */
+    fun keepMine() {
+        val held = heldContent ?: return
+        conflictHeld = false
+        conflictBannerOpen = false
+        heldContent = null
+        announcement = null
+        takeBase(held)
+        commitDraft()
+    }
+
+    /** The draft is dropped; the notice's Undo puts it back into a `CellDraft`. */
+    fun takeTheirs() = cancelEdit()
+
+    /** [content] is the new committed base: the ledger, undo targets and grid all start from it. */
+    private fun takeBase(content: String) {
+        sync.registerLoaded(content)
+        currentContent = content
+        undoTargets.clear()
+        redoTargets.clear()
+        resetUndoScope()
+        load(content)
     }
 
     private fun closeOrCollapse() {
@@ -635,7 +690,7 @@ internal class InlineTableState(
     fun onBack(key: LadderKey, imeVisible: Boolean, hideIme: () -> Unit): LadderAction {
         val active = selection != null && !frozen
         val ladder = LadderState(
-            conflictBannerOpen = false,
+            conflictBannerOpen = conflictBannerOpen && conflictHeld,
             menuOpen = openMenu != null || notices.visible?.type == NoticeType.Why,
             imeVisible = imeVisible && mode == GridMode.Edit,
             mode = if (active) mode else null,
@@ -644,6 +699,7 @@ internal class InlineTableState(
         )
         val action = TableBackLadder.next(TableSurface.Inline, ladder, key)
         when (action) {
+            LadderAction.DismissBanner -> dismissBanner()
             LadderAction.CloseMenu -> closeMenu()
             LadderAction.HideIme -> hideIme()
             LadderAction.Done -> perform(StripAction.Done)
@@ -700,6 +756,7 @@ internal class InlineTableState(
 
     private fun holdDraft(content: String) {
         conflictHeld = true
+        conflictBannerOpen = true
         heldContent = content
         draft?.let { announcement = TableMessages.heldNotSaved(it.address.toString()) }
     }

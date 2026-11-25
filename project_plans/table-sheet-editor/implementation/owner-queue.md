@@ -16,7 +16,16 @@ Items an agent could not complete headlessly. Each needs the owner (Tyler) or a 
 |---|---|---|
 | 8.2b early device smoke, inline | PENDING-OWNER | Pixel_Fold: tap/long-press/link timing, IME inset docking of the strip, landscape IME fullscreen (Compose exposes no no-extract/no-fullscreen flags), TalkBack order across the strip popup, `onStop` commit, `ImeAction.Next` reaching the Enter action. Gates 4.4a/5.1a go/no-go per Task 0.4a. |
 | 0.3a/b Wasm IME/clipboard | PENDING-OWNER | `ComposeTableClipboard` paste on Wasm is UNVERIFIED; strip entry profile from DOM pointer type is INFERRED. |
-| 4.5e Resolve chip, TableConflictBanner, Back rung 1, held-commit gate banner | DEFERRED to PR-C | Depend on 5.1b/5.1d. PR-B keeps the draft and holds commits; Resolve slot is inert. |
+| 4.5e Resolve chip, TableConflictBanner, Back rung 1, held-commit gate banner | DONE in PR-C (Robolectric), PENDING-OWNER on device | `TableInlineConflictTest` covers it headlessly. Verify on Pixel_Fold/TalkBack: banner focus order, the Resolve chip reachable from the strip, Back dismissing only the banner. |
 | 4.5d hints H2/H3 | DEFERRED to PR-C | Need the sheet range mode (5.4a). |
 | TalkBack / Switch Access entry profile | PENDING-OWNER | A semantic click now enters `Touch` (strip visible) because commonMain has no accessibility-service signal; `accessibilityServiceActive` is still never passed. Verify on a device with TalkBack that the strip is reachable, and decide whether a platform signal (Android `AccessibilityManager`) is worth wiring. |
 | Mouse vs touch drag on a hybrid device | PENDING-OWNER | Mouse drag selects a range, touch drag never does; a stylus or touchscreen laptop that reports `Touch` for a mouse-like pointer is UNVERIFIED. |
+
+## PR-C additions (all PENDING, nothing verified on device)
+
+| Task | Status | What is needed |
+|---|---|---|
+| 5.1a Dialog window keys and Back | PENDING-OWNER | On device and desktop: Ctrl+Z/Y reach the sheet, Esc is not handled twice (key handler plus `onDismissRequest`), hardware Back dismisses the banner first, the soft keyboard and IME insets behave inside the Dialog at phone width. |
+| 5.1b `onStop` / configuration change | PENDING-OWNER | `isChangingConfiguration` defaults to false in commonMain (no platform signal wired): rotate and fold on Pixel_Fold and confirm a draft is neither lost nor double-committed. |
+| 5.1b commit failure on a real DB error | PENDING-OWNER | Only tested with a `Left`-returning wrapper over in-memory repositories; Retry writes the persisted content first (three undo steps), see repair-log. |
+| 5.1d recovered-draft notice outside the sheet | PENDING-OWNER | Shown in a non-focusable `Popup` at the window bottom when no sheet is open; placement over the keyboard, TalkBack announcement and the Apply path (reopens the sheet, then applies) are unverified. |

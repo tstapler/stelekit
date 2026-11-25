@@ -74,6 +74,9 @@ internal class StripHooks {
     /** Null unless the sheet flag is on: it hides every Maximize entry and unbinds Ctrl+Shift+Enter. */
     var openSheet: (() -> Unit)? = null
     var editAsMarkdown: () -> Unit = {}
+
+    /** Hands an unsaved held draft to the session's recovered-draft notice before the raw editor opens. */
+    var recoverDraft: ((DraftText) -> Unit)? = null
     var cellText: ((TableDoc, CellAddress) -> String)? = null
     var errorDetail: ((TableDoc, CellAddress) -> String?)? = null
 
@@ -194,7 +197,7 @@ private fun StripButton(action: StripAction, state: InlineTableState, modifier: 
     val (text, dimmed, description) = when (action) {
         StripAction.Undo -> Triple(state.undoLabel, !state.undoEnabled, notingNothing(state, undo = true))
         StripAction.Redo -> Triple(state.redoLabel, !state.redoEnabled, notingNothing(state, undo = false))
-        StripAction.Resolve -> Triple(action.label, true, "Conflict resolution arrives with the sheet release")
+        StripAction.Resolve -> Triple(action.label, false, null)
         else -> Triple(action.label, false, null)
     }
     StripText(
