@@ -94,13 +94,13 @@ class SketchTextSearchTest {
         repeat(SketchSearchTextRepository.CANDIDATE_PAGE * 3) { i ->
             repos.searchText.save(SketchSearchRow("p1", "s$i", "kitchen $i", "h$i", i.toLong()))
         }
-        val hits = repos.searchText.search("kitchen", 5).getOrNull()!!
+        val hits = repos.searchText.findByText("kitchen", 5).getOrNull()!!
         assertEquals(5, hits.size)
         assertEquals("s${SketchSearchTextRepository.CANDIDATE_PAGE * 3 - 1}", hits.first().sheetUuid, "newest first")
         repos.searchText.save(SketchSearchRow("p1", "pct", "kitchen 100% done", "hp", 0L))
         repos.searchText.save(SketchSearchRow("p1", "pctx", "kitchen 1000 done", "hq", 0L))
-        assertEquals(listOf("pct"), repos.searchText.search("100%", 5).getOrNull()!!.map { it.sheetUuid }, "% in the query is literal, not a wildcard")
+        assertEquals(listOf("pct"), repos.searchText.findByText("100%", 5).getOrNull()!!.map { it.sheetUuid }, "% in the query is literal, not a wildcard")
         repos.searchText.deleteProject("p1")
-        assertTrue(repos.searchText.search("kitchen", 5).getOrNull()!!.isEmpty())
+        assertTrue(repos.searchText.findByText("kitchen", 5).getOrNull()!!.isEmpty())
     }
 }

@@ -26,7 +26,6 @@ import kotlinx.coroutines.yield
  * Global search over sketch text (E8). The sheet saver keeps the index current for sheets edited in the app; [backfill]
  * catches the rest (sheets written by the CLI, pulled by git, or saved before the index existed).
  */
-@OptIn(DirectRepositoryWrite::class)
 class SketchTextSearch(
     private val repos: SketchRepositories,
     private val store: () -> ProjectSidecarStore?,
@@ -38,7 +37,7 @@ class SketchTextSearch(
 
     /** At most [limit] sketches whose text contains every word of [query]; a failure reads as no results. */
     suspend fun search(query: String, limit: Int = RESULT_LIMIT): List<SketchSearchHit> =
-        repos.searchText.search(query, limit).getOrNull().orEmpty()
+        repos.searchText.findByText(query, limit).getOrNull().orEmpty()
 
     /**
      * Indexes every v2 sheet whose stored hash differs from its file's text, project by project in bounded pages
@@ -71,7 +70,7 @@ class SketchTextSearch(
             .filter { it.schemaVersion == SheetPaths.SCHEMA_V2 }
         val stored = repos.searchText.hashesOf(project.uuid.value).getOrNull().orEmpty()
         val live = sheets.mapTo(HashSet()) { it.uuid.value }
-        for (gone in stored.keys - live) write { repos.searchText.deleteSheet(gone) }
+        for (gone in stored.keys - live) dropRow(gone)
         var written = 0
         for (sheet in sheets) {
             val bytes = sidecar.readV2SheetFile(project.slug, sheet.uuid.value) ?: continue
@@ -79,10 +78,16 @@ class SketchTextSearch(
             val text = SketchTextExtractor.extract(doc)
             if (stored[sheet.uuid.value] == text.hash) continue
             val row = SketchSearchRow(project.uuid.value, sheet.uuid.value, text.body, text.hash, clock())
-            if (write { repos.searchText.save(row) }.isRight()) written++
+            if (saveRow(row).isRight()) written++
         }
         return written
     }
+
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun saveRow(row: SketchSearchRow) = write { repos.searchText.save(row) }
+
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun dropRow(sheetUuid: String) = write { repos.searchText.deleteSheet(sheetUuid) }
 
     companion object {
         const val RESULT_LIMIT = 5

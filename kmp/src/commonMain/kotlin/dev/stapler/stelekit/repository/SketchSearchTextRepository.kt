@@ -39,7 +39,7 @@ interface SketchSearchTextRepository {
     suspend fun deleteProject(projectUuid: String): Either<DomainError, Unit>
 
     /** Sketches whose text (or project name) contains every word of [query], newest first. A blank query finds nothing. */
-    suspend fun search(query: String, limit: Int): Either<DomainError, List<SketchSearchHit>>
+    suspend fun findByText(query: String, limit: Int): Either<DomainError, List<SketchSearchHit>>
 
     companion object {
         /** Rows read per SQL page and the most pages one query reads: the scan bound of [search]. */
@@ -94,7 +94,7 @@ class InMemorySketchSearchTextRepository(private val projectName: (String) -> St
         return Unit.right()
     }
 
-    override suspend fun search(query: String, limit: Int): Either<DomainError, List<SketchSearchHit>> {
+    override suspend fun findByText(query: String, limit: Int): Either<DomainError, List<SketchSearchHit>> {
         val words = SketchSearchMatching.words(query)
         if (words.isEmpty() || limit <= 0) return emptyList<SketchSearchHit>().right()
         return rows.values.sortedByDescending { it.updatedAt }.mapNotNull { r ->
@@ -104,6 +104,7 @@ class InMemorySketchSearchTextRepository(private val projectName: (String) -> St
     }
 }
 
+@OptIn(DirectRepositoryWrite::class)
 class SqlDelightSketchSearchTextRepository(database: SteleDatabase) : SketchSearchTextRepository {
     private val queries = database.steleDatabaseQueries
 
@@ -124,7 +125,7 @@ class SqlDelightSketchSearchTextRepository(database: SteleDatabase) : SketchSear
         queries.deleteSketchSearchTextByProject(projectUuid)
     }
 
-    override suspend fun search(query: String, limit: Int): Either<DomainError, List<SketchSearchHit>> = guarded {
+    override suspend fun findByText(query: String, limit: Int): Either<DomainError, List<SketchSearchHit>> = guarded {
         val words = SketchSearchMatching.words(query)
         val anchor = SketchSearchMatching.anchor(words)
         if (anchor == null || limit <= 0) return@guarded emptyList()
