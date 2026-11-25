@@ -48,18 +48,25 @@ internal fun TableDoc.rewriteAllFormulas(reference: FormulaReferenceTransform, e
     return doc to RewriteResult(header, rewritten, broken)
 }
 
-/** New column list: each entry is the old column index it comes from, or null for a new empty column. */
-private fun RowLine.remap(map: List<Int?>): RowLine {
+/**
+ * New column list: each entry is the old column index it comes from, or null for a new empty column. A ragged short row
+ * has implicit empty cells up to [width], so an old index below [width] but past the row's end remaps to an empty cell.
+ */
+private fun RowLine.remap(map: List<Int?>, width: Int): RowLine {
     if (map.size == cells.size && map.withIndex().all { (i, v) -> i == v }) return this
     val keepRaw = rawCells.size == cells.size
     val newCells = ArrayList<CellText>(map.size)
     val newRaw = ArrayList<String>(map.size)
+    var trailingPad = 0
     for (old in map) {
         when {
-            old == null -> { newCells.add(CellText("")); newRaw.add("") }
-            old < cells.size -> { newCells.add(cells[old]); if (keepRaw) newRaw.add(rawCells[old]) else newRaw.add("") }
+            old == null -> { newCells.add(CellText("")); newRaw.add(""); trailingPad = 0 }
+            old < cells.size -> { newCells.add(cells[old]); newRaw.add(if (keepRaw) rawCells[old] else ""); trailingPad = 0 }
+            old < width -> { newCells.add(CellText("")); newRaw.add(""); trailingPad++ }
         }
     }
+    // Implicit empties at the end stay implicit: the row keeps the ragged shape it had.
+    repeat(trailingPad) { newCells.removeAt(newCells.size - 1); newRaw.removeAt(newRaw.size - 1) }
     return RowLine(newCells, if (keepRaw) newRaw else emptyList(), null, cr)
 }
 
@@ -78,10 +85,11 @@ private fun DelimiterRow.remap(map: List<Int?>, width: Int): DelimiterRow {
 private fun TableDoc.remapColumns(build: (Int) -> List<Int?>): TableDoc {
     val width = columnCount
     val dMap = build(maxOf(width, delimiter.aligns.size))
+    fun RowLine.remapped() = remap(build(maxOf(cells.size, width)), width)
     return copy(
-        header = header.remap(build(header.cells.size)),
+        header = header.remapped(),
         delimiter = delimiter.remap(dMap, maxOf(width, delimiter.aligns.size)),
-        body = body.map { it.remap(build(it.cells.size)) },
+        body = body.map { it.remapped() },
     )
 }
 

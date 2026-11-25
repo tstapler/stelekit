@@ -65,6 +65,9 @@ fun splitTableRow(line: String): List<String> {
 /** Display view over `TableDoc`: header fixes the column count, cells keep source `<br>` text for the renderer. */
 fun parseTableContent(raw: String): TableData {
     val doc = (TableParser.parse(raw) as? TableParseResult.Parsed)?.doc ?: return parseTableContentLegacy(raw)
+    // Lines around the table run (intro text, trailing text, `id::` properties) rendered as header/body rows before
+    // TableParser existed; keep that exactly. Blank lines never rendered, so they do not count.
+    if (doc.prefix.any { it.isNotBlank() } || doc.suffix.any { it.isNotBlank() }) return parseTableContentLegacy(raw)
     fun cells(rawCells: List<String>) = rawCells.map(TableCellCodec::unescapePipes)
     val rawHeaders = cells(doc.header.rawCells)
     val columnCount = rawHeaders.size
@@ -85,7 +88,7 @@ fun parseTableContent(raw: String): TableData {
     )
 }
 
-/** Fallback for content `TableParser` rejects (no valid delimiter line): the previous lenient behaviour. */
+/** The previous lenient behaviour, kept for content `TableParser` rejects or finds other text around. */
 private fun parseTableContentLegacy(raw: String): TableData {
     val lines = raw.lines().filter { it.isNotBlank() }
     if (lines.size < 2) return TableData(emptyList(), emptyList(), emptyList())

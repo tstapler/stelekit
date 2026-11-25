@@ -1,7 +1,6 @@
 package dev.stapler.stelekit.table.formula
 
 import kotlin.math.abs
-import kotlin.math.floor
 import kotlin.math.pow
 
 /** Read-only view of the table the evaluator reads through; 1-based, row 1 is the header row. */
@@ -94,17 +93,20 @@ class FunctionRegistry(private val impls: Map<String, FunctionImpl>) {
             if (x !is CellValue.Num) return x
             val d = if (args.size > 1) scalarNumber(args[1]) else CellValue.Num(0.0)
             if (d !is CellValue.Num) return d
-            val digits = d.value.toInt() // truncates toward zero
-            if (digits > 15) return x
-            if (digits < -15) return CellValue.Num(0.0)
-            val factor = 10.0.pow(abs(digits))
-            val scaled = if (digits >= 0) x.value * factor else x.value / factor
-            // Relative nudge so 2.675 (stored as 2.67499...) rounds half away from zero like a spreadsheet.
-            val a = abs(scaled)
-            val r = floor(a + 0.5 + a * 1e-15)
-            val signed = if (scaled < 0) -r else r
-            return finite(if (digits >= 0) signed / factor else signed * factor)
+            val digits = d.value.toInt().coerceIn(-1000, 1000) // truncates toward zero
+            if (x.value == 0.0) return CellValue.Num(0.0)
+            // Decimal rounding on the shortest digits (no binary scaling, so no overflow and no magnitude-dependent
+            // nudge): first to the 15 significant digits a spreadsheet keeps (2.675 and 1.0049999999999999 behave like
+            // 2.675 and 1.005), then half away from zero at [digits] decimals.
+            val (all, pos) = NumberDisplay.shortestDigits(abs(x.value))
+            val (sig, sigPos) = NumberDisplay.roundDigits(all, pos, SIGNIFICANT_DIGITS)
+            val (kept, keptPos) = NumberDisplay.roundDigits(sig, sigPos, sigPos + digits)
+            if (kept.isEmpty()) return CellValue.Num(0.0)
+            val magnitude = (kept + "e" + (keptPos - kept.length)).toDouble()
+            return finite(if (x.value < 0) -magnitude else magnitude)
         }
+
+        private const val SIGNIFICANT_DIGITS = 15
 
         private fun scalarNumber(arg: EvalArg): CellValue = when (arg) {
             is EvalArg.Block -> CellValue.Err(CellError.Value)
@@ -120,8 +122,9 @@ class FunctionRegistry(private val impls: Map<String, FunctionImpl>) {
     }
 }
 
+/** A non-finite result (NaN, or overflow to infinity) is `#NUM!`, as in Excel. */
 private fun finite(v: Double): CellValue =
-    if (v.isNaN() || v.isInfinite()) CellValue.Err(CellError.Value) else CellValue.Num(v)
+    if (v.isNaN() || v.isInfinite()) CellValue.Err(CellError.Num) else CellValue.Num(v)
 
 /**
  * Evaluates one parsed formula against [CellResolver]. Iterative (explicit work and value stacks) so

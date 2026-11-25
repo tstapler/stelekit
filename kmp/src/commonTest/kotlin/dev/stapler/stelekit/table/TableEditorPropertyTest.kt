@@ -145,4 +145,47 @@ class TableEditorPropertyTest {
             }
         }
     }
+
+    /** Header width 2-4; body rows randomly shorter than the header (never longer) so implicit empty slots exist. */
+    private fun raggedDoc(rnd: Random): TableDoc {
+        val cols = rnd.nextInt(2, 5)
+        val rows = rnd.nextInt(1, 6)
+        val pool = listOf("", "1", "2", "10", "abc", "x y")
+        fun line(cells: List<String>) = "|" + cells.joinToString("|") { " $it " } + "|"
+        val body = List(rows) { line(List(rnd.nextInt(1, cols + 1)) { pool[rnd.nextInt(pool.size)] }) }
+        val lines = listOf(line(List(cols) { "h$it" }), "|" + List(cols) { "---" }.joinToString("|") + "|") + body
+        return assertIs<TableParseResult.Parsed>(TableParser.parse(lines.joinToString("\n"))).doc
+    }
+
+    private fun padded(d: TableDoc): TableDoc {
+        fun pad(r: RowLine) = RowLine.fresh(r.cells + List((d.columnCount - r.cells.size).coerceAtLeast(0)) { CellText("") }, r.cr)
+        return d.copy(header = pad(d.header), body = d.body.map(::pad))
+    }
+
+    private fun grid(d: TableDoc): List<List<String>> =
+        (1..d.rowCount).map { r -> (1..d.columnCount).map { c -> d.cell(CellAddress(r, c))?.value ?: "" } }
+
+    @Test
+    fun moveCols_should_KeepImplicitEmptySlots_When_RowIsShorterThanHeader() {
+        val doc = assertIs<TableParseResult.Parsed>(TableParser.parse("| A | B | C |\n|---|---|---|\n| a | b |")).doc
+        val out = editor.apply(doc, MoveCols(from = 3, count = 1, before = 1)) as TableEditOutcome.Applied
+        assertEquals(listOf("C", "A", "B"), (1..3).map { out.doc.cell(CellAddress(1, it))!!.value })
+        assertEquals(listOf("", "a", "b"), (1..3).map { out.doc.cell(CellAddress(2, it))?.value ?: "<missing>" })
+    }
+
+    @Test
+    fun structuralAndSortOps_should_MatchPaddedTableSemantics_When_BodyRowsAreRagged() = runTest {
+        checkAll(800, Arb.long()) { seed ->
+            val rnd = Random(seed)
+            val ragged = raggedDoc(rnd)
+            val full = padded(ragged)
+            val edit = randomEdit(rnd, ragged)
+            val a = editor.apply(ragged, edit)
+            val b = editor.apply(full, edit)
+            assertEquals(b::class, a::class, "seed=$seed $edit")
+            if (a is TableEditOutcome.Applied && b is TableEditOutcome.Applied) {
+                assertEquals(grid(b.doc), grid(a.doc), "seed=$seed $edit")
+            }
+        }
+    }
 }

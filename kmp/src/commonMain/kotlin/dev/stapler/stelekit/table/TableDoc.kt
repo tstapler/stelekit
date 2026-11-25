@@ -107,9 +107,11 @@ object TableCellCodec {
     fun escape(text: String): String {
         val s = text.replace("\r\n", "\n").replace('\r', '\n')
             .replace("|", "\\|").replace("\n", "<br>")
-        // A trailing backslash would otherwise escape the closing pipe.
-        return if (s.endsWith("\\")) "$s " else s
+        return guardTrailingBackslash(s)
     }
+
+    /** A trailing backslash would otherwise escape the closing pipe (raw cells lose the padding that protected it). */
+    fun guardTrailingBackslash(s: String): String = if (s.endsWith("\\")) "$s " else s
 
     fun alignOf(cell: String): ColumnAlign {
         val c = cell.trim()

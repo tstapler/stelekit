@@ -47,6 +47,8 @@ import dev.stapler.stelekit.clipboard.BlockTreeAlgorithms
 import dev.stapler.stelekit.clipboard.ClipboardOperation
 import dev.stapler.stelekit.model.EffectiveNotesPath
 
+private const val RECENT_OWN_CONTENT_LIMIT = 8
+
 /**
  * Single source of truth for block state across all screens (JournalsView, PageView).
  *
@@ -189,6 +191,19 @@ class BlockStateManager(
      * already holds the correct, possibly-newer, optimistic content.
      */
     private val _pendingContentWriteCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
+
+    /**
+     * The last few contents this manager itself wrote per block, oldest first, so a duplicate or late confirmation of
+     * an older own write that arrives after every write was accounted for is not mistaken for a foreign edit.
+     */
+    private val recentOwnContent = MutableStateFlow<Map<String, List<String>>>(emptyMap())
+
+    private fun rememberOwnContent(uuidStr: String, content: String) {
+        recentOwnContent.update { m ->
+            val kept = (m[uuidStr].orEmpty() - content + content).takeLast(RECENT_OWN_CONTENT_LIMIT)
+            m + (uuidStr to kept)
+        }
+    }
 
     /** Returns the remaining pending-write count for [uuidStr] after decrementing by one. */
     private fun decrementPendingContentWrite(uuidStr: String): Int {
@@ -809,9 +824,13 @@ class BlockStateManager(
     /**
      * A foreign write to a table block must reach [_blocks]: otherwise a later commit of content equal
      * to our stale copy is dropped by [applyBlockContentUpdate]'s equality guard (P5-3). Other block
-     * kinds keep ignoring patches they did not issue.
+     * kinds keep ignoring patches they did not issue. Not adopted while the raw editor has the block open
+     * (it would swap text under the cursor), nor when the patch repeats an older write of our own: with no
+     * write pending, that is a duplicate or late confirmation, and adopting it would move the block backwards.
      */
     private fun adoptForeignTableContent(pageUuidStr: String, blockUuid: BlockUuid, newContent: String) {
+        if (_editingBlockUuid.value == blockUuid) return
+        if (newContent in recentOwnContent.value[blockUuid.value].orEmpty()) return
         _blocks.update { current ->
             val pageBlocks = current[pageUuidStr] ?: return@update current
             val idx = pageBlocks.indexOfFirst { it.uuid == blockUuid }
@@ -821,6 +840,7 @@ class BlockStateManager(
             val isTable = TableParser.parse(newContent) is TableParseResult.Parsed ||
                 TableParser.parse(local.content) is TableParseResult.Parsed
             if (!isTable) return@update current
+            recentOwnContent.update { it - blockUuid.value }
             current + (pageUuidStr to pageBlocks.toMutableList().also { it[idx] = local.copy(content = newContent) })
         }
     }
@@ -1173,6 +1193,7 @@ class BlockStateManager(
         // text jumping back / getting erased mid-edit.
         _dirtyBlocks.update { it + (uuidStr to maxOf(it[uuidStr] ?: 0L, version)) }
         _pendingContentWriteCounts.update { it + (uuidStr to ((it[uuidStr] ?: 0) + 1)) }
+        rememberOwnContent(uuidStr, content)
 
         val t0 = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
         val writeResult = writeContentOnly(blockUuid, content, block.pageUuid)

@@ -36,8 +36,9 @@ const val ANNOTATOR_STICKY_TOOLS_LABEL = "Keep tools active"
 const val TABLE_WRAP_LABEL = "Wrap text in table cells"
 const val TABLE_NUMERIC_RIGHT_ALIGN_LABEL = "Right-align number columns"
 const val TABLE_COMPACT_LABEL = "Compact table rows"
-const val TABLE_INLINE_EDIT_LABEL = "Edit table cells in place"
-const val TABLE_SHEET_LABEL = "Spreadsheet view"
+const val TABLE_NOT_ACTIVE_SUFFIX = " (not active yet)"
+const val TABLE_INLINE_EDIT_LABEL = "Edit table cells in place$TABLE_NOT_ACTIVE_SUFFIX"
+const val TABLE_SHEET_LABEL = "Spreadsheet view$TABLE_NOT_ACTIVE_SUFFIX"
 const val TABLE_SHEET_HELPER = "Raw markdown editing is always available"
 
 @Composable

@@ -5,27 +5,32 @@ enum class LedgerVerdict { Echo, Stale, Defer, Adopt, External, ExternalWithDraf
 
 /**
  * Remembers the table contents the sheet has shown, committed or loaded, so a feed emission can be told apart
- * from an external edit. Keyed by content hash plus length with its own monotonic `seq`; it never sees a DB
- * or UI version (R2-B1). Invariants (Story 3.2 rule 0): one entry per hash, "retired" means `Acked` (never
- * removed), echoing an entry acks every older `InFlight` one, `markDone` acks without an echo, eviction is LRU by `seq`.
- * Rule 4/5 (P5-5): an `Acked` state below `ownFloor` (newest own commit or undo/redo reservation; foreign
- * observations never raise it) is `Stale` unless `expectAdopt` reserved it; unknown content while
- * a commit is `InFlight` is `Defer`red and handed back by [takeDeferred].
+ * from an external edit. Keyed by the content itself (equality is exact, so distinct contents can never collide)
+ * with its own monotonic `seq`; it never sees a DB or UI version (R2-B1). Invariants (Story 3.2 rule 0): one entry
+ * per content, "retired" means `Acked` (never removed), echoing an entry acks every older `InFlight` one, `markDone`
+ * acks without an echo, eviction is LRU by `seq` under both an entry and a total-size budget.
+ * Rule 4/5 (P5-5, P5-6): an `Acked` state below `ownFloor` (newest own commit or undo/redo reservation; foreign
+ * observations never raise it) is `Stale` unless `expectAdopt` reserved it, but only until the emission of the
+ * state at `ownFloor` itself has been observed: the feed is ordered, so no older echo can follow it and an emission
+ * equal to an older Acked state is then a genuine external edit (`External`/`ExternalWithDraft`). Known limit: if
+ * the feed conflates that newest emission away, a later external revert to an older state reads as `Stale`.
+ * Unknown content while a commit is `InFlight` is `Defer`red and handed back by [takeDeferred].
  * Single-threaded: the host calls it from one coroutine.
  */
 class OwnCommitLedger(private val capacity: Int = DEFAULT_CAPACITY) {
     private enum class State { InFlight, Acked }
 
-    private data class Key(val hash: Long, val length: Int)
     private class Entry(var seq: Long, var state: State)
-    private class Expectation(val key: Key, val seq: Long)
+    private class Expectation(val key: String, val seq: Long)
 
-    private val entries = HashMap<Key, Entry>()
+    private val entries = HashMap<String, Entry>()
+    private var totalChars = 0L
+    private var ownFloorObserved = false
     private val expectations = ArrayList<Expectation>()
     private var nextSeq = 1L
     private var currentSeq = 0L
     private var ownFloor = 0L
-    private var displayed: Key? = null
+    private var displayed: String? = null
     private var deferred: String? = null
 
     val size: Int get() = entries.size
@@ -33,18 +38,25 @@ class OwnCommitLedger(private val capacity: Int = DEFAULT_CAPACITY) {
     /** The state the grid shows, as the ledger tracks it. */
     val displayedSeq: Long get() = currentSeq
 
-    fun registerLoaded(content: String): Long = put(keyOf(content), State.Acked, makeCurrent = true)
+    fun registerLoaded(content: String): Long = put(content, State.Acked, makeCurrent = true)
 
     fun registerCommit(content: String): Long =
-        put(keyOf(content), State.InFlight, makeCurrent = true).also { ownFloor = maxOf(ownFloor, it) }
+        put(content, State.InFlight, makeCurrent = true).also { raiseFloor(it) }
 
     /** Declares the content the manager's undo/redo produced, reserving its `seq` now (R3-C1). */
     fun expectAdopt(content: String): Long {
         val seq = nextSeq++
-        ownFloor = maxOf(ownFloor, seq)
-        expectations.add(Expectation(keyOf(content), seq))
+        raiseFloor(seq)
+        expectations.add(Expectation(content, seq))
         if (expectations.size > MAX_EXPECTATIONS) expectations.removeAt(0)
         return seq
+    }
+
+    private fun raiseFloor(seq: Long) {
+        if (seq > ownFloor) {
+            ownFloor = seq
+            ownFloorObserved = false
+        }
     }
 
     /** The commit's `Job` completed: retire it without waiting for an echo (R3-C5). A re-seq'd entry no longer matches. */
@@ -65,16 +77,20 @@ class OwnCommitLedger(private val capacity: Int = DEFAULT_CAPACITY) {
     }
 
     private fun verdictFor(content: String, draftPending: Boolean): LedgerVerdict {
-        val key = keyOf(content)
+        val key = content
         val entry = entries[key]
         // An Echo never consumes an expectation: the emission may be an older commit's, not the undo's (P5-5).
         if (key == displayed) {
-            entry?.let { ack(it) }
+            entry?.let {
+                ack(it)
+                observed(it.seq)
+            }
             return LedgerVerdict.Echo
         }
         expectations.firstOrNull { it.key == key }?.let { expected ->
             expectations.remove(expected)
             put(key, State.Acked, makeCurrent = true, seq = expected.seq)
+            observed(expected.seq)
             return LedgerVerdict.Adopt
         }
         if (entry != null && entry.state == State.InFlight) {
@@ -85,9 +101,10 @@ class OwnCommitLedger(private val capacity: Int = DEFAULT_CAPACITY) {
             // host must rebuild to it (P5-5); a plain Echo would leave the older state shown.
             currentSeq = entry.seq
             displayed = key
+            observed(entry.seq)
             return LedgerVerdict.Adopt
         }
-        if (entry != null) {
+        if (entry != null && !(entry.seq < ownFloor && ownFloorObserved)) {
             if (entry.seq < ownFloor) return LedgerVerdict.Stale
             if (entry.seq > ownFloor && entries.values.any { it.state == State.InFlight }) {
                 deferred = content
@@ -109,20 +126,26 @@ class OwnCommitLedger(private val capacity: Int = DEFAULT_CAPACITY) {
         return LedgerVerdict.External
     }
 
+    /** The emission of the state at `ownFloor` arrived: nothing older can follow it on an ordered feed. */
+    private fun observed(seq: Long) {
+        if (seq == ownFloor) ownFloorObserved = true
+    }
+
     private fun ack(e: Entry) {
         val upTo = e.seq
         e.state = State.Acked
         for (other in entries.values) if (other.state == State.InFlight && other.seq < upTo) other.state = State.Acked
     }
 
-    private fun put(key: Key, state: State, makeCurrent: Boolean, seq: Long = nextSeq++): Long {
+    private fun put(key: String, state: State, makeCurrent: Boolean, seq: Long = nextSeq++): Long {
         val existing = entries[key]
         if (existing != null) {
             existing.seq = seq
             existing.state = state
         } else {
             entries[key] = Entry(seq, state)
-            if (entries.size > capacity) evictOldest()
+            totalChars += key.length
+            while (entries.size > 1 && (entries.size > capacity || totalChars > MAX_TOTAL_CHARS)) evictOldest(keep = key)
         }
         if (makeCurrent) {
             currentSeq = seq
@@ -131,23 +154,15 @@ class OwnCommitLedger(private val capacity: Int = DEFAULT_CAPACITY) {
         return seq
     }
 
-    private fun evictOldest() {
-        val oldest = entries.entries.minByOrNull { it.value.seq } ?: return
-        entries.remove(oldest.key)
-    }
-
-    private fun keyOf(content: String): Key {
-        var h = FNV_OFFSET
-        for (ch in content) {
-            h = (h xor ch.code.toLong()) * FNV_PRIME
-        }
-        return Key(h, content.length)
+    private fun evictOldest(keep: String) {
+        val oldest = entries.entries.filter { it.key != keep }.minByOrNull { it.value.seq }?.key ?: return
+        entries.remove(oldest) // the map entry view throws once the map changed, so read the key first
+        totalChars -= oldest.length
     }
 
     companion object {
         const val DEFAULT_CAPACITY = 128
         private const val MAX_EXPECTATIONS = 16
-        private const val FNV_OFFSET = -3750763034362895579L
-        private const val FNV_PRIME = 1099511628211L
+        private const val MAX_TOTAL_CHARS = 4_000_000L
     }
 }

@@ -11,8 +11,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 class FormulaFuzzTest {
-    private val alphabet = "=0123456789+-*/^%()<>:,.\$ \"ABCZabcz#REF!SUMIFAVERAGEROUNDABSCOUNTMINMAX_;'&"
-    private val fragments = listOf("SUM(", "IF(", "A1:B2", "\$A\$1", "#REF!", "ROUND(", ")", "1e308", "99999999999", "ZZ9999", "\"", "<>", ">=", "^^", "%%")
+    private val alphabet = "=0123456789+-*/^%()<>:,.\$ \"ABCZabcz#REF!SUMIFAVERAGEROUNDABSCOUNTMINMAX_;'&\u0663\u0661\u0967\uFF11\u00B2"
+    private val fragments = listOf("SUM(", "IF(", "A1:B2", "\$A\$1", "#REF!", "ROUND(", ")", "1e308", "99999999999", "ZZ9999", "\"", "<>", ">=", "^^", "%%", "A\u0663", "\u0661.\u0662", "SUM(A\u0661:B\u0662)", "\$A\$\u0663")
 
     private fun randomString(rnd: Random): String {
         val sb = StringBuilder("=")
@@ -60,6 +60,16 @@ class FormulaFuzzTest {
             val v = calc.valueAt(CellAddress(4, 3))
             assertEquals(v, calc.valueAt(CellAddress(4, 3)), "stable for '$s'")
             calc.displayAt(CellAddress(4, 3))
+        }
+    }
+
+    @Test
+    fun parse_should_RejectNonAsciiDigits_When_RowOrNumberUsesUnicodeDigits() {
+        for (f in listOf("=A\u0663", "=\u0661+\u0662", "=SUM(A\u0661:B\u0662)", "=ROUND(1,\u0662)", "=A\u0967", "=A\uFF11", "=1.\u0665")) {
+            val parsed = FormulaParser.parse(f)
+            assertIs<FormulaParse.Failure>(parsed, "'$f' must not parse")
+            RefRewriter.rewrite(f, TableEdit.InsertRows(before = 2))
+            FormulaParser.isFormulaShaped(f)
         }
     }
 }

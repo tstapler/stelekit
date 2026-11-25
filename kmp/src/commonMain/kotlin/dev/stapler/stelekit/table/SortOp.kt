@@ -16,10 +16,11 @@ fun interface SortKeyOf {
         /** Literal cell text: no formula evaluation, `=...` sorts as text. */
         val Literal = SortKeyOf { doc, address ->
             val raw = doc.cell(address)?.value?.trim().orEmpty()
-            val num = raw.toDoubleOrNull()
+            // One number grammar with the formula engine, so `1,234` sorts as the 1234 `=A2+1` reads.
+            val num = NumberGrammar.parse(raw)
             when {
                 raw.isEmpty() -> SortKey.Blank
-                num != null && num.isFinite() -> SortKey.Num(num)
+                num != null -> SortKey.Num(num)
                 else -> SortKey.Text(raw)
             }
         }

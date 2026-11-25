@@ -184,6 +184,13 @@ class TableEditorTest {
     }
 
     @Test
+    fun sortRows_should_ReadThousandsSeparatedNumbersAsNumbers_When_FormulasDo() {
+        val doc = parsed(table("| k | v |", listOf("| a | 2000 |", "| b | 1,234 |", "| c | 10 |")))
+        val out = applied(editor.apply(doc, SortRows(col = 2, ascending = true))).doc
+        assertEquals(listOf("c", "b", "a"), col(out, 1))
+    }
+
+    @Test
     fun sortRows_should_ExcludeTrailingTotalsRow_When_NoSelection() {
         for (total in listOf("=SUM(B2:B5)", "=B2+B3+B4+B5", "=B2*2+B3", "=AVERAGE(B2:B5)", "=B2")) {
             val doc = parsed(table("| k | v |", listOf("| a | 3 |", "| b | 1 |", "| c | 2 |", "| d | 0 |", "| Total | $total |")))

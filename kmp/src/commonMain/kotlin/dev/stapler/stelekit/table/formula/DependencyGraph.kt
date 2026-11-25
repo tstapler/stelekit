@@ -35,16 +35,74 @@ data class EvalPlan(val order: List<CellAddress>, val cyclic: Set<CellAddress>) 
     val size: Int get() = order.size + cyclic.size
 }
 
+/** One rectangle's rows within a column, owned by the formula cell that reads it. */
+private class RowSpan(val r1: Int, val r2: Int, val owner: CellAddress)
+
 /**
- * Formula dependencies with range precedents stored as rectangles (ADR-002). Single-cell
- * precedents are hash-indexed; multi-cell rectangles are scanned per lookup, which stays cheap
- * because only a handful of formulas (totals) use real ranges. Patch with [setFormula]/[removeFormula]
- * on a cell edit; rebuild a new graph on structural change.
+ * Stabbing index over the [RowSpan]s of one column: spans sorted by start row plus a max-end segment tree, so a lookup
+ * touches O(log n + hits) nodes instead of every span. Built lazily and dropped on any change to the column.
+ */
+private class ColumnIndex {
+    val spans = ArrayList<RowSpan>()
+    private var starts = IntArray(0)
+    private var sorted: List<RowSpan> = emptyList()
+    private var tree = IntArray(0)
+    private var size = 0
+    private var built = false
+
+    fun invalidate() {
+        built = false
+    }
+
+    private fun build() {
+        sorted = spans.sortedBy { it.r1 }
+        starts = IntArray(sorted.size) { sorted[it].r1 }
+        size = 1
+        while (size < sorted.size) size *= 2
+        tree = IntArray(2 * size) { -1 }
+        for (i in sorted.indices) tree[size + i] = sorted[i].r2
+        for (n in size - 1 downTo 1) tree[n] = maxOf(tree[2 * n], tree[2 * n + 1])
+        built = true
+    }
+
+    /** Adds the owner of every span containing [row] to [out]; returns the number of tree nodes examined. */
+    fun stab(row: Int, out: MutableSet<CellAddress>): Long {
+        if (spans.isEmpty()) return 0
+        if (!built) build()
+        var limit = 0 // spans [0, limit) start at or before row
+        var hi = sorted.size
+        while (limit < hi) {
+            val mid = (limit + hi) ushr 1
+            if (starts[mid] <= row) limit = mid + 1 else hi = mid
+        }
+        return collect(1, 0, size, limit, row, out)
+    }
+
+    private fun collect(node: Int, lo: Int, hi: Int, limit: Int, row: Int, out: MutableSet<CellAddress>): Long {
+        if (lo >= limit || tree[node] < row) return 1
+        if (hi - lo == 1) {
+            out.add(sorted[lo].owner)
+            return 1
+        }
+        val mid = (lo + hi) ushr 1
+        return 1 + collect(2 * node, lo, mid, limit, row, out) + collect(2 * node + 1, mid, hi, limit, row, out)
+    }
+}
+
+/**
+ * Formula dependencies with range precedents stored as rectangles (ADR-002). Single-cell precedents are
+ * hash-indexed; multi-cell rectangles are indexed per column ([ColumnIndex]) so [dependentsOf] costs O(log n + hits)
+ * rather than a scan of every range owner. Patch with [setFormula]/[removeFormula] on a cell edit; rebuild a new graph
+ * on structural change.
  */
 class DependencyGraph {
     private val precedents = HashMap<CellAddress, List<CellRange>>()
     private val pointDependents = HashMap<CellAddress, MutableSet<CellAddress>>()
     private val rectOwners = HashMap<CellAddress, List<CellRange>>()
+    private val columns = HashMap<Int, ColumnIndex>()
+
+    /** Index nodes examined by [dependentsOf] since construction; tests bound it to prove lookups are not O(owners). */
+    internal var rectChecks = 0L
 
     val formulaCells: Set<CellAddress> get() = precedents.keys
 
@@ -57,12 +115,24 @@ class DependencyGraph {
         for (r in reads) {
             if (r.rows == 1 && r.cols == 1) pointDependents.getOrPut(r.topLeft) { HashSet() }.add(cell) else rects.add(r)
         }
-        if (rects.isNotEmpty()) rectOwners[cell] = rects
+        if (rects.isNotEmpty()) {
+            rectOwners[cell] = rects
+            for (r in rects) for (c in r.topLeft.col..r.bottomRight.col) {
+                columns.getOrPut(c) { ColumnIndex() }.also { it.invalidate() }.spans.add(RowSpan(r.topLeft.row, r.bottomRight.row, cell))
+            }
+        }
     }
 
     fun removeFormula(cell: CellAddress) {
         val old = precedents.remove(cell) ?: return
-        rectOwners.remove(cell)
+        rectOwners.remove(cell)?.let { rects ->
+            val touched = rects.flatMapTo(HashSet()) { (it.topLeft.col..it.bottomRight.col).toList() }
+            for (c in touched) columns[c]?.let { idx ->
+                idx.spans.removeAll { it.owner == cell }
+                idx.invalidate()
+                if (idx.spans.isEmpty()) columns.remove(c)
+            }
+        }
         for (r in old) {
             if (r.rows == 1 && r.cols == 1) {
                 pointDependents[r.topLeft]?.let {
@@ -79,7 +149,7 @@ class DependencyGraph {
         if (rectOwners.isEmpty()) return points ?: emptySet()
         val out = HashSet<CellAddress>()
         if (points != null) out.addAll(points)
-        for ((owner, rects) in rectOwners) if (rects.any { cell in it }) out.add(owner)
+        columns[cell.col]?.let { rectChecks += it.stab(cell.row, out) }
         return out
     }
 

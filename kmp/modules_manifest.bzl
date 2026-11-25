@@ -41,6 +41,7 @@ KMP_MODULES = {
    "commonMain/kotlin/dev/stapler/stelekit/table/GridNavigator.kt",
    "commonMain/kotlin/dev/stapler/stelekit/table/GridSelection.kt",
    "commonMain/kotlin/dev/stapler/stelekit/table/NoticeQueue.kt",
+   "commonMain/kotlin/dev/stapler/stelekit/table/NumberGrammar.kt",
    "commonMain/kotlin/dev/stapler/stelekit/table/OwnCommitLedger.kt",
    "commonMain/kotlin/dev/stapler/stelekit/table/PasteOp.kt",
    "commonMain/kotlin/dev/stapler/stelekit/table/SelectionStats.kt",

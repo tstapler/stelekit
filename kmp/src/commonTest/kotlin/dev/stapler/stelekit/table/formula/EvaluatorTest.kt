@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.table.formula
 
+import dev.stapler.stelekit.table.NumberGrammar
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -78,8 +79,8 @@ class EvaluatorTest {
         assertEquals(err(CellError.Parse), eval("=ABS(1,2)"))
         assertEquals(err(CellError.Parse), eval("=IF(1)"))
         assertEquals(err(CellError.DivZero), eval("=0^-1"))
-        assertEquals(err(CellError.Value), eval("=(-8)^(1/3)"))
-        assertEquals(err(CellError.Value), eval("=10^400"))
+        assertEquals("#NUM!", (eval("=(-8)^(1/3)") as CellValue.Err).error.display)
+        assertEquals("#NUM!", (eval("=10^400") as CellValue.Err).error.display)
     }
 
     @Test
@@ -159,5 +160,59 @@ class EvaluatorTest {
         val parsed = FormulaParser.parse("=ABS(-3)") as FormulaParse.Ok
         assertEquals(num(-3.0), FormulaEvaluator(registry).evaluate(parsed.expr, Grid(2, 2)))
         assertIs<CellValue.Num>(FormulaEvaluator().evaluate(parsed.expr, Grid(2, 2)))
+    }
+
+    @Test
+    fun round_should_NotNudgeLargeMagnitudes_When_ValueIsAtOrAbove1e14() {
+        assertEquals(num(500000000000000.0), eval("=ROUND(500000000000000)"))
+        assertEquals(num(1000000000000000.0), eval("=ROUND(1000000000000000)"))
+        assertEquals(num(1234567890123.45), eval("=ROUND(1234567890123.454,2)"))
+        assertEquals(num(1e300), eval("=ROUND(1e300,2)"))
+    }
+
+    @Test
+    fun round_should_NotOverflowToError_When_ScaledValueExceedsDoubleRange() {
+        assertEquals(num(1.7e308), eval("=ROUND(1.7E308,2)"))
+        assertEquals(num(1.7e308), eval("=ROUND(1.7E308,15)"))
+        assertEquals(num(0.0), eval("=ROUND(5e-324,15)"))
+        assertEquals(num(0.0), eval("=ROUND(1234,-400)"))
+    }
+
+    @Test
+    fun round_should_RoundHalfAwayFromZeroLikeASpreadsheet_When_BinaryValueIsJustBelowHalf() {
+        assertEquals(num(1.01), eval("=ROUND(1.005,2)"))
+        assertEquals(num(0.29), eval("=ROUND(0.285,2)"))
+        assertEquals(num(1.5), eval("=ROUND(1.45,1)"))
+        assertEquals(num(-2.68), eval("=ROUND(-2.675,2)"))
+        assertEquals(num(1.0), eval("=ROUND(0.5)"))
+        assertEquals(num(-1.0), eval("=ROUND(-0.5)"))
+        assertEquals(num(1.01), eval("=ROUND(1.0049999999999999,2)")) // 15 significant digits, like a spreadsheet
+    }
+
+    @Test
+    fun round_should_MatchDecimalReference_When_GeneratedWithUpTo15Digits() {
+        val rnd = kotlin.random.Random(15)
+        repeat(3000) {
+            val k = rnd.nextInt(0, 9) // fractional digits of the input
+            val n = rnd.nextLong(0L, 1_000_000_000_000_000L) // < 10^15: exactly representable decimal digits
+            val d = rnd.nextInt(0, k + 1)
+            val neg = rnd.nextBoolean() && n != 0L
+            val intPart = n / pow10(k)
+            val frac = (n % pow10(k)).toString().padStart(k, '0')
+            val literal = if (k == 0) "$intPart" else "$intPart.$frac"
+            // reference: half away from zero on the exact decimal integer n
+            val q = pow10(k - d)
+            val m = (n + q / 2) / q
+            val expectedText = if (d == 0) "$m" else m.toString().padStart(d + 1, '0').let { it.dropLast(d) + "." + it.takeLast(d) }
+            val expected = expectedText.toDouble().let { if (neg) -it else it }
+            val formula = "=ROUND(${if (neg) "-" else ""}$literal,$d)"
+            assertEquals(if (expected == 0.0) 0.0 else expected, (eval(formula) as CellValue.Num).value, formula)
+        }
+    }
+
+    private fun pow10(e: Int): Long {
+        var r = 1L
+        repeat(e) { r *= 10 }
+        return r
     }
 }

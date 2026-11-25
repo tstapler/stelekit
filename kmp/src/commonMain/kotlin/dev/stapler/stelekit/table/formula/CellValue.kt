@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.table.formula
 
+import dev.stapler.stelekit.table.NumberGrammar
 import kotlin.math.abs
 
 enum class CellError(val display: String) {
@@ -8,6 +9,7 @@ enum class CellError(val display: String) {
     Cycle("#CYCLE!"),
     DivZero("#DIV/0!"),
     Value("#VALUE!"),
+    Num("#NUM!"),
     Name("#NAME?"),
     Limit("#LIMIT!"),
 }
@@ -33,62 +35,6 @@ sealed interface CellValue {
             return if (n != null) Num(n) else Text(raw)
         }
     }
-}
-
-/** Locale-independent number syntax from ADR-002. Hand-scanned so `NaN`, `Infinity`, hex and `1d` never match. */
-object NumberGrammar {
-    /** Null when [raw] (surrounding whitespace ignored) is not a number. */
-    fun parse(raw: String): Double? {
-        val s = raw.trim()
-        val n = s.length
-        var i = 0
-        val clean = StringBuilder()
-        if (i < n && (s[i] == '+' || s[i] == '-')) {
-            if (s[i] == '-') clean.append('-')
-            i++
-        }
-        val intStart = i
-        while (i < n && (s[i].isAsciiDigit() || s[i] == ',')) i++
-        val intDigits = stripThousands(s.substring(intStart, i)) ?: return null
-        clean.append(if (intDigits.isEmpty() && i < n && s[i] == '.') "0" else intDigits)
-        var fracDigits = 0
-        if (i < n && s[i] == '.') {
-            clean.append('.')
-            i++
-            val fracStart = i
-            while (i < n && s[i].isAsciiDigit()) i++
-            fracDigits = i - fracStart
-            clean.append(if (fracDigits == 0) "0" else s.substring(fracStart, i))
-        }
-        if (intDigits.length + fracDigits == 0) return null
-        if (i < n && (s[i] == 'e' || s[i] == 'E')) {
-            var j = i + 1
-            val expStart = j
-            if (j < n && (s[j] == '+' || s[j] == '-')) j++
-            val digitsStart = j
-            while (j < n && s[j].isAsciiDigit()) j++
-            if (j == digitsStart) return null
-            clean.append('e').append(s, expStart, j)
-            i = j
-        }
-        val percent = i < n && s[i] == '%'
-        if (percent) i++
-        if (i != n) return null
-        val v = clean.toString().toDoubleOrNull() ?: return null
-        if (v.isNaN() || v.isInfinite()) return null
-        return if (percent) v / 100.0 else v
-    }
-
-    /** `1,234,567` -> `1234567`; null unless the first group has 1-3 digits and every later group exactly 3. */
-    private fun stripThousands(token: String): String? {
-        if (!token.contains(',')) return token
-        val groups = token.split(',')
-        if (groups[0].length !in 1..3) return null
-        if (groups.drop(1).any { it.length != 3 }) return null
-        return groups.joinToString("")
-    }
-
-    private fun Char.isAsciiDigit() = this in '0'..'9'
 }
 
 /** 12-significant-digit display (ADR-002) built without `String.format`, whose output differs per target. */
@@ -143,8 +89,32 @@ object NumberDisplay {
         return sign + body
     }
 
+    /**
+     * Rounds `0.<digits> * 10^pos` half up (digits are of a magnitude) to its first [keep] digits; an empty result
+     * means zero. Carry out of the first digit raises the position.
+     */
+    internal fun roundDigits(digits: String, pos: Int, keep: Int): Pair<String, Int> {
+        if (keep >= digits.length) return digits to pos
+        if (keep < 0) return "" to pos
+        val up = digits[keep] >= '5'
+        if (keep == 0) return if (up) "1" to pos + 1 else "" to pos
+        if (!up) return digits.substring(0, keep) to pos
+        val kept = digits.substring(0, keep).toCharArray()
+        var k = keep - 1
+        while (k >= 0) {
+            if (kept[k] == '9') {
+                kept[k] = '0'
+                k--
+            } else {
+                kept[k] = kept[k] + 1
+                break
+            }
+        }
+        return if (k < 0) ("1" + kept.concatToString()) to pos + 1 else kept.concatToString() to pos
+    }
+
     /** Digits (no leading or trailing zeros) and decimal point position of `Double.toString`, parsed from any target's format. */
-    private fun shortestDigits(positive: Double): Pair<String, Int> {
+    internal fun shortestDigits(positive: Double): Pair<String, Int> {
         val s = positive.toString()
         val e = s.indexOfFirst { it == 'e' || it == 'E' }
         val mantissa = if (e >= 0) s.substring(0, e) else s

@@ -65,15 +65,50 @@ class TableSyncPolicyTest {
         assertEquals(p.adoptOf(s1), p.classify(s1))
     }
 
-    // trace (c): an Acked state older than the newest own commit with no expectation registered is Stale (P5-5):
-    // only `expectAdopt` makes an undo/redo target an Adopt.
+    // trace (c): before the newest own commit's emission was observed, an older Acked state is a late echo (Stale);
+    // only `expectAdopt` makes an undo/redo target an Adopt. After the newest echo, the same content is external.
     @Test
-    fun undoRedo_should_BeStale_When_NoExpectationWasRegistered() {
+    fun olderAckedState_should_BeStaleThenExternal_When_NewestEchoNotYetThenObserved() {
+        val p = policy()
+        p.registerCommit(s1); p.classify(s1)
+        val q2 = p.registerCommit(s2)
+        p.markDone(q2)
+        assertEquals(SyncDecision.Stale, p.classify(s1), "S2's echo is still due, so S1 can only be a late echo")
+        assertEquals(SyncDecision.Echo, p.classify(s2))
+        assertEquals(SyncDecision.Rebuild(null), p.classify(s1), "after S2's echo nothing older can arrive: a genuine revert")
+    }
+
+    // P5-6: the revert scenario the review found. S1 acked, the DB is then externally reverted to S0.
+    @Test
+    fun externalRevertToOlderState_should_Rebuild_When_NewestOwnEchoWasObserved() {
+        val p = policy()
+        val q1 = p.registerCommit(s1)
+        assertEquals(SyncDecision.Echo, p.classify(s1))
+        p.markDone(q1)
+        assertEquals(SyncDecision.Rebuild(CellAddress(2, 1)), p.classify(s0, selection = CellAddress(2, 1)))
+        assertEquals(SyncDecision.Echo, p.classify(s0))
+        // a new commit re-arms the floor: S0's echo can no longer be mistaken for an external edit
+        p.registerCommit(s2)
+        assertEquals(SyncDecision.Stale, p.classify(s0))
+        assertEquals(SyncDecision.Echo, p.classify(s2))
+    }
+
+    @Test
+    fun externalRevertToOlderState_should_KeepDraft_When_DraftPending() {
+        val p = policy()
+        p.registerCommit(s1); p.classify(s1)
+        assertEquals(SyncDecision.ConflictKeepDraft, p.classify(s0, draftPending = true))
+    }
+
+    // the floor also lifts when the newest own state is an undo's Adopt
+    @Test
+    fun externalRevert_should_Rebuild_When_NewestIsAdoptedUndoTarget() {
         val p = policy()
         p.registerCommit(s1); p.classify(s1)
         p.registerCommit(s2); p.classify(s2)
-        assertEquals(SyncDecision.Stale, p.classify(s1))
-        assertEquals(SyncDecision.Echo, p.classify(s2))
+        p.expectAdopt(s1)
+        assertEquals(p.adoptOf(s1), p.classify(s1))
+        assertEquals(SyncDecision.Rebuild(null), p.classify(s0))
     }
 
     @Test
@@ -204,14 +239,14 @@ class TableSyncPolicyTest {
         assertEquals(SyncDecision.ConflictKeepDraft, p.classify(s2, draftPending = true, selection = CellAddress(3, 2)))
     }
 
-    // trace (d3): external content equal to a superseded Acked state is ignored (Stale), accepted: it is
-    // indistinguishable from a late echo. A foreign revert to an older state is lost until the next write (P5-5).
+    // trace (d3): once S2's echo was observed the feed (ordered) cannot deliver an older echo, so an emission equal to
+    // a superseded Acked state is a genuine external edit (P5-6; it was Stale in P5-5).
     @Test
-    fun externalEditEqualToSupersededAckedState_should_BeStale_When_NothingInFlight() {
+    fun externalEditEqualToSupersededAckedState_should_Rebuild_When_NewestEchoObserved() {
         val p = policy()
         p.registerCommit(s1); p.classify(s1)
         p.registerCommit(s2); p.classify(s2)
-        assertEquals(SyncDecision.Stale, p.classify(s1))
+        assertEquals(SyncDecision.Rebuild(null), p.classify(s1))
     }
 
     // trace (d): external edit equal to an older InFlight entry is Stale (last writer wins on the next commit).
@@ -236,7 +271,7 @@ class TableSyncPolicyTest {
             }
             for (i in 99 downTo 0) {
                 if (withExpect) p.expectAdopt(states[i])
-                val want = if (withExpect) SyncDecision.Adopt(states[i]) else SyncDecision.Stale
+                val want = if (withExpect) SyncDecision.Adopt(states[i]) else SyncDecision.Rebuild(null)
                 assertEquals(want, p.classify(states[i]), "undo to $i expect=$withExpect")
             }
         }
@@ -398,9 +433,10 @@ class TableSyncPolicyTest {
         assertEquals(SyncDecision.Echo, p.classify(s2))
     }
 
-    // P5-5 gap 1: an older acked emission trailing an undo's Adopt is Stale too; only the expectation adopts.
+    // P5-5 gap 1 / P5-6: S2's echo was never observed, so S2 trailing the undo's Adopt is not an older late echo (the feed
+    // is ordered: S2 precedes the undo's S1); it is an external write. Only the expectation adopts.
     @Test
-    fun olderAckedEmission_should_BeStale_When_ItTrailsUndoAdopt() {
+    fun olderAckedEmission_should_Rebuild_When_ItTrailsUndoAdopt() {
         val p = policy()
         val q1 = p.registerCommit(s1)
         val q2 = p.registerCommit(s2)
@@ -408,7 +444,7 @@ class TableSyncPolicyTest {
         p.markDone(q2)
         p.expectAdopt(s1)
         assertEquals(p.adoptOf(s1), p.classify(s1))
-        assertEquals(SyncDecision.Stale, p.classify(s2))
+        assertEquals(SyncDecision.Rebuild(null), p.classify(s2))
     }
 
     // P5-5 gap 1: redo needs its own expectation; an unexpected superseded state is Stale.

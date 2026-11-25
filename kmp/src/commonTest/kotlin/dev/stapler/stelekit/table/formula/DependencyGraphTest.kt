@@ -99,4 +99,29 @@ class DependencyGraphTest {
         val cyclic = graph(*(formulas + ("A1" to "=A20000+1")).toTypedArray()).planAll()
         assertEquals(20_000, cyclic.cyclic.size)
     }
+
+    @Test
+    fun dependentsOf_should_ExamineOnlyRectanglesNearTheCell_When_ManyRowLocalRanges() {
+        val n = 5_000
+        val g = graph(*(2..n + 1).map { "C$it" to "=SUM(A$it:B$it)" }.toTypedArray())
+        assertEquals(setOf(a("C2500")), g.dependentsOf(a("A2500")))
+        assertEquals(emptySet(), g.dependentsOf(a("Z2500")))
+        val plan = g.planAll()
+        assertEquals(n, plan.order.size)
+        assertTrue(plan.cyclic.isEmpty())
+        assertEquals(n, g.plan((2..n + 1).map { a("A$it") }).size)
+        // Scanning every rectangle per lookup costs n * n = 25M per pass here; an index touches ~log n nodes per lookup.
+        assertTrue(g.rectChecks < 2_000_000L, "examined ${g.rectChecks} index nodes")
+    }
+
+    @Test
+    fun planAll_should_OrderRunningTotalColumn_When_ManyPrefixSums() {
+        val n = 1_500
+        val g = graph(*(2..n + 1).map { "B$it" to "=SUM(A\$2:A$it)" }.toTypedArray(), "C2" to "=B2+B${n + 1}")
+        val plan = g.planAll()
+        assertEquals(n + 1, plan.order.size)
+        assertTrue(plan.cyclic.isEmpty())
+        assertEquals(n - 1, g.dependentsOf(a("A3")).size)
+        assertEquals(setOf(a("B${n + 1}")), g.dependentsOf(a("A${n + 1}")))
+    }
 }

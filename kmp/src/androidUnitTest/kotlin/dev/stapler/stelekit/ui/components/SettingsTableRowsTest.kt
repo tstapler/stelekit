@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import dev.stapler.stelekit.ui.components.settings.TABLE_INLINE_EDIT_LABEL
+import dev.stapler.stelekit.ui.components.settings.TABLE_NOT_ACTIVE_SUFFIX
 import dev.stapler.stelekit.ui.components.settings.TABLE_SHEET_HELPER
 import dev.stapler.stelekit.ui.components.settings.TABLE_SHEET_LABEL
 import dev.stapler.stelekit.ui.components.settings.TableSettingsRows
@@ -24,6 +25,9 @@ class SettingsTableRowsTest {
     @Test
     fun flagRowsAppearAndFlipPrefs() {
         val holder = TablePreferences(null)
+        // Nothing reads these flags yet, so the rows must say so in the label itself (not only in a tooltip).
+        assertEquals(true, TABLE_INLINE_EDIT_LABEL.endsWith(TABLE_NOT_ACTIVE_SUFFIX))
+        assertEquals(true, TABLE_SHEET_LABEL.endsWith(TABLE_NOT_ACTIVE_SUFFIX))
         rule.setContent { MaterialTheme { Column { TableSettingsRows(holder) } } }
         rule.onNodeWithText(TABLE_SHEET_HELPER, useUnmergedTree = true).assertExists()
         rule.onNodeWithText(TABLE_INLINE_EDIT_LABEL, useUnmergedTree = true).performClick()

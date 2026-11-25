@@ -41,7 +41,7 @@ object Tokenizer {
                 continue
             }
             val tok = when {
-                c.isDigit() || (c == '.' && i + 1 < n && text[i + 1].isDigit()) -> number(text, i)
+                c.isAsciiDigit() || (c == '.' && i + 1 < n && text[i + 1].isAsciiDigit()) -> number(text, i)
                 c == '"' -> string(text, i)
                 c == '#' -> refError(text, i)
                 c == '$' || c.isAsciiLetter() || c == '_' -> word(text, i)
@@ -56,18 +56,20 @@ object Tokenizer {
 
     private fun Char.isAsciiLetter() = this in 'a'..'z' || this in 'A'..'Z'
 
+    private fun Char.isAsciiDigit() = this in '0'..'9'
+
     private fun number(text: String, start: Int): Token {
         var i = start
-        while (i < text.length && text[i].isDigit()) i++
+        while (i < text.length && text[i].isAsciiDigit()) i++
         if (i < text.length && text[i] == '.') {
             i++
-            while (i < text.length && text[i].isDigit()) i++
+            while (i < text.length && text[i].isAsciiDigit()) i++
         }
         if (i < text.length && (text[i] == 'e' || text[i] == 'E')) {
             var j = i + 1
             if (j < text.length && (text[j] == '+' || text[j] == '-')) j++
-            if (j < text.length && text[j].isDigit()) {
-                while (j < text.length && text[j].isDigit()) j++
+            if (j < text.length && text[j].isAsciiDigit()) {
+                while (j < text.length && text[j].isAsciiDigit()) j++
                 i = j
             }
         }
@@ -95,7 +97,7 @@ object Tokenizer {
         if (text.regionMatches(start, "#REF!", 0, 5, ignoreCase = true)) Token.RefErr(start, start + 5)
         else Token.Invalid(start, start + 1)
 
-    private fun isNameChar(c: Char) = c.isAsciiLetter() || c.isDigit() || c == '_' || c == '.'
+    private fun isNameChar(c: Char) = c.isAsciiLetter() || c.isAsciiDigit() || c == '_' || c == '.'
 
     private fun isNameStart(c: Char) = c.isAsciiLetter() || c == '_' || c == '.'
 
@@ -119,7 +121,7 @@ object Tokenizer {
         val absRow = i < text.length && text[i] == '$'
         if (absRow) i++
         val rowStart = i
-        while (i < text.length && text[i].isDigit()) i++
+        while (i < text.length && text[i].isAsciiDigit()) i++
         if (i == rowStart || i - rowStart > 9) return null
         if (i < text.length && (isNameStart(text[i]) || text[i] == '(')) return null
         val row = text.substring(rowStart, i).toInt()

@@ -54,7 +54,7 @@ object FormulaParser {
         while (i < text.length && text[i].isWhitespace()) i++
         if (i >= text.length) return false
         val c = text[i]
-        return c.isDigit() || c in 'a'..'z' || c in 'A'..'Z' || c == '_' || c == '.' ||
+        return c in '0'..'9' || c in 'a'..'z' || c in 'A'..'Z' || c == '_' || c == '.' ||
             c == '$' || c == '(' || c == '+' || c == '-' || c == '"' ||
             text.regionMatches(i, "#REF!", 0, 5, ignoreCase = true)
     }

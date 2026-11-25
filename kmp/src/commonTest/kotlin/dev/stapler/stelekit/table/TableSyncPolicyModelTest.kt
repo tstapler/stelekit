@@ -35,12 +35,18 @@ class TableSyncPolicyModelTest {
         val expected = HashSet<String>()
         val failures = ArrayList<String>()
         val log = ArrayList<String>()
+        val history = ArrayList<String>()
+        val writes = HashMap<Int, String>()
+        var ownIdx = 0
+        var ownDelivered = true
         fun short(c: String) = c.lines().last().filter { it.isLetterOrDigit() }
 
-        init { policy.registerLoaded(truth) }
+        init { policy.registerLoaded(truth); history.add(truth) }
 
         fun write(content: String) {
             truth = content
+            history.add(content)
+            writes[latestWrite + 1] = content
             latestWrite++
             feed.addLast(latestWrite to content)
         }
@@ -51,6 +57,8 @@ class TableSyncPolicyModelTest {
             display = c
             write(c)
             displayIdx = latestWrite
+            ownIdx = latestWrite
+            ownDelivered = false
             pendingDone.add(policy.registerCommit(c) to latestWrite)
             log.add("commit #$latestWrite ${short(c)}")
         }
@@ -59,6 +67,7 @@ class TableSyncPolicyModelTest {
             val (idx, content) = feed.removeFirstOrNull() ?: return
             lastObserved = content
             lastObservedIdx = idx
+            if (idx == ownIdx) ownDelivered = true
             val before = display
             val d = policy.classify(content)
             log.add("deliver #$idx ${short(content)} -> ${d::class.simpleName} display=${short(display)}")
@@ -109,7 +118,22 @@ class TableSyncPolicyModelTest {
             policy.expectAdopt(target)
             expected.add(target)
             write(target)
+            ownIdx = latestWrite
+            ownDelivered = false
             log.add("undo/redo #$latestWrite -> ${short(target)}")
+        }
+
+        /** A genuine external edit restoring older content; only legal once the newest own emission was observed (ordered feed). */
+        fun revert(pick: Int) {
+            if (!ownDelivered) return
+            // Content equal to a still-InFlight own commit stays Stale by design (last writer wins on the next commit).
+            val inFlight = pendingDone.map { it.second }.mapNotNull { writes[it] }.toSet()
+            val older = history.filter { it != truth && it !in inFlight }.distinct()
+            if (older.isEmpty()) return
+            undo.clear(); redo.clear()
+            val target = older[pick % older.size]
+            write(target)
+            log.add("revert #$latestWrite -> ${short(target)}")
         }
 
         fun foreign() {
@@ -134,7 +158,11 @@ class TableSyncPolicyModelTest {
                     4 -> sim.dropNext()
                     5 -> sim.markOne(op)
                     6 -> sim.undoOrRedo(isUndo = op % 3 != 0)
-                    else -> if (op % 5 == 0) sim.foreign() else sim.deliverNext()
+                    else -> when {
+                        op % 5 == 0 -> sim.foreign()
+                        op % 5 <= 2 -> sim.revert(op)
+                        else -> sim.deliverNext()
+                    }
                 }
                 assertEquals(emptyList<String>(), sim.failures)
             }

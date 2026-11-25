@@ -21,7 +21,7 @@ object TableSerializer {
         row.source?.let { return it + cr }
         val parts = row.cells.mapIndexed { i, cell ->
             val raw = row.rawCells.getOrNull(i)
-            if (raw != null && TableCellCodec.unescape(raw) == cell.value) raw else TableCellCodec.escape(cell.value)
+            if (raw != null && TableCellCodec.unescape(raw) == cell.value) TableCellCodec.guardTrailingBackslash(raw) else TableCellCodec.escape(cell.value)
         }
         return render(parts, style) + cr
     }
