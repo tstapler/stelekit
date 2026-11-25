@@ -55,6 +55,8 @@ class QueryPlanAuditTest {
         "selectImageAnnotationsByTag",
         // Library tag chips: GROUP BY over the whole tags column, LIMITed output, run once per Library open
         "selectAnnotationTagSets",
+        // One small row per sheet; LIKE '%word%' on the body is a scan by design (FTS5 cannot tokenise 36" or 3' 6"), result LIMITed
+        "searchSketchText",
         // pending_asset_moves is a crash-recovery WAL bounded to <= a handful of rows by design
         "selectAllPendingMoves",
         // SQLite reports "SCAN CONSTANT ROW" for rowid helpers with no FROM clause — not a real scan
@@ -480,6 +482,11 @@ ORDER BY depth, parent_uuid, position"""),
             "SELECT * FROM sketch_sheets WHERE project_uuid = 'x' ORDER BY position, uuid LIMIT 51"),
         AuditQuery("selectSketchPrimitivesBySheet",
             "SELECT * FROM sketch_primitives WHERE sheet_uuid = 'x' ORDER BY z, uuid LIMIT 500 OFFSET 0"),
+        AuditQuery("selectSketchSearchHashes",
+            "SELECT sheet_uuid, body_hash FROM sketch_search_text WHERE project_uuid = 'x' LIMIT 1000"),
+        AuditQuery("searchSketchText",
+            "SELECT s.project_uuid, s.sheet_uuid, s.body, p.name FROM sketch_search_text s JOIN sketch_projects p ON p.uuid = s.project_uuid " +
+                "WHERE s.body LIKE '%x%' ESCAPE '\\' OR LOWER(p.name) LIKE '%x%' ESCAPE '\\' ORDER BY s.updated_at DESC, s.sheet_uuid LIMIT 100 OFFSET 0"),
         AuditQuery("selectSketchDimensionsByProject",
             "SELECT * FROM sketch_dimensions WHERE project_uuid = 'x' ORDER BY key, uuid LIMIT 500 OFFSET 0"),
 

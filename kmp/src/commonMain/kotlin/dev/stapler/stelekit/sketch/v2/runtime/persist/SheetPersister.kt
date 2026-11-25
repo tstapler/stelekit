@@ -16,9 +16,11 @@ import dev.stapler.stelekit.projectbridge.SidecarCodec
 import dev.stapler.stelekit.projectbridge.SidecarRead
 import dev.stapler.stelekit.projectbridge.SidecarWriteOutcome
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
+import dev.stapler.stelekit.repository.SketchSearchRow
+import dev.stapler.stelekit.sketch.v2.search.SketchSearchText
 
 /** One encoded sheet: its bytes, their sha and the layer mirror the model carries. */
-internal class Encoded(val bytes: ByteArray, val sha: String, val layers: List<String>)
+internal class Encoded(val bytes: ByteArray, val sha: String, val layers: List<String>, val search: SketchSearchText? = null)
 
 internal sealed interface Persist {
     data object Written : Persist
@@ -79,7 +81,7 @@ internal class SheetPersister(private val target: SheetTarget, private val ports
         val others = bundle.sheetPayloads.filterKeys { it != target.sheet }
             .mapNotNull { (uuid, payload) -> (payload as? SheetPayload.V2Opaque)?.let { SheetPaths.pathFor(uuid, SheetPaths.SCHEMA_V2) to it.sha256 } }.toMap()
         return when (val outcome = ports.store.writeNow(target.slug, modelFiles - others.keys, others)) {
-            SidecarWriteOutcome.Written -> finishWrite(loaded.project, updatedRow, SidecarCodec.bundleHash(modelFiles))
+            SidecarWriteOutcome.Written -> finishWrite(loaded.project, updatedRow, SidecarCodec.bundleHash(modelFiles), encoded.search)
             SidecarWriteOutcome.Deferred -> Persist.Deferred
             SidecarWriteOutcome.StaleOpaque -> null
             SidecarWriteOutcome.Unavailable -> Persist.Failed(SaveFailure.Unavailable)
@@ -92,13 +94,23 @@ internal class SheetPersister(private val target: SheetTarget, private val ports
 
     /** The files are written: mirror the sheet row and move the reconcile base so the next reconcile reads `Unchanged`. */
     @OptIn(DirectRepositoryWrite::class)
-    private suspend fun finishWrite(project: SketchProject, row: SketchSheet, hash: String): Persist {
+    private suspend fun finishWrite(project: SketchProject, row: SketchSheet, hash: String, search: SketchSearchText?): Persist {
         val token = ports.repos.projects.loadProject(project.uuid).getOrNull()?.token ?: return Persist.Failed(SaveFailure.Write)
         val rowResult = write { ports.repos.sheets.saveSheet(row, token) }
         if (rowResult.isLeft()) return Persist.Failed(SaveFailure.Write)
         val fresh = ports.repos.projects.loadProject(project.uuid).getOrNull()?.project ?: project
         val baseResult = write { ports.repos.projects.saveProject(fresh.copy(lastSyncedSidecarHash = hash, baseRevision = fresh.modelRevision)) }
-        return if (baseResult.isLeft()) Persist.Failed(SaveFailure.Write) else Persist.Written
+        if (baseResult.isLeft()) return Persist.Failed(SaveFailure.Write)
+        indexSearchText(project, search)
+        return Persist.Written
+    }
+
+    /** Best effort: the text index is a cache the next backfill repairs, so a failed write never fails the save. */
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun indexSearchText(project: SketchProject, search: SketchSearchText?) {
+        if (search == null) return
+        val row = SketchSearchRow(project.uuid.value, target.sheet.value, search.body, search.hash, ports.clockMillis())
+        write { ports.repos.searchText.save(row) }
     }
 
     private suspend fun write(op: suspend () -> Either<DomainError, Unit>): Either<DomainError, Unit> =

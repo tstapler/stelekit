@@ -32,6 +32,7 @@ import dev.stapler.stelekit.sketch.v2.SheetSaverConflictTest
 import dev.stapler.stelekit.sketch.v2.SheetSaverReconcileIntegrationTest
 import dev.stapler.stelekit.sketch.v2.SheetSplitterTest
 import dev.stapler.stelekit.sketch.v2.SketchStorageReviewRegressionTest
+import dev.stapler.stelekit.sketch.v2.SketchTextSearchTest
 import dev.stapler.stelekit.sketch.v2.TechnicalDataConversionGoldenTest
 import dev.stapler.stelekit.sketch.v2.TechnicalDataEditsTest
 import dev.stapler.stelekit.sketch.v2.UpgradeChipConsentSheetTest
@@ -107,6 +108,7 @@ import org.junit.runners.Suite
     SheetSaverReconcileIntegrationTest::class,
     SheetSplitterTest::class,
     SketchStorageReviewRegressionTest::class,
+    SketchTextSearchTest::class,
     TechnicalDataConversionGoldenTest::class,
     TechnicalDataEditsTest::class,
     UpgradeChipConsentSheetTest::class,

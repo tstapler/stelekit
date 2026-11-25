@@ -975,6 +975,21 @@ object MigrationRunner {
                 SchemaOp.AddColumn("measurement_annotations", "value_original_meters", "REAL"),
             ),
         ),
+        Migration(
+            name = "sketch_search_text",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS sketch_search_text (
+                    project_uuid TEXT NOT NULL,
+                    sheet_uuid   TEXT NOT NULL,
+                    body         TEXT NOT NULL,
+                    body_hash    TEXT NOT NULL,
+                    updated_at   INTEGER NOT NULL,
+                    PRIMARY KEY (project_uuid, sheet_uuid)
+                )
+                """,
+            )
+        ),
     )
 
     /**

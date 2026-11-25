@@ -1,0 +1,138 @@
+// Copyright (c) 2026 Tyler Stapler
+// SPDX-License-Identifier: Elastic-2.0
+// https://www.elastic.co/licensing/elastic-license
+
+@file:OptIn(DirectRepositoryWrite::class)
+
+package dev.stapler.stelekit.sketch.v2
+
+import dev.stapler.stelekit.repository.DirectRepositoryWrite
+import dev.stapler.stelekit.repository.SketchSearchRow
+import dev.stapler.stelekit.repository.SketchSearchTextRepository
+import dev.stapler.stelekit.repository.SketchTestSupport
+import dev.stapler.stelekit.sketch.v2.runtime.persist.SketchTextSearch
+import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
+import dev.stapler.stelekit.sketch.v2.constraints.Constraint
+import dev.stapler.stelekit.sketch.v2.constraints.ConstraintId
+import dev.stapler.stelekit.sketch.v2.constraints.ConstraintKind
+import dev.stapler.stelekit.sketch.v2.constraints.ConstraintTarget
+import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
+import dev.stapler.stelekit.sketch.v2.scene.ElementBase
+import dev.stapler.stelekit.sketch.v2.scene.ElementId
+import dev.stapler.stelekit.sketch.v2.scene.SceneUnit
+import dev.stapler.stelekit.sketch.v2.scene.TextElement
+import dev.stapler.stelekit.sketch.v2.scene.ZKey
+import dev.stapler.stelekit.sketch.v2.search.SketchTextExtractor
+import kotlinx.coroutines.runBlocking
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+/** E8: sketch text reaches global search through the real sheet saver and the real SQLDelight repository. */
+class SketchTextSearchTest {
+    private fun label(id: String, text: String, name: String? = null) = TextElement(
+        ElementBase(ElementId(id), zKey = ZKey("b$id"), name = name),
+        SceneUnit.ofInt(0), SceneUnit.ofInt(0), SceneUnit.ofInt(40), SceneUnit.ofInt(20), text = text,
+    )
+
+    private fun docWith(base: SketchDocumentV2, vararg els: TextElement) =
+        els.fold(base) { d, e -> d.copy(scene = d.scene.add(e).getOrNull()!!) }
+
+    @Test
+    fun extractor_should_IndexTextNamesAndLengthsBothWays_When_ASheetHasThem() {
+        val rect = SaverRig.rect("r1", 0)
+        val doc = docWith(SketchDocumentV2(sheetUuid = "s"), label("t1", "Kitchen\nIsland", name = "North wall"))
+            .let { it.copy(scene = it.scene.add(rect).getOrNull()!!) }
+            .copy(constraints = listOf(Constraint(ConstraintId("d1"), ConstraintKind.Distance, listOf(ConstraintTarget(ElementId("r1"))), value = 576.0)))
+        val text = SketchTextExtractor.extract(doc).body
+        assertTrue("kitchen island" in text, text)
+        assertTrue("north wall" in text, text)
+        assertTrue("36\"" in text, "a 36 inch dimension is found by its inch form: $text")
+        assertTrue("3' 0\"" in text, "and by its feet-inches form: $text")
+    }
+
+    @Test
+    fun extractor_should_StayInsideItsBudget_When_ASheetIsVeryWordy() {
+        var doc = SketchDocumentV2(sheetUuid = "s")
+        repeat(500) { i -> doc = docWith(doc, label("t$i", "word$i ".repeat(10))) }
+        val text = SketchTextExtractor.extract(doc)
+        assertTrue(text.body.length <= SketchTextExtractor.BODY_BUDGET)
+        assertTrue("word0" in text.body)
+    }
+
+    @Test
+    fun savedSheet_should_BeFoundByTextAndByDimension_When_TheSaverWrites() = runBlocking<Unit> {
+        val rig = SaverRig(MixedProjectFixtures.device(convertA = true), coroutineContext)
+        val doc = docWith(rig.loadedDoc(), label("kt", "Kitchen pantry")).copy(
+            constraints = listOf(Constraint(ConstraintId("d1"), ConstraintKind.Distance, listOf(ConstraintTarget(ElementId("kt"))), value = 576.0)),
+        )
+        rig.saver.submit(doc)
+        assertEquals(SaveState.Saved, rig.saver.flush())
+        val search = SketchTextSearch(rig.device.repos, { rig.device.store }, { it() }, { 1L })
+        val byText = search.search("pantry")
+        assertEquals(listOf(SketchTestSupport.P.value), byText.map { it.projectUuid })
+        assertEquals("kitchen pantry", byText.single().snippet)
+        assertEquals(1, search.search("36\"").size)
+        assertEquals(1, search.search("PANTRY kitchen").size, "every word must match, in any order and case")
+        assertTrue(search.search("pantry bathroom").isEmpty())
+        rig.saver.close()
+    }
+
+    @Test
+    fun backfill_should_IndexSheetsTheSaverNeverSaw_AndSkipUnchangedOnes() = runBlocking<Unit> {
+        val device = MixedProjectFixtures.device(convertA = true)
+        val search = SketchTextSearch(device.repos, { device.store }, { it() }, { 1L })
+        assertEquals(1, search.backfill())
+        assertEquals(0, search.backfill(), "the backfill runs once per instance")
+        assertEquals(0, SketchTextSearch(device.repos, { device.store }, { it() }, { 2L }).backfill(), "a fresh instance finds every hash unchanged and writes nothing")
+    }
+
+    @Test
+    fun search_should_BeBounded_When_ManyRowsMatch() = runBlocking<Unit> {
+        val repos = SketchTestSupport.backends().first { it.name == "sqldelight" }.repos
+        repos.projects.saveProject(SketchTestSupport.project())
+        repeat(SketchSearchTextRepository.CANDIDATE_PAGE * 3) { i ->
+            repos.searchText.save(SketchSearchRow("p1", "s$i", "kitchen $i", "h$i", i.toLong()))
+        }
+        val hits = repos.searchText.findByText("kitchen", 5).getOrNull()!!
+        assertEquals(5, hits.size)
+        assertEquals("s${SketchSearchTextRepository.CANDIDATE_PAGE * 3 - 1}", hits.first().sheetUuid, "newest first")
+        repos.searchText.save(SketchSearchRow("p1", "pct", "kitchen 100% done", "hp", 0L))
+        repos.searchText.save(SketchSearchRow("p1", "pctx", "kitchen 1000 done", "hq", 0L))
+        assertEquals(listOf("pct"), repos.searchText.findByText("100%", 5).getOrNull()!!.map { it.sheetUuid }, "% in the query is literal, not a wildcard")
+        repos.searchText.deleteProject("p1")
+        assertTrue(repos.searchText.findByText("kitchen", 5).getOrNull()!!.isEmpty())
+    }
+
+    @Test
+    fun repository_should_BehaveTheSameOnBothBackends_ForSaveHashDeleteAndNameMatch() = runBlocking<Unit> {
+        for (b in SketchTestSupport.backends()) {
+            val r = b.repos
+            r.projects.saveProject(SketchTestSupport.project())
+            r.searchText.save(SketchSearchRow("p1", "s1", "kitchen wall", "h1", 1L))
+            r.searchText.save(SketchSearchRow("p1", "s2", "bath", "h2", 2L))
+            assertEquals(mapOf("s1" to "h1", "s2" to "h2"), r.searchText.hashesOf("p1").getOrNull(), b.name)
+            assertEquals(listOf("s1"), r.searchText.findByText("kitchen wall", 5).getOrNull()!!.map { it.sheetUuid }, b.name)
+            assertEquals(listOf("s2", "s1"), r.searchText.findByText("kitchen", 5).getOrNull()!!.map { it.sheetUuid }, "${b.name}: the project name (Kitchen) matches every sheet, newest first")
+            assertTrue(r.searchText.findByText("  ", 5).getOrNull()!!.isEmpty(), b.name)
+            assertTrue(r.searchText.findByText("kitchen", 0).getOrNull()!!.isEmpty(), b.name)
+            r.searchText.deleteSheet("s1")
+            assertEquals(setOf("s2"), r.searchText.hashesOf("p1").getOrNull()!!.keys, b.name)
+            r.searchText.deleteProject("p1")
+            assertTrue(r.searchText.hashesOf("p1").getOrNull()!!.isEmpty(), b.name)
+        }
+    }
+
+    @OptIn(dev.stapler.stelekit.db.DirectSqlWrite::class)
+    @Test
+    fun restrictedQueries_should_ForwardTheSearchTextWrites() = runBlocking<Unit> {
+        val b = SketchTestSupport.backends().first { it.name == "sqldelight" }
+        val q = dev.stapler.stelekit.db.RestrictedDatabaseQueries(b.database!!.steleDatabaseQueries)
+        q.upsertSketchSearchText("p1", "s1", "kitchen", "h", 1L)
+        assertEquals(1L, SketchTestSupport.countRows(b.driver!!, "sketch_search_text"))
+        q.deleteSketchSearchTextBySheet("s1")
+        q.upsertSketchSearchText("p1", "s2", "bath", "h", 1L)
+        q.deleteSketchSearchTextByProject("p1")
+        assertEquals(0L, SketchTestSupport.countRows(b.driver!!, "sketch_search_text"))
+    }
+}

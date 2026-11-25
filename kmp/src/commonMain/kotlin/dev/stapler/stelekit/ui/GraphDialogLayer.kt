@@ -66,7 +66,7 @@ internal fun GraphDialogLayer(
     val scope = rememberCoroutineScope()
 
     CommandPaletteHost(appState, viewModel, deps.extraCommands)
-    SearchDialogHost(appState, searchViewModel, viewModel, deps.loadPageBlocks, deps.assetSearch)
+    SearchDialogHost(appState, searchViewModel, viewModel, deps.loadPageBlocks, deps.assetSearch, deps.sketchSearch)
     SettingsDialogHost(appState, viewModel, fileSystem, deps.settings)
     GitSetupDialogHost(appState, viewModel, fileSystem, deps.gitSync)
     ConflictResolutionDialogHost(appState, viewModel, deps.gitSync)
@@ -108,6 +108,7 @@ private fun SearchDialogHost(
     viewModel: StelekitViewModel,
     loadPageBlocks: (String) -> kotlinx.coroutines.flow.Flow<Either<DomainError, List<dev.stapler.stelekit.model.Block>>>,
     assetSearch: dev.stapler.stelekit.asset.AssetSearchService? = null,
+    sketchSearch: dev.stapler.stelekit.sketch.v2.runtime.persist.SketchTextSearch? = null,
 ) {
     val indexingProgress by viewModel.indexingProgress.collectAsState()
     SearchDialog(
@@ -120,8 +121,18 @@ private fun SearchDialogHost(
         initialQuery = appState.searchDialogInitialQuery,
         isIndexing = indexingProgress is IndexingState.InProgress,
         loadPageBlocks = loadPageBlocks,
-        assetsSection = assetSearch?.let { service ->
-            { query ->
+        assetsSection = if (assetSearch == null && sketchSearch == null) null else { query ->
+            sketchSearch?.let { search ->
+                dev.stapler.stelekit.ui.sketch.SketchSearchSection(
+                    query = query,
+                    search = search,
+                    onOpenSketch = { projectUuid ->
+                        viewModel.setSearchDialogVisible(false)
+                        viewModel.navigateTo(Screen.Sketch(projectUuid))
+                    },
+                )
+            }
+            assetSearch?.let { service ->
                 dev.stapler.stelekit.ui.assets.AssetsSearchSection(
                     query = query,
                     service = service,

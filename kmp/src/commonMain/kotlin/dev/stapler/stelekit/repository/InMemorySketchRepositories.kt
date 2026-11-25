@@ -34,6 +34,7 @@ fun inMemorySketchRepositories(): SketchRepositories {
         projects = InMemorySketchProjectRepository(store),
         sheets = InMemorySketchSheetRepository(store),
         dimensions = InMemorySketchDimensionRepository(store),
+        searchText = InMemorySketchSearchTextRepository { store.projects.value[ProjectUuid(it)]?.name },
     )
 }
 

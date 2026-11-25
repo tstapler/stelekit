@@ -170,6 +170,7 @@ private val translations = mapOf(
         "library.cmd.show_annotated.desc" to "Open the Library filtered to annotated photos",
         "library.search.section" to "Library",
         "library.search.show_all" to "Show all in Library",
+        "sketch.search.section" to "Sketches",
         "nav.more.drawer" to "Graphs, favorites and sync"
     ),
     Language.CHINESE to mapOf(
@@ -345,6 +346,7 @@ class I18n(val language: Language) {
         const val LIBRARY_CMD_SHOW_ANNOTATED_DESC = "library.cmd.show_annotated.desc"
         const val LIBRARY_SEARCH_SECTION = "library.search.section"
         const val LIBRARY_SEARCH_SHOW_ALL = "library.search.show_all"
+        const val SKETCH_SEARCH_SECTION = "sketch.search.section"
 
         /** English lookup for non-composable callers (palette commands, tests). */
         fun get(key: String): String = I18n(Language.ENGLISH).t(key)

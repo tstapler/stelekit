@@ -4029,6 +4029,44 @@ public class SteleDatabaseQueries(
     value__: Long,
   ): Query<Sketch_dimensions> = selectSketchDimensionsByProject(project_uuid, value_, value__, ::Sketch_dimensions)
 
+  public fun <T : Any> selectSketchSearchHashes(
+    project_uuid: String,
+    `value`: Long,
+    mapper: (sheet_uuid: String, body_hash: String) -> T,
+  ): Query<T> = SelectSketchSearchHashesQuery(project_uuid, value) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!
+    )
+  }
+
+  public fun selectSketchSearchHashes(project_uuid: String, value_: Long): Query<SelectSketchSearchHashes> = selectSketchSearchHashes(project_uuid, value_, ::SelectSketchSearchHashes)
+
+  public fun <T : Any> searchSketchText(
+    needle: String,
+    limit: Long,
+    offset: Long,
+    mapper: (
+      project_uuid: String,
+      sheet_uuid: String,
+      body: String,
+      project_name: String,
+    ) -> T,
+  ): Query<T> = SearchSketchTextQuery(needle, limit, offset) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!
+    )
+  }
+
+  public fun searchSketchText(
+    needle: String,
+    limit: Long,
+    offset: Long,
+  ): Query<SearchSketchText> = searchSketchText(needle, limit, offset, ::SearchSketchText)
+
   /**
    * @return The number of rows updated.
    */
@@ -6208,6 +6246,58 @@ public class SteleDatabaseQueries(
         }.await()
     notifyQueries(-354_911_423) { emit ->
       emit("sketch_projects")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun upsertSketchSearchText(
+    project_uuid: String,
+    sheet_uuid: String,
+    body: String,
+    body_hash: String,
+    updated_at: Long,
+  ): Long {
+    val result = driver.execute(-1_997_269_679, """INSERT OR REPLACE INTO sketch_search_text (project_uuid, sheet_uuid, body, body_hash, updated_at) VALUES (?, ?, ?, ?, ?)""", 5) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, project_uuid)
+          bindString(parameterIndex++, sheet_uuid)
+          bindString(parameterIndex++, body)
+          bindString(parameterIndex++, body_hash)
+          bindLong(parameterIndex++, updated_at)
+        }.await()
+    notifyQueries(-1_997_269_679) { emit ->
+      emit("sketch_search_text")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun deleteSketchSearchTextBySheet(sheet_uuid: String): Long {
+    val result = driver.execute(-1_512_448_837, """DELETE FROM sketch_search_text WHERE sheet_uuid = ?""", 1) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, sheet_uuid)
+        }.await()
+    notifyQueries(-1_512_448_837) { emit ->
+      emit("sketch_search_text")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun deleteSketchSearchTextByProject(project_uuid: String): Long {
+    val result = driver.execute(163_734_389, """DELETE FROM sketch_search_text WHERE project_uuid = ?""", 1) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, project_uuid)
+        }.await()
+    notifyQueries(163_734_389) { emit ->
+      emit("sketch_search_text")
     }
     return result
   }
@@ -9215,5 +9305,59 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectSketchDimensionsByProject"
+  }
+
+  private inner class SelectSketchSearchHashesQuery<out T : Any>(
+    public val project_uuid: String,
+    public val `value`: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("sketch_search_text", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("sketch_search_text", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-1_622_754_323, """SELECT sheet_uuid, body_hash FROM sketch_search_text WHERE project_uuid = ? LIMIT ?""", mapper, 2) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, project_uuid)
+      bindLong(parameterIndex++, value)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectSketchSearchHashes"
+  }
+
+  private inner class SearchSketchTextQuery<out T : Any>(
+    public val needle: String,
+    public val limit: Long,
+    public val offset: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("sketch_search_text", "sketch_projects", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("sketch_search_text", "sketch_projects", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(2_023_624_130, """
+    |SELECT s.project_uuid, s.sheet_uuid, s.body, p.name AS project_name
+    |FROM sketch_search_text s
+    |JOIN sketch_projects p ON p.uuid = s.project_uuid
+    |WHERE s.body LIKE '%' || ? || '%' ESCAPE '\' OR LOWER(p.name) LIKE '%' || ? || '%' ESCAPE '\'
+    |ORDER BY s.updated_at DESC, s.sheet_uuid
+    |LIMIT ? OFFSET ?
+    """.trimMargin(), mapper, 4) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, needle)
+      bindString(parameterIndex++, needle)
+      bindLong(parameterIndex++, limit)
+      bindLong(parameterIndex++, offset)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:searchSketchText"
   }
 }

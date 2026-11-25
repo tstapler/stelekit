@@ -852,6 +852,16 @@ class RestrictedDatabaseQueries(
     suspend fun deleteSketchPrimitive(uuid: String): Long = queries.deleteSketchPrimitive(uuid)
 
     @DirectSqlWrite
+    suspend fun upsertSketchSearchText(project_uuid: String, sheet_uuid: String, body: String, body_hash: String, updated_at: Long): Long =
+        queries.upsertSketchSearchText(project_uuid, sheet_uuid, body, body_hash, updated_at)
+
+    @DirectSqlWrite
+    suspend fun deleteSketchSearchTextBySheet(sheet_uuid: String): Long = queries.deleteSketchSearchTextBySheet(sheet_uuid)
+
+    @DirectSqlWrite
+    suspend fun deleteSketchSearchTextByProject(project_uuid: String): Long = queries.deleteSketchSearchTextByProject(project_uuid)
+
+    @DirectSqlWrite
     suspend fun deleteSketchPrimitivesBySheet(sheet_uuid: String): Long = queries.deleteSketchPrimitivesBySheet(sheet_uuid)
 
     @DirectSqlWrite
