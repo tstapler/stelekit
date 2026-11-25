@@ -330,3 +330,8 @@ Three limits were pinned as `knownLimit_*` tests: (1) after `markDone` (or after
 - `ROUND`: single decimal rounding of the shortest digits; `digits > 15` returns the input untouched; `0.49999999999999994` rounds to 0.
 - `DependencyGraph`: removal tombstones spans and new spans join an unindexed list; the per-column index rebuilds only when those outgrow a fraction of it.
 
+### P5-8: round-3 review fixes
+- `BlockStateManager`: a held foreign edit is discarded when any local write is issued for the block (typing then backspacing back to the old text no longer adopts it over the DB) and when a later foreign patch equals the editor's content. The flush is deliberately not serialized with in-flight keystrokes: a keystroke that loses the race overwrites memory and DB with the user's text (the same last-writer result), and only its undo entry restores the foreign content the DB held; no write is lost.
+- Outstanding own-write tracking covers only table-shaped content (new or previous), evicts the oldest content past 16 instead of clearing all, expires after 64 newer writes, is cleared when a foreign edit is adopted, and is pruned for blocks that no longer exist or whose page is unobserved. `DatabaseWriteActor` emits confirmations with `tryEmit` on success only (no coalescing of `WriteBlockContent`), so a confirmation can be dropped when the shared buffer is full; that is why entries expire.
+- `OwnCommitLedger.takeSettled` releases a stale emission only when it equals the newest registration's content, so an older echo that trails a newer in-flight commit is never shown. A first commit (no floor yet) is not treated as recurring.
+

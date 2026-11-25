@@ -217,4 +217,78 @@ class BlockStateManagerTableUndoTest {
         assertEquals("plain text", m.content(), "non-table blocks keep ignoring patches they did not issue")
         m.unobservePage(PageUuid(pageUuid))
     }
+
+    private fun tbl(n: Int) = "| a | b |\n|---|---|\n| $n | $n |"
+
+    @Test
+    fun heldForeignEdit_should_NotBeAdopted_When_UserTypedAndRestoredTheOriginalText() = runTest {
+        val pushed = MutableSharedFlow<BlockUpdateEvent>(extraBufferCapacity = 10)
+        val m = manager(swallowWrites = true, pushed = pushed)
+        val typed = "| a | b |\n|---|---|\n| 1 | 2x |"
+        m.requestEditBlock(uuid, 0)
+        pushed.patch(foreign) // DB now holds the foreign edit; the editor keeps showing c0
+        testScheduler.advanceUntilIdle()
+        m.updateBlockContent(uuid, typed, 2, restoreEditFocus = false) // DB = typed
+        m.updateBlockContent(uuid, c0, 3, restoreEditFocus = false) // backspace: DB = c0, memory = c0
+        pushed.patch(typed)
+        pushed.patch(c0)
+        testScheduler.advanceUntilIdle()
+        m.stopEditingBlock(uuid)
+        assertEquals(c0, m.content(), "the DB holds c0, so adopting the older foreign edit would desync memory from it")
+        m.unobservePage(PageUuid(pageUuid))
+    }
+
+    @Test
+    fun heldForeignEdit_should_BeDropped_When_ALaterForeignPatchEqualsLocalContent() = runTest {
+        val pushed = MutableSharedFlow<BlockUpdateEvent>(extraBufferCapacity = 10)
+        val m = manager(pushed = pushed)
+        m.requestEditBlock(uuid, 0)
+        pushed.patch(foreign)
+        pushed.patch(c0) // the other writer restored c0: the DB equals what the editor shows
+        testScheduler.advanceUntilIdle()
+        m.stopEditingBlock(uuid)
+        assertEquals(c0, m.content())
+        m.unobservePage(PageUuid(pageUuid))
+    }
+
+    @Test
+    fun lateOwnConfirmation_should_StayOwn_When_MoreThanSixteenContentsWereWritten() = runTest {
+        val pushed = MutableSharedFlow<BlockUpdateEvent>(extraBufferCapacity = 64)
+        val m = manager(swallowWrites = true, pushed = pushed)
+        for (i in 1..17) m.updateBlockContent(uuid, tbl(i), i.toLong() + 1, restoreEditFocus = false)
+        repeat(17) { pushed.patch(foreign) } // drains the pending count without confirming any of our writes
+        testScheduler.advanceUntilIdle()
+        pushed.patch(tbl(16))
+        testScheduler.advanceUntilIdle()
+        assertEquals(tbl(17), m.content(), "c16's confirmation is still outstanding: late, not foreign")
+        m.unobservePage(PageUuid(pageUuid))
+    }
+
+    @Test
+    fun outstandingEntry_should_NotSwallowALaterForeignWrite_When_ItsConfirmationNeverArrived() = runTest {
+        val pushed = MutableSharedFlow<BlockUpdateEvent>(extraBufferCapacity = 64)
+        val m = manager(swallowWrites = true, pushed = pushed)
+        m.updateBlockContent(uuid, c1, 2, restoreEditFocus = false)
+        pushed.patch(foreign) // drains pending; c1's confirmation was lost (tryEmit drops when the buffer is full)
+        testScheduler.advanceUntilIdle()
+        val other = tbl(5)
+        pushed.patch(other) // a genuinely foreign write lands afterwards
+        testScheduler.advanceUntilIdle()
+        assertEquals(other, m.content())
+        pushed.patch(c1) // and a later write equal to the lost one's content is foreign too
+        testScheduler.advanceUntilIdle()
+        assertEquals(c1, m.content())
+        m.unobservePage(PageUuid(pageUuid))
+    }
+
+    @Test
+    fun proseWithPipe_should_NotBeTracked_When_BlockIsNotATable() = runTest {
+        val pushed = MutableSharedFlow<BlockUpdateEvent>(extraBufferCapacity = 10)
+        val m = manager(swallowWrites = true, pushed = pushed, blockType = BlockType.Bullet, content = "x")
+        m.updateBlockContent(uuid, "a | b", 2, restoreEditFocus = false)
+        pushed.patch("a | b")
+        testScheduler.advanceUntilIdle()
+        assertEquals("a | b", m.content())
+        m.unobservePage(PageUuid(pageUuid))
+    }
 }

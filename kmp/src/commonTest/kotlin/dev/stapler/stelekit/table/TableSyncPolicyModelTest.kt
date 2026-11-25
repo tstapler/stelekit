@@ -116,6 +116,9 @@ class TableSyncPolicyModelTest {
             pendingDone.remove(pick)
             val released = policy.markDone(pick.first)
             log.add("markDone #${pick.second} -> ${released?.let { it::class.simpleName }}")
+            if (released is SyncDecision.Rebuild && lastObservedIdx in ownWriteIdxs && lastObservedIdx < ownIdx && lastObserved != truth) {
+                failures.add("markDone released the older own echo #$lastObservedIdx")
+            }
             apply(released, lastObserved, lastObservedIdx, display)
         }
 

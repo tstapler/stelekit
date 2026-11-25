@@ -480,6 +480,19 @@ class TableSyncPolicyTest {
         assertEquals(SyncDecision.Stale, p.classify(s1, draftPending = true))
     }
 
+    // Round 3: a late echo of an older own commit (A) while a newer commit (B) is in flight must never be released as an
+    // external edit when B's Job completes: the DB holds B, so showing A would regress the grid.
+    @Test
+    fun markDone_should_NotReleaseOlderOwnEcho_When_NewerCommitWasInFlight() {
+        val p = policy()
+        val qa = p.registerCommit(s1)
+        val qb = p.registerCommit(s2)
+        assertEquals(null, p.markDone(qa))
+        assertEquals(SyncDecision.Stale, p.classify(s1))
+        assertEquals(null, p.markDone(qb), "the stale echo is not the newest registration's content")
+        assertEquals(SyncDecision.Echo, p.classify(s2))
+    }
+
     // Round 2: undoing to the content already displayed changes nothing, so the expectation must not leave the floor
     // raised-and-unobservable (which would turn a later genuine revert into Stale).
     @Test

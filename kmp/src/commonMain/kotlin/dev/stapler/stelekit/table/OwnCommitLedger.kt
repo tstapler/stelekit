@@ -27,6 +27,7 @@ class OwnCommitLedger(private val capacity: Int = DEFAULT_CAPACITY) {
     private var totalChars = 0L
     private var ownFloorObserved = false
     private var floorAmbiguous = false
+    private var floorContent: String? = null
     private val expectations = ArrayList<Expectation>()
     private var nextSeq = 1L
     private var currentSeq = 0L
@@ -45,14 +46,14 @@ class OwnCommitLedger(private val capacity: Int = DEFAULT_CAPACITY) {
     fun registerCommit(content: String): Long {
         val ambiguous = recurs(content)
         return put(content, State.InFlight, makeCurrent = true, recommitted = content in entries)
-            .also { raiseFloor(it, ambiguous) }
+            .also { raiseFloor(it, ambiguous, content) }
     }
 
     /**
      * Content already in the ledger while the previous floor's emission is still due: an emission of it cannot be told
      * from an old one (A, B, A), so it must not lift the floor. The floor then stays armed until the next commit.
      */
-    private fun recurs(content: String) = content in entries && !ownFloorObserved
+    private fun recurs(content: String) = content in entries && ownFloor > 0 && !ownFloorObserved
 
     /** Declares the content the manager's undo/redo produced, reserving its `seq` now (R3-C1). */
     fun expectAdopt(content: String): Long {
@@ -61,7 +62,7 @@ class OwnCommitLedger(private val capacity: Int = DEFAULT_CAPACITY) {
         // settled (no expectation pending, nothing in flight, newest own emission seen): otherwise the display is about
         // to move and "displayed" is not where the UI will be.
         if (content == displayed && isSettled()) return seq
-        raiseFloor(seq, recurs(content))
+        raiseFloor(seq, recurs(content), content)
         expectations.add(Expectation(content, seq))
         if (expectations.size > MAX_EXPECTATIONS) expectations.removeAt(0)
         return seq
@@ -70,8 +71,9 @@ class OwnCommitLedger(private val capacity: Int = DEFAULT_CAPACITY) {
     private fun isSettled() =
         expectations.isEmpty() && ownFloorObserved && entries.values.none { it.state == State.InFlight }
 
-    private fun raiseFloor(seq: Long, ambiguous: Boolean) {
+    private fun raiseFloor(seq: Long, ambiguous: Boolean, content: String) {
         if (seq > ownFloor) {
+            floorContent = content
             ownFloor = seq
             ownFloorObserved = false
             floorAmbiguous = ambiguous
@@ -104,7 +106,8 @@ class OwnCommitLedger(private val capacity: Int = DEFAULT_CAPACITY) {
      */
     fun takeSettled(): String? {
         if (entries.values.any { it.state == State.InFlight }) return null
-        return lastStale.also { lastStale = null }?.takeIf { it != displayed }
+        // Only the newest registration's own content: an older echo that trails a newer commit is not the DB's state.
+        return lastStale.also { lastStale = null }?.takeIf { it != displayed && it == floorContent }
     }
 
     /** Shows [content] released by [takeSettled]: an external edit as far as the host is concerned. */
