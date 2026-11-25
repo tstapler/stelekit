@@ -431,7 +431,7 @@ Serialization constraints (shared files): `TableBlock.kt` is edited by 4.2a (W5)
 **As a** user, **I want** `=SUM(B2:B5)` and arithmetic parsed safely, **so that** formulas work without execution risk.
 **Acceptance Criteria**:
 - Precedence and associativity are right.
-  - *Given* the texts `=-2^2`, `=2^3^2`, `=10-4-3`, *When* parsed and evaluated, *Then* the results are -4 (power binds tighter than unary minus), 512 (`^` is right-associative) and 3 (`-` is left-associative).
+  - *Given* the texts `=-2^2`, `=2^3^2`, `=10-4-3`, *When* parsed and evaluated, *Then* the results are 4 (unary minus binds tighter than `^`, as in Excel), 64 (`^` is left-associative, as in Excel) and 3 (`-` is left-associative).
 - Unknown and malformed input is an error value, not an exception.
   - *Given* `=SUM(`, `=FOO(1)` and a 5 000-character formula, *When* parsed, *Then* the results are `#PARSE!`, `#NAME?`, `#LIMIT!` respectively and nothing throws.
 - A rewritten formula stays a formula.
