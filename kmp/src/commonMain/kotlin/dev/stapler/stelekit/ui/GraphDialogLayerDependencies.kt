@@ -146,4 +146,6 @@ data class GraphDialogLayerDeps(
     val extraCommands: List<Command> = emptyList(),
     /** Backs the global-search Assets section; null (release variants, no asset stack) hides it. */
     val assetSearch: dev.stapler.stelekit.asset.AssetSearchService? = null,
+    /** Backs the global-search Sketches section; null hides it. */
+    val sketchSearch: dev.stapler.stelekit.sketch.v2.runtime.persist.SketchTextSearch? = null,
 )

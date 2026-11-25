@@ -333,6 +333,16 @@ private class SteleDatabaseImpl(
           |    locked        INTEGER NOT NULL DEFAULT 0
           |)
           """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE IF NOT EXISTS sketch_search_text (
+          |    project_uuid TEXT NOT NULL,
+          |    sheet_uuid   TEXT NOT NULL,
+          |    body         TEXT NOT NULL,
+          |    body_hash    TEXT NOT NULL,
+          |    updated_at   INTEGER NOT NULL,
+          |    PRIMARY KEY (project_uuid, sheet_uuid)
+          |)
+          """.trimMargin(), 0).await()
       driver.execute(null, "CREATE INDEX idx_pages_namespace ON pages(namespace)", 0).await()
       driver.execute(null, "CREATE INDEX idx_blocks_page_position ON blocks(page_uuid, position)", 0).await()
       driver.execute(null, "CREATE INDEX idx_blocks_parent_position ON blocks(parent_uuid, position)", 0).await()

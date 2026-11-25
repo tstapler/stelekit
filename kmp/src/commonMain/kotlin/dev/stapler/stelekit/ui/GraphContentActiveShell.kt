@@ -100,6 +100,14 @@ internal fun GraphContentActiveShell(
     val encryptionManager = deps.coreServices.encryptionManager
     // The status bar's plugin count reads the one registry (PluginRegistry.enabledCount); 0 without an asset stack.
     // Only builds where the asset switch is visible search assets, so release variants stay dark.
+    val sketchTextSearch = remember(repos, viewModel) {
+        dev.stapler.stelekit.sketch.v2.runtime.persist.SketchTextSearch(
+            repos = repos.sketchRepositories,
+            store = viewModel::projectSidecarStore,
+            write = { op -> repos.writeActor?.execute { op() } ?: op() },
+            clock = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+        )
+    }
     val assetSearchService = remember(deps.assets, repos) {
         deps.assets?.takeIf { it.indexing.toggleVisible }?.let { dev.stapler.stelekit.asset.AssetSearchService(repos.assetRepository) }
     }
@@ -663,6 +671,7 @@ internal fun GraphContentActiveShell(
                 },
                 loadPageBlocks = { pageUuidStr -> repos.blockRepository.getBlocksForPage(dev.stapler.stelekit.model.PageUuid(pageUuidStr)) },
                 assetSearch = assetSearchService,
+                sketchSearch = sketchTextSearch,
                 onDebugStateChange = { newState ->
                     debugMenuStateState.value = newState
                     viewModel.onDebugMenuStateChange(newState)

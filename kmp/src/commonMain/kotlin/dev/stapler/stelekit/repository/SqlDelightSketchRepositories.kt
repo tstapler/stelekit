@@ -51,6 +51,7 @@ fun sqlDelightSketchRepositories(database: SteleDatabase): SketchRepositories {
         projects = SqlDelightSketchProjectRepository(queries, tokens),
         sheets = SqlDelightSketchSheetRepository(queries, tokens),
         dimensions = SqlDelightSketchDimensionRepository(queries, tokens),
+        searchText = SqlDelightSketchSearchTextRepository(database),
     )
 }
 
@@ -165,6 +166,7 @@ private class SqlDelightSketchProjectRepository(
                 queries.deleteSketchPrimitivesByProject(uuid.value)
                 queries.deleteSketchSheetsByProject(uuid.value)
                 queries.deleteSketchDimensionsByProject(uuid.value)
+                queries.deleteSketchSearchTextByProject(uuid.value)
                 queries.deleteSketchProject(uuid.value)
             }
             tokens.forget(uuid)
@@ -216,6 +218,7 @@ private class SqlDelightSketchSheetRepository(
             tokens.require(token)
             queries.transaction {
                 queries.deleteSketchPrimitivesBySheet(uuid.value)
+                queries.deleteSketchSearchTextBySheet(uuid.value)
                 queries.deleteSketchSheet(uuid.value)
             }
         }

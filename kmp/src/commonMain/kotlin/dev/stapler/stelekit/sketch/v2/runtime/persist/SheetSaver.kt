@@ -26,6 +26,7 @@ import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
 import dev.stapler.stelekit.sketch.v2.diagnostics.DiagnosticsPort
 import dev.stapler.stelekit.sketch.v2.runtime.telemetry.SketchLog
+import dev.stapler.stelekit.sketch.v2.search.SketchTextExtractor
 import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -339,7 +340,7 @@ class SheetSaver(
         val started = ports.clockMillis()
         val result = withContext(encodeContext) {
             ports.encoder(doc, limits).map { bytes ->
-                Encoded(bytes, SheetSaveGuard.sha(bytes), V2ToV1.projectScene(doc.scene).layers.map { it.encode() })
+                Encoded(bytes, SheetSaveGuard.sha(bytes), V2ToV1.projectScene(doc.scene).layers.map { it.encode() }, SketchTextExtractor.extract(doc))
             }
         }
         val millis = ports.clockMillis() - started

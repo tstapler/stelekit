@@ -1543,3 +1543,37 @@ DELETE FROM sketch_dimensions WHERE project_uuid = ?;
 
 deleteSketchProject:
 DELETE FROM sketch_projects WHERE uuid = ?;
+
+-- Sketch text search: one row per v2 sheet holding the lower-cased searchable text (element text, names, layer names,
+-- dimension values). Derived from the sheet file, so it is a rebuildable cache; a plain table with LIKE rather than FTS5
+-- because `36"` and `3' 6"` are not word tokens and FTS5 may be absent on a device. Reads are bounded by LIMIT and the
+-- table has one small row per sheet, never per element.
+CREATE TABLE IF NOT EXISTS sketch_search_text (
+    project_uuid TEXT NOT NULL,
+    sheet_uuid   TEXT NOT NULL,
+    body         TEXT NOT NULL,
+    body_hash    TEXT NOT NULL,
+    updated_at   INTEGER NOT NULL,
+    PRIMARY KEY (project_uuid, sheet_uuid)
+);
+
+upsertSketchSearchText:
+INSERT OR REPLACE INTO sketch_search_text (project_uuid, sheet_uuid, body, body_hash, updated_at) VALUES (?, ?, ?, ?, ?);
+
+deleteSketchSearchTextBySheet:
+DELETE FROM sketch_search_text WHERE sheet_uuid = ?;
+
+deleteSketchSearchTextByProject:
+DELETE FROM sketch_search_text WHERE project_uuid = ?;
+
+selectSketchSearchHashes:
+SELECT sheet_uuid, body_hash FROM sketch_search_text WHERE project_uuid = ? LIMIT ?;
+
+-- Candidates for one query word (the caller filters the other words). The join hides rows of deleted projects.
+searchSketchText:
+SELECT s.project_uuid, s.sheet_uuid, s.body, p.name AS project_name
+FROM sketch_search_text s
+JOIN sketch_projects p ON p.uuid = s.project_uuid
+WHERE s.body LIKE '%' || :needle || '%' ESCAPE '\' OR LOWER(p.name) LIKE '%' || :needle || '%' ESCAPE '\'
+ORDER BY s.updated_at DESC, s.sheet_uuid
+LIMIT :limit OFFSET :offset;
