@@ -18,7 +18,8 @@ import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.ElementStyle
 import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.text.FixedAdvanceTextMetricsProvider
-import dev.stapler.stelekit.sketch.v2.tools.filledRectEl
+import dev.stapler.stelekit.sketch.v2.scene.ElementBase
+import dev.stapler.stelekit.sketch.v2.scene.SceneUnit
 import dev.stapler.stelekit.units.LengthFormat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -34,6 +35,9 @@ class OutlineDialogsDesktopTest {
     val rule = createComposeRule()
 
     private fun SemanticsNodeInteraction.setText(text: String) = performSemanticsAction(SemanticsActions.SetText) { it(AnnotatedString(text)) }
+
+    private fun filledRectEl(id: String, x: Int, y: Int, w: Int, h: Int) =
+        RectElement(ElementBase(ElementId(id)), SceneUnit.ofInt(x), SceneUnit.ofInt(y), SceneUnit.ofInt(w), SceneUnit.ofInt(h))
 
     private fun controller(): SketchEditorController {
         val rig = V2EditorRig()
