@@ -56,6 +56,9 @@ data class MoveSelectionCommand(
 /** Resize or rotate of one or more elements, one undo step. */
 data class TransformSelectionCommand(val steps: List<ElementTransform>) : ToolCommand
 
+/** Moves the middle segment of an elbow arrow to [coord]; see `SetElbowMid`. */
+data class SetElbowMidCommand(val id: ElementId, val coord: Double) : ToolCommand
+
 data class FlipSelectionCommand(val ids: List<ElementId>, val horizontal: Boolean) : ToolCommand
 
 data class DuplicateSelectionCommand(

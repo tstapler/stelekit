@@ -7,7 +7,10 @@ package dev.stapler.stelekit.sketch.v2.tools
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.index.Bounds
 import dev.stapler.stelekit.sketch.v2.index.ElementBounds
+import dev.stapler.stelekit.sketch.v2.binding.ElbowRouting
+import dev.stapler.stelekit.sketch.v2.binding.MidHandle
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
+import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.BoxElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.EllipseElement
@@ -102,7 +105,11 @@ class SelectTool(
     }
 
     /** The vertices of the single selected line: the overlay draws each as a grab point, since a press on one drags just that point. */
-    fun vertexPoints(ctx: ToolContext): List<ScenePoint> = (editable(ctx).singleOrNull() as? LineElement)?.points.orEmpty()
+    fun vertexPoints(ctx: ToolContext): List<ScenePoint> =
+        (editable(ctx).singleOrNull() as? LineElement)?.points ?: elbowHandle(ctx)?.let { listOf(ScenePoint(unitOrZero(it.x), unitOrZero(it.y))) }.orEmpty()
+
+    /** The grab point of the middle segment of the single selected elbow arrow, when its route has one. */
+    private fun elbowHandle(ctx: ToolContext): MidHandle? = (editable(ctx).singleOrNull() as? ArrowElement)?.let(ElbowRouting::midHandle)
 
     // ---- host verbs (keyboard, selection bar) ----------------------------------------------------------------------
 
@@ -147,6 +154,12 @@ class SelectTool(
         val touch = touchPresent || event.pointerKind != PointerKind.Mouse
         vertexUnder(event.point, ctx, touch)?.let { (line, index) ->
             return ToolResult(next = VertexDrag(this, event.pointerId, line, index, event.point))
+        }
+        elbowHandle(ctx)?.let { h ->
+            val tolerance = vertexTolerance(ctx, touch)
+            if (hypot(h.x - event.point.x.value, h.y - event.point.y.value) <= tolerance) {
+                return ToolResult(next = ElbowMidDrag(this, event.pointerId, editable(ctx).single() as ArrowElement, h, event.point))
+            }
         }
         val handle = handleLayout(ctx, touch)?.hit(event.point.x.value, event.point.y.value)
         if (handle != null) return ToolResult(next = Transforming(this, event.pointerId, handle, event.point, ctx))
@@ -293,6 +306,34 @@ class SelectTool(
                 else -> placed.point
             }
             return Moved(line.points.toMutableList().also { it[index] = to }, placed)
+        }
+    }
+
+    /** Drags the middle segment of an elbow arrow: the segment follows the pointer across the route (one [SetElbowMidCommand], one undo step). */
+    private class ElbowMidDrag(
+        private val owner: SelectTool,
+        private val pointerId: Int,
+        private val arrow: ArrowElement,
+        private val handle: MidHandle,
+        private val start: ScenePoint,
+    ) : Tool, SelectionAware {
+        override val id: ToolId get() = ToolId.Select
+        override val selection: List<ElementId> get() = owner.selection
+        override val marquee: Box? get() = null
+
+        private fun command(event: InputEvent): SetElbowMidCommand =
+            SetElbowMidCommand(arrow.id, if (handle.vertical) event.point.x.value else event.point.y.value)
+
+        private fun travelled(event: InputEvent, ctx: ToolContext): Boolean =
+            hypot(event.point.x.value - start.x.value, event.point.y.value - start.y.value) * ctx.zoom > DRAG_THRESHOLD_PX
+
+        override fun onEvent(event: InputEvent, ctx: ToolContext): ToolResult = when {
+            event.type == InputType.Escape || event.type == InputType.Cancel -> ToolResult(preview = null, next = owner)
+            event.type == InputType.Down && event.pointerId != pointerId -> ToolResult(preview = null, next = owner)
+            event.pointerId != pointerId -> ToolResult.Nothing
+            event.type == InputType.Move -> ToolResult(preview = if (travelled(event, ctx)) previewOf(command(event), ctx, listOf(arrow.id), event.point) else null)
+            event.type == InputType.Up -> if (travelled(event, ctx)) ToolResult(command(event), null, owner) else ToolResult(preview = null, next = owner)
+            else -> ToolResult.Nothing
         }
     }
 

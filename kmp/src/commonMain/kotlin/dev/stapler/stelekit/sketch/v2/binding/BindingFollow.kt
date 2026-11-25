@@ -30,7 +30,9 @@ fun SketchSceneV2.followBoundArrows(changed: Set<ElementId>): Either<CommandErro
     val moved = LinkedHashSet<ElementId>()
     for (e in elementsInOrder) {
         if (e !is ArrowElement) continue
-        val points = followedPoints(out, e, changed).bind()
+        val followed = followedPoints(out, e, changed).bind()
+        // An elbow arrow with a bound end is re-routed between its (now moved) ends, so it stays orthogonal and clear of the shapes.
+        val points = if (e.elbowed) ElbowRouting.pointsOf(out, e.copy(points = followed)) ?: followed else followed
         if (points == e.points) continue
         out = out.replace(e.copy(points = points).touched()).bind()
         moved += e.id
