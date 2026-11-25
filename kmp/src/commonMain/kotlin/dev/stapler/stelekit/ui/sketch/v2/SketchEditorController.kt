@@ -61,7 +61,7 @@ import kotlinx.coroutines.launch
 import kotlin.coroutines.CoroutineContext
 
 /** What the host may open over the canvas on the controller's say (a key or a menu): one at a time. */
-enum class EditorOverlay { Shortcuts, GoToElement, ConstrainMenu, HelpSearch, WallLength, Outline, AddShapeAt }
+enum class EditorOverlay { Shortcuts, GoToElement, ConstrainMenu, HelpSearch, WallLength, Outline, AddShapeAt, Rotate }
 
 /** The seams the controller talks to; every one has a default so a test names only what it checks. */
 class EditorPorts(

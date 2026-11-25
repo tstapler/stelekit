@@ -73,10 +73,10 @@ internal fun finish(doc: SketchDocumentV2, scene: SketchSceneV2, touched: Set<El
     return Applied(doc.copy(scene = repaired.scene).withoutOrphans(), touched + repaired.changed)
 }
 
-private fun SketchSceneV2.element(id: ElementId): Either<CommandError, SceneElement> =
+internal fun SketchSceneV2.element(id: ElementId): Either<CommandError, SceneElement> =
     this[id]?.right() ?: CommandError.UnknownElement(id.value).left()
 
-private fun SketchSceneV2.requireAll(ids: Collection<ElementId>): Either<CommandError, List<SceneElement>> = either {
+internal fun SketchSceneV2.requireAll(ids: Collection<ElementId>): Either<CommandError, List<SceneElement>> = either {
     ids.distinct().map { element(it).bind() }
 }
 
@@ -148,7 +148,7 @@ internal fun SceneElement.shifted(dx: Double, dy: Double, limits: SceneLimits): 
 }
 
 /** [ids] plus, for a frame, its members, and for any container the text labels bound to it. */
-private fun moveSet(scene: SketchSceneV2, ids: Collection<ElementId>): Either<CommandError, Set<ElementId>> = either {
+internal fun moveSet(scene: SketchSceneV2, ids: Collection<ElementId>): Either<CommandError, Set<ElementId>> = either {
     val out = LinkedHashSet<ElementId>()
     for (e in scene.requireAll(ids).bind()) {
         out += e.id
