@@ -27,3 +27,11 @@
 	- ### Screen readers
 		- Apple and Android mobile devices have build-in screen readers.
 		- For desktop, [NVDA](https://help.gnome.org/users/orca/stable/index.html.en) is the most popular choice. For linux, [Orca](https://help.gnome.org/users/orca/stable/index.html.en) is a good option.
+- ## Sketch editor: stylus input
+	- With Finger drawing OFF (the default once a stylus has been seen) a pen or mouse draws and a finger only pans and zooms.
+	- Palm rejection: a finger that lands while a pen is hovering or in contact (or its eraser end) is ignored whole, so a resting hand never pans or draws. A pen with no sample for 500 ms counts as out of range, so a missed hover-exit cannot lock out touch. A finger already panning keeps panning when the pen arrives. A mouse never rejects touch. Logic: `SketchPointerAdapter` (`PEN_RANGE_MS`).
+	- Pen hover without contact reaches the active tool as a move, so the snap marker follows the pen; pressure is captured only by the Freedraw tool.
+	- The eraser end erases for that stroke. The barrel button is the secondary click (context menu at the pen, UX-101), not an eraser: Erase stays on the Eraser tool and the eraser end.
+	- Barrel double-tap: Compose in `commonMain` exposes no pen gesture API (only `PointerType` and button state), so it is not handled.
+	- Not verified on stylus hardware: Android reports hover exit and the barrel bit per device; the web pen path relies on the raw DOM listener.
+
