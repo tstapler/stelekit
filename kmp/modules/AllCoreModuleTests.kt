@@ -10,6 +10,7 @@ import dev.stapler.stelekit.table.LogseqCompatFixtureTest
 import dev.stapler.stelekit.table.NoticeQueueTest
 import dev.stapler.stelekit.table.SelectionStatsTest
 import dev.stapler.stelekit.table.TableBackLadderTest
+import dev.stapler.stelekit.table.TableCommitCountersTest
 import dev.stapler.stelekit.table.TableEditorPropertyTest
 import dev.stapler.stelekit.table.TableEditorTest
 import dev.stapler.stelekit.table.TableParserTest
@@ -53,6 +54,7 @@ import org.junit.runners.Suite
     NoticeQueueTest::class,
     SelectionStatsTest::class,
     TableBackLadderTest::class,
+    TableCommitCountersTest::class,
     TableEditorPropertyTest::class,
     TableEditorTest::class,
     TableParserTest::class,

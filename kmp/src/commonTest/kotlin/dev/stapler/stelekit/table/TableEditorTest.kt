@@ -68,7 +68,7 @@ class TableEditorTest {
     @Test
     fun insertCols_should_AddCellPerRowAndDelimiterMarker_When_BeforeSecond() {
         val doc = parsed("| a | b |\n|:--|--:|\n| 1 | 2 |")
-        assertEquals("| a | | b |\n| :-- | | --: |\n| 1 | | 2 |", ser(editor.apply(doc, InsertCols(before = 2))))
+        assertEquals("| a | | b |\n| :-- | --- | --: |\n| 1 | | 2 |", ser(editor.apply(doc, InsertCols(before = 2))))
     }
 
     @Test

@@ -54,6 +54,12 @@ class TableCalc(
         is CellValue.Err -> v.error.display
     }
 
+    /** One loop through [address] when it is a cycle member (B2, C2, B2); empty for any other cell, including cells downstream of a loop. */
+    fun cyclePath(address: CellAddress): List<CellAddress> {
+        val members = values.filterValues { it is CellValue.Err && it.error == CellError.Cycle }.keys
+        return if (address in members) graph.cyclePath(address, members) else emptyList()
+    }
+
     /** The stored text (formula source for formula cells), for the "as formulas" copy. */
     fun rawAt(address: CellAddress): String = doc.cell(address)?.value ?: ""
 

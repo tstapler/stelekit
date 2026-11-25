@@ -301,6 +301,7 @@ fun main() {
             val copyHost = remember {
                 dev.stapler.stelekit.ui.screens.copy.inMemoryCopyHostConfig(dev.stapler.stelekit.merge.SourcePlatform.Web)
             }
+            WebTableEnvironment {
             StelekitApp(
                 fileSystem = fileSystem,
                 graphPath = graphPath,
@@ -396,6 +397,7 @@ fun main() {
                     ),
                 ),
             )
+            }
         }
     }
 }
@@ -459,6 +461,7 @@ private suspend fun runEphemeralSession(scope: CoroutineScope) {
     markGraphDialogCapable(false)
 
     ComposeViewport(document.body!!) {
+        WebTableEnvironment {
         StelekitApp(
             fileSystem = fileSystem,
             graphPath = graphPath,
@@ -495,5 +498,6 @@ private suspend fun runEphemeralSession(scope: CoroutineScope) {
                 ),
             ),
         )
+        }
     }
 }

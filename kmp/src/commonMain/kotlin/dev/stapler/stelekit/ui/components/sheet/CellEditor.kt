@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.ui.components.sheet
 
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -102,6 +103,7 @@ internal fun CellEditor(
         keyboardActions = KeyboardActions(onNext = { state.handleKey(CellEditorKey.Enter(back = false)) }),
         modifier = modifier
             .widthIn(min = 48.dp)
+            .padding(horizontal = 6.dp)
             .focusRequester(focusRequester)
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false

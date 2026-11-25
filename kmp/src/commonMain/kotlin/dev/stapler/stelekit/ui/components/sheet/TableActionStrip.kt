@@ -66,6 +66,17 @@ internal enum class ExtendChoice(val label: String) {
     TableEnd("To table end"),
 }
 
+/** Where [this] choice moves a range's focus from [focus]; shared by the inline strip, the sheet strip and point mode. */
+internal fun ExtendChoice.target(focus: CellAddress, b: dev.stapler.stelekit.table.GridBounds): CellAddress = b.clamp(
+    when (this) {
+        ExtendChoice.Right -> CellAddress(focus.row, focus.col + 1)
+        ExtendChoice.Down -> CellAddress(focus.row + 1, focus.col)
+        ExtendChoice.RowEnd -> CellAddress(focus.row, b.cols)
+        ExtendChoice.ColumnEnd -> CellAddress(b.rows, focus.col)
+        ExtendChoice.TableEnd -> CellAddress(b.rows, b.cols)
+    },
+)
+
 /** Callbacks the composable refreshes each composition; everything platform-shaped stays out of the state. */
 internal class StripHooks {
     /** Writes [String] to the clipboard and reports whether it landed (the write is asynchronous). */
@@ -74,6 +85,9 @@ internal class StripHooks {
     /** Null unless the sheet flag is on: it hides every Maximize entry and unbinds Ctrl+Shift+Enter. */
     var openSheet: (() -> Unit)? = null
     var editAsMarkdown: () -> Unit = {}
+
+    /** Hands an unsaved held draft to the session's recovered-draft notice before the raw editor opens. */
+    var recoverDraft: ((DraftText) -> Unit)? = null
     var cellText: ((TableDoc, CellAddress) -> String)? = null
     var errorDetail: ((TableDoc, CellAddress) -> String?)? = null
 
@@ -194,7 +208,7 @@ private fun StripButton(action: StripAction, state: InlineTableState, modifier: 
     val (text, dimmed, description) = when (action) {
         StripAction.Undo -> Triple(state.undoLabel, !state.undoEnabled, notingNothing(state, undo = true))
         StripAction.Redo -> Triple(state.redoLabel, !state.redoEnabled, notingNothing(state, undo = false))
-        StripAction.Resolve -> Triple(action.label, true, "Conflict resolution arrives with the sheet release")
+        StripAction.Resolve -> Triple(action.label, false, null)
         else -> Triple(action.label, false, null)
     }
     StripText(

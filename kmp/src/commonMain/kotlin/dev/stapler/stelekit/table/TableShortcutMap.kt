@@ -68,6 +68,7 @@ object TableShortcutMap {
         add(nav("Y", GridCommand.Redo, mod = true))
         add(nav("=", GridCommand.InsertRowOrColumn, mod = true, shift = true))
         add(nav("-", GridCommand.DeleteRowOrColumn, mod = true))
+        for ((key, dir) in arrows) add(nav(key, GridCommand.MoveSelection(dir), shift = true, alt = true))
         add(nav("Escape", GridCommand.Cancel))
         add(nav("Enter", GridCommand.ToggleMaximize, mod = true, shift = true))
         add(nav("F2", GridCommand.EditAsMarkdown, shift = true))

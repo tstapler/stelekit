@@ -524,4 +524,31 @@ class TableSyncPolicyTest {
         assertEquals(f, released?.content)
         assertTrue(released?.decision is SyncDecision.Rebuild)
     }
+
+    // undo, then the same text committed again: the order of the undo's emission and the re-commit's registration varies.
+    @Test
+    fun recommitAfterUndo_should_EchoS1_When_TheUndoEmissionWasSeenBeforeTheRecommit() {
+        val p = policy()
+        p.registerCommit(s1)
+        assertEquals(SyncDecision.Echo, p.classify(s1))
+        p.markDone(p.ledger.displayedSeq)
+        p.expectAdopt(s0)
+        assertEquals(SyncDecision.Adopt(s0), p.classify(s0))
+        val seq = p.registerCommit(s1)
+        assertEquals(SyncDecision.Echo, p.classify(s1), "S1 is what the display now holds: a rebuild to S1 happens through the Issued event")
+        p.markDone(seq)
+    }
+
+    @Test
+    fun recommitAfterUndo_should_AdoptS0ThenS1_When_TheRecommitRegisteredBeforeTheUndoEmission() {
+        val p = policy()
+        p.registerCommit(s1)
+        p.classify(s1)
+        p.markDone(p.ledger.displayedSeq)
+        p.expectAdopt(s0)
+        val seq = p.registerCommit(s1)
+        assertEquals(SyncDecision.Adopt(s0), p.classify(s0), "the undo's emission is still adopted")
+        assertEquals(SyncDecision.Adopt(s1), p.classify(s1), "and S1 is adopted back, never an Echo of the stale display")
+        p.markDone(seq)
+    }
 }

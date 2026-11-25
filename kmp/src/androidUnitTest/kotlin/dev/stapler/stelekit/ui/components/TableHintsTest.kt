@@ -20,7 +20,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.pressKey
 import dev.stapler.stelekit.ui.components.settings.TABLE_INLINE_EDIT_LABEL
 import dev.stapler.stelekit.ui.components.settings.TableSettingsRows
 import dev.stapler.stelekit.ui.components.sheet.TABLE_HINTS_SEEN_KEY
@@ -131,5 +133,74 @@ class TableHintsTest {
         rule.onNodeWithText(TableMessages.SHOW_TIPS_AGAIN).performClick()
         rule.waitForIdle()
         assertEquals("", settings.getString(TABLE_HINTS_SEEN_KEY, "x"))
+    }
+
+    // ---- H2 and H3 on the sheet (Story 4.5d, PR-C) -----------------------------------------------------------------
+
+    private fun openSheet(): SheetFixture =
+        SheetFixture(rule, gridContent(rows = 4, cols = 3)).also {
+            it.show(realCommands = true, preferences = TablePreferences(settings))
+        }
+
+    private fun quiet() {
+        rule.mainClock.advanceTimeBy(dev.stapler.stelekit.ui.components.sheet.HINT_IDLE_MS + 100)
+        rule.waitForIdle()
+    }
+
+    @Test
+    fun h2_should_ShowOnTheFirstTouchOfTheSheet_AfterTwoQuietSeconds_AndBeMarkedSeen() {
+        val f = openSheet()
+        rule.onNodeWithTag("cell-B2").performTouchInput { click() }
+        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(500)
+        chips().assertCountEquals(0)
+        quiet()
+        rule.onNodeWithText(TableHint.H2.text).assertExists()
+        assertTrue(settings.getString(TABLE_HINTS_SEEN_KEY, "").contains("H2"))
+        assertFalse(f.s.mode == dev.stapler.stelekit.table.GridMode.Edit, "the chip never moves focus or starts an edit")
+        rule.onNode(hasText(TableMessages.DISMISS) and hasAnyAncestor(hasTestTag("tableHint"))).performSemanticsAction(SemanticsActions.OnClick)
+        rule.waitForIdle()
+        chips().assertCountEquals(0)
+        f.close()
+    }
+
+    @Test
+    fun h3_should_ShowForAKeyboardUser_NotH2() {
+        val f = openSheet()
+        rule.onNodeWithTag("sheetGridFocus").performKeyInput { pressKey(androidx.compose.ui.input.key.Key.DirectionRight) }
+        rule.waitForIdle()
+        quiet()
+        rule.onNodeWithText(TableHint.H3.text).assertExists()
+        assertFalse(rule.onAllNodes(hasText(TableHint.H2.text)).fetchSemanticsNodes().isNotEmpty())
+        f.close()
+    }
+
+    @Test
+    fun aHintAlreadySeen_should_NotShowAgain() {
+        settings.putString(TABLE_HINTS_SEEN_KEY, "H2")
+        val f = openSheet()
+        rule.onNodeWithTag("cell-B2").performTouchInput { click() }
+        rule.waitForIdle()
+        quiet()
+        chips().assertCountEquals(0)
+        f.close()
+    }
+
+    @Test
+    fun aHint_should_WaitOutAnEdit_AndBeDroppedWithoutBeingMarkedAfterThreeDeferrals() {
+        val f = openSheet()
+        rule.onNodeWithTag("cell-B2").performTouchInput { click() }
+        rule.waitForIdle()
+        repeat(3) {
+            rule.runOnUiThread { f.s.startEdit(dev.stapler.stelekit.table.CellAddress(3, 1)) }
+            rule.waitForIdle()
+            assertEquals(dev.stapler.stelekit.table.GridMode.Edit, f.s.mode)
+            rule.runOnUiThread { f.s.cancelEdit() }
+            rule.waitForIdle()
+        }
+        quiet()
+        chips().assertCountEquals(0)
+        assertFalse(settings.getString(TABLE_HINTS_SEEN_KEY, "").contains("H2"), "a dropped hint is not marked seen, so it can return next session")
+        f.close()
     }
 }

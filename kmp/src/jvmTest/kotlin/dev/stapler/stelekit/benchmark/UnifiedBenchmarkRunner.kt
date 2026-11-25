@@ -21,6 +21,11 @@ import kotlin.time.Clock
  */
 class UnifiedBenchmarkRunner {
 
+    private companion object {
+        // Not graph-shaped: the preset only satisfies the descriptor schema.
+        val TABLE_COMMIT = ScenarioDescriptor("table-commit-200x12", GraphPreset.TINY, setOf("jvm"))
+    }
+
     private val json = Json { prettyPrint = true }
 
     @Test
@@ -40,7 +45,8 @@ class UnifiedBenchmarkRunner {
             System.getProperty("benchmark.output.dir", "build/reports"),
         ).also { it.mkdirs() }
 
-        val jvmDescriptors = BenchmarkRegistry.all.filter { "jvm" in it.supportedPlatforms }
+        // JVM-only extras stay out of the commonMain registry: the wasm test pins its exact contents.
+        val jvmDescriptors = (BenchmarkRegistry.all + TABLE_COMMIT).filter { "jvm" in it.supportedPlatforms }
 
         val results = jvmDescriptors.map { descriptor ->
             val startMs = Clock.System.now().toEpochMilliseconds()
@@ -81,6 +87,7 @@ class UnifiedBenchmarkRunner {
             "WriteConcurrency" -> runWriteConcurrencyMetrics(preset)
             "NavigationLatency" -> runNavigationLatencyMetrics(preset)
             "UserSession" -> runUserSessionMetrics()
+            "table-commit-200x12" -> TableCommitBenchmarkTest.run()
             else -> emptyMap()
         }
     }

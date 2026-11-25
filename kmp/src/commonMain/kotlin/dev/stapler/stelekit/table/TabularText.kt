@@ -3,11 +3,14 @@ package dev.stapler.stelekit.table
 /** One constant for paste size (ADR-008): parsing refuses above it, and the editor reuses it. */
 const val PASTE_CELL_CAP = 10_000
 
+/** Longest single pasted cell, in characters: spreadsheets stop at 32,767, so a longer one is not a cell. */
+const val PASTE_CELL_CHARS = 32_767
+
 sealed interface TabularParse {
     /** Rows may be ragged; a trailing line terminator never adds a row. */
     data class Grid(val rows: List<List<String>>) : TabularParse
 
-    /** More than [PASTE_CELL_CAP] cells; nothing is returned. */
+    /** More than [PASTE_CELL_CAP] cells or a cell over [PASTE_CELL_CHARS] characters; nothing is returned. */
     data object TooLarge : TabularParse
 }
 
@@ -37,10 +40,11 @@ object TabularText {
         var atRowStart = true
 
         fun endField(): Boolean {
+            val fits = field.length <= PASTE_CELL_CHARS
             row.add(field.toString())
             field.setLength(0)
             cells++
-            return cells <= PASTE_CELL_CAP
+            return fits && cells <= PASTE_CELL_CAP
         }
 
         while (i < n) {

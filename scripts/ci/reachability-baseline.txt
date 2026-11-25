@@ -27,15 +27,11 @@ MeasureTemplateResolver	kmp/src/commonMain/kotlin/dev/stapler/stelekit/domain/Me
 NamespaceUtils	kmp/src/commonMain/kotlin/dev/stapler/stelekit/outliner/NamespaceUtils.kt	-
 PageOptics	kmp/src/commonMain/kotlin/dev/stapler/stelekit/model/ModelOptics.kt	-
 PlaceholderInferenceWorker	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/VectorSearch.kt	17
-PointModeRule	kmp/src/commonMain/kotlin/dev/stapler/stelekit/table/formula/PointModeRule.kt	38
-PointModeState	kmp/src/commonMain/kotlin/dev/stapler/stelekit/table/formula/PointModeRule.kt	38
 PropertiesParser	kmp/src/commonMain/kotlin/dev/stapler/stelekit/parser/PropertiesParser.kt	-
 PropertiesResult	kmp/src/commonMain/kotlin/dev/stapler/stelekit/parser/PropertiesParser.kt	-
 PropertyOptics	kmp/src/commonMain/kotlin/dev/stapler/stelekit/model/ModelOptics.kt	-
 RemoteInferenceWorker	kmp/src/commonMain/kotlin/dev/stapler/stelekit/search/VectorSearch.kt	17
-SortIndicator	kmp/src/commonMain/kotlin/dev/stapler/stelekit/table/TableViewState.kt	38
 TableParseFailureLog	kmp/src/commonMain/kotlin/dev/stapler/stelekit/table/TableParser.kt	38
-TableViewState	kmp/src/commonMain/kotlin/dev/stapler/stelekit/table/TableViewState.kt	38
 TutorialContent	kmp/src/commonMain/kotlin/dev/stapler/stelekit/docs/DiataxisDoc.kt	-
 TutorialDoc	kmp/src/commonMain/kotlin/dev/stapler/stelekit/docs/DiataxisDoc.kt	-
 UrlFetcherIos	kmp/src/iosMain/kotlin/dev/stapler/stelekit/domain/UrlFetcherIos.kt	-

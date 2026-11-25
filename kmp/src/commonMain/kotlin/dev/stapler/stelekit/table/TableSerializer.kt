@@ -31,7 +31,8 @@ object TableSerializer {
         d.source?.let { return it + cr }
         val parts = d.aligns.mapIndexed { i, align ->
             val raw = d.rawCells.getOrNull(i)
-            if (raw != null && TableCellCodec.alignOf(raw) == align) raw else TableCellCodec.delimiterCell(align)
+            // An inserted column has an empty raw cell, which reads back as NONE but is not a valid delimiter cell.
+            if (!raw.isNullOrBlank() && TableCellCodec.alignOf(raw) == align) raw else TableCellCodec.delimiterCell(align)
         }
         return render(parts, style) + cr
     }

@@ -128,6 +128,7 @@ import dev.stapler.stelekit.service.JvmMediaAttachmentServiceTest
 import dev.stapler.stelekit.transfer.qrcode.QrTransferSettingsPersistenceTest
 import dev.stapler.stelekit.benchmark.LibsqlConcurrentWriteBenchmarkTest
 import dev.stapler.stelekit.benchmark.LibsqlSequentialWriteBenchmarkTest
+import dev.stapler.stelekit.benchmark.TableCommitBenchmarkTest
 import dev.stapler.stelekit.benchmark.UnifiedBenchmarkRunner
 import dev.stapler.stelekit.benchmark.UserSessionBenchmarkTest
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorScreenKeyboardTest
@@ -346,6 +347,7 @@ import org.junit.runners.Suite
     JvmMediaAttachmentServiceTest::class,
     QrTransferSettingsPersistenceTest::class,
     LibsqlConcurrentWriteBenchmarkTest::class,
+    TableCommitBenchmarkTest::class,
     LibsqlSequentialWriteBenchmarkTest::class,
     UnifiedBenchmarkRunner::class,
     UserSessionBenchmarkTest::class,
@@ -430,6 +432,7 @@ import org.junit.runners.Suite
     JvmPlatformCapsRootTest::class,
     dev.stapler.stelekit.ui.settings.ScheduledSyncRadioKeyboardTest::class,
     dev.stapler.stelekit.ui.state.BlockStateManagerEmissionTraceTest::class,
+    dev.stapler.stelekit.ui.components.TableSheetRealFeedTest::class,
     // Gradle-only sketch v2 classes (kmp/src/jvmTest/kotlin/BUILD.bazel excludes each: the commonTest fixtures they drive, or Compose
     // Multiplatform's generated `Res`, are not on this target's classpath). They run under `./gradlew :kmp:jvmTest`; they are named here
     // so TestRegistrationAuditTest can tell an exclusion from an unregistered class: ArchitectureScenarioTest, ToolsEndToEndTest,

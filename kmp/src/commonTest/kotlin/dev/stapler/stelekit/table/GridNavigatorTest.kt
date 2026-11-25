@@ -69,14 +69,15 @@ class GridNavigatorTest {
     }
 
     @Test
-    fun navigator_should_MirrorArrowsAndHome_When_Rtl() {
+    fun navigator_should_MirrorOnlyTheArrows_When_Rtl() {
         val nav = GridNavigator(bounds, rtl = true)
         assertEquals(sel(2, 1), nav.moved(sel(2, 2), GridCommand.Move(GridDirection.Right)))
         assertEquals(sel(2, 3), nav.moved(sel(2, 2), GridCommand.Move(GridDirection.Left)))
-        assertEquals(sel(2, 3), nav.moved(sel(2, 2), GridCommand.LineEdge(end = false)))
-        assertEquals(sel(2, 1), nav.moved(sel(2, 2), GridCommand.LineEdge(end = true)))
-        // Tab follows reading order: in RTL forward goes to the lower logical column.
-        assertEquals(sel(2, 1), nav.moved(sel(2, 2), GridCommand.Tab()))
+        // Column 1 is drawn rightmost, so Home is the rightmost cell and Tab walks right to left: both stay logical.
+        assertEquals(sel(2, 1), nav.moved(sel(2, 2), GridCommand.LineEdge(end = false)))
+        assertEquals(sel(2, 3), nav.moved(sel(2, 2), GridCommand.LineEdge(end = true)))
+        assertEquals(sel(2, 3), nav.moved(sel(2, 2), GridCommand.Tab()))
+        assertEquals(sel(2, 1), nav.moved(sel(2, 2), GridCommand.Tab(back = true)))
     }
 
     @Test

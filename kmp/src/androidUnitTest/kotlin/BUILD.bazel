@@ -150,6 +150,7 @@ kt_android_library(
             "**/TableBlockLayoutTest.kt",
             # Compose host tests for the table baseline render and the Tables settings flag rows (Gradle-only, same reason)
             "**/TableBaselineRenderTest.kt",
+            "**/TablePhoneRenderTest.kt",
             "**/SettingsTableRowsTest.kt",
             # Compose host test for BlockItem table dispatch (flag-off equivalence) and the ClipboardManager-typed clipboard adapter test (Gradle-only, same reason)
             "**/TableBlockFlagOffEquivalenceTest.kt",
@@ -165,6 +166,31 @@ kt_android_library(
             "**/TableInlineAffordancesTest.kt",
             "**/TableHintsTest.kt",
             "**/TableInlineA11yTest.kt",
+            # Compose host tests for the maximized table sheet: host over a real manager, notice host, conflict banner, and their shared harness (Gradle-only)
+            "**/TableSheetTestSupport.kt",
+            "**/TableSheetHostTest.kt",
+            "**/TableNoticeHostTest.kt",
+            "**/TableConflictBannerTest.kt",
+            "**/TableInlineConflictTest.kt",
+            # Compose host tests for the sheet grid, keys, Back ladder, loading states and formula UX over the real sheet host, plus their fixture (Gradle-only)
+            "**/SheetTestSupport.kt",
+            "**/SheetGridTest.kt",
+            "**/SheetKeyboardTest.kt",
+            "**/SheetBackLadderTest.kt",
+            "**/SheetLoadingStateTest.kt",
+            "**/SheetFormulaUxTest.kt",
+            "**/SheetBodyWiringTest.kt",
+            # Compose host tests for sheet range selection, clipboard, status line, structure, view state, sort and undo controls (Gradle-only)
+            "**/SheetSelectionClipboardTest.kt",
+            "**/SheetStructureTest.kt",
+            "**/SheetViewStateTest.kt",
+            "**/SheetSortTest.kt",
+            "**/SheetUndoRedoControlsTest.kt",
+            # Compose host tests for sheet semantics, custom actions, Back ladder, forced colors, RTL and reflow (Gradle-only)
+            "**/SheetA11yTest.kt",
+            "**/SheetVisualPrefsTest.kt",
+            "**/SheetPasteEventTest.kt",
+            "**/SheetGridHeaderRowTest.kt",
             # Compose host tests for the annotator status strip, pasteboard inset and gesture layer (Gradle-only)
             "**/StatusStripTest.kt",
             "**/PasteboardInsetTest.kt",

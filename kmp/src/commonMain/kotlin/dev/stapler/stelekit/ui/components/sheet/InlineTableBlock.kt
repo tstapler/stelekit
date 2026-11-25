@@ -204,9 +204,10 @@ internal fun InlineTableBlock(
         header = MaterialTheme.colorScheme.surfaceVariant,
         zebra = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
     )
-    val outline = outlineColor(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.surface)
+    val outline = sheetOutlineColor(MaterialTheme.colorScheme.primary, cellBackgrounds(MaterialTheme.colorScheme))
 
     val sheetOpen = onOpenSheet.takeIf { prefs.sheetEnabled }
+    val recoveredStore = LocalRecoveredDraftStore.current
     val clipboard = LocalTableClipboard.current ?: defaultTableClipboard()
     val copyScope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
@@ -214,6 +215,7 @@ internal fun InlineTableBlock(
     SideEffect {
         state.hooks.openSheet = sheetOpen
         state.hooks.editAsMarkdown = onStartEditing
+        state.hooks.recoverDraft = recoveredStore?.let { store -> blockUuid?.let { id -> { d -> store.add(RecoveredDraft(id, d)) } } }
         state.hooks.bindCellDisplay(calcMemo)
         state.hooks.copyToClipboard = { text, done ->
             copyScope.launch {
@@ -249,6 +251,18 @@ internal fun InlineTableBlock(
     }
 
     Column(modifier) {
+        if (state.conflictHeld) {
+            if (state.conflictBannerOpen) {
+                TableConflictBanner(
+                    draftAddress = state.draft?.address?.toString(),
+                    onKeepMine = state::keepMine,
+                    onTakeTheirs = state::takeTheirs,
+                    onEditAsMarkdown = state::editAsMarkdown,
+                )
+            } else {
+                ResolveChip(onClick = state::reopenBanner)
+            }
+        }
         doc.prefix.filter { it.isNotBlank() }.forEach { PlainLine(it, onStartEditing) }
         Box(
             modifier = Modifier
@@ -343,7 +357,7 @@ internal fun InlineTableBlock(
 
 /** Landscape on a short window: hints go, notices shrink to a line and the strip collapses (ux.md rule 13). */
 @Composable
-private fun isCompactLandscape(): Boolean {
+internal fun isCompactLandscape(): Boolean {
     val size = LocalWindowInfo.current.containerSize
     val heightDp = with(LocalDensity.current) { size.height.toDp() }
     return size.width > size.height && heightDp < COMPACT_HEIGHT
@@ -352,7 +366,7 @@ private fun isCompactLandscape(): Boolean {
 private val COMPACT_HEIGHT = 480.dp
 
 @Composable
-private fun defaultTableClipboard(): TableClipboard {
+internal fun defaultTableClipboard(): TableClipboard {
     val manager = LocalClipboardManager.current
     val provider = rememberClipboardProvider(manager)
     return remember(manager, provider) { ComposeTableClipboard(manager, provider) }
@@ -511,7 +525,7 @@ private fun InlineCell(
 }
 
 /** TalkBack and Switch Access path to everything the strip does (ux.md 3.6b); each acts on this cell. */
-private fun cellCustomActions(state: InlineTableState, address: CellAddress, sheetEnabled: Boolean, editing: Boolean): List<CustomAccessibilityAction> {
+internal fun cellCustomActions(state: InlineTableState, address: CellAddress, sheetEnabled: Boolean, editing: Boolean): List<CustomAccessibilityAction> {
     fun onCell(label: String, run: () -> Unit) = CustomAccessibilityAction(label) {
         run()
         true
@@ -521,6 +535,7 @@ private fun cellCustomActions(state: InlineTableState, address: CellAddress, she
         if (editing) {
             add(onCell(TableMessages.NEXT_COLUMN) { state.perform(StripAction.NextColumn) })
             add(onCell(TableMessages.LINE_BREAK) { state.perform(StripAction.LineBreak) })
+            if (state.conflictHeld) add(onCell(TableMessages.RESOLVE) { state.perform(StripAction.Resolve) })
             return@buildList
         }
         add(onCell(TableMessages.SELECT_ROW) { select(); state.perform(StripAction.SelectRow) })
@@ -534,11 +549,12 @@ private fun cellCustomActions(state: InlineTableState, address: CellAddress, she
         add(onCell(TableMessages.REDO) { state.perform(StripAction.Redo) })
         if (sheetEnabled) add(onCell(TableMessages.MAXIMIZE) { state.maximize() })
         add(onCell(TableMessages.EDIT_AS_MARKDOWN) { state.editAsMarkdown() })
+        if (state.conflictHeld) add(onCell(TableMessages.RESOLVE) { state.perform(StripAction.Resolve) })
     }
 }
 
 @Composable
-private fun CellContent(
+internal fun CellContent(
     display: CellDisplay,
     address: CellAddress,
     hits: CellHitRegistry,
@@ -549,10 +565,11 @@ private fun CellContent(
 ) {
     val marker = when (display) {
         is CellDisplay.Formula -> "fx"
-        is CellDisplay.InvalidFormula -> "!"
+        is CellDisplay.InvalidFormula -> ERROR_GLYPH
+        is CellDisplay.Failed -> ERROR_GLYPH.takeIf { LocalTableVisualPrefs.current.highContrast }
         else -> null
     }
-    val color = if (display is CellDisplay.Failed) MaterialTheme.colorScheme.error else textColor
+    val color = if (display is CellDisplay.Failed) sheetErrorColor(MaterialTheme.colorScheme.error, cellBackgrounds(MaterialTheme.colorScheme)) else textColor
     Box {
         // An error token like `#DIV/0!` is not user text: parsed as markup it reads as a #tag link and steals the tap.
         if (display is CellDisplay.Failed) {
@@ -576,7 +593,7 @@ private fun CellContent(
             Text(
                 text = marker,
                 fontSize = 9.sp,
-                color = if (display is CellDisplay.InvalidFormula) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                color = if (display is CellDisplay.Plain || display is CellDisplay.Formula) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                 modifier = Modifier.align(Alignment.TopEnd),
             )
         }

@@ -84,6 +84,12 @@ internal object FormulaRefScan {
     }
 }
 
+/** The totals rule the sort uses, public so a menu can say "Totals row stays at the bottom" before sorting. */
+object SortTotals {
+    /** True when the last body row is a totals row that a whole-body sort leaves in place. */
+    fun hasTrailingTotals(doc: TableDoc): Boolean = SortOp.totalsStart(doc) <= doc.rowCount
+}
+
 internal class SortOp(
     private val reference: FormulaReferenceTransform,
     private val keyOf: SortKeyOf,
@@ -170,19 +176,21 @@ internal class SortOp(
         else -> 0
     }
 
-    /** First body row of the trailing totals run (rowCount + 1 when none), detected by dependency (ADR-003). */
-    private fun totalsStart(doc: TableDoc): Int {
-        var start = doc.rowCount + 1
-        for (row in doc.rowCount downTo 2) {
-            if (!isTotalsRow(doc, row)) break
-            start = row
+    companion object {
+        /** First body row of the trailing totals run (rowCount + 1 when none), detected by dependency (ADR-003). */
+        fun totalsStart(doc: TableDoc): Int {
+            var start = doc.rowCount + 1
+            for (row in doc.rowCount downTo 2) {
+                if (!isTotalsRow(doc, row)) break
+                start = row
+            }
+            return start
         }
-        return start
-    }
 
-    private fun isTotalsRow(doc: TableDoc, row: Int): Boolean = doc.row(row).cells.any { c ->
-        if (!c.value.startsWith("=")) return@any false
-        val others = FormulaRefScan.scan(c.value).flatMap { (it.r1..it.r2).toList() }.filter { it != row && it >= 2 }
-        others.isNotEmpty() && others.all { it < row }
+        private fun isTotalsRow(doc: TableDoc, row: Int): Boolean = doc.row(row).cells.any { c ->
+            if (!c.value.startsWith("=")) return@any false
+            val others = FormulaRefScan.scan(c.value).flatMap { (it.r1..it.r2).toList() }.filter { it != row && it >= 2 }
+            others.isNotEmpty() && others.all { it < row }
+        }
     }
 }

@@ -40,4 +40,22 @@ class TableMessagesTest {
         assertFalse(isGridTableContent("| a | b |\n| 1 | 2 |"))
         assertFalse(isGridTableContent("plain text"))
     }
+
+    @Test
+    fun sheetNotices_should_EachMapToNonBlankText() {
+        val texts = listOf(
+            TableMessages.TABLE_REMOVED, TableMessages.NOT_A_TABLE, TableMessages.EDITED_ELSEWHERE,
+            TableMessages.RELOADED_TO_STAY_SAFE, TableMessages.EDITOR_OPENED, TableMessages.SAVE_FAILED_REMOVED,
+            TableMessages.UPDATED_FROM_DISK, TableMessages.COMMIT_FAILED, TableMessages.RETRY, TableMessages.READ_ONLY,
+            TableMessages.COLUMN_WIDTHS_RESET, TableMessages.COPY_AS_FORMULAS, TableMessages.SHORTCUTS,
+            TableMessages.CONFLICT_TITLE, TableMessages.KEEP_MINE, TableMessages.TAKE_THEIRS, TableMessages.DISCARDED_EDIT,
+            TableMessages.RECOVERED_DRAFT, TableMessages.APPLY, TableMessages.DISCARD, TableMessages.SHEET_UNDO_SCOPE_NOTE,
+            TableMessages.moreNotices(1), TableMessages.recoveredDraft("B3"), TableMessages.applyTo("B3"),
+            TableMessages.conflictBannerDraft("B3"),
+        )
+        texts.forEach { assertTrue(it.isNotBlank(), "blank sheet message") }
+        assertEquals("Apply to B3", TableMessages.applyTo("B3"))
+        assertEquals("1 more", TableMessages.moreNotices(1))
+        assertEquals(texts.size, texts.toSet().size, "every sheet message is distinct")
+    }
 }
