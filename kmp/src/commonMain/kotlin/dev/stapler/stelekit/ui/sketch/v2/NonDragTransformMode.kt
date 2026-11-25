@@ -5,7 +5,10 @@
 package dev.stapler.stelekit.ui.sketch.v2
 
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
+import dev.stapler.stelekit.sketch.v2.scene.BoxElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
+import dev.stapler.stelekit.sketch.v2.scene.EllipseElement
+import dev.stapler.stelekit.sketch.v2.scene.OpeningElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementStyle
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
@@ -18,6 +21,7 @@ import dev.stapler.stelekit.sketch.v2.tools.ElementTransform
 import dev.stapler.stelekit.sketch.v2.tools.FrameMembership
 import dev.stapler.stelekit.sketch.v2.tools.Handle
 import dev.stapler.stelekit.sketch.v2.tools.MoveSelectionCommand
+import dev.stapler.stelekit.sketch.v2.tools.RotateSelectionCommand
 import dev.stapler.stelekit.sketch.v2.tools.Selectability
 import dev.stapler.stelekit.sketch.v2.tools.SelectTool
 import dev.stapler.stelekit.sketch.v2.tools.TextResize
@@ -61,7 +65,7 @@ enum class NonDragNotice(val text: String) {
 
     NothingSelected(SketchStrings.NonDrag.NOTHING_SELECTED),
 
-    /** Rotate needs rectangles, diamonds, ellipses, text, images or frames. */
+    /** Rotate needs something other than an opening alone (an opening turns with its wall). */
     NotRotatable(SketchStrings.NonDrag.NOT_ROTATABLE),
 
     /** Bind end needs exactly one arrow. */
@@ -149,7 +153,7 @@ class NonDragTransformMode private constructor(
     private fun command(): ToolCommand? = if (!pending) null else when (action) {
         NonDragAction.MoveElement -> move()
         NonDragAction.Resize -> resizeSteps()?.let(::TransformSelectionCommand)
-        NonDragAction.Rotate -> TransformSelectionCommand(rotateSteps())
+        NonDragAction.Rotate -> rotateCommandOf(items, frame, deltaAngle()) ?: TransformSelectionCommand(rotateSteps())
     }
 
     private fun move(): ToolCommand {
@@ -228,6 +232,12 @@ class NonDragTransformMode private constructor(
             return NonDragStart.Started(mode)
         }
     }
+}
+
+/** The rigid [RotateSelectionCommand] for lines, walls and mixed selections (boxes and ellipses keep the per-element rotation: null). */
+private fun rotateCommandOf(items: List<SceneElement>, frame: Box, delta: Double): ToolCommand? {
+    val general = items.any { it !is BoxElement && it !is EllipseElement } || items.any { it is OpeningElement }
+    return if (general) RotateSelectionCommand(items.map { it.id }, delta, frame.cx, frame.cy) else null
 }
 
 /** How the preview line writes numbers: whole when whole, else one decimal, with a sign for a displacement. */

@@ -33,6 +33,7 @@ import dev.stapler.stelekit.sketch.v2.runtime.settings.SnapPreferences
 import dev.stapler.stelekit.sketch.v2.snap.GridPreset
 import dev.stapler.stelekit.sketch.v2.snap.PointSnapKind
 import dev.stapler.stelekit.sketch.v2.snap.PointSnapKinds
+import dev.stapler.stelekit.sketch.v2.snap.RotateStep
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchHostStrings
 
 object SnapMenuTags {
@@ -40,6 +41,7 @@ object SnapMenuTags {
     const val SECTION = "sketch.snap.section"
     const val ALIGNMENT = "sketch.snap.alignment"
     const val GRID_STEP = "sketch.snap.gridstep"
+    const val ROTATE_STEP = "sketch.snap.rotatestep"
 }
 
 /**
@@ -64,6 +66,14 @@ class SnapChoices(private val prefs: SnapPreferences?) {
     fun toggleAlignment() {
         alignment = !alignment
         prefs?.chooseAlignment(alignment)
+    }
+
+    /** The rotate-drag snap (session only): free by default, then 15, 45, 90 degrees. */
+    var rotateStep: RotateStep by mutableStateOf(RotateStep.Free)
+        private set
+
+    fun cycleRotateStep() {
+        rotateStep = rotateStep.next()
     }
 
     fun cycleGrid() {
@@ -93,6 +103,11 @@ fun SnapMenuSection(choices: SnapChoices, technical: Boolean, modifier: Modifier
                 SnapSwitchRow(SketchHostStrings.Snap.kindName(kind), kind in choices.kinds, SnapMenuTags.kind(kind)) { choices.toggle(kind) }
             }
             SnapSwitchRow(SketchHostStrings.Snap.ALIGNMENT, choices.alignment, SnapMenuTags.ALIGNMENT, choices::toggleAlignment)
+            DropdownMenuItem(
+                text = { Text(SketchHostStrings.Snap.rotateRow(choices.rotateStep)) },
+                onClick = choices::cycleRotateStep,
+                modifier = Modifier.testTag(SnapMenuTags.ROTATE_STEP).semantics { role = Role.Button },
+            )
             if (technical) {
                 val preset = choices.gridPreset
                 DropdownMenuItem(

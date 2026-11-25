@@ -31,6 +31,7 @@ import dev.stapler.stelekit.sketch.v2.runtime.image.ImageStoreError
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.snap.GridSettings
 import dev.stapler.stelekit.sketch.v2.snap.PointSnapKinds
+import dev.stapler.stelekit.sketch.v2.snap.RotateStep
 import dev.stapler.stelekit.sketch.v2.snap.SnapSettings
 import dev.stapler.stelekit.sketch.v2.tools.AddElementCommand
 import dev.stapler.stelekit.sketch.v2.tools.CalibrationPointsCommand
@@ -267,6 +268,7 @@ class EditorExtras(
         objects = snap && snapChoices.alignment,
         grid = gridSettings(),
         points = if (snap) snapChoices.kinds else PointSnapKinds.None,
+        rotateStep = if (snap) snapChoices.rotateStep else RotateStep.Free,
     ).whileHeld(snapHeld)
 
     private fun autoConstrained(command: AddElementCommand): ToolCommand? {

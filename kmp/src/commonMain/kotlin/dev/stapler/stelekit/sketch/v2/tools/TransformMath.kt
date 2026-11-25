@@ -83,6 +83,13 @@ object TransformMath {
         return normalise(if (snap) (raw / ROTATE_SNAP).roundToInt() * ROTATE_SNAP else raw)
     }
 
+    /** Like [rotate] with the snap given as a step in radians (null for free). */
+    fun rotateBy(cx: Double, cy: Double, startAngle: Double, startX: Double, startY: Double, curX: Double, curY: Double, step: Double?): Double {
+        val delta = atan2(curY - cy, curX - cx) - atan2(startY - cy, startX - cx)
+        val raw = startAngle + delta
+        return normalise(if (step != null && step > 0.0) (raw / step).roundToInt() * step else raw)
+    }
+
     /** Folds [angle] into (-PI, PI]. */
     fun normalise(angle: Double): Double {
         var a = angle % FULL_TURN

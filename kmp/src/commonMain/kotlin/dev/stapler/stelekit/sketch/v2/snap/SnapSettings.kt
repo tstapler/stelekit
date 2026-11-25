@@ -19,7 +19,17 @@ data class SnapSettings(
     val grid: GridSettings? = null,
     /** The point kinds (endpoint, midpoint, intersection, ...) a drawn or dragged point locks onto; none by default. */
     val points: PointSnapKinds = PointSnapKinds.None,
+    /** The angle a rotate drag locks to; [RotateStep.Free] locks to nothing (Shift still snaps to 15 degrees). */
+    val rotateStep: RotateStep = RotateStep.Free,
 ) {
+    /** The rotate-drag snap in radians, or null for a free rotation: Shift forces 15 degrees at least, [bypass] (Ctrl) frees it. */
+    fun rotateStepRadians(shift: Boolean, bypass: Boolean): Double? = when {
+        bypass -> null
+        shift -> maxOf(rotateStep.radians, RotateStep.Deg15.radians)
+        rotateStep == RotateStep.Free -> null
+        else -> rotateStep.radians
+    }
+
     /** The grid, or null when absent or switched off. */
     val activeGrid: GridSettings? get() = grid?.takeIf { it.enabled }
 
@@ -62,5 +72,22 @@ data class SnapSettings(
 
     companion object {
         val None = SnapSettings()
+    }
+}
+
+/** The angle steps of a rotation: what a rotate drag locks to and what the Rotate dialog's quick buttons add. */
+enum class RotateStep(val degrees: Int) {
+    Free(0),
+    Deg15(15),
+    Deg45(45),
+    Deg90(90),
+    ;
+
+    val radians: Double get() = degrees * kotlin.math.PI / HALF_TURN
+
+    fun next(): RotateStep = entries[(ordinal + 1) % entries.size]
+
+    private companion object {
+        const val HALF_TURN = 180.0
     }
 }

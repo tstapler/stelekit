@@ -33,6 +33,30 @@ object SketchHostStrings {
         fun deleteName(name: String): String = "Delete $name from the library"
     }
 
+    /** The Rotate dialog: a typed angle, quick steps and the pivot. */
+    object Rotate {
+        const val CHIP = "Rotate"
+        const val CHIP_DESCRIPTION = "Rotate the selection by an angle"
+        const val TITLE = "Rotate selection"
+        const val FIELD = "Angle in degrees (clockwise)"
+        const val SET = "Rotate"
+        const val CANCEL = "Cancel"
+        const val INVALID = "Type an angle in degrees, such as 30 or -45."
+        const val PIVOT = "Turn about"
+        const val PLUS_15 = "+15"
+        const val PLUS_45 = "+45"
+        const val PLUS_90 = "+90"
+        const val MINUS_90 = "-90"
+
+        fun pivotName(pivot: dev.stapler.stelekit.sketch.v2.tools.RotatePivot): String = when (pivot) {
+            dev.stapler.stelekit.sketch.v2.tools.RotatePivot.Centre -> "Centre"
+            dev.stapler.stelekit.sketch.v2.tools.RotatePivot.TopLeft -> "Top left"
+            dev.stapler.stelekit.sketch.v2.tools.RotatePivot.TopRight -> "Top right"
+            dev.stapler.stelekit.sketch.v2.tools.RotatePivot.BottomRight -> "Bottom right"
+            dev.stapler.stelekit.sketch.v2.tools.RotatePivot.BottomLeft -> "Bottom left"
+        }
+    }
+
     /** The floor-plan modes of the Line tool and the typed wall length. */
     object Plan {
         const val MODE_LINE = "Line"
@@ -130,6 +154,9 @@ object SketchHostStrings {
             GridPreset.SixInch -> "6 in"
             GridPreset.Foot -> "1 ft"
         }
+
+        fun rotateRow(step: dev.stapler.stelekit.sketch.v2.snap.RotateStep): String =
+            "Rotate snap: " + if (step.degrees == 0) "free" else "${step.degrees} deg"
 
         fun gridRow(preset: GridPreset): String = "$GRID_STEP: ${presetName(preset)}"
 
