@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.125.0](https://github.com/tstapler/stelekit/compare/v0.124.0...v0.125.0) (2026-11-25)
+
+
+### Features
+
+* **sketch:** agent edit/diff CLI and AI-provenance review (E8) ([#747](https://github.com/tstapler/stelekit/issues/747)) ([9ad2c72](https://github.com/tstapler/stelekit/commit/9ad2c72c17c50afadb9ae516b722fd2171dae03c))
+* **sketch:** draw dimension annotations in exports, embed previews and the CLI ([#737](https://github.com/tstapler/stelekit/issues/737)) ([e64d311](https://github.com/tstapler/stelekit/commit/e64d3112e3a30ecb57450e4fbc5f834531231de1))
+* **sketch:** elbow connector router (E11) ([#750](https://github.com/tstapler/stelekit/issues/750)) ([d2777f8](https://github.com/tstapler/stelekit/commit/d2777f857d3630a6b594e16981b6d43401950ff4))
+* **sketch:** element-level merge for two devices editing one sheet (E14) ([#753](https://github.com/tstapler/stelekit/issues/753)) ([c46d490](https://github.com/tstapler/stelekit/commit/c46d4906d1c9a5ded0fd4edd6f37da5647a719a6))
+* **sketch:** headless CLI, format spec and agent skill for external agents ([#734](https://github.com/tstapler/stelekit/issues/734)) ([2ff7f79](https://github.com/tstapler/stelekit/commit/2ff7f79237226ded2915245c1a64e78d7d2f021b))
+* **sketch:** index sketch text into global search (E8) ([#746](https://github.com/tstapler/stelekit/issues/746)) ([46d6880](https://github.com/tstapler/stelekit/commit/46d68808d311cab1321007d65445d2fb31966f95))
+* **sketch:** metric units and Measure mode for the dimension editor ([#738](https://github.com/tstapler/stelekit/issues/738)) ([c4769ad](https://github.com/tstapler/stelekit/commit/c4769adbb398194ebdc358e8e172019f53679db2))
+* **sketch:** photo underlay with two-point scale calibration (E5) ([#742](https://github.com/tstapler/stelekit/issues/742)) ([b80300d](https://github.com/tstapler/stelekit/commit/b80300de2ba6c3d84ef189dc9d54efdc5fa2c891))
+* **sketch:** real-world snapping (endpoint, midpoint, intersection, perpendicular, tangent, coarse grid) ([#740](https://github.com/tstapler/stelekit/issues/740)) ([521cdd7](https://github.com/tstapler/stelekit/commit/521cdd7a3acc5e92be07fbd69954dcbdfdd81b4e))
+* **sketch:** rotate any selection, typed angle, snap steps (E9) ([#749](https://github.com/tstapler/stelekit/issues/749)) ([351b5ed](https://github.com/tstapler/stelekit/commit/351b5ed7fd302d97cdbb4c61ad086fa0e9b77fba))
+* **sketch:** sheet scale, paper, title block and PDF export (E7) ([#745](https://github.com/tstapler/stelekit/issues/745)) ([a76d067](https://github.com/tstapler/stelekit/commit/a76d067e248e6b23b6c9b755ce95a6c05039fbd8))
+* **sketch:** sketch outline, add-shape-at, 48 dp chips (E12 accessibility) ([#752](https://github.com/tstapler/stelekit/issues/752)) ([8c724d7](https://github.com/tstapler/stelekit/commit/8c724d779cc97579439c08c9a4450b11ba607c1e))
+* **sketch:** stylus palm rejection while the pen hovers (E12) ([#751](https://github.com/tstapler/stelekit/issues/751)) ([52c0bba](https://github.com/tstapler/stelekit/commit/52c0bba8d073c313777d9c91c44e1ff50b84511c))
+* **sketch:** walls, hosted openings, room area and a starter symbol library (E6, E13) ([#743](https://github.com/tstapler/stelekit/issues/743)) ([c606db4](https://github.com/tstapler/stelekit/commit/c606db4e8f622ca0d1cd721b6e65557bc10b28d0))
+* **table:** PR-A lossless table engine, formula engine, undo seam (flags off) ([#744](https://github.com/tstapler/stelekit/issues/744)) ([b19ed5e](https://github.com/tstapler/stelekit/commit/b19ed5ef5be153a80e4ac4aa2f69d35bbec54bc2))
+* **table:** PR-B inline cell editing (flag off by default) ([#754](https://github.com/tstapler/stelekit/issues/754)) ([9a53076](https://github.com/tstapler/stelekit/commit/9a530768c04af392139a4a213b871fe18856036b))
+
+
+### Bug Fixes
+
+* **sketch:** close v2 editor dimension, text and selection gaps ([#735](https://github.com/tstapler/stelekit/issues/735)) ([d2a63d5](https://github.com/tstapler/stelekit/commit/d2a63d50c2fe85ba35b609772df2298372236410))
+* **sketch:** embed phone-render test passes without Roborazzi record mode ([#741](https://github.com/tstapler/stelekit/issues/741)) ([b83fd33](https://github.com/tstapler/stelekit/commit/b83fd33ebc4d4e1e5894cd8639d7f6db7dd05369))
+* **web:** bound SQLite startup and preserve graphs on failure ([2231286](https://github.com/tstapler/stelekit/commit/22312861da170d9439522eb62dd8fe08fd2473fd))
+
 ## [0.124.0](https://github.com/tstapler/stelekit/compare/v0.123.0...v0.124.0) (2026-11-24)
 
 
