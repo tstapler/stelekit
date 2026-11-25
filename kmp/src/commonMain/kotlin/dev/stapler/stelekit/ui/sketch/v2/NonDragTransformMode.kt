@@ -5,7 +5,10 @@
 package dev.stapler.stelekit.ui.sketch.v2
 
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
+import dev.stapler.stelekit.sketch.v2.scene.BoxElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
+import dev.stapler.stelekit.sketch.v2.scene.EllipseElement
+import dev.stapler.stelekit.sketch.v2.scene.OpeningElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementStyle
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
@@ -18,6 +21,7 @@ import dev.stapler.stelekit.sketch.v2.tools.ElementTransform
 import dev.stapler.stelekit.sketch.v2.tools.FrameMembership
 import dev.stapler.stelekit.sketch.v2.tools.Handle
 import dev.stapler.stelekit.sketch.v2.tools.MoveSelectionCommand
+import dev.stapler.stelekit.sketch.v2.tools.RotateSelectionCommand
 import dev.stapler.stelekit.sketch.v2.tools.Selectability
 import dev.stapler.stelekit.sketch.v2.tools.SelectTool
 import dev.stapler.stelekit.sketch.v2.tools.TextResize
@@ -61,7 +65,7 @@ enum class NonDragNotice(val text: String) {
 
     NothingSelected(SketchStrings.NonDrag.NOTHING_SELECTED),
 
-    /** Rotate needs rectangles, diamonds, ellipses, text, images or frames. */
+    /** Rotate needs something other than an opening alone (an opening turns with its wall). */
     NotRotatable(SketchStrings.NonDrag.NOT_ROTATABLE),
 
     /** Bind end needs exactly one arrow. */
@@ -149,7 +153,7 @@ class NonDragTransformMode private constructor(
     private fun command(): ToolCommand? = if (!pending) null else when (action) {
         NonDragAction.MoveElement -> move()
         NonDragAction.Resize -> resizeSteps()?.let(::TransformSelectionCommand)
-        NonDragAction.Rotate -> TransformSelectionCommand(rotateSteps())
+        NonDragAction.Rotate -> rotateCommand()
     }
 
     private fun move(): ToolCommand {
@@ -182,6 +186,12 @@ class NonDragTransformMode private constructor(
     }
 
     private fun deltaAngle(): Double = (offsetX + offsetY) * (if (step == NudgeStep.Percent) PERCENT_TURN_DEGREES else 1.0) * PI / HALF_TURN_DEGREES
+
+    /** Boxes and ellipses keep the per-element rotation; lines, walls and mixed selections turn rigidly about the frame centre. */
+    private fun rotateCommand(): ToolCommand {
+        val general = items.any { it !is BoxElement && it !is EllipseElement } || items.any { it is OpeningElement }
+        return if (general) RotateSelectionCommand(items.map { it.id }, deltaAngle(), frame.cx, frame.cy) else TransformSelectionCommand(rotateSteps())
+    }
 
     private fun rotateSteps(): List<ElementTransform> {
         val delta = deltaAngle()

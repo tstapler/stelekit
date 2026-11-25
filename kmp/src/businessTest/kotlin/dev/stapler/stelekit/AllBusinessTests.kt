@@ -434,6 +434,8 @@ import org.junit.runners.Suite
     dev.stapler.stelekit.sketch.v2.tools.ImageToolTest::class,
     dev.stapler.stelekit.sketch.v2.scene.UnderlayCalibrationTest::class,
     dev.stapler.stelekit.sketch.v2.scene.UnderlayCommandsTest::class,
+    dev.stapler.stelekit.sketch.v2.tools.RotateToolingTest::class,
+    dev.stapler.stelekit.sketch.v2.RotateSelectionTest::class,
     dev.stapler.stelekit.sketch.v2.runtime.export.UnderlayExportTest::class,
     dev.stapler.stelekit.sketch.v2.export.SheetPrintTest::class,
     dev.stapler.stelekit.sketch.v2.export.SheetSetupTest::class,

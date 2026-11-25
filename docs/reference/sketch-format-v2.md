@@ -37,7 +37,7 @@ ADR-001 and `StandaloneSketch.kt` define the embed: an image whose target is the
 
 - Scene unit = **1/16 inch**, a `Double`. 16 units = 1 in, 192 units = 1 ft. Absolute value limit 268435456.
 - Origin is arbitrary. **x increases to the right (east), y increases downward (south).** North is up on a plan.
-- Angles are radians. Box rotation is clockwise on screen about the box centre. Arc angles sweep toward increasing angle, which is clockwise on screen because y points down.
+- Angles are radians. Box rotation is clockwise on screen about the box centre. Arc angles sweep toward increasing angle, which is clockwise on screen because y points down. Only boxes, ellipses, text, images and frames store an `angle`; a line, arrow, freehand stroke or wall that is rotated has its points rewritten instead, and an arc's `sa`/`ea` turn with it. An opening's angle is derived from its wall.
 - There is no separate "model scale" on a real-world sheet: the unit is already physical. The *drawing scale* of a print (1/4" = 1', 1:50) is a separate, optional sheet property that only the exports read (section 6b). A photo underlay is brought to that scale by calibrating it (section 6a). Stroke width and font size are in scene units too (a 4 1/2 inch wall is stroke width 72; 96 is a 6 inch tall font).
 - **Abstract diagrams** use the same numbers but nothing is physical: `build` with `"mode": "diagram"` reads bare numbers as plain scene units and draws thin strokes and 20-unit text. Imported `.excalidraw` files map 1 Excalidraw pixel to 1 unit (ADR-002 scale addendum), so a 100 px box is 6 1/4 inches.
 - `project-model.json` records `scaleSixteenthsPerUnit` (16) and `unit` ("in") per sheet; they only describe this convention.

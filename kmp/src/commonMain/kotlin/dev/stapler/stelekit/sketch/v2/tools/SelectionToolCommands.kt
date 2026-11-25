@@ -56,6 +56,9 @@ data class MoveSelectionCommand(
 /** Resize or rotate of one or more elements, one undo step. */
 data class TransformSelectionCommand(val steps: List<ElementTransform>) : ToolCommand
 
+/** Rigid rotation of [ids] by [delta] radians about ([pivotX], [pivotY]) (any element kind, one undo step); see `RotateSelection`. */
+data class RotateSelectionCommand(val ids: List<ElementId>, val delta: Double, val pivotX: Double, val pivotY: Double) : ToolCommand
+
 data class FlipSelectionCommand(val ids: List<ElementId>, val horizontal: Boolean) : ToolCommand
 
 data class DuplicateSelectionCommand(

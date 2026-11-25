@@ -65,8 +65,9 @@ private fun PlanMode.label(): String = when (this) {
  * keypad for the exact length of the next wall. The Line tool and a technical sheet only; nothing for a read-only sheet.
  */
 internal fun planChips(controller: SketchEditorController): List<ActionChip> {
-    if (controller.sheetKind != SheetKind.Technical || controller.readOnly) return emptyList()
-    if (controller.ui.activeTool == ToolId.Select) return selectionChips(controller)
+    if (controller.readOnly) return emptyList()
+    if (controller.ui.activeTool == ToolId.Select) return (if (controller.sheetKind == SheetKind.Technical) selectionChips(controller) else emptyList()) + rotateChip(controller)
+    if (controller.sheetKind != SheetKind.Technical) return emptyList()
     if (controller.ui.activeTool != ToolId.Line) return emptyList()
     val tools = controller.tools
     val modes = PlanMode.entries.map { mode ->
@@ -80,6 +81,15 @@ internal fun planChips(controller: SketchEditorController): List<ActionChip> {
         ActionChip(PlanTags.CHIP_DONE, P.DONE, P.DONE_DESCRIPTION) { tools.finishWalls() },
         if (placed >= PlanLimits.CLOSE_FROM) ActionChip(PlanTags.CHIP_CLOSE, P.CLOSE_ROOM, P.CLOSE_ROOM_DESCRIPTION) { tools.closeRoom() } else null,
     )
+}
+
+/** "Rotate" for a selection of one or more elements: opens the angle dialog (typed degrees, quick steps, pivot). */
+private fun rotateChip(controller: SketchEditorController): List<ActionChip> {
+    val scene = controller.doc.scene
+    val turnable = controller.ui.selection.mapNotNull { scene[ElementId(it)] }.any { it !is OpeningElement }
+    if (!turnable) return emptyList()
+    val strings = dev.stapler.stelekit.ui.sketch.v2.strings.SketchHostStrings.Rotate
+    return listOf(ActionChip(RotateTags.CHIP, strings.CHIP, strings.CHIP_DESCRIPTION) { controller.overlay = EditorOverlay.Rotate })
 }
 
 /** Edits of a selected opening (flip its swing or hinge) or wall (cycle justification, type the last segment's length). */

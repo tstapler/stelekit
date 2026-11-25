@@ -99,7 +99,7 @@ data class HandleLayout(val tier: HandleTier, val handles: List<PlacedHandle>) {
          * whole shape; the press nearest a corner wins over the body because the Select tool tries handles first. A box with no
          * area (a straight line) has no corners and gets none.
          */
-        fun compact(cx: Double, cy: Double, width: Double, height: Double, angle: Double, zoom: Double, floorPx: Double): HandleLayout {
+        fun compact(cx: Double, cy: Double, width: Double, height: Double, angle: Double, zoom: Double, floorPx: Double, rotatable: Boolean = false): HandleLayout {
             val shorter = minOf(width, height)
             if (shorter <= 0.0) return HandleLayout(HandleTier.None, emptyList())
             // Reach inward as far as the floor allows (clamped to a share of the shape), but only part of that outward, so a press
@@ -122,7 +122,12 @@ data class HandleLayout(val tier: HandleTier, val handles: List<PlacedHandle>) {
                     ScenePoint(unit(cx + hx * c - hy * s), unit(cy + hx * s + hy * c)),
                 )
             }
-            return HandleLayout(HandleTier.Compact, placed)
+            val corners = placed.toMutableList()
+            if (rotatable) {
+                val ly = -height / HALF - ROTATE_OFFSET_FLOORS * floorPx / zoom
+                corners += PlacedHandle(Handle.Rotate, ScenePoint(unit(cx - ly * s), unit(cy + ly * c)), floorPx / zoom / HALF)
+            }
+            return HandleLayout(HandleTier.Compact, corners)
         }
 
         private fun unit(v: Double) = dev.stapler.stelekit.sketch.v2.scene.SceneUnit.of(v).getOrNull() ?: dev.stapler.stelekit.sketch.v2.scene.SceneUnit.ZERO

@@ -12,6 +12,7 @@ import dev.stapler.stelekit.sketch.v2.scene.BoxElement
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.EllipseElement
 import dev.stapler.stelekit.sketch.v2.scene.LineElement
+import dev.stapler.stelekit.sketch.v2.scene.OpeningElement
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
@@ -69,7 +70,7 @@ class SelectTool(
     fun selectionFrame(ctx: ToolContext): SelectionFrame? {
         val items = editable(ctx)
         if (items.isEmpty()) return null
-        val rotatable = items.all { it is BoxElement || it is EllipseElement }
+        val rotatable = items.any { it !is OpeningElement }
         val single = items.singleOrNull()
         if (single != null && (single is BoxElement || single is EllipseElement)) return SelectionFrame(ownBox(single), ownAngle(single), rotatable)
         val joint = items.map { ElementBounds.geometry(it) }.reduce { a, b -> Bounds(minOf(a.minX, b.minX), minOf(a.minY, b.minY), maxOf(a.maxX, b.maxX), maxOf(a.maxY, b.maxY)) }
@@ -86,7 +87,7 @@ class SelectTool(
         val sized = HandleLayout.compute(f.box.cx, f.box.cy, f.box.width, f.box.height, f.angle, ctx.zoom, floorPx, f.rotatable)
         // On touch, a selection too small for floor-sized handles still gets its four corners, so a finger can resize it without
         // moving it. A mouse keeps the plain rule (no handles below the smallest tier): it can aim, or zoom.
-        return if (sized.tier == HandleTier.None && touch) HandleLayout.compact(f.box.cx, f.box.cy, f.box.width, f.box.height, f.angle, ctx.zoom, floorPx) else sized
+        return if (sized.tier == HandleTier.None && touch) HandleLayout.compact(f.box.cx, f.box.cy, f.box.width, f.box.height, f.angle, ctx.zoom, floorPx, f.rotatable) else sized
     }
 
     /** Half the touch floor (22 dp touch, 12 dp mouse), in scene units: how far from a vertex a press still grabs it. */
@@ -314,10 +315,10 @@ class SelectTool(
             event.type == InputType.Escape || event.type == InputType.Cancel -> ToolResult(preview = null, next = owner)
             event.type == InputType.Down && event.pointerId != pointerId -> ToolResult(preview = null, next = owner)
             event.pointerId != pointerId -> ToolResult.Nothing
-            event.type == InputType.Move -> ToolResult(preview = steps(event, ctx)?.let { previewOf(TransformSelectionCommand(it.transforms), ctx, items.map { e -> e.id }, snappedCursor(event, ctx), it.guides, owner) })
+            event.type == InputType.Move -> ToolResult(preview = steps(event, ctx)?.let { previewOf(it.command ?: TransformSelectionCommand(it.transforms), ctx, items.map { e -> e.id }, snappedCursor(event, ctx), it.guides, owner) })
             event.type == InputType.Up -> {
                 val skipped = owner.selection.count { ctx.scene[it] != null } - items.size
-                val cmd = steps(event, ctx)?.let { TransformSelectionCommand(it.transforms) }
+                val cmd = steps(event, ctx)?.let { it.command ?: TransformSelectionCommand(it.transforms) }
                 ToolResult(cmd, null, owner, owner.skipNotice(skipped))
             }
             else -> ToolResult.Nothing
@@ -335,13 +336,13 @@ class SelectTool(
             return ScenePoint(unitOrZero(event.point.x.value + out.dx - rawDx), unitOrZero(event.point.y.value + out.dy - rawDy))
         }
 
-        private class Steps(val transforms: List<ElementTransform>, val guides: List<SnapGuide> = emptyList())
+        private class Steps(val transforms: List<ElementTransform>, val guides: List<SnapGuide> = emptyList(), val command: ToolCommand? = null)
 
         private fun steps(event: InputEvent, ctx: ToolContext): Steps? {
             val dx = event.point.x.value - start.x.value
             val dy = event.point.y.value - start.y.value
             if (dx == 0.0 && dy == 0.0) return null
-            return if (handle == Handle.Rotate) Steps(rotateSteps(event)) else resizeSteps(dx, dy, event.modifiers, ctx)
+            return if (handle == Handle.Rotate) rotateStepsFor(event, ctx) else resizeSteps(dx, dy, event.modifiers, ctx)
         }
 
         /**
@@ -388,16 +389,28 @@ class SelectTool(
             return Steps(listOf(t), if (landed) out.guides else emptyList())
         }
 
-        private fun rotateSteps(event: InputEvent): List<ElementTransform> {
+        private fun stepOf(event: InputEvent, ctx: ToolContext): Double? = ctx.snap.rotateStepRadians(event.modifiers.shift, event.modifiers.ctrl)
+
+        /** Boxes and ellipses turn about their own centres as before; anything else (lines, walls, a mix) turns rigidly about the frame centre. */
+        private fun rotateStepsFor(event: InputEvent, ctx: ToolContext): Steps {
+            val general = items.any { it !is BoxElement && it !is EllipseElement } || items.any { it is OpeningElement }
+            if (!general) return Steps(rotateSteps(event, ctx))
+            val delta = TransformMath.normalise(
+                TransformMath.rotateBy(frame.box.cx, frame.box.cy, 0.0, start.x.value, start.y.value, event.point.x.value, event.point.y.value, stepOf(event, ctx)),
+            )
+            return Steps(emptyList(), command = RotateSelectionCommand(items.map { it.id }, delta, frame.box.cx, frame.box.cy))
+        }
+
+        private fun rotateSteps(event: InputEvent, ctx: ToolContext): List<ElementTransform> {
             val cx = frame.box.cx
             val cy = frame.box.cy
             if (items.size == 1) {
                 val e = items.single()
-                val angle = TransformMath.rotate(cx, cy, frame.angle, start.x.value, start.y.value, event.point.x.value, event.point.y.value, event.modifiers.shift)
+                val angle = TransformMath.rotateBy(cx, cy, frame.angle, start.x.value, start.y.value, event.point.x.value, event.point.y.value, stepOf(event, ctx))
                 return listOf(fit(e, ownBox(e), angle))
             }
             val delta = TransformMath.normalise(
-                TransformMath.rotate(cx, cy, 0.0, start.x.value, start.y.value, event.point.x.value, event.point.y.value, event.modifiers.shift),
+                TransformMath.rotateBy(cx, cy, 0.0, start.x.value, start.y.value, event.point.x.value, event.point.y.value, stepOf(event, ctx)),
             )
             return items.map { e ->
                 val b = ownBox(e)

@@ -475,6 +475,7 @@ private fun HostOverlays(controller: SketchEditorController, extras: EditorExtra
         EditorOverlay.ConstrainMenu -> ConstrainMenuDialog(controller, extras)
         EditorOverlay.HelpSearch -> GuideDialog(controller, extras, tours)
         EditorOverlay.WallLength -> WallLengthDialog(controller, extras)
+        EditorOverlay.Rotate -> RotateDialog(controller)
         null -> Unit
     }
 }
