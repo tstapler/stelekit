@@ -69,7 +69,12 @@ class GoldenCorpusTest {
         f("=(2+3)*4", "20"),
         f("=10/4", "2.5"),
         f("=2^3", "8"),
-        f("=-2^2", "-4"),
+        f("=-2^2", "4"),
+        f("=-(2^2)", "-4"),
+        f("=2^3^2", "64"),
+        f("=2^(3^2)", "512"),
+        f("=(2^3)^2", "64"),
+        f("=2^-1", "0.5"),
         f("=--3", "3"),
         f("=+5", "5"),
         f("=50%", "0.5"),
@@ -131,6 +136,14 @@ class GoldenCorpusTest {
         f("=A1+1", "#VALUE!"),
         f("=Z2", "#REF!"),
         f("=A100", "#REF!"),
+        f("=SUM(Z2:Z5)", "0"),
+        f("=COUNT(Z2:Z5)", "0"),
+        f("=COUNTA(Z2:Z5)", "0"),
+        f("=AVERAGE(Z2:Z5)", "#DIV/0!"),
+        f("=MIN(Z2:Z5)", "0"),
+        f("=MAX(Z2:Z5)", "0"),
+        f("=SUM(A2:A3,Z2:Z5)", "4"),
+        f("=SUM(Z2)", "#REF!"),
         f("=SUM(A2:A100)", "6"),
         // errors propagate
         f("=D2+1", "#DIV/0!"),
@@ -173,20 +186,6 @@ class GoldenCorpusTest {
             if (actual == c.expected) null else "${c.formula.take(60)} [${c.overrides}] at ${c.at}: expected ${c.expected} got $actual"
         }
         assertEquals(emptyList(), failures, "${failures.size} of ${cases.size} golden cases disagree")
-    }
-
-    /**
-     * Cases where documented Sheets/Excel behaviour and the implementation disagree and ADR-002 is silent.
-     * The implementation's current answer is pinned so a change is noticed; the owner decides (see report).
-     */
-    private val disagreements = listOf(
-        f("=2^3^2", "512") to "Sheets/Excel evaluate ^ left to right (64); implementation is right-associative (512)",
-        f("=SUM(Z2:Z5)", "#REF!") to "ADR-002 says ranges are clamped to the table (0 expected); a range wholly outside gives #REF!",
-    )
-
-    @Test
-    fun golden_should_PinImplementationAnswer_When_AdrIsSilentAndSheetsDiffers() {
-        for ((c, why) in disagreements) assertEquals(c.expected, run(c), why)
     }
 
     private class Rewrite(val formula: String, val edit: TableEdit, val expected: String?)

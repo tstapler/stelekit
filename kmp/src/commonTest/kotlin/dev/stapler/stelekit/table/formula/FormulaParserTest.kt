@@ -44,8 +44,12 @@ class FormulaParserTest {
 
     @Test
     fun parse_should_ApplyPrecedenceAndAssociativity_When_UnaryMinusPowerSubtraction() {
-        assertEquals(-4.0, fold(ok("=-2^2")))
-        assertEquals(512.0, fold(ok("=2^3^2")))
+        assertEquals(4.0, fold(ok("=-2^2")))
+        assertEquals(-4.0, fold(ok("=-(2^2)")))
+        assertEquals(64.0, fold(ok("=2^3^2")))
+        assertEquals(512.0, fold(ok("=2^(3^2)")))
+        assertEquals(0.25, fold(ok("=-2^-2"))) // (-2)^(-2)
+        assertEquals(-0.5, fold(ok("=-50%"))) // unary minus binds tighter than %, value is the same
         assertEquals(3.0, fold(ok("=10-4-3")))
         assertEquals(7.0, fold(ok("=1+2*3")))
         assertEquals(9.0, fold(ok("=(1+2)*3")))
@@ -134,10 +138,12 @@ class FormulaParserTest {
         assertIs<FormulaParse.Ok>(FormulaParser.parse(nested(FormulaParser.MAX_DEPTH - 1)))
         assertEquals(FormulaParseError.Limit, failure(nested(FormulaParser.MAX_DEPTH)))
         assertEquals(FormulaParseError.Limit, failure("=" + "-".repeat(500) + "1"))
-        assertEquals(FormulaParseError.Limit, failure("=" + "2^".repeat(300) + "2"))
+        assertEquals(FormulaParseError.Limit, failure("=" + "2^(".repeat(300) + "2" + ")".repeat(300)))
         assertEquals(FormulaParseError.Limit, failure("=" + "SUM(".repeat(200) + "1" + ")".repeat(200)))
         // Flat chains are iterative and must not count toward depth.
         assertIs<FormulaParse.Ok>(FormulaParser.parse("=" + "1+".repeat(499) + "1"))
+        // `^` is left-associative, so an unparenthesized chain is flat too.
+        assertIs<FormulaParse.Ok>(FormulaParser.parse("=" + "2^".repeat(300) + "2"))
     }
 
     private val noSpan = Span(0, 0)

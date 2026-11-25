@@ -13,9 +13,9 @@ object FormulaPrinter {
     private const val P_COMPARE = 10
     private const val P_ADD = 20
     private const val P_MUL = 30
-    private const val P_UNARY = 40
     private const val P_POW = 50
     private const val P_PERCENT = 60
+    private const val P_UNARY = 70
     private const val P_ATOM = 100
 
     /** Full cell text including the leading `=`. */
@@ -45,8 +45,8 @@ object FormulaPrinter {
             is Expr.Pct -> push(stack, operand(e.operand, prec(e.operand) < P_PERCENT), "%")
             is Expr.Bin -> {
                 val p = binPrec(e.op)
-                val leftParens = prec(e.left) < p || (e.op == BinOp.Pow && prec(e.left) == p)
-                val rightParens = prec(e.right) < p || (e.op != BinOp.Pow && prec(e.right) == p)
+                val leftParens = prec(e.left) < p
+                val rightParens = prec(e.right) <= p
                 push(stack, operand(e.left, leftParens), e.op.symbol, operand(e.right, rightParens))
             }
             is Expr.Call -> {

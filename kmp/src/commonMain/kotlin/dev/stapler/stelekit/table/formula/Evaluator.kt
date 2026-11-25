@@ -240,7 +240,8 @@ class FormulaEvaluator(private val registry: FunctionRegistry = FunctionRegistry
         val r1 = minOf(e.from.row, e.to.row)
         val r2 = minOf(maxOf(e.from.row, e.to.row), run.cells.rowCount)
         if (c1 > c2 || r1 > r2) {
-            run.pushValue(CellValue.Err(CellError.Ref))
+            // A range wholly outside the table is empty, as in Excel; a single-cell ref stays #REF!.
+            run.values.add(EvalArg.Block(emptyList()))
             return
         }
         run.charge((c2 - c1 + 1).toLong() * (r2 - r1 + 1))

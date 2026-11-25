@@ -38,13 +38,14 @@ object FormulaParser {
     const val MAX_LENGTH = 1000
     const val MAX_DEPTH = 64
 
-    // Binding powers: precedence low to high. Unary minus sits below `^` so `-2^2` is -4 (ADR-002).
+    // Binding powers, low to high, in Excel order: unary minus binds tighter than `%`, which binds
+    // tighter than `^`, so `-2^2` is 4 (ADR-002).
     private const val BP_COMPARE = 10
     private const val BP_ADD = 20
     private const val BP_MUL = 30
-    private const val BP_UNARY = 40
     private const val BP_POW = 50
     private const val BP_PERCENT = 60
+    private const val BP_UNARY = 70
 
     /** `=` at index 0 and the next non-space token can start an expression (ADR-002). */
     fun isFormulaShaped(text: String): Boolean {
@@ -97,8 +98,8 @@ object FormulaParser {
                     left = if (op.symbol == "%") {
                         Expr.Pct(left, Span(left.span.start, op.end))
                     } else {
-                        // `^` is right-associative, everything else left-associative.
-                        val right = parseExpr(if (op.symbol == "^") bp else bp + 1)
+                        // Every binary operator is left-associative, `^` included (Excel: `2^3^2` is 64).
+                        val right = parseExpr(bp + 1)
                         Expr.Bin(binOp(op.symbol), left, right, Span(left.span.start, right.span.end))
                     }
                 }

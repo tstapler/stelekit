@@ -14,6 +14,7 @@ import io.kotest.property.Arb
 import io.kotest.property.arbitrary.long
 import io.kotest.property.checkAll
 import kotlinx.coroutines.test.runTest
+import kotlin.math.pow
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -232,6 +233,22 @@ class FormulaPropertyTest {
             // primitive == so -0.0 equals 0.0 (the display is "0" either way)
             val actual = assertIs<CellValue.Num>(calc.valueAt(CellAddress(2, 2)), "seed=$seed $text").value
             assertTrue(actual == eval(tree), "seed=$seed $text expected ${eval(tree)} got $actual")
+        }
+    }
+
+    @Test
+    fun pow_should_FoldLeftToRight_When_UnparenthesizedChainGenerated() = runTest {
+        checkAll(500, Arb.long()) { seed ->
+            val rnd = Random(seed)
+            val operands = List(rnd.nextInt(2, 6)) { rnd.nextInt(1, 4) }
+            val negateFirst = rnd.nextBoolean()
+            val text = "=" + (if (negateFirst) "-" else "") + operands.joinToString("^")
+            // Excel: unary minus binds tighter than ^ and ^ is left-associative.
+            var expected = (if (negateFirst) -operands[0] else operands[0]).toDouble()
+            for (x in operands.drop(1)) expected = expected.pow(x.toDouble())
+            val calc = TableCalc(parse(listOf(listOf("h", "h"), listOf("", text))))
+            val actual = assertIs<CellValue.Num>(calc.valueAt(CellAddress(2, 2)), "seed=$seed $text").value
+            assertTrue(actual == expected, "seed=$seed $text expected $expected got $actual")
         }
     }
 

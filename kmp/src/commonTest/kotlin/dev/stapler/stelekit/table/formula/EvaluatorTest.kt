@@ -56,8 +56,9 @@ class EvaluatorTest {
 
     @Test
     fun evaluate_should_ApplyPrecedenceFunctionsAndComparisons_When_Evaluated() {
-        assertEquals(num(-4.0), eval("=-2^2"))
-        assertEquals(num(512.0), eval("=2^3^2"))
+        assertEquals(num(4.0), eval("=-2^2"))
+        assertEquals(num(64.0), eval("=2^3^2"))
+        assertEquals(num(512.0), eval("=2^(3^2)"))
         assertEquals(num(3.0), eval("=10-4-3"))
         assertEquals(num(0.25), eval("=2^-2"))
         assertEquals(num(1.5), eval("=1+50%"))
@@ -99,8 +100,15 @@ class EvaluatorTest {
         tall.reads = 0
         eval("=SUM(A1:A10001)", tall)
         assertEquals(0, tall.reads)
-        // A wholly out-of-table range is #REF!.
-        assertEquals(err(CellError.Ref), eval("=SUM(D1:E5)", three))
+        // A range wholly outside the table is empty (Excel semantics); a single-cell ref outside stays #REF!.
+        assertEquals(num(0.0), eval("=SUM(D1:E5)", three))
+        assertEquals(num(0.0), eval("=COUNT(D1:E5)", three))
+        assertEquals(num(0.0), eval("=MIN(D1:E5)", three))
+        assertEquals(num(0.0), eval("=MAX(D1:E5)", three))
+        assertEquals(err(CellError.DivZero), eval("=AVERAGE(D1:E5)", three))
+        assertEquals(num(9.0), eval("=SUM(A1:C3,D1:E5)", three))
+        assertEquals(err(CellError.Ref), eval("=D1", three))
+        assertEquals(err(CellError.Ref), eval("=SUM(D1)", three))
     }
 
     @Test
