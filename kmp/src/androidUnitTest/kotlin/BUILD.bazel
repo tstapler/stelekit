@@ -86,6 +86,7 @@ kt_android_library(
             "**/SolveProgressIndicatorTest.kt",
             # Compose host tests for the v2 go-to-element dialog, accessibility audit, walkthrough keyboard and loading states (Gradle-only, no Compose plugin in this target)
             "**/GoToElementTest.kt",
+            "**/OutlineAccessibilityTest.kt",
             "**/UxA11yAcceptanceTest.kt",
             "**/WalkthroughKeyboardTest.kt",
             "**/LoadingStatesTest.kt",

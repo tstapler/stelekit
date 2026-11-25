@@ -193,6 +193,8 @@ fun SketchEditorV2Host(
         ),
         toasts = toasts,
         onGoToElement = { controller.overlay = EditorOverlay.GoToElement },
+        onOutline = { controller.overlay = EditorOverlay.Outline },
+        onAddShapeAt = if (controller.readOnly) null else ({ controller.overlay = EditorOverlay.AddShapeAt }),
         selectionItems = selectionItems(controller) + extras.engine.menuItems(),
         onSelectionAction = { controller.onSelectionAction(it, extras) },
         escRows = { controller.escRows() + extras.escRows() },
@@ -474,6 +476,8 @@ private fun HostOverlays(controller: SketchEditorController, extras: EditorExtra
             },
             onDismiss = { controller.overlay = null },
         )
+        EditorOverlay.Outline -> OutlineHost(controller)
+        EditorOverlay.AddShapeAt -> AddShapeAtHost(controller, extras)
         EditorOverlay.ConstrainMenu -> ConstrainMenuDialog(controller, extras)
         EditorOverlay.HelpSearch -> GuideDialog(controller, extras, tours)
         EditorOverlay.WallLength -> WallLengthDialog(controller, extras)
