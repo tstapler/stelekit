@@ -136,4 +136,21 @@ class ElbowConnectorTest {
         assertTrue(points(again).any { abs(it.first - cmd.coord) < eps }, "${points(again)}")
         assertEquals(null, (SetElbowMid(elId("e"), null).apply(history.present).getOrNull()!!.doc.scene[elId("e")] as ArrowElement).base.extras[ElbowMid.KEY])
     }
+
+    @Test
+    fun bindingAnElbowArrowEnd_should_RerouteIt() {
+        val loose = elbow().copy(endBinding = null, points = listOf(sp(100, 30), sp(290, 215)))
+        val doc = docWith(loose)
+        val after = Transaction.begin(doc).apply(dev.stapler.stelekit.sketch.v2.binding.BindArrowEnd(elId("e"), dev.stapler.stelekit.sketch.v2.scene.BindingEnd.End, elId("b"))).getOrNull()?.doc ?: error("bind")
+        assertTrue(orthogonal(points(after)), "${points(after)}")
+    }
+
+    @Test
+    fun aDraggedMiddleSegment_should_BeDropped_WhenAShapeMovesFarPastIt() {
+        val doc = routed(docWith(elbow()))
+        val dragged = Transaction.begin(doc).apply(SetElbowMid(elId("e"), 200.0)).getOrNull()?.doc ?: error("mid")
+        val moved = Transaction.begin(dragged).apply(MoveElements(listOf(elId("b")), -250.0, 0.0)).getOrNull()?.doc ?: error("move")
+        val pts = points(moved)
+        assertTrue(orthogonal(pts) && pts.none { abs(it.first - 200.0) < eps && abs(it.second - 30.0) > eps && abs(it.second - 230.0) > eps }, "$pts")
+    }
 }

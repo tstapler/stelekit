@@ -70,7 +70,11 @@ object ElbowRouting {
         val last = arrow.points.last()
         val start = endOf(scene, arrow.startBinding, first)
         val end = endOf(scene, arrow.endBinding, last)
-        return ElbowRouter.route(start, end, ElbowMid.read(arrow.base.extras))
+        // A dragged middle segment only holds while it still lies between the two ends; after a long move it is dropped (the router chooses).
+        val mid = ElbowMid.read(arrow.base.extras)?.takeIf { m ->
+            (m > minOf(start.x, end.x) && m < maxOf(start.x, end.x)) || (m > minOf(start.y, end.y) && m < maxOf(start.y, end.y))
+        }
+        return ElbowRouter.route(start, end, mid)
     }
 
     /** [routeOf] as scene points, or null (also null when a coordinate would leave the scene's bounds). */
