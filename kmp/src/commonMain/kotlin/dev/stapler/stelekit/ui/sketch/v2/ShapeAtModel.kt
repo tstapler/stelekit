@@ -98,7 +98,7 @@ object ShapeAtModel {
 
     private const val HALF = 2.0
 
-    private val ZERO = Regex("""^0+(\.0*)?\s*(mm|cm|m|"|')?$""")
+    private val ZERO = Regex("""^0+(\.0*)?\s*(mm|cm|m|in|inch|inches|ft|"|')?$""")
 
     private fun isZero(text: String): Boolean = ZERO.matches(text)
 

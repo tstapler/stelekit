@@ -78,4 +78,12 @@ class SketchOutlineAndShapeAtTest {
         assertEquals(ShapeAtField.Height, plan(ShapeAtForm(x = "0", y = "0", width = "5", height = "-5")).leftOrNull()!!.field)
         assertTrue(plan(ShapeAtForm(x = "1e12", y = "0", width = "5", height = "5")).isLeft())
     }
+
+    @Test
+    fun shapeAt_should_AcceptZeroWithAUnit_ForXAndY_And_OutlineNamesCarryTheBareName() {
+        val r = assertIs<RectElement>(plan(ShapeAtForm(x = "0 in", y = "0'", width = "1'", height = "1'"), technical = true).getOrNull()!!.command.element)
+        assertEquals(0.0, r.x.value)
+        val entry = SketchOutlineModel.build(sceneOf(filledRectEl("a", 0, 0, 5, 5)), emptySet()).single()
+        assertTrue(entry.label.startsWith(entry.name) && entry.label != entry.name)
+    }
 }

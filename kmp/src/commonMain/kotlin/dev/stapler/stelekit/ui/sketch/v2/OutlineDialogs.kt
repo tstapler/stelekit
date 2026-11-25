@@ -88,6 +88,8 @@ fun SketchOutlineDialog(
     onDismiss: () -> Unit,
     /** Whether the rename field takes focus when it opens; a Compose test cannot wait out a focused field's cursor and passes false. */
     autoFocus: Boolean = true,
+    /** False on a read-only sheet: the Rename action is then not offered. */
+    canRename: Boolean = true,
 ) {
     var renaming by remember { mutableStateOf<OutlineEntry?>(null) }
     var renameText by remember { mutableStateOf("") }
@@ -137,11 +139,11 @@ fun SketchOutlineDialog(
                                         CustomAccessibilityAction(S.SELECT_ACTION) { onSelect(entry); true },
                                         CustomAccessibilityAction(S.RENAME_ACTION) {
                                             renaming = entry
-                                            renameText = entry.label
+                                            renameText = entry.name
                                             renameError = null
                                             true
                                         },
-                                    )
+                                    ).filter { canRename || it.label != S.RENAME_ACTION }
                                 },
                             style = MaterialTheme.typography.bodyLarge,
                         )
@@ -269,9 +271,10 @@ internal fun OutlineHost(controller: SketchEditorController) {
             controller.overlay = null
         },
         onRename = { id, text ->
-            controller.submit(ElementsPanelModel.rename(id, text))?.let { ElementsPanelModel.renameError(it) ?: it.toString() }
+            controller.submit(ElementsPanelModel.rename(id, text))?.let { ElementsPanelModel.renameError(it) ?: S.RENAME_REFUSED }
         },
         onDismiss = { controller.overlay = null },
+        canRename = !controller.readOnly,
     )
 }
 
@@ -286,7 +289,8 @@ internal fun AddShapeAtHost(controller: SketchEditorController, extras: EditorEx
         plan = { form -> ShapeAtModel.plan(form, technical, format, id, controller.defaultStyle) },
         onAdd = { plan ->
             controller.commitToolCommand(plan.command)
-            controller.view.reveal(plan.command.element.id)
+            // The add may land later (solver queue, auto-constrain), so reveal only when it is already in; a refusal raises its own notice.
+            if (controller.doc.scene[plan.command.element.id] != null) controller.view.reveal(plan.command.element.id)
             controller.notifier.announce(plan.announcement)
             controller.overlay = null
         },

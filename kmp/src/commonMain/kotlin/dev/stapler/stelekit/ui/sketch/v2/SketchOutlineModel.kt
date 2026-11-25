@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.ui.sketch.v2
 
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
+import dev.stapler.stelekit.sketch.v2.scene.ElementNames
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
 import dev.stapler.stelekit.sketch.v2.view.SceneBounds
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchOutlineStrings
@@ -15,6 +16,8 @@ data class OutlineEntry(
     val position: Int,
     val total: Int,
     val label: String,
+    /** The element's own name, the prefill of Rename (the label also carries size and state). */
+    val name: String,
     val bounds: SceneBounds,
     val selected: Boolean,
     val locked: Boolean,
@@ -41,6 +44,7 @@ object SketchOutlineModel {
                 position = index + 1,
                 total = ordered.size,
                 label = SceneSemantics.label(scene, e, annotations),
+                name = ElementNames.nameOf(e),
                 bounds = bounds,
                 selected = e.id in selection,
                 locked = e.base.locked || layers[e.base.layerId]?.locked == true,

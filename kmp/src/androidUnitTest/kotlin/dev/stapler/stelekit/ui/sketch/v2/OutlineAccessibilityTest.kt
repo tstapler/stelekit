@@ -74,7 +74,6 @@ class OutlineAccessibilityTest {
 
     private fun withFontScale(scale: Float, content: @androidx.compose.runtime.Composable () -> Unit) {
         fontScale = scale
-        if (scale == 1f) { rule.setContent { content() }; return }
         rule.setContent {
             val base = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(base.density, fontScale)) { content() }

@@ -13,6 +13,7 @@ object SketchOutlineStrings {
     const val SELECT_ACTION = "Select"
     const val RENAME_ACTION = "Rename"
     const val RENAME_FIELD = "Name"
+    const val RENAME_REFUSED = "That name could not be saved."
     const val RENAME_SAVE = "Save name"
     const val RENAME_CANCEL = "Cancel"
     const val SELECTED_SUFFIX = "selected"
