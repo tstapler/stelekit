@@ -291,7 +291,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/scene/UnderlayCalibrationTest.kt",
         "dev/stapler/stelekit/sketch/v2/scene/UnderlayCommandsTest.kt",
         "dev/stapler/stelekit/sketch/v2/scene/UnderlayPinAndCropTest.kt",
-        "dev/stapler/stelekit/platform/image/BitmapOrienterTest.kt",
+        "dev/stapler/stelekit/platform/image/BitmapOrienterModelTest.kt",
         "dev/stapler/stelekit/sketch/v2/runtime/export/UnderlayExportTest.kt",
         "dev/stapler/stelekit/sketch/v2/export/SheetPrintGolden.kt",
         "dev/stapler/stelekit/sketch/v2/export/SheetPrintTest.kt",

@@ -12,8 +12,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
 
-/** E5 leftover: orientations 2..8 turned upright without a platform downscaler. */
-class BitmapOrienterTest {
+/** E5 leftover: orientations 2..8 turned upright without a platform downscaler (real Skia canvas; the Android Robolectric canvas does not draw). */
+class BitmapOrienterPixelTest {
     private fun source(): ImageBitmap {
         val bmp = ImageBitmap(3, 2)
         val canvas = Canvas(bmp)
