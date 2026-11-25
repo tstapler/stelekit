@@ -177,7 +177,7 @@ class ExportDialogModel(private val source: ExportSource, private val runner: Sk
 data class FitCheck(val fits: Boolean, val text: String, val suggestion: dev.stapler.stelekit.sketch.v2.export.DrawingScale?)
 
 /** How the drawing sits on the page, in words: the fit check the page preview shows. */
-internal fun ExportDialogModel.fitCheck(plan: SheetPlan): FitCheck {
+fun ExportDialogModel.fitCheck(plan: SheetPlan): FitCheck {
     val setup = plan.setup
     val imperial = setup.paper.imperial
     val need = "${SheetPlanner.lengthText(plan.scaledWidth, imperial)} x ${SheetPlanner.lengthText(plan.scaledHeight, imperial)}"
