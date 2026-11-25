@@ -6,10 +6,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [[ "${1:-}" != "--no-build" ]]; then
-  ./gradlew :kmp:compileProductionExecutableKotlinWasmJs :kmp:wasmJsProductionExecutableCompileSync -PenableJs=true -q
+  ./gradlew :kmp:compileProductionExecutableKotlinWasmJsOptimize :kmp:wasmJsProductionExecutableCompileSync -PenableJs=true -q
 fi
 shopt -s nullglob
-files=(kmp/build/compileSync/wasmJs/*/*Executable/kotlin/*.import-object.mjs)
+files=(kmp/build/compileSync/wasmJs/*/*Executable/{kotlin,optimized}/*.import-object.mjs)
 if [[ ${#files[@]} -eq 0 ]]; then
   echo "no import-object.mjs found; run without --no-build" >&2
   exit 2
