@@ -16,6 +16,7 @@ import dev.stapler.stelekit.sketch.v2.scene.LineElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
 import dev.stapler.stelekit.sketch.v2.scene.withArrowType
+import dev.stapler.stelekit.sketch.v2.binding.ElbowRouting
 
 /**
  * What a new arrow looks like and whether its ends bind (Story 3.3.1). [bind] false is the "Don't bind" chip of the action
@@ -96,13 +97,18 @@ class ArrowTool private constructor(
             startArrowhead = options.startArrowhead, endArrowhead = options.endArrowhead,
         ).withArrowType(options.type)
         if (drop == Drop.Free) return Built(raw, null)
-        val start = targetAt(drawn.points.first(), ctx)
-        val end = targetAt(drawn.points.last(), ctx)
+        val start = targetAt(drawn.points.first(), ctx)?.let(::portSnapped)
+        val end = targetAt(drawn.points.last(), ctx)?.let(::portSnapped)
         val snapped = snapEnds(drawn.points, start, end)
         if (snapped.size == drawn.points.size && collapsed(snapped)) return Built(raw, end?.target?.id ?: start?.target?.id)
         val bound = raw.copy(points = snapped, startBinding = start?.binding, endBinding = end?.binding)
-        return Built(bound, end?.target?.id ?: start?.target?.id)
+        val routed = if (bound.elbowed) ElbowRouting.pointsOf(ctx.scene, bound)?.let { bound.copy(points = it) } ?: bound else bound
+        return Built(routed, end?.target?.id ?: start?.target?.id)
     }
+
+    /** An elbow arrow binds to a side midpoint (a port) when the drop is within [PORT_TOLERANCE] of it, so its stub leaves square from the middle of a side. */
+    private fun portSnapped(t: BindTarget): BindTarget =
+        if (options.type == ArrowType.Elbow) BindTarget(t.target, ElbowRouting.snapToPort(t.binding, PORT_TOLERANCE)) else t
 
     private fun targetAt(p: ScenePoint, ctx: ToolContext): BindTarget? =
         BindTargets.find(ctx.scene, ctx.spatialIndex, p.x.value, p.y.value, ctx.zoom)
@@ -122,5 +128,8 @@ class ArrowTool private constructor(
 
     private companion object {
         const val MIN_POINTS = 2
+
+        /** How far, as a fraction of a side, a drop may be from a side's midpoint and still snap to that port. */
+        const val PORT_TOLERANCE = 0.2
     }
 }

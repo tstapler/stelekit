@@ -291,6 +291,8 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/tools/ImageToolTest.kt",
         "dev/stapler/stelekit/sketch/v2/scene/UnderlayCalibrationTest.kt",
         "dev/stapler/stelekit/sketch/v2/scene/UnderlayCommandsTest.kt",
+        "dev/stapler/stelekit/sketch/v2/tools/ElbowConnectorTest.kt",
+        "dev/stapler/stelekit/sketch/v2/routing/ElbowRouterTest.kt",
         "dev/stapler/stelekit/sketch/v2/tools/RotateToolingTest.kt",
         "dev/stapler/stelekit/sketch/v2/RotateSelectionTest.kt",
         "dev/stapler/stelekit/sketch/v2/runtime/export/UnderlayExportTest.kt",

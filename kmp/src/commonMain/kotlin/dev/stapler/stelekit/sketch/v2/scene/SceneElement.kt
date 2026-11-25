@@ -125,7 +125,7 @@ data class ArrowElement(
     override fun withBase(base: ElementBase) = copy(base = base)
 }
 
-/** The three arrow types of the style panel (FB-SP-14). Elbow is stored only: it draws as a polyline, no router (OD-7). */
+/** The three arrow types of the style panel (FB-SP-14). Elbow arrows are routed by `ElbowRouter` when an end is bound. */
 enum class ArrowType { Sharp, Round, Elbow }
 
 val ArrowElement.arrowType: ArrowType
