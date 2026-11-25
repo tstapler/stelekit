@@ -23,6 +23,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -51,6 +53,10 @@ internal object ColumnWidths {
     const val AUTO_MIN_DP = 96f
     const val AUTO_MAX_DP = 240f
     const val SCAN_ROWS = 2_000
+
+    /** The width after a pointer moved [deltaPx] along the x axis; the handle sits on the column's end edge, so RTL grows leftwards. */
+    fun dragWidth(startDp: Float, deltaPx: Float, density: Float, rtl: Boolean): Float =
+        startDp + (if (rtl) -deltaPx else deltaPx) / density
 
     fun autoFitDp(longestLine: Int): Float = (longestLine * CHAR_DP + PADDING_DP).coerceIn(AUTO_MIN_DP, AUTO_MAX_DP)
 
@@ -112,6 +118,7 @@ internal fun ColumnResizeHandle(state: SheetState, col: Int, columnWidth: Dp, mo
     val density = LocalDensity.current
     var coords: LayoutCoordinates? by remember { mutableStateOf(null) }
     val label = CellAddress.columnLabel(col)
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     Box(
         modifier = modifier
             .width(minOf(RESIZE_HIT, columnWidth / 2))
@@ -126,7 +133,7 @@ internal fun ColumnResizeHandle(state: SheetState, col: Int, columnWidth: Dp, mo
                     val startX = coords?.localToRoot(down.position)?.x ?: return@awaitEachGesture
                     val ok = drag(down.id) { change ->
                         val x = coords?.localToRoot(change.position)?.x ?: return@drag
-                        state.resizeColumn(col, startWidth + (x - startX) / density.density)
+                        state.resizeColumn(col, ColumnWidths.dragWidth(startWidth, x - startX, density.density, rtl))
                         change.consume()
                     }
                     if (ok) state.announce(TableMessages.columnWidth(label, state.view.widthOf(col).toInt()))

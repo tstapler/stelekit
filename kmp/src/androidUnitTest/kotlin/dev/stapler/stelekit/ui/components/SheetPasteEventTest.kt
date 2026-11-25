@@ -9,6 +9,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import dev.stapler.stelekit.table.CellAddress
@@ -112,7 +113,8 @@ class SheetPasteEventTest {
 
     @Test
     fun eventPaste_should_BeLeftToThePasteBox_While_ItIsOpen() {
-        val f = open()
+        var now = 0L
+        val f = open { now }
         f.clipboard.failPaste = true
         select(f, CellAddress(2, 1))
         rule.onNodeWithTag("sheetGridFocus").performKeyInput {
@@ -122,6 +124,7 @@ class SheetPasteEventTest {
         }
         rule.waitForIdle()
         assertTrue(rule.exists("pasteHereDialog"), "the Paste here box is open")
+        now = 10_000 // the keystroke is long past: this paste is the user's, into the box
         assertFalse(deliver("9\t9"))
         assertEquals("2-1", f.s.rawText(CellAddress(2, 1)))
     }
@@ -175,5 +178,81 @@ class SheetPasteEventTest {
         }
         rule.waitForIdle()
         assertFalse(rule.exists("pasteHereDialog"), "no fallback box: the event already delivered")
+    }
+
+    private fun open(nowMs: () -> Long): SheetFixture =
+        SheetFixture(rule, gridContent(rows = 4, cols = 4)).also {
+            fixture = it
+            it.show(realCommands = true, nowMs = nowMs, wrap = { inner -> CompositionLocalProvider(LocalPasteEventSource provides source) { inner() } })
+        }
+
+    private fun ctrlV() {
+        rule.onNodeWithTag("sheetGridFocus").performKeyInput {
+            keyDown(Key.CtrlLeft)
+            pressKey(Key.V)
+            keyUp(Key.CtrlLeft)
+        }
+        rule.waitForIdle()
+    }
+
+    @Test
+    fun aSlowPortRead_should_NotApplyASecondTime_When_TheEventAlreadyDeliveredThatPaste() {
+        var now = 0L
+        val f = open { now }
+        f.clipboard.text = "7\t8"
+        f.clipboard.pasteGate = kotlinx.coroutines.CompletableDeferred()
+        select(f, CellAddress(2, 1))
+        val before = f.s.pasteApplications
+        ctrlV() // asked at t=0, the port is still thinking
+        now = 100
+        assertTrue(deliver("7\t8"))
+        now = 5_000 // far past the window by the time the port answers
+        f.clipboard.pasteGate!!.complete(Unit)
+        rule.waitForIdle()
+        assertEquals(before + 1, f.s.pasteApplications, "the port's late answer is the same keystroke's paste")
+    }
+
+    @Test
+    fun theEvent_should_StillBeTaken_When_ThePortFailedFirstAndOpenedTheBox() {
+        var now = 0L
+        val f = open { now }
+        f.clipboard.failPaste = true
+        select(f, CellAddress(2, 1))
+        ctrlV()
+        assertTrue(rule.exists("pasteHereDialog"), "the failed read opened the box")
+        now = 50
+        assertTrue(deliver("5\t6"), "the DOM event of the same Ctrl+V is not lost to the box")
+        assertEquals("5", f.s.rawText(CellAddress(2, 1)))
+        assertFalse(rule.exists("pasteHereDialog"))
+    }
+
+    @Test
+    fun anOpenBox_should_KeepOwningLaterPastes_OnceTheKeystrokeIsLongPast() {
+        var now = 0L
+        val f = open { now }
+        f.clipboard.failPaste = true
+        select(f, CellAddress(2, 1))
+        ctrlV()
+        now = 10_000
+        assertFalse(deliver("5\t6"))
+        assertEquals("2-1", f.s.rawText(CellAddress(2, 1)))
+    }
+
+    @Test
+    fun eventPaste_should_BeLeftToTheShowAsTextPanel_While_ItIsOpen() {
+        val f = open()
+        f.clipboard.failCopy = true
+        select(f, CellAddress(2, 1))
+        rule.onNodeWithTag("sheetGridFocus").performKeyInput {
+            keyDown(Key.CtrlLeft)
+            pressKey(Key.C)
+            keyUp(Key.CtrlLeft)
+        }
+        rule.waitForIdle()
+        rule.onNodeWithTag("noticeAction").performClick()
+        rule.waitForIdle()
+        assertTrue(rule.exists("showAsTextDialog"))
+        assertFalse(deliver("9\t9"))
+        assertEquals("2-1", f.s.rawText(CellAddress(2, 1)))
     }
 }

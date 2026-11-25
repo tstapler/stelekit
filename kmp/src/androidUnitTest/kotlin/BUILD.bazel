@@ -189,6 +189,7 @@ kt_android_library(
             "**/SheetA11yTest.kt",
             "**/SheetVisualPrefsTest.kt",
             "**/SheetPasteEventTest.kt",
+            "**/SheetGridHeaderRowTest.kt",
             # Compose host tests for the annotator status strip, pasteboard inset and gesture layer (Gradle-only)
             "**/StatusStripTest.kt",
             "**/PasteboardInsetTest.kt",

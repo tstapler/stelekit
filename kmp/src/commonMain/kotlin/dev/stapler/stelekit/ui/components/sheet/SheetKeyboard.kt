@@ -79,12 +79,15 @@ internal fun KeyEvent.toChord(): Chord? {
     return Chord(name, mod = isCtrlPressed || isMetaPressed, shift = isShiftPressed, alt = isAltPressed)
 }
 
-/** The typed character of a key-down, or null for a control key or a press with Ctrl, Cmd or Alt held. */
-internal fun KeyEvent.typedText(): String? {
-    if (isCtrlPressed || isMetaPressed || isAltPressed) return null
-    val cp = utf16CodePoint
-    if (cp < ' '.code || cp == 0x7F) return null
-    return cp.toChar().toString()
+/** The typed character of a key-down, or null for a control key or a press with Ctrl, Cmd or Alt held (AltGr is Ctrl+Alt and types). */
+internal fun KeyEvent.typedText(): String? = typedTextOf(isCtrlPressed, isMetaPressed, isAltPressed, utf16CodePoint)
+
+/** Windows reports AltGr as Ctrl and Alt together; a layout's third-level characters (@, \u20AC, {) are typing, not a shortcut. */
+internal fun typedTextOf(ctrl: Boolean, meta: Boolean, alt: Boolean, codePoint: Int): String? {
+    val altGr = ctrl && alt && !meta
+    val shortcut = (ctrl || meta || alt) && !altGr
+    if (shortcut || codePoint < ' '.code || codePoint == 0x7F) return null
+    return codePoint.toChar().toString()
 }
 
 /** Decides one Compose key event for [mode]; `KeyUp` and unmapped keys come back `NotHandled`. */

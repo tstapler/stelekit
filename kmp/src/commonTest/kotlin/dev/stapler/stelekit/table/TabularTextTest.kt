@@ -64,4 +64,11 @@ class TabularTextTest {
         assertEquals(blankLast, grid(TabularText.format(blankLast)))
         assertTrue(TabularText.format(listOf(listOf(""))) == "\"\"")
     }
+
+    @Test
+    fun parse_should_RefuseACellOverTheCharacterCap_WhateverTheCellCount() {
+        assertIs<TabularParse.TooLarge>(TabularText.parse("a\t" + "x".repeat(PASTE_CELL_CHARS + 1)))
+        assertIs<TabularParse.TooLarge>(TabularText.parse("\"" + "x".repeat(PASTE_CELL_CHARS + 1) + "\""))
+        assertIs<TabularParse.Grid>(TabularText.parse("a\t" + "x".repeat(PASTE_CELL_CHARS)))
+    }
 }

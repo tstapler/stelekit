@@ -147,7 +147,7 @@ class SheetViewStateTest {
         rule.waitForIdle()
         assertTrue(f.s.horizontalScroll > 0)
         val left = rule.onNodeWithTag("cell-A2").fetchSemanticsNode().boundsInRoot.left
-        val gutter = with(rule.density) { 44.dp.toPx() }
+        val gutter = with(rule.density) { 48.dp.toPx() }
         assertEquals(gridLeft + gutter, left, 2f, "column A stays right of the gutter")
     }
 
@@ -158,7 +158,7 @@ class SheetViewStateTest {
         rule.waitForIdle()
         assertTrue(f.s.horizontalScroll > 0)
         val gridLeft = rule.onNodeWithTag("sheetGrid").fetchSemanticsNode().boundsInRoot.left
-        val gutter = with(rule.density) { 44.dp.toPx() }
+        val gutter = with(rule.density) { 48.dp.toPx() }
         assertTrue(rule.onNodeWithTag("cell-A2").fetchSemanticsNode().boundsInRoot.left < gridLeft + gutter - 1f, "column A moved under the gutter")
     }
 

@@ -60,6 +60,8 @@ internal fun SheetBodyContent(
     parse: (String) -> ParsedSheet = ::parseSheet,
     onState: (SheetState) -> Unit = {},
     clipboardPort: TableClipboard? = null,
+    /** A clock for the paste dedupe window; null is the real one. A test seam. */
+    nowMs: (() -> Long)? = null,
 ) {
     val initial = remember(session) { session.content }
     val inline = remember(session) { if (SheetLoadingState.parsesOffThread(initial)) null else parse(initial) }
@@ -82,7 +84,9 @@ internal fun SheetBodyContent(
     }
     val state = rememberSaveable(parsed, session, saver = SheetState.saver(parsed, session, sink)) { SheetState(parsed, session, sink) }
     val port = clipboardPort ?: LocalTableClipboard.current ?: defaultTableClipboard()
-    val clipboard = remember(state, session, port) { SheetClipboard(state, session, port, session.context) }
+    val clipboard = remember(state, session, port) {
+        if (nowMs == null) SheetClipboard(state, session, port, session.context) else SheetClipboard(state, session, port, session.context, nowMs = nowMs)
+    }
     val commands = remember(state, session, clipboard) { SheetCommands(state, session, clipboard) }
     DisposableEffect(clipboard) {
         session.bodyCopyAsFormulas = clipboard::copyAsFormulas
@@ -103,7 +107,7 @@ internal fun SheetBodyContent(
                 state.restoreDraft(d.address, d.text)
             }
         }
-        onDispose { }
+        onDispose { session.unbind(state) }
     }
     SheetBackHandler(state)
     Box(modifier.fillMaxSize()) {
@@ -146,13 +150,20 @@ private fun SheetBodyLayout(state: SheetState, session: TableSheetSession, comma
             Box(
                 Modifier.size(0.dp).semantics {
                     liveRegion = LiveRegionMode.Polite
-                    contentDescription = state.announcement ?: ""
+                    contentDescription = announcementNode(state.announcement, state.announcementSeq)
                 }.testTag("announcement"),
             )
         }
         SheetBottomMenu(state)
     }
 }
+
+/**
+ * A live region speaks when its text changes, so the same sentence announced twice reads once. Every other announcement
+ * gets an invisible zero-width space appended, which changes the node without changing what is said.
+ */
+internal fun announcementNode(text: String?, seq: Int): String =
+    if (text.isNullOrEmpty()) "" else if (seq % 2 == 1) text else text + "\u200B"
 
 /** True once [active] has held for [afterMs] without a break; flips back at once. Driven by `delay`, so a test clock moves it. */
 @Composable

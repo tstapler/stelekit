@@ -482,4 +482,30 @@ class SheetStateTest {
         s.typeWithCaret("=1+2", 4)
         assertNull(s.pointIndicator)
     }
+
+    @Test
+    fun dragWidth_should_GrowLeftwards_When_TheLayoutIsRtl() {
+        assertEquals(160f, ColumnWidths.dragWidth(100f, 120f, 2f, rtl = false))
+        assertEquals(40f, ColumnWidths.dragWidth(100f, 120f, 2f, rtl = true), "dragging right shrinks a column whose handle is on its left edge")
+        assertEquals(160f, ColumnWidths.dragWidth(100f, -120f, 2f, rtl = true))
+    }
+
+    @Test
+    fun typedTextOf_should_TypeAltGrCharacters_ButNotShortcuts() {
+        assertEquals("@", typedTextOf(ctrl = true, meta = false, alt = true, codePoint = '@'.code), "AltGr arrives as Ctrl+Alt")
+        assertNull(typedTextOf(ctrl = true, meta = false, alt = false, codePoint = 'c'.code))
+        assertNull(typedTextOf(ctrl = false, meta = false, alt = true, codePoint = 'x'.code))
+        assertNull(typedTextOf(ctrl = true, meta = true, alt = true, codePoint = 'x'.code), "Cmd is never AltGr")
+        assertEquals("a", typedTextOf(ctrl = false, meta = false, alt = false, codePoint = 'a'.code))
+        assertNull(typedTextOf(ctrl = false, meta = false, alt = false, codePoint = 0x7F))
+    }
+
+    @Test
+    fun announcementNode_should_ChangeBetweenTwoIdenticalAnnouncements() {
+        assertEquals("", announcementNode(null, 0))
+        val first = announcementNode("Copied 1 cell", 1)
+        val second = announcementNode("Copied 1 cell", 2)
+        assertFalse(first == second, "a live region only speaks when its text changes")
+        assertEquals(first, announcementNode("Copied 1 cell", 3))
+    }
 }

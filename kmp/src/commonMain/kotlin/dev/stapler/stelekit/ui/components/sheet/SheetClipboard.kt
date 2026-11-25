@@ -233,6 +233,8 @@ internal class SheetClipboard(
     /** Ctrl+V and the strip's Paste: reads the clipboard port; unreadable opens the fallback box, empty says so. */
     fun paste() {
         if (state.readOnly) return state.announce(TableMessages.READ_ONLY)
+        // The window starts when the keystroke asked, not when a slow port answers: a DOM event in between is the same paste.
+        val askedAt = nowMs()
         scope.launch {
             val text = try {
                 clipboard.paste()
@@ -240,15 +242,18 @@ internal class SheetClipboard(
                 throw e
             } catch (e: Throwable) {
                 log.warn("clipboard read failed: ${e.message}")
-                if (!eventPasteIsRecent()) pasteBoxOpen = true
+                if (!eventPasteIsRecent(askedAt)) {
+                    pasteBoxOpen = true
+                    boxOpenedAtMs = nowMs()
+                }
                 return@launch
             }
             if (text.isNullOrEmpty()) {
-                if (!eventPasteIsRecent()) {
+                if (!eventPasteIsRecent(askedAt)) {
                     session.notices.withAction(NoticeType.Action, TableMessages.NOTHING_TO_PASTE, TableMessages.PASTE_HERE) { pasteBoxOpen = true }
                 }
             } else {
-                deliver(text, PasteOrigin.Port)
+                deliver(text, PasteOrigin.Port, askedAt)
             }
         }
     }
@@ -263,10 +268,14 @@ internal class SheetClipboard(
      * box open the browser's paste belongs to the text field, so it is left alone (false).
      */
     fun pasteFromEvent(text: String): Boolean {
-        if (state.mode != GridMode.Navigate || pasteBoxOpen) return false
+        if (state.mode != GridMode.Navigate || shownText != null) return false
+        // The box a failed port read opened a moment ago belongs to this same keystroke; any other open box owns the paste.
+        if (pasteBoxOpen && nowMs() - boxOpenedAtMs > DUPLICATE_PASTE_WINDOW_MS) return false
         deliver(text, PasteOrigin.Event)
         return true
     }
+
+    private var boxOpenedAtMs = Long.MIN_VALUE / 2
 
     private enum class PasteOrigin { Port, Event, Box }
 
@@ -274,13 +283,13 @@ internal class SheetClipboard(
 
     private var lastPaste: LastPaste? = null
 
-    private fun eventPasteIsRecent(): Boolean =
-        lastPaste?.let { it.origin == PasteOrigin.Event && nowMs() - it.atMs <= DUPLICATE_PASTE_WINDOW_MS } == true
+    private fun eventPasteIsRecent(since: Long): Boolean =
+        lastPaste?.let { it.origin == PasteOrigin.Event && it.atMs >= since - DUPLICATE_PASTE_WINDOW_MS } == true
 
     /** A paste that reaches us by both the port (Ctrl+V keydown) and the DOM event within the window applies once. */
-    private fun deliver(text: String, origin: PasteOrigin) {
+    private fun deliver(text: String, origin: PasteOrigin, since: Long = nowMs()) {
         val now = nowMs()
-        if (isSecondRouteOfSamePaste(text, origin, now)) {
+        if (isSecondRouteOfSamePaste(text, origin, since)) {
             lastPaste = null
             return
         }
@@ -288,10 +297,11 @@ internal class SheetClipboard(
         applyPaste(text)
     }
 
-    private fun isSecondRouteOfSamePaste(text: String, origin: PasteOrigin, now: Long): Boolean {
+    /** [since] is when this route's request began (now, for a DOM event): the earlier route must fall inside the window before it. */
+    private fun isSecondRouteOfSamePaste(text: String, origin: PasteOrigin, since: Long): Boolean {
         val last = lastPaste ?: return false
         val bothRoutes = origin != PasteOrigin.Box && last.origin != PasteOrigin.Box && last.origin != origin
-        return bothRoutes && last.text == normalize(text) && now - last.atMs <= DUPLICATE_PASTE_WINDOW_MS
+        return bothRoutes && last.text == normalize(text) && since - last.atMs <= DUPLICATE_PASTE_WINDOW_MS
     }
 
     private fun normalize(text: String) = text.replace("\r\n", "\n").replace('\r', '\n').trimEnd('\n')

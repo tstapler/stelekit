@@ -55,6 +55,7 @@ internal class SheetFixture(
         realCommands: Boolean = false,
         sizeClass: dev.stapler.stelekit.ui.WindowSizeClass? = null,
         preferences: TablePreferences? = null,
+        nowMs: (() -> Long)? = null,
         wrap: @androidx.compose.runtime.Composable (@androidx.compose.runtime.Composable () -> Unit) -> Unit = { it() },
     ) {
         h.show(
@@ -74,6 +75,7 @@ internal class SheetFixture(
                             parse = parse,
                             onState = { state = it },
                             clipboardPort = clipboard,
+                            nowMs = nowMs,
                         )
                     }
                     val sized = @androidx.compose.runtime.Composable {
@@ -150,6 +152,9 @@ internal class FakeTableClipboard : dev.stapler.stelekit.table.TableClipboard {
     var failPaste = false
     var copies = 0
 
+    /** While set, [paste] waits for it: a slow permission prompt or a busy system clipboard. */
+    var pasteGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+
     override suspend fun copy(plainTsv: String, html: String?) {
         if (failCopy) error("clipboard refused")
         copies++
@@ -158,6 +163,7 @@ internal class FakeTableClipboard : dev.stapler.stelekit.table.TableClipboard {
     }
 
     override suspend fun paste(): String? {
+        pasteGate?.await()
         if (failPaste) error("clipboard unreadable")
         return text
     }

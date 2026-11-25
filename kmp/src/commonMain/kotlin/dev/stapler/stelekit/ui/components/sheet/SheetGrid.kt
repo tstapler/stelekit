@@ -68,9 +68,12 @@ import dev.stapler.stelekit.ui.components.TableColumnAlignment
 import dev.stapler.stelekit.ui.components.effectiveAlignments
 import kotlinx.coroutines.CancellationException
 
-private val GUTTER_WIDTH = 44.dp
+/** Test seam: called each time a row composes, so a test can count recompositions. Always null in production. */
+internal var sheetRowCompositionProbe: ((Int) -> Unit)? = null
+
+private val GUTTER_WIDTH = 48.dp
 private val ROW_MIN_HEIGHT = 48.dp
-private val LETTER_ROW_HEIGHT = 36.dp
+private val LETTER_ROW_HEIGHT = 48.dp
 
 /**
  * The lazy grid (Story 5.2): column letters and the table's header row stay above a [LazyColumn] of body rows keyed
@@ -102,20 +105,21 @@ internal fun SheetGrid(state: SheetState, modifier: Modifier = Modifier) {
     val haptics = LocalHapticFeedback.current
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val totalPx = with(density) { total.toPx() }
+    // The sticky gutter sits at the viewport's start edge: the left in LTR, the right (scrolling from the end) in RTL.
+    // Set from the scroll collector too: nothing here reads the scroll position, so a scroll does not recompose the grid.
+    val shieldAt = { h: Int ->
+        if (rtl) Rect(totalPx - h - gutterPx, 0f, totalPx - h, Float.MAX_VALUE) else Rect(h.toFloat(), 0f, h + gutterPx, Float.MAX_VALUE)
+    }
     SideEffect {
         state.rtl = rtl
-        // The sticky gutter sits at the viewport's start edge: the left in LTR, the right (scrolling from the end) in RTL.
-        hits.shield = if (rtl) {
-            Rect(totalPx - hScroll.value - gutterPx, 0f, totalPx - hScroll.value, Float.MAX_VALUE)
-        } else {
-            Rect(hScroll.value.toFloat(), 0f, hScroll.value + gutterPx, Float.MAX_VALUE)
-        }
+        hits.shield = shieldAt(hScroll.value)
         hits.frozenColumn = frozenColumn
         state.onRangeModeEntered = { runCatching { haptics.performHapticFeedback(HapticFeedbackType.LongPress) } }
     }
-    LaunchedEffect(listState, hScroll) {
+    LaunchedEffect(listState, hScroll, rtl, totalPx, gutterPx) {
         snapshotFlow { Triple(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, hScroll.value) }
             .collect { (i, o, h) ->
+                hits.shield = shieldAt(h)
                 state.recordScroll(i, o, h)
                 state.pageRows = (listState.layoutInfo.visibleItemsInfo.size - 1).coerceAtLeast(1)
             }
@@ -133,15 +137,12 @@ internal fun SheetGrid(state: SheetState, modifier: Modifier = Modifier) {
             },
     ) {
         Column(Modifier.horizontalScroll(hScroll).width(total).fillMaxHeight()) {
-            LetterRow(state, widths, hScroll.value, colors)
-            if (freezeHeader) {
-                SheetRow(state, hits, 1, widths, alignments, explicitAlign, colors, hScroll.value)
-            }
-            Box(Modifier.width(total).weight(1f)) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
+            LetterRow(state, widths, hScroll, colors)
+            // The gesture owner spans the frozen header row too, and the range handles live in its coordinates.
+            Box(
+                Modifier
+                    .width(total)
+                    .weight(1f)
                     .tableGestureOwner(
                         hits = hits,
                         mode = GestureMode.Interactive,
@@ -166,12 +167,16 @@ internal fun SheetGrid(state: SheetState, modifier: Modifier = Modifier) {
                         onSecondaryClick = { state.openMenu(SheetMenuTarget.Cell(it)) },
                     ),
             ) {
-                val count = (state.rowCount - firstLazyRow + 1).coerceAtLeast(0)
-                items(count = count, key = { state.rowKeyOf(it + firstLazyRow) }) { index ->
-                    SheetRow(state, hits, index + firstLazyRow, widths, alignments, explicitAlign, colors, hScroll.value)
+                Column(Modifier.fillMaxSize()) {
+                    if (freezeHeader) SheetRow(state, hits, 1, widths, alignments, explicitAlign, colors, hScroll)
+                    LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().weight(1f)) {
+                        val count = (state.rowCount - firstLazyRow + 1).coerceAtLeast(0)
+                        items(count = count, key = { state.rowKeyOf(it + firstLazyRow) }) { index ->
+                            SheetRow(state, hits, index + firstLazyRow, widths, alignments, explicitAlign, colors, hScroll)
+                        }
+                    }
                 }
-            }
-            RangeHandles(state, hits)
+                RangeHandles(state, hits)
             }
         }
     }
@@ -197,15 +202,15 @@ internal fun sheetColorsFor(scheme: androidx.compose.material3.ColorScheme, pref
 }
 
 @Composable
-private fun LetterRow(state: SheetState, widths: List<androidx.compose.ui.unit.Dp>, hOffset: Int, colors: SheetColors) {
+private fun LetterRow(state: SheetState, widths: List<androidx.compose.ui.unit.Dp>, hScroll: androidx.compose.foundation.ScrollState, colors: SheetColors) {
     Row(Modifier.height(LETTER_ROW_HEIGHT).background(colors.header).testTag("sheetLetters")) {
-        Box(Modifier.width(GUTTER_WIDTH).fillMaxHeight().offset { IntOffset(hOffset, 0) }.zIndex(1f).background(colors.header))
+        Box(Modifier.width(GUTTER_WIDTH).fillMaxHeight().offset { IntOffset(hScroll.value, 0) }.zIndex(1f).background(colors.header))
         widths.forEachIndexed { i, w ->
             val col = i + 1
             val label = CellAddress.columnLabel(col)
             val indicator = state.view.sort?.takeIf { it.col == col }
             val frozen = col == 1 && state.view.freezeFirstColumn
-            val pinned = if (frozen) Modifier.offset { IntOffset(hOffset, 0) }.zIndex(1f).background(colors.header) else Modifier
+            val pinned = if (frozen) Modifier.offset { IntOffset(hScroll.value, 0) }.zIndex(1f).background(colors.header) else Modifier
             Box(
                 pinned.width(w).fillMaxHeight()
                     .clickable { state.selectColumn(col) }
@@ -251,11 +256,12 @@ private fun SheetRow(
     alignments: List<TableColumnAlignment>,
     explicitAlign: List<TableColumnAlignment?>,
     colors: SheetColors,
-    hOffset: Int,
+    hScroll: androidx.compose.foundation.ScrollState,
 ) {
+    sheetRowCompositionProbe?.invoke(row)
     Row(Modifier.height(IntrinsicSize.Min).heightIn(min = ROW_MIN_HEIGHT).fillMaxWidth().testTag("sheetRow-$row")) {
         Box(
-            Modifier.width(GUTTER_WIDTH).fillMaxHeight().offset { IntOffset(hOffset, 0) }.zIndex(1f)
+            Modifier.width(GUTTER_WIDTH).fillMaxHeight().offset { IntOffset(hScroll.value, 0) }.zIndex(1f)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .clickable { state.selectRow(row) }.secondaryClick { state.selectRow(row) }.testTag("gutter-$row"),
             contentAlignment = Alignment.Center,
@@ -266,7 +272,7 @@ private fun SheetRow(
         widths.forEachIndexed { i, w ->
             val align = cellTextAlign(alignments.getOrElse(i) { TableColumnAlignment.LEFT }, explicit = explicitAlign.getOrNull(i) != null)
             val pinned = if (i == 0 && state.view.freezeFirstColumn) {
-                Modifier.offset { IntOffset(hOffset, 0) }.zIndex(1f).background(MaterialTheme.colorScheme.surface)
+                Modifier.offset { IntOffset(hScroll.value, 0) }.zIndex(1f).background(MaterialTheme.colorScheme.surface)
             } else {
                 Modifier
             }
