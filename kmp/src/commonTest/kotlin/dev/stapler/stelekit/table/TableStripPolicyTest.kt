@@ -49,12 +49,15 @@ class TableStripPolicyTest {
 
     @Test
     fun policy_should_NotChange_When_ProfileIsHeldAcrossMidEditKeyOrTap() {
-        // The profile is an input fixed at edit entry; a mid-edit key or tap is not an input, so the answer is constant.
-        val atEntry = TableStripPolicy.profileAtEntry(touchOrPenPointer = true, accessibilityServiceActive = false)
-        val before = TableStripPolicy(GridMode.Edit, atEntry, false)
-        val afterBluetoothKey = TableStripPolicy(GridMode.Edit, atEntry, false)
-        assertEquals(before.visible, afterBluetoothKey.visible)
-        val hw = TableStripPolicy.profileAtEntry(touchOrPenPointer = false, accessibilityServiceActive = false)
-        assertEquals(false, TableStripPolicy(GridMode.Edit, hw, false).visible)
+        val touch = dev.stapler.stelekit.ui.components.sheet.InlineTableState("| a | b |\n|---|---|\n| 1 | 2 |") {}
+        touch.startEdit(CellAddress(2, 1), TableStripPolicy.profileAtEntry(touchOrPenPointer = true, accessibilityServiceActive = false))
+        touch.onFieldChange(androidx.compose.ui.text.input.TextFieldValue("12"))
+        assertEquals(EntryProfile.Touch, touch.entryProfile)
+        assertEquals(true, touch.stripVisible)
+        val hw = dev.stapler.stelekit.ui.components.sheet.InlineTableState("| a | b |\n|---|---|\n| 1 | 2 |") {}
+        hw.startEdit(CellAddress(2, 1), TableStripPolicy.profileAtEntry(touchOrPenPointer = false, accessibilityServiceActive = false))
+        hw.onFieldChange(androidx.compose.ui.text.input.TextFieldValue("12"))
+        assertEquals(EntryProfile.Hardware, hw.entryProfile)
+        assertEquals(false, hw.stripVisible)
     }
 }

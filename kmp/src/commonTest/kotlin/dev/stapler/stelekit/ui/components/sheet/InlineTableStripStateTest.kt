@@ -12,6 +12,7 @@ import dev.stapler.stelekit.table.GridSelection
 import dev.stapler.stelekit.table.LadderAction
 import dev.stapler.stelekit.table.LadderKey
 import dev.stapler.stelekit.table.NoticeType
+import dev.stapler.stelekit.table.formula.TableCalc
 import dev.stapler.stelekit.ui.components.TableMessages
 import dev.stapler.stelekit.ui.components.TableUndoHost
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,7 +38,7 @@ class InlineTableStripStateTest {
 
     private fun state(content: String = table, host: Boolean = true): InlineTableState {
         val s = InlineTableState(content) { sent += it }
-        s.hooks.copyToClipboard = { copied += it }
+        s.hooks.copyToClipboard = { text, done -> copied += text; done(true) }
         s.hooks.editAsMarkdown = { markdown++ }
         s.hooks.openSheet = { maximized++ }
         if (host) {
@@ -437,5 +438,172 @@ class InlineTableStripStateTest {
         assertTrue(sent.isEmpty())
         assertEquals("45", s.draft?.text)
         assertEquals(GridMode.Edit, s.mode)
+    }
+
+    // ---- review fixes -----------------------------------------------------------------------------------
+
+    private fun bigTable(rows: Int, cols: Int): String {
+        val row = { r: Int -> (1..cols).joinToString(" | ", "| ", " |") { "r${r}c$it" } }
+        val head = (1..cols).joinToString(" | ", "| ", " |") { "h$it" }
+        val delim = (1..cols).joinToString("|", "|", "|") { "---" }
+        return (listOf(head, delim) + (2..rows).map(row)).joinToString("\n")
+    }
+
+    @Test
+    fun commitDraft_should_RebaseTheDraft_SoItIsNotDirtyAfterwards() {
+        val s = state()
+        s.startEdit(CellAddress(2, 2), EntryProfile.Hardware)
+        s.type("45")
+        assertTrue(s.commitDraft())
+        assertFalse(s.draft!!.isDirty)
+        assertFalse(s.commitDraft())
+        s.cancelEdit()
+        assertNull(s.notices.visible)
+        assertEquals(1, sent.size)
+    }
+
+    @Test
+    fun freeze_should_CommitADirtyDraftBeforeDroppingIt() {
+        val s = state()
+        s.startEdit(CellAddress(2, 2), EntryProfile.Hardware)
+        s.type("45")
+        s.freeze()
+        assertEquals(1, sent.size)
+        assertTrue(sent.single().contains("45"))
+    }
+
+    @Test
+    fun maximize_should_IssueTheCommitBeforeOpeningTheSheet() {
+        val order = mutableListOf<String>()
+        val s = InlineTableState(table) { order += "commit" }
+        s.hooks.openSheet = { order += "open" }
+        s.startEdit(CellAddress(2, 2), EntryProfile.Touch)
+        s.type("45")
+        s.maximize()
+        assertEquals(listOf("commit", "open"), order)
+    }
+
+    @Test
+    fun undoEcho_should_KeepADirtyDraftAndHoldTheCommit() {
+        val s = state()
+        s.startEdit(CellAddress(2, 2), EntryProfile.Hardware)
+        s.type("45")
+        s.perform(StripAction.Done)
+        val committed = sent.single()
+        s.perform(StripAction.Undo)
+        s.startEdit(CellAddress(2, 2), EntryProfile.Hardware)
+        s.type("x")
+        s.onContent(table)
+        assertEquals("x", s.draft?.text)
+        assertEquals(GridMode.Edit, s.mode)
+        assertTrue(s.conflictHeld)
+        assertEquals(1, sent.size)
+        assertTrue(committed != table)
+    }
+
+    @Test
+    fun markDone_should_RebuildFromTheHeldForeignContent_NotFromOwnCommit() {
+        val foreign = "| Item | Qty | Note |\n|---|---|---|\n| Apple | 3 | red |\n| Pear | 99 | green |"
+        lateinit var s: InlineTableState
+        s = InlineTableState(table) { s.onContent(foreign) }
+        s.startEdit(CellAddress(2, 1), EntryProfile.Hardware)
+        s.type("Fig")
+        s.commitDraft()
+        assertEquals("99", s.doc!!.cell(CellAddress(3, 2))?.value)
+    }
+
+    @Test
+    fun rebuildFromExternalEdit_should_DropHistory_EvenWhenOwnRecordAccountingDrifted() {
+        // The manager recorded nothing for our commit (block missing or unchanged), so one own record is "pending" forever.
+        val s = state()
+        s.startEdit(CellAddress(2, 2), EntryProfile.Hardware)
+        s.type("45")
+        s.perform(StripAction.Done)
+        val external = "| Item | Qty | Note |\n|---|---|---|\n| Apple | 77 | red |\n| Pear | 5 | green |"
+        s.onContent(external)
+        records.value = 1
+        s.onUndoRecordCount(1)
+        assertFalse(s.undoEnabled)
+        assertEquals("77", s.doc!!.cell(CellAddress(2, 2))?.value)
+    }
+
+    @Test
+    fun navigation_should_StayInsideTheComposedRowWindow() {
+        val rows = 3_000
+        val s = InlineTableState(bigTable(rows, 1), cellWindow = 1_000) { sent += it }
+        s.startEdit(CellAddress(1_000, 1), EntryProfile.Hardware)
+        s.handleKey(CellEditorKey.Enter(back = false))
+        assertTrue((s.editingAddress?.row ?: 0) <= 1_000)
+        s.startEdit(CellAddress(2_500, 1), EntryProfile.Hardware)
+        assertTrue((s.editingAddress?.row ?: 0) <= 1_000)
+        s.cancel()
+        s.dragSelect(CellAddress(2, 1), CellAddress(2, 1))
+        s.perform(StripAction.SelectTable)
+        assertEquals(1_000, s.selection?.cellCount)
+    }
+
+    @Test
+    fun displayData_should_ReadOnlyTheShownRows() {
+        val d = (dev.stapler.stelekit.table.TableParser.parse(bigTable(50, 2)) as dev.stapler.stelekit.table.TableParseResult.Parsed).doc
+        assertEquals(2, d.displayData(shownRows = 3).rows.size)
+        assertEquals(49, d.displayData().rows.size)
+    }
+
+    @Test
+    fun selectAllCopy_should_BuildOneTableCalc_ForAHundredByHundredTable() {
+        var built = 0
+        val s = InlineTableState(bigTable(100, 100)) { sent += it }
+        s.hooks.bindCellDisplay(CalcMemo { built++; TableCalc.orNull(it) })
+        s.hooks.copyToClipboard = { text, done -> copied += text; done(true) }
+        s.dragSelect(CellAddress(1, 1), CellAddress(1, 1))
+        s.perform(StripAction.SelectTable)
+        s.copySelection()
+        assertEquals(1, copied.size)
+        assertTrue(built <= 1, "built $built calcs")
+    }
+
+    @Test
+    fun copy_should_PostCopiedOnlyOnSuccess_AndReportFailure() {
+        val s = state()
+        var finish: ((Boolean) -> Unit)? = null
+        s.hooks.copyToClipboard = { _, done -> finish = done }
+        s.dragSelect(CellAddress(2, 1), CellAddress(2, 1))
+        s.copySelection()
+        assertNull(s.notices.visible)
+        finish!!(false)
+        assertEquals(TableMessages.COPY_FAILED, s.notices.visible?.text)
+        s.notices.dismiss()
+        s.copySelection()
+        finish!!(true)
+        assertEquals(TableMessages.copied(1, 1), s.notices.visible?.text)
+    }
+
+    @Test
+    fun copy_should_RefuseAnOversizeSelection() {
+        val s = InlineTableState(bigTable(200, 150)) { sent += it }
+        var called = false
+        s.hooks.copyToClipboard = { _, _ -> called = true }
+        s.dragSelect(CellAddress(1, 1), CellAddress(1, 1))
+        s.perform(StripAction.SelectTable)
+        s.copySelection()
+        assertFalse(called)
+        assertEquals(TableMessages.COPY_TOO_LARGE, s.notices.visible?.text)
+    }
+
+    @Test
+    fun activatingAnotherTable_should_ResetThePreviousOneToNavigateWithoutSelection() {
+        val activation = TableActivation()
+        val a = state()
+        val b = state()
+        a.startEdit(CellAddress(2, 2), EntryProfile.Touch)
+        a.type("45")
+        activation.activate(a)
+        b.dragSelect(CellAddress(2, 1), CellAddress(2, 1))
+        activation.activate(b)
+        assertNull(a.selection)
+        assertEquals(GridMode.Navigate, a.mode)
+        assertEquals(1, sent.size)
+        assertFalse(a.stripVisible)
+        assertTrue(b.stripVisible)
     }
 }

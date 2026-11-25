@@ -37,6 +37,8 @@ object TableMessages {
     const val MORE = "More"
     const val RESOLVE = "Resolve"
     const val DISCARDED_EDIT = "Discarded your edit"
+    const val COPY_TOO_LARGE = "Selection is too large to copy"
+    const val COPY_FAILED = "Could not copy to the clipboard"
     const val EDIT_CELL = "Edit cell"
     const val TIP_SELECT_ROW_COPY = "Select row, then Copy, copies a row"
     const val SHOW_TIPS_AGAIN = "Show tips again"

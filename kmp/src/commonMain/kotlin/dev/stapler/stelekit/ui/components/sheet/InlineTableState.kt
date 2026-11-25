@@ -50,7 +50,7 @@ import kotlin.time.TimeSource
 
 /**
  * Hoisted state of one inline table: the parsed doc, the active cell and its draft. It outlives the cell
- * composables (a cell leaving composition keeps its text; nothing commits on dispose) and owns no scope.
+ * composables (a cell leaving composition keeps its text; the table's own disposal commits the draft) and owns no scope.
  * [emit] receives the serialized table exactly once per commit.
  */
 @Suppress("TooManyFunctions", "LargeClass") // one hoisted holder for the grid's selection, draft, strip actions and undo; splitting would scatter one state machine
@@ -59,6 +59,8 @@ internal class InlineTableState(
     private val editor: TableEditor = TableEngine.editor(),
     private val sync: TableSyncPolicy = TableSyncPolicy(),
     private val usageLog: Logger = Logger("TableUsage"),
+    /** Cells the grid composes; navigation and selection never address rows past this window. */
+    private val cellWindow: Int = Int.MAX_VALUE,
     private val emit: (String) -> Unit,
 ) {
     var doc: TableDoc? by mutableStateOf(null)
@@ -123,7 +125,10 @@ internal class InlineTableState(
 
     val editingAddress: CellAddress? get() = if (mode == GridMode.Edit) draft?.address else null
 
-    private fun bounds(d: TableDoc) = GridBounds(d.rowCount, d.columnCount.coerceAtLeast(1))
+    private fun bounds(d: TableDoc): GridBounds {
+        val cols = d.columnCount.coerceAtLeast(1)
+        return GridBounds(inlineRowWindow(d.rowCount, cols, cellWindow), cols)
+    }
 
     /** Replaces everything from [content] (first load, or the sheet released the block). */
     fun reload(content: String) {
@@ -159,6 +164,7 @@ internal class InlineTableState(
 
     /** The sheet owns this block: inline renders read-only and drops any selection. */
     fun freeze() {
+        commitDraft()
         frozen = true
         cancel()
         selection = null
@@ -216,10 +222,12 @@ internal class InlineTableState(
         val seq = sync.registerCommit(serialized)
         doc = outcome.doc
         recordCommit(d.address, serialized)
+        // The draft stays open (ON_STOP, dispose) but is no longer dirty: no false conflict or "discarded edit".
+        draft = d.markCommitted()
         emit(serialized)
         usageLog.info("via=inline")
         // The write is fire-and-forget here, so retire it at once; a later undo then reads as an external change.
-        sync.markDone(seq, draftPending = false, selection = selection?.anchor)?.let { applyDecision(it, serialized) }
+        sync.markDoneWithContent(seq, draftPending = false, selection = selection?.anchor)?.let { applyDecision(it.decision, it.content) }
         return true
     }
 
@@ -394,9 +402,14 @@ internal class InlineTableState(
     /** Copies the selection as TSV through the clipboard hook and posts "Copied R x C cells". */
     fun copySelection() {
         val current = selection ?: return
-        hooks.copyToClipboard(SelectionStats.toTsv(current, ::textAt))
         val range = current.range
-        notices.info(TableMessages.copied(range.rows, range.cols))
+        if (current.cellCount > MAX_COPY_CELLS) return notices.info(TableMessages.COPY_TOO_LARGE)
+        val tsv = SelectionStats.toTsv(current, ::textAt)
+        if (tsv.length > MAX_COPY_CHARS) return notices.info(TableMessages.COPY_TOO_LARGE)
+        // The write is async: say "Copied" only once the clipboard accepted it.
+        hooks.copyToClipboard(tsv) { ok ->
+            notices.info(if (ok) TableMessages.copied(range.rows, range.cols) else TableMessages.COPY_FAILED)
+        }
     }
 
     // ---- strip actions (4.4a, 4.4c) --------------------------------------------------------------------
@@ -650,14 +663,24 @@ internal class InlineTableState(
     private fun applyDecision(decision: SyncDecision, content: String) {
         when (decision) {
             SyncDecision.Echo, SyncDecision.Stale, SyncDecision.Defer -> Unit
-            is SyncDecision.Adopt -> rebuild(decision.content, selection?.anchor)
-            is SyncDecision.Rebuild -> rebuild(content, decision.selection)
-            SyncDecision.ConflictKeepDraft -> {
-                conflictHeld = true
-                heldContent = content
-                draft?.let { announcement = TableMessages.heldNotSaved(it.address.toString()) }
+            is SyncDecision.Adopt -> if (draft?.isDirty == true) holdDraft(decision.content) else rebuild(decision.content, selection?.anchor)
+            is SyncDecision.Rebuild -> {
+                // An external edit invalidates our history; this also heals own-record accounting that drifted.
+                undoTargets.clear()
+                redoTargets.clear()
+                ownRecordsPending = 0
+                undoScope.foreignEntry()
+                syncDepths()
+                rebuild(content, decision.selection)
             }
+            SyncDecision.ConflictKeepDraft -> holdDraft(content)
         }
+    }
+
+    private fun holdDraft(content: String) {
+        conflictHeld = true
+        heldContent = content
+        draft?.let { announcement = TableMessages.heldNotSaved(it.address.toString()) }
     }
 
     /** Re-parses [content] keeping the selection (and an unchanged-draft edit) where the new table still has it. */
@@ -675,3 +698,6 @@ internal class InlineTableState(
         if (mode == GridMode.Edit && anchor != null) beginEdit(d, anchor) else selection = anchor?.let { GridSelection.single(it, bounds(d)) }
     }
 }
+
+private const val MAX_COPY_CELLS = 20_000
+private const val MAX_COPY_CHARS = 2_000_000

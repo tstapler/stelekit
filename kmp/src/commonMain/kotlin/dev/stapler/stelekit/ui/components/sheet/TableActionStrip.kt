@@ -68,7 +68,8 @@ internal enum class ExtendChoice(val label: String) {
 
 /** Callbacks the composable refreshes each composition; everything platform-shaped stays out of the state. */
 internal class StripHooks {
-    var copyToClipboard: (String) -> Unit = {}
+    /** Writes [String] to the clipboard and reports whether it landed (the write is asynchronous). */
+    var copyToClipboard: (String, (Boolean) -> Unit) -> Unit = { _, done -> done(false) }
 
     /** Null unless the sheet flag is on: it hides every Maximize entry and unbinds Ctrl+Shift+Enter. */
     var openSheet: (() -> Unit)? = null

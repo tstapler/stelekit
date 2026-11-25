@@ -34,7 +34,6 @@ KMP_MODULE_TESTS = {
    "dev/stapler/stelekit/table/TableRoundTripPropertyTest.kt",
    "dev/stapler/stelekit/table/TableSerializerTest.kt",
    "dev/stapler/stelekit/table/TableShortcutMapTest.kt",
-   "dev/stapler/stelekit/table/TableStripPolicyTest.kt",
    "dev/stapler/stelekit/table/TableSyncPolicyModelTest.kt",
    "dev/stapler/stelekit/table/TableSyncPolicyTest.kt",
    "dev/stapler/stelekit/table/TableUndoScopeTest.kt",
@@ -268,6 +267,7 @@ KMP_MODULE_TESTS = {
  "ui_main": {
   "srcs": [
    "dev/stapler/stelekit/jobs/BackgroundJobsTest.kt",
+   "dev/stapler/stelekit/table/TableStripPolicyTest.kt",
    "dev/stapler/stelekit/ui/assets/AssetDetailViewModelTest.kt",
    "dev/stapler/stelekit/ui/assets/ImageViewerPanBoundsTest.kt",
    "dev/stapler/stelekit/ui/components/CrossBlockSelectionTest.kt",
@@ -276,6 +276,7 @@ KMP_MODULE_TESTS = {
    "dev/stapler/stelekit/ui/components/HeadingScaleTest.kt",
    "dev/stapler/stelekit/ui/components/QueryResultCountTextTest.kt",
    "dev/stapler/stelekit/ui/components/TableMessagesTest.kt",
+   "dev/stapler/stelekit/ui/components/TableReviewFixesTest.kt",
    "dev/stapler/stelekit/ui/components/UuidKeysTest.kt",
    "dev/stapler/stelekit/ui/components/sheet/InlineTableRealManagerTest.kt",
    "dev/stapler/stelekit/ui/components/sheet/InlineTableStripStateTest.kt",

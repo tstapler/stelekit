@@ -41,3 +41,37 @@ internal fun cellDisplay(doc: TableDoc, calc: TableCalc?, address: CellAddress):
     }
     return CellDisplay.Formula(calc.displayAt(address), raw)
 }
+
+/** Builds one [TableCalc] per doc instance, so per-cell hooks (copy, Why?) do not each rebuild the dependency graph. */
+internal class CalcMemo(private val build: (TableDoc) -> TableCalc? = { TableCalc.orNull(it) }) {
+    private var doc: TableDoc? = null
+    private var calc: TableCalc? = null
+
+    fun of(d: TableDoc): TableCalc? {
+        if (d !== doc) {
+            calc = build(d)
+            doc = d
+        }
+        return calc
+    }
+}
+
+/** Points the strip's per-cell hooks at [memo], so a select-all copy evaluates the table once. */
+internal fun StripHooks.bindCellDisplay(memo: CalcMemo) {
+    cellText = { d, address -> cellDisplay(d, memo.of(d), address).text }
+    errorDetail = { d, address ->
+        when (val shown = cellDisplay(d, memo.of(d), address)) {
+            is CellDisplay.Failed -> shown.detail
+            is CellDisplay.InvalidFormula -> shown.detail
+            else -> null
+        }
+    }
+}
+
+private val SAFE_CELL_URL_SCHEMES = listOf("http://", "https://", "mailto:")
+
+/** Table-cell links open only web and mail URLs; `file:`, `intent:`, `javascript:` and the rest are refused. */
+internal fun isSafeCellUrl(url: String): Boolean {
+    val trimmed = url.trim()
+    return SAFE_CELL_URL_SCHEMES.any { trimmed.startsWith(it, ignoreCase = true) }
+}
