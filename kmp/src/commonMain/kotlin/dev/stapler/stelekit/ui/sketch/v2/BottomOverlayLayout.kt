@@ -11,9 +11,9 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 
 /** Where the action chip row goes: beside the view cluster when its whole natural width fits there, else on its own row above. */
-internal enum class ChipRowPlacement { Beside, Raised }
+enum class ChipRowPlacement { Beside, Raised }
 
-internal object BottomOverlayPolicy {
+object BottomOverlayPolicy {
     /** [Beside] only when every chip fits between the start inset and the end stack, so the two never share pixels. */
     fun placement(chipsNaturalPx: Int, besideRoomPx: Int): ChipRowPlacement =
         if (chipsNaturalPx <= besideRoomPx) ChipRowPlacement.Beside else ChipRowPlacement.Raised
@@ -23,8 +23,8 @@ internal object BottomOverlayPolicy {
  * The bottom of the canvas: the action chip row at the start and the end stack (pan pad over the view cluster) at the end.
  * Both are measured, so the chip row sits beside the cluster only when all of it fits there and otherwise moves onto the
  * row above the whole end stack; a fixed canvas-width threshold let the chips run under the translucent cluster on a phone
- * a little wider than the threshold or at a large font. [onChipsBottom] reports how far the chip row's bottom is from the
- * canvas bottom, in px, for the toast lane above it.
+ * a little wider than the threshold or at a large font. [onClearance] reports how far up from the canvas bottom the chip row
+ * and the end stack reach, in px, so the toast lane and the help popup sit above both.
  */
 @Composable
 internal fun BottomOverlayLayout(
@@ -35,7 +35,7 @@ internal fun BottomOverlayLayout(
     chipsEndPad: Dp,
     bottomPad: Dp,
     gap: Dp,
-    onChipsBottom: (Int) -> Unit,
+    onClearance: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Layout(contents = listOf(chips, endStack), modifier = modifier) { (chipMeasurables, endMeasurables), constraints ->
@@ -62,7 +62,7 @@ internal fun BottomOverlayLayout(
                 p.placeRelative(width - endPad.roundToPx() - p.width, y)
             }
             for (p in chipPlaceables) p.placeRelative(start, height - chipsBottom - chipHeight)
-            onChipsBottom(chipsBottom)
+            onClearance(maxOf(chipsBottom + chipHeight, bottom + endHeight))
         }
     }
 }

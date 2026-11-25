@@ -150,7 +150,8 @@ val SketchEditorController.sheetName: String? get() = creation.sheetName
  */
 fun SketchEditorController.renameSheet(raw: String): Either<SheetNameError, String> =
     SheetNameExtras.validate(raw, doc.scene.limits).onRight { name ->
-        if (readOnly || name == creation.sheetName) return@onRight
+        // Not skipped when equal to the shown name: that one may be a cut of a longer stored name, which Save then replaces.
+        if (readOnly) return@onRight
         creation.chooseName(name)
         saves.submit(creation.forSave(history.present))
     }

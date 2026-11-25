@@ -13,7 +13,6 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.draw.drawBehind
@@ -70,7 +69,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -639,8 +637,9 @@ private fun CanvasArea(
     canvas: @Composable BoxScope.() -> Unit,
 ) {
     var canvasPx by remember { mutableStateOf(IntSize.Zero) }
-    // Where the bottom-end stack (view cluster, pan pad) starts, measured, so the help popup sits just above it however tall it is.
-    var overlayTopPx by remember { mutableFloatStateOf(0f) }
+    // How far up from the canvas bottom the chip row and the end stack (pan pad, view cluster) reach, measured, so the toast lane
+    // and the help popup sit just above them however tall a large font or an open pan pad makes them.
+    var clearancePx by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
     Box(modifier.fillMaxWidth().testTag(ShellTags.CANVAS).onSizeChanged { canvasPx = it }.focusRequester(focus.canvas).mark(regions, TabStop.Canvas).focusable().then(config.canvasModifier).onKeyEvent(config.onCanvasKey)) {
         canvas()
@@ -648,16 +647,12 @@ private fun CanvasArea(
         Column(Modifier.align(Alignment.TopStart).padding(8.dp)) {
             if (hintShown && (state.selection.isEmpty() || cue != null)) Text(cueHint(cue, hintLine(state, config.pointer), canvasPx.width / density.density), Modifier.testTag(ShellTags.HINT).background(MaterialTheme.colorScheme.surface.copy(alpha = HINT_SCRIM_ALPHA), RoundedCornerShape(HINT_RADIUS)).padding(horizontal = 8.dp, vertical = 2.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        val clearance = with(density) { clearancePx.toDp() }
         // Above the chip row, not under the hint: the top of the canvas is where a finger drags and a toast there hides the shape being moved.
-        var chipsBottomPx by remember { mutableIntStateOf(0) }
         val endPad = 16.dp + config.endInset + PanPadPolicy.stripInsetDp(config.edgeStripAtEnd).dp
         config.toasts?.let {
-            ToastLaneOverlay(it, canvasPx.height / density.density, Modifier.align(Alignment.BottomStart).padding(start = 8.dp, end = endPad, bottom = with(density) { chipsBottomPx.toDp() } + TOAST_ABOVE_CHIPS))
+            ToastLaneOverlay(it, canvasPx.height / density.density, Modifier.align(Alignment.BottomStart).padding(start = 8.dp, end = endPad, bottom = clearance + TOAST_GAP))
         }
-        // The popup sits beside the control it explains: above the dock when the strip is at the bottom, at the top otherwise.
-        val aboveOverlays = with(density) { (canvasPx.height - overlayTopPx).coerceAtLeast(0f).toDp() } + HELP_GAP + if (state.selection.isNotEmpty()) HELP_CLEARS_ZOOM_CHIP else 0.dp
-        if (helpNearStrip) HelpPopupHost(state.help, Modifier.align(Alignment.BottomCenter).padding(bottom = aboveOverlays))
-        else HelpPopupHost(state.help, Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
         BottomOverlayLayout(
             chips = {
                 ActionChipRow(
@@ -668,26 +663,28 @@ private fun CanvasArea(
                     ) + config.extraChips,
                 )
             },
-            endStack = { BottomEndStack(state, config, regions, canvasPx) { overlayTopPx = it } },
+            endStack = { BottomEndStack(state, config, regions, canvasPx) },
             startPad = 16.dp,
             endPad = endPad,
             chipsEndPad = endPad,
             bottomPad = 8.dp,
             gap = CHIP_CLUSTER_GAP,
-            onChipsBottom = { chipsBottomPx = it },
+            onClearance = { clearancePx = it },
             modifier = Modifier.matchParentSize(),
         )
+        // After the chips and the cluster so it draws over them; it sits beside the control it explains: above the dock when the
+        // strip is at the bottom, at the top otherwise.
+        val aboveOverlays = clearance + HELP_GAP + if (state.selection.isNotEmpty()) HELP_CLEARS_ZOOM_CHIP else 0.dp
+        if (helpNearStrip) HelpPopupHost(state.help, Modifier.align(Alignment.BottomCenter).padding(bottom = aboveOverlays))
+        else HelpPopupHost(state.help, Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
     }
 }
 
-/** The pan pad (when open) over the view cluster, at the canvas's bottom end; [onTop] reports its top for the help popup. */
+/** The pan pad (when open) over the view cluster, at the canvas's bottom end. */
 @Composable
-private fun BottomEndStack(state: SketchEditorState, config: SketchShellConfig, regions: RegionFocus, canvasPx: IntSize, onTop: (Float) -> Unit) {
+private fun BottomEndStack(state: SketchEditorState, config: SketchShellConfig, regions: RegionFocus, canvasPx: IntSize) {
     val density = LocalDensity.current
-    Column(
-        Modifier.onGloballyPositioned { onTop(it.positionInParent().y) },
-        horizontalAlignment = Alignment.End,
-    ) {
+    Column(horizontalAlignment = Alignment.End) {
         if (state.panPadOpen) {
             val variant = PanPadPolicy.variant((canvasPx.width / density.density).toInt(), (canvasPx.height / density.density).toInt())
             PanPad(
@@ -807,7 +804,7 @@ private val CLUSTER_ICON = 22.dp
 private val CLUSTER_LABEL_PAD = 6.dp
 private val HELP_GAP = 8.dp
 private val HELP_CLEARS_ZOOM_CHIP = 56.dp
-private val TOAST_ABOVE_CHIPS = ChromeBudget.TOOL_TARGET_DP.dp + 8.dp
+private val TOAST_GAP = 8.dp
 private val CHIP_CLUSTER_GAP = 8.dp
 private const val CLUSTER_ALPHA = 0.92f
 

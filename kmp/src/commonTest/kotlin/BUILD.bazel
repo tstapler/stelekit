@@ -354,6 +354,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/ui/sketch/v2/NonDragTransformModeTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/NonDragPickModesTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/PanPadPolicyTest.kt",
+        "dev/stapler/stelekit/ui/sketch/v2/BottomOverlayPolicyTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/FingerDrawingDefaultsTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/EdgePanPolicyTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/LoupeSpecTest.kt",

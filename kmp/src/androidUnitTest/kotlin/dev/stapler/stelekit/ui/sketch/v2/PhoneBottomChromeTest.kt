@@ -34,7 +34,7 @@ class PhoneBottomChromeTest {
     @get:Rule
     val rule = createComposeRule()
 
-    private fun mount(fontScale: Float = 1f) {
+    private fun mount(fontScale: Float = 1f): SketchEditorSession {
         val rig = V2EditorRig()
         runBlocking { rig.seed() }
         val metrics = FixedAdvanceTextMetricsProvider()
@@ -49,6 +49,7 @@ class PhoneBottomChromeTest {
             }
         }
         rule.waitForIdle()
+        return session
     }
 
     private fun bounds(tag: String): Rect = rule.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
@@ -95,9 +96,15 @@ class PhoneBottomChromeTest {
     }
 
     @Test
-    fun placement_should_GoBeside_OnlyWhenTheWholeRowFits() {
-        kotlin.test.assertEquals(ChipRowPlacement.Beside, BottomOverlayPolicy.placement(chipsNaturalPx = 300, besideRoomPx = 300))
-        kotlin.test.assertEquals(ChipRowPlacement.Raised, BottomOverlayPolicy.placement(chipsNaturalPx = 301, besideRoomPx = 300))
+    @Config(sdk = [29], qualifiers = "w360dp-h780dp-xxhdpi")
+    fun chips_should_StayClearOfAnOpenPanPad() {
+        val session = mount()
+        session.controller.ui.panPadOpen = true
+        rule.waitForIdle()
+        val chips = bounds(ShellTags.CHIP_ROW)
+        val pad = bounds(PanTags.PAD)
+        assertTrue(!chips.overlaps(pad), "chip row $chips draws over the open pan pad $pad")
+        assertApart("bottom-chrome-360-panpad")
     }
 
     @Test
