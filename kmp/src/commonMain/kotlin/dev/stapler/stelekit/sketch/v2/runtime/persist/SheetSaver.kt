@@ -42,6 +42,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -108,7 +110,10 @@ class SheetTarget(
  * [SheetSaver.acknowledgeMerge]. Until then every submitted scene is rebased the same way, so the editor can never write
  * over the merge.
  */
-class SheetMerge(val ours: SketchDocumentV2, val merged: SketchDocumentV2, val report: MergeReport)
+class SheetMerge(val ours: SketchDocumentV2, val merged: SketchDocumentV2, val report: MergeReport) {
+    /** The version of the scene the editor submitted after taking this merge; saves of older versions are rebased onto it, newer ones are the editor's own. */
+    internal val adoptedAt = MutableStateFlow<Long?>(null)
+}
 
 /** Receives one measurement per encode: element count, milliseconds and bytes (`sketch.encode_ms_5000`, `sketch.save_bytes_5000`). */
 fun interface SaveSamples {
@@ -227,7 +232,7 @@ class SheetSaver(
     /** Records [doc] as the scene to persist and restarts the debounce. The latest call wins; earlier ones are never written. */
     fun submit(doc: SketchDocumentV2) {
         if (closed) return
-        latest.value = Submitted((latest.value?.version ?: 0L) + 1, doc)
+        latest.update { Submitted((it?.version ?: 0L) + 1, doc) }
         if (!mutableState.value.blocksSaving) mutableState.value = SaveState.Pending
         wake.trySend(false)
     }
@@ -241,13 +246,33 @@ class SheetSaver(
         pendingMerge.compareAndSet(merge, null)
     }
 
+    /**
+     * The editor took [merge] and submits its resulting scene [doc] as one step: scenes submitted before it are still rebased onto the
+     * merge, scenes submitted after it (the user's next edits) are the editor's own even before [acknowledgeMerge] lands.
+     */
+    fun submitAdopted(merge: SheetMerge, doc: SketchDocumentV2) {
+        if (closed) return
+        val next = latest.updateAndGet { Submitted((it?.version ?: 0L) + 1, doc) }
+        merge.adoptedAt.value = next?.version
+        if (!mutableState.value.blocksSaving) mutableState.value = SaveState.Pending
+        wake.trySend(false)
+    }
+
+    /** The editor could not combine [merge] with its scene: the file holds the merge and the editor does not, so the user chooses (Use theirs or Keep mine). */
+    suspend fun mergeNotApplied(merge: SheetMerge) = saveGate.withLock {
+        if (!pendingMerge.compareAndSet(merge, null)) return@withLock
+        ports.log.saveConflict(target.sheet.value)
+        mutableState.value = SaveState.Conflict(null)
+        ports.diagnostics.raise(BannerRowId.SaveConflict)
+    }
+
     /** [doc] with the changes of [merge] folded in, so a scene the editor drew before it took the merge cannot write over it. Null when that is refused. */
     private fun rebased(merge: SheetMerge, doc: SketchDocumentV2): SketchDocumentV2? =
         SceneMerge.merge(merge.ours, doc, merge.merged, limits).getOrNull()?.doc
 
     /** The scene cannot be combined with the merged file: it is never written over it, goes to a conflict copy, and the user chooses. */
     private suspend fun keepUnmerged(snap: Submitted) {
-        pendingMerge.value = null
+        // The merge stays pending: if the copy cannot be written, a retry must be refused again, never written over the merged file.
         val encoded = encode(snap.doc) ?: return
         conflict(snap.version, encoded, baseSha)
     }
@@ -282,7 +307,7 @@ class SheetSaver(
                 baseDoc = doc
                 baseBytes = null
                 pendingMerge.value = null
-                latest.value = Submitted((latest.value?.version ?: 0L) + 1, doc)
+                latest.update { Submitted((it?.version ?: 0L) + 1, doc) }
                 savedVersion = latest.value?.version ?: 0L
                 ports.diagnostics.resolve(BannerRowId.SaveConflict)
                 mutableState.value = SaveState.Saved
@@ -314,7 +339,7 @@ class SheetSaver(
         pendingMerge.value = null
         ports.diagnostics.resolve(BannerRowId.SaveConflict)
         ports.store.pruneConflictCopies(target.slug, target.sheet.value, emptySet())
-        latest.value = Submitted((latest.value?.version ?: 0L) + 1, mine)
+        latest.update { Submitted((it?.version ?: 0L) + 1, mine) }
         mutableState.value = SaveState.Pending
         wake.trySend(true)
     }
@@ -375,7 +400,8 @@ class SheetSaver(
 
     private suspend fun saveSnapshot(submitted: Submitted) {
         val pending = pendingMerge.value
-        val snap = if (pending == null) submitted else Submitted(submitted.version, rebased(pending, submitted.doc) ?: return keepUnmerged(submitted))
+        val stale = pending != null && (pending.adoptedAt.value?.let { submitted.version < it } ?: true)
+        val snap = if (pending == null || !stale) submitted else Submitted(submitted.version, rebased(pending, submitted.doc) ?: return keepUnmerged(submitted))
         val encoded = encode(snap.doc) ?: return
         if (encoded.sha == baseSha && !needsRewrite) return saved(snap)
         when (val result = persister.persist(encoded, baseSha, merge = mergeAttempt(snap.doc))) {

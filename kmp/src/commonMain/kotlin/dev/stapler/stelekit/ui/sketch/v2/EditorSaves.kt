@@ -36,9 +36,17 @@ class EditorSaves(
         saver?.let { s -> scope.launch { s.merges.filterNotNull().collect { onMerged(it) } } }
     }
 
-    /** The editor holds [merge] now and has submitted its scene: the saver stops rebasing saves onto it. */
-    fun acknowledgeMerge(merge: SheetMerge) {
-        saver?.let { s -> scope.launch { s.acknowledgeMerge(merge) } }
+    /** The editor holds [merge] now: submits its resulting scene [doc] and lets the saver stop rebasing onto the merge. */
+    fun submitAdopted(merge: SheetMerge, doc: SketchDocumentV2) {
+        saver?.let { s ->
+            s.submitAdopted(merge, doc)
+            scope.launch { s.acknowledgeMerge(merge) }
+        }
+    }
+
+    /** The editor could not apply [merge]: the saver raises the conflict prompt instead of leaving editor and file apart. */
+    fun mergeNotApplied(merge: SheetMerge) {
+        saver?.let { s -> scope.launch { s.mergeNotApplied(merge) } }
     }
 
     /** Hands the latest document to the saver. */

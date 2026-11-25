@@ -358,7 +358,8 @@ class SketchEditorController(
      * of writing over the merge.
      */
     internal fun mergedFromOtherDevice(merge: SheetMerge): Unit = queue.enqueue {
-        val rebased = SceneMerge.merge(merge.ours, creation.forSave(history.present), merge.merged, ports.limits).getOrNull() ?: return@enqueue
+        val rebased = SceneMerge.merge(merge.ours, creation.forSave(history.present), merge.merged, ports.limits).getOrNull()
+            ?: return@enqueue saves.mergeNotApplied(merge)
         history = HistoryV2.of(rebased.doc, ports.limits)
         creation.reload(rebased.doc)
         undoLabels = UndoAnnouncer.Empty
@@ -366,9 +367,8 @@ class SketchEditorController(
         ui.selection = emptySet()
         revision += 1
         if (rebased.doc.constraints.isNotEmpty()) analyze() else constraintState.cleared()
-        saves.submit(creation.forSave(rebased.doc))
-        saves.acknowledgeMerge(merge)
-        announceMerge(merge)
+        saves.submitAdopted(merge, creation.forSave(rebased.doc))
+        if (merge.report.affectedCount > 0) announceMerge(merge)
     }
 
     private fun announceMerge(merge: SheetMerge) {

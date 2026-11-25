@@ -65,9 +65,11 @@ object SceneMerge {
         base: SketchDocumentV2,
         ours: SketchDocumentV2,
         theirs: SketchDocumentV2,
-        limits: SceneLimits = ours.scene.limits,
+        limitsOverride: SceneLimits? = null,
     ): Either<MergeRefusal, MergeResult> {
         if (ours.sheetUuid != theirs.sheetUuid) return MergeRefusal.SheetMismatch.left()
+        // Same limits on both sides keep them; differing ones fall back to the defaults, so the result never depends on argument order.
+        val limits = limitsOverride ?: ours.scene.limits.takeIf { it == theirs.scene.limits } ?: SceneLimits.Default
         val whole = when {
             sameDoc(ours, theirs) -> ours
             sameDoc(ours, base) -> theirs
@@ -101,7 +103,7 @@ object SceneMerge {
         val added = theirsNow.keys.filter { it !in mine }.sortedBy { it.value }
         val removed = mine.keys.filter { it !in theirsNow }.sortedBy { it.value }
         val changed = theirsNow.filter { (id, e) -> mine[id]?.let { !sameContent(it, e) } == true }.keys.sortedBy { it.value }
-        return MergeReport(added, changed, removed, conflicts, repairs)
+        return MergeReport(added, changed, removed, conflicts, repairs, docChanged = !sameDoc(ours, merged))
     }
 
     /** The winner of a three-way field: a change beats the base, equal changes agree, two different changes go to the greater by [order]. */

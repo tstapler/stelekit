@@ -137,6 +137,27 @@ class SheetSaverMergeTest {
     }
 
     @Test
+    fun sheetLevelChange_should_SurviveTheNextSave_When_OnlyExtrasDifferedOnTheOtherDevice() = runBlocking<Unit> {
+        val a = merging(coroutineContext)
+        val b = SaverRig(MixedProjectFixtures.device(convertA = true), coroutineContext)
+        val extras = kotlinx.serialization.json.JsonObject(mapOf("grid" to kotlinx.serialization.json.JsonPrimitive(true)))
+        b.saver.submit(b.loadedDoc().copy(extras = extras))
+        assertEquals(SaveState.Saved, b.saver.flush())
+        a.rig.device.pullFrom(b.device)
+        b.saver.close()
+        val mine = SaverRig.withRect(a.rig.loadedDoc(), "mine", 300)
+
+        a.saver.submit(mine)
+        assertEquals(SaveState.Saved, a.saver.flush())
+        assertNotNull(a.saver.merges.value, "an extras-only difference still has to reach the editor")
+        a.saver.submit(SaverRig.withRect(mine, "later", 400))
+        assertEquals(SaveState.Saved, a.saver.flush())
+
+        assertEquals(extras, a.disk().extras, "the stale editor scene did not write over the other device's sheet setting")
+        a.close()
+    }
+
+    @Test
     fun withoutABase_should_KeepTheConflictCopyAsBefore() = runBlocking<Unit> {
         val a = pulledFromB(coroutineContext, withBase = false)
 

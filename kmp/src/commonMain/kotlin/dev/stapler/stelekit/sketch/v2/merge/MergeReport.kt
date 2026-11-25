@@ -70,6 +70,8 @@ data class MergeReport(
     val removed: List<ElementId>,
     val conflicts: List<MergeConflict>,
     val repairs: List<MergeRepair>,
+    /** True when the merged document differs from ours in anything (elements, constraints, layers, sheet extras, counters); the editor must take it. */
+    val docChanged: Boolean = false,
 ) {
     /** Elements of the merged document that differ from ours; what "Show" selects. */
     val shownIds: List<ElementId> get() = (added + changed).sortedBy { it.value }
@@ -77,7 +79,7 @@ data class MergeReport(
     /** The N of "Merged changes from another device (N elements)". */
     val affectedCount: Int get() = added.size + changed.size + removed.size
 
-    val isEmpty: Boolean get() = affectedCount == 0 && repairs.isEmpty()
+    val isEmpty: Boolean get() = !docChanged && affectedCount == 0 && repairs.isEmpty()
 }
 
 data class MergeResult(val doc: SketchDocumentV2, val report: MergeReport)
