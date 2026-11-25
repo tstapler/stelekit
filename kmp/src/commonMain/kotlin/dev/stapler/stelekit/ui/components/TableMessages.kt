@@ -59,6 +59,8 @@ object TableMessages {
     fun undoLabel(step: String?): String = if (step == null) UNDO else "Undo: $step"
     fun redoLabel(step: String?): String = if (step == null) REDO else "Redo: $step"
 
+    fun copiedVisible(rows: Int, cols: Int): String = "Copied the visible $rows x $cols cells; more rows are not shown here"
+
     fun copied(rows: Int, cols: Int): String = "Copied $rows x $cols ${if (rows * cols == 1) "cell" else "cells"}"
 
     fun cannotEditAsGrid(failure: TableParseFailure): String =

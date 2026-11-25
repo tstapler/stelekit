@@ -606,4 +606,51 @@ class InlineTableStripStateTest {
         assertFalse(a.stripVisible)
         assertTrue(b.stripVisible)
     }
+
+    private val external = "| Item | Qty | Note |\n|---|---|---|\n| Apple | 77 | red |\n| Pear | 5 | green |"
+
+    @Test
+    fun commitAndClear_should_ReleaseAHeldConflict_ShowExternalContentAndOfferUndo() {
+        val s = state()
+        s.startEdit(CellAddress(2, 1), EntryProfile.Hardware)
+        s.type("Fig")
+        s.onContent(external)
+        assertTrue(s.conflictHeld)
+        s.commitAndClear()
+        assertFalse(s.conflictHeld)
+        assertEquals("77", s.doc!!.cell(CellAddress(2, 2))?.value)
+        assertEquals(TableMessages.DISCARDED_EDIT, s.notices.visible?.text)
+        s.startEdit(CellAddress(3, 1), EntryProfile.Hardware)
+        s.type("Plum")
+        assertTrue(s.commitDraft())
+        assertEquals(1, sent.size)
+    }
+
+    @Test
+    fun activatingAnotherTable_should_ReleaseAConflictHeldInThePreviousOne() {
+        val activation = TableActivation()
+        val a = state()
+        val b = state()
+        a.startEdit(CellAddress(2, 1), EntryProfile.Touch)
+        a.type("Fig")
+        a.onContent(external)
+        activation.activate(a)
+        b.dragSelect(CellAddress(2, 1), CellAddress(2, 1))
+        activation.activate(b)
+        assertFalse(a.conflictHeld)
+        assertNull(a.selection)
+        assertEquals("77", a.doc!!.cell(CellAddress(2, 2))?.value)
+    }
+
+    @Test
+    fun selectAllCopy_should_SayItCopiedTheVisibleRows_WhenTheWindowTruncates() {
+        val s = InlineTableState(bigTable(50, 1), cellWindow = 10) { sent += it }
+        val notes = mutableListOf<String>()
+        s.hooks.copyToClipboard = { _, done -> done(true) }
+        s.dragSelect(CellAddress(1, 1), CellAddress(1, 1))
+        s.perform(StripAction.SelectTable)
+        s.copySelection()
+        notes += s.notices.visible!!.text
+        assertEquals(TableMessages.copiedVisible(10, 1), notes.single())
+    }
 }

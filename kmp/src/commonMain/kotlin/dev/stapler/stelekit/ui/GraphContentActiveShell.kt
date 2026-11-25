@@ -347,6 +347,8 @@ internal fun GraphContentActiveShell(
             action
         }
 
+        val tableActivation = remember { dev.stapler.stelekit.ui.components.sheet.TableActivation() }
+
         val tableUndoHost = remember(blockStateManager) {
             dev.stapler.stelekit.ui.components.TableUndoHost(
                 undo = { blockStateManager.undo() },
@@ -385,6 +387,7 @@ internal fun GraphContentActiveShell(
             dev.stapler.stelekit.ui.components.LocalAnnotateImageAction provides annotateImageAction,
             dev.stapler.stelekit.ui.components.LocalTableCommitAction provides tableCommitAction,
             dev.stapler.stelekit.ui.components.LocalTableUndoHost provides tableUndoHost,
+            dev.stapler.stelekit.ui.components.sheet.LocalTableActivation provides tableActivation,
             dev.stapler.stelekit.ui.components.LocalTablePreferences provides viewModel.tablePreferences,
             LocalWindowSizeClass provides windowSizeClass,
             LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) },

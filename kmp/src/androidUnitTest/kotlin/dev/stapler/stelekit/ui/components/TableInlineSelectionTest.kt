@@ -156,7 +156,10 @@ class TableInlineSelectionTest {
     fun editingASecondTable_should_ResetTheFirstAndLeaveOneStrip() {
         val prefs = TableDisplayPrefs(inlineEditEnabled = true)
         rule.setContent {
-            androidx.compose.runtime.CompositionLocalProvider(LocalTablePreferences provides TablePreferences(null)) {
+            androidx.compose.runtime.CompositionLocalProvider(
+                LocalTablePreferences provides TablePreferences(null),
+                dev.stapler.stelekit.ui.components.sheet.LocalTableActivation provides dev.stapler.stelekit.ui.components.sheet.TableActivation(),
+            ) {
                 androidx.compose.material3.MaterialTheme {
                     androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.width(360.dp)) {
                         TableBlock(content = "| A | B |\n|---|---|\n| apple | 1 |", onStartEditing = {}, prefs = prefs, blockUuid = dev.stapler.stelekit.model.BlockUuid("t1"), onCommit = {})
@@ -172,5 +175,25 @@ class TableInlineSelectionTest {
         rule.waitForIdle()
         rule.onAllNodesWithTag("strip:Done").assertCountEquals(1)
         rule.onAllNodes(androidx.compose.ui.test.hasSetTextAction()).assertCountEquals(1)
+    }
+
+    @Test
+    fun tablesWithSeparateActivationHolders_should_NotAffectEachOther() {
+        val prefs = TableDisplayPrefs(inlineEditEnabled = true)
+        rule.setContent {
+            androidx.compose.runtime.CompositionLocalProvider(LocalTablePreferences provides TablePreferences(null)) {
+                androidx.compose.material3.MaterialTheme {
+                    androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.width(360.dp)) {
+                        TableBlock(content = "| A | B |\n|---|---|\n| apple | 1 |", onStartEditing = {}, prefs = prefs, blockUuid = dev.stapler.stelekit.model.BlockUuid("t1"), onCommit = {})
+                        TableBlock(content = "| C | D |\n|---|---|\n| cherry | 2 |", onStartEditing = {}, prefs = prefs, blockUuid = dev.stapler.stelekit.model.BlockUuid("t2"), onCommit = {})
+                    }
+                }
+            }
+        }
+        rule.onNodeWithText("apple").performTouchInput { click() }
+        rule.waitForIdle()
+        rule.onNodeWithText("cherry").performTouchInput { click() }
+        rule.waitForIdle()
+        rule.onAllNodes(androidx.compose.ui.test.hasSetTextAction()).assertCountEquals(2)
     }
 }

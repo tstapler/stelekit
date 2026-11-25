@@ -139,7 +139,7 @@ internal fun InlineTableBlock(
     // One holder per state: a state replaced for another block keeps committing to its own block on dispose.
     val commitHolder = remember(blockUuid) { mutableStateOf(onCommit) }.also { it.value = onCommit }
     val state = remember(blockUuid, cellWindow) { InlineTableState(content, cellWindow = cellWindow) { commitHolder.value(it) } }
-    val activation = LocalTableActivation.current
+    val activation = LocalTableActivation.current ?: remember { TableActivation() }
     val isActive = state.selection != null
     LaunchedEffect(isActive, activation) { if (isActive) activation.activate(state) }
     DisposableEffect(state, activation) {

@@ -20,5 +20,6 @@ internal class TableActivation {
     }
 }
 
-@Suppress("CompositionLocalAllowlist") // one holder per page; every inline table on it reads the same one
-internal val LocalTableActivation = staticCompositionLocalOf { TableActivation() }
+/** Provided once per window by the shell; null (default) gives each table its own holder, so unrelated hosts never share state. */
+@Suppress("CompositionLocalAllowlist") // one holder per window so every inline table in it shares the active slot
+internal val LocalTableActivation = staticCompositionLocalOf<TableActivation?> { null }

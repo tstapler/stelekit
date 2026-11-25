@@ -278,7 +278,21 @@ internal class InlineTableState(
 
     /** Block selection began: commit what is pending, then hide the editor. */
     fun commitAndClear() {
+        if (conflictHeld) {
+            // The commit is refused while a foreign edit is held: drop the draft, show the held content, keep it recoverable.
+            val discarded = draft?.takeIf { it.isDirty }
+            cancel()
+            clearInteraction()
+            if (discarded != null) {
+                notices.withAction(NoticeType.Undo, TableMessages.DISCARDED_EDIT, TableMessages.UNDO) { restoreDraft(discarded.address, discarded.text) }
+            }
+            return
+        }
         commitDraft()
+        clearInteraction()
+    }
+
+    private fun clearInteraction() {
         draft = null
         fieldValue = TextFieldValue()
         mode = GridMode.Navigate
@@ -403,12 +417,19 @@ internal class InlineTableState(
     fun copySelection() {
         val current = selection ?: return
         val range = current.range
+        val truncated = doc?.let { it.rowCount > bounds(it).rows && range.bottomRight.row == bounds(it).rows } == true
         if (current.cellCount > MAX_COPY_CELLS) return notices.info(TableMessages.COPY_TOO_LARGE)
         val tsv = SelectionStats.toTsv(current, ::textAt)
         if (tsv.length > MAX_COPY_CHARS) return notices.info(TableMessages.COPY_TOO_LARGE)
         // The write is async: say "Copied" only once the clipboard accepted it.
         hooks.copyToClipboard(tsv) { ok ->
-            notices.info(if (ok) TableMessages.copied(range.rows, range.cols) else TableMessages.COPY_FAILED)
+            notices.info(
+                when {
+                    !ok -> TableMessages.COPY_FAILED
+                    truncated -> TableMessages.copiedVisible(range.rows, range.cols)
+                    else -> TableMessages.copied(range.rows, range.cols)
+                },
+            )
         }
     }
 

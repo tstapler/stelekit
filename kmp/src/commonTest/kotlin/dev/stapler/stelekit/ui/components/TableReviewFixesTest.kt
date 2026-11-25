@@ -69,4 +69,26 @@ class TableReviewFixesTest {
         assertFalse(isSafeCellUrl("intent://scan#Intent;end"))
         assertFalse(isSafeCellUrl("tel:123"))
     }
+
+    @Test
+    fun commitQueue_should_KeepRunningAfterAWriteThrows_AndNotBlockOtherBlocks() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val ran = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val hung = CompletableDeferred<Unit>()
+        val queue = TableCommitQueue(scope) { uuid, text, _ ->
+            if (uuid.value == "hung") hung.await()
+            if (text == "boom") error("write failed")
+            ran += "${uuid.value}:$text"
+        }
+        queue.submit(BlockUuid("hung"), "x", 1L)
+        queue.submit(BlockUuid("a"), "boom", 1L)
+        queue.submit(BlockUuid("a"), "ok", 2L)
+        kotlinx.coroutines.withTimeout(5_000) { while ("a:ok" !in ran) delay(5) }
+        assertEquals(listOf("a:ok"), ran.toList())
+        queue.close()
+        queue.submit(BlockUuid("a"), "late", 3L)
+        hung.complete(Unit)
+        kotlinx.coroutines.withTimeout(5_000) { while ("hung:x" !in ran) delay(5) }
+        assertFalse("a:late" in ran)
+    }
 }
