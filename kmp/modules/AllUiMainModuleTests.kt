@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.modules
 
 import dev.stapler.stelekit.jobs.BackgroundJobsTest
+import dev.stapler.stelekit.table.TableStripPolicyTest
 import dev.stapler.stelekit.ui.assets.AssetDetailViewModelTest
 import dev.stapler.stelekit.ui.assets.ImageViewerPanBoundsTest
 import dev.stapler.stelekit.ui.components.CrossBlockSelectionTest
@@ -8,7 +9,11 @@ import dev.stapler.stelekit.ui.components.EditorToolbarCursorResolutionTest
 import dev.stapler.stelekit.ui.components.ExtractSuggestionsTest
 import dev.stapler.stelekit.ui.components.HeadingScaleTest
 import dev.stapler.stelekit.ui.components.QueryResultCountTextTest
+import dev.stapler.stelekit.ui.components.TableMessagesTest
+import dev.stapler.stelekit.ui.components.TableReviewFixesTest
 import dev.stapler.stelekit.ui.components.UuidKeysTest
+import dev.stapler.stelekit.ui.components.sheet.InlineTableRealManagerTest
+import dev.stapler.stelekit.ui.components.sheet.InlineTableStripStateTest
 import dev.stapler.stelekit.ui.screens.DiskConflictDiffTest
 import dev.stapler.stelekit.ui.screens.GlobalUnlinkedReferencesViewModelTest
 import dev.stapler.stelekit.ui.screens.ImportViewModelTest
@@ -33,6 +38,7 @@ import org.junit.runners.Suite
 @RunWith(Suite::class)
 @Suite.SuiteClasses(
     BackgroundJobsTest::class,
+    TableStripPolicyTest::class,
     AssetDetailViewModelTest::class,
     ImageViewerPanBoundsTest::class,
     CrossBlockSelectionTest::class,
@@ -40,7 +46,11 @@ import org.junit.runners.Suite
     ExtractSuggestionsTest::class,
     HeadingScaleTest::class,
     QueryResultCountTextTest::class,
+    TableMessagesTest::class,
+    TableReviewFixesTest::class,
     UuidKeysTest::class,
+    InlineTableRealManagerTest::class,
+    InlineTableStripStateTest::class,
     DiskConflictDiffTest::class,
     GlobalUnlinkedReferencesViewModelTest::class,
     ImportViewModelTest::class,

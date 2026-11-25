@@ -142,7 +142,8 @@ class OwnCommitLedger(private val capacity: Int = DEFAULT_CAPACITY) {
                 put(key, State.Acked, makeCurrent = true, seq = expected.seq)
             }
             observed(expected.seq)
-            return LedgerVerdict.Adopt
+            // An undo or redo result must not replace a draft the user is still typing (the display moved, the draft stays).
+            return if (draftPending) LedgerVerdict.AdoptWithDraft else LedgerVerdict.Adopt
         }
         if (entry != null && entry.state == State.InFlight) {
             val stale = entry.seq < maxOf(currentSeq, ownFloor)
