@@ -34,6 +34,8 @@ KMP_MODULE_TESTS = {
    "dev/stapler/stelekit/table/TableRoundTripPropertyTest.kt",
    "dev/stapler/stelekit/table/TableSerializerTest.kt",
    "dev/stapler/stelekit/table/TableShortcutMapTest.kt",
+   "dev/stapler/stelekit/table/TableSyncPolicyModelTest.kt",
+   "dev/stapler/stelekit/table/TableSyncPolicyTest.kt",
    "dev/stapler/stelekit/table/TableUndoScopeTest.kt",
    "dev/stapler/stelekit/table/TableViewStatePropertyTest.kt",
    "dev/stapler/stelekit/table/TableViewStateTest.kt",

@@ -16,6 +16,8 @@ import dev.stapler.stelekit.table.TableParserTest
 import dev.stapler.stelekit.table.TableRoundTripPropertyTest
 import dev.stapler.stelekit.table.TableSerializerTest
 import dev.stapler.stelekit.table.TableShortcutMapTest
+import dev.stapler.stelekit.table.TableSyncPolicyModelTest
+import dev.stapler.stelekit.table.TableSyncPolicyTest
 import dev.stapler.stelekit.table.TableUndoScopeTest
 import dev.stapler.stelekit.table.TableViewStatePropertyTest
 import dev.stapler.stelekit.table.TableViewStateTest
@@ -57,6 +59,8 @@ import org.junit.runners.Suite
     TableRoundTripPropertyTest::class,
     TableSerializerTest::class,
     TableShortcutMapTest::class,
+    TableSyncPolicyModelTest::class,
+    TableSyncPolicyTest::class,
     TableUndoScopeTest::class,
     TableViewStatePropertyTest::class,
     TableViewStateTest::class,
