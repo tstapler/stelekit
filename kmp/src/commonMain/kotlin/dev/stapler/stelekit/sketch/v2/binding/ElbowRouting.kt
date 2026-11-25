@@ -53,6 +53,7 @@ object ElbowRouting {
     /** Where the draggable middle segment of [arrow]'s route sits: its midpoint, and whether it runs vertically; null unless the route has exactly two bends. */
     fun midHandle(arrow: ArrowElement): MidHandle? {
         if (!arrow.elbowed || arrow.points.size != Z_POINTS) return null
+        if (arrow.startBinding == null && arrow.endBinding == null) return null
         val (b, c) = arrow.points[1] to arrow.points[2]
         val vertical = abs(b.x.value - c.x.value) <= EPS
         val horizontal = abs(b.y.value - c.y.value) <= EPS
