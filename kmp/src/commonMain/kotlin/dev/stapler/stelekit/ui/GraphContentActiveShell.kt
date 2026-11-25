@@ -11,6 +11,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
@@ -39,6 +40,7 @@ import dev.stapler.stelekit.ui.components.settings.UpdatesNotificationSettingsSt
 import dev.stapler.stelekit.vault.VaultManager
 import dev.stapler.stelekit.voice.VoiceCaptureState
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import dev.stapler.stelekit.merge.ActiveDbPageSource
 import dev.stapler.stelekit.ui.screens.copy.ConflictReviewViewModel
 import dev.stapler.stelekit.ui.screens.copy.CopyFlowHost
@@ -332,6 +334,31 @@ internal fun GraphContentActiveShell(
             action
         }
 
+        val tableCommitQueue = remember(blockStateManager) {
+            dev.stapler.stelekit.ui.components.TableCommitQueue(
+                CoroutineScope(SupervisorJob() + dev.stapler.stelekit.coroutines.PlatformDispatcher.Default),
+            ) { uuid, text, version ->
+                blockStateManager.updateBlockContent(uuid, text, version, restoreEditFocus = false).join()
+            }
+        }
+        DisposableEffect(tableCommitQueue) { onDispose { tableCommitQueue.close() } }
+        val tableCommitAction = remember(tableCommitQueue) {
+            val action: (dev.stapler.stelekit.model.BlockUuid, String, Long) -> Unit = tableCommitQueue::submit
+            action
+        }
+
+        val tableActivation = remember { dev.stapler.stelekit.ui.components.sheet.TableActivation() }
+
+        val tableUndoHost = remember(blockStateManager) {
+            dev.stapler.stelekit.ui.components.TableUndoHost(
+                undo = { blockStateManager.undo() },
+                redo = { blockStateManager.redo() },
+                canUndo = blockStateManager.canUndo,
+                canRedo = blockStateManager.canRedo,
+                recordCount = blockStateManager.undoRecordCount,
+            )
+        }
+
         val openSketchAction = remember(repos, viewModel) {
             val action: (String) -> Unit = { slug ->
                 scope.launch {
@@ -358,6 +385,9 @@ internal fun GraphContentActiveShell(
             dev.stapler.stelekit.ui.components.LocalOpenSketchAction provides openSketchAction,
             dev.stapler.stelekit.ui.components.LocalArchiveUrlAction provides archiveUrlAction,
             dev.stapler.stelekit.ui.components.LocalAnnotateImageAction provides annotateImageAction,
+            dev.stapler.stelekit.ui.components.LocalTableCommitAction provides tableCommitAction,
+            dev.stapler.stelekit.ui.components.LocalTableUndoHost provides tableUndoHost,
+            dev.stapler.stelekit.ui.components.sheet.LocalTableActivation provides tableActivation,
             dev.stapler.stelekit.ui.components.LocalTablePreferences provides viewModel.tablePreferences,
             LocalWindowSizeClass provides windowSizeClass,
             LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) },

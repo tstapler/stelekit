@@ -1,11 +1,17 @@
 package dev.stapler.stelekit.ui.components
 
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.ui.components.sheet.InlineTableBlock
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -32,9 +38,9 @@ import kotlinx.coroutines.CancellationException
 import androidx.compose.ui.unit.dp
 
 /** Widest a column may grow when cells scroll instead of wrapping, so one long cell cannot dominate. */
-private const val UNBREAKABLE_CELL = "unbreakable"
-private const val BREAKABLE_CELL = "breakable"
-private val MAX_SCROLL_COLUMN_WIDTH = 480.dp
+internal const val UNBREAKABLE_CELL = "unbreakable"
+internal const val BREAKABLE_CELL = "breakable"
+internal val MAX_SCROLL_COLUMN_WIDTH = 480.dp
 
 /**
  * Renders a GFM pipe table: one column grid shared by every row, cell text wrapped (or scrolled,
@@ -55,6 +61,52 @@ internal fun TableBlock(
     linkColor: Color = MaterialTheme.colorScheme.primary,
     onLinkClick: (String) -> Unit = {},
     prefs: TableDisplayPrefs = LocalTablePreferences.current.prefs,
+    // Inline-edit seam: read only when [TableDisplayPrefs.inlineEditEnabled] is on and [onCommit] is given.
+    blockUuid: BlockUuid? = null,
+    onCommit: ((String) -> Unit)? = null,
+    onOpenSheet: (() -> Unit)? = null,
+    inBlockSelectionMode: Boolean = false,
+) {
+    if (prefs.inlineEditEnabled && onCommit != null) {
+        InlineTableBlock(
+            content = content,
+            onStartEditing = onStartEditing,
+            modifier = modifier,
+            isInSelectionMode = isInSelectionMode,
+            onToggleSelect = onToggleSelect,
+            onLongPressSelect = onLongPressSelect,
+            linkColor = linkColor,
+            onLinkClick = onLinkClick,
+            prefs = prefs,
+            blockUuid = blockUuid,
+            onCommit = onCommit,
+            onOpenSheet = onOpenSheet,
+            inBlockSelectionMode = inBlockSelectionMode,
+        )
+    } else if (prefs.sheetEnabled && onOpenSheet != null) {
+        // Flag matrix row "inline off, sheet on": the Maximize button is the only way into the sheet.
+        Column(modifier) {
+            FlagOffTableBlock(content, onStartEditing, isInSelectionMode, onToggleSelect, onLongPressSelect, linkColor, onLinkClick, prefs)
+            if (!isInSelectionMode) TextButton(onClick = onOpenSheet, modifier = Modifier.heightIn(min = 48.dp)) { Text(TableMessages.MAXIMIZE) }
+        }
+    } else {
+        FlagOffTableBlock(content, onStartEditing, isInSelectionMode, onToggleSelect, onLongPressSelect, linkColor, onLinkClick, prefs, modifier)
+    }
+}
+
+/** Today's renderer, untouched: used whenever inline editing is off. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun FlagOffTableBlock(
+    content: String,
+    onStartEditing: () -> Unit,
+    isInSelectionMode: Boolean,
+    onToggleSelect: () -> Unit,
+    onLongPressSelect: (() -> Unit)?,
+    linkColor: Color,
+    onLinkClick: (String) -> Unit,
+    prefs: TableDisplayPrefs,
+    modifier: Modifier = Modifier,
 ) {
     val uriHandler = LocalUriHandler.current
     val onUrlClick: (String) -> Unit = { url ->
@@ -141,7 +193,7 @@ internal fun TableBlock(
 }
 
 /** Publishes the width this block is offered, so the grid can fit columns to it while sitting inside a scroller. */
-private fun Modifier.captureMaxWidth(into: MutableIntState): Modifier = layout { measurable, constraints ->
+internal fun Modifier.captureMaxWidth(into: MutableIntState): Modifier = layout { measurable, constraints ->
     into.intValue = constraints.maxWidth
     val placeable = measurable.measure(constraints)
     layout(placeable.width, placeable.height) { placeable.place(0, 0) }
@@ -153,7 +205,7 @@ private fun Modifier.captureMaxWidth(into: MutableIntState): Modifier = layout {
  * tallest cell at that width.
  */
 @Composable
-private fun TableGrid(
+internal fun TableGrid(
     columnCount: Int,
     availableWidth: () -> Int,
     overflow: TableOverflow,

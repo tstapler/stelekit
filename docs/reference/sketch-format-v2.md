@@ -99,7 +99,7 @@ Every element has `id` (unique, non-empty) and `type`, plus optional base fields
 | `rect`, `diamond` | `x y w h angle` | x,y top-left. Outline is stroked centred on the edge. |
 | `ellipse` | `cx cy rx ry angle` | centre and radii; `rx == ry` is a circle |
 | `line` | `pts` `[[x,y],...]`, `poly` | `poly: true` closes it and fills with `style.bg` |
-| `arrow` | `pts`, `sb`, `eb`, `sah`, `eah`, `elbow` | points are absolute; `sb`/`eb` `{id, fx, fy, mode}` record the shape each end is attached to (`fx`,`fy` are fractions of its box). `sah` default `None`, `eah` default `Arrow`. |
+| `arrow` | `pts`, `sb`, `eb`, `sah`, `eah`, `elbow` | points are absolute; `sb`/`eb` `{id, fx, fy, mode}` record the shape each end is attached to (`fx`,`fy` are fractions of its box). `sah` default `None`, `eah` default `Arrow`. With `elbow` true and at least one bound end the app re-routes `pts` itself as an orthogonal route that leaves each bound shape square from the side `sb`/`eb` sits on and stays clear of both shapes (re-routed whenever a bound shape moves); the route's middle segment can be dragged, stored as `extras.elbowMid` (x of a vertical, y of a horizontal middle segment). An elbow arrow with no bound end keeps the `pts` written. |
 | `text` | `x y w h angle text orig fs ff ta va container lh auto` | see below |
 | `frame` | `x y w h` | clipping frame; title is `name` |
 | `wall` | `pts` `[[x,y],...]`, `t`, `just`, `closed` | centreline polyline with thickness `t`, drawn as a double line with mitred joints; `just` is `Inside`, `Centre` (default) or `Outside`; `closed: true` makes a room. See the paragraph below. |

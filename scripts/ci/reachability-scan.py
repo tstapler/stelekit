@@ -76,7 +76,7 @@ REGISTER = {
     34: ["InitializingDebugScreen"],
     35: ["OtelSpanElement"],
     37: ["BackgroundSyncScheduler"],
-    38: ["CellDraft", "Chord", "FormulaPrinter", "GridNavigator", "LadderAction", "LadderKey", "LadderState", "NavResult", "NoticeHeightLimit", "NoticeQueue", "OfferOutcome", "PointModeRule", "PointModeState", "SelectionStats", "SelectionStatsResult", "ShortcutBinding", "SortIndicator", "SyncDecision", "TableBackLadder", "TableEngine", "TableParseFailureLog", "TableSerializer", "TableShortcutMap", "TableSurface", "TableSyncPolicy", "TableUndoScope", "TableViewState", "TextSelection"],  # table-sheet-editor PR-A engine; PR-B/PR-C wire it and delete these
+    38: ["FormulaPrinter", "PointModeRule", "PointModeState", "SortIndicator", "TableParseFailureLog", "TableViewState"],  # table-sheet-editor PR-A engine; PR-B/PR-C wire it and delete these
 }
 REGISTER_ROW_COUNT = 38
 ROW_OF = {name: row for row, names in REGISTER.items() for name in names}

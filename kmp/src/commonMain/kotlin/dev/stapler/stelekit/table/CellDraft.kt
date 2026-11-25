@@ -73,7 +73,11 @@ class CellDraft private constructor(
     /** After a commit or cancel: history is gone, the text stays. */
     fun clearHistory(): CellDraft = copy(undoStack = emptyList(), redoStack = emptyList(), lastEditAtMs = null)
 
+    /** The text just committed: the draft stays open but is no longer dirty. */
+    fun markCommitted(): CellDraft = copy(committedContent = text, undoStack = emptyList(), redoStack = emptyList(), lastEditAtMs = null)
+
     private fun copy(
+        committedContent: String = this.committedContent,
         text: String = this.text,
         selection: TextSelection = this.selection,
         composing: Boolean = this.composing,

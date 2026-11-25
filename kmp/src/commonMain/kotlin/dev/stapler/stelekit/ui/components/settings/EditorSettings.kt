@@ -85,15 +85,31 @@ fun TableSettingsRows(tablePreferences: TablePreferences, modifier: Modifier = M
         SettingsSwitchRow(TABLE_INLINE_EDIT_LABEL, prefs.inlineEditEnabled) { on ->
             tablePreferences.update { it.copy(inlineEditEnabled = on) }
         }
+        if (prefs.inlineEditEnabled) TableFirstRunNote()
         SettingsSwitchRow(TABLE_SHEET_LABEL, prefs.sheetEnabled) { on ->
             tablePreferences.update { it.copy(sheetEnabled = on) }
         }
+        if (prefs.sheetEnabled && !prefs.inlineEditEnabled) TableFirstRunNote()
         Text(
             TABLE_SHEET_HELPER,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        androidx.compose.material3.TextButton(
+            onClick = { tablePreferences.hints.showAgain() },
+            modifier = Modifier.heightIn(min = 48.dp),
+        ) { Text(dev.stapler.stelekit.ui.components.TableMessages.SHOW_TIPS_AGAIN) }
     }
+}
+
+/** Text only: shown while a table flag is on, under its toggle (ux.md 3.9). */
+@Composable
+private fun TableFirstRunNote() {
+    Text(
+        dev.stapler.stelekit.ui.components.TableMessages.FIRST_RUN_NOTE,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable

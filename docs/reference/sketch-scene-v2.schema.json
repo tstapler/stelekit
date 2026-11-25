@@ -111,7 +111,7 @@
         "ver": { "type": "integer", "default": 1 },
         "ord": { "type": "integer", "default": 0, "description": "Auto-name ordinal (\"Rectangle 3\"); 0 = unassigned." },
         "name": { "type": "string", "maxLength": 80, "description": "User-visible name; must be unique among elements." },
-        "extras": { "type": "object", "description": "Element keys the app does not interpret are kept as written. On the image with id \"underlay\" the key `underlay` holds its calibration (see $defs/underlayExtras). `provenance` marks an element an agent wrote (see $defs/provenance).", "properties": { "underlay": { "$ref": "#/$defs/underlayExtras" }, "provenance": { "$ref": "#/$defs/provenance" } } }
+        "extras": { "type": "object", "description": "Element keys the app does not interpret are kept as written. On the image with id \"underlay\" the key `underlay` holds its calibration (see $defs/underlayExtras). `provenance` marks an element an agent wrote (see $defs/provenance). On an elbow arrow the key `elbowMid` is the coordinate the user dragged the route's middle segment to (x for a vertical middle segment, y for a horizontal one).", "properties": { "underlay": { "$ref": "#/$defs/underlayExtras" }, "provenance": { "$ref": "#/$defs/provenance" }, "elbowMid": { "type": "number" } } }
       }
     },
     "provenance": {

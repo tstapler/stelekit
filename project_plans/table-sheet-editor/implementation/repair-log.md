@@ -335,3 +335,20 @@ Three limits were pinned as `knownLimit_*` tests: (1) after `markDone` (or after
 - Outstanding own-write tracking covers only table-shaped content (new or previous), evicts the oldest content past 16 instead of clearing all, expires after 64 newer writes, is cleared when a foreign edit is adopted, and is pruned for blocks that no longer exist or whose page is unobserved. `DatabaseWriteActor` emits confirmations with `tryEmit` on success only (no coalescing of `WriteBlockContent`), so a confirmation can be dropped when the shared buffer is full; that is why entries expire.
 - `OwnCommitLedger.takeSettled` releases a stale emission only when it equals the newest registration's content, so an older echo that trails a newer in-flight commit is never shown. A first commit (no floor yet) is not treated as recurring.
 
+
+### P5-9 / PR-B: P5-1 resolved by content detection in the renderer
+Bullet-typed (Logseq-indented) tables get the table UI by content, not by block type: `BlockItem` swaps the dispatch type to `Table` when a table flag is on, the block is a `Bullet` and `isGridTableContent(block.content)`; with both flags off the check is not evaluated (decision in ADR-010). `TableBlockFlagOffEquivalenceTest` covers flags off (Bullet stays a bullet, tap opens `onStartEditing`) and flag on (Bullet renders as the Table branch does).
+
+### PR-B adversarial review fixes (3 reviews)
+- Draft loss: `InlineTableBlock` commits a dirty draft when it leaves composition (page navigation, parent collapse), not only on ON_STOP. Each state commits through its own holder, so a state replaced for another block never writes to the new block. Block focus loss is not a separate trigger: a table has no block-level focus callback, and dispose plus ON_STOP cover the exits.
+- `commitDraft` rebases the draft (`CellDraft.markCommitted`): after an ON_STOP or dispose commit the open draft is clean, so no false `ConflictKeepDraft` and no "Discarded your edit" notice on Esc. `freeze()` commits first; `maximize()` already committed before `openSheet` (now locked by a test).
+- A11y: a semantic click (TalkBack, Switch Access) starts edit with the `Touch` profile so the strip is visible. No commonMain accessibility-service signal exists; owner-queue lists the follow-up.
+- Detection (ADR-010): fenced code or surrounding prose disqualifies a Bullet; the dispatch type is memoized.
+- Copy: one `TableCalc` per doc via `CalcMemo` (was one per cell); "Copied" posts only after the clipboard write succeeds, a failure posts "Could not copy"; selections over 20 000 cells or 2 000 000 chars are refused.
+- Window: navigation, selection and edit entry clamp to the composed row window (`cellWindow`); alignment detection reads only the shown rows.
+- Undo echo vs draft: an expected undo/redo emission with a pending draft is now `AdoptWithDraft` (conflict held, draft kept); the state also refuses an `Adopt` over a dirty draft.
+- Commit order: table commits go through `TableCommitQueue` (one channel, one consumer that joins each write) from `GraphContentActiveShell`; normal block editing is untouched.
+- `markDone` releases a held decision with its own content (`markDoneWithContent`); the old path rebuilt from the table's own commit.
+- Own-record accounting: if the manager records nothing for a commit (block missing, content already equal) the pending counter drifts; an external rebuild now clears undo/redo history and the counter, so the drift can only disable undo, never mislabel a foreign entry as ours.
+- Cell links open only `http`, `https` and `mailto`; one active table per page (`TableActivation`); the inline-off Maximize button respects selection mode.
+

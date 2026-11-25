@@ -21,6 +21,9 @@ sealed interface SyncDecision {
     data object ConflictKeepDraft : SyncDecision
 }
 
+/** A decision released by `markDone`, with the content it applies to. */
+data class ReleasedDecision(val decision: SyncDecision, val content: String)
+
 /**
  * Classifies observed block content for the table sheet (Story 3.2, ADR-004). Takes content only, never a version:
  * the feed's DB-row counter and the UI's commit order cannot be compared (R2-B1).
@@ -32,12 +35,16 @@ class TableSyncPolicy(val ledger: OwnCommitLedger = OwnCommitLedger()) {
 
     fun expectAdopt(content: String): Long = ledger.expectAdopt(content)
 
-    fun markDone(seq: Long, draftPending: Boolean = false, selection: CellAddress? = null): SyncDecision? {
+    fun markDone(seq: Long, draftPending: Boolean = false, selection: CellAddress? = null): SyncDecision? =
+        markDoneWithContent(seq, draftPending, selection)?.decision
+
+    /** Like [markDone], plus the content the decision is about (held foreign content or the settled emission). */
+    fun markDoneWithContent(seq: Long, draftPending: Boolean = false, selection: CellAddress? = null): ReleasedDecision? {
         ledger.markDone(seq)
         val held = ledger.takeDeferred()
-        if (held != null) return classify(held, draftPending, selection)
+        if (held != null) return ReleasedDecision(classify(held, draftPending, selection), held)
         val settled = ledger.takeSettled() ?: return null
-        return decide(ledger.settle(settled, draftPending), settled, selection)
+        return ReleasedDecision(decide(ledger.settle(settled, draftPending), settled, selection), settled)
     }
 
     fun classify(content: String, draftPending: Boolean = false, selection: CellAddress? = null): SyncDecision =

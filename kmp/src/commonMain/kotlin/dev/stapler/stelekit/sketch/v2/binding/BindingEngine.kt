@@ -127,7 +127,11 @@ object BindingEngine {
 data class BindArrowEnd(val arrow: ElementId, val end: BindingEnd, val target: ElementId) : Command {
     override fun apply(doc: SketchDocumentV2): Either<CommandError, Applied> = either {
         val edit = BindingEngine.bind(doc.scene, arrow, end, target).bind()
-        finish(doc, edit.scene, edit.changed)
+        // An elbow arrow is re-routed between its (now bound) ends so it stays orthogonal.
+        val bound = edit.scene[arrow] as? ArrowElement
+        val routed = bound?.takeIf { it.elbowed }?.let { a -> ElbowRouting.pointsOf(edit.scene, a)?.let { a.copy(points = it) } }
+        val scene = if (routed != null && routed != bound) edit.scene.replace(routed.touched()).bind() else edit.scene
+        finish(doc, scene, edit.changed)
     }
 }
 

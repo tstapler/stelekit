@@ -61,6 +61,9 @@ fun Settings.writeTableDisplayPrefs(prefs: TableDisplayPrefs) {
  * rendered table reads [prefs], so a change repaints open pages without a restart.
  */
 class TablePreferences(private val settings: Settings?) {
+    /** One-time tips, shared by every table so each shows once per install. */
+    val hints = dev.stapler.stelekit.ui.components.sheet.TableHints(settings)
+
     var prefs: TableDisplayPrefs by mutableStateOf(settings.tableDisplayPrefs())
         private set
 

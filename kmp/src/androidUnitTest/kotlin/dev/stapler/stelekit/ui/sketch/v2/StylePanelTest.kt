@@ -191,7 +191,7 @@ class StylePanelTest {
         rule.onNodeWithTag(StylePanelTags.ELBOW_NOTE).assertDoesNotExist()
         rule.onNodeWithTag(StylePanelTags.choice("Arrow type.Elbow")).performClick()
         rule.waitForIdle()
-        rule.onNodeWithTag(StylePanelTags.ELBOW_NOTE).assertTextEquals("Elbow routing isn't supported; drawn as a polyline")
+        rule.onNodeWithTag(StylePanelTags.ELBOW_NOTE).assertTextEquals("Elbow arrows route around the shapes they are bound to; bind an end to a shape")
         assertEquals(true, (h.doc.scene[ElementId("a1")] as ArrowElement).elbowed)
     }
 

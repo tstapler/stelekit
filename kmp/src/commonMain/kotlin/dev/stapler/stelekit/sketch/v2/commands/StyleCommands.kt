@@ -18,6 +18,7 @@ import dev.stapler.stelekit.sketch.v2.scene.TextElement
 import dev.stapler.stelekit.sketch.v2.scene.ValueError
 import dev.stapler.stelekit.sketch.v2.scene.VerticalAlign
 import dev.stapler.stelekit.sketch.v2.scene.withArrowType
+import dev.stapler.stelekit.sketch.v2.binding.ElbowRouting
 import dev.stapler.stelekit.sketch.v2.text.TextAutoSize
 import dev.stapler.stelekit.sketch.v2.text.TextMetricsProvider
 import dev.stapler.stelekit.sketch.v2.text.TextRefit
@@ -143,7 +144,8 @@ data class StyleArrowType(val ids: List<ElementId>, val type: ArrowType) : Comma
         for (id in ids.distinct()) {
             val e: SceneElement = out[id] ?: raise(CommandError.UnknownElement(id.value))
             if (e !is ArrowElement) continue
-            val next = e.withArrowType(type)
+            val typed = e.withArrowType(type)
+            val next = if (typed.elbowed) ElbowRouting.pointsOf(out, typed)?.let { typed.copy(points = it) } ?: typed else typed
             if (next == e) continue
             out = out.replace(next.touched()).bind()
             changed += id

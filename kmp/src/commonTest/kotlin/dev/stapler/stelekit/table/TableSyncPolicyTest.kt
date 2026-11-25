@@ -504,4 +504,24 @@ class TableSyncPolicyTest {
         assertEquals(SyncDecision.Rebuild(null), p.classify(s0), "the floor stayed observed, so a revert is external")
         assertEquals(SyncDecision.Echo, p.classify(s0))
     }
+
+    @Test
+    fun undoAdopt_should_KeepTheDraft_When_ADraftIsPending() {
+        val p = policy()
+        p.registerCommit(s1)
+        p.markDone(1)
+        p.expectAdopt(s0)
+        assertEquals(SyncDecision.ConflictKeepDraft, p.classify(s0, draftPending = true))
+        assertEquals(SyncDecision.Echo, p.classify(s0, draftPending = true))
+    }
+
+    @Test
+    fun markDoneWithContent_should_ReturnTheHeldContentTheDecisionIsAbout() {
+        val p = policy()
+        val seq = p.registerCommit(s1)
+        assertEquals(SyncDecision.Defer, p.classify(f))
+        val released = p.markDoneWithContent(seq)
+        assertEquals(f, released?.content)
+        assertTrue(released?.decision is SyncDecision.Rebuild)
+    }
 }
