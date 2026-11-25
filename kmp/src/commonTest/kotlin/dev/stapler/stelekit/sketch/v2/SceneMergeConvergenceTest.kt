@@ -92,7 +92,7 @@ class SceneMergeConvergenceTest {
             repeat(SETTLE) {
                 for (d in devices) if (d.unsaved()) d.save() else d.refresh()
             }
-            val final = String(disk.bytes)
+            val final = disk.bytes.decodeToString()
             assertEquals(final, SceneMergeSupport.bytes(a.current), "device a diverged, seed $seed")
             assertEquals(final, SceneMergeSupport.bytes(b.current), "device b diverged, seed $seed")
             val finalIds = SceneMergeSupport.ids(SheetCodecV2.decode(disk.bytes).getOrNull()!!)
