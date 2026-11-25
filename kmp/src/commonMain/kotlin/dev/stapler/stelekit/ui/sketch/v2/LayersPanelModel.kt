@@ -17,6 +17,7 @@ import dev.stapler.stelekit.sketch.v2.scene.Layer
 import dev.stapler.stelekit.sketch.v2.scene.LayerId
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
+import dev.stapler.stelekit.sketch.v2.scene.UnderlayIds
 
 /** One row of the layers panel, top of the paint order first. */
 data class LayerRowModel(
@@ -67,12 +68,15 @@ object LayersPanelModel {
                 layer = layer,
                 elementCount = counts[layer.id] ?: 0,
                 active = layer.id == activeLayer,
-                canMoveUp = i < ascending.lastIndex,
-                canMoveDown = i > 0,
+                canMoveUp = i < ascending.lastIndex && layer.id != UnderlayIds.LAYER,
+                canMoveDown = i > pinnedBottom(ascending) && layer.id != UnderlayIds.LAYER,
                 deleteDisabledReason = if (layer.id == LayerId.Default) BASE_NOT_DELETABLE else null,
             )
         }.asReversed()
     }
+
+    /** 1 when the underlay layer sits at the bottom (nothing may go below it), else 0. */
+    private fun pinnedBottom(ascending: List<Layer>): Int = if (ascending.firstOrNull()?.id == UnderlayIds.LAYER) 1 else 0
 
     /** A layer always stays active: when the active one is gone the base layer takes over. */
     fun activeOrBase(scene: SketchSceneV2, active: LayerId): LayerId = if (scene.layer(active) != null) active else LayerId.Default
@@ -85,7 +89,9 @@ object LayersPanelModel {
         val ascending = scene.layers.sortedBy { it.order }
         val at = ascending.indexOfFirst { it.id == id }
         val to = at + step
-        return if (at < 0 || to !in ascending.indices) null else MoveLayer(id, to)
+        val floor = pinnedBottom(ascending)
+        val movable = id != UnderlayIds.LAYER
+        return if (at < 0 || !movable || to !in floor until ascending.size) null else MoveLayer(id, to)
     }
 
     /** "Layer 2" and so on: the first name no layer uses. */
