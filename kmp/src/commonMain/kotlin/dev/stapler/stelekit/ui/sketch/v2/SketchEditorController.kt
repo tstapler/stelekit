@@ -15,6 +15,8 @@ import dev.stapler.stelekit.sketch.v2.commands.Applied
 import dev.stapler.stelekit.sketch.v2.commands.Command
 import dev.stapler.stelekit.sketch.v2.commands.CommandError
 import dev.stapler.stelekit.sketch.v2.commands.Committed
+import dev.stapler.stelekit.sketch.v2.diagnostics.BannerTier
+import dev.stapler.stelekit.sketch.v2.merge.SceneMerge
 import dev.stapler.stelekit.sketch.v2.commands.HistoryV2
 import dev.stapler.stelekit.sketch.v2.commands.ResizeElement
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
@@ -30,6 +32,7 @@ import dev.stapler.stelekit.sketch.v2.runtime.constraints.SolveState
 import dev.stapler.stelekit.sketch.v2.render.SeedSource
 import dev.stapler.stelekit.sketch.v2.render.SheetStyleDefaults
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
+import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetMerge
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetSaver
 import dev.stapler.stelekit.sketch.v2.runtime.telemetry.QualitySignals
 import dev.stapler.stelekit.sketch.v2.runtime.telemetry.SketchErrorState
@@ -160,7 +163,7 @@ class SketchEditorController(
     val notifier = EditorNotifier(SketchNoticeQueue(ports.limits, ports.sequencer, ports.log), ports.clockMillis)
     val notices: SketchNoticeQueue get() = notifier.queue
     val constraintState = ConstraintState(runner, ports.diagnostics, notifier) { history.present }
-    val saves = EditorSaves(ports.saver, scope, notifier, ::reloaded) { creation.forSave(history.present) }
+    val saves: EditorSaves = EditorSaves(ports.saver, scope, notifier, ::reloaded, ::mergedFromOtherDevice) { creation.forSave(history.present) }
 
     /** The text measurer of this sheet, for panels that change a text size; null in a session built without one. */
     val textMetrics: TextMetricsProvider? get() = ports.textMetrics
@@ -346,6 +349,44 @@ class SketchEditorController(
         ui.selection = emptySet()
         revision += 1
         if (doc.constraints.isNotEmpty()) analyze() else constraintState.cleared()
+    }
+
+    /**
+     * Another device's changes were merged into the file under the open sheet (ADR-008). The editor's scene becomes
+     * `merge(ours, current, merged)`, so edits made while the save ran survive; the undo history restarts, as after a reload.
+     * A merge that cannot be applied is left unacknowledged: the saver then keeps every later scene as a conflict copy instead
+     * of writing over the merge.
+     */
+    internal fun mergedFromOtherDevice(merge: SheetMerge): Unit = queue.enqueue {
+        val rebased = SceneMerge.merge(merge.ours, creation.forSave(history.present), merge.merged, ports.limits).getOrNull() ?: return@enqueue
+        history = HistoryV2.of(rebased.doc, ports.limits)
+        creation.reload(rebased.doc)
+        undoLabels = UndoAnnouncer.Empty
+        index.rebuild(rebased.doc.scene)
+        ui.selection = emptySet()
+        revision += 1
+        if (rebased.doc.constraints.isNotEmpty()) analyze() else constraintState.cleared()
+        saves.submit(creation.forSave(rebased.doc))
+        saves.acknowledgeMerge(merge)
+        announceMerge(merge)
+    }
+
+    private fun announceMerge(merge: SheetMerge) {
+        val shown = merge.report.shownIds
+        notifier.onPrimary(SketchEditorStrings.Toasts.KEY_MERGED) {
+            ui.selection = shown.mapTo(LinkedHashSet()) { it.value }
+            shown.firstOrNull()?.let(view::reveal)
+        }
+        val repairs = merge.report.repairs.size
+        notifier.post(
+            SketchNotice(
+                SketchEditorStrings.Toasts.KEY_MERGED,
+                BannerTier.Info,
+                SketchEditorStrings.Toasts.merged(merge.report.affectedCount),
+                action = SketchEditorStrings.Toasts.MERGED_SHOW,
+                details = if (repairs > 0) SketchEditorStrings.Toasts.mergedRepairs(repairs) else null,
+            ),
+        )
     }
 
     /** Re-reads the degrees of freedom and conflicts for the status line; nothing is recorded in history. */

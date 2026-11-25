@@ -7,10 +7,12 @@ package dev.stapler.stelekit.ui.sketch.v2
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.diagnostics.BannerRowId
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SaveState
+import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetMerge
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SheetSaver
 import dev.stapler.stelekit.ui.sketch.v2.strings.SketchEditorStrings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
@@ -23,10 +25,21 @@ class EditorSaves(
     private val scope: CoroutineScope,
     private val notifier: EditorNotifier,
     private val onReloaded: (SketchDocumentV2) -> Unit,
+    /** Takes another device's changes that the saver merged into the file; it must end by calling [acknowledgeMerge]. */
+    private val onMerged: (SheetMerge) -> Unit,
     /** The document the editor holds now, which "Keep mine" writes even when no edit is waiting. */
     private val current: () -> SketchDocumentV2,
 ) {
     val state: StateFlow<SaveState> = saver?.state ?: MutableStateFlow(SaveState.Saved)
+
+    init {
+        saver?.let { s -> scope.launch { s.merges.filterNotNull().collect { onMerged(it) } } }
+    }
+
+    /** The editor holds [merge] now and has submitted its scene: the saver stops rebasing saves onto it. */
+    fun acknowledgeMerge(merge: SheetMerge) {
+        saver?.let { s -> scope.launch { s.acknowledgeMerge(merge) } }
+    }
 
     /** Hands the latest document to the saver. */
     fun submit(doc: SketchDocumentV2) {

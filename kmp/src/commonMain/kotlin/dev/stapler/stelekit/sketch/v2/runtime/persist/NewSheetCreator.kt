@@ -43,7 +43,7 @@ class NewSheetCreator(private val ports: SheetSaverPorts, private val newId: () 
             Persist.Written -> sheet.right()
             Persist.Deferred -> CreateFailure.Deferred.left()
             is Persist.Failed -> (if (persisted.reason == SaveFailure.Unavailable) CreateFailure.Unavailable else CreateFailure.Write).left()
-            is Persist.Conflict, Persist.LeaseLost -> CreateFailure.Write.left()
+            is Persist.Conflict, is Persist.Merged, Persist.LeaseLost -> CreateFailure.Write.left()
         }
     }
 

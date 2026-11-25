@@ -29,6 +29,7 @@ import dev.stapler.stelekit.sketch.v2.SheetConversionCrashInjectionTest
 import dev.stapler.stelekit.sketch.v2.SheetConversionGoldenTest
 import dev.stapler.stelekit.sketch.v2.SheetSaverConflictEditsTest
 import dev.stapler.stelekit.sketch.v2.SheetSaverConflictTest
+import dev.stapler.stelekit.sketch.v2.SheetSaverMergeTest
 import dev.stapler.stelekit.sketch.v2.SheetSaverReconcileIntegrationTest
 import dev.stapler.stelekit.sketch.v2.SheetSplitterTest
 import dev.stapler.stelekit.sketch.v2.SketchStorageReviewRegressionTest
@@ -105,6 +106,7 @@ import org.junit.runners.Suite
     SheetConversionGoldenTest::class,
     SheetSaverConflictEditsTest::class,
     SheetSaverConflictTest::class,
+    SheetSaverMergeTest::class,
     SheetSaverReconcileIntegrationTest::class,
     SheetSplitterTest::class,
     SketchStorageReviewRegressionTest::class,

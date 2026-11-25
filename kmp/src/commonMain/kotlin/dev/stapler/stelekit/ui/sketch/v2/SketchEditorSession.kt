@@ -284,10 +284,10 @@ class V2EditorOpener(
         val port = InMemoryDiagnosticsPort(SketchEditorStrings.Banners, deps.limits)
         val saver = if (readOnly == null) {
             SheetSaver(
-                SheetTarget(target.slug, target.project, target.sheet, sha),
+                SheetTarget(target.slug, target.project, target.sheet, sha, loadedDoc = doc.takeIf { sha != null }),
                 SheetSaverPorts(
                     deps.repos, target.store, deps.slugLock, port, log = deps.log, writeActor = deps.writeActor,
-                    durability = deps.durability, lifecycle = deps.lifecycle,
+                    durability = deps.durability, lifecycle = deps.lifecycle, mergeOnConflict = true,
                 ),
                 limits = deps.limits,
                 context = context,
