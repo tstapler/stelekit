@@ -52,6 +52,8 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
                 "from-excalidraw" -> fromExcalidraw(parsed)
                 "to-excalidraw" -> toExcalidraw(parsed)
                 "place" -> place(parsed)
+                "edit" -> edit(parsed)
+                "diff" -> diff(parsed)
                 else -> usage("unknown command \"$command\"")
             }
         } catch (e: UsageProblem) {
@@ -72,7 +74,7 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
         fun input(): File = File(positional.firstOrNull() ?: throw UsageProblem("give the input file"))
 
         companion object {
-            private val SWITCHES = setOf("dimensions", "no-dimensions", "in-place", "no-scale-bar", "tile")
+            private val SWITCHES = setOf("dimensions", "no-dimensions", "in-place", "no-scale-bar", "tile", "dry-run", "partial")
 
             fun of(args: List<String>): Parsed? {
                 val positional = ArrayList<String>()
@@ -385,6 +387,52 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
         }
     }
 
+    private fun edit(p: Parsed): Int {
+        val file = p.input()
+        val dryRun = p.has("dry-run")
+        if (!dryRun && !p.has("out") && !p.has("in-place")) throw UsageProblem("edit needs --out <sheet.v2.json>, --in-place or --dry-run")
+        if (p.has("out") && p.has("in-place")) throw UsageProblem("--out and --in-place cannot be combined")
+        val request = SketchEdit.parse(read(File(p.flag("edits") ?: throw UsageProblem("edit needs --edits <edits.json>"))).decodeToString())
+            .fold({ throw UsageProblem(it) }, { it })
+        val before = docOrReport(file) ?: return 1
+        val shaBefore = ContentHasher.sha256(read(file))
+        val outcome = SketchEdit.run(before, request)
+        outcome.applied.forEach { a -> out("ok       [${a.index}] ${a.op}${a.target?.let { " $it" }.orEmpty()} -> ${a.ids.joinToString()}${a.note?.let { " ($it)" }.orEmpty()}") }
+        outcome.refused.forEach { r -> out("REFUSED  [${r.index}] ${r.op}: ${r.reason}${if (r.conflicts.isEmpty()) "" else " (conflicts: ${r.conflicts.joinToString()})"}") }
+        val encoded = (SheetCodecV2.encode(outcome.doc) as? Either.Right)?.value
+        val valid = encoded != null && SketchValidate.validate(encoded).ok
+        if (!valid) out("ERROR   the edited sheet does not validate; nothing was written")
+        val writes = !dryRun && valid && (outcome.refused.isEmpty() || p.has("partial"))
+        val target = if (p.has("in-place")) file else p.flag("out")?.let(::File)
+        val shaAfter = encoded?.let { ContentHasher.sha256(it) }
+        p.flag("audit")?.let { path ->
+            val at = p.flag("at") ?: java.time.Instant.now().toString()
+            val audit = SketchEdit.audit(request, outcome, file.path, shaBefore, shaAfter.takeIf { writes }, dryRun, at)
+            File(path).also { it.absoluteFile.parentFile?.mkdirs() }.writeText(Json { prettyPrint = true }.encodeToString(JsonObject.serializer(), audit) + "\n")
+        }
+        val diff = SketchDiff.sheets(before, outcome.doc, file.path, if (writes) target?.path ?: file.path else "${file.path} (edited)")
+        out(if (diff.isEmpty()) "no differences" else diff.trimEnd())
+        if (writes && target != null && encoded != null) {
+            target.absoluteFile.parentFile?.mkdirs()
+            target.writeBytes(encoded)
+            out("wrote ${target.path} (${encoded.size} bytes, sha256 $shaAfter)")
+        } else if (dryRun) {
+            out("dry run: nothing was written")
+        } else if (outcome.refused.isNotEmpty() && !p.has("partial")) {
+            out("nothing was written because ${outcome.refused.size} edit(s) were refused; fix them, or pass --partial to keep the others")
+        }
+        return if (valid && outcome.refused.isEmpty()) 0 else 1
+    }
+
+    private fun diff(p: Parsed): Int {
+        if (p.positional.size != 2) throw UsageProblem("diff needs two files: diff <a.json> <b.json>")
+        val a = docOrReport(File(p.positional[0])) ?: return 1
+        val b = docOrReport(File(p.positional[1])) ?: return 1
+        val text = SketchDiff.sheets(a, b, p.positional[0], p.positional[1])
+        out(if (text.isEmpty()) "no differences" else text.trimEnd())
+        return 0
+    }
+
     companion object {
         const val EXIT_USAGE = 2
         private val HEX_COLOR = Regex("#[0-9a-fA-F]{6}")
@@ -408,6 +456,11 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
             |  to-excalidraw <sheet.v2.json> --out <x.excalidraw>
             |  place <sheet.v2.json> --graph <graph dir> [--slug proj-xxxxxx] [--name "Title"] [--underlay-image <photo>]
             |        add the sheet to the graph's sketch bundle and print the markdown embed line; --underlay-image stores the photo in assets/
+            |  edit <sheet.v2.json> --edits <edits.json> (--out <sheet.v2.json> | --in-place | --dry-run) [--audit <audit.json>] [--partial] [--at <timestamp>]
+            |        apply a list of edits (add, move, resize, relabel, delete, set-dimension, add-wall, add-opening, set-layer) by element id or name;
+            |        everything written is marked as agent-written for review; refused edits (constraint conflicts, no fit) write nothing unless --partial;
+            |        prints the textual diff, and --audit writes who/what/before/after as JSON
+            |  diff <a.json> <b.json>   unified textual diff of two sheets' descriptions (no differences when they match)
             |
             |Exit codes: 0 ok, 1 the input has errors (read the report), 2 usage or missing file.
         """.trimMargin() + "\n"
