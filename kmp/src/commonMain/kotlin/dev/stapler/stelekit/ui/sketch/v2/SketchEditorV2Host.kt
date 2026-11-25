@@ -205,7 +205,7 @@ fun SketchEditorV2Host(
         importDisabledReason = extras.importDisabledReason,
         onExport = if (extras.exportAvailable) extras.exporter::open else null,
         extraChips = solveChips(controller, solving) + extras.access.chips() + listOfNotNull(extras.underlay.chip()),
-        priorityChips = textSizeChips(controller) + technicalChips(controller, extras, extras.constraintsAvailable, technical != null),
+        priorityChips = textSizeChips(controller) + planChips(controller) + technicalChips(controller, extras, extras.constraintsAvailable, technical != null),
         edgeStripAtEnd = extras.input.stripAtEnd,
         durabilityCue = cue,
         grid = extras.grid,
@@ -474,6 +474,7 @@ private fun HostOverlays(controller: SketchEditorController, extras: EditorExtra
         )
         EditorOverlay.ConstrainMenu -> ConstrainMenuDialog(controller, extras)
         EditorOverlay.HelpSearch -> GuideDialog(controller, extras, tours)
+        EditorOverlay.WallLength -> WallLengthDialog(controller, extras)
         null -> Unit
     }
 }

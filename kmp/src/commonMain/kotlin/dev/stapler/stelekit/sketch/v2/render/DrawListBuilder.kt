@@ -17,7 +17,10 @@ import dev.stapler.stelekit.sketch.v2.scene.FreedrawElement
 import dev.stapler.stelekit.sketch.v2.scene.ImageElement
 import dev.stapler.stelekit.sketch.v2.scene.Layer
 import dev.stapler.stelekit.sketch.v2.scene.LineElement
+import dev.stapler.stelekit.sketch.v2.scene.OpeningElement
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
+import dev.stapler.stelekit.sketch.v2.scene.WallScene
 import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
@@ -51,7 +54,13 @@ class DrawListBuilder(metrics: TextMetricsProvider) {
     var builtElementCount: Int = 0
         private set
 
+    /** Walls and openings read their neighbours, so they are rebuilt every time instead of cached by their own version. */
+    private var scene: SketchSceneV2 = SketchSceneV2.empty()
+    private var openingsByHost: Map<ElementId, List<OpeningElement>> = emptyMap()
+
     fun build(scene: SketchSceneV2, style: RenderStyle): List<DrawOp> {
+        this.scene = scene
+        openingsByHost = WallScene.openingsByHost(scene)
         val layers = scene.layers.associateBy { it.id }
         val indexed = scene.elementsInOrder.withIndex().toList()
         val sorted = indexed.sortedWith(
@@ -77,6 +86,7 @@ class DrawListBuilder(metrics: TextMetricsProvider) {
 
     private fun opsFor(element: SceneElement, layerOpacity: Double, style: RenderStyle): List<DrawOp> {
         val opacity = element.base.opacity / ElementBase.FULL_OPACITY.toDouble() * layerOpacity
+        if (element is WallElement || element is OpeningElement) return convert(element, opacity, StrokeStyleProvider.forStyle(style))
         val hit = cache[element.id]
         if (hit != null && hit.matches(element.base.version, opacity, style)) return hit.ops
         val ops = convert(element, opacity, StrokeStyleProvider.forStyle(style))
@@ -97,6 +107,8 @@ class DrawListBuilder(metrics: TextMetricsProvider) {
         is FrameElement -> staticOps.frame(element, opacity)
         is PointElement -> listOf(staticOps.point(element, opacity))
         is ArcElement -> listOf(staticOps.arc(element, opacity))
+        is WallElement -> staticOps.wall(element, openingsByHost[element.id].orEmpty(), opacity)
+        is OpeningElement -> (scene[element.hostId] as? WallElement)?.let { staticOps.opening(element, it, opacity) }.orEmpty()
     }
 
     private fun box(e: SceneElement, x: Double, y: Double, w: Double, h: Double, angle: Double, opacity: Double, diamond: Boolean, strokes: StrokeStyleProvider): List<DrawOp> {

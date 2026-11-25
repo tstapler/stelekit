@@ -9,7 +9,13 @@ import dev.stapler.stelekit.sketch.v2.scene.ElementStyle
 import dev.stapler.stelekit.sketch.v2.scene.FrameElement
 import dev.stapler.stelekit.sketch.v2.scene.FreedrawElement
 import dev.stapler.stelekit.sketch.v2.scene.ImageElement
+import dev.stapler.stelekit.sketch.v2.scene.OpeningElement
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
+import dev.stapler.stelekit.sketch.v2.scene.WallGeometry
+import dev.stapler.stelekit.sketch.v2.scene.WallScene
+import dev.stapler.stelekit.sketch.v2.scene.WallStroke
+import dev.stapler.stelekit.sketch.v2.scene.WallVec
 import dev.stapler.stelekit.sketch.v2.scene.Roundness
 import dev.stapler.stelekit.sketch.v2.scene.RoundnessKind
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
@@ -101,6 +107,31 @@ internal class StaticOpBuilder(private val metrics: TextMetricsProvider) {
         val b = PathBuilder()
         PathGeometry.arc(b, e.cx.value, e.cy.value, e.radius.value, e.startAngle, e.endAngle)
         return PaintStyle.pathOp(e, b.build(), opacity, filled = false)
+    }
+
+    /** The wall body as one filled path (when it has a background colour) and its faces, caps and jambs as one stroked path; crisp, never restyled. */
+    fun wall(e: WallElement, openings: List<OpeningElement>, opacity: Double): List<DrawOp> {
+        val layout = WallScene.layout(e, openings)
+        val ops = ArrayList<DrawOp>(2)
+        val fill = PaintStyle.fillOf(e.base.style)
+        if (fill != null && layout.fills.isNotEmpty()) ops += DrawOp.PathOp(e.id, layout.fills.flatMap { closedPath(it) }, null, fill, opacity)
+        ops += DrawOp.PathOp(e.id, layout.strokes.flatMap { strokePath(it) }, PaintStyle.strokeOf(e.base.style), null, opacity)
+        return ops
+    }
+
+    /** A door's leaf and swing arc or a window's frame, drawn in the opening's own style over the wall it sits on. */
+    fun opening(e: OpeningElement, host: WallElement, opacity: Double): List<DrawOp> {
+        val strokes = WallGeometry.symbol(host, e)
+        if (strokes.isEmpty()) return emptyList()
+        return listOf(DrawOp.PathOp(e.id, strokes.flatMap { strokePath(it) }, PaintStyle.strokeOf(e.base.style), null, opacity))
+    }
+
+    private fun closedPath(points: List<WallVec>): List<PathSegment> =
+        listOf<PathSegment>(PathSegment.MoveTo(points.first().x, points.first().y)) + points.drop(1).map { PathSegment.LineTo(it.x, it.y) } + PathSegment.Close
+
+    private fun strokePath(s: WallStroke): List<PathSegment> {
+        val path = closedPath(s.points)
+        return if (s.closed) path else path.dropLast(1)
     }
 
     fun text(e: TextElement, opacity: Double): DrawOp {

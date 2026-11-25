@@ -24,6 +24,9 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.sketch.v2.scene.OpeningElement
+import dev.stapler.stelekit.sketch.v2.scene.WallGeometry
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.BoundKind
@@ -139,6 +142,8 @@ object SceneSemantics {
             is FrameElement -> s.frame(name, scene.elementsInOrder.count { it.base.frameId == e.id })
             is PointElement -> s.pointAt(name, units(e.x.value), units(e.y.value))
             is ArcElement -> s.radius(name, units(e.radius.value))
+            is WallElement -> s.wall(name, units(WallGeometry.length(e)), units(e.thickness.value))
+            is OpeningElement -> s.opening(name, units(e.width.value))
         }
     }
 

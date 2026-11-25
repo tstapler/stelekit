@@ -16,6 +16,11 @@ import dev.stapler.stelekit.sketch.v2.constraints.ConstraintTarget
 import dev.stapler.stelekit.sketch.v2.constraints.TargetPart
 import dev.stapler.stelekit.sketch.v2.constraints.withoutOrphans
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
+import dev.stapler.stelekit.sketch.v2.scene.OpeningElement
+import dev.stapler.stelekit.sketch.v2.scene.OpeningKind
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
+import dev.stapler.stelekit.sketch.v2.scene.WallGeometry
+import dev.stapler.stelekit.sketch.v2.scene.WallJustification
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.Arrowhead
 import dev.stapler.stelekit.sketch.v2.scene.Binding
@@ -273,6 +278,25 @@ object SheetCodecV2 {
                         }
                     }
                     is PointElement -> { put("type", "point"); put("x", u(e.x, where)); put("y", u(e.y, where)) }
+                    is WallElement -> {
+                        put("type", "wall")
+                        put("pts", points(e.points, where))
+                        put("t", u(e.thickness, where))
+                        put("just", e.justification.name)
+                        put("closed", e.closed)
+                    }
+                    is OpeningElement -> {
+                        put("type", "opening")
+                        put("host", e.hostId.value)
+                        put("seg", e.segment)
+                        put("off", u(e.offset, where))
+                        put("w", u(e.width, where))
+                        put("kind", e.kind.name)
+                        put("flipSide", e.flipSide)
+                        put("flipHinge", e.flipHinge)
+                        // Derived from the host on every edit and load; written so a load-and-save does not change the bytes.
+                        put("x", u(e.x, where)); put("y", u(e.y, where)); put("h", u(e.height, where)); put("angle", n(e.angle, where))
+                    }
                     is ArcElement -> {
                         put("type", "arc")
                         put("cx", u(e.cx, where)); put("cy", u(e.cy, where)); put("r", u(e.radius, where))
@@ -453,6 +477,8 @@ object SheetCodecV2 {
                 "image" -> image(o, base, where)
                 "point" -> PointElement(base, unit(o, "x", where), unit(o, "y", where))
                 "arc" -> arc(o, base, index, where)
+                "wall" -> wall(o, base, index, where)
+                "opening" -> opening(o, base, index, where)
                 else -> raise(SheetError.InvalidElement(index, "type"))
             }
         }
@@ -462,6 +488,28 @@ object SheetCodecV2 {
             val ry = unit(o, "ry", where)
             if (rx.value <= 0.0 || ry.value <= 0.0) raise(SheetError.InvalidElement(index, "radius"))
             return EllipseElement(base, unit(o, "cx", where), unit(o, "cy", where), rx, ry, dblOr(o, "angle", 0.0, where), bound(o, where))
+        }
+
+        private fun Raise<SheetError>.wall(o: JsonObject, base: ElementBase, index: Int, where: String): SceneElement {
+            val pts = points(o["pts"], index, where)
+            val closed = bool(o, "closed", false, where)
+            val thickness = unit(o, "t", where)
+            val minPoints = if (closed) WallElement.MIN_CLOSED_POINTS else WallElement.MIN_POINTS
+            if (pts.size < minPoints || thickness.value <= 0.0 || !WallGeometry.hasDistinctVertices(pts, closed)) raise(SheetError.InvalidElement(index, "wall"))
+            return WallElement(base, pts, thickness, enum(o, "just", WallJustification.Centre, where), closed)
+        }
+
+        private fun Raise<SheetError>.opening(o: JsonObject, base: ElementBase, index: Int, where: String): SceneElement {
+            val width = unit(o, "w", where)
+            val offset = unit(o, "off", where)
+            val segment = int(o, "seg", 0, where)
+            if (width.value <= 0.0 || offset.value < 0.0 || segment < 0) raise(SheetError.InvalidElement(index, "opening"))
+            return OpeningElement(
+                base, ElementId(str(o, "host", where)), segment, offset, width, enum(o, "kind", OpeningKind.Door, where),
+                bool(o, "flipSide", false, where), bool(o, "flipHinge", false, where),
+                unitOf(dblOr(o, "x", 0.0, where), "$where.x"), unitOf(dblOr(o, "y", 0.0, where), "$where.y"),
+                unitOf(dblOr(o, "h", 0.0, where), "$where.h"), dblOr(o, "angle", 0.0, where),
+            )
         }
 
         private fun Raise<SheetError>.arc(o: JsonObject, base: ElementBase, index: Int, where: String): SceneElement {

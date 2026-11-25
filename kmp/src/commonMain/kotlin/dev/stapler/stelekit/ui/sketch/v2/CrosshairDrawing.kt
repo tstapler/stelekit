@@ -14,6 +14,7 @@ import dev.stapler.stelekit.sketch.v2.tools.InputEvent
 import dev.stapler.stelekit.sketch.v2.tools.InputType
 import dev.stapler.stelekit.sketch.v2.tools.LineTool
 import dev.stapler.stelekit.sketch.v2.tools.TextTool
+import dev.stapler.stelekit.sketch.v2.tools.WallTool
 import dev.stapler.stelekit.sketch.v2.tools.Tool
 import dev.stapler.stelekit.sketch.v2.tools.ToolCommand
 import dev.stapler.stelekit.sketch.v2.tools.ToolContext
@@ -94,6 +95,7 @@ class CrosshairDrawing private constructor(
     val midDraw: Boolean
         get() = when (tool) {
             is LineTool -> tool.placedPoints.isNotEmpty()
+            is WallTool -> tool.placedPoints.isNotEmpty()
             is ArrowTool -> tool.placedPoints.isNotEmpty()
             is ArcTool -> tool.placedPoints.isNotEmpty()
             else -> armed

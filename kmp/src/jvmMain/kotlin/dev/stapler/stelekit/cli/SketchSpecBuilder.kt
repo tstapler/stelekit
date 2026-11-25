@@ -40,6 +40,8 @@ import dev.stapler.stelekit.sketch.v2.scene.Layer
 import dev.stapler.stelekit.sketch.v2.scene.LayerId
 import dev.stapler.stelekit.sketch.v2.scene.LineElement
 import dev.stapler.stelekit.sketch.v2.scene.NameCounters
+import dev.stapler.stelekit.sketch.v2.scene.OpeningElement
+import dev.stapler.stelekit.sketch.v2.scene.OpeningKind
 import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
@@ -49,6 +51,9 @@ import dev.stapler.stelekit.sketch.v2.scene.StrokeStyle
 import dev.stapler.stelekit.sketch.v2.scene.TextAlign
 import dev.stapler.stelekit.sketch.v2.scene.TextElement
 import dev.stapler.stelekit.sketch.v2.scene.VerticalAlign
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
+import dev.stapler.stelekit.sketch.v2.scene.WallGeometry
+import dev.stapler.stelekit.sketch.v2.scene.WallJustification
 import dev.stapler.stelekit.sketch.v2.scene.reconcile
 import dev.stapler.stelekit.util.ContentHasher
 import kotlinx.serialization.json.JsonArray
@@ -140,6 +145,7 @@ internal class SketchSpecBuilder(private val root: JsonObject, private val baseD
 
         (root["shapes"] as? JsonArray)?.forEachIndexed { i, s -> shape(s, "shapes[$i]") }
         (root["lines"] as? JsonArray)?.forEachIndexed { i, s -> line(s, "lines[$i]") }
+        (root["walls"] as? JsonArray)?.forEachIndexed { i, s -> wallEntry(s, "walls[$i]") }
         (root["openings"] as? JsonArray)?.forEachIndexed { i, s -> opening(s, "openings[$i]") }
         (root["arrows"] as? JsonArray)?.forEachIndexed { i, s -> arrow(s, "arrows[$i]") }
         (root["labels"] as? JsonArray)?.forEachIndexed { i, s -> label(s, "labels[$i]") }
@@ -216,12 +222,15 @@ internal class SketchSpecBuilder(private val root: JsonObject, private val baseD
         val thickness = if (o["thickness"] != null) real.length(o["thickness"], "$path.thickness") ?: wall else defaultThickness(o)
         val role = (o["role"] as? JsonPrimitive)?.content
         if (role != null && role != "room" && role != "furniture") return issues.error("$path.role", "must be room or furniture, got \"$role\"")
+        val asWalls = (o["as"] as? JsonPrimitive)?.content
+        if (asWalls != null && asWalls != "walls") return issues.error("$path.as", "must be \"walls\" (a rect drawn as a closed room of wall elements), got \"$asWalls\"")
+        if (asWalls != null && (kind != "rect" || !plan)) return issues.error("$path.as", "\"walls\" needs a rect shape in plan mode, got a $kind in ${mode.wire} mode")
         val stroke = color(o["stroke"], "$path.stroke", if (furniture(o)) "#495057" else "#1e1e1e")
         val fill = color(o["fill"], "$path.fill", "transparent")
         val dashed = flag(o, "dashed", path)
         val base = base(id, LayerId.Default.value, ElementStyle(stroke, fill, FillStyle.Solid, thickness, if (dashed) StrokeStyle.Dashed else StrokeStyle.Solid, 0), named = true)
         val (x, y) = xy
-        val e: SceneElement = when (kind) {
+        val e: SceneElement = if (asWalls != null) roomWalls(id, x, y, w, h, thickness, stroke, if (o["fill"] == null) WALL_FILL else fill, dashed) else when (kind) {
             "ellipse" -> EllipseElement(base, u(x + w / 2), u(y + h / 2), u(w / 2), u(h / 2))
             "diamond" -> DiamondElement(base, u(x), u(y), u(w), u(h))
             else -> RectElement(base, u(x), u(y), u(w), u(h))
@@ -231,7 +240,8 @@ internal class SketchSpecBuilder(private val root: JsonObject, private val baseD
         (o["label"] as? JsonPrimitive)?.content?.let { text ->
             val fs = o["fontSize"]?.let { real.length(it, "$path.fontSize") } ?: defaultFont
             val inner = w - thickness
-            labelIn(id, text, x + w / 2, y + h / 2, fs, inner, h - thickness, path)
+            if (asWalls != null) labelFree("$id.label", text, x + w / 2, y + h / 2, fs, "center", "#1e1e1e", LayerId.Default.value, null)
+            else labelIn(id, text, x + w / 2, y + h / 2, fs, inner, h - thickness, path)
         }
     }
 
@@ -263,6 +273,94 @@ internal class SketchSpecBuilder(private val root: JsonObject, private val baseD
         return x to y
     }
 
+    // Walls
+
+    /** Walls this spec made, by id: what an opening can sit on. [sides] maps a compass side to its segment for a room made from a rect. */
+    private class WallHost(val wall: WallElement, val sides: Map<String, Int>)
+
+    private val wallHosts = LinkedHashMap<String, WallHost>()
+
+    /** A rect room as one closed wall whose drawn line is the rect's outline (clockwise on screen: north, east, south, west). */
+    private fun roomWalls(id: String, x: Double, y: Double, w: Double, h: Double, thickness: Double, stroke: String, fill: String, dashed: Boolean): WallElement {
+        val style = ElementStyle(stroke, fill, FillStyle.Solid, thin, if (dashed) StrokeStyle.Dashed else StrokeStyle.Solid, 0)
+        val wall = WallElement(
+            base(id, LayerId.Default.value, style, named = true),
+            listOf(pt(x to y), pt(x + w to y), pt(x + w to y + h), pt(x to y + h)), u(thickness), WallJustification.Centre, closed = true,
+        )
+        wallHosts[id] = WallHost(wall, mapOf("north" to 0, "east" to 1, "south" to 2, "west" to 3))
+        return wall
+    }
+
+    private fun wallEntry(el: JsonElement, path: String) {
+        val o = el as? JsonObject ?: return issues.error(path, "expected an object, got ${SpecReader.describeJson(el)}")
+        checkKeys(o, path, WALL_KEYS)
+        val id = idOf(o, path, "wall") ?: return
+        val closed = flag(o, "closed", path)
+        val pts = reader.points(o["points"], "$path.points", if (closed) 3 else 2) ?: return
+        val thickness = if (o["thickness"] != null) real.length(o["thickness"], "$path.thickness") ?: wall else wall
+        if (thickness <= 0.0) return issues.error("$path.thickness", "must be greater than zero")
+        val justify = (o["justify"] as? JsonPrimitive)?.content ?: "centre"
+        val just = WallJustification.entries.firstOrNull { it.name.lowercase() == justify } ?: return issues.error("$path.justify", "must be inside, centre or outside, got \"$justify\"")
+        val scenePoints = pts.map(::pt)
+        if (!WallGeometry.hasDistinctVertices(scenePoints, closed)) return issues.error("$path.points", "two consecutive points are the same place; a wall segment needs a direction")
+        val dashed = flag(o, "dashed", path)
+        val style = ElementStyle(
+            color(o["stroke"], "$path.stroke", "#1e1e1e"), color(o["fill"], "$path.fill", WALL_FILL), FillStyle.Solid, thin,
+            if (dashed) StrokeStyle.Dashed else StrokeStyle.Solid, 0,
+        )
+        val element = WallElement(base(id, LayerId.Default.value, style, named = true), scenePoints, u(thickness), just, closed)
+        add(element)
+        wallHosts[id] = WallHost(element, emptyMap())
+        (o["label"] as? JsonPrimitive)?.content?.let { text ->
+            val fs = o["fontSize"]?.let { real.length(it, "$path.fontSize") } ?: defaultFont
+            labelFree("$id.label", text, pts.map { it.first }.average(), pts.map { it.second }.average(), fs, "center", "#1e1e1e", LayerId.Default.value, null)
+        }
+    }
+
+    /** A door, window or plain opening hosted on a wall element (a room drawn `as: walls`, or an entry of `walls`). */
+    private fun hostedOpening(o: JsonObject, path: String, id: String, type: String, host: WallHost, onId: String) {
+        val wall = host.wall
+        val side = (o["wall"] as? JsonPrimitive)?.content
+        val segment: Int
+        val reversed: Boolean
+        if (host.sides.isNotEmpty()) {
+            segment = host.sides[side] ?: return issues.error("$path.wall", "must be north, south, east or west, got ${SpecReader.describeJson(o["wall"])}")
+            reversed = side == "south" || side == "west"
+        } else {
+            val n = (o["segment"] as? JsonPrimitive)?.content?.toIntOrNull() ?: 0
+            if (n < 0 || n >= wall.segmentCount) return issues.error("$path.segment", "wall \"$onId\" has ${wall.segmentCount} segments, numbered from 0; got ${SpecReader.describeJson(o["segment"])}")
+            segment = n
+            reversed = false
+        }
+        val offset = reader.length(o["offset"], "$path.offset") ?: return
+        val width = if (o["width"] == null) defaultOpeningWidth(type).also { issues.notes += "$path: width defaults to ${SketchLengths.feetInches(it)}" } else reader.length(o["width"], "$path.width") ?: return
+        if (width <= 0.0) return issues.error("$path.width", "must be greater than zero")
+        val seg = WallGeometry.segments(wall)[segment]
+        val start = if (reversed) seg.length - (offset + width) else offset
+        val fit = WallGeometry.fit(wall, segment, start, width)
+        val where = side?.let { "the $it wall" } ?: "segment $segment"
+        if (fit == null || abs(fit.first - start) > FIT_SLACK || abs(fit.second - width) > FIT_SLACK) {
+            val span = WallGeometry.span(wall, segment)
+            val free = span?.let { " between the joints (${SketchLengths.feetInches(it.length)} free of ${SketchLengths.feetInches(seg.length)})" } ?: ""
+            return issues.error(path, "the opening spans ${SketchLengths.feetInches(offset)} to ${SketchLengths.feetInches(offset + width)} but $where of \"$onId\" is only ${SketchLengths.feetInches(seg.length)} long$free")
+        }
+        val swing = (o["swing"] as? JsonPrimitive)?.content ?: if (host.sides.isNotEmpty()) "in" else "left"
+        val hinge = (o["hinge"] as? JsonPrimitive)?.content ?: "start"
+        val swings = if (host.sides.isNotEmpty()) setOf("in", "out") else setOf("left", "right")
+        if (swing !in swings) return issues.error("$path.swing", "must be ${swings.joinToString(" or ")}, got \"$swing\"")
+        if (hinge != "start" && hinge != "end") return issues.error("$path.hinge", "must be start (the low-offset end of the opening) or end, got \"$hinge\"")
+        // A clockwise room has its inside on the right of travel; "left" and "right" are of the segment's direction.
+        val flipSide = swing == "in" || swing == "right"
+        val flipHinge = (hinge == "end") != reversed
+        val kind = when (type) {
+            "door" -> OpeningKind.Door
+            "window" -> OpeningKind.Window
+            else -> OpeningKind.Opening
+        }
+        val style = ElementStyle("#1e1e1e", "transparent", FillStyle.Solid, thin, StrokeStyle.Solid, 0)
+        add(OpeningElement(base(id, LayerId.Default.value, style, named = true), ElementId(onId), segment, u(start), u(width), kind, flipSide, flipHinge))
+    }
+
     // Free lines and polygons
 
     private fun line(el: JsonElement, path: String) {
@@ -291,8 +389,10 @@ internal class SketchSpecBuilder(private val root: JsonObject, private val baseD
         checkKeys(o, path, OPENING_KEYS)
         val id = idOf(o, path, "opening") ?: return
         val type = (o["type"] as? JsonPrimitive)?.content
-        if (type != "door" && type != "window") return issues.error("$path.type", "must be \"door\" or \"window\", got ${SpecReader.describeJson(o["type"])}")
-        val onId = (o["on"] as? JsonPrimitive)?.content ?: return issues.error("$path.on", "name the shape (room) whose wall holds the opening")
+        if (type != "door" && type != "window" && type != "opening") return issues.error("$path.type", "must be \"door\", \"window\" or \"opening\", got ${SpecReader.describeJson(o["type"])}")
+        val onId = (o["on"] as? JsonPrimitive)?.content ?: return issues.error("$path.on", "name the shape (room) or wall whose wall holds the opening")
+        wallHosts[onId]?.let { return hostedOpening(o, path, id, type, it, onId) }
+        if (type == "opening") return issues.error("$path.type", "a plain opening needs wall elements: draw \"$onId\" with \"as\": \"walls\" or list it under \"walls\"")
         val room = placed[onId] ?: return issues.error("$path.on", "unknown shape \"$onId\"; list the room in shapes first")
         if (room.kind != "rect") return issues.error("$path.on", "\"$onId\" is a ${room.kind}; openings go on rect shapes")
         val side = (o["wall"] as? JsonPrimitive)?.content
@@ -630,6 +730,8 @@ internal class SketchSpecBuilder(private val root: JsonObject, private val baseD
 
     private companion object {
         const val CALIBRATION_WARN = 0.05
+        const val FIT_SLACK = 0.5
+        const val WALL_FILL = "#ced4da"
         const val DOOR_INCHES = 36.0
         const val WINDOW_INCHES = 48.0
         const val CHAR_WIDTH = 0.55
@@ -645,10 +747,11 @@ internal class SketchSpecBuilder(private val root: JsonObject, private val baseD
         const val DEFAULT_UNDERLAY_PERCENT = 50.0
         const val BYTES_PER_MB = 1_048_576L
         val TRANSPOSING_ORIENTATIONS = 5..8
-        val TOP_KEYS = setOf("spec", "mode", "title", "space", "calibration", "underlay", "wall", "sheetUuid", "shapes", "lines", "openings", "arrows", "labels", "dimensions")
-        val SHAPE_KEYS = setOf("id", "kind", "x", "y", "w", "h", "rightOf", "below", "gap", "label", "fontSize", "fill", "stroke", "thickness", "dashed", "role")
+        val TOP_KEYS = setOf("spec", "mode", "title", "space", "calibration", "underlay", "wall", "sheetUuid", "shapes", "lines", "walls", "openings", "arrows", "labels", "dimensions")
+        val SHAPE_KEYS = setOf("id", "kind", "x", "y", "w", "h", "rightOf", "below", "gap", "label", "fontSize", "fill", "stroke", "thickness", "dashed", "role", "as")
+        val WALL_KEYS = setOf("id", "points", "closed", "thickness", "justify", "stroke", "fill", "dashed", "label", "fontSize")
         val LINE_KEYS = setOf("id", "points", "closed", "thickness", "stroke", "fill", "dashed", "label", "fontSize")
-        val OPENING_KEYS = setOf("id", "type", "on", "wall", "offset", "width", "swing", "hinge")
+        val OPENING_KEYS = setOf("id", "type", "on", "wall", "segment", "offset", "width", "swing", "hinge")
         val ARROW_KEYS = setOf("id", "from", "to", "via", "points", "label", "head", "dashed", "stroke", "fontSize")
         val LABEL_KEYS = setOf("id", "text", "at", "size", "align", "color")
         val DIM_KEYS = setOf("id", "shape", "side", "from", "to", "offset", "text")

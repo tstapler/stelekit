@@ -72,6 +72,8 @@ object ElementNames {
         is FrameElement -> "frame"
         is PointElement -> "point"
         is ArcElement -> "arc"
+        is WallElement -> "wall"
+        is OpeningElement -> e.kind.name.lowercase()
     }
 
     /** The kind word: an ellipse with equal radii reads "Circle". */
@@ -87,6 +89,8 @@ object ElementNames {
         is FrameElement -> "Frame"
         is PointElement -> "Point"
         is ArcElement -> "Arc"
+        is WallElement -> "Wall"
+        is OpeningElement -> e.kind.name
     }
 
     /** The name shown everywhere: the user's name when set, else "Kind n"; an element with no ordinal reads as its kind. */

@@ -24,6 +24,8 @@ import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
 import dev.stapler.stelekit.sketch.v2.scene.TextAlign
 import dev.stapler.stelekit.sketch.v2.scene.TextElement
 import dev.stapler.stelekit.sketch.v2.scene.VerticalAlign
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
+import dev.stapler.stelekit.sketch.v2.scene.WallGeometry
 import dev.stapler.stelekit.units.LengthFormat
 import kotlin.math.hypot
 import kotlin.math.max
@@ -87,6 +89,8 @@ class ExportedDimension(
     val textRect: AnnotationRect,
     val strokeWidth: Double,
     val fontSize: Double,
+    /** [PlacedDimension.tag]: what tells one annotation of an element from another in ids and output. */
+    val tag: String = "",
 ) {
     val strokes: List<AnnotationSegment> get() = extensions + pieces + ticks
 
@@ -143,6 +147,7 @@ object DimensionExport {
     private fun typicalSpan(visible: List<SceneElement>): Double? {
         val spans = visible.mapNotNull { e ->
             when {
+                e is WallElement -> WallGeometry.segments(e).minOf { it.length }
                 Measurements.of(e).isEmpty() -> null
                 e is LineElement -> Measurements.lineLength(e)
                 else -> ElementFrame.of(e)?.let { min(it.width, it.height) }
@@ -164,6 +169,7 @@ object DimensionExport {
             textRect = rect,
             strokeWidth = LINE_DP / dpPerUnit,
             fontSize = DimensionAnnotationEngine.TEXT_SP / dpPerUnit,
+            tag = tag,
         )
     }
 
@@ -184,8 +190,8 @@ object DimensionExport {
     fun drawOps(dimensions: List<ExportedDimension>, ink: String): List<DrawOp> = dimensions.flatMap { d ->
         val segments = d.strokes.flatMap { listOf(PathSegment.MoveTo(it.a.x, it.a.y), PathSegment.LineTo(it.b.x, it.b.y)) }
         val opacity = d.alpha
-        listOf(
-            DrawOp.PathOp(d.elementId, segments, StrokePaint(ink, d.strokeWidth), null, opacity),
+        listOfNotNull(
+            if (segments.isEmpty()) null else DrawOp.PathOp(d.elementId, segments, StrokePaint(ink, d.strokeWidth), null, opacity),
             DrawOp.TextRun(
                 d.elementId,
                 listOf(TextLine(d.text, d.textRect.centreX, d.textRect.centreY - d.fontSize * TEXT_TOP_RATIO)),
@@ -212,7 +218,7 @@ object DimensionExport {
     }
 
     private fun elementsOf(d: ExportedDimension, layer: LayerId, ink: String): List<SceneElement> {
-        val id = "$ID_PREFIX${d.elementId.value}.${d.kind.name.lowercase()}"
+        val id = "$ID_PREFIX${d.elementId.value}.${d.kind.name.lowercase()}${if (d.tag.isEmpty()) "" else ".${d.tag}"}"
         val style = ElementStyle(strokeColor = ink, strokeWidth = d.strokeWidth, roughness = 0)
         val opacity = (d.alpha * FULL_OPACITY_PERCENT).toInt().coerceIn(0, FULL_OPACITY_PERCENT)
         fun base(suffix: String, s: ElementStyle = style) = ElementBase(ElementId("$id.$suffix"), layer, style = s, opacity = opacity)

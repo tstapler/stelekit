@@ -7,6 +7,9 @@ package dev.stapler.stelekit.sketch.v2.commands
 import arrow.core.Either
 import arrow.core.raise.either
 import dev.stapler.stelekit.sketch.v2.index.ElementBounds
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
+import dev.stapler.stelekit.sketch.v2.scene.WallJustification
+import dev.stapler.stelekit.sketch.v2.scene.OpeningElement
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.BoxElement
@@ -58,6 +61,7 @@ data class FlipElements(val ids: List<ElementId>, val horizontal: Boolean) : Com
         fun mirror(v: Double) = 2.0 * axis - v
         fun unit(v: Double) = sceneUnit(v, limits).bind()
         fun point(p: ScenePoint) = if (horizontal) ScenePoint(unit(mirror(p.x.value)), p.y) else ScenePoint(p.x, unit(mirror(p.y.value)))
+        val flippedIds = targets.mapTo(HashSet()) { it.id }
         var out = scene
         for (e in targets) {
             val flipped: SceneElement = when (e) {
@@ -75,6 +79,8 @@ data class FlipElements(val ids: List<ElementId>, val horizontal: Boolean) : Com
                 is ArrowElement -> e.copy(points = e.points.map(::point))
                 is FreedrawElement -> e.copy(points = e.points.map(::point))
                 is ArcElement -> flippedArc(e, horizontal, ::mirror, ::unit)
+                is WallElement -> e.copy(points = e.points.map(::point), justification = if (e.closed) e.justification else e.justification.mirrored())
+                is OpeningElement -> if (e.hostId in flippedIds) e.copy(flipSide = !e.flipSide) else e
             }
             if (flipped != e) out = out.replace(flipped.touched()).bind()
         }
@@ -97,4 +103,11 @@ data class FlipElements(val ids: List<ElementId>, val horizontal: Boolean) : Com
     private companion object {
         const val HALF = 2.0
     }
+}
+
+/** A mirror image puts the body of an open wall on the other side of the drawn line. */
+private fun WallJustification.mirrored(): WallJustification = when (this) {
+    WallJustification.Inside -> WallJustification.Outside
+    WallJustification.Outside -> WallJustification.Inside
+    WallJustification.Centre -> WallJustification.Centre
 }

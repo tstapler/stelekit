@@ -51,6 +51,7 @@ import dev.stapler.stelekit.sketch.v2.constraints.SheetKind
 import dev.stapler.stelekit.sketch.v2.index.Bounds
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
 import dev.stapler.stelekit.sketch.v2.tools.SelectTool
 import dev.stapler.stelekit.sketch.v2.tools.ToolId
 import dev.stapler.stelekit.sketch.v2.tools.TouchFloor
@@ -64,7 +65,9 @@ object DimensionAnnotationTags {
     const val LAYER = "sketch.annotations"
     const val LINES = "sketch.annotations.lines"
     const val PENDING_TOAST_KEY = "sketch.annotation.pending"
-    fun value(id: String, kind: PillKind) = "sketch.annotation.$id.${kind.name.lowercase()}"
+    fun value(id: String, kind: PillKind, tag: String = "") = "sketch.annotation.$id.${kind.name.lowercase()}${suffix(tag)}"
+
+    private fun suffix(tag: String) = tag.takeIf { it.isNotEmpty() }?.let { ".$it" }.orEmpty()
 }
 
 private const val VIEW_MARGIN_DP = 48.0
@@ -174,7 +177,7 @@ internal fun DimensionAnnotationsOverlay(controller: SketchEditorController, ext
         Box(Modifier.fillMaxSize().graphicsLayer { translationX = shiftX.toFloat() * density.density; translationY = shiftY.toFloat() * density.density }) {
             Canvas(Modifier.fillMaxSize().clearAndSetSemantics { }) { drawLines(annotations, ink, surface) }
             annotations.forEach { a ->
-                key(a.elementId.value, a.kind) { AnnotationValue(a, tappable && a.alpha >= DimensionAnnotationLayout.TAP_MIN_ALPHA, ink, chip) { select(controller, state, a, shift = false) } }
+                key(a.elementId.value, a.kind, a.tag) { AnnotationValue(a, tappable && a.alpha >= DimensionAnnotationLayout.TAP_MIN_ALPHA, ink, chip) { select(controller, state, a, shift = false) } }
             }
         }
     }
@@ -224,7 +227,7 @@ private fun select(controller: SketchEditorController, state: DimensionPillsStat
     val current = controller.ui.selection.map(::ElementId)
     val next = SelectTool.clickSelection(a.elementId, current, shift, clickCount = 1, scene = controller.doc.scene)
     controller.tools.select(next)
-    if (next == listOf(a.elementId)) state.open(element, a.kind) else state.close()
+    if (next == listOf(a.elementId) && element !is WallElement) state.open(element, a.kind) else state.close()
 }
 
 /** Each line is drawn twice: a wider [casing] stroke first, then the [ink] on it, so the line reads over a light or dark shape fill alike. */
@@ -236,7 +239,7 @@ private fun DrawScope.drawLines(annotations: List<DimensionAnnotation>, ink: Col
 private fun DrawScope.drawPass(annotations: List<DimensionAnnotation>, base: Color, alpha: Float, widthDp: Float) {
     val stroke = widthDp.dp.toPx()
     val tick = TICK_DP.dp.toPx()
-    for (a in annotations) {
+    for (a in annotations.filterNot { it.isArea }) {
         val color = base.copy(alpha = alpha * a.alpha.toFloat())
         val rect = Rect(a.textRect.left.dp.toPx(), a.textRect.top.dp.toPx(), a.textRect.right.dp.toPx(), a.textRect.bottom.dp.toPx())
         clipRect(rect.left, rect.top, rect.right, rect.bottom, ClipOp.Difference) {
@@ -267,7 +270,7 @@ private fun AnnotationValue(a: DimensionAnnotation, tappable: Boolean, ink: Colo
     val description = DimensionAnnotationLayout.description(a)
     val label = DimensionPillModel.label(a.kind)
     val base = Modifier.offset(a.tapRect.left.dp, a.tapRect.top.dp).size(a.tapRect.width.dp, a.tapRect.height.dp).alpha(a.alpha.toFloat())
-        .testTag(DimensionAnnotationTags.value(a.elementId.value, a.kind))
+        .testTag(DimensionAnnotationTags.value(a.elementId.value, a.kind, a.tag))
     val interactive = if (tappable) {
         base.semantics(mergeDescendants = true) {
             contentDescription = description

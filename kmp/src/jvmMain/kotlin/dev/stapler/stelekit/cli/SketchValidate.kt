@@ -11,7 +11,16 @@ import dev.stapler.stelekit.sketch.excalidraw.ImportSource
 import dev.stapler.stelekit.sketch.v2.codec.SheetCodecV2
 import dev.stapler.stelekit.sketch.v2.codec.SheetError
 import dev.stapler.stelekit.sketch.v2.importer.ExcalidrawImporter
+import arrow.core.getOrElse
 import dev.stapler.stelekit.sketch.v2.scene.Arrowhead
+import dev.stapler.stelekit.sketch.v2.scene.ElementBase
+import dev.stapler.stelekit.sketch.v2.scene.ElementId
+import dev.stapler.stelekit.sketch.v2.scene.OpeningKind
+import dev.stapler.stelekit.sketch.v2.scene.SceneUnit
+import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
+import dev.stapler.stelekit.sketch.v2.scene.WallGeometry
+import dev.stapler.stelekit.sketch.v2.scene.WallJustification
 import dev.stapler.stelekit.sketch.v2.scene.FillStyle
 import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
 import dev.stapler.stelekit.sketch.v2.scene.StrokeStyle
@@ -25,6 +34,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlin.math.abs
 
 /** What `validate` found. [errors] stop a sheet from loading; [warnings] load but are probably not what was meant. */
 internal class ValidationReport(val kind: String, val errors: List<String>, val warnings: List<String>, val info: List<String>) {
@@ -105,6 +115,7 @@ internal object SketchValidate {
         val ids = HashMap<String, Int>()
         elements.forEachIndexed { i, el -> elementChecks(i, el, lines.getOrNull(i), layerIds, ids, errors, warnings) }
         referenceChecks(elements, ids.keys, lines, warnings)
+        wallChecks(elements, lines, errors, warnings)
         constraintChecks(root, ids.keys, warnings)
         when (val decoded = SheetCodecV2.decode(bytes)) {
             is Either.Left -> {
@@ -222,6 +233,66 @@ internal object SketchValidate {
             (o["bound"] as? JsonArray)?.forEach { ref("bound element", ((it as? JsonObject)?.get("id") as? JsonPrimitive)?.content) }
         }
     }
+
+    /** Wall and opening rules the codec cannot say in one line: degenerate walls, and every opening's host reference and fit. */
+    private fun wallChecks(elements: JsonArray, lines: List<Int>, errors: MutableList<String>, warnings: MutableList<String>) {
+        fun obj(i: Int) = elements.getOrNull(i) as? JsonObject
+        fun idOf(o: JsonObject) = (o["id"] as? JsonPrimitive)?.content
+        fun whoAt(i: Int, o: JsonObject) = "elements[$i] (id \"${idOf(o)}\")${at(lines.getOrNull(i))}"
+        val walls = HashMap<String, WallElement>()
+        elements.forEachIndexed { i, el ->
+            val o = el as? JsonObject ?: return@forEachIndexed
+            if ((o["type"] as? JsonPrimitive)?.content != "wall") return@forEachIndexed
+            val who = whoAt(i, o)
+            val pts = (o["pts"] as? JsonArray)?.mapNotNull { p -> (p as? JsonArray)?.let { a -> a.mapNotNull { n -> (n as? JsonPrimitive)?.content?.toDoubleOrNull() }.takeIf { it.size == 2 } } }.orEmpty()
+            val closed = (o["closed"] as? JsonPrimitive)?.content == "true"
+            val thickness = (o["t"] as? JsonPrimitive)?.content?.toDoubleOrNull()
+            enumCheck(o, "just", WallJustification.entries.map { it.name }, who, errors)
+            if (thickness != null && thickness <= 0.0) errors += "$who: \"t\" must be greater than zero"
+            if (pts.size < (if (closed) WallElement.MIN_CLOSED_POINTS else WallElement.MIN_POINTS)) {
+                errors += "$who: a ${if (closed) "closed " else ""}wall needs at least ${if (closed) WallElement.MIN_CLOSED_POINTS else WallElement.MIN_POINTS} points in \"pts\", got ${pts.size}"
+                return@forEachIndexed
+            }
+            val scenePoints = pts.map { (x, y) -> ScenePoint(SceneUnit.of(x).getOrElse { SceneUnit.ZERO }, SceneUnit.of(y).getOrElse { SceneUnit.ZERO }) }
+            if (!WallGeometry.hasDistinctVertices(scenePoints, closed)) {
+                errors += "$who: two consecutive points of \"pts\" are the same place; a segment needs a direction"
+                return@forEachIndexed
+            }
+            val id = idOf(o) ?: return@forEachIndexed
+            val just = WallJustification.entries.firstOrNull { it.name == (o["just"] as? JsonPrimitive)?.content } ?: WallJustification.Centre
+            walls[id] = WallElement(ElementBase(ElementId(id)), scenePoints, SceneUnit.of(thickness ?: 1.0).getOrElse { SceneUnit.ZERO }.let { if (it.value > 0.0) it else SceneUnit.ofInt(1) }, just, closed)
+        }
+        elements.indices.forEach { i ->
+            val o = obj(i) ?: return@forEach
+            if ((o["type"] as? JsonPrimitive)?.content != "opening") return@forEach
+            val who = whoAt(i, o)
+            enumCheck(o, "kind", OpeningKind.entries.map { it.name }, who, errors)
+            val width = (o["w"] as? JsonPrimitive)?.content?.toDoubleOrNull()
+            val offset = (o["off"] as? JsonPrimitive)?.content?.toDoubleOrNull()
+            if (width != null && width <= 0.0) errors += "$who: \"w\" must be greater than zero"
+            if (offset != null && offset < 0.0) errors += "$who: \"off\" must not be negative"
+            val hostId = (o["host"] as? JsonPrimitive)?.content ?: return@forEach
+            val host = walls[hostId]
+            if (host == null) {
+                val exists = elements.any { (it as? JsonObject)?.let(::idOf) == hostId }
+                warnings += "$who: host \"$hostId\" ${if (exists) "is not a (valid) wall" else "does not exist"}; the opening is kept but draws nothing until it names a wall"
+                return@forEach
+            }
+            val segment = (o["seg"] as? JsonPrimitive)?.content?.toIntOrNull() ?: 0
+            if (segment < 0 || segment >= host.segmentCount) {
+                warnings += "$who: \"seg\" $segment is not a segment of wall \"$hostId\" (it has ${host.segmentCount}, numbered from 0); the opening draws nothing"
+                return@forEach
+            }
+            if (width == null || offset == null || width <= 0.0 || offset < 0.0) return@forEach
+            val fit = WallGeometry.fit(host, segment, offset, width)
+            if (fit == null) warnings += "$who: segment $segment of wall \"$hostId\" is too short for any opening; it draws nothing"
+            else if (abs(fit.first - offset) > FIT_EPSILON || abs(fit.second - width) > FIT_EPSILON) {
+                warnings += "$who: does not fit inside segment $segment of wall \"$hostId\"; on load it becomes offset ${SketchLengths.tidy(fit.first)}, width ${SketchLengths.tidy(fit.second)} (scene units)"
+            }
+        }
+    }
+
+    private const val FIT_EPSILON = 1e-6
 
     private fun constraintChecks(root: JsonObject, ids: Set<String>, warnings: MutableList<String>) {
         (root["constraints"] as? JsonArray)?.forEachIndexed { i, c ->
@@ -345,6 +416,11 @@ internal object SketchValidate {
         ),
         "image" to box(listOf("fileId" to Kind.Text, "fx" to Kind.Bool, "fy" to Kind.Bool, "crop" to Kind.Object)),
         "point" to TypeSpec(listOf("x" to Kind.Number, "y" to Kind.Number), emptyList()),
+        "wall" to TypeSpec(listOf("pts" to Kind.Points, "t" to Kind.Number), listOf("just" to Kind.Text, "closed" to Kind.Bool)),
+        "opening" to TypeSpec(
+            listOf("host" to Kind.Text, "off" to Kind.Number, "w" to Kind.Number),
+            listOf("seg" to Kind.Number, "kind" to Kind.Text, "flipSide" to Kind.Bool, "flipHinge" to Kind.Bool, "x" to Kind.Number, "y" to Kind.Number, "h" to Kind.Number, "angle" to Kind.Number),
+        ),
         "arc" to TypeSpec(
             listOf("cx" to Kind.Number, "cy" to Kind.Number, "r" to Kind.Number, "a0" to Kind.Number, "a1" to Kind.Number),
             emptyList(),

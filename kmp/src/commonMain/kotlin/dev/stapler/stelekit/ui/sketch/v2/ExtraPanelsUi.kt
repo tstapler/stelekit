@@ -47,6 +47,7 @@ object ExtraPanelTags {
     const val LIBRARY = "sketch.host.library"
     const val LIBRARY_SAVE = "sketch.host.library.save"
     const val LIBRARY_EMPTY = "sketch.host.library.empty"
+    const val LIBRARY_STARTER = "sketch.host.library.starter"
     const val CONSTRAIN_MENU = "sketch.host.constrainmenu"
     fun align(edge: AlignEdge) = "sketch.host.align.${AlignBaseline.alignIds.getValue(edge)}"
     fun distribute(axis: DistributeAxis) = "sketch.host.distribute.${AlignBaseline.distributeIds.getValue(axis)}"
@@ -159,6 +160,14 @@ internal fun LibraryPanel(controller: SketchEditorController, extras: EditorExtr
                 Text(SketchHostStrings.Library.itemDescription(name, item.elements.size), Modifier.weight(1f))
                 PanelButton(SketchHostStrings.Library.INSERT, ExtraPanelTags.libraryInsert(item.id)) { extras.library.insert(item.id) }
                 PanelButton(SketchHostStrings.Library.DELETE, ExtraPanelTags.libraryDelete(item.id)) { extras.library.delete(item.id) }
+            }
+        }
+        Text(SketchHostStrings.Library.STARTER_TITLE, Modifier.testTag(ExtraPanelTags.LIBRARY_STARTER))
+        for (item in library.starterItems) {
+            val name = item.name ?: item.id
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(GAP_DP.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(name, Modifier.weight(1f))
+                PanelButton(SketchHostStrings.Library.INSERT, ExtraPanelTags.libraryInsert(item.id)) { extras.library.insert(item.id) }
             }
         }
     }

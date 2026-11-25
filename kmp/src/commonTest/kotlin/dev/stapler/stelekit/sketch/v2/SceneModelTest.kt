@@ -17,7 +17,10 @@ import dev.stapler.stelekit.sketch.v2.scene.FreedrawElement
 import dev.stapler.stelekit.sketch.v2.scene.ImageElement
 import dev.stapler.stelekit.sketch.v2.scene.LineElement
 import dev.stapler.stelekit.sketch.v2.scene.PersistentHashTrie
+import dev.stapler.stelekit.sketch.v2.scene.OpeningElement
 import dev.stapler.stelekit.sketch.v2.scene.PointElement
+import dev.stapler.stelekit.sketch.v2.scene.ScenePoint
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
 import dev.stapler.stelekit.sketch.v2.scene.RectElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.SceneLimits
@@ -120,6 +123,8 @@ class SceneModelTest {
             TextElement(base("t"), u(0), u(0), u(1), u(1), text = "hi"), ImageElement(base("i"), u(0), u(0), u(1), u(1), fileId = null),
             FrameElement(base("fr"), u(0), u(0), u(1), u(1)), PointElement(base("p"), u(0), u(0)),
             ArcElement(base("arc"), u(0), u(0), u(1), 0.0, 1.0),
+            WallElement(base("w"), listOf(ScenePoint(u(0), u(0)), ScenePoint(u(10), u(0))), u(2)),
+            OpeningElement(base("o"), ElementId("w"), 0, u(1), u(3)),
         )
         val names = all.map {
             when (it) {
@@ -134,6 +139,8 @@ class SceneModelTest {
                 is FrameElement -> "frame"
                 is PointElement -> "point"
                 is ArcElement -> "arc"
+                is WallElement -> "wall"
+                is OpeningElement -> "opening"
             }
         }
         assertEquals(all.size, names.toSet().size)

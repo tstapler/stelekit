@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.ui.sketch.v2
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
@@ -14,6 +15,9 @@ import dev.stapler.stelekit.sketch.v2.tools.AddFrameCommand
 import dev.stapler.stelekit.sketch.v2.tools.InputEvent
 import dev.stapler.stelekit.sketch.v2.tools.InputType
 import dev.stapler.stelekit.sketch.v2.tools.LinePointEditTool
+import dev.stapler.stelekit.sketch.v2.tools.PlanMode
+import dev.stapler.stelekit.sketch.v2.tools.PlanTools
+import dev.stapler.stelekit.sketch.v2.tools.WallTool
 import dev.stapler.stelekit.sketch.v2.tools.SelectTool
 import dev.stapler.stelekit.sketch.v2.tools.SelectionAware
 import dev.stapler.stelekit.sketch.v2.tools.TextEditSession
@@ -63,6 +67,14 @@ class ToolSession(
     /** The shape whose interior holds a point, for a press that hits no outline (a transparent shape is hit on its edge only); null by default. */
     var interiorAt: (ScenePoint) -> ElementId? = { null }
 
+    /** What the Line tool draws now: plain lines, walls, or a door, window or opening on a wall (the chips of a floor plan pick it). */
+    var planMode: PlanMode by mutableStateOf(PlanMode.Line)
+        private set
+
+    /** How many vertices the wall chain being drawn holds (0 when none, or another mode is active); observable, so the chain's chips follow it. */
+    var wallVertexCount: Int by mutableIntStateOf(0)
+        private set
+
     private val doubleClicks = DoubleClickDetector()
     private var tool: Tool = ports.tools.create(ToolId.Select) ?: error("the tool registry has no Select tool")
     private var overrideTool: Tool? = null
@@ -99,6 +111,32 @@ class ToolSession(
     fun onWheel(wheel: WheelInput) {
         syncInput()
         onPointerActions(adapter.onWheel(wheel))
+    }
+
+    /** Switches the Line tool to [mode]; an unfinished chain or gesture is dropped. */
+    fun choosePlanMode(mode: PlanMode) {
+        ui.chooseTool(ToolId.Line)
+        planMode = mode
+        tool = PlanTools.create(mode)
+        wallVertexCount = 0
+        preview = null
+        textSession = null
+        configureAdapter()
+    }
+
+    /** The Done chip: finishes the wall chain as an open wall. */
+    fun finishWalls() {
+        (tool as? WallTool)?.let { take(it.done(context(), notifier.now())) }
+    }
+
+    /** The Close room chip: joins the chain's last vertex back to its first. */
+    fun closeRoom() {
+        (tool as? WallTool)?.let { take(it.close(context(), notifier.now())) }
+    }
+
+    /** The typed length of the next wall, in scene units (the Length keypad). */
+    fun typeWallLength(units: Double) {
+        (tool as? WallTool)?.let { take(it.withLength(units, context(), notifier.now())) }
     }
 
     /** Picks [id] from the strip, a key or the overflow menu. */
@@ -175,6 +213,8 @@ class ToolSession(
     /** Makes [tool] follow `ui.activeTool` (the strip writes it directly) and the adapter follow the tool. */
     private fun syncTool() {
         if (tool.id != ui.activeTool) {
+            planMode = PlanMode.Line
+            wallVertexCount = 0
             tool = freshTool(ui.activeTool)
             preview = null
             textSession = null
@@ -217,6 +257,7 @@ class ToolSession(
             tool = it
             configureAdapter()
         }
+        wallVertexCount = (tool as? WallTool)?.placedPoints?.size ?: 0
         preview = result.preview
         readSelection()
         textSession = (tool as? TextTool.Editing)?.session

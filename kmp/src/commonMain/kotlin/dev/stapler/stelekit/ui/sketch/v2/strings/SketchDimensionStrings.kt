@@ -33,6 +33,9 @@ object SketchDimensionStrings {
         fun description(label: String, element: String, spoken: String) = "$label of $element: $spoken"
 
         fun editAction(label: String) = "Edit $label"
+
+        /** The floor-area label of a closed room, read as "Area of Wall 1: 123.4 sq ft". */
+        fun areaDescription(element: String, area: String) = "Area of $element: $area"
     }
 
     /** A length in words, for a screen reader. */

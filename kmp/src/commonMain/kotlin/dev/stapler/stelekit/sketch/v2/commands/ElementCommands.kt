@@ -11,6 +11,9 @@ import arrow.core.right
 import dev.stapler.stelekit.sketch.v2.binding.BindingEngine
 import dev.stapler.stelekit.sketch.v2.binding.followBoundArrows
 import dev.stapler.stelekit.sketch.v2.constraints.withoutOrphans
+import dev.stapler.stelekit.sketch.v2.scene.WallGeometry
+import dev.stapler.stelekit.sketch.v2.scene.WallElement
+import dev.stapler.stelekit.sketch.v2.scene.OpeningElement
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
 import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import dev.stapler.stelekit.sketch.v2.scene.Binding
@@ -110,12 +113,14 @@ private fun withBox(e: BoxElement, x: SceneUnit, y: SceneUnit, w: SceneUnit, h: 
     is TextElement -> e.copy(x = x, y = y, width = w, height = h)
     is ImageElement -> e.copy(x = x, y = y, width = w, height = h)
     is FrameElement -> e.copy(x = x, y = y, width = w, height = h)
+    is OpeningElement -> e
 }
 
 private fun pointsOf(e: SceneElement): List<ScenePoint>? = when (e) {
     is LineElement -> e.points
     is ArrowElement -> e.points
     is FreedrawElement -> e.points
+    is WallElement -> e.points
     else -> null
 }
 
@@ -123,6 +128,7 @@ private fun withPoints(e: SceneElement, points: List<ScenePoint>): SceneElement 
     is LineElement -> e.copy(points = points)
     is ArrowElement -> e.copy(points = points)
     is FreedrawElement -> e.copy(points = points)
+    is WallElement -> if (WallGeometry.hasDistinctVertices(points, e.closed)) e.copy(points = points) else e
     else -> e
 }
 
@@ -137,6 +143,7 @@ internal fun SceneElement.shifted(dx: Double, dy: Double, limits: SceneLimits): 
         is LineElement -> e.copy(points = e.points.map(::p))
         is ArrowElement -> e.copy(points = e.points.map(::p))
         is FreedrawElement -> e.copy(points = e.points.map(::p))
+        is WallElement -> e.copy(points = e.points.map(::p))
     }
 }
 
@@ -160,7 +167,11 @@ data class MoveElements(val ids: List<ElementId>, val dx: Double, val dy: Double
         val scene = doc.scene
         var out = scene
         val moved = moveSet(scene, ids).bind()
-        for (id in moved) out = out.replace(scene.element(id).bind().shifted(dx, dy, scene.limits).bind().touched()).bind()
+        for (id in moved) {
+            val e = scene.element(id).bind()
+            val next = if (e is OpeningElement && e.hostId !in moved) e.slidAlong(scene, dx, dy).bind() else e.shifted(dx, dy, scene.limits).bind()
+            out = out.replace(next.touched()).bind()
+        }
         val freed = BindingEngine.unbindStranded(out, moved).bind()
         val followed = freed.scene.followBoundArrows(moved).bind()
         finish(doc, followed.scene, moved + freed.changed + followed.arrows)
@@ -185,7 +196,9 @@ internal fun SketchDocumentV2.moveEach(deltas: Map<ElementId, Pair<Double, Doubl
     var out = scene
     for ((id, d) in effective) {
         if (d.first == 0.0 && d.second == 0.0) continue
-        out = out.replace(scene.element(id).bind().shifted(d.first, d.second, scene.limits).bind().touched()).bind()
+        val e = scene.element(id).bind()
+        val next = if (e is OpeningElement && e.hostId !in effective) e.slidAlong(scene, d.first, d.second).bind() else e.shifted(d.first, d.second, scene.limits).bind()
+        out = out.replace(next.touched()).bind()
     }
     val moved = effective.keys
     val freed = BindingEngine.unbindStranded(out, moved).bind()
@@ -215,7 +228,7 @@ data class ResizeElement(val id: ElementId, val x: Double, val y: Double, val wi
                     rx = sceneUnit(width / HALF_DIVISOR, limits).bind(), ry = sceneUnit(height / HALF_DIVISOR, limits).bind(),
                 )
             }
-            is LineElement, is ArrowElement, is FreedrawElement -> withPoints(e, fitPoints(pointsOf(e).orEmpty(), x, y, width, height, limits).bind())
+            is LineElement, is ArrowElement, is FreedrawElement, is WallElement -> withPoints(e, fitPoints(pointsOf(e).orEmpty(), x, y, width, height, limits).bind())
             is PointElement, is ArcElement -> raise(CommandError.Unsupported(id.value, "resize"))
         }
         val resized = if (next == e) scene else scene.replace(next.touched()).bind()
@@ -250,7 +263,7 @@ data class RotateElement(val id: ElementId, val angle: Double) : Command {
             is ImageElement -> e.copy(angle = angle)
             is FrameElement -> e.copy(angle = angle)
             is EllipseElement -> e.copy(angle = angle)
-            is LineElement, is ArrowElement, is FreedrawElement, is PointElement, is ArcElement -> raise(CommandError.Unsupported(id.value, "rotate"))
+            is LineElement, is ArrowElement, is FreedrawElement, is PointElement, is ArcElement, is WallElement, is OpeningElement -> raise(CommandError.Unsupported(id.value, "rotate"))
         }
         val rotated = if (next == e) doc.scene else doc.scene.replace(next.touched()).bind()
         val followed = rotated.followBoundArrows(setOf(id)).bind()
@@ -265,6 +278,7 @@ data class DeleteElements(val ids: List<ElementId>) : Command {
         val doomed = LinkedHashSet<ElementId>()
         scene.requireAll(ids).bind().forEach { doomed += it.id }
         scene.elementsInOrder.filter { it is TextElement && it.containerId in doomed }.forEach { doomed += it.id }
+        scene.elementsInOrder.filter { it is OpeningElement && it.hostId in doomed }.forEach { doomed += it.id }
         var out = scene
         for (id in doomed) out = out.remove(id).bind()
         finish(doc, out, doomed)
@@ -415,6 +429,7 @@ private fun remapped(e: SceneElement, ids: Map<ElementId, ElementId>, groups: Ma
         is EllipseElement -> moved.copy(boundElements = bound(moved.boundElements))
         is ArrowElement -> moved.copy(startBinding = binding(moved.startBinding), endBinding = binding(moved.endBinding))
         is TextElement -> moved.copy(containerId = moved.containerId?.let { id(it) })
+        is OpeningElement -> moved.copy(hostId = id(moved.hostId) ?: moved.hostId)
         else -> moved
     }
 }
