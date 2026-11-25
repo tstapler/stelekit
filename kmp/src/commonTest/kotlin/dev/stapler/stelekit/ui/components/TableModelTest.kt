@@ -106,4 +106,33 @@ class TableModelTest {
             }
         }
     }
+
+    // Flags are off and the sheet is not wired, so existing content must render exactly as before TableParser.
+    @Test
+    fun linesBeforeTheTable_should_RenderAsLegacyHeaderRow_When_ContentHasAPrefix() {
+        val t = parseTableContent("intro text\n| A | B |\n|---|---|\n| 1 | 2 |")
+        assertEquals(listOf("intro text"), t.headers)
+        assertEquals(listOf(listOf("---"), listOf("1")), t.rows)
+    }
+
+    @Test
+    fun linesAfterTheTable_should_RenderAsLegacyBodyRow_When_ContentHasASuffix() {
+        val t = parseTableContent("| A | B |\n|---|---|\n| 1 | 2 |\ntrailing text")
+        assertEquals(listOf("A", "B"), t.headers)
+        assertEquals(listOf(listOf("1", "2"), listOf("trailing text", "")), t.rows)
+    }
+
+    @Test
+    fun idPropertyLine_should_RenderAsLegacyBodyRow_When_ItFollowsTheTable() {
+        val t = parseTableContent("| A | B |\n|---|---|\n| 1 | 2 |\nid:: 6a1b2c3d-0000-4000-8000-000000000001")
+        assertEquals(2, t.rows.size)
+        assertEquals("id:: 6a1b2c3d-0000-4000-8000-000000000001", t.rows[1][0])
+    }
+
+    @Test
+    fun trailingNewlineAndBlankLines_should_NotChangeTheRender_When_NoNonBlankLineSurroundsTheTable() {
+        val plain = parseTableContent("| A | B |\n|---|---|\n| 1 | 2 |")
+        assertEquals(plain, parseTableContent("| A | B |\n|---|---|\n| 1 | 2 |\n"))
+        assertEquals(plain, parseTableContent("\n| A | B |\n|---|---|\n| 1 | 2 |\n\n"))
+    }
 }

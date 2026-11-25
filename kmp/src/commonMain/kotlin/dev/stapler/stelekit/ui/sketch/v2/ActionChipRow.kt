@@ -42,6 +42,9 @@ data class ActionChip(
     val onClick: () -> Unit,
 )
 
+/** Chips are overlay controls outside the chrome budget, so they take the 48 dp accessibility target rather than the 44 dp strip floor (E12). */
+internal const val CHIP_TARGET_DP = 48
+
 object ActionChipTags {
     const val CHEVRON = "sketch.chips.chevron"
 }
@@ -61,7 +64,7 @@ fun ActionChipRow(chips: List<ActionChip>, modifier: Modifier = Modifier) {
             for (chip in chips) {
                 Box(
                     Modifier.testTag(chip.tag)
-                        .defaultMinSize(minWidth = chip.minWidthDp.dp, minHeight = ChromeBudget.TOOL_TARGET_DP.dp)
+                        .defaultMinSize(minWidth = chip.minWidthDp.dp, minHeight = CHIP_TARGET_DP.dp)
                         .clip(RoundedCornerShape(CHIP_RADIUS_DP.dp))
                         .background(MaterialTheme.colorScheme.secondaryContainer)
                         .clickable(onClick = chip.onClick)
@@ -79,7 +82,7 @@ fun ActionChipRow(chips: List<ActionChip>, modifier: Modifier = Modifier) {
         }
         if (scroll.canScrollForward) {
             Box(
-                Modifier.size(ChromeBudget.TOOL_TARGET_DP.dp).testTag(ActionChipTags.CHEVRON)
+                Modifier.size(CHIP_TARGET_DP.dp).testTag(ActionChipTags.CHEVRON)
                     .clickable { scope.launch { scroll.scrollTo(scroll.maxValue) } }
                     .semantics { contentDescription = SketchStrings.Chrome.SCROLL_CHIPS; role = Role.Button },
                 contentAlignment = Alignment.Center,

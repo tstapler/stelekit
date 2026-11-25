@@ -15,7 +15,9 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.SemanticsPropertyReceiver
 import androidx.compose.ui.semantics.contentDescription
@@ -112,7 +114,7 @@ object SceneSemantics {
         return eligible.filter { it.id in picked }
     }
 
-    private fun isNode(e: SceneElement, layers: Map<LayerId, Layer>): Boolean =
+    internal fun isNode(e: SceneElement, layers: Map<LayerId, Layer>): Boolean =
         (layers[e.base.layerId] ?: Layer.DefaultLayer).visible && !(e is TextElement && e.containerId != null)
 
     private fun isLocked(e: SceneElement, layers: Map<LayerId, Layer>): Boolean = e.base.locked || (layers[e.base.layerId]?.locked == true)
@@ -218,9 +220,11 @@ fun SceneSemanticsLayer(
     modifier: Modifier = Modifier,
     requesters: Map<ElementId, FocusRequester> = emptyMap(),
     onFocusElement: (ElementId) -> Unit = {},
+    /** TalkBack's action menu on the canvas node: the gesture-free routes (outline, add shape at coordinates). */
+    canvasActions: List<CustomAccessibilityAction> = emptyList(),
 ) {
     val density = LocalDensity.current
-    Box(modifier.fillMaxSize().semantics { canvasApplicationRole = true; contentDescription = SketchStrings.Semantics.CANVAS }) {
+    Box(modifier.fillMaxSize().semantics { canvasApplicationRole = true; contentDescription = SketchStrings.Semantics.CANVAS; customActions = canvasActions }) {
         tree.nodes.forEach { node ->
             val left = (node.bounds.minX * viewport.zoom + viewport.panX).toInt()
             val top = (node.bounds.minY * viewport.zoom + viewport.panY).toInt()

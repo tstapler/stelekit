@@ -296,6 +296,7 @@ import org.junit.runners.Suite
     SketchCanvasDrawTest::class,
     dev.stapler.stelekit.ui.sketch.v2.InputSpikeTest::class,
     dev.stapler.stelekit.ui.sketch.v2.PointerAdapterDesktopTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.OutlineDialogsDesktopTest::class,
     dev.stapler.stelekit.sketch.v2.TextMetricsDesktopEntryPointTest::class,
     dev.stapler.stelekit.sketch.v2.SketchStorageDesktopEntryPointTest::class,
     dev.stapler.stelekit.ui.sketch.SketchPreviewRenderTest::class,
@@ -428,6 +429,7 @@ import org.junit.runners.Suite
     GitSyncServiceRegistryBalanceTest::class,
     JvmPlatformCapsRootTest::class,
     dev.stapler.stelekit.ui.settings.ScheduledSyncRadioKeyboardTest::class,
+    dev.stapler.stelekit.ui.state.BlockStateManagerEmissionTraceTest::class,
     // Gradle-only sketch v2 classes (kmp/src/jvmTest/kotlin/BUILD.bazel excludes each: the commonTest fixtures they drive, or Compose
     // Multiplatform's generated `Res`, are not on this target's classpath). They run under `./gradlew :kmp:jvmTest`; they are named here
     // so TestRegistrationAuditTest can tell an exclusion from an unregistered class: ArchitectureScenarioTest, ToolsEndToEndTest,
