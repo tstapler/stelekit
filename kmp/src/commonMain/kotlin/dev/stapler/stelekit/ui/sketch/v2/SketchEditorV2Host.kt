@@ -165,7 +165,8 @@ fun SketchEditorV2Host(
         pointer = pointer,
         status = ToolStripStatus(controller.canUndo, controller.canRedo, state.selection.size),
         actions = ToolStripActions(onUndo = controller::undo, onRedo = controller::redo, onDelete = { controller.keys.run(KeyAction.Delete) }, onConstrain = { controller.overlay = EditorOverlay.ConstrainMenu }),
-        title = session.title,
+        title = sheetTitle(controller, session),
+        onRename = if (controller.readOnly) null else ({ controller.overlay = EditorOverlay.RenameSheet }),
         hasMultipleLayers = controller.doc.scene.layers.size > 1,
         onFit = { state.viewport = controller.view.fit() },
         banner = banner,
@@ -244,7 +245,7 @@ fun SketchEditorV2Host(
                 largeScene.hardCap?.let { HardCapNotice(it, largeScene::answer, Modifier.align(Alignment.TopCenter)) }
             },
         )
-        HostOverlays(controller, extras, tours, singleKey) { singleKey = it }
+        HostOverlays(controller, extras, tours, singleKey, sheetTitle(controller, session)) { singleKey = it }
         if (leave.prompting) {
             LeaveSketchPrompt(
                 onRetry = leave::retry,
@@ -460,7 +461,7 @@ private fun Modifier.wheelInput(controller: SketchEditorController): Modifier = 
 }
 
 @Composable
-private fun HostOverlays(controller: SketchEditorController, extras: EditorExtras, tours: TourController?, singleKey: Boolean, onSingleKey: (Boolean) -> Unit) {
+private fun HostOverlays(controller: SketchEditorController, extras: EditorExtras, tours: TourController?, singleKey: Boolean, title: String, onSingleKey: (Boolean) -> Unit) {
     ExtrasDialogs(extras)
     when (controller.overlay) {
         EditorOverlay.Shortcuts -> ShortcutsSheet(
@@ -482,9 +483,13 @@ private fun HostOverlays(controller: SketchEditorController, extras: EditorExtra
         EditorOverlay.HelpSearch -> GuideDialog(controller, extras, tours)
         EditorOverlay.WallLength -> WallLengthDialog(controller, extras)
         EditorOverlay.Rotate -> RotateDialog(controller)
+        EditorOverlay.RenameSheet -> RenameSheetDialog(controller, title)
         null -> Unit
     }
 }
+
+/** The header's name: the one the user gave the sheet, else the sketch's. */
+internal fun sheetTitle(controller: SketchEditorController, session: SketchEditorSession): String = controller.sheetName ?: session.title
 
 /** Shown while the sheet loads or when the host cannot open it. */
 @Composable

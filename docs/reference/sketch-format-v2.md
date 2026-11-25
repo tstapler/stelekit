@@ -75,7 +75,7 @@ Top level (all keys but `schema` and `sheetUuid` optional):
 | `elements` | list, **paint order**: later entries draw over earlier ones (within a layer by `z`, then array order) |
 | `layers` | list of `{id, name, visible, locked, opacity 0..1, order}`; layer `default` always exists; lower `order` paints first; hidden layers are not drawn or exported |
 | `constraints` | list of solver constraints (section 6) |
-| `extras` | free JSON kept as written. Known keys: `sheetKind: "technical"` (marks a real-world sheet: constraints on by default), `dimensionsOn: true|false` (optional; whether the sheet shows dimension annotations, see section 6; absent until someone chooses, so existing sheets keep their exact bytes), `sheetSetup: {...}` (optional print setup, section 6b), `agent: {mode, title, spec}` written by `build` |
+| `extras` | free JSON kept as written. Known keys: `sheetKind: "technical"` (marks a real-world sheet: constraints on by default), `dimensionsOn: true|false` (optional; whether the sheet shows dimension annotations, see section 6; absent until someone chooses, so existing sheets keep their exact bytes), `sheetSetup: {...}` (optional print setup, section 6b), `sheetName: "..."` (optional; the name the user gave the sheet, shown in the editor header, `describe` and global search; one line, at most `SceneLimits.maxNameChars` (80) characters; absent until someone names the sheet, so existing sheets keep their exact bytes; not an undo step; a three-way merge picks it per key like the other sheet extras), `agent: {mode, title, spec}` written by `build` |
 | `nameCounters` | `{kind: highest ordinal}` |
 
 Every element has `id` (unique, non-empty) and `type`, plus optional base fields:

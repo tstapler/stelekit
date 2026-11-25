@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -32,7 +33,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -66,6 +69,8 @@ class TopBarActions(
     val onSelectionAction: (SelectionAction) -> Unit = {},
     /** Opens Help and search; null hides the button. */
     val onHelp: (() -> Unit)? = null,
+    /** Opens the rename dialog when the name is tapped; null leaves the name as plain text (a read-only sheet). */
+    val onRename: (() -> Unit)? = null,
 )
 
 /**
@@ -97,13 +102,7 @@ fun TopBar(
                 contentAlignment = Alignment.Center,
             ) { StripIconView(StripIcon.Back, MaterialTheme.colorScheme.onSurface) }
         }
-        Text(
-            content.title,
-            Modifier.weight(1f).testTag(TopBarTags.NAME).semantics { contentDescription = content.title },
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.titleMedium,
-        )
+        SheetTitle(content.title, actions.onRename, Modifier.weight(1f))
         FingerChip(content, actions)
         // The budget has no column for Help, so the bar shows it only when the name keeps its minimum without it; the menu always lists it.
         actions.onHelp?.takeIf { content.plan.nameDp >= ChromeBudget.NAME_MIN_DP + ChromeBudget.BACK_DP }?.let { help ->
@@ -131,6 +130,26 @@ fun TopBar(
                 }
             }
         }
+    }
+}
+
+/** The sheet's name; where it can be renamed the whole name is a 48 dp button that opens the rename dialog. */
+@Composable
+private fun SheetTitle(title: String, onRename: (() -> Unit)?, modifier: Modifier = Modifier) {
+    Box(
+        modifier.fillMaxHeight().defaultMinSize(minHeight = TITLE_TARGET).testTag(TopBarTags.NAME)
+            .then(if (onRename != null) Modifier.clickable(onClick = onRename) else Modifier)
+            // Cleared so the name is read once whether or not it is a button.
+            .clearAndSetSemantics {
+                contentDescription = title
+                if (onRename != null) {
+                    role = Role.Button
+                    onClick(SketchStrings.TopBar.RENAME_ACTION) { onRename(); true }
+                }
+            },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
     }
 }
 
@@ -231,6 +250,7 @@ private fun saveFullText(status: SaveStatus): String = when (status) {
 }
 
 private val SAVE_GAP = 4.dp
+private val TITLE_TARGET = 48.dp
 private val CHIP_TEXT_PAD = 6.dp
 private val CHIP_ICON = 16.dp
 private val SAVE_ICON_LARGE = 24.dp

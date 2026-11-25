@@ -13,8 +13,8 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -69,7 +69,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -188,6 +187,8 @@ data class SketchShellConfig(
     val tours: TourController? = null,
     /** Opens Help and search from the top bar and the menu; null hides both. */
     val onHelp: (() -> Unit)? = null,
+    /** Opens the rename dialog from the header name and the menu; null (a read-only sheet) hides both. */
+    val onRename: (() -> Unit)? = null,
 )
 
 object ShellTags {
@@ -391,6 +392,7 @@ private fun ShellTopBar(state: SketchEditorState, config: SketchShellConfig, foc
             },
             onSelectionAction = config.onSelectionAction,
             onHelp = config.onHelp,
+            onRename = config.onRename,
         ),
         Modifier.padding(horizontal = 4.dp),
         Modifier.anchorFor(state, WalkthroughStep.Shortcuts).tourAnchored(config, TabStop.TopBar)
@@ -435,6 +437,13 @@ private val MENU_TEXT_INSET = 12.dp
 private fun SheetMenuItems(state: SketchEditorState, config: SketchShellConfig, close: () -> Unit) {
     Column {
         MenuSection(SketchChromeStrings.MENU_SHEET)
+        config.onRename?.let { rename ->
+            DropdownMenuItem(
+                text = { Text(SketchStrings.RenameSheet.MENU_ITEM) },
+                onClick = { close(); rename() },
+                modifier = Modifier.testTag(RenameSheetTags.OVERFLOW),
+            )
+        }
         val switch = config.onSheetKind
         when (config.sheetKind) {
             dev.stapler.stelekit.sketch.v2.constraints.SheetKind.Diagram -> if (switch != null) DropdownMenuItem(
@@ -628,8 +637,9 @@ private fun CanvasArea(
     canvas: @Composable BoxScope.() -> Unit,
 ) {
     var canvasPx by remember { mutableStateOf(IntSize.Zero) }
-    // Where the bottom-end stack (view cluster, pan pad) starts, measured, so the help popup sits just above it however tall it is.
-    var overlayTopPx by remember { mutableFloatStateOf(0f) }
+    // How far up from the canvas bottom the chip row and the end stack (pan pad, view cluster) reach, measured, so the toast lane
+    // and the help popup sit just above them however tall a large font or an open pan pad makes them.
+    var clearancePx by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
     Box(modifier.fillMaxWidth().testTag(ShellTags.CANVAS).onSizeChanged { canvasPx = it }.focusRequester(focus.canvas).mark(regions, TabStop.Canvas).focusable().then(config.canvasModifier).onKeyEvent(config.onCanvasKey)) {
         canvas()
@@ -637,44 +647,57 @@ private fun CanvasArea(
         Column(Modifier.align(Alignment.TopStart).padding(8.dp)) {
             if (hintShown && (state.selection.isEmpty() || cue != null)) Text(cueHint(cue, hintLine(state, config.pointer), canvasPx.width / density.density), Modifier.testTag(ShellTags.HINT).background(MaterialTheme.colorScheme.surface.copy(alpha = HINT_SCRIM_ALPHA), RoundedCornerShape(HINT_RADIUS)).padding(horizontal = 8.dp, vertical = 2.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        val clearance = with(density) { clearancePx.toDp() }
         // Above the chip row, not under the hint: the top of the canvas is where a finger drags and a toast there hides the shape being moved.
-        val chipsRaised = canvasPx.width / density.density < CHIPS_BESIDE_CLUSTER_MIN_DP
+        val endPad = 16.dp + config.endInset + PanPadPolicy.stripInsetDp(config.edgeStripAtEnd).dp
         config.toasts?.let {
-            ToastLaneOverlay(it, canvasPx.height / density.density, Modifier.align(Alignment.BottomStart).padding(start = 8.dp, end = 16.dp + config.endInset + PanPadPolicy.stripInsetDp(config.edgeStripAtEnd).dp, bottom = (if (chipsRaised) CHIPS_RAISED else 8.dp) + TOAST_ABOVE_CHIPS))
+            ToastLaneOverlay(it, canvasPx.height / density.density, Modifier.align(Alignment.BottomStart).padding(start = 8.dp, end = endPad, bottom = clearance + TOAST_GAP))
         }
-        ActionChipRow(
-            config.priorityChips + listOfNotNull(
-                cue?.takeIf { it.placement == CuePlacement.ChipRow }?.let { ActionChip(ShellTags.DURABILITY_CUE, it.chip?.text.orEmpty(), it.view.accessibleName, onClick = it.view.onActivate) },
-                if (state.toolLock) ActionChip(ShellTags.TOOL_LOCK_CHIP, SketchStrings.Chrome.TOOL_LOCK_CHIP, icon = StripIcon.LockClosed) { state.toolLock = false } else null,
-                config.autoConstrain?.takeIf { config.constraintsAvailable }?.let(AutoConstrainChips::freeDraw),
-            ) + config.extraChips,
-            // On a narrow canvas the chips and the view cluster cannot share the bottom row, so the chips sit on the row above it.
-            Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = if (canvasPx.width / density.density < CHIPS_BESIDE_CLUSTER_MIN_DP) CHIPS_RAISED else 8.dp),
+        BottomOverlayLayout(
+            chips = {
+                ActionChipRow(
+                    config.priorityChips + listOfNotNull(
+                        cue?.takeIf { it.placement == CuePlacement.ChipRow }?.let { ActionChip(ShellTags.DURABILITY_CUE, it.chip?.text.orEmpty(), it.view.accessibleName, onClick = it.view.onActivate) },
+                        if (state.toolLock) ActionChip(ShellTags.TOOL_LOCK_CHIP, SketchStrings.Chrome.TOOL_LOCK_CHIP, icon = StripIcon.LockClosed) { state.toolLock = false } else null,
+                        config.autoConstrain?.takeIf { config.constraintsAvailable }?.let(AutoConstrainChips::freeDraw),
+                    ) + config.extraChips,
+                )
+            },
+            endStack = { BottomEndStack(state, config, regions, canvasPx) },
+            startPad = 16.dp,
+            endPad = endPad,
+            chipsEndPad = endPad,
+            bottomPad = 8.dp,
+            gap = CHIP_CLUSTER_GAP,
+            onClearance = { clearancePx = it },
+            modifier = Modifier.matchParentSize(),
         )
-        // The popup sits beside the control it explains: above the dock when the strip is at the bottom, at the top otherwise.
-        val aboveOverlays = with(density) { (canvasPx.height - overlayTopPx).coerceAtLeast(0f).toDp() } + HELP_GAP + if (state.selection.isNotEmpty()) HELP_CLEARS_ZOOM_CHIP else 0.dp
+        // After the chips and the cluster so it draws over them; it sits beside the control it explains: above the dock when the
+        // strip is at the bottom, at the top otherwise.
+        val aboveOverlays = clearance + HELP_GAP + if (state.selection.isNotEmpty()) HELP_CLEARS_ZOOM_CHIP else 0.dp
         if (helpNearStrip) HelpPopupHost(state.help, Modifier.align(Alignment.BottomCenter).padding(bottom = aboveOverlays))
         else HelpPopupHost(state.help, Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
-        val stripInset = PanPadPolicy.stripInsetDp(config.edgeStripAtEnd).dp
-        Column(
-            Modifier.align(Alignment.BottomEnd).padding(end = 16.dp + config.endInset + stripInset, bottom = 8.dp)
-                .onGloballyPositioned { overlayTopPx = it.positionInParent().y },
-            horizontalAlignment = Alignment.End,
-        ) {
-            if (state.panPadOpen) {
-                val variant = PanPadPolicy.variant((canvasPx.width / density.density).toInt(), (canvasPx.height / density.density).toInt())
-                PanPad(
-                    variant,
-                    onPan = { direction, quarters ->
-                        val (dx, dy) = PanPadPolicy.contentShift(direction, quarters, canvasPx.width.toDouble(), canvasPx.height.toDouble())
-                        state.viewport = state.viewport.panBy(dx, dy)
-                    },
-                    onFit = config.onFit,
-                    onClose = { state.panPadOpen = false },
-                )
-            }
-            ViewCluster(state, config, Modifier.anchorFor(state, WalkthroughStep.Zoom).region(regions, TabStop.ViewCluster, exitToPopover(state, WalkthroughStep.Zoom)))
+    }
+}
+
+/** The pan pad (when open) over the view cluster, at the canvas's bottom end. */
+@Composable
+private fun BottomEndStack(state: SketchEditorState, config: SketchShellConfig, regions: RegionFocus, canvasPx: IntSize) {
+    val density = LocalDensity.current
+    Column(horizontalAlignment = Alignment.End) {
+        if (state.panPadOpen) {
+            val variant = PanPadPolicy.variant((canvasPx.width / density.density).toInt(), (canvasPx.height / density.density).toInt())
+            PanPad(
+                variant,
+                onPan = { direction, quarters ->
+                    val (dx, dy) = PanPadPolicy.contentShift(direction, quarters, canvasPx.width.toDouble(), canvasPx.height.toDouble())
+                    state.viewport = state.viewport.panBy(dx, dy)
+                },
+                onFit = config.onFit,
+                onClose = { state.panPadOpen = false },
+            )
         }
+        ViewCluster(state, config, Modifier.anchorFor(state, WalkthroughStep.Zoom).region(regions, TabStop.ViewCluster, exitToPopover(state, WalkthroughStep.Zoom)))
     }
 }
 
@@ -781,9 +804,8 @@ private val CLUSTER_ICON = 22.dp
 private val CLUSTER_LABEL_PAD = 6.dp
 private val HELP_GAP = 8.dp
 private val HELP_CLEARS_ZOOM_CHIP = 56.dp
-private val CHIPS_RAISED = 64.dp
-private val TOAST_ABOVE_CHIPS = ChromeBudget.TOOL_TARGET_DP.dp + 8.dp
-private const val CHIPS_BESIDE_CLUSTER_MIN_DP = 420f
+private val TOAST_GAP = 8.dp
+private val CHIP_CLUSTER_GAP = 8.dp
 private const val CLUSTER_ALPHA = 0.92f
 
 private val centre = dev.stapler.stelekit.sketch.v2.view.ScreenPx(0.0, 0.0)
