@@ -67,6 +67,8 @@ class TableSyncPolicyModelTest {
         fun commit(pick: Int) {
             val c = table(pool[pick % pool.size])
             if (c == display || c == truth) return
+            // Same content already due on the feed from an outside write: its emission cannot be told from this commit's.
+            if (feed.any { it.first in outsideWriteIdxs && it.second == c }) return
             undo.add(truth); redo.clear()
             display = c
             val ambiguousBefore = c in history && !ownDelivered
@@ -169,6 +171,27 @@ class TableSyncPolicyModelTest {
 
     private companion object {
         fun table(v: String) = "| A | B |\n| --- | --- |\n| $v | x |"
+    }
+
+    /** Pins the documented limit: content-only classification cannot tell an outside write's emission from an own commit's of the same content. */
+    @Test
+    fun classify_should_ReadOwnEmissionAsExternal_When_OutsideWriteOfSameContentIsStillDue() {
+        val policy = TableSyncPolicy()
+        val zero = table("0")
+        val one = table("1")
+        policy.registerLoaded(zero)
+        policy.classify(zero)
+        val first = policy.registerCommit(one)
+        assertEquals(SyncDecision.Echo, policy.classify(one))
+        policy.markDone(first)
+        assertEquals(SyncDecision.Rebuild(null), policy.classify(zero)) // outside revert, delivered
+        // outside writes 1 and 0 are still due when the user commits 1 then 0
+        policy.registerCommit(one)
+        assertEquals(SyncDecision.Echo, policy.classify(one)) // the outside 1's emission, read as the commit's echo
+        val last = policy.registerCommit(zero)
+        policy.markDone(last)
+        assertEquals(SyncDecision.Echo, policy.classify(zero)) // the outside 0's emission lifts the floor
+        assertEquals(SyncDecision.Rebuild(null), policy.classify(one)) // the commit's own emission, now read as external
     }
 
     @Test
