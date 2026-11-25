@@ -368,6 +368,19 @@ object SketchStrings {
         const val SAVING_FULL = "Saving"
         const val UNSAVED_FULL = "Unsaved changes"
         const val FAILED_FULL = "Save failed"
+        const val RENAME_ACTION = "Rename sheet"
+    }
+
+    /** Naming a sheet from the header or the overflow menu. */
+    object RenameSheet {
+        const val MENU_ITEM = "Rename sheet..."
+        const val TITLE = "Rename sheet"
+        const val FIELD = "Sheet name"
+        const val SAVE = "Save"
+        const val CANCEL = "Cancel"
+        const val BLANK = "Enter a name."
+        fun tooLong(limit: Int) = "Use $limit characters or fewer."
+        fun count(length: Int, limit: Int) = "$length / $limit"
     }
 
     /** The compact-height Selection menu (Story 3.1.4d, UX-127). */

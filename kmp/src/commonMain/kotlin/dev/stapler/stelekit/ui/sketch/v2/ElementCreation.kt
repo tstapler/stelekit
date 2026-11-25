@@ -14,6 +14,11 @@ import dev.stapler.stelekit.sketch.v2.commands.SheetSetupExtras
 import dev.stapler.stelekit.sketch.v2.commands.withSheetSetup
 import dev.stapler.stelekit.sketch.v2.export.SheetSetup
 import dev.stapler.stelekit.sketch.v2.commands.SheetKindExtras
+import dev.stapler.stelekit.sketch.v2.commands.SheetNameError
+import dev.stapler.stelekit.sketch.v2.commands.SheetNameExtras
+import dev.stapler.stelekit.sketch.v2.commands.sheetName
+import dev.stapler.stelekit.sketch.v2.commands.withSheetName
+import arrow.core.Either
 import dev.stapler.stelekit.sketch.v2.commands.withDimensionsOn
 import dev.stapler.stelekit.sketch.v2.commands.withSheetKind
 import dev.stapler.stelekit.sketch.v2.commands.withSheetStyle
@@ -45,6 +50,13 @@ class ElementCreation(initial: SketchDocumentV2, private val seeds: SeedSource) 
     var sheetSetup: SheetSetup? by mutableStateOf(SheetSetupExtras.read(initial.extras))
         private set
 
+    /** The name the user gave the sheet; null until they name it (the header then shows the sketch's name). */
+    var sheetName: String? by mutableStateOf(initial.sheetName)
+        private set
+
+    // Written into the document only once renamed here, so a name another tool stored is saved back byte for byte.
+    private var renamed = false
+
     /** The style a new shape takes before the Style panel's defaults row changes it. */
     fun startingStyle(): ElementStyle = sheetStyle.styleForNewElement()
 
@@ -61,6 +73,13 @@ class ElementCreation(initial: SketchDocumentV2, private val seeds: SeedSource) 
         sheetKind = SheetKindExtras.read(doc.extras)
         dimensionsOn = SheetDimensionsExtras.read(doc.extras)
         sheetSetup = SheetSetupExtras.read(doc.extras)
+        sheetName = doc.sheetName
+        renamed = false
+    }
+
+    fun chooseName(name: String) {
+        sheetName = name
+        renamed = true
     }
 
     fun chooseSheetSetup(setup: SheetSetup) {
@@ -80,7 +99,9 @@ class ElementCreation(initial: SketchDocumentV2, private val seeds: SeedSource) 
     }
 
     /** [doc] as it is saved: with the sheet's style in its extras. */
-    fun forSave(doc: SketchDocumentV2): SketchDocumentV2 = doc.withSheetStyle(sheetStyle).withSheetKind(sheetKind).withDimensionsOn(dimensionsOn).withSheetSetup(sheetSetup)
+    fun forSave(doc: SketchDocumentV2): SketchDocumentV2 =
+        doc.withSheetStyle(sheetStyle).withSheetKind(sheetKind).withDimensionsOn(dimensionsOn).withSheetSetup(sheetSetup)
+            .let { if (renamed) it.withSheetName(sheetName) else it }
 
     companion object {
         /** A seed source that differs per sheet and per session without a random source: the clock folded with the sheet. */
@@ -116,3 +137,20 @@ fun SketchEditorController.setSheetSetup(setup: SheetSetup) {
     creation.chooseSheetSetup(setup)
     saves.submit(creation.forSave(history.present))
 }
+
+/**
+ * The name the user gave this sheet, or null; the header shows it in place of the sketch's name. Read it here, not from
+ * `doc.sheetName`: a rename reaches the document only when it is saved (see [ElementCreation.forSave]).
+ */
+val SketchEditorController.sheetName: String? get() = creation.sheetName
+
+/**
+ * Names the sheet: [raw] is trimmed to one line and refused (nothing changes) when blank or over `SceneLimits.maxNameChars`.
+ * The name lives in the sheet's extras like its kind, so it is not an undo step; it is saved with the next document.
+ */
+fun SketchEditorController.renameSheet(raw: String): Either<SheetNameError, String> =
+    SheetNameExtras.validate(raw, doc.scene.limits).onRight { name ->
+        if (readOnly || name == creation.sheetName) return@onRight
+        creation.chooseName(name)
+        saves.submit(creation.forSave(history.present))
+    }

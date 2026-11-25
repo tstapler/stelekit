@@ -8,6 +8,7 @@ package dev.stapler.stelekit.cli
 
 import dev.stapler.stelekit.sketch.v2.annotation.RoomArea
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
+import dev.stapler.stelekit.sketch.v2.commands.sheetName
 import dev.stapler.stelekit.sketch.v2.index.Bounds
 import dev.stapler.stelekit.sketch.v2.index.ElementBounds
 import dev.stapler.stelekit.sketch.v2.scene.ArcElement
@@ -66,7 +67,10 @@ internal object SketchDescribe {
         val special = setOf(SketchLayers.OPENINGS, SketchLayers.DIMENSIONS, UnderlayIds.LAYER.value)
         val main = all.filter { it.base.layerId.value !in special && !(it is TextElement && it.containerId != null) }
         val out = StringBuilder()
-        out.appendLine("SKETCH SHEET ${doc.sheetUuid} (schema 2)" + ((agent?.get("title") as? JsonPrimitive)?.contentOrNull?.let { ", title \"$it\"" } ?: ""))
+        out.appendLine(
+            "SKETCH SHEET ${doc.sheetUuid} (schema 2)" + (doc.sheetName?.let { ", named \"$it\"" } ?: "") +
+                ((agent?.get("title") as? JsonPrimitive)?.contentOrNull?.let { ", title \"$it\"" } ?: ""),
+        )
         out.appendLine(
             if (diagram) "Units: scene units (abstract pixels). x grows right, y grows down."
             else "Units: 1 scene unit = 1/16 inch (192 units per foot). x grows east (right), y grows south (down).",

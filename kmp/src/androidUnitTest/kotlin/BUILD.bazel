@@ -38,6 +38,8 @@ kt_android_library(
             "**/ProjectListDeleteTest.kt",
             "**/TechnicalTabHostTest.kt",
             "**/PhoneMenuEntryTest.kt",
+            "**/PhoneBottomChromeTest.kt",
+            "**/SheetRenamePhoneTest.kt",
             "**/UnderlayPhoneRenderTest.kt",
             "**/ElbowPhoneRenderTest.kt",
             "**/RotatePhoneRenderTest.kt",

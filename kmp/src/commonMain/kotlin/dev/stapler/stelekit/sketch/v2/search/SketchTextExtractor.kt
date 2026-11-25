@@ -6,6 +6,7 @@ package dev.stapler.stelekit.sketch.v2.search
 
 import dev.stapler.stelekit.sketch.MetricScene
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
+import dev.stapler.stelekit.sketch.v2.commands.sheetName
 import dev.stapler.stelekit.sketch.v2.constraints.ConstraintKind
 import dev.stapler.stelekit.sketch.v2.scene.LayerId
 import dev.stapler.stelekit.sketch.v2.scene.OpeningElement
@@ -18,7 +19,7 @@ data class SketchSearchText(val body: String, val hash: String) {
 }
 
 /**
- * Turns a sheet into the text global search matches against (E8): text elements and shape labels, names the user gave
+ * Turns a sheet into the text global search matches against (E8): the sheet's own name, text elements and shape labels, names the user gave
  * elements (walls and rooms included), the names of layers that hold something, the width of every opening and the value
  * of every length dimension. Lengths are written both as feet-inches and as inches so `36"` finds `3' 0"` and the reverse.
  * Pure and bounded: it keeps at most [BODY_BUDGET] characters, so one sheet never makes an unbounded row.
@@ -36,6 +37,7 @@ object SketchTextExtractor {
             val line = raw?.replace('\n', ' ')?.trim()?.lowercase().orEmpty()
             if (line.isNotEmpty()) lines += line
         }
+        add(doc.sheetName)
         for (e in doc.scene.elementsInOrder) {
             used += e.base.layerId
             add(e.base.name)

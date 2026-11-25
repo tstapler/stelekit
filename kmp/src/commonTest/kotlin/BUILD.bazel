@@ -383,6 +383,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/ConstraintAdapterTest.kt",
         "dev/stapler/stelekit/sketch/v2/SvgExporterGoldenTest.kt",
         "dev/stapler/stelekit/sketch/v2/DimensionExportTest.kt",
+        "dev/stapler/stelekit/sketch/v2/SheetNameTest.kt",
         "dev/stapler/stelekit/sketch/v2/DimensionExportGolden.kt",
         "dev/stapler/stelekit/sketch/v2/SvgEscapingPropertyTest.kt",
         "dev/stapler/stelekit/sketch/v2/SvgGolden.kt",
