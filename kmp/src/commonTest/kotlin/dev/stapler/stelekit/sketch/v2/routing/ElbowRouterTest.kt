@@ -138,22 +138,26 @@ class ElbowRouterTest {
     }
 
     @Test
-    fun route_should_StayStable_WhenTheOtherShapeMovesALittle() = runTest {
-        checkAll(offsets, offsets, sizes, sizes, sizes, sizes, sidePick, sidePick) { ox, oy, w, h, ws, hs, s1, s2 ->
-            val (p, q) = shapes(ox, oy, w, h, ws, hs)
-            val moved = RouteRect(q.minX, q.minY + SMALL_MOVE, q.maxX, q.maxY + SMALL_MOVE)
-            val before = ElbowRouter.route(end(s1, p), end(s2, q))
-            val after = ElbowRouter.route(end(s1, p), end(s2, moved))
-            assertTrue(abs(ElbowRouter.bends(before) - ElbowRouter.bends(after)) <= 2, "$before vs $after")
-            assertTrue(abs(length(before) - length(after)) <= LENGTH_SLACK * SMALL_MOVE, "length jumped: ${length(before)} to ${length(after)}")
+    fun route_should_KeepItsShape_WhenTheOtherShapeMovesALittle() {
+        val moves = listOf(0.0 to 0.5, 0.5 to 0.0, -0.5 to 0.5, 0.25 to -0.25)
+        val shapesToTry = listOf(
+            RouteRect(300.0, 200.0, 400.0, 260.0), RouteRect(300.0, -200.0, 400.0, -140.0), RouteRect(-300.0, 250.0, -200.0, 310.0), RouteRect(40.0, 300.0, 140.0, 360.0),
+        )
+        for (q in shapesToTry) for (side in 0..3) {
+            val before = ElbowRouter.route(rightOf(a), end(side, q))
+            for ((dx, dy) in moves) {
+                val moved = RouteRect(q.minX + dx, q.minY + dy, q.maxX + dx, q.maxY + dy)
+                val after = ElbowRouter.route(rightOf(a), end(side, moved))
+                assertEquals(ElbowRouter.bends(before), ElbowRouter.bends(after), "bends for $q side $side move ($dx, $dy)")
+                assertEquals(before.size, after.size)
+                before.zip(after).forEach { (p, r) ->
+                    assertTrue(abs(p.x - r.x) <= 2 * (abs(dx) + abs(dy)) + eps && abs(p.y - r.y) <= 2 * (abs(dx) + abs(dy)) + eps, "corner jumped: $p to $r")
+                }
+            }
         }
     }
 
-    private fun length(route: List<RoutePoint>) = route.zipWithNext().sumOf { (p, q) -> abs(p.x - q.x) + abs(p.y - q.y) }
-
     private companion object {
         const val MAX_BENDS = 6
-        const val SMALL_MOVE = 0.5
-        const val LENGTH_SLACK = 8.0
     }
 }

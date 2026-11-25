@@ -111,7 +111,18 @@
         "ver": { "type": "integer", "default": 1 },
         "ord": { "type": "integer", "default": 0, "description": "Auto-name ordinal (\"Rectangle 3\"); 0 = unassigned." },
         "name": { "type": "string", "maxLength": 80, "description": "User-visible name; must be unique among elements." },
-        "extras": { "type": "object", "description": "Element keys the app does not interpret are kept as written. On the image with id \"underlay\" the key `underlay` holds its calibration (see $defs/underlayExtras). On an elbow arrow the key `elbowMid` is the coordinate the user dragged the route's middle segment to (x for a vertical middle segment, y for a horizontal one).", "properties": { "underlay": { "$ref": "#/$defs/underlayExtras" }, "elbowMid": { "type": "number" } } }
+        "extras": { "type": "object", "description": "Element keys the app does not interpret are kept as written. On the image with id \"underlay\" the key `underlay` holds its calibration (see $defs/underlayExtras). `provenance` marks an element an agent wrote (see $defs/provenance). On an elbow arrow the key `elbowMid` is the coordinate the user dragged the route's middle segment to (x for a vertical middle segment, y for a horizontal one).", "properties": { "underlay": { "$ref": "#/$defs/underlayExtras" }, "provenance": { "$ref": "#/$defs/provenance" }, "elbowMid": { "type": "number" } } }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "description": "Who wrote the element and whether a person reviewed it (epic E8). Optional; a sheet without it keeps its exact bytes.",
+      "required": ["source"],
+      "properties": {
+        "source": { "type": "string", "description": "\"agent\" for anything written by sketch-cli edit." },
+        "confidence": { "type": "integer", "minimum": 0, "maximum": 100, "description": "Whole percent the agent reports; a belief, not a measurement." },
+        "note": { "type": "string", "description": "Where the value came from." },
+        "accepted": { "type": "boolean", "description": "True once a person accepted it in the editor; the marker stays." }
       }
     },
     "sheetSetup": {
