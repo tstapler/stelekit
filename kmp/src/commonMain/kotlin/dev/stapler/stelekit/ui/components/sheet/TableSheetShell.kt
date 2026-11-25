@@ -17,7 +17,11 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.table.TableParseResult
 import dev.stapler.stelekit.table.TableParser
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import dev.stapler.stelekit.logging.Logger
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlin.coroutines.CoroutineContext
@@ -28,9 +32,14 @@ import kotlin.coroutines.CoroutineContext
  * [owner] as `LocalTableSheetOwner` (the block's inline table is inert while it is set).
  */
 internal class TableSheetController(
-    private val scope: CoroutineScope,
     private val loadBlock: suspend (BlockUuid) -> Block?,
 ) {
+    // Owns its scope: this object sits in `remember`, so a composition scope handed in would be cancelled under it.
+    private val scope = CoroutineScope(
+        SupervisorJob() + PlatformDispatcher.Default +
+            CoroutineExceptionHandler { _, t -> Logger("TableSheet").error("opening the sheet failed: ${t.message}", t) },
+    )
+
     class Open(val uuid: BlockUuid, val content: String, val version: Long, val pendingApply: RecoveredDraft? = null)
 
     var open: Open? by mutableStateOf(null)

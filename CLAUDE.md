@@ -519,6 +519,21 @@ Rules:
 
 Regression tests: `TaskSchedulerAndroidEntryPointTest`, `TaskSchedulerDesktopEntryPointTest`, `TaskRegistryBothRootsTest`, `WorkManagerSyncSchedulerUniqueWorkTest`, `NetworkGateTest`, `GraphRemovalTasksTest`, `TaskSettingsStoreMigrationTest`, `JitterPolicyPropertyTest`. Decisions: `project_plans/background-task-scheduling/decisions/ADR-001..006`.
 
+### Table engine and sheet — pure engine, one commit one undo, flags off
+
+The pipe-table editor is the `table` and `table.formula` packages (pure, no Compose, no `ui`/`db`/`repository` imports) plus the UI in `ui/components/sheet/` and `ui/components/Table*.kt`. Docs and decisions: `project_plans/table-sheet-editor/` (ADR-001..010).
+
+Rules:
+- **`table` must not import `table.formula`, `ui`, `db` or `repository`** (`TableEngineImportDirectionTest`, with planted-violation tests). Compose stays out of the engine; `TableEngine.editor()` is the one composition point.
+- **One commit is one undo step, through `TableCommitter`** (sheet) or `LocalTableCommitAction` (inline). Every undo and redo must call `expectAdopt` on the `OwnCommitLedger` first; an unregistered undo reads as `Stale`. Commits are serialized (each joins its predecessor). Never write a table block's content around the committer or `BlockStateManager`.
+- **Foreign-write sync is `TableSyncPolicy`** (`Echo`, `Stale`, `Adopt`, `Rebuild`, `Defer`, `ConflictKeepDraft`); it is keyed by content, never by DB or UI version (two different version spaces).
+- **View state is session-only** (column widths, freeze, scroll, selection): nothing is written to the file or the DB; the file stays plain Logseq-compatible markdown. Serializer rewrites only dirty rows; untouched lines are byte for byte.
+- **One gesture owner**: `TableGestureOwner` is the only pointer handler on a table; sheet and inline never both write one block (`LocalTableSheetOwner`). Do not add a second `pointerInput` for a gesture it already owns.
+- **Shortcuts come from `TableShortcutMap`** (ADR-009: Alt+Enter line break, Shift+Enter commit up, Ctrl+Shift+Enter toggles the sheet). A new chord is added there and in `InlineShortcutParityTest`, not in a composable. Check it against the app's global chords and Chrome's zoom chords.
+- **Flags `table_inline_edit_enabled` and `table_sheet_enabled` default off**; with both off `BlockItem` and `TableBlock` render exactly as before (`TableBlockLayoutTest`, `TableBlockFlagOffEquivalenceTest`, the baseline PNGs from `TableBaselineRenderTest`). Links in cells open only `http`, `https` and `mailto`; paste and parse stop at 10 000 cells.
+- **Owner-gated, never claimed from a headless run:** Pixel_Fold touch/IME/rotation, Wasm clipboard and IME, TalkBack/NVDA/VoiceOver, Logseq fixtures. Each is listed in `project_plans/table-sheet-editor/implementation/owner-queue.md`; a default flip needs those first.
+- Phone layout: render with `TablePhoneRenderTest` and open the PNGs; the IME is a placeholder there (no real insets under Robolectric).
+
 ### Android debugging — persisted logs, no logcat
 
 The owner cannot run `adb logcat` (it crashes their Linux machine). Diagnose from what the app persists: `filesDir/logs/current.log`, `previous.log`, `last-crash.txt` (`AndroidFileLogSink`, `AndroidCrashRecorder`, wired in `SteleKitApplication.installPersistentLogging`). On next launch `PreviousSessionLog` replays the crash, the previous session's tail, and Android's recorded exit reason (OOM / ANR / native crash, API 30+) into the in-app Logs screen.

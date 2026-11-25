@@ -1,4 +1,34 @@
-# Owner queue (PR-A)
+# Owner queue (PR-A, PR-B, PR-C)
+
+## PR-C consolidated owner list (read this first)
+
+Nothing below is verified on a device, in a real browser or in Logseq. Every item is PENDING until the owner records a result; no agent has marked any of them done. The two flags stay default off until these pass.
+
+**Do these before turning `table_inline_edit_enabled` or `table_sheet_enabled` on**
+
+| # | Item | Where it is detailed | What to do |
+|---|---|---|---|
+| 1 | 0.4a / 8.2a Pixel_Fold pass (touch, soft keyboard, rotation and fold, process death, TalkBack, hinge) | PR-B 8.2b, PR-C 5.1a/5.1b/5.2/5.4a/5.5 to 5.7 | `~/Android/Sdk/emulator/emulator -avd Pixel_Fold -no-window -no-audio -no-snapshot`; steps in plan Task 8.2a and validation M-05. Read `filesDir/logs/*`, never logcat. The pinned edit bar above the IME, `imePadding` inside the `Dialog`, landscape IME and the strip dock are all UNVERIFIED. |
+| 2 | 8.2c early sheet smoke | plan Task 8.2c | Open the sheet, tap-edit with the soft keyboard, scroll the editing row 30 rows away and back, tap a link, long-press into range mode. PENDING-OWNER. |
+| 3 | 0.3a / 0.3b Wasm clipboard and IME | PR-B and worker-4 rows below | Chrome Ctrl+V and context-menu paste on a wasm build, a dead-key or CJK sequence. Gates the Wasm part of 5.3a and 7.1b. |
+| 4 | 8.3a web pass | plan Task 8.3a | `./gradlew :kmp:wasmJsBrowserDevelopmentRun -PenableJs=true`; 390 px and desktop width, Chrome zoom chords, strip at 390 px. PENDING-OWNER, not run. |
+| 5 | 0.1b web baseline | PR-A row | Screenshot at 390 px and desktop width. |
+| 6 | 0.7a baseline measurement | PR-A row | The table-count command needs the owner's graph path; stopwatch protocol and the five persona questions. |
+| 7 | 8.4b Logseq untouched fixtures | `logseq-compat/README.md` | Open `logseq-compat/*.md` in Logseq and fill the results table. |
+| 8 | 8.4a app-edited fixture copies | plan Task 8.4a | NOT DONE: needs the real editor applied to the fixtures, then opened in Logseq. Open the edited copies after 8.4b passes. |
+| 9 | 6.1e screen readers | worker-4 rows below | NVDA (Windows), VoiceOver (macOS), Orca (Linux), TalkBack. Rows are BLANK, so UX-81 blocks default-on for Web and Desktop. |
+| 10 | ADR-005 touch wording | `decisions/ADR-005` | The owner confirms the touch entry wording before Task 4.4a text is final (wall-clock blocker). |
+| 11 | 8.2c, 8.3a, 8.4a, 8.7a | plan | PENDING-OWNER (8.7a is the 3 to 5 person study; M-18). |
+
+**Found by the PR-C phone renders and left for the owner to judge (8.1b polish, not repaired)**
+- The edit bar shows one line, so a 120-character cell is cut off without an ellipsis while the grid cell wraps.
+- The edit bar's Cancel edit icon is the same arrow shape as an undo; label and icon should differ more (UX-89 asks for distinct icons).
+- In `Edit` the field-scoped Undo and Redo are never dimmed, although ux.md rule 16a says they dim with "Nothing more to undo in this cell" when the cell has no history.
+- The inline touch strip clips its "Select column" label next to the fixed Markdown button (scrollable, but the clip looks accidental).
+- Alignment menu rows use ASCII `[ ]` / `[x]` markers.
+- RTL: numbers align to the logical end, which is the left edge; confirm that is what an RTL reader expects.
+- The IME is a placeholder in every render (Robolectric has no insets), so "strip bottom edge equals the IME top" is not asserted anywhere.
+
 
 Items an agent could not complete headlessly. Each needs the owner (Tyler) or a device/browser.
 

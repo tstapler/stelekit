@@ -112,7 +112,8 @@ internal class TableSheetSession(
 ) : SheetHostPort {
     private val log = Logger("TableSheetSession")
     private val sync = TableSyncPolicy().also { it.registerLoaded(initialContent) }
-    private var hooks: SheetBodyHooks? = null
+    // Snapshot state: the chrome reads `fieldScopedUndo` before the body binds, and must recompose when it does.
+    private var hooks: SheetBodyHooks? by mutableStateOf(null)
 
     /** The content the body should show; changes when the sheet adopts or rebuilds. */
     var content: String by mutableStateOf(initialContent)

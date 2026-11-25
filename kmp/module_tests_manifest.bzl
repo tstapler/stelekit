@@ -28,6 +28,7 @@ KMP_MODULE_TESTS = {
    "dev/stapler/stelekit/table/NoticeQueueTest.kt",
    "dev/stapler/stelekit/table/SelectionStatsTest.kt",
    "dev/stapler/stelekit/table/TableBackLadderTest.kt",
+   "dev/stapler/stelekit/table/TableCommitCountersTest.kt",
    "dev/stapler/stelekit/table/TableEditorPropertyTest.kt",
    "dev/stapler/stelekit/table/TableEditorTest.kt",
    "dev/stapler/stelekit/table/TableParserTest.kt",

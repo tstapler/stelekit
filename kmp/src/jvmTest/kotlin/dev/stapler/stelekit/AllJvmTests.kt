@@ -128,6 +128,7 @@ import dev.stapler.stelekit.service.JvmMediaAttachmentServiceTest
 import dev.stapler.stelekit.transfer.qrcode.QrTransferSettingsPersistenceTest
 import dev.stapler.stelekit.benchmark.LibsqlConcurrentWriteBenchmarkTest
 import dev.stapler.stelekit.benchmark.LibsqlSequentialWriteBenchmarkTest
+import dev.stapler.stelekit.benchmark.TableCommitBenchmarkTest
 import dev.stapler.stelekit.benchmark.UnifiedBenchmarkRunner
 import dev.stapler.stelekit.benchmark.UserSessionBenchmarkTest
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorScreenKeyboardTest
@@ -346,6 +347,7 @@ import org.junit.runners.Suite
     JvmMediaAttachmentServiceTest::class,
     QrTransferSettingsPersistenceTest::class,
     LibsqlConcurrentWriteBenchmarkTest::class,
+    TableCommitBenchmarkTest::class,
     LibsqlSequentialWriteBenchmarkTest::class,
     UnifiedBenchmarkRunner::class,
     UserSessionBenchmarkTest::class,

@@ -65,15 +65,19 @@ internal fun TableSheetScreen(
     body: SheetBody,
 ) {
     var showShortcuts by remember { mutableStateOf(false) }
+    val compact = landscape || isCompactLandscape()
     Column(modifier = modifier.fillMaxSize().testTag("tableSheet")) {
-        SheetTopBar(
-            session = session,
-            title = title,
-            onClose = { session.close(SheetCloseReason.User) },
-            onEditAsMarkdown = session::editAsMarkdown,
-            overflow = overflow,
-            onShortcuts = { showShortcuts = true },
-        )
+        // On a short landscape window the IME leaves about 200dp: while a cell is edited the top bar gives its row to the grid.
+        if (!(compact && session.fieldScopedUndo)) {
+            SheetTopBar(
+                session = session,
+                title = title,
+                onClose = { session.close(SheetCloseReason.User) },
+                onEditAsMarkdown = session::editAsMarkdown,
+                overflow = overflow,
+                onShortcuts = { showShortcuts = true },
+            )
+        }
         if (session.conflictHeld) {
             if (session.bannerOpen) {
                 TableConflictBanner(
@@ -91,7 +95,7 @@ internal fun TableSheetScreen(
             notices = session.notices,
             recovered = session.recovered.pinned?.takeIf { it.blockUuid == session.blockUuid },
             recoveredActions = recoveredActions,
-            landscape = landscape,
+            landscape = compact,
         )
     }
     if (showShortcuts) ShortcutsPanel(onDismiss = { showShortcuts = false })

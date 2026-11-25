@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.table.NoticeType
 import dev.stapler.stelekit.table.TableClipboard
+import dev.stapler.stelekit.table.GridMode
 import dev.stapler.stelekit.ui.components.LocalTableClipboard
 import dev.stapler.stelekit.ui.components.TableMessages
 import kotlinx.coroutines.delay
@@ -122,6 +123,7 @@ private fun OpeningTable(modifier: Modifier = Modifier) {
 @Composable
 private fun SheetBodyLayout(state: SheetState, session: TableSheetSession, commands: SheetCommands, modifier: Modifier = Modifier) {
     val gridFocus = remember { FocusRequester() }
+    val compactLandscape = isCompactLandscape()
     LaunchedEffect(state.gridFocusToken) { runCatching { gridFocus.requestFocus() } }
     val saving by rememberDelayedFlag(session.pending.collectAsState().value > 0, SheetLoadingState.SAVING_INDICATOR_MS)
     val applying by rememberDelayedFlag(state.applying, SheetLoadingState.APPLYING_INDICATOR_MS)
@@ -139,7 +141,8 @@ private fun SheetBodyLayout(state: SheetState, session: TableSheetSession, comma
             }
             SheetStatusRow(state, SheetLoadingState.statusText(saving, applying))
             SheetHintHost(session, state, input)
-            SheetContextStrip(state, session, commands)
+            // Its only Edit content, field Undo and Redo, is in the edit bar overflow; a short landscape window needs the row.
+            if (!(compactLandscape && state.mode == GridMode.Edit)) SheetContextStrip(state, session, commands)
             Box(
                 Modifier.size(0.dp).semantics {
                     liveRegion = LiveRegionMode.Polite

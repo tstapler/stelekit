@@ -12,6 +12,7 @@ import dev.stapler.stelekit.table.TableUndoScope
 import dev.stapler.stelekit.ui.components.TableMessages
 import dev.stapler.stelekit.ui.state.BlockStateManager
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -118,7 +119,12 @@ internal class TableCommitter(
     private val usageLog: Logger = Logger("TableUsage"),
 ) {
     private val log = Logger("TableCommitter")
-    private val scope = CoroutineScope(SupervisorJob() + context)
+    // An Error (OutOfMemoryError) reaching the default handler kills the process on Android; close the sheet instead.
+    private val guard = CoroutineExceptionHandler { _, t ->
+        log.error("table operation died for ${uuid.value}: ${t.message}", t)
+        if (!closed) mustClose(SheetCloseReason.Degraded)
+    }
+    private val scope = CoroutineScope(SupervisorJob() + context + guard)
     private val undoScope = TableUndoScope()
     private val undoTargets = ArrayDeque<String>()
     private val redoTargets = ArrayDeque<String>()

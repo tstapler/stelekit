@@ -361,9 +361,13 @@ internal fun GraphContentActiveShell(
             )
         }
 
-        val tableSheetFlushScope = remember { CoroutineScope(SupervisorJob() + dev.stapler.stelekit.coroutines.PlatformDispatcher.Default) }
-        val tableSheetController = remember(repos, scope) {
-            dev.stapler.stelekit.ui.components.sheet.TableSheetController(scope) { uuid ->
+        val tableSheetFlushScope = remember {
+            // A flush that throws an Error must not reach the default handler (kills the process on Android).
+            val guard = kotlinx.coroutines.CoroutineExceptionHandler { _, t -> dev.stapler.stelekit.logging.Logger("TableSheet").error("sheet flush failed: ${t.message}", t) }
+            CoroutineScope(SupervisorJob() + dev.stapler.stelekit.coroutines.PlatformDispatcher.Default + guard)
+        }
+        val tableSheetController = remember(repos) {
+            dev.stapler.stelekit.ui.components.sheet.TableSheetController { uuid ->
                 repos.blockRepository.getBlockByUuid(uuid).first().getOrNull()
             }
         }

@@ -149,6 +149,7 @@ kt_android_library(
             "**/TableBlockLayoutTest.kt",
             # Compose host tests for the table baseline render and the Tables settings flag rows (Gradle-only, same reason)
             "**/TableBaselineRenderTest.kt",
+            "**/TablePhoneRenderTest.kt",
             "**/SettingsTableRowsTest.kt",
             # Compose host test for BlockItem table dispatch (flag-off equivalence) and the ClipboardManager-typed clipboard adapter test (Gradle-only, same reason)
             "**/TableBlockFlagOffEquivalenceTest.kt",

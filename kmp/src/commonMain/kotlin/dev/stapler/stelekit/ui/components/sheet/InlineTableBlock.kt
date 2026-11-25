@@ -357,7 +357,7 @@ internal fun InlineTableBlock(
 
 /** Landscape on a short window: hints go, notices shrink to a line and the strip collapses (ux.md rule 13). */
 @Composable
-private fun isCompactLandscape(): Boolean {
+internal fun isCompactLandscape(): Boolean {
     val size = LocalWindowInfo.current.containerSize
     val heightDp = with(LocalDensity.current) { size.height.toDp() }
     return size.width > size.height && heightDp < COMPACT_HEIGHT

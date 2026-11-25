@@ -45,6 +45,7 @@ class TableCommitterTest {
         var gate: CompletableDeferred<Unit>? = null
         var persist = true
         var openEditorOnUndo = false
+        var contentOfFailure: Throwable? = null
         val stack = ArrayDeque<Pair<String, String>>()
         private val redoStack = ArrayDeque<Pair<String, String>>()
 
@@ -85,7 +86,7 @@ class TableCommitterTest {
             stack.addLast(old to new)
         }
 
-        override fun contentOf(uuid: BlockUuid) = content
+        override fun contentOf(uuid: BlockUuid): String? = contentOfFailure?.let { throw it } ?: content
         override suspend fun storedContent(uuid: BlockUuid) = stored
     }
 
@@ -99,6 +100,16 @@ class TableCommitterTest {
         val events = mutableListOf<CommitterEvent>()
         val committer = TableCommitter(uuid, port, sync, start, dispatcher, onEvent = { if (it !is CommitterEvent.Issued) events += it })
         return Rig(port, sync, committer, events)
+    }
+
+    @Test
+    fun anErrorInsideAnOperation_should_CloseTheSheetSafely_NotReachTheUncaughtHandler() = runTest {
+        val r = rig()
+        r.port.contentOfFailure = OutOfMemoryError("test: heap pressure")
+        r.committer.commit("S1", "edit A1")
+        advanceUntilIdle()
+        assertEquals(listOf<CommitterEvent>(CommitterEvent.MustClose(SheetCloseReason.Degraded)), r.events)
+        assertEquals(0, r.committer.pending.value, "the counter is released so Saving... cannot stick")
     }
 
     @Test
