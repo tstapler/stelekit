@@ -296,6 +296,7 @@ import org.junit.runners.Suite
     SketchCanvasDrawTest::class,
     dev.stapler.stelekit.ui.sketch.v2.InputSpikeTest::class,
     dev.stapler.stelekit.ui.sketch.v2.PointerAdapterDesktopTest::class,
+    dev.stapler.stelekit.ui.sketch.v2.OutlineDialogsDesktopTest::class,
     dev.stapler.stelekit.sketch.v2.TextMetricsDesktopEntryPointTest::class,
     dev.stapler.stelekit.sketch.v2.SketchStorageDesktopEntryPointTest::class,
     dev.stapler.stelekit.ui.sketch.SketchPreviewRenderTest::class,

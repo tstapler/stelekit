@@ -477,7 +477,7 @@ private fun HostOverlays(controller: SketchEditorController, extras: EditorExtra
             onDismiss = { controller.overlay = null },
         )
         EditorOverlay.Outline -> OutlineHost(controller)
-        EditorOverlay.AddShapeAt -> AddShapeAtHost(controller, extras)
+        EditorOverlay.AddShapeAt -> AddShapeAtHost(controller, extras.lengthUnit.format)
         EditorOverlay.ConstrainMenu -> ConstrainMenuDialog(controller, extras)
         EditorOverlay.HelpSearch -> GuideDialog(controller, extras, tours)
         EditorOverlay.WallLength -> WallLengthDialog(controller, extras)

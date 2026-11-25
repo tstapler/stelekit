@@ -36,7 +36,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.collectionInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
@@ -218,18 +217,20 @@ fun AddShapeAtDialog(
 internal fun RenameBar(text: String, error: String?, onText: (String) -> Unit, onSave: () -> Unit, onCancel: () -> Unit, autoFocus: Boolean) {
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { if (autoFocus) runCatching { focus.requestFocus() } }
-    OutlinedTextField(
-        text,
-        onText,
-        Modifier.fillMaxWidth().focusRequester(focus).testTag(OutlineTags.RENAME_FIELD),
-        label = { Text(S.RENAME_FIELD) },
-        isError = error != null,
-        singleLine = true,
-    )
-    error?.let { FieldError(it) }
-    Row {
-        TextButton(onSave, Modifier.defaultMinSize(minHeight = TARGET_DP.dp).testTag(OutlineTags.RENAME_SAVE)) { Text(S.RENAME_SAVE) }
-        TextButton(onCancel, Modifier.defaultMinSize(minHeight = TARGET_DP.dp).testTag(OutlineTags.RENAME_CANCEL)) { Text(S.RENAME_CANCEL) }
+    Column {
+        OutlinedTextField(
+            text,
+            onText,
+            Modifier.fillMaxWidth().focusRequester(focus).testTag(OutlineTags.RENAME_FIELD),
+            label = { Text(S.RENAME_FIELD) },
+            isError = error != null,
+            singleLine = true,
+        )
+        error?.let { FieldError(it) }
+        Row {
+            TextButton(onSave, Modifier.defaultMinSize(minHeight = TARGET_DP.dp).testTag(OutlineTags.RENAME_SAVE)) { Text(S.RENAME_SAVE) }
+            TextButton(onCancel, Modifier.defaultMinSize(minHeight = TARGET_DP.dp).testTag(OutlineTags.RENAME_CANCEL)) { Text(S.RENAME_CANCEL) }
+        }
     }
 }
 
@@ -241,21 +242,23 @@ private fun FieldError(message: String) {
 /** The four typed fields of "Add shape at..."; split out so a test can compose them without a dialog window. */
 @Composable
 internal fun AddShapeAtFields(form: ShapeAtForm, error: ShapeAtError?, onForm: (ShapeAtForm) -> Unit, firstField: FocusRequester) {
-    ShapeAtField.entries.forEach { field ->
-        val message = error?.takeIf { it.field == field }?.message
-        OutlinedTextField(
-            form.text(field),
-            { onForm(form.with(field, it)) },
-            Modifier
-                .fillMaxWidth()
-                .defaultMinSize(minHeight = TARGET_DP.dp)
-                .testTag(ShapeAtTags.field(field))
-                .let { if (field == ShapeAtField.X) it.focusRequester(firstField) else it },
-            label = { Text(field.label) },
-            isError = message != null,
-            singleLine = true,
-        )
-        message?.let { FieldError(it) }
+    Column {
+        ShapeAtField.entries.forEach { field ->
+            val message = error?.takeIf { it.field == field }?.message
+            OutlinedTextField(
+                form.text(field),
+                { onForm(form.with(field, it)) },
+                Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = TARGET_DP.dp)
+                    .testTag(ShapeAtTags.field(field))
+                    .let { if (field == ShapeAtField.X) it.focusRequester(firstField) else it },
+                label = { Text(field.label) },
+                isError = message != null,
+                singleLine = true,
+            )
+            message?.let { FieldError(it) }
+        }
     }
 }
 
@@ -279,9 +282,8 @@ internal fun OutlineHost(controller: SketchEditorController) {
 }
 
 @Composable
-internal fun AddShapeAtHost(controller: SketchEditorController, extras: EditorExtras) {
+internal fun AddShapeAtHost(controller: SketchEditorController, format: LengthFormat) {
     val technical = controller.sheetKind == SheetKind.Technical
-    val format = extras.lengthUnit.format
     val id = remember { controller.ids.next() }
     AddShapeAtDialog(
         technical = technical,

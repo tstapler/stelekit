@@ -73,8 +73,10 @@ object ShapeAtModel {
             val value = read(form.text(field), positive, technical, format, limits).fold({ return ShapeAtError(field, S.fieldError(field.label, it)).left() }, { it })
             values[field] = value
         }
-        val (x, y, w, h) = listOf(ShapeAtField.X, ShapeAtField.Y, ShapeAtField.Width, ShapeAtField.Height).map { values.getValue(it) }
-        val element = shape(form.kind, ElementBase(id, style = style), x, y, w, h)
+        val element = shape(
+            form.kind, ElementBase(id, style = style),
+            values.getValue(ShapeAtField.X), values.getValue(ShapeAtField.Y), values.getValue(ShapeAtField.Width), values.getValue(ShapeAtField.Height),
+        )
             ?: return ShapeAtError(ShapeAtField.X, S.fieldError(ShapeAtField.X.label, S.OUT_OF_RANGE)).left()
         val spoken = ShapeAtField.entries.map { form.text(it).trim() }
         return ShapeAtPlan(AddElementCommand(element), S.added(form.kind.label, spoken[0], spoken[1], spoken[2], spoken[3])).right()
