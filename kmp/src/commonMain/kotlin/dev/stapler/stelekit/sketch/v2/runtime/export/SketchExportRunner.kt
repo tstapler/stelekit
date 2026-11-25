@@ -158,19 +158,17 @@ class SketchExportRunner(
         return oriented.copy(scale = scale)
     }
 
-    private fun setupOf(source: ExportSource, request: ExportRequest): SheetSetup = request.sheet ?: suggestedSetup(source, request)
-
     private fun content(subject: Subject, source: ExportSource, request: ExportRequest) = SvgExporter.content(
         subject.scene, builder, request.style.render,
         SvgExportOptions(bounds = subject.bounds, dimensions = dimensions(source, request)),
     )
 
     private fun planOf(subject: Subject, source: ExportSource, request: ExportRequest): SheetPlan =
-        SheetPlanner.plan(setupOf(source, request), content(subject, source, request).bounds, source.metric)
+        SheetPlanner.plan((request.sheet ?: suggestedSetup(source, request)), content(subject, source, request).bounds, source.metric)
 
     private fun printOf(subject: Subject, source: ExportSource, request: ExportRequest): SheetPrint {
         val content = content(subject, source, request)
-        val plan = SheetPlanner.plan(setupOf(source, request), content.bounds, source.metric)
+        val plan = SheetPlanner.plan((request.sheet ?: suggestedSetup(source, request)), content.bounds, source.metric)
         val ink = ExportInk.forBackground(background(request))
         return SheetPrint(plan, content.ops, clip = !plan.fits || subject.bounds != null, ink = ink, background = background(request))
     }

@@ -211,11 +211,11 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
         sheet = flagsOf(p),
     )
 
-    private val PAGE_FLAGS = listOf("paper", "scale", "orientation", "margin", "north", "title", "author", "date", "sheet-number", "notes", "dpi", "no-scale-bar", "tile")
+    private val pageFlags = listOf("paper", "scale", "orientation", "margin", "north", "title", "author", "date", "sheet-number", "notes", "dpi", "no-scale-bar", "tile")
 
     /** The page flags, or null when none was given (a PDF supplies defaults itself). */
     private fun flagsOf(p: Parsed): SheetFlags? {
-        if (PAGE_FLAGS.none { p.has(it) } && p.flag("format")?.lowercase() != "pdf") return null
+        if (pageFlags.none { p.has(it) } && p.flag("format")?.lowercase() != "pdf") return null
         val title = listOf("title", "author", "date", "sheet-number", "notes").takeIf { names -> names.any { p.has(it) } }?.let {
             TitleBlock(p.flag("title").orEmpty(), p.flag("author").orEmpty(), p.flag("date").orEmpty(), p.flag("sheet-number").orEmpty(), p.flag("notes").orEmpty())
         }

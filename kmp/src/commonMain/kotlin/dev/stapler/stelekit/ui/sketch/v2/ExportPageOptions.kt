@@ -95,6 +95,7 @@ private const val TINT = 0.25f
 private const val WASH = 0.08f
 
 /** The page part of the export dialog: paper, orientation, margins, drawing scale, furniture, resolution, tiling, the fit check and the page preview. */
+@Suppress("MultipleEmitters")
 @Composable
 internal fun PageSection(model: ExportDialogModel, open: ExportUiState.Open, update: (ExportRequest) -> Unit) {
     val request = open.request
@@ -175,6 +176,7 @@ private fun ScaleOptions(model: ExportDialogModel, request: ExportRequest, setup
     }
 }
 
+@Suppress("MultipleEmitters")
 @Composable
 private fun FurnitureOptions(setup: SheetSetup, change: (SheetSetup) -> Unit, edit: (FieldsEditor) -> Unit) {
     CheckRow(Strings.SCALE_BAR, ExportPageTags.SCALE_BAR, setup.scaleBar) { change(setup.copy(scaleBar = it)) }

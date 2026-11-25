@@ -267,4 +267,4 @@ internal object PdfChecks {
 }
 
 /** The bytes as one char each, so a PDF's binary header and octal-escaped text read as the ASCII they are. */
-internal fun latin1(bytes: ByteArray): String = String(CharArray(bytes.size) { (bytes[it].toInt() and 0xFF).toChar() })
+internal fun latin1(bytes: ByteArray): String = CharArray(bytes.size) { (bytes[it].toInt() and 0xFF).toChar() }.concatToString()

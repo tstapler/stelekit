@@ -128,19 +128,6 @@ class ExportDialogModel(private val source: ExportSource, private val runner: Sk
         return request.copy(sheet = setup.copy(scale = best), tiled = false)
     }
 
-    /** How the drawing sits on the page, in words: the fit check the page preview shows. */
-    fun fitCheck(plan: SheetPlan): FitCheck {
-        val setup = plan.setup
-        val imperial = setup.paper.imperial
-        val need = "${SheetPlanner.lengthText(plan.scaledWidth, imperial)} x ${SheetPlanner.lengthText(plan.scaledHeight, imperial)}"
-        val room = "${SheetPlanner.lengthText(plan.area.width, imperial)} x ${SheetPlanner.lengthText(plan.area.height, imperial)}"
-        val scale = setup.scale.label
-        val paper = Strings.paperName(setup.paper.label, setup.orientation)
-        if (plan.fits) return FitCheck(true, Strings.fits(scale, paper, need, room), null)
-        val better = SheetPlanner.bestFit(setup, plan.content, source.metric)
-        return FitCheck(false, Strings.overflow(scale, paper, need, room, plan.columns, plan.rows), better)
-    }
-
     /** UX-58: shown only for the `.excalidraw` format and only when the sheet has more than one layer. */
     fun showsFlattenedNotice(request: ExportRequest): Boolean = request.format == ExportFormat.Excalidraw && source.scene.layers.size > 1
 
@@ -157,7 +144,7 @@ class ExportDialogModel(private val source: ExportSource, private val runner: Sk
     fun preview(request: ExportRequest): ExportPreview {
         if (request.onPaper) return pagePreview(request)
         val result = runner.measure(source, request) ?: return ExportPreview.NotApplicable
-        return result.fold({ failure -> failurePreview(failure, request.scale) }, { it.toPreview() })
+        return result.fold({ failure -> failurePreview(failure, request.scale) }, { ExportPreview.Size(it.widthPx, it.heightPx) })
     }
 
     private fun pagePreview(request: ExportRequest): ExportPreview {
@@ -167,8 +154,6 @@ class ExportDialogModel(private val source: ExportSource, private val runner: Sk
         val tooLarge = (measured?.leftOrNull() as? ExportFailure.TooLarge)?.let(::tooLargeMessage)
         return ExportPreview.Page(plan, pixels, tooLarge, request.tiled)
     }
-
-    private fun PixelSize.toPreview() = ExportPreview.Size(widthPx, heightPx)
 
     private fun failurePreview(failure: ExportFailure, scale: Int): ExportPreview = when (failure) {
         is ExportFailure.TooLarge -> ExportPreview.TooLarge(tooLargeMessage(failure), scale)
@@ -190,6 +175,20 @@ class ExportDialogModel(private val source: ExportSource, private val runner: Sk
 
 /** The verdict of the fit check: [fits] on one page, the [text] that says so, and the largest standard scale that would fit when it does not. */
 data class FitCheck(val fits: Boolean, val text: String, val suggestion: dev.stapler.stelekit.sketch.v2.export.DrawingScale?)
+
+/** How the drawing sits on the page, in words: the fit check the page preview shows. */
+internal fun ExportDialogModel.fitCheck(plan: SheetPlan): FitCheck {
+    val setup = plan.setup
+    val imperial = setup.paper.imperial
+    val need = "${SheetPlanner.lengthText(plan.scaledWidth, imperial)} x ${SheetPlanner.lengthText(plan.scaledHeight, imperial)}"
+    val room = "${SheetPlanner.lengthText(plan.area.width, imperial)} x ${SheetPlanner.lengthText(plan.area.height, imperial)}"
+    val scale = setup.scale.label
+    val paper = Strings.paperName(setup.paper.label, setup.orientation)
+    if (plan.fits) return FitCheck(true, Strings.fits(scale, paper, need, room), null)
+    val better = SheetPlanner.bestFit(setup, plan.content, metric)
+    return FitCheck(false, Strings.overflow(scale, paper, need, room, plan.columns, plan.rows), better)
+}
+
 
 /** Why the dialog stays open after Export. Each has its own one-tap fix. */
 sealed interface ExportError {
