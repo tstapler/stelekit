@@ -91,6 +91,17 @@ class ProvenanceTest {
     }
 
     @Test
+    fun acceptAll_should_SkipElementsOnHiddenOrLockedLayers() {
+        val base = docOf(rect("ai1", 0, Provenance()), rect("ai2", 20, Provenance()))
+        val hiddenLayer = dev.stapler.stelekit.sketch.v2.scene.Layer(dev.stapler.stelekit.sketch.v2.scene.LayerId("h"), "H", visible = false, order = 1)
+        val scene = base.scene.withLayers(base.scene.layers + hiddenLayer)
+        val ai2 = scene[ElementId("ai2")]!!
+        val moved = scene.replace(ai2.withBase(ai2.base.copy(layerId = hiddenLayer.id))).getOrNull()!!
+        val after = (AcceptAllProvenance.apply(base.copy(scene = moved)) as arrow.core.Either.Right).value.doc
+        assertEquals(listOf("ai2"), after.scene.unreviewed().map { it.id.value })
+    }
+
+    @Test
     fun accept_should_TouchOnlyTheNamedElements() {
         val doc = docOf(rect("ai1", 0, Provenance()), rect("ai2", 20, Provenance()))
         val after = (AcceptProvenance(listOf(ElementId("ai1"))).apply(doc) as arrow.core.Either.Right).value.doc

@@ -9,6 +9,7 @@ import arrow.core.raise.either
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.SceneElement
 import dev.stapler.stelekit.sketch.v2.scene.provenance
+import dev.stapler.stelekit.sketch.v2.scene.reviewable
 import dev.stapler.stelekit.sketch.v2.scene.withProvenance
 
 /**
@@ -31,10 +32,10 @@ data class AcceptProvenance(val ids: List<ElementId>) : Command {
     }
 }
 
-/** Accepts everything an agent wrote and nobody reviewed, as one undo step. */
+/** Accepts everything an agent wrote and nobody reviewed on a visible, unlocked layer, as one undo step. */
 data object AcceptAllProvenance : Command {
     override fun apply(doc: SketchDocumentV2): Either<CommandError, Applied> =
-        AcceptProvenance(doc.scene.elementsInOrder.filter { it.base.provenance?.needsReview == true }.map { it.id }).apply(doc)
+        AcceptProvenance(doc.scene.reviewable().map { it.id }).apply(doc)
 }
 
 private fun SceneElement.accepted(): SceneElement? {

@@ -69,5 +69,11 @@ val ElementBase.provenance: Provenance? get() = Provenance.read(extras)
 
 fun ElementBase.withProvenance(provenance: Provenance?): ElementBase = copy(extras = Provenance.write(extras, provenance))
 
+/** The unreviewed elements a reviewer can see and change: [unreviewed] minus those on hidden or locked layers, which Accept all leaves alone. */
+fun SketchSceneV2.reviewable(): List<SceneElement> = unreviewed().filter { e ->
+    val layer = layer(e.base.layerId)
+    layer == null || (layer.visible && !layer.locked)
+}
+
 /** Every element of the scene an agent wrote that nobody accepted yet, in paint order. */
 fun SketchSceneV2.unreviewed(): List<SceneElement> = elementsInOrder.filter { it.base.provenance?.needsReview == true }

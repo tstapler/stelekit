@@ -38,6 +38,7 @@ import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.ElementNames
 import dev.stapler.stelekit.sketch.v2.scene.SketchSceneV2
 import dev.stapler.stelekit.sketch.v2.scene.provenance
+import dev.stapler.stelekit.sketch.v2.scene.reviewable
 import dev.stapler.stelekit.sketch.v2.scene.unreviewed
 import dev.stapler.stelekit.sketch.v2.view.SceneBounds
 import dev.stapler.stelekit.sketch.v2.view.SketchViewport
@@ -117,7 +118,7 @@ fun ProvenanceMarks(marks: List<ProvenanceMark>, modifier: Modifier = Modifier) 
 @Composable
 fun BoxScope.ProvenanceBar(controller: SketchEditorController, modifier: Modifier = Modifier) {
     if (controller.readOnly) return
-    val waiting = remember(controller.revision) { controller.doc.scene.unreviewed().map { it.id } }
+    val waiting = remember(controller.revision) { controller.doc.scene.reviewable().map { it.id } }
     if (waiting.isEmpty()) return
     val selected = controller.ui.selection.map(::ElementId).filter { it in waiting }
     Surface(
