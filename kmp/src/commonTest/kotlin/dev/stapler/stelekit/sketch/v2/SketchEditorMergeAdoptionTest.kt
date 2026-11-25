@@ -63,6 +63,7 @@ class SketchEditorMergeAdoptionTest {
             waitFor("the editor to hold the other device's element") { ElementId("theirs") in controller.doc.scene }
             assertTrue(ElementId("mine") in controller.doc.scene)
             assertEquals(setOf("mine", "theirs"), rig.diskDoc().scene.elementsInOrder.map { it.id.value }.toSet())
+            waitFor("the merge notice") { controller.notices.visible(controller.notifier.now()).any { it.notice.key == SketchEditorStrings.Toasts.KEY_MERGED } }
             val notice = controller.notices.visible(controller.notifier.now()).map { it.notice }.single { it.key == SketchEditorStrings.Toasts.KEY_MERGED }
             assertEquals("Merged changes from another device (1 element)", notice.text)
             assertEquals(SketchEditorStrings.Toasts.MERGED_SHOW, notice.action)
