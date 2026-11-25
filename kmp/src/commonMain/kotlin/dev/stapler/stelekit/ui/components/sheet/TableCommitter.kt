@@ -19,6 +19,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.coroutines.CoroutineContext
 
@@ -134,6 +135,11 @@ internal class TableCommitter(
     private val _history = MutableStateFlow(SheetHistory())
     val history: StateFlow<SheetHistory> = _history.asStateFlow()
 
+    private val pendingOps = MutableStateFlow(0)
+
+    /** Queued commits, undos and redos that have not finished; the "Saving..." indicator reads it (UX-66). */
+    val pending: StateFlow<Int> = pendingOps.asStateFlow()
+
     /** Queues a commit of [text] (the whole serialized table). Equal-to-current content is skipped. UI thread only. */
     fun commit(text: String, label: String, draft: DraftText? = null) = enqueue { runCommit(text, label, draft) }
 
@@ -174,18 +180,23 @@ internal class TableCommitter(
     private fun enqueue(op: suspend () -> Unit) {
         if (closed) return
         val previous = tail
+        pendingOps.update { it + 1 }
         tail = scope.launch {
-            previous?.join()
-            if (closed) return@launch
-            running = true
             try {
-                op()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                log.warn("table operation failed for ${uuid.value}: ${e.message}")
+                previous?.join()
+                if (closed) return@launch
+                running = true
+                try {
+                    op()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    log.warn("table operation failed for ${uuid.value}: ${e.message}")
+                } finally {
+                    running = false
+                }
             } finally {
-                running = false
+                pendingOps.update { it - 1 }
             }
         }
     }

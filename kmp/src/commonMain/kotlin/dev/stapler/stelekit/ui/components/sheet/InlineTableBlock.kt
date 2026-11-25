@@ -552,7 +552,7 @@ private fun cellCustomActions(state: InlineTableState, address: CellAddress, she
 }
 
 @Composable
-private fun CellContent(
+internal fun CellContent(
     display: CellDisplay,
     address: CellAddress,
     hits: CellHitRegistry,

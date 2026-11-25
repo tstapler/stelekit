@@ -76,6 +76,24 @@ object TableMessages {
     const val SHEET_UNDO_SCOPE_NOTE = "Undo here only covers edits made in this sheet. Edits made inline earlier: close the sheet and use the page's Ctrl+Z."
     const val RECOVERED_APPLY_DISABLED = "That cell no longer exists"
 
+    // ---- sheet grid (PR-C 5.2, 5.3, 5.8, 5.9) ----
+    const val END_OF_TABLE = "End of table"
+    const val OPENING_TABLE = "Opening table..."
+    const val SAVING = "Saving..."
+    const val APPLYING = "Applying..."
+    const val STOP_INSERTING = "Stop inserting"
+    const val TAP_TO_INSERT_REFERENCE = "Tap a cell to insert its reference"
+    const val INSERT_LINE_BREAK = "Insert line break"
+    const val READ_ONLY_STATE = "Read only"
+    const val EDIT_BAR_LABEL = "Cell contents"
+    const val FORMULA_MARKER = "fx"
+    const val CIRCULAR_REFERENCE = "Circular reference"
+
+    fun circularReference(path: List<dev.stapler.stelekit.table.CellAddress>): String =
+        if (path.isEmpty()) CIRCULAR_REFERENCE else "$CIRCULAR_REFERENCE ${path.joinToString(" -> ")}"
+
+    fun insertedReference(ref: String) = "Inserted $ref. Extend... or type to continue"
+
     fun moreNotices(count: Int) = "$count more"
 
     fun recoveredDraft(address: String) = "Your unsaved edit to $address was kept"

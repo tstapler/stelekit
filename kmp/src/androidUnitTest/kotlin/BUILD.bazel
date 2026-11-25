@@ -170,6 +170,14 @@ kt_android_library(
             "**/TableNoticeHostTest.kt",
             "**/TableConflictBannerTest.kt",
             "**/TableInlineConflictTest.kt",
+            # Compose host tests for the sheet grid, keys, Back ladder, loading states and formula UX over the real sheet host, plus their fixture (Gradle-only)
+            "**/SheetTestSupport.kt",
+            "**/SheetGridTest.kt",
+            "**/SheetKeyboardTest.kt",
+            "**/SheetBackLadderTest.kt",
+            "**/SheetLoadingStateTest.kt",
+            "**/SheetFormulaUxTest.kt",
+            "**/SheetBodyWiringTest.kt",
             # Compose host tests for the annotator status strip, pasteboard inset and gesture layer (Gradle-only)
             "**/StatusStripTest.kt",
             "**/PasteboardInsetTest.kt",

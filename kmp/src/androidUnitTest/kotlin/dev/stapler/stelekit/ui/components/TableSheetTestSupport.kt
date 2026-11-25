@@ -127,10 +127,13 @@ private class FlakyBlockRepository(val inner: InMemoryBlockRepository) : BlockRe
  * compose test dispatcher, which is the single context the host expects.
  */
 @OptIn(DirectRepositoryWrite::class)
-internal class SheetHarness(private val rule: ComposeContentTestRule) {
+internal class SheetHarness(
+    private val rule: ComposeContentTestRule,
+    val c0: String = "| Item | Qty |\n|---|---|\n| Apple | 3 |",
+    wrapPort: (TableManagerPort) -> TableManagerPort = { it },
+) {
     val pageUuid = PageUuid("sheet-page")
     val uuid = BlockUuid("sheet-table-1")
-    val c0 = "| Item | Qty |\n|---|---|\n| Apple | 3 |"
     private val now = Clock.System.now()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
     private val memory = InMemoryBlockRepository()
@@ -159,7 +162,7 @@ internal class SheetHarness(private val rule: ComposeContentTestRule) {
             manager.observePage(pageUuid)
             manager.blocks.first { it.containsKey(pageUuid.value) }
         }
-        port = BlockStateManagerTablePort(manager) { id -> repo.getBlockByUuid(id).first().getOrNull()?.content }
+        port = wrapPort(BlockStateManagerTablePort(manager) { id -> repo.getBlockByUuid(id).first().getOrNull()?.content })
     }
 
     fun failContentWrites(fail: Boolean) {
@@ -176,7 +179,7 @@ internal class SheetHarness(private val rule: ComposeContentTestRule) {
 
     fun foreignWrite(content: String) = runBlocking { repo.updateBlockContentOnly(uuid, content) }
 
-    fun show(body: SheetBody? = null, readOnly: Boolean = false, wrapParent: Boolean = false, initialContent: String = c0) {
+    fun show(body: SheetBody? = null, readOnly: Boolean = false, wrapParent: Boolean = false, initialContent: String = c0, bindFakeHooks: Boolean = true) {
         rule.setContent {
             MaterialTheme {
                 val ctx = rememberCoroutineScope().coroutineContext[ContinuationInterceptor]!!
@@ -198,7 +201,7 @@ internal class SheetHarness(private val rule: ComposeContentTestRule) {
                             readOnly = readOnly,
                             onSessionReady = { s ->
                                 session = s
-                                s.bind(hooks)
+                                if (bindFakeHooks) s.bind(hooks)
                             },
                             onClose = { closes += it; open = false },
                             body = body ?: { s -> dev.stapler.stelekit.ui.components.sheet.PlaceholderSheetBody(s) },

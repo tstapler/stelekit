@@ -95,13 +95,13 @@ internal class TableSheetSession(
     initialContent: String,
     port: TableManagerPort,
     context: CoroutineContext,
-    val readOnly: Boolean = false,
+    override val readOnly: Boolean = false,
     val recovered: RecoveredDraftStore = RecoveredDraftStore(),
     startVersion: Long = 0L,
     private val flushScope: CoroutineScope,
     private val flush: suspend () -> Unit,
     private val onCloseRequest: (SheetCloseReason) -> Unit,
-) {
+) : SheetHostPort {
     private val log = Logger("TableSheetSession")
     private val sync = TableSyncPolicy().also { it.registerLoaded(initialContent) }
     private var hooks: SheetBodyHooks? = null
@@ -146,6 +146,9 @@ internal class TableSheetSession(
 
     val history get() = committer.history
 
+    /** Commits, undos and redos still queued or running; the sheet shows "Saving..." when this stays above 0 for 300 ms. */
+    val pending get() = committer.pending
+
     fun bind(body: SheetBodyHooks?) {
         hooks = body
     }
@@ -153,7 +156,7 @@ internal class TableSheetSession(
     // ---- commits and undo ---------------------------------------------------------------------------------------
 
     /** The body's single path to the block. False when nothing was issued (read-only, or held by a conflict). */
-    fun commit(text: String, label: String, draft: DraftText? = null): Boolean {
+    override fun commit(text: String, label: String, draft: DraftText?): Boolean {
         if (closed) return false
         if (readOnly) return false.also { notices.info(TableMessages.READ_ONLY) }
         if (conflictHeld) {
@@ -165,9 +168,11 @@ internal class TableSheetSession(
         return true
     }
 
-    fun undo() = committer.undo()
+    override fun undo() = committer.undo()
 
-    fun redo() = committer.redo()
+    override fun redo() = committer.redo()
+
+    override fun closeSheet() = close(SheetCloseReason.User)
 
     /** A notice that offers Undo for the last structural or paste commit; routes through [undo] (UX-24). */
     fun noticeWithUndo(text: String) = notices.withAction(NoticeType.Undo, text, TableMessages.UNDO) { committer.undo() }
@@ -303,7 +308,7 @@ internal class TableSheetSession(
     }
 
     /** Hands any unsaved cell to the recovered-draft notice, then closes into the raw editor. */
-    fun editAsMarkdown() {
+    override fun editAsMarkdown() {
         close(SheetCloseReason.EditAsMarkdown)
     }
 

@@ -794,6 +794,7 @@ internal fun GraphContentActiveShell(
                 flush = { blockStateManager.flush() },
                 showMessage = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } },
                 editAsMarkdown = { uuid -> blockStateManager.requestEditBlock(uuid) },
+                body = { session -> dev.stapler.stelekit.ui.components.sheet.SheetBodyContent(session) },
             )
         }
 

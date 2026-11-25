@@ -54,6 +54,9 @@ internal class CellHitRegistry {
     private val texts = HashMap<CellAddress, TextHit>()
     var owner: LayoutCoordinates? = null
 
+    /** A strip of the owner's coordinates that sticky chrome covers (the sheet's gutter); taps there resolve to no cell. */
+    var shield: Rect? = null
+
     fun setCell(address: CellAddress, coords: LayoutCoordinates) {
         cells[address] = coords
     }
@@ -70,6 +73,7 @@ internal class CellHitRegistry {
     /** [position] is in the owner's coordinates. */
     fun cellAt(position: Offset): CellAddress? {
         val ownerCoords = owner?.takeIf { it.isAttached } ?: return null
+        if (shield?.contains(position) == true) return null
         for ((address, coords) in cells) {
             if (!coords.isAttached) continue
             val local = coords.localPositionOf(ownerCoords, position)
