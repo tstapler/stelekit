@@ -431,4 +431,18 @@ class TableInlineEditTest {
         rule.onNodeWithText("Maximize").assertDoesNotExist()
         rule.onNodeWithText("Edit as markdown").assertExists()
     }
+
+    @Test
+    fun leavingComposition_should_CommitADirtyDraft() {
+        val host = TableTestHost(rule)
+        host.show()
+        rule.onNodeWithText("3").performTouchInput { click() }
+        rule.waitForIdle()
+        rule.onNode(hasSetTextAction()).performTextReplacement("45")
+        rule.waitForIdle()
+        assertTrue(host.commits.isEmpty())
+        host.present = false
+        rule.waitForIdle()
+        assertTrue(host.commits.last().contains("| 45 |"), "dispose must commit the draft: ${host.commits}")
+    }
 }

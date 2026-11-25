@@ -113,4 +113,12 @@ class TableInlineA11yTest {
         assertTrue(done.config.contains(SemanticsActions.OnClick))
         assertTrue(done.config.contains(SemanticsActions.RequestFocus))
     }
+
+    @Test
+    fun semanticClick_should_StartEditWithTheStripVisible() {
+        host.show()
+        rule.onNodeWithText("3").performSemanticsAction(SemanticsActions.OnClick)
+        rule.waitForIdle()
+        rule.onNodeWithTag("strip:Done").assertExists()
+    }
 }

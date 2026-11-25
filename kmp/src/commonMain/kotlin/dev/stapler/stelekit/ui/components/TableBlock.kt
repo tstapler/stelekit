@@ -87,7 +87,7 @@ internal fun TableBlock(
         // Flag matrix row "inline off, sheet on": the Maximize button is the only way into the sheet.
         Column(modifier) {
             FlagOffTableBlock(content, onStartEditing, isInSelectionMode, onToggleSelect, onLongPressSelect, linkColor, onLinkClick, prefs)
-            TextButton(onClick = onOpenSheet, modifier = Modifier.heightIn(min = 48.dp)) { Text(TableMessages.MAXIMIZE) }
+            if (!isInSelectionMode) TextButton(onClick = onOpenSheet, modifier = Modifier.heightIn(min = 48.dp)) { Text(TableMessages.MAXIMIZE) }
         }
     } else {
         FlagOffTableBlock(content, onStartEditing, isInSelectionMode, onToggleSelect, onLongPressSelect, linkColor, onLinkClick, prefs, modifier)

@@ -41,9 +41,16 @@ internal val LocalTableUndoHost = staticCompositionLocalOf<TableUndoHost?> { nul
 @Suppress("CompositionLocalAllowlist") // test seam and future platform override; one value per window
 internal val LocalTableClipboard = staticCompositionLocalOf<dev.stapler.stelekit.table.TableClipboard?> { null }
 
-/** True when [content] parses as a table with a header and delimiter row (also matches Bullet-typed, Logseq-indented tables). */
-fun isGridTableContent(content: String): Boolean =
-    content.contains('|') && dev.stapler.stelekit.table.TableParser.parse(content) is dev.stapler.stelekit.table.TableParseResult.Parsed
+/**
+ * True when [content] is a table and nothing else: a header and delimiter row, no fenced code and no prose before or
+ * after it (also matches Bullet-typed, Logseq-indented tables). Conservative on purpose (ADR-010): a block that mixes
+ * a table with prose or a code fence keeps its normal bullet rendering instead of being hijacked into the grid.
+ */
+fun isGridTableContent(content: String): Boolean {
+    if (!content.contains('|') || content.lineSequence().any { it.trimStart().startsWith("```") || it.trimStart().startsWith("~~~") }) return false
+    val doc = (dev.stapler.stelekit.table.TableParser.parse(content) as? dev.stapler.stelekit.table.TableParseResult.Parsed)?.doc ?: return false
+    return doc.prefix.all { it.isBlank() } && doc.suffix.all { it.isBlank() }
+}
 
 /** Flag-gated: false without evaluating the parse when both table flags are off (ADR-010). */
 internal fun TableDisplayPrefs.bulletMayBeTable(block: dev.stapler.stelekit.model.Block): Boolean =

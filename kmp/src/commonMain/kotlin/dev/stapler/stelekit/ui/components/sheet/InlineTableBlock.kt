@@ -91,7 +91,6 @@ import dev.stapler.stelekit.table.CellAddress
 import dev.stapler.stelekit.table.ColumnAlign
 import dev.stapler.stelekit.table.TableDoc
 import dev.stapler.stelekit.table.TableStripPolicy
-import dev.stapler.stelekit.table.formula.TableCalc
 import dev.stapler.stelekit.ui.components.BREAKABLE_CELL
 import dev.stapler.stelekit.ui.components.LocalTablePreferences
 import dev.stapler.stelekit.ui.components.LocalTableSheetOwner
@@ -137,8 +136,19 @@ internal fun InlineTableBlock(
     accessibilityServiceActive: Boolean = false,
     landscapeOverride: Boolean? = null,
 ) {
-    val latestCommit by rememberUpdatedState(onCommit)
-    val state = remember(blockUuid) { InlineTableState(content) { latestCommit(it) } }
+    // One holder per state: a state replaced for another block keeps committing to its own block on dispose.
+    val commitHolder = remember(blockUuid) { mutableStateOf(onCommit) }.also { it.value = onCommit }
+    val state = remember(blockUuid, cellWindow) { InlineTableState(content, cellWindow = cellWindow) { commitHolder.value(it) } }
+    val activation = LocalTableActivation.current
+    val isActive = state.selection != null
+    LaunchedEffect(isActive, activation) { if (isActive) activation.activate(state) }
+    DisposableEffect(state, activation) {
+        onDispose {
+            // Leaving composition (navigation, collapse) must not lose a typed draft.
+            state.commitDraft()
+            activation.release(state)
+        }
+    }
     val frozen = blockUuid != null && LocalTableSheetOwner.current == blockUuid
     val selectionMode = isInSelectionMode || inBlockSelectionMode
     val undoHost = LocalTableUndoHost.current
@@ -175,18 +185,19 @@ internal fun InlineTableBlock(
     val uriHandler = LocalUriHandler.current
     val onUrlClick: (String) -> Unit = { url ->
         try {
-            uriHandler.openUri(url)
+            if (isSafeCellUrl(url)) uriHandler.openUri(url)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             // Ignore a URL the platform cannot open, like BlockViewer.
         }
     }
-    val calc = remember(doc) { TableCalc.orNull(doc) }
-    val alignments = remember(doc, prefs.numericRightAlign) { doc.displayData().effectiveAlignments(prefs.numericRightAlign) }
+    val calcMemo = remember { CalcMemo() }
+    val calc = remember(doc) { calcMemo.of(doc) }
+    val shownRows = inlineRowWindow(doc.rowCount, doc.columnCount, cellWindow)
+    val alignments = remember(doc, prefs.numericRightAlign, shownRows) { doc.displayData(shownRows).effectiveAlignments(prefs.numericRightAlign) }
     val hits = remember { CellHitRegistry() }
     val availableWidth = remember { mutableIntStateOf(0) }
-    val shownRows = inlineRowWindow(doc.rowCount, doc.columnCount, cellWindow)
     val colors = TableColors(
         border = MaterialTheme.colorScheme.outlineVariant,
         divider = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
@@ -203,22 +214,17 @@ internal fun InlineTableBlock(
     SideEffect {
         state.hooks.openSheet = sheetOpen
         state.hooks.editAsMarkdown = onStartEditing
-        state.hooks.cellText = { d, address -> cellDisplay(d, TableCalc.orNull(d), address).text }
-        state.hooks.errorDetail = { d, address ->
-            when (val shown = cellDisplay(d, TableCalc.orNull(d), address)) {
-                is CellDisplay.Failed -> shown.detail
-                is CellDisplay.InvalidFormula -> shown.detail
-                else -> null
-            }
-        }
-        state.hooks.copyToClipboard = { text ->
+        state.hooks.bindCellDisplay(calcMemo)
+        state.hooks.copyToClipboard = { text, done ->
             copyScope.launch {
                 try {
                     clipboard.copy(text, null)
+                    done(true)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     sheetLogger.warn("table copy failed: ${e.message}")
+                    done(false)
                 }
             }
         }
@@ -381,8 +387,8 @@ private fun RowWindowNote(shown: Int, total: Int, onMaximize: (() -> Unit)?, onE
     }
 }
 
-/** Display values for alignment and numeric-column detection; cell text is the unescaped doc text. */
-private fun TableDoc.displayData(): TableData {
+/** Display values for alignment and numeric-column detection over the first [shownRows] rows; cell text is the unescaped doc text. */
+internal fun TableDoc.displayData(shownRows: Int = rowCount): TableData {
     val cols = columnCount
     fun rowTexts(row: Int) = List(cols) { c -> cell(CellAddress(row, c + 1))?.value ?: "" }
     val explicit = List(cols) { c ->
@@ -396,7 +402,7 @@ private fun TableDoc.displayData(): TableData {
     return TableData(
         headers = rowTexts(1),
         alignments = explicit.map { it ?: TableColumnAlignment.LEFT },
-        rows = (2..rowCount).map(::rowTexts),
+        rows = (2..shownRows.coerceAtMost(rowCount)).map(::rowTexts),
         explicitAlignments = explicit,
     )
 }
@@ -482,7 +488,8 @@ private fun InlineCell(
                     liveRegion = LiveRegionMode.Polite
                     contentDescription = announced
                 }
-                if (!editing) onClick(label = TableMessages.EDIT_CELL) { state.startEdit(address); true }
+                // A semantic click (TalkBack, Switch Access) has no pointer: enter as touch so the strip is reachable.
+                if (!editing) onClick(label = TableMessages.EDIT_CELL) { state.startEdit(address, EntryProfile.Touch); true }
                 customActions = cellCustomActions(state, address, sheetEnabled, editing)
             },
     ) {

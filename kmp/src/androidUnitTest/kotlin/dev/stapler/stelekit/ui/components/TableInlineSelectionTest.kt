@@ -13,6 +13,9 @@ import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.width
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
@@ -147,5 +150,27 @@ class TableInlineSelectionTest {
         mainRoot().performKeyInput { keyUp(Key.ShiftLeft) }
         rule.waitForIdle()
         rule.onAllNodes(isSelected()).assertCountEquals(4)
+    }
+
+    @Test
+    fun editingASecondTable_should_ResetTheFirstAndLeaveOneStrip() {
+        val prefs = TableDisplayPrefs(inlineEditEnabled = true)
+        rule.setContent {
+            androidx.compose.runtime.CompositionLocalProvider(LocalTablePreferences provides TablePreferences(null)) {
+                androidx.compose.material3.MaterialTheme {
+                    androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.width(360.dp)) {
+                        TableBlock(content = "| A | B |\n|---|---|\n| apple | 1 |", onStartEditing = {}, prefs = prefs, blockUuid = dev.stapler.stelekit.model.BlockUuid("t1"), onCommit = {})
+                        TableBlock(content = "| C | D |\n|---|---|\n| cherry | 2 |", onStartEditing = {}, prefs = prefs, blockUuid = dev.stapler.stelekit.model.BlockUuid("t2"), onCommit = {})
+                    }
+                }
+            }
+        }
+        rule.onNodeWithText("apple").performTouchInput { click() }
+        rule.waitForIdle()
+        rule.onAllNodesWithTag("strip:Done").assertCountEquals(1)
+        rule.onNodeWithText("cherry").performTouchInput { click() }
+        rule.waitForIdle()
+        rule.onAllNodesWithTag("strip:Done").assertCountEquals(1)
+        rule.onAllNodes(androidx.compose.ui.test.hasSetTextAction()).assertCountEquals(1)
     }
 }

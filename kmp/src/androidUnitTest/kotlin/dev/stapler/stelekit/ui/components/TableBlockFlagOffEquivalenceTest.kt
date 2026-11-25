@@ -12,7 +12,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.printToString
@@ -108,6 +118,9 @@ class TableBlockFlagOffEquivalenceTest {
         val tableTree = show(block(BlockType.Table), TableDisplayPrefs())
         val bulletTree = show(block(BlockType.Bullet), TableDisplayPrefs())
         assertNotEquals(tableTree, bulletTree, "flags off: a Bullet must not take the table path")
+        assertFalse(bulletTree.contains("CollectionInfo"), "flags off: a Bullet with table content is not a grid")
+        assertTrue(bulletTree.contains("Qty"), "flags off: the bullet shows the content as text")
+        assertEquals(bulletTree, show(block(BlockType.Bullet), TableDisplayPrefs()), "flags off: stable bullet rendering")
         started = 0
         tapBlock()
         assertEquals(1, started)
@@ -127,8 +140,77 @@ class TableBlockFlagOffEquivalenceTest {
         val on = TableDisplayPrefs(sheetEnabled = true)
         val plainBullet = show(block(BlockType.Bullet, "Qty and Load"), on)
         assertTrue(plainBullet.contains("Qty and Load"))
+        assertEquals(plainBullet, show(block(BlockType.Bullet, "Qty and Load"), TableDisplayPrefs()), "a plain bullet is not routed to TableBlock")
         assertFalse(isGridTableContent("Qty and Load | not a table"))
         assertTrue(isGridTableContent(TABLE))
+    }
+
+    @Test
+    fun bulletWithFencedOrProseWrappedTable_should_StayBullet_When_FlagOn() {
+        mountOnce()
+        val on = TableDisplayPrefs(inlineEditEnabled = true)
+        val fenced = show(block(BlockType.Bullet, "```\n$TABLE\n```"), on)
+        assertFalse(fenced.contains("CollectionInfo"), "a table inside a code fence is not hijacked")
+        val prose = show(block(BlockType.Bullet, "Intro\n$TABLE"), on)
+        assertFalse(prose.contains("CollectionInfo"), "prose around the table keeps the bullet rendering")
+    }
+
+    @Test
+    fun tableBlock_should_HideTheMaximizeButton_InSelectionMode_WhenInlineIsOff() {
+        rule.setContent {
+            MaterialTheme {
+                Surface {
+                    TableBlock(
+                        content = TABLE,
+                        onStartEditing = {},
+                        prefs = TableDisplayPrefs(inlineEditEnabled = false, sheetEnabled = true),
+                        onOpenSheet = {},
+                        isInSelectionMode = true,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onAllNodesWithText(TableMessages.MAXIMIZE).assertCountEquals(0)
+    }
+
+    @Test
+    fun bulletTable_should_WriteBackThroughTheCommitActionKeepingItsIndentation() {
+        val commits = mutableListOf<Triple<BlockUuid, String, Long>>()
+        val prefs = TablePreferences(null).also { it.update { TableDisplayPrefs(inlineEditEnabled = true) } }
+        val indented = "  | Item | Qty |\n  |---|---|\n  | Apple | 3 |"
+        rule.setContent {
+            MaterialTheme {
+                Surface {
+                    CompositionLocalProvider(
+                        LocalTablePreferences provides prefs,
+                        LocalTableCommitAction provides { uuid, text, version -> commits += Triple(uuid, text, version) },
+                    ) {
+                        Box(Modifier.width(360.dp)) {
+                            BlockItem(
+                                block = block(BlockType.Bullet, indented),
+                                isEditing = false,
+                                onStartEditing = {},
+                                onStopEditing = {},
+                                onContentChange = { _, _ -> },
+                                onLinkClick = {},
+                                onNewBlock = {},
+                                onSplitBlock = { _, _ -> },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("3").performTouchInput { click() }
+        rule.waitForIdle()
+        rule.onNode(hasSetTextAction()).performTextReplacement("45")
+        rule.onNodeWithTag("strip:Done").performSemanticsAction(SemanticsActions.OnClick)
+        rule.waitForIdle()
+        val written = commits.single().second
+        assertEquals("  | Item | Qty |\n  |---|---|\n  | Apple | 45 |", written)
+        assertEquals(BlockUuid("00000000-0000-0000-0000-000000000001"), commits.single().first)
     }
 
     private companion object {

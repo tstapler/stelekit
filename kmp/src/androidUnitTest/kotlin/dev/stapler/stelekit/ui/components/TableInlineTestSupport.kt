@@ -50,6 +50,7 @@ internal class TableTestHost(private val rule: ComposeContentTestRule) {
     var pageCopyKeys = 0
     var sheetOwner by mutableStateOf<BlockUuid?>(null)
     var blockSelection by mutableStateOf(false)
+    var present by mutableStateOf(true)
     private var generation by mutableStateOf(0)
     private var activePreferences by mutableStateOf(TablePreferences(null))
     val uuid = BlockUuid("table-block")
@@ -73,7 +74,7 @@ internal class TableTestHost(private val rule: ComposeContentTestRule) {
                 LocalTablePreferences provides activePreferences,
             ) {
                 androidx.compose.runtime.key(generation) {
-                MaterialTheme {
+                if (present) MaterialTheme {
                     Surface {
                         Box(
                             Modifier.width(360.dp).onKeyEvent { event ->

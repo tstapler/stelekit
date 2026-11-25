@@ -94,7 +94,7 @@ class TableStripFlowTest {
     }
 
     @Test
-    fun stripBottomEdge_should_SitOnTheImeTop_OrTheWindowBottomWhenTheImeIsHidden() {
+    fun overlayTopY_should_PlaceThePopupAboveTheImeOrAtTheWindowBottom_AsPureArithmetic() {
         assertEquals(800 - 60, overlayTopY(windowHeight = 800, popupHeight = 60, imeBottom = 0))
         assertEquals(800 - 300 - 60, overlayTopY(windowHeight = 800, popupHeight = 60, imeBottom = 300))
         assertEquals(0, overlayTopY(windowHeight = 100, popupHeight = 400, imeBottom = 300))
@@ -120,7 +120,7 @@ class TableStripFlowTest {
     }
 
     @Test
-    fun stripShowAndHide_should_NotAnimate_OnTheTestClock() {
+    fun strip_should_BeComposedAfterOneFrame_OnTheTestClock() {
         host.show()
         rule.mainClock.autoAdvance = false
         rule.onNodeWithText("3").performTouchInput { click() }

@@ -400,7 +400,9 @@ internal fun BlockItem(
                 // View mode — dispatch on block type
                 // Flag-gated (short-circuits when both are off): Logseq-indented tables parse as Bullet (ADR-010).
                 val tablePrefs = LocalTablePreferences.current.prefs
-                val tableAwareBlockType = if (tablePrefs.bulletMayBeTable(block)) BlockType.Table else block.blockType
+                val tableAwareBlockType = remember(block.content, block.blockType, tablePrefs.inlineEditEnabled, tablePrefs.sheetEnabled) {
+                    if (tablePrefs.bulletMayBeTable(block)) BlockType.Table else block.blockType
+                }
                 val queryContext = LocalQueryBlockContext.current
                 // Content-based (not blockType-based) so a freshly typed query block goes live
                 // without a reload; whole-block-only, so inline mixes keep the literal rendering.
