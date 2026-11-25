@@ -48,6 +48,7 @@ object ElbowRouting {
     private const val HALF = 2.0
     private const val CENTRE = 0.5
     private const val Z_POINTS = 4
+    private const val MIN_POINTS = 2
     private const val EPS = 1e-9
 
     /** Where the draggable middle segment of [arrow]'s route sits: its midpoint, and whether it runs vertically; null unless the route has exactly two bends. */
@@ -63,7 +64,7 @@ object ElbowRouting {
 
     /** The routed points of [arrow], or null when it is not an elbow arrow, has no bound end, or its binding cannot be resolved. */
     fun routeOf(scene: SketchSceneV2, arrow: ArrowElement): List<RoutePoint>? {
-        if (!arrow.elbowed || arrow.points.size < 2) return null
+        if (!arrow.elbowed || arrow.points.size < MIN_POINTS) return null
         if (arrow.startBinding == null && arrow.endBinding == null) return null
         val first = arrow.points.first()
         val last = arrow.points.last()

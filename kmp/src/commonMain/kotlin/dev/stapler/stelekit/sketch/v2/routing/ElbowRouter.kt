@@ -159,6 +159,7 @@ object ElbowRouter {
     }
 
     private const val Z_POINTS = 4
+    private const val MIN_RUN = 2
 
     /** With no clear grid route: leave along the stubs and meet through one corner or a mid-line, ignoring the boxes. */
     private fun fallback(s1: RoutePoint, e1: RoutePoint, start: RouteEnd): List<RoutePoint> {
@@ -172,7 +173,7 @@ object ElbowRouter {
         val out = ArrayList<RoutePoint>()
         for (p in points) {
             if (out.isNotEmpty() && abs(out.last().x - p.x) <= EPS && abs(out.last().y - p.y) <= EPS) continue
-            while (out.size >= 2 && collinear(out[out.size - 2], out.last(), p)) out.removeAt(out.size - 1)
+            while (out.size >= MIN_RUN && collinear(out[out.size - MIN_RUN], out.last(), p)) out.removeAt(out.size - 1)
             out += p
         }
         return out
