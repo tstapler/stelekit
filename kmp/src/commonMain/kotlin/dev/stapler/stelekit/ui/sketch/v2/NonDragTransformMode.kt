@@ -153,7 +153,7 @@ class NonDragTransformMode private constructor(
     private fun command(): ToolCommand? = if (!pending) null else when (action) {
         NonDragAction.MoveElement -> move()
         NonDragAction.Resize -> resizeSteps()?.let(::TransformSelectionCommand)
-        NonDragAction.Rotate -> rotateCommand()
+        NonDragAction.Rotate -> rotateCommandOf(items, frame, deltaAngle()) ?: TransformSelectionCommand(rotateSteps())
     }
 
     private fun move(): ToolCommand {
@@ -186,12 +186,6 @@ class NonDragTransformMode private constructor(
     }
 
     private fun deltaAngle(): Double = (offsetX + offsetY) * (if (step == NudgeStep.Percent) PERCENT_TURN_DEGREES else 1.0) * PI / HALF_TURN_DEGREES
-
-    /** Boxes and ellipses keep the per-element rotation; lines, walls and mixed selections turn rigidly about the frame centre. */
-    private fun rotateCommand(): ToolCommand {
-        val general = items.any { it !is BoxElement && it !is EllipseElement } || items.any { it is OpeningElement }
-        return if (general) RotateSelectionCommand(items.map { it.id }, deltaAngle(), frame.cx, frame.cy) else TransformSelectionCommand(rotateSteps())
-    }
 
     private fun rotateSteps(): List<ElementTransform> {
         val delta = deltaAngle()
@@ -238,6 +232,12 @@ class NonDragTransformMode private constructor(
             return NonDragStart.Started(mode)
         }
     }
+}
+
+/** The rigid [RotateSelectionCommand] for lines, walls and mixed selections (boxes and ellipses keep the per-element rotation: null). */
+private fun rotateCommandOf(items: List<SceneElement>, frame: Box, delta: Double): ToolCommand? {
+    val general = items.any { it !is BoxElement && it !is EllipseElement } || items.any { it is OpeningElement }
+    return if (general) RotateSelectionCommand(items.map { it.id }, delta, frame.cx, frame.cy) else null
 }
 
 /** How the preview line writes numbers: whole when whole, else one decimal, with a sign for a displacement. */

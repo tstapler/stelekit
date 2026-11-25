@@ -71,7 +71,7 @@ class RotatePhoneRenderTest {
         rule.waitForIdle()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/rotate-1-selected.png")
         rule.onNodeWithTag(RotateTags.CHIP).assertExists()
-        assertTrue(RotateTags.CHIP in planChips(session.controller).map { it.tag })
+        assertTrue(RotateTags.CHIP in rotateChips(session.controller).map { it.tag })
         rule.onNodeWithTag(RotateTags.CHIP).performClick()
         assertEquals(EditorOverlay.Rotate, session.controller.overlay)
     }
