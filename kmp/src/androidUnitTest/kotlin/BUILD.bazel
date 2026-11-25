@@ -150,6 +150,9 @@ kt_android_library(
             # Compose host test for BlockItem table dispatch (flag-off equivalence) and the ClipboardManager-typed clipboard adapter test (Gradle-only, same reason)
             "**/TableBlockFlagOffEquivalenceTest.kt",
             "**/ComposeTableClipboardTest.kt",
+            # Compose host tests for the inline table gesture owner and in-cell editor (Gradle-only, same reason)
+            "**/TableGestureOwnerTest.kt",
+            "**/TableInlineEditTest.kt",
             # Compose host tests for the annotator status strip, pasteboard inset and gesture layer (Gradle-only)
             "**/StatusStripTest.kt",
             "**/PasteboardInsetTest.kt",

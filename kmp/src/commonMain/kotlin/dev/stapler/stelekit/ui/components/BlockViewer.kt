@@ -9,6 +9,8 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -129,6 +131,8 @@ fun WikiLinkText(
     textAlign: TextAlign = TextAlign.Unspecified,
     /** Base weight override (table header cells); null keeps the body style's weight. */
     fontWeight: FontWeight? = null,
+    /** Reports the rendered text, its layout and position so a parent gesture owner can hit-test links (inline table cells). */
+    onHitInfo: ((AnnotatedString, TextLayoutResult?, LayoutCoordinates?) -> Unit)? = null,
 ) {
     val blockRefBg = StelekitTheme.colors.blockRefBackground
     val codeBg = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
@@ -160,12 +164,18 @@ fun WikiLinkText(
     }
 
     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+    var textCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    if (onHitInfo != null) {
+        // Read here so layout/position changes recompose and re-report.
+        val reportedLayout = textLayoutResult
+        val reportedCoords = textCoords
+        SideEffect { onHitInfo(annotatedString, reportedLayout, reportedCoords) }
+    }
 
     // Cross-block drag selection: register this text's layout under its block uuid (null for
     // WikiLinkText used outside a BlockList row) and paint the selected slice behind the text.
     val dragSelect = LocalCrossBlockSelectionState.current
     val renderedBlockUuid = LocalRenderedBlockUuid.current
-    var textCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
     if (dragSelect != null && renderedBlockUuid != null) {
         val layout = textLayoutResult
