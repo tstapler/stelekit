@@ -244,7 +244,7 @@ Do not rebuild a sheet the owner has already drawn on: `edit` changes it in plac
 
 | `op` | fields |
 |---|---|
-| `add` | `id`, `kind` (`rect`, `ellipse`, `text`, `line`), `x`, `y`, then `w` + `h` (rect, ellipse), `text` + `fontSize` (text) or `x2` + `y2` (line); optional `name`, `layer` |
+| `add` | `id`, `kind` (`rect`, `ellipse`, `text`, `line`), `x`, `y`, then `w` + `h` (rect, ellipse), `text` + `fontSize` (text; a length, default 20 units) or `x2` + `y2` (line); optional `name`, `layer` |
 | `move` | `id`, `dx` and/or `dy` |
 | `resize` | `id`, `w` and/or `h` (the top-left corner stays) |
 | `relabel` | `id`, `text` (the shape's label or the text element), or `to` (rename the element) |

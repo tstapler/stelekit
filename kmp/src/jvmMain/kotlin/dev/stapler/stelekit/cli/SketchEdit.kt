@@ -22,6 +22,7 @@ import dev.stapler.stelekit.sketch.v2.commands.ResizeElement
 import dev.stapler.stelekit.sketch.v2.commands.SequenceCommand
 import dev.stapler.stelekit.sketch.v2.commands.SketchDocumentV2
 import dev.stapler.stelekit.sketch.v2.constraints.ConstraintId
+import dev.stapler.stelekit.sketch.v2.constraints.ConstraintKind
 import dev.stapler.stelekit.sketch.v2.constraints.SceneProblem
 import dev.stapler.stelekit.sketch.v2.constraints.SceneToProblem
 import dev.stapler.stelekit.sketch.v2.constraints.SetConstraintReference
@@ -213,6 +214,9 @@ internal object SketchEdit {
 
     private fun need(o: JsonObject, key: String): Double? = units(o, key)
 
+    /** Keys present in [o] whose value is not a length: such an edit is refused, never applied with the bad part dropped. */
+    private fun badLengths(o: JsonObject, vararg keys: String): List<String> = keys.filter { o[it] != null && units(o, it) == null }
+
     private sealed interface Found {
         class One(val element: SceneElement) : Found
 
@@ -271,7 +275,8 @@ internal object SketchEdit {
             }
             "text" -> {
                 val text = str(o, "text") ?: return Step.Refused("add text needs \"text\"")
-                val font = need(o, "fontSize")?.let { it / UNITS_PER_INCH } ?: DEFAULT_FONT
+                badLengths(o, "fontSize").takeIf { it.isNotEmpty() }?.let { return Step.Refused("\"fontSize\" is not a length") }
+                val font = need(o, "fontSize") ?: DEFAULT_FONT
                 val (w, h) = textBox(text, font)
                 TextElement(base, unit(x) ?: return outOfRange(), unit(y) ?: return outOfRange(), unit(w) ?: return outOfRange(), unit(h) ?: return outOfRange(), text = text, fontSize = font)
             }
@@ -293,6 +298,7 @@ internal object SketchEdit {
     }
 
     private fun move(doc: SketchDocumentV2, o: JsonObject): Step = withElement(doc, o) { el ->
+        badLengths(o, "dx", "dy").takeIf { it.isNotEmpty() }?.let { return@withElement Step.Refused("${it.joinToString()} is not a length (use 3' 6\", 42 or 25.4 mm)") }
         val dx = need(o, "dx") ?: 0.0
         val dy = need(o, "dy") ?: 0.0
         if (dx == 0.0 && dy == 0.0) Step.Refused("move needs \"dx\" and/or \"dy\"") else run(doc, MoveElements(listOf(el.id), dx, dy))
@@ -300,6 +306,7 @@ internal object SketchEdit {
 
     private fun resize(doc: SketchDocumentV2, o: JsonObject): Step = withElement(doc, o) { el ->
         val b = SceneBounds.of(listOf(el)) ?: return@withElement Step.Refused("\"${el.id.value}\" has no size")
+        badLengths(o, "w", "h").takeIf { it.isNotEmpty() }?.let { return@withElement Step.Refused("${it.joinToString()} is not a length (use 3' 6\", 42 or 25.4 mm)") }
         val w = need(o, "w") ?: b.width
         val h = need(o, "h") ?: b.height
         run(doc, ResizeElement(el.id, b.minX, b.minY, w, h))
@@ -406,6 +413,7 @@ internal object SketchEdit {
         val ref = str(o, "id") ?: return Step.Refused("set-dimension needs \"id\" (a constraint id or an authored dimension's id)")
         val value = need(o, "value") ?: return Step.Refused("set-dimension needs \"value\" (a length)")
         if (value <= 0.0) return Step.Refused("\"value\" must be greater than zero")
+        if (doc.constraints.any { it.id.value == ref && it.kind == ConstraintKind.Angle }) return Step.Refused("\"$ref\" is an angle; set-dimension sets lengths only")
         if (doc.constraints.any { it.id.value == ref }) return run(doc, SetDimensionValue(ConstraintId(ref), value), solve = false, stamp = false, note = "driving dimension; the solver moved the geometry").let { markDimension(doc, it, ref, o) }
         val line = doc.scene[ElementId("$ref.line")] as? ArrowElement ?: return Step.Refused("no constraint or authored dimension \"$ref\"")
         val text = doc.scene[ElementId("$ref.text")] as? TextElement

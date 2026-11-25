@@ -183,6 +183,15 @@ class SketchEditCliTest {
     }
 
     @Test
+    fun edit_should_RefuseAnEditWhoseLengthDoesNotParse_InsteadOfApplyingHalfOfIt() {
+        val sheet = sheet()
+        val r = cli("edit", sheet.path, "--edits", edits("""{"op":"move","id":"kitchen","dx":"3 furlongs","dy":"1'"}""").path, "--dry-run")
+        assertEquals(1, r.code, r.out)
+        assertTrue(r.out.contains("REFUSED  [0] move: dx is not a length"), r.out)
+        assertTrue(r.out.contains("no differences"), "nothing was applied:\n${r.out}")
+    }
+
+    @Test
     fun edit_should_ResolveByNameAndRefuseAnAmbiguousOne() {
         val sheet = sheet()
         val named = cli(
