@@ -14,7 +14,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.SketchSearchRow
-import dev.stapler.stelekit.repository.SketchTestSupport
+import dev.stapler.stelekit.model.ProjectUuid
+import dev.stapler.stelekit.model.SketchProject
 import dev.stapler.stelekit.repository.inMemorySketchRepositories
 import dev.stapler.stelekit.sketch.v2.runtime.persist.SketchTextSearch
 import kotlinx.coroutines.runBlocking
@@ -30,7 +31,7 @@ class SketchSearchSectionTest {
     private fun search(): SketchTextSearch {
         val repos = inMemorySketchRepositories()
         runBlocking {
-            repos.projects.saveProject(SketchTestSupport.project())
+            repos.projects.saveProject(SketchProject(uuid = ProjectUuid("p1"), slug = "proj-0a1b2c", name = "Kitchen", createdAt = 1L))
             repos.searchText.save(SketchSearchRow("p1", "s1", "kitchen pantry", "h", 1L))
         }
         return SketchTextSearch(repos, { null }, { it() }, { 1L })
