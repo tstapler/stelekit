@@ -235,6 +235,8 @@ fun SketchEditorV2Host(
                 ExtrasCanvasOverlays(controller, extras, pointer, glyphsHidden = largeScene.degradation.has(DegradationStep.ConstraintGlyphsHidden))
                 PlatformInputOverlays(extras.input)
                 UnderlayBar(extras.underlay)
+                ProvenanceMarksOverlay(controller)
+                ProvenanceBar(controller)
                 CanvasAccessLayer(controller, canvasAccess)
                 CrosshairLayer(extras.access, state.viewport, canvasAccess.regions)
                 largeScene.hardCap?.let { HardCapNotice(it, largeScene::answer, Modifier.align(Alignment.TopCenter)) }

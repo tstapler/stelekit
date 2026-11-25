@@ -40,6 +40,7 @@ kt_android_library(
             "**/PhoneMenuEntryTest.kt",
             "**/UnderlayPhoneRenderTest.kt",
             "**/RotatePhoneRenderTest.kt",
+            "**/ProvenancePhoneRenderTest.kt",
             "**/TouchLoupeHostTest.kt",
             "**/MobileChromeRenderTest.kt",
             "**/TextAutosizeRenderTest.kt",
