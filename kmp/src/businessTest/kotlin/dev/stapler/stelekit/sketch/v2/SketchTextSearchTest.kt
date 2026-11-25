@@ -83,7 +83,8 @@ class SketchTextSearchTest {
         val device = MixedProjectFixtures.device(convertA = true)
         val search = SketchTextSearch(device.repos, { device.store }, { it() }, { 1L })
         assertEquals(1, search.backfill())
-        assertEquals(0, search.backfill(), "an unchanged sheet is not rewritten")
+        assertEquals(0, search.backfill(), "the backfill runs once per instance")
+        assertEquals(0, SketchTextSearch(device.repos, { device.store }, { it() }, { 2L }).backfill(), "a fresh instance finds every hash unchanged and writes nothing")
     }
 
     @Test
@@ -96,7 +97,9 @@ class SketchTextSearchTest {
         val hits = repos.searchText.search("kitchen", 5).getOrNull()!!
         assertEquals(5, hits.size)
         assertEquals("s${SketchSearchTextRepository.CANDIDATE_PAGE * 3 - 1}", hits.first().sheetUuid, "newest first")
-        assertTrue(repos.searchText.search("100%", 5).getOrNull()!!.isEmpty(), "LIKE wildcards in the query are literal")
+        repos.searchText.save(SketchSearchRow("p1", "pct", "kitchen 100% done", "hp", 0L))
+        repos.searchText.save(SketchSearchRow("p1", "pctx", "kitchen 1000 done", "hq", 0L))
+        assertEquals(listOf("pct"), repos.searchText.search("100%", 5).getOrNull()!!.map { it.sheetUuid }, "% in the query is literal, not a wildcard")
         repos.searchText.deleteProject("p1")
         assertTrue(repos.searchText.search("kitchen", 5).getOrNull()!!.isEmpty())
     }
