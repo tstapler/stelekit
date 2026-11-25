@@ -75,7 +75,10 @@ data class MoveLayer(val id: LayerId, val toIndex: Int) : Command {
     override fun apply(doc: SketchDocumentV2): Either<CommandError, Applied> = either {
         val layer = doc.scene.layerOrFail(id).bind()
         val sorted = doc.scene.layers.sortedBy { it.order }.filter { it.id != id }.toMutableList()
-        val pinned = if (id == UnderlayIds.LAYER) 0 else if (sorted.firstOrNull()?.id == UnderlayIds.LAYER) 1 else 0
+        // An underlay that is not lowest (an older sheet) is healed to the bottom by any layer move.
+        val underlay = sorted.firstOrNull { it.id == UnderlayIds.LAYER }
+        if (underlay != null) { sorted.remove(underlay); sorted.add(0, underlay) }
+        val pinned = if (underlay != null) 1 else 0
         sorted.add(if (id == UnderlayIds.LAYER) 0 else toIndex.coerceIn(pinned, sorted.size), layer)
         val renumbered = sorted.mapIndexed { i, l -> l.copy(order = i) }
         val byId = renumbered.associateBy { it.id }

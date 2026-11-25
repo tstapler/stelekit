@@ -5,7 +5,6 @@
 package dev.stapler.stelekit.sketch.v2.render
 
 import dev.stapler.stelekit.sketch.v2.scene.ImageCrop
-import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -23,8 +22,8 @@ object CropSourceRect {
         if (crop == null) return BitmapSourceRect(0, 0, bitmapWidth, bitmapHeight)
         val sx = if (crop.naturalWidth > 0.0) bitmapWidth / crop.naturalWidth else 1.0
         val sy = if (crop.naturalHeight > 0.0) bitmapHeight / crop.naturalHeight else 1.0
-        val left = floor(crop.x * sx).toInt().coerceIn(0, max(bitmapWidth - 1, 0))
-        val top = floor(crop.y * sy).toInt().coerceIn(0, max(bitmapHeight - 1, 0))
+        val left = (crop.x * sx).roundToInt().coerceIn(0, max(bitmapWidth - 1, 0))
+        val top = (crop.y * sy).roundToInt().coerceIn(0, max(bitmapHeight - 1, 0))
         val right = min(bitmapWidth, max(left + 1, ((crop.x + crop.width) * sx).roundToInt()))
         val bottom = min(bitmapHeight, max(top + 1, ((crop.y + crop.height) * sy).roundToInt()))
         return BitmapSourceRect(left, top, right - left, bottom - top)

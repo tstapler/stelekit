@@ -54,6 +54,24 @@ class UnderlayPinAndCropTest {
     }
 
     @Test
+    fun moveLayer_should_HealAnUnderlayThatIsNotLowest_AndKeepOrdinaryMovesAboveIt() {
+        val d = docWithLayers()
+        val raised = d.copy(scene = d.scene.withLayers(d.scene.layers.map { if (it.id == UnderlayIds.LAYER) it.copy(order = 50) else it }))
+        val healed = MoveLayer(LayerId("walls"), 2).apply(raised).getOrNull()!!.doc
+        assertEquals(UnderlayIds.LAYER, bottomToTop(healed).first())
+        val between = MoveLayer(LayerId("notes"), 1).apply(d).getOrNull()!!.doc
+        assertEquals(listOf(UnderlayIds.LAYER, LayerId("notes")), bottomToTop(between).take(2))
+    }
+
+    @Test
+    fun setUnderlay_should_LowerAnExistingUnderlayLayerBelowTheOthers() {
+        val d = docWithLayers()
+        val raised = d.copy(scene = d.scene.withLayers(d.scene.layers.map { if (it.id == UnderlayIds.LAYER) it.copy(order = 50) else it }))
+        val again = SetUnderlay(file, 4000, 3000, UnderlayPlacement(0.0, 0.0, 800.0, 600.0, 0.0)).apply(raised).getOrNull()!!.doc
+        assertEquals(UnderlayIds.LAYER, bottomToTop(again).first())
+    }
+
+    @Test
     fun cropSourceRect_should_ScaleTheCropToTheDownsampledBitmap() {
         val crop = ImageCrop(1000.0, 500.0, 2000.0, 1000.0, 4000.0, 3000.0)
         assertEquals(BitmapSourceRect(500, 256, 1000, 512), CropSourceRect.map(crop, 2000, 1536))
