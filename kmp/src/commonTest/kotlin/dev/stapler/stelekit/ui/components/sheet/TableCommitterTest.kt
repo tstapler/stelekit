@@ -280,4 +280,110 @@ class TableCommitterTest {
         assertEquals("F", released.content)
         assertIs<SyncDecision.Rebuild>(released.decision)
     }
+
+    private fun List<CommitterEvent>.dropped() = filterIsInstance<CommitterEvent.Dropped>().map { it.text }
+
+    @Test
+    fun aQueuedCommit_should_BeDropped_When_AnOutsideWriteWasAdoptedAfterItWasQueued() = runTest {
+        val r = rig()
+        r.port.gate = CompletableDeferred()
+        r.committer.commit("S1", "edit A1")
+        r.committer.commit("S2", "edit A2", DraftText(dev.stapler.stelekit.table.CellAddress(1, 1), "typed"))
+        advanceUntilIdle() // S1 is writing, S2 waits behind it
+        r.committer.foreignContent("F") // the host adopted an outside write
+        r.port.gate!!.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(listOf("S1"), r.port.writes, "S2 was built on the old table and must not overwrite F")
+        assertEquals(listOf("S2"), r.events.dropped())
+        assertEquals("typed", r.events.filterIsInstance<CommitterEvent.Dropped>().single().draft?.text)
+    }
+
+    @Test
+    fun aQueuedCommit_should_BeDropped_When_TheHostHoldsForeignContent() = runTest {
+        val r = rig()
+        r.port.gate = CompletableDeferred()
+        r.committer.commit("S1", "edit A1")
+        r.committer.commit("S2", "edit A2")
+        advanceUntilIdle()
+        r.committer.invalidateQueued() // a conflict hold: the foreign write is not adopted, but must not be overwritten
+        r.port.gate!!.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(listOf("S1"), r.port.writes)
+        assertEquals(listOf("S2"), r.events.dropped())
+    }
+
+    @Test
+    fun aCommit_should_BeDropped_When_TheManagerHoldsContentNobodyAdopted() = runTest {
+        val r = rig()
+        r.committer.commit("S1", "edit A1")
+        advanceUntilIdle()
+        r.port.content = "F" // an outside write the feed has not delivered yet
+        r.committer.commit("S2", "edit A2")
+        advanceUntilIdle()
+        assertEquals(listOf("S1"), r.port.writes)
+        assertEquals(listOf("S2"), r.events.dropped())
+    }
+
+    @Test
+    fun aQueuedCommit_should_ReportItsDraft_When_TheCommitterClosedBeforeItRan() = runTest {
+        val r = rig()
+        r.port.gate = CompletableDeferred()
+        r.committer.commit("S1", "edit A1")
+        r.committer.commit("S2", "edit A2", DraftText(dev.stapler.stelekit.table.CellAddress(1, 1), "typed"))
+        advanceUntilIdle()
+        r.port.foreignRecord() // S1's record count will not add up: the committer closes itself
+        r.port.gate!!.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(r.events.any { it is CommitterEvent.MustClose })
+        assertEquals(listOf("S2"), r.events.dropped(), "the queued commit's draft is handed back, not lost")
+        r.committer.commit("S3", "edit A3")
+        assertEquals(listOf("S2", "S3"), r.events.dropped(), "a commit after close is reported too")
+    }
+
+    @Test
+    fun retry_should_ReattemptTheWrite_When_StoredContentCannotBeRead() = runTest {
+        val r = rig()
+        r.port.persist = false
+        r.port.stored = null
+        r.committer.commit("S1", "edit A1")
+        advanceUntilIdle()
+        assertIs<CommitterEvent.CommitFailed>(r.events.single())
+        r.committer.retry()
+        advanceUntilIdle()
+        assertEquals(listOf("S1", "S0", "S1"), r.port.writes, "unknown persistence is not 'already saved': the retry writes again")
+    }
+
+    @Test
+    fun undo_should_Work_When_AnotherBlockIsInTheEditor() = runTest {
+        val r = rig()
+        r.port.editingBlockUuid.value = BlockUuid("other")
+        r.committer.commit("S1", "edit A1")
+        r.committer.undo()
+        advanceUntilIdle()
+        assertTrue(r.events.none { it is CommitterEvent.MustClose }, "events: ${r.events}")
+        assertEquals("S0", r.port.content)
+    }
+
+    @Test
+    fun adoptObserved_should_ResetTheSteps_When_IdleAndTheContentIsNotWhatWasCommitted() = runTest {
+        val r = rig()
+        r.committer.commit("S1", "edit A1")
+        advanceUntilIdle()
+        r.committer.adoptObserved("S1")
+        assertEquals(1, r.committer.history.value.undoDepth, "the committed content is not foreign")
+        r.committer.adoptObserved("F")
+        assertEquals(0, r.committer.history.value.undoDepth)
+    }
+
+    @Test
+    fun adoptObserved_should_BeIgnored_While_AnOperationIsQueued() = runTest {
+        val r = rig()
+        r.port.gate = CompletableDeferred()
+        r.committer.commit("S1", "edit A1")
+        r.committer.adoptObserved("F")
+        r.port.gate!!.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(1, r.committer.history.value.undoDepth)
+        assertEquals(emptyList(), r.events.dropped())
+    }
 }

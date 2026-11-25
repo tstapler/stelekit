@@ -23,7 +23,9 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -32,13 +34,17 @@ import kotlin.coroutines.CoroutineContext
  * [owner] as `LocalTableSheetOwner` (the block's inline table is inert while it is set).
  */
 internal class TableSheetController(
-    private val loadBlock: suspend (BlockUuid) -> Block?,
-) {
+    /** The manager's in-memory content (it can be ahead of the stored row while a write is queued); null when unknown. */
+    private val liveContent: (BlockUuid) -> String? = { null },
     // Owns its scope: this object sits in `remember`, so a composition scope handed in would be cancelled under it.
-    private val scope = CoroutineScope(
+    private val scope: CoroutineScope = CoroutineScope(
         SupervisorJob() + PlatformDispatcher.Default +
             CoroutineExceptionHandler { _, t -> Logger("TableSheet").error("opening the sheet failed: ${t.message}", t) },
-    )
+    ),
+    private val loadBlock: suspend (BlockUuid) -> Block?,
+) {
+    // Taken synchronously by the caller's thread so two quick taps cannot both pass the `open` check.
+    private val opening = Mutex()
 
     class Open(val uuid: BlockUuid, val content: String, val version: Long, val pendingApply: RecoveredDraft? = null)
 
@@ -47,18 +53,31 @@ internal class TableSheetController(
 
     val owner: BlockUuid? get() = open?.uuid
 
+    /**
+     * Dropped with the controller on a graph switch on purpose: a draft is keyed by block uuid and cell, and
+     * applying it into another graph's table would write text into a table it never belonged to.
+     */
     val recovered = RecoveredDraftStore()
 
     fun openSheet(uuid: BlockUuid, pendingApply: RecoveredDraft? = null) {
-        if (open != null) return
+        if (open != null || !opening.tryLock()) return
         scope.launch {
-            val block = loadBlock(uuid) ?: return@launch
-            if (open == null) open = Open(uuid, block.content, block.version, pendingApply)
+            try {
+                val block = loadBlock(uuid) ?: return@launch
+                if (open == null) open = Open(uuid, liveContent(uuid) ?: block.content, block.version, pendingApply)
+            } finally {
+                opening.unlock()
+            }
         }
     }
 
     fun closed() {
         open = null
+    }
+
+    /** Stops any open in flight; the controller is leaving composition. */
+    fun dispose() {
+        scope.cancel()
     }
 }
 
@@ -88,6 +107,7 @@ internal fun TableSheetShell(
     flush: suspend () -> Unit,
     showMessage: (String) -> Unit,
     editAsMarkdown: (BlockUuid) -> Unit,
+    onChangeLoss: (String) -> Unit = showMessage,
     isChangingConfiguration: () -> Boolean = { false },
     readOnly: Boolean = false,
     body: SheetBody = { PlaceholderSheetBody(it) },
@@ -128,6 +148,7 @@ internal fun TableSheetShell(
             readOnly = readOnly,
             isChangingConfiguration = isChangingConfiguration,
             recoveredActions = actions,
+            onChangeLoss = onChangeLoss,
             body = body,
             onSessionReady = { session ->
                 live = session

@@ -60,6 +60,8 @@ object TableMessages {
     const val SAVE_FAILED_REMOVED = "Your last edit could not be saved: the table was removed"
     const val UPDATED_FROM_DISK = "Updated from disk"
     const val COMMIT_FAILED = "Couldn't save the change"
+    const val CHANGE_NOT_APPLIED = "The table changed first, so your last edit was not applied"
+    const val CHANGE_NOT_SAVED = "The last change could not be saved"
     const val RETRY = "Retry"
     const val READ_ONLY = "This graph is read-only"
     const val COLUMN_WIDTHS_RESET = "Column widths reset when you close the sheet"

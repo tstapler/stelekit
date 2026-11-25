@@ -158,7 +158,10 @@ class TableSheetRealFeedTest {
         // The undo's S0 emission is either seen before the re-commit registers (then S1 is an Echo of the displayed
         // state) or after it (then S0 is adopted and S1 must be adopted back, never an Echo of a stale display).
         // Both orders occur on a real feed; what must hold is that nothing is a Rebuild and the end state is S1.
-        assertTrue(decisionsFor(s1).all { it.first == SyncDecision.Echo || it.first == SyncDecision.Adopt(s1) }, "decisions for S1: ${decisionsFor(s1)}")
+        val s1Decisions = decisionsFor(s1)
+        assertTrue(s1Decisions.isNotEmpty(), "S1 was emitted at least once, so all{} below cannot pass on nothing")
+        assertTrue(s1Decisions.all { it.first == SyncDecision.Echo || it.first == SyncDecision.Adopt(s1) }, "decisions for S1: $s1Decisions")
+        assertEquals(s1, displays.lastOrNull() ?: session.content, "the grid's last rebuild is S1, never the undo's S0")
         val adoptedS0 = decisionsFor(s0).any { it.first == SyncDecision.Adopt(s0) }
         assertTrue(adoptedS0, "the undo's emission is adopted: ${decisionsFor(s0)}")
         assertTrue(synchronized(decisions) { decisions.none { it.first is SyncDecision.Rebuild || it.first == SyncDecision.ConflictKeepDraft } })

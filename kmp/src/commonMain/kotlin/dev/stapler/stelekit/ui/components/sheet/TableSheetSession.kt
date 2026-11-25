@@ -33,6 +33,7 @@ import dev.stapler.stelekit.ui.components.TableMessages
 import dev.stapler.stelekit.ui.components.isGridTableContent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -81,13 +82,21 @@ internal class RecoveredDraftStore {
     val all: List<RecoveredDraft> get() = items.toList()
     val pinned: RecoveredDraft? get() = items.firstOrNull()
 
+    /** Keeps the newest [MAX_ITEMS] drafts, each cut to [MAX_TEXT_CHARS]: this store lives as long as the window. */
     fun add(d: RecoveredDraft) {
-        items.removeAll { it.blockUuid == d.blockUuid && it.draft.address == d.draft.address }
-        items.add(d)
+        val bounded = if (d.draft.text.length > MAX_TEXT_CHARS) d.copy(draft = d.draft.copy(text = d.draft.text.take(MAX_TEXT_CHARS))) else d
+        items.removeAll { it.blockUuid == bounded.blockUuid && it.draft.address == bounded.draft.address }
+        items.add(bounded)
+        while (items.size > MAX_ITEMS) items.removeAt(0)
     }
 
     fun discard(d: RecoveredDraft) {
         items.remove(d)
+    }
+
+    companion object {
+        const val MAX_ITEMS = 20
+        const val MAX_TEXT_CHARS = dev.stapler.stelekit.table.PASTE_CELL_CHARS
     }
 }
 
@@ -109,6 +118,8 @@ internal class TableSheetSession(
     private val flushScope: CoroutineScope,
     private val flush: suspend () -> Unit,
     private val onCloseRequest: (SheetCloseReason) -> Unit,
+    /** One line for the window (snackbar) when a change is lost after the sheet is gone and no draft can be kept. */
+    private val onChangeLoss: (String) -> Unit = {},
 ) : SheetHostPort {
     private val log = Logger("TableSheetSession")
     private val sync = TableSyncPolicy().also { it.registerLoaded(initialContent) }
@@ -136,6 +147,10 @@ internal class TableSheetSession(
 
     val notices = TableNotices()
 
+    // What the body's grid shows, as far as the host knows: its own commit text, or what the host last told it to rebuild to.
+    private var gridText = initialContent
+    private var lastCommitText: String? = null
+
     private var heldContent: String? = null
     private var heldDraft: DraftText? = null
     private var staleContent: String? = null
@@ -162,6 +177,11 @@ internal class TableSheetSession(
         hooks = body
     }
 
+    /** The body is leaving composition: drop its hooks, unless a newer body already replaced them. */
+    fun unbind(body: SheetBodyHooks) {
+        if (hooks === body) hooks = null
+    }
+
     // ---- commits and undo ---------------------------------------------------------------------------------------
 
     /** The body's single path to the block. False when nothing was issued (read-only, or held by a conflict). */
@@ -174,6 +194,8 @@ internal class TableSheetSession(
             return false
         }
         committer.commit(text, label, draft)
+        lastCommitText = text
+        gridText = text
         return true
     }
 
@@ -224,24 +246,44 @@ internal class TableSheetSession(
 
     /** The block turned into the raw editor (a path the depth rule should make unreachable). */
     fun onEditingBlock(editing: BlockUuid?) {
-        if (editing != null) close(SheetCloseReason.EditorOpened)
+        // Another block's editor (the manager's editing uuid is page-wide) says nothing about this table.
+        if (editing == blockUuid) close(SheetCloseReason.EditorOpened)
     }
 
     private fun onCommitterEvent(event: CommitterEvent) {
+        if (closed) return onClosedCommitterEvent(event)
         when (event) {
             is CommitterEvent.CommitFailed -> {
                 event.draft?.let { hooks?.restoreDraft(it.address, it.text) }
                 notices.withAction(NoticeType.Retry, TableMessages.COMMIT_FAILED, TableMessages.RETRY) { committer.retry() }
+            }
+            is CommitterEvent.Dropped -> {
+                event.draft?.let { hooks?.restoreDraft(it.address, it.text) }
+                notices.info(TableMessages.CHANGE_NOT_APPLIED)
             }
             CommitterEvent.NothingToUndo -> notices.info(TableMessages.NOTHING_TO_UNDO_TABLE)
             CommitterEvent.NothingToRedo -> notices.info(TableMessages.NOTHING_TO_REDO_TABLE)
             is CommitterEvent.Undone -> announcement = TableMessages.UNDONE
             is CommitterEvent.Redone -> announcement = TableMessages.REDONE
             // The ledger's displayed state moves here, so `content` follows it (an undo's late echo then cannot win).
-            is CommitterEvent.Issued -> content = event.text
+            is CommitterEvent.Issued -> {
+                content = event.text
+                // An undo's echo can rebuild the grid to older text between a commit and its write; the newest commit wins it back.
+                if (event.text == lastCommitText && event.text != gridText) show(event.text, hooks?.selectionAnchor)
+            }
             is CommitterEvent.Released -> apply(event.decision, event.content)
             is CommitterEvent.MustClose -> close(event.reason)
         }
+    }
+
+    /** The sheet is gone: nothing renders, so a failed or dropped commit's draft goes to the recovered store instead. */
+    private fun onClosedCommitterEvent(event: CommitterEvent) {
+        val draft = when (event) {
+            is CommitterEvent.CommitFailed -> event.draft
+            is CommitterEvent.Dropped -> event.draft
+            else -> return
+        }
+        if (draft != null) recoverDraft(draft) else onChangeLoss(TableMessages.CHANGE_NOT_SAVED)
     }
 
     /** Diagnostics: every classified decision with the content it is about (the real-feed test records them). */
@@ -252,7 +294,10 @@ internal class TableSheetSession(
         if (decision == SyncDecision.Stale) noteStale(observed) else staleStreak = 0
         when (decision) {
             SyncDecision.Echo, SyncDecision.Stale, SyncDecision.Defer -> Unit
-            is SyncDecision.Adopt -> show(decision.content, hooks?.selectionAnchor)
+            is SyncDecision.Adopt -> {
+                committer.adoptObserved(decision.content)
+                show(decision.content, hooks?.selectionAnchor)
+            }
             is SyncDecision.Rebuild -> {
                 committer.foreignContent(observed)
                 show(observed, decision.selection)
@@ -269,6 +314,7 @@ internal class TableSheetSession(
     }
 
     private fun show(newContent: String, keep: CellAddress?) {
+        gridText = newContent
         content = newContent
         revision++
         hooks?.rebuild(newContent, keep)
@@ -278,6 +324,7 @@ internal class TableSheetSession(
 
     private fun hold(observed: String) {
         conflictHeld = true
+        committer.invalidateQueued()
         bannerOpen = true
         heldContent = observed
         heldDraft = hooks?.dirtyDraft()
@@ -346,6 +393,19 @@ internal class TableSheetSession(
 
     /** Writes a recovered draft into its cell as one commit; false when the cell is gone or the sheet is read-only. */
     fun applyRecovered(item: RecoveredDraft): Boolean {
+        if (closed || readOnly) return false
+        if (committer.pending.value > 0) {
+            // Build on what the queued commits write, not on what the grid showed when Apply was tapped.
+            flushScope.launch(context) {
+                committer.drain()
+                if (!closed) applyRecoveredNow(item)
+            }
+            return true
+        }
+        return applyRecoveredNow(item)
+    }
+
+    private fun applyRecoveredNow(item: RecoveredDraft): Boolean {
         val doc = (TableParser.parse(content) as? TableParseResult.Parsed)?.doc ?: return false
         val outcome = TableEngine.editor().apply(doc, TableEdit.SetCell(item.draft.address, CellText(item.draft.text)))
         val applied = outcome as? TableEditOutcome.Applied ?: return false
@@ -392,11 +452,16 @@ internal class TableSheetSession(
         closeReason = reason
         log.info("sheet closed: ${reason.name}")
         flushScope.launch {
-            committer.drain()
-            flush()
-            committer.cancel()
+            try {
+                committer.drain()
+                flush()
+            } finally {
+                committer.cancel()
+            }
+            // The raw editor must open on the committed text, so its callback waits for the queued commits.
+            if (reason == SheetCloseReason.EditAsMarkdown) withContext(context) { onCloseRequest(reason) }
         }
-        onCloseRequest(reason)
+        if (reason != SheetCloseReason.EditAsMarkdown) onCloseRequest(reason)
     }
 
     private fun recoverDraft(draft: DraftText) {

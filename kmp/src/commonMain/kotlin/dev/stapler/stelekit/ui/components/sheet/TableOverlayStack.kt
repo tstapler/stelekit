@@ -51,6 +51,9 @@ internal class TableNotices {
     private val actions = HashMap<Long, () -> Unit>()
     private var nextId = 1L
 
+    /** Actions still held for a notice; one per notice that can still be activated. */
+    internal val actionCount: Int get() = actions.size
+
     var visible: Notice? by mutableStateOf(null)
         private set
     var moreCount: Int by mutableIntStateOf(0)
@@ -92,6 +95,12 @@ internal class TableNotices {
     }
 
     private fun sync() {
+        // A replaced or evicted notice leaves the queue without activate or dismiss; its action must not outlive it.
+        val live = HashSet<Long>()
+        queue.visible?.let { live.add(it.id) }
+        queue.pending.forEach { live.add(it.id) }
+        queue.retiredUndos.forEach { live.add(it.id) }
+        actions.keys.retainAll(live)
         visible = queue.visible
         moreCount = queue.moreCount
     }

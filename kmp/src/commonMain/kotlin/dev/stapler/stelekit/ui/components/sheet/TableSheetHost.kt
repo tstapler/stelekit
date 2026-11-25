@@ -26,6 +26,7 @@ import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
@@ -78,9 +79,11 @@ internal fun TableSheetHost(
     recoveredActions: RecoveredDraftActions? = null,
     overflow: SheetOverflowActions = SheetOverflowActions(),
     onSessionReady: (TableSheetSession) -> Unit = {},
+    onChangeLoss: (String) -> Unit = {},
     body: SheetBody = { PlaceholderSheetBody(it) },
 ) {
     val latestOnClose = rememberUpdatedState(onClose)
+    val latestChangeLoss = rememberUpdatedState(onChangeLoss)
     val openedForGraph = remember { graphKey }
     val session = remember(blockUuid) {
         TableSheetSession(
@@ -94,6 +97,7 @@ internal fun TableSheetHost(
             flushScope = flushScope,
             flush = flush,
             onCloseRequest = { latestOnClose.value(it) },
+            onChangeLoss = { latestChangeLoss.value(it) },
         )
     }
     val latestReady = rememberUpdatedState(onSessionReady)
@@ -118,8 +122,9 @@ internal fun TableSheetHost(
     val focus = remember { FocusRequester() }
     LaunchedEffect(session) { runCatching { focus.requestFocus() } }
     val fraction = sheetWidthFraction(LocalWindowSizeClass.current)
+    val escGate = remember { EscDismissGate() }
     Dialog(
-        onDismissRequest = { session.onBack(LadderKey.Back) },
+        onDismissRequest = { if (!escGate.swallowDismiss()) session.onBack(LadderKey.Back) },
         properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
     ) {
         Surface(
@@ -129,6 +134,7 @@ internal fun TableSheetHost(
                 .fillMaxHeight(if (fraction < 1f) fraction else 1f)
                 .focusRequester(focus)
                 .focusable()
+                .onPreviewKeyEvent { escGate.observe(it.key == Key.Escape, it.type == KeyEventType.KeyDown); false }
                 .onKeyEvent { sheetKey(session, it) }
                 .testTag("tableSheetHost"),
         ) {
@@ -143,6 +149,22 @@ internal fun TableSheetHost(
             }
         }
     }
+}
+
+/**
+ * Esc never closes the sheet (UX-71, UX-93), but a platform `Dialog` may report an unconsumed Esc as a dismiss request,
+ * the same call Android Back makes. The gate remembers an Esc key-down so that one dismiss request is ignored.
+ * UNVERIFIED on a real desktop or browser window: whether the platform dialog reports Esc this way is pending the owner.
+ */
+internal class EscDismissGate {
+    private var escapeDown = false
+
+    fun observe(isEscape: Boolean, isDown: Boolean) {
+        if (isEscape) escapeDown = isDown
+    }
+
+    /** True once per Esc press: the dismiss request that follows it is not a Back. */
+    fun swallowDismiss(): Boolean = escapeDown.also { escapeDown = false }
 }
 
 /**

@@ -42,6 +42,12 @@ internal enum class SheetCloseReason(val message: String?) {
 internal sealed interface CommitterEvent {
     /** The write did not stick (Left, throw, or the manager disagrees); the draft stays and Retry re-issues it. */
     data class CommitFailed(val text: String, val label: String, val draft: DraftText?) : CommitterEvent
+
+    /**
+     * The commit never ran: the committer closed, or an outside write replaced the table after it was queued, so
+     * writing its text would overwrite that content. The host puts [draft] back (or recovers it).
+     */
+    data class Dropped(val text: String, val label: String, val draft: DraftText?) : CommitterEvent
     data object NothingToUndo : CommitterEvent
     data object NothingToRedo : CommitterEvent
     data class Undone(val label: String?) : CommitterEvent
@@ -105,7 +111,7 @@ internal data class SheetHistory(
  * commit, are gated by the sheet's own [TableUndoScope] (the page's stack is page-wide), and declare the expected
  * content to the ledger before calling the manager. An undo-record rise nobody here caused closes the sheet.
  */
-@Suppress("LongParameterList") // one collaborator per concern; a holder object would only rename them
+@Suppress("LongParameterList", "TooManyFunctions") // one collaborator per concern; one writer owns commit, undo, redo and the ledger calls
 internal class TableCommitter(
     private val uuid: BlockUuid,
     private val port: TableManagerPort,
@@ -136,6 +142,9 @@ internal class TableCommitter(
     private var closed = false
     private var failed: PendingCommit? = null
 
+    // Bumped whenever an outside write replaces the table; a commit queued before it was built on the old table.
+    private var epoch = 0
+
     private class PendingCommit(val text: String, val label: String, val draft: DraftText?)
 
     private val _history = MutableStateFlow(SheetHistory())
@@ -147,7 +156,10 @@ internal class TableCommitter(
     val pending: StateFlow<Int> = pendingOps.asStateFlow()
 
     /** Queues a commit of [text] (the whole serialized table). Equal-to-current content is skipped. UI thread only. */
-    fun commit(text: String, label: String, draft: DraftText? = null) = enqueue { runCommit(text, label, draft) }
+    fun commit(text: String, label: String, draft: DraftText? = null) = commitAt(text, label, draft, epoch)
+
+    private fun commitAt(text: String, label: String, draft: DraftText?, queuedAt: Int) =
+        enqueue(onDropped = { onEvent(CommitterEvent.Dropped(text, label, draft)) }) { runCommit(text, label, draft, queuedAt) }
 
     fun undo() = enqueue { runHistory(redo = false) }
 
@@ -156,7 +168,7 @@ internal class TableCommitter(
     /** Re-issues the last failed commit with a new `seq`. */
     fun retry() {
         val f = failed ?: return
-        enqueue { runCommit(f.text, f.label, f.draft) }
+        commitAt(f.text, f.label, f.draft, epoch)
     }
 
     /** Resolves after every queued operation finished. */
@@ -171,6 +183,7 @@ internal class TableCommitter(
 
     /** An external write or an adopted foreign state replaced the table: the earlier steps no longer apply. */
     fun foreignContent(content: String) {
+        epoch++
         current = content
         undoScope.foreignEntry()
         undoTargets.clear()
@@ -178,19 +191,34 @@ internal class TableCommitter(
         publish()
     }
 
+    /**
+     * The host holds foreign content it will not adopt (a conflict): commits queued before it must not write over it.
+     */
+    fun invalidateQueued() {
+        epoch++
+    }
+
+    /**
+     * The feed showed [content] as the new display without an own commit or undo behind it. While nothing is queued
+     * and it differs from what the committer expects, the table was replaced from outside (steps no longer apply).
+     */
+    fun adoptObserved(content: String) {
+        if (pendingOps.value == 0 && content != current) foreignContent(content)
+    }
+
     /** The host observed the manager's undo-record counter; a rise while idle is somebody else's entry (R3-C4). */
     fun onUndoRecordCount(count: Long) {
         if (!running && !closed && count > knownRecords) mustClose(SheetCloseReason.ForeignEntry)
     }
 
-    private fun enqueue(op: suspend () -> Unit) {
-        if (closed) return
+    private fun enqueue(onDropped: (() -> Unit)? = null, op: suspend () -> Unit) {
+        if (closed) return run { onDropped?.invoke() }
         val previous = tail
         pendingOps.update { it + 1 }
         tail = scope.launch {
             try {
                 previous?.join()
-                if (closed) return@launch
+                if (closed) return@launch run { onDropped?.invoke() }
                 running = true
                 try {
                     op()
@@ -207,9 +235,12 @@ internal class TableCommitter(
         }
     }
 
-    private suspend fun runCommit(text: String, label: String, draft: DraftText?) {
+    private suspend fun runCommit(text: String, label: String, draft: DraftText?, queuedAt: Int) {
         if (text == current || foreignEntryDetected()) return
+        if (queuedAt != epoch) return onEvent(CommitterEvent.Dropped(text, label, draft))
         val before = port.contentOf(uuid) ?: return mustClose(SheetCloseReason.SaveFailedRemoved)
+        // The manager holds something this committer neither wrote nor was told about: an outside write not adopted yet.
+        if (before != current && before != text && before != failed?.text) return onEvent(CommitterEvent.Dropped(text, label, draft))
         val seq = sync.registerCommit(text)
         val recordsBefore = port.undoRecordCount.value
         usageLog.info("via=sheet")
@@ -231,7 +262,8 @@ internal class TableCommitter(
             knownRecords += delta
             if (recorded) recordStep(before, label)
             failed = PendingCommit(text, label, draft)
-            current = persisted ?: after
+            // Unknown persistence (null) is not "persisted as current": keep the old base so Retry really re-attempts.
+            if (persisted != null) current = persisted
             publish()
             return onEvent(CommitterEvent.CommitFailed(text, label, draft))
         }
@@ -279,7 +311,7 @@ internal class TableCommitter(
         (if (redo) port.redo() else port.undo()).join()
         val consistent = port.contentOf(uuid) == target &&
             port.undoRecordCount.value == recordsBefore &&
-            port.editingBlockUuid.value == null
+            port.editingBlockUuid.value != uuid
         if (!consistent) return mustClose(SheetCloseReason.Degraded)
         current = target
         publish()

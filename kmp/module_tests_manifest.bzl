@@ -289,6 +289,7 @@ KMP_MODULE_TESTS = {
    "dev/stapler/stelekit/ui/components/sheet/SheetRangeStateTest.kt",
    "dev/stapler/stelekit/ui/components/sheet/SheetStateTest.kt",
    "dev/stapler/stelekit/ui/components/sheet/TableCommitterTest.kt",
+   "dev/stapler/stelekit/ui/components/sheet/TableSheetSessionTest.kt",
    "dev/stapler/stelekit/ui/screens/DiskConflictDiffTest.kt",
    "dev/stapler/stelekit/ui/screens/GlobalUnlinkedReferencesViewModelTest.kt",
    "dev/stapler/stelekit/ui/screens/ImportViewModelTest.kt",

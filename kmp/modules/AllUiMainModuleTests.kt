@@ -22,6 +22,7 @@ import dev.stapler.stelekit.ui.components.sheet.SheetKeyDecisionTest
 import dev.stapler.stelekit.ui.components.sheet.SheetRangeStateTest
 import dev.stapler.stelekit.ui.components.sheet.SheetStateTest
 import dev.stapler.stelekit.ui.components.sheet.TableCommitterTest
+import dev.stapler.stelekit.ui.components.sheet.TableSheetSessionTest
 import dev.stapler.stelekit.ui.screens.DiskConflictDiffTest
 import dev.stapler.stelekit.ui.screens.GlobalUnlinkedReferencesViewModelTest
 import dev.stapler.stelekit.ui.screens.ImportViewModelTest
@@ -67,6 +68,7 @@ import org.junit.runners.Suite
     SheetRangeStateTest::class,
     SheetStateTest::class,
     TableCommitterTest::class,
+    TableSheetSessionTest::class,
     DiskConflictDiffTest::class,
     GlobalUnlinkedReferencesViewModelTest::class,
     ImportViewModelTest::class,

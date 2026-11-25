@@ -361,21 +361,27 @@ internal fun GraphContentActiveShell(
             )
         }
 
+        val tableSheetFlushJob = remember { SupervisorJob() }
         val tableSheetFlushScope = remember {
             // A flush that throws an Error must not reach the default handler (kills the process on Android).
             val guard = kotlinx.coroutines.CoroutineExceptionHandler { _, t -> dev.stapler.stelekit.logging.Logger("TableSheet").error("sheet flush failed: ${t.message}", t) }
-            CoroutineScope(SupervisorJob() + dev.stapler.stelekit.coroutines.PlatformDispatcher.Default + guard)
+            CoroutineScope(tableSheetFlushJob + dev.stapler.stelekit.coroutines.PlatformDispatcher.Default + guard)
         }
-        val tableSheetController = remember(repos) {
-            dev.stapler.stelekit.ui.components.sheet.TableSheetController { uuid ->
-                repos.blockRepository.getBlockByUuid(uuid).first().getOrNull()
-            }
-        }
+        // complete(), not cancel(): a closing sheet's queued commits and flush may still be running when this leaves composition.
+        DisposableEffect(tableSheetFlushJob) { onDispose { tableSheetFlushJob.complete() } }
         val tableSheetPort = remember(blockStateManager, repos) {
             dev.stapler.stelekit.ui.components.sheet.BlockStateManagerTablePort(blockStateManager) { uuid ->
                 repos.blockRepository.getBlockByUuid(uuid).first().getOrNull()?.content
             }
         }
+        val tableSheetController = remember(repos, tableSheetPort) {
+            dev.stapler.stelekit.ui.components.sheet.TableSheetController(
+                liveContent = { uuid -> tableSheetPort.contentOf(uuid) },
+            ) { uuid ->
+                repos.blockRepository.getBlockByUuid(uuid).first().getOrNull()
+            }
+        }
+        DisposableEffect(tableSheetController) { onDispose { tableSheetController.dispose() } }
         val tableSheetEnabled = viewModel.tablePreferences.prefs.sheetEnabled
         val openTableSheetAction = remember(tableSheetController, tableSheetEnabled) {
             if (!tableSheetEnabled) null else {
