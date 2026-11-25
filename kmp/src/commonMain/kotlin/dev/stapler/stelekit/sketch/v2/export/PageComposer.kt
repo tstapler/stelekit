@@ -132,7 +132,7 @@ object PageComposer {
      * The page of [tile]: [content] (scene units) placed at the sheet's scale, then the furniture. [clip] clips the drawing to the
      * drawing area; it is set by the caller for a tiled page, an overflowing page and a frame crop. [ink] colours the furniture.
      */
-    fun compose(plan: SheetPlan, tile: PageTile, content: List<DrawOp>, clip: Boolean, ink: String): List<DrawOp> {
+    fun compose(plan: SheetPlan, tile: PageTile, content: List<DrawOp>, clip: Boolean, ink: String, tiled: Boolean = false): List<DrawOp> {
         val f = plan.factor
         val (ox, oy) = plan.origin(tile)
         val placed = PageOps.place(content, f, ox - plan.content.minX * f, oy - plan.content.minY * f)
@@ -143,7 +143,7 @@ object PageComposer {
         plan.strip?.let { strip ->
             if (plan.setup.scaleBar) out += scaleBar(plan, strip, ink)
             plan.setup.northDegrees?.let { out += northArrow(strip, it, ink) }
-            if (plan.pageCount > 1) out += label("page.tile", PageText.tilePosition(tile, plan), strip.x + strip.width / HALF, strip.y + BAR_LABEL_TOP, BAR_LABEL_SIZE, TextAlign.Center, ink, 1.0)
+            if (tiled) out += label("page.tile", PageText.tilePosition(tile, plan), strip.x + strip.width / HALF, strip.y + BAR_LABEL_TOP, BAR_LABEL_SIZE, TextAlign.Center, ink, 1.0)
         }
         return out
     }

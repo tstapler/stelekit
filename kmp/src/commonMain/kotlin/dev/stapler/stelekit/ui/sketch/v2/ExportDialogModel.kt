@@ -277,7 +277,6 @@ class ExportDialogController(
         val current = mutableState.value as? ExportUiState.Open ?: return
         val fresh = model ?: return
         val next = fresh.normalised(request)
-        next.sheet?.takeIf { it != current.request.sheet }?.let(rememberSheet)
         rendered = null
         mutableState.value = current.copy(request = next, preview = fresh.preview(next), error = null)
     }
@@ -334,6 +333,7 @@ class ExportDialogController(
         val current = mutableState.value as? ExportUiState.Open ?: return
         when (outcome) {
             is SketchSaveOutcome.Saved -> {
+                current.request.sheet?.let(rememberSheet)
                 postNotice(withMissingNote(savedNotice(outcome), file.missingImages))
                 rendered = null
                 mutableState.value = ExportUiState.Closed

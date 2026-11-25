@@ -42,13 +42,13 @@ class SheetPlan(
     val factor: Double get() = setup.scale.factor
     val scaledWidth: Double get() = (content.maxX - content.minX) * factor
     val scaledHeight: Double get() = (content.maxY - content.minY) * factor
-    val pageCount: Int get() = columns * rows
+    val pageCount: Int get() = (columns.toLong() * rows).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 
     /** True when one page holds the whole drawing at this scale. */
     val fits: Boolean get() = columns == 1 && rows == 1 && area.width > 0 && area.height > 0
 
     /** True when the drawing needs more pages than a tiled export writes ([SheetPlanner.PAGE_BUDGET]). */
-    val tooManyPages: Boolean get() = pageCount.toLong() > SheetPlanner.PAGE_BUDGET
+    val tooManyPages: Boolean get() = columns.toLong() * rows > SheetPlanner.PAGE_BUDGET
 
     /** The windows in reading order (row by row); a single tile covering the drawing when it fits or when the plan has too many pages to tile. */
     val tiles: List<PageTile>
@@ -104,7 +104,11 @@ object SheetPlanner {
         return SheetPlan(setup, metric, content, pageW, pageH, printable, area, title, strip, columns, rows)
     }
 
-    private fun pagesFor(length: Double, per: Double): Int = max(1, ceil((length - FIT_SLACK) / per).toInt())
+    /** Pages along one axis, held just over [PAGE_BUDGET] so a huge or infinite drawing is "too many pages" without a product that overflows. */
+    private fun pagesFor(length: Double, per: Double): Int {
+        val pages = ceil((length - FIT_SLACK) / per)
+        return if (pages.isNaN() || pages > PAGE_BUDGET) PAGE_BUDGET + 1 else max(1, pages.toInt())
+    }
 
     fun titleBandHeight(block: TitleBlock): Double = TITLE_MAIN_ROW + TITLE_META_ROW + (if (block.notes.isBlank()) 0.0 else TITLE_NOTES_ROW)
 

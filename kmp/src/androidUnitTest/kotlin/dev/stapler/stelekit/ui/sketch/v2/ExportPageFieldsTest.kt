@@ -75,7 +75,6 @@ class ExportPageFieldsTest {
         tap(ExportPageTags.FIELDS_APPLY)
         assertEquals("Kitchen", open(controller).request.sheet!!.titleBlock!!.title)
         assertEquals("T. S.", open(controller).request.sheet!!.titleBlock!!.author)
-        assertEquals("Kitchen", remembered.last().titleBlock!!.title)
         rule.onNodeWithTag(ExportPageTags.TITLE_SHOWN).assertTextContains("Kitchen")
 
         tap(ExportPageTags.SCALE_CUSTOM_BUTTON)

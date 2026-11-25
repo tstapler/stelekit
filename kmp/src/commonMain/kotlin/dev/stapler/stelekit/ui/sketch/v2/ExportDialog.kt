@@ -117,7 +117,7 @@ private fun FormatOptions(model: ExportDialogModel, request: ExportRequest, upda
                 selected = request.format == format,
                 reason = model.disabledReason(format),
                 tag = ExportTags.format(format),
-                onSelect = { update(request.copy(format = format)) },
+                onSelect = { update(request.copy(format = format, sheet = if (request.format == ExportFormat.Pdf && format != ExportFormat.Pdf) null else request.sheet, tiled = false)) },
             )
         }
     }

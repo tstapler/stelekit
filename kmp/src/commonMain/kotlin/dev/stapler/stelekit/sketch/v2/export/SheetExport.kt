@@ -17,7 +17,7 @@ class SheetPrint(val plan: SheetPlan, val content: List<DrawOp>, val clip: Boole
     fun pages(tiled: Boolean): List<List<DrawOp>> {
         val tiles = if (tiled && !plan.tooManyPages) plan.tiles else plan.tiles.take(1)
         val clipped = clip || tiles.size > 1
-        return tiles.map { PageComposer.compose(plan, it, content, clipped, ink) }
+        return tiles.map { PageComposer.compose(plan, it, content, clipped, ink, tiled = tiles.size > 1) }
     }
 
     /** The one-page SVG: width and height in physical units, the viewBox in page units, and the `data-sketch-*` scale metadata. */

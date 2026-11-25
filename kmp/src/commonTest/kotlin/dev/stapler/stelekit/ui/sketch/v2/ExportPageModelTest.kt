@@ -106,14 +106,13 @@ class ExportPageModelTest {
         val controller = ExportDialogController({ src }, runner, files, {}, dispatcher = Dispatchers.Unconfined, rememberSheet = { remembered += it })
         controller.open()
         val open = assertIs<ExportUiState.Open>(controller.state.value)
-        assertTrue(remembered.isEmpty(), "opening changes nothing")
         controller.update(open.request.copy(format = ExportFormat.Pdf))
-        assertEquals(1, remembered.size, "the suggested setup is remembered when the PDF is chosen")
-        val chosen = assertNotNull(remembered.single())
+        val chosen = assertNotNull(assertIs<ExportUiState.Open>(controller.state.value).request.sheet)
         controller.update(assertIs<ExportUiState.Open>(controller.state.value).request.copy(sheet = chosen.copy(scale = DrawingScale.of(1, 96))))
-        assertEquals(DrawingScale.of(1, 96), remembered.last().scale)
+        assertTrue(remembered.isEmpty(), "choosing and editing change nothing on the sheet until an export is saved")
         controller.export()
         assertEquals(listOf("plan.pdf"), files.saved)
+        assertEquals(DrawingScale.of(1, 96), remembered.single().scale)
     }
 
     private companion object {

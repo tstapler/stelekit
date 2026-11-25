@@ -80,7 +80,7 @@ class ExportDialogPageTest {
         rule.onNodeWithTag(ExportPageTags.PREVIEW).assertExists()
         val setup = assertNotNull(open(controller).request.sheet)
         assertEquals(ExportFormat.Pdf, open(controller).request.format)
-        assertEquals(setup, remembered.single(), "the suggested setup is remembered with the sheet")
+        assertTrue(remembered.isEmpty(), "nothing is written to the sheet until an export is saved")
         rule.onNodeWithTag(ExportTags.DIALOG).captureRoboImage("build/outputs/roborazzi/export-page-1-fits.png")
     }
 
