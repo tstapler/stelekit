@@ -61,7 +61,7 @@ cat > "${INSTALL_PATH}" <<WRAPPER
 if [ "\$1" = "sketch" ]; then
   dir=\$(mktemp -d) || exit 2
   trap 'rm -rf "\$dir"' EXIT
-  trap 'exit 130' INT TERM
+  trap 'exit 130' INT TERM HUP
   TMPDIR="\$dir" APPIMAGE_EXTRACT_AND_RUN=1 "${APPIMAGE_PATH}" "\$@"
   exit \$?
 fi

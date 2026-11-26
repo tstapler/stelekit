@@ -9,8 +9,8 @@ You can see images and edit files; you cannot open the app. `stelekit sketch` cl
 
 ## Setup
 
-- The tool is `stelekit sketch`, part of the installed SteleKit desktop app. Check: `timeout 60 stelekit sketch help` prints a usage line. A release without the subcommand opens the app instead (the timeout ends it): upgrade. From a repo checkout, `scripts/sketch-cli` is the same tool (JDK 21).
-- `stelekit` is on `PATH` after a Homebrew or `install.sh` install. Otherwise call the app's executable: `/opt/stelekit/bin/stelekit` (deb, rpm), the `.AppImage` file itself, or `/Applications/stelekit.app/Contents/MacOS/stelekit` (macOS). On Windows the CLI is untested and may print nothing in a console.
+- The tool is `stelekit sketch`, part of the installed SteleKit desktop app. Check: `stelekit sketch help` prints a usage line. A release without the subcommand opens the app instead, so run the check with a time limit (`timeout 60`, or `gtimeout` on macOS) and upgrade if it hangs. From a repo checkout, `scripts/sketch-cli` is the same tool (JDK 21).
+- `stelekit` is on `PATH` after a Homebrew or `install.sh` install. Otherwise call the app's executable: `/opt/stelekit/bin/stelekit` (deb, rpm), the `.AppImage` file itself (if it needs `APPIMAGE_EXTRACT_AND_RUN=1`, also give it its own `TMPDIR`, or it can delete a running app's files), or `/Applications/stelekit.app/Contents/MacOS/stelekit` (macOS). On Windows the CLI is untested and may print nothing in a console.
 - Format details: `stelekit sketch format` (units are 1/16 inch, y grows down).
 - Use absolute paths or run from your scratch folder.
 - The graph is the notes folder (it has `pages/` and `journals/`). Sketches live in `<graph>/assets/stelekit-sketch/<slug>/`.
