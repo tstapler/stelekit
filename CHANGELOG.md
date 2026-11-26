@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.126.0](https://github.com/tstapler/stelekit/compare/v0.125.0...v0.126.0) (2026-11-25)
+
+
+### Features
+
+* **table:** sheet editor UI, PR-C (flags off by default) ([#755](https://github.com/tstapler/stelekit/issues/755)) ([d710eba](https://github.com/tstapler/stelekit/commit/d710eba724b01da94b173b7c39b98a7711649255))
+
+
+### Bug Fixes
+
+* **sketch:** chip row overlap on phones; name and rename sheets ([#757](https://github.com/tstapler/stelekit/issues/757)) ([a81f655](https://github.com/tstapler/stelekit/commit/a81f655aef1d3789cd459d00d964dcc480e435ff))
+
 ## [0.125.0](https://github.com/tstapler/stelekit/compare/v0.124.0...v0.125.0) (2026-11-25)
 
 
