@@ -66,6 +66,7 @@ class GitSyncBusyCounterFetchOnlyTest {
         )
     }
 
+    // runBlocking: real threads/dispatchers do the work under test; virtual time cannot order or await them
     @Test
     fun `isBusy is true for the duration of fetchOnly`() = runBlocking {
         assumeTrue(
@@ -88,15 +89,16 @@ class GitSyncBusyCounterFetchOnlyTest {
         assertFalse(counter.isBusy.value, "precondition: counter starts idle")
 
         val job = launch { service.fetchOnly("test-graph") }
-        withTimeout(5_000) { entered.await() }
+        withTimeout(5_000) { entered.await() } // real-clock hang guard: awaits real threads
         assertTrue(counter.isBusy.value, "isBusy must be true while fetchOnly is in flight")
 
         gate.complete(Unit)
-        withTimeout(5_000) { job.join() }
+        withTimeout(5_000) { job.join() } // real-clock hang guard: awaits real threads
 
         assertFalse(counter.isBusy.value, "counter must return to idle once fetchOnly completes")
     }
 
+    // runBlocking: real threads/dispatchers do the work under test; virtual time cannot order or await them
     @Test
     fun `isBusy returns to false even when fetchOnly throws`() = runBlocking {
         assumeTrue(

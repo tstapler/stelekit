@@ -18,7 +18,7 @@ import arrow.core.right
 import com.google.common.util.concurrent.ListenableFuture
 import dev.stapler.stelekit.git.testsupport.cloningStub
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -81,7 +81,7 @@ class GitCloneWorkerThrowableSafetyTest {
             .build()
 
     @Test
-    fun `doWork() returns Result failure and tears down the foreground notification when the wrapped clone delegate throws OutOfMemoryError`() = runBlocking {
+    fun `doWork() returns Result failure and tears down the foreground notification when the wrapped clone delegate throws OutOfMemoryError`() = runTest {
         val repo = cloningStub { _, _, _, _ -> throw OutOfMemoryError("simulated JGit pack-parsing OOM") }
         val worker = buildWorker(repo)
 
@@ -96,7 +96,7 @@ class GitCloneWorkerThrowableSafetyTest {
     }
 
     @Test
-    fun `doWork() rethrows CancellationException rather than converting it to Result failure when the wrapped clone delegate is cancelled`() = runBlocking {
+    fun `doWork() rethrows CancellationException rather than converting it to Result failure when the wrapped clone delegate is cancelled`() = runTest {
         val repo = cloningStub { _, _, _, _ -> throw CancellationException("worker stopped") }
         val worker = buildWorker(repo)
 
@@ -105,7 +105,7 @@ class GitCloneWorkerThrowableSafetyTest {
     }
 
     @Test
-    fun `doWork() tears down the foreground notification on the CancellationException path too`() = runBlocking {
+    fun `doWork() tears down the foreground notification on the CancellationException path too`() = runTest {
         val foregroundUpdater = RecordingForegroundUpdater()
         val repo = cloningStub { _, _, _, _ -> throw CancellationException("worker stopped") }
         val worker = buildWorker(repo, foregroundUpdater)
@@ -121,7 +121,7 @@ class GitCloneWorkerThrowableSafetyTest {
     }
 
     @Test
-    fun `a successful clone never throws and returns Result success`() = runBlocking {
+    fun `a successful clone never throws and returns Result success`() = runTest {
         val repo = cloningStub { _, _, _, _ -> Unit.right() }
         val worker = buildWorker(repo)
 

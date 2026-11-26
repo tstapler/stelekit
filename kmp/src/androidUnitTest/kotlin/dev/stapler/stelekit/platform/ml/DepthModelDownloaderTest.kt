@@ -16,9 +16,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -53,12 +52,12 @@ class DepthModelDownloaderTest {
 
     private fun jobs() = WorkManager.getInstance(context).getWorkInfosForUniqueWork(DepthModelDownloader.UNIQUE_WORK_NAME).get()
 
-    private suspend fun DepthModelDownloader.awaitDownloading() = withTimeout(5_000) {
+    private suspend fun DepthModelDownloader.awaitDownloading() {
         modelState.first { it is DepthModelDownloader.ModelState.Downloading }
     }
 
     @Test
-    fun `a ready model short-circuits without enqueueing`() = runBlocking<Unit> {
+    fun `a ready model short-circuits without enqueueing`() = runTest {
         val file = DepthModelStorage.modelFile(context).also { it.parentFile!!.mkdirs() }
         file.writeBytes(ByteArray((DepthModelStorage.MIN_MODEL_BYTES + 1).toInt()))
 
@@ -67,7 +66,7 @@ class DepthModelDownloaderTest {
     }
 
     @Test
-    fun `a second caller re-attaches to the queued job instead of enqueueing another`() = runBlocking<Unit> {
+    fun `a second caller re-attaches to the queued job instead of enqueueing another`() = runTest {
         val downloader = DepthModelDownloader(context)
         val first = async { downloader.downloadModel() }
         downloader.awaitDownloading()
@@ -81,7 +80,7 @@ class DepthModelDownloaderTest {
     }
 
     @Test
-    fun `a fresh instance after a restart sees the job that is still queued`() = runBlocking<Unit> {
+    fun `a fresh instance after a restart sees the job that is still queued`() = runTest {
         val before = DepthModelDownloader(context)
         val waiting = async { before.downloadModel() }
         before.awaitDownloading()
@@ -95,7 +94,7 @@ class DepthModelDownloaderTest {
     }
 
     @Test
-    fun `cancel resolves a waiting caller and surfaces Cancelled`() = runBlocking<Unit> {
+    fun `cancel resolves a waiting caller and surfaces Cancelled`() = runTest {
         val downloader = DepthModelDownloader(context)
         val waiting = async { downloader.downloadModel() }
         downloader.awaitDownloading()
@@ -109,7 +108,7 @@ class DepthModelDownloaderTest {
     }
 
     @Test
-    fun `a queued-state snapshot that finishes after cancel never shows Downloading again`() = runBlocking<Unit> {
+    fun `a queued-state snapshot that finishes after cancel never shows Downloading again`() = runTest {
         val gate = CompletableDeferred<Unit>()
         val entered = CompletableDeferred<Unit>()
         val downloader = DepthModelDownloader(
@@ -120,13 +119,13 @@ class DepthModelDownloaderTest {
         val recorder = launch(Dispatchers.Unconfined) { downloader.modelState.collect { seen += it } }
         val waiting = async { downloader.downloadModel() }
         // The ENQUEUED emission is now suspended inside the snapshot read: the stale write we guard against.
-        withTimeout(5_000) { entered.await() }
+        entered.await()
 
         downloader.cancelDownload()
         gate.complete(Unit)
         waiting.await()
         // WorkManager's CANCELLED emission is applied after the stale one (collect is sequential); wait for it.
-        withTimeout(5_000) { downloader.modelState.first { it is DepthModelDownloader.ModelState.Cancelled } }
+        downloader.modelState.first { it is DepthModelDownloader.ModelState.Cancelled }
         recorder.cancel()
 
         val afterCancel = seen.dropWhile { it !is DepthModelDownloader.ModelState.Cancelled }

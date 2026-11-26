@@ -16,8 +16,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -56,27 +55,27 @@ class ModelDownloadEndToEndTest {
         fixture.uninstall()
     }
 
-    private fun downloadFromCurrentSettings() = runBlocking<Unit> {
+    private suspend fun downloadFromCurrentSettings() {
         val result = scope.async { fixture.downloader.downloadModel() }
         val work = WorkManager.getInstance(context)
         val id: UUID = awaitActiveWorkId(work, DepthModelDownloader.UNIQUE_WORK_NAME)
         fixture.downloader.awaitDownloadingState()
         WorkManagerTestInitHelper.getTestDriver(context)!!.setAllConstraintsMet(id)
 
-        assertTrue(withTimeout(60_000) { result.await() }.isRight())
+        assertTrue(result.await().isRight())
         assertContentEquals(server.payload, target.readBytes())
         assertEquals(DepthModelDownloader.ModelState.Ready, fixture.downloader.modelState.value)
     }
 
     @Test
-    fun downloadModel_should_endReady_When_settingsAreEmpty() {
+    fun downloadModel_should_endReady_When_settingsAreEmpty() = runTest {
         assertTrue(fixture.settings.store.keys.none { it.startsWith("task_entry_") })
         downloadFromCurrentSettings()
     }
 
     @Test
-    fun downloadModel_should_endReady_When_storedEntryHasEnabledFalse() {
-        runBlocking { fixture.store.write(ModelDownloadTask.KEY, TaskEntry(enabled = false, overrides = null)) }
+    fun downloadModel_should_endReady_When_storedEntryHasEnabledFalse() = runTest {
+        fixture.store.write(ModelDownloadTask.KEY, TaskEntry(enabled = false, overrides = null))
         downloadFromCurrentSettings()
     }
 }

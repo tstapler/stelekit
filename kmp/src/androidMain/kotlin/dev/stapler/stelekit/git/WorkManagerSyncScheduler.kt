@@ -45,8 +45,9 @@ import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.SteleKitContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 /**
  * Legacy Android entry point for [BackgroundSyncScheduler], now a shim over [WorkManagerTaskScheduler]
@@ -66,24 +67,22 @@ class WorkManagerSyncScheduler(
 
     /**
      * Persists intent through the port: jitter and constraints come from [TaskSettingsStore] (the spec
-     * defaults when nothing is stored), the interval is the caller's. Blocks briefly on the adapter, which
-     * guards every WorkManager failure itself, so this never throws.
+     * defaults when nothing is stored), the interval is the caller's. WorkManager failures are logged by the
+     * adapter, not thrown; cancellation propagates.
      */
     @Deprecated("Use BackgroundTaskScheduler.apply(TaskKey(git-sync, graphId), config); kept for one release.")
-    override fun schedule(intervalMinutes: Int) {
-        runBlocking {
-            val adapter = legacyAdapter(context)
-            val stored = legacyStore(context).read(key)
-            adapter.apply(
-                key,
-                TaskConfig(enabled = true, schedule = Schedule.coerce(intervalMinutes, stored.schedule.jitterMinutes), constraints = stored.constraints),
-            )
-        }
+    override suspend fun schedule(intervalMinutes: Int) {
+        val adapter = legacyAdapter(context)
+        val stored = legacyStore(context).read(key)
+        adapter.apply(
+            key,
+            TaskConfig(enabled = true, schedule = Schedule.coerce(intervalMinutes, stored.schedule.jitterMinutes), constraints = stored.constraints),
+        )
     }
 
     @Deprecated("Use BackgroundTaskScheduler.cancel(TaskKey(git-sync, graphId)); kept for one release.")
-    override fun cancel() {
-        runBlocking { legacyAdapter(context).cancel(key) }
+    override suspend fun cancel() {
+        legacyAdapter(context).cancel(key)
     }
 
     companion object {
@@ -104,8 +103,8 @@ class WorkManagerSyncScheduler(
          * [dev.stapler.stelekit.model.StorageMoveOperation], not necessarily one it already holds
          * a per-graph [WorkManagerSyncScheduler] instance for.
          */
-        fun pauseFor(context: Context, graphId: String) {
-            runBlocking { legacyAdapter(context).pause(TaskScope(graphId)) }
+        suspend fun pauseFor(context: Context, graphId: String) {
+            legacyAdapter(context).pause(TaskScope(graphId))
         }
 
         /**
@@ -113,8 +112,9 @@ class WorkManagerSyncScheduler(
          * (falling back to the last applied config, then the store). A graph the user disabled meanwhile
          * stays off.
          */
-        fun resumeFor(context: Context, graphId: String) {
-            runBlocking { legacyAdapter(context).resume(TaskScope(graphId)) }
+        suspend fun resumeFor(context: Context, graphId: String) {
+            // NonCancellable: resume consumes the paused snapshot before it enqueues, so a cancel in between loses the job.
+            withContext(NonCancellable) { legacyAdapter(context).resume(TaskScope(graphId)) }
         }
 
         /** The port adapter built from a [Context] and process statics alone (no UI state); also what a cold process can build. */

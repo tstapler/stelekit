@@ -34,7 +34,10 @@ import dev.stapler.stelekit.jobs.schedule.NetworkSnapshotProvider
 import dev.stapler.stelekit.platform.NetworkMonitor
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
-import kotlinx.coroutines.runBlocking
+import java.util.UUID
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -131,16 +134,13 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
             .build()
 
     @Test
-    fun `GitSyncWorker doWork() fast path returns Result failure(), not Result retry(), when fetchOnly() returns Left(RetryExhausted)`() {
+    fun `GitSyncWorker doWork() fast path returns Result failure(), not Result retry(), when fetchOnly() returns Left(RetryExhausted)`() = runTest {
         registerFastPathService(
             FAST_PATH_GRAPH_ID,
             DomainError.GitError.RetryExhausted(5, DomainError.GitError.FetchFailed("boom")).left(),
         )
 
-        // Block body (not `= runBlocking { ... }`): JUnit4's method validator requires a `void`
-        // (Unit) return type, but `runBlocking`'s generic `T` would otherwise be inferred from
-        // `assertIs`'s own return value (it returns the narrowed type, not Unit).
-        val result = runBlocking { buildWorker(FAST_PATH_GRAPH_ID).doWork() }
+        val result = buildWorker(FAST_PATH_GRAPH_ID).doWork()
 
         assertIs<ListenableWorker.Result.Failure>(result)
     }
@@ -155,7 +155,7 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
     }
 
     @Test
-    fun `fast path runs the policy-gated scheduled tick, not a bare fetchOnly`() {
+    fun `fast path runs the policy-gated scheduled tick, not a bare fetchOnly`() = runTest {
         val settings = MapSettings()
         val stubFs = StubFileSystem()
         val service = GitSyncService(
@@ -177,7 +177,7 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
         )
         GitSyncServiceRegistry.register(FAST_PATH_GRAPH_ID, service)
 
-        val result = runBlocking { buildWorker(FAST_PATH_GRAPH_ID).doWork() }
+        val result = buildWorker(FAST_PATH_GRAPH_ID).doWork()
 
         assertIs<ListenableWorker.Result.Success>(result)
         assertEquals(FetchOnlyReason.Saf, SyncStalenessStore(settings).read(FAST_PATH_GRAPH_ID).fetchOnlyReason)
@@ -186,12 +186,10 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
     }
 
     @Test
-    fun `slow path hands the single fetch to the cold runner and records the behind count`() {
+    fun `slow path hands the single fetch to the cold runner and records the behind count`() = runTest {
         val settings = MapSettings()
         val staleness = SyncStalenessStore(settings)
-        val result = runBlocking {
-            runSlowPathFetch({ sampleConfig }, repoReturning(FetchResult(true, 4).right()), RepoOpGate(), { "k" }, staleness, clock = { 9L })
-        }
+        val result = runSlowPathFetch({ sampleConfig }, repoReturning(FetchResult(true, 4).right()), RepoOpGate(), { "k" }, staleness, clock = { 9L })
         assertIs<ListenableWorker.Result.Success>(result)
         val stored = staleness.read(sampleConfig.graphId)
         assertEquals(4, stored.behindCount)
@@ -199,10 +197,10 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
     }
 
     @Test
-    fun `slow path records a typed fetch error as the outcome and fails`() {
+    fun `slow path records a typed fetch error as the outcome and fails`() = runTest {
         val staleness = SyncStalenessStore(MapSettings())
         val error = DomainError.GitError.RemoteBranchNotFound("origin", "main", emptyList())
-        val result = runBlocking { runSlowPathFetch({ sampleConfig }, repoReturning(error.left()), RepoOpGate(), { "k" }, staleness, clock = { 9L }) }
+        val result = runSlowPathFetch({ sampleConfig }, repoReturning(error.left()), RepoOpGate(), { "k" }, staleness, clock = { 9L })
         assertIs<ListenableWorker.Result.Failure>(result)
         assertEquals("RemoteBranchNotFound", staleness.read(sampleConfig.graphId).history.last().detail)
     }
@@ -215,30 +213,28 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
         }
 
     @Test
-    fun `slow path returns Result failure(), not retry(), when fetch() returns Left(RetryExhausted)`() {
-        val result = runBlocking {
-            runSlowPathFetch(
-                loadConfig = { sampleConfig },
-                gitRepository = repoReturning(
-                    DomainError.GitError.RetryExhausted(5, DomainError.GitError.FetchFailed("boom")).left(),
-                ),
-                gate = RepoOpGate(),
-                gateKeyFor = { "k" },
-            )
-        }
+    fun `slow path returns Result failure(), not retry(), when fetch() returns Left(RetryExhausted)`() = runTest {
+        val result = runSlowPathFetch(
+            loadConfig = { sampleConfig },
+            gitRepository = repoReturning(
+                DomainError.GitError.RetryExhausted(5, DomainError.GitError.FetchFailed("boom")).left(),
+            ),
+            gate = RepoOpGate(),
+            gateKeyFor = { "k" },
+        )
         assertIs<ListenableWorker.Result.Failure>(result)
     }
 
     @Test
-    fun `slow path returns success when fetch() succeeds, and success when no config row exists`() {
-        val ok = runBlocking { runSlowPathFetch({ sampleConfig }, repoReturning(FetchResult(false, 0).right()), RepoOpGate(), { "k" }) }
+    fun `slow path returns success when fetch() succeeds, and success when no config row exists`() = runTest {
+        val ok = runSlowPathFetch({ sampleConfig }, repoReturning(FetchResult(false, 0).right()), RepoOpGate(), { "k" })
         assertIs<ListenableWorker.Result.Success>(ok)
-        val noRow = runBlocking { runSlowPathFetch({ null }, repoReturning(FetchResult(false, 0).right()), RepoOpGate(), { "k" }) }
+        val noRow = runSlowPathFetch({ null }, repoReturning(FetchResult(false, 0).right()), RepoOpGate(), { "k" })
         assertIs<ListenableWorker.Result.Success>(noRow)
     }
 
     @Test
-    fun `slow path skips without fetching when the shared gate is held`() {
+    fun `slow path skips without fetching when the shared gate is held`() = runTest {
         val gate = RepoOpGate()
         gate.tryAcquire("k", SyncOrigin.UiPress)!!
         var fetched = false
@@ -248,7 +244,7 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
                 return FetchResult(false, 0).right()
             }
         }
-        val result = runBlocking { runSlowPathFetch({ sampleConfig }, repo, gate, { "k" }) }
+        val result = runSlowPathFetch({ sampleConfig }, repo, gate, { "k" })
         assertIs<ListenableWorker.Result.Success>(result)
         assertEquals(false, fetched)
         assertEquals(
@@ -266,7 +262,7 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
      * `GitTransportRetryTest`'s exhaustion test).
      */
     @Test
-    fun `a GitSyncWorker built via TestListenableWorkerBuilder against a retry-exhausting StubGitRepository returns Result failure() and is not re-enqueued by WorkManager's own retry mechanism`() {
+    fun `a GitSyncWorker built via TestListenableWorkerBuilder against a retry-exhausting StubGitRepository returns Result failure() and is not re-enqueued by WorkManager's own retry mechanism`() = runTest {
         registerFastPathService(
             WORK_MANAGER_GRAPH_ID,
             DomainError.GitError.RetryExhausted(5, DomainError.GitError.FetchFailed("boom")).left(),
@@ -281,14 +277,13 @@ class WorkManagerSyncSchedulerRetryOwnerTest {
         // GitSyncWorker is a CoroutineWorker: it runs on a coroutine dispatcher, not the test
         // SynchronousExecutor, so the state right after enqueue can still be RUNNING. Wait for a
         // terminal state; a Result.retry() would surface as ENQUEUED and never terminate.
-        val deadline = System.nanoTime() + 10_000_000_000L
-        var state = workManager.getWorkInfoById(request.id).get().state
-        while (!state.isFinished && state != WorkInfo.State.ENQUEUED && System.nanoTime() < deadline) {
-            Thread.sleep(25)
-            state = workManager.getWorkInfoById(request.id).get().state
-        }
+        val state = awaitSettledState(workManager, request.id)
         assertEquals(WorkInfo.State.FAILED, state, "must not be re-enqueued (ENQUEUED/RUNNING) after Result.failure()")
     }
+
+    // A separate function keeps the generated lambda class name under the filesystem's filename limit.
+    private suspend fun awaitSettledState(workManager: WorkManager, id: UUID): WorkInfo.State =
+        workManager.getWorkInfoByIdFlow(id).mapNotNull { it?.state }.first { it.isFinished || it == WorkInfo.State.ENQUEUED }
 
     companion object {
         private const val FAST_PATH_GRAPH_ID = "retry-owner-fast-path"

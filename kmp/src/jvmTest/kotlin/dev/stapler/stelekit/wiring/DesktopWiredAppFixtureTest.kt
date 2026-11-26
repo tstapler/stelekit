@@ -31,6 +31,7 @@ class DesktopWiredAppFixtureTest {
     @AfterTest
     fun tearDown() {
         headless?.close()
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         fixture?.let { runBlocking { it.close() } }
         dataDir.deleteRecursively()
     }
@@ -42,6 +43,7 @@ class DesktopWiredAppFixtureTest {
 
     @Test
     fun wiredAppFixtureDesktop_should_BehaveIdenticallyWithoutDisplay_When_StackComposed() {
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         val wired = runBlocking { DesktopWiredAppFixture.desktop(dataDir) }
         fixture = wired
         val composition = HeadlessComposition().also { headless = it }

@@ -20,6 +20,7 @@ import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
 import androidx.work.workDataOf
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -77,7 +78,7 @@ class WorkManagerSyncSchedulerUniqueWorkTest {
     }
 
     @Test
-    fun `AndroidGitCloneWorkerLauncher computes the same workNameFor(graphId) as WorkManagerSyncScheduler's periodic job`() {
+    fun `AndroidGitCloneWorkerLauncher computes the same workNameFor(graphId) as WorkManagerSyncScheduler's periodic job`() = runTest {
         initTestWorkManager()
         val graphId = "unique-work-happy-path"
         WorkManagerSyncScheduler(context, graphId).schedule(30)
@@ -129,6 +130,7 @@ class WorkManagerSyncSchedulerUniqueWorkTest {
      * Non-blocking by design: the periodic job's initial delay keeps it `ENQUEUED` (never run) so
      * the test driver's serial executor is never held by a gated worker.
      */
+    // runBlocking: launchClone()'s BLOCKED watchdog uses delay(), which runTest would skip
     @Test
     fun `launchClone over an existing periodic job reaches SUCCEEDED instead of being left BLOCKED, and restores the periodic job`() = runBlocking {
         val graphId = "unique-work-concurrency"

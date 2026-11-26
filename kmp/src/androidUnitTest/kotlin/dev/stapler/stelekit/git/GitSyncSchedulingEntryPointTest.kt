@@ -57,6 +57,7 @@ class GitSyncSchedulingEntryPointTest {
 
     @After
     fun tearDown() {
+        // runBlocking: non-suspend JUnit method; bridges a suspend setup, read or teardown call
         fixture?.let { runBlocking { it.close() } }
         dataDir.deleteRecursively()
     }
@@ -86,6 +87,7 @@ class GitSyncSchedulingEntryPointTest {
             Configuration.Builder().setExecutor(SynchronousExecutor()).build(),
         )
         val settings = FakeSettings().also { it.putBoolean(SCHEDULED_SYNC_ENABLED_KEY, true) }
+        // runBlocking: non-suspend JUnit method; bridges a suspend setup, read or teardown call
         val wired = runBlocking {
             WiredAppFixture.android(
                 context,
@@ -104,6 +106,7 @@ class GitSyncSchedulingEntryPointTest {
         composeRule.setContent { controls = rememberGraphContentScheduledSyncControls(wired.deps, null, configRepo, graphId) }
         composeRule.waitForIdle()
         // The port adapter enqueues from a coroutine launched by the glue, so wait for the work rather than the frame.
+        // Real-clock ceiling: WorkManager and the glue coroutine run off the Compose clock, so there is no virtual signal.
         composeRule.waitUntil(10_000) { workInfos().isNotEmpty() }
 
         ObservableEffect.assert("periodic-work-enqueued") {
@@ -117,6 +120,7 @@ class GitSyncSchedulingEntryPointTest {
         assertEquals(15, controls?.minimumIntervalMinutes)
 
         composeRule.runOnIdle { controls!!.setEnabled(false) }
+        // Real-clock ceiling: WorkManager and the glue coroutine run off the Compose clock, so there is no virtual signal.
         composeRule.waitUntil(10_000) { workInfos().single().state == WorkInfo.State.CANCELLED }
         assertEquals(WorkInfo.State.CANCELLED, workInfos().single().state, "turning the switch off cancels the job")
     }
@@ -127,6 +131,7 @@ class GitSyncSchedulingEntryPointTest {
             context,
             Configuration.Builder().setExecutor(SynchronousExecutor()).build(),
         )
+        // runBlocking: non-suspend JUnit method; bridges a suspend setup, read or teardown call
         val wired = runBlocking {
             WiredAppFixture.android(
                 context,

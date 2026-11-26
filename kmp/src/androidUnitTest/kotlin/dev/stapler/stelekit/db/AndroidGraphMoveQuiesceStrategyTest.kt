@@ -20,6 +20,7 @@ import kotlinx.coroutines.yield
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.model.StorageMoveOperation
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -86,6 +87,25 @@ class AndroidGraphMoveQuiesceStrategyTest {
             queue.dequeue("pages/foo.md")
             return emptyList()
         }
+    }
+
+    @Test
+    fun release_should_ResumeBackgroundSync_When_TheCallerIsAlreadyCancelled() = runTest {
+        var resumed = false
+        val strategy = AndroidGraphMoveQuiesceStrategy(
+            gitSyncBusyCounter = GitSyncBusyCounter(),
+            gate = RepoOpGate(),
+            gateKeyFor = { null },
+            shadowWorktreeTarget = { null },
+            resumeBackgroundSync = { resumed = true },
+        )
+
+        launch {
+            cancel()
+            strategy.release(op)
+        }.join()
+
+        assertTrue(resumed, "a cancelled caller must still resume background sync")
     }
 
     @Test
@@ -261,9 +281,10 @@ class AndroidGraphMoveQuiesceStrategyTest {
     )
 
     private suspend fun awaitCondition(what: String, condition: () -> Boolean) {
-        withTimeout(5_000) { while (!condition()) yield() }
+        withTimeout(5_000) { while (!condition()) yield() } // real-clock hang guard: awaits real threads
     }
 
+    // runBlocking: quiesce hops to Dispatchers.IO and blocks on real locks; virtual time cannot order it
     @Test
     fun quiesce_should_WaitForGateWithoutHoldingWorktreeLock_AndCompleteAfterSync() = runBlocking {
         val gate = RepoOpGate()
@@ -283,7 +304,7 @@ class AndroidGraphMoveQuiesceStrategyTest {
         worktreeLock.unlock()
 
         gate.releaseOrHandOff(syncLease)
-        withTimeout(5_000) { job.join() }
+        withTimeout(5_000) { job.join() } // real-clock hang guard: awaits real threads
         assertTrue(done)
         assertEquals(SyncOrigin.Quiesce, gate.heldBy(gateKey))
         assertTrue(worktreeLock.isLocked)
@@ -294,7 +315,7 @@ class AndroidGraphMoveQuiesceStrategyTest {
     }
 
     @Test
-    fun quiesce_should_CoalesceTriggers_AndNeverSetRerun_While_QuiesceLeaseHeld() = runBlocking {
+    fun quiesce_should_CoalesceTriggers_AndNeverSetRerun_While_QuiesceLeaseHeld() = runTest {
         val gate = RepoOpGate()
         val strategy = gatedStrategy(gate, newTarget(newQueue()) { emptyList() })
 
@@ -308,6 +329,7 @@ class AndroidGraphMoveQuiesceStrategyTest {
         assertEquals(null, gate.releaseOrHandOff(checkNotNull(gate.tryAcquire(gateKey, SyncOrigin.UiPress))), "no follow-up fires after release")
     }
 
+    // runBlocking: quiesce hops to Dispatchers.IO and blocks on real locks; virtual time cannot order it
     @Test
     fun quiesce_should_ReleaseLease_When_CancelledWhileWaitingForWorktreeMutex() = runBlocking {
         val gate = RepoOpGate()
@@ -317,10 +339,10 @@ class AndroidGraphMoveQuiesceStrategyTest {
         val strategy = gatedStrategy(gate, target)
 
         val job = launch(Dispatchers.Default) { strategy.quiesce(op) }
-        withTimeout(5_000) { awaitCondition("lease taken") { gate.isHeld(gateKey) } }
+        withTimeout(5_000) { awaitCondition("lease taken") { gate.isHeld(gateKey) } } // real-clock hang guard: awaits real threads
 
         job.cancel(CancellationException("timeout"))
-        withTimeout(5_000) { job.join() }
+        withTimeout(5_000) { job.join() } // real-clock hang guard: awaits real threads
         assertFalse(gate.isHeld(gateKey), "the lease must be released when the mutex wait is cancelled")
         worktreeLock.unlock()
 
@@ -329,7 +351,7 @@ class AndroidGraphMoveQuiesceStrategyTest {
     }
 
     @Test
-    fun quiesce_should_ReleaseBothOnRelease_When_DrainReturnsError() = runBlocking {
+    fun quiesce_should_ReleaseBothOnRelease_When_DrainReturnsError() = runTest {
         val gate = RepoOpGate()
         val queue = newQueue().also { it.enqueue("pages/foo.md") }
         val flush = FailingFlush(queue) { DomainError.GitError.WorkingTreeConcurrentEditDetected(it) }
@@ -345,7 +367,7 @@ class AndroidGraphMoveQuiesceStrategyTest {
     }
 
     @Test
-    fun quiesce_should_UseNoGate_When_GateKeyUnresolvable() = runBlocking {
+    fun quiesce_should_UseNoGate_When_GateKeyUnresolvable() = runTest {
         val gate = RepoOpGate()
         val strategy = AndroidGraphMoveQuiesceStrategy(
             gitSyncBusyCounter = GitSyncBusyCounter(),

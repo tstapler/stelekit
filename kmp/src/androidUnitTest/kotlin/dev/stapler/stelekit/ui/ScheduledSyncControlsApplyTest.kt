@@ -44,6 +44,7 @@ class ScheduledSyncControlsApplyTest {
 
     @After
     fun tearDown() {
+        // runBlocking: non-suspend JUnit method; bridges a suspend setup, read or teardown call
         fixture?.let { runBlocking { it.close() } }
         dataDir.deleteRecursively()
     }
@@ -51,6 +52,7 @@ class ScheduledSyncControlsApplyTest {
     @Test
     fun setEnabledFalse_should_PersistDisabledToTheGraphStoreEntry_AndLeaveLegacyFlagAlone() {
         val settings = FakeSettings().also { it.putBoolean(SCHEDULED_SYNC_ENABLED_KEY, true) }
+        // runBlocking: non-suspend JUnit method; bridges a suspend setup, read or teardown call
         val wired = runBlocking { WiredAppFixture.android(context, dataDir, ports = FakePlatformPorts(settings = settings)) }
         fixture = wired
         val graphId = "apply-graph"
@@ -60,12 +62,16 @@ class ScheduledSyncControlsApplyTest {
 
         var controls: ScheduledSyncControls? = null
         composeRule.setContent { controls = rememberGraphContentScheduledSyncControls(wired.deps, null, configRepo, graphId) }
+        // Real-clock ceiling: the store write runs off the Compose clock, so there is no virtual signal.
         composeRule.waitUntil(5_000) { controls?.enabled == true }
+        // runBlocking: non-suspend JUnit method; bridges a suspend setup, read or teardown call
         assertEquals(30, runBlocking { store.read(key) }.schedule.intervalMinutes, "the legacy flag and interval were migrated")
 
         composeRule.runOnIdle { controls!!.setEnabled(false) }
+        // Real-clock ceiling: the store write runs off the Compose clock, so there is no virtual signal.
         composeRule.waitUntil(5_000) { controls?.enabled == false }
 
+        // runBlocking: non-suspend JUnit method; bridges a suspend setup, read or teardown call
         assertFalse(runBlocking { store.read(key) }.enabled, "the store entry is disabled")
         assertTrue(settings.getBoolean(SCHEDULED_SYNC_ENABLED_KEY, false), "the legacy flag is not rewritten")
     }

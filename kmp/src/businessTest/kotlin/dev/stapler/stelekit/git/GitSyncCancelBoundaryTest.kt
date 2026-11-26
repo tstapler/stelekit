@@ -115,6 +115,7 @@ class GitSyncCancelBoundaryTest {
         latch.await()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun cancelDuringFetch_should_NotMerge_AndCancelBeforeCommitShouldNotCommit() = runBlocking<Unit> {
         val entered = CompletableDeferred<Unit>()
@@ -123,7 +124,7 @@ class GitSyncCancelBoundaryTest {
         val svc = service(git)
 
         val run = scope.async { svc.sync("g") }
-        withTimeout(20_000) { entered.await() }
+        withTimeout(20_000) { entered.await() } // real-clock hang guard: awaits real threads
         run.cancel()
         latch.countDown()
         run.join()
@@ -138,7 +139,7 @@ class GitSyncCancelBoundaryTest {
         val git2 = Repo(localChanges = true).apply { onStatus = blocking(statusEntered, statusLatch) }
         val svc2 = service(git2)
         val run2 = scope.async { svc2.sync("g") }
-        withTimeout(20_000) { statusEntered.await() }
+        withTimeout(20_000) { statusEntered.await() } // real-clock hang guard: awaits real threads
         run2.cancel()
         statusLatch.countDown()
         run2.join()
@@ -147,6 +148,7 @@ class GitSyncCancelBoundaryTest {
         assertFalse(gate.isHeld(key()))
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun cancelThenImmediateRepress_should_NotOverlap_When_BlockingCallStillRunning() = runBlocking<Unit> {
         val entered = CompletableDeferred<Unit>()
@@ -155,7 +157,7 @@ class GitSyncCancelBoundaryTest {
         val svc = service(git)
 
         val first = scope.async { svc.sync("g") }
-        withTimeout(20_000) { entered.await() }
+        withTimeout(20_000) { entered.await() } // real-clock hang guard: awaits real threads
         first.cancel()
         // Scheduled origin: a UI press would queue a follow-up rerun that re-acquires the gate after the first run ends.
         val second = withTimeout(20_000) { svc.sync("g", origin = SyncOrigin.Scheduled) }
@@ -172,6 +174,7 @@ class GitSyncCancelBoundaryTest {
         assertEquals(0, git.count("fetch"), "the pipeline stops before fetch after the cancel")
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun commit_should_CompleteAndPipelineStopBeforeFetch_When_CancelRequestedDuringCommit() = runBlocking<Unit> {
         val entered = CompletableDeferred<Unit>()
@@ -180,7 +183,7 @@ class GitSyncCancelBoundaryTest {
         val svc = service(git)
 
         val run = scope.async { svc.sync("g") }
-        withTimeout(20_000) { entered.await() }
+        withTimeout(20_000) { entered.await() } // real-clock hang guard: awaits real threads
         run.cancel()
         proceed.complete(Unit)
         run.join()
@@ -198,6 +201,7 @@ class GitSyncCancelBoundaryTest {
         rawContent = "<<<<<<< LOCAL\n- a\n=======\n- b\n>>>>>>> REMOTE\n",
     )
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun mergeUnit_should_NotFallThroughToPush_When_ConflictOrCommitFailureExitsInsideNonCancellable() = runBlocking<Unit> {
         val conflicted = Repo(remoteChanges = true).apply {
@@ -218,6 +222,7 @@ class GitSyncCancelBoundaryTest {
         assertEquals(1, failing.count("abort"))
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun mergeUnit_should_ReloadEveryChangedPathBeforeStopping_When_CancelArrivesRightAfterMerge() = runBlocking<Unit> {
         val reloaded = CopyOnWriteArrayList<String>()
@@ -252,6 +257,7 @@ class GitSyncCancelBoundaryTest {
         return reloaded to (GraphLoader(fs, InMemoryPageRepository(), InMemoryBlockRepository()) to fs)
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun resolveConflicts_should_ReloadResolvedFiles_When_CancelArrivesRightAfterCommit() = runBlocking<Unit> {
         val (reloaded, loaderAndFs) = reloadingFixture()
@@ -272,6 +278,7 @@ class GitSyncCancelBoundaryTest {
         assertFalse(gate.isHeld(key()))
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun applyJournalMerge_should_ReloadTheFile_When_CancelArrivesRightAfterCommit() = runBlocking<Unit> {
         val (reloaded, loaderAndFs) = reloadingFixture()
@@ -288,6 +295,7 @@ class GitSyncCancelBoundaryTest {
         assertFalse(gate.isHeld(key()))
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun commitLocalChanges_should_FinishTheCommit_When_CancelRequestedDuringIt() = runBlocking<Unit> {
         val entered = CompletableDeferred<Unit>()
@@ -296,7 +304,7 @@ class GitSyncCancelBoundaryTest {
         val svc = service(git)
 
         val run = scope.async { svc.commitLocalChanges("g") }
-        withTimeout(20_000) { entered.await() }
+        withTimeout(20_000) { entered.await() } // real-clock hang guard: awaits real threads
         run.cancel()
         proceed.complete(Unit)
         run.join()
@@ -305,6 +313,7 @@ class GitSyncCancelBoundaryTest {
         assertFalse(gate.isHeld(key()))
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun reloadMergedFiles_should_FlagReloadIncomplete_When_CancelledMidReload() = runBlocking<Unit> {
         val fs = object : StubFileSystem() {
@@ -320,13 +329,14 @@ class GitSyncCancelBoundaryTest {
     }
 
     // PR #683 round 2 (C1): only the caller's wait is bounded; the lease and record stay until the unit really ends.
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun resolveConflicts_should_KeepTheLease_UntilALateCommitFinishes_ThenReleaseAndClearTheFlag() = runBlocking<Unit> {
         val late = CompletableDeferred<Unit>()
         val git = Repo().apply { onCommit = { late.await() } }
         val svc = service(git).also { it.commitUnitTimeoutMs = 300 }
 
-        val result = withTimeout(20_000) {
+        val result = withTimeout(20_000) { // real-clock hang guard: awaits real threads
             svc.resolveConflicts("g", listOf(realConflict), sideResolutions = mapOf("/repo/real.md" to MergeSide.LOCAL))
         }
 
@@ -339,18 +349,19 @@ class GitSyncCancelBoundaryTest {
         assertEquals(1, git.count("commit.start"))
 
         late.complete(Unit)
-        withTimeout(20_000) { while (gate.isHeld(key()) || svc.reloadIncomplete.value) kotlinx.coroutines.delay(20) }
+        withTimeout(20_000) { while (gate.isHeld(key()) || svc.reloadIncomplete.value) kotlinx.coroutines.delay(20) } // real-clock hang guard: awaits real threads
         assertFalse(gate.isHeld(key()))
         assertFalse(svc.reloadIncomplete.value, "the sentinel clears when the abandoned unit ends")
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun sync_should_KeepTheLeaseAndNotFlagReload_When_TheMainCommitOutlivesTheWait() = runBlocking<Unit> {
         val late = CompletableDeferred<Unit>()
         val git = Repo(localChanges = true).apply { onCommit = { late.await() } }
         val svc = service(git).also { it.commitUnitTimeoutMs = 300 }
 
-        val result = withTimeout(20_000) { svc.sync("g") }
+        val result = withTimeout(20_000) { svc.sync("g") } // real-clock hang guard: awaits real threads
 
         assertIs<DomainError.GitError.CommitFailed>(result.leftOrNull())
         assertTrue(gate.isHeld(key()))
@@ -358,10 +369,11 @@ class GitSyncCancelBoundaryTest {
         assertIs<DomainError.GitError.SyncInProgress>(svc.sync("g", origin = SyncOrigin.Scheduled).leftOrNull())
 
         late.complete(Unit)
-        withTimeout(20_000) { while (gate.isHeld(key())) kotlinx.coroutines.delay(20) }
+        withTimeout(20_000) { while (gate.isHeld(key())) kotlinx.coroutines.delay(20) } // real-clock hang guard: awaits real threads
     }
 
     // PR #683 review m1: a later complete reload of other files must not clear an earlier incomplete one.
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun reloadIncomplete_should_StaySticky_UntilTheFailedPathsReloadCompletely() = runBlocking<Unit> {
         val failing = java.util.concurrent.atomic.AtomicBoolean(true)
@@ -404,6 +416,7 @@ class GitSyncCancelBoundaryTest {
         override fun observeConfig(graphId: String) = kotlinx.coroutines.flow.flowOf<Either<DomainError, GitConfig?>>(Either.Right(byGraph[graphId]))
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun abandonedUnit_should_HoldOnlyItsOwnRunsLease_AndEndEverythingExactlyOnce() = runBlocking<Unit> {
         val dirB = Files.createTempDirectory("cancel_boundary_b_").toFile()
@@ -418,14 +431,14 @@ class GitSyncCancelBoundaryTest {
                 isOnline = { true }, gate = gate,
             ).also { services += it; it.commitUnitTimeoutMs = 300 }
 
-            val a = withTimeout(20_000) { svc.sync("a") }
+            val a = withTimeout(20_000) { svc.sync("a") } // real-clock hang guard: awaits real threads
             assertIs<DomainError.GitError.CommitFailed>(a.leftOrNull())
             val keyB = checkNotNull(RepoOpGate.keyForOrNull("${dirB.absolutePath}/.git") { File(it).canonicalFile.path })
             assertTrue(gate.isHeld(key()), "A's abandoned commit keeps A's lease")
             assertFalse(gate.isHeld(keyB), "B is a different repository and must not be held by A's unit")
             assertEquals(0, repo.ends[config.repoRoot.value]?.get() ?: 0, "A's record must not end while its unit runs")
 
-            val b = withTimeout(20_000) { svc.sync("b") }
+            val b = withTimeout(20_000) { svc.sync("b") } // real-clock hang guard: awaits real threads
             assertTrue(b.isRight(), "B runs independently while A's unit lingers, got $b")
             assertEquals(1, repo.ends[configB.repoRoot.value]?.get(), "B's record ends exactly once, on its own")
             assertFalse(gate.isHeld(keyB))
@@ -433,7 +446,7 @@ class GitSyncCancelBoundaryTest {
             assertEquals(0, repo.ends[config.repoRoot.value]?.get() ?: 0)
 
             late.complete(Unit)
-            withTimeout(20_000) { while (gate.isHeld(key())) kotlinx.coroutines.delay(20) }
+            withTimeout(20_000) { while (gate.isHeld(key())) kotlinx.coroutines.delay(20) } // real-clock hang guard: awaits real threads
             kotlinx.coroutines.delay(100)
             assertEquals(1, repo.ends[config.repoRoot.value]?.get(), "A's owner record ends exactly once")
             assertEquals(2, repo.begins.get(), "one claim per run")

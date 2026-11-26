@@ -11,9 +11,7 @@ import dev.stapler.stelekit.git.testsupport.cloningStub
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -79,7 +77,7 @@ class JvmGitCloneWorkerLauncherTest {
     }
 
     @Test
-    fun `cancelling the launchClone() caller cancels the in-flight clone`() = runBlocking {
+    fun `cancelling the launchClone() caller cancels the in-flight clone`() = runTest {
         val started = CompletableDeferred<Unit>()
         val cloneCancelled = CompletableDeferred<Unit>()
         val fakeRepo = cloningStub { _, _, _, _ ->
@@ -95,9 +93,9 @@ class JvmGitCloneWorkerLauncherTest {
         val caller = launch {
             launcher.launchClone("g", "https://example.invalid/g.git", "/tmp/g", GitAuth.None, {}, {}, null)
         }
-        withTimeout(5_000) { started.await() }
+        started.await()
         caller.cancel()
 
-        withTimeout(5_000) { cloneCancelled.await() }
+        cloneCancelled.await()
     }
 }

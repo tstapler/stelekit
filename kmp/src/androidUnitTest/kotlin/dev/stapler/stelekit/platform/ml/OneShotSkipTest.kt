@@ -24,8 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -59,7 +58,7 @@ class OneShotSkipTest {
         fixture?.uninstall()
     }
 
-    private fun workerRun(attempt: Int): Result = runBlocking {
+    private suspend fun workerRun(attempt: Int): Result =
         TestListenableWorkerBuilder<TaskWorker>(context)
             .setInputData(
                 workDataOf(
@@ -71,10 +70,9 @@ class OneShotSkipTest {
             .setRunAttemptCount(attempt)
             .build()
             .doWork()
-    }
 
     @Test
-    fun worker_should_retryThenFailTerminalWithError_When_meteredSkipsShareTheFiveAttemptBudget() {
+    fun worker_should_retryThenFailTerminalWithError_When_meteredSkipsShareTheFiveAttemptBudget() = runTest {
         fixture = ModelDownloadFixture(context, server.url, network = NetworkSnapshot(online = true, isMetered = true)).also { it.install() }
 
         assertEquals(Result.retry(), workerRun(0))
@@ -85,7 +83,7 @@ class OneShotSkipTest {
         assertFalse(DepthModelStorage.modelFile(context).exists(), "the body must not run on a skip")
     }
 
-    private fun assertDownloadResolvesFailed(network: NetworkSnapshot, expectedReason: String) = runBlocking<Unit> {
+    private suspend fun assertDownloadResolvesFailed(network: NetworkSnapshot, expectedReason: String) {
         // Cap 1 means the first skip is already terminal, so the real WorkManager chain ends without backoff timing.
         val f = ModelDownloadFixture(context, server.url, network = network, specTransform = { it.copy(oneShotRetryCap = 1) })
             .also { it.install() }
@@ -100,16 +98,19 @@ class OneShotSkipTest {
         f.downloader.awaitDownloadingState()
         WorkManagerTestInitHelper.getTestDriver(context)!!.setAllConstraintsMet(id)
 
-        val outcome = withTimeout(30_000) { result.await() }
+        // downloadModel() completes on the first terminal modelState, so no timeout of our own is needed.
+        val outcome = result.await()
         assertTrue(outcome.isLeft())
         assertEquals(DepthModelDownloader.ModelState.Failed(expectedReason), f.downloader.modelState.value)
     }
 
     @Test
-    fun downloadModel_should_resolveFailed_When_networkIsMetered() =
+    fun downloadModel_should_resolveFailed_When_networkIsMetered() = runTest {
         assertDownloadResolvesFailed(NetworkSnapshot(online = true, isMetered = true), "skipped: metered")
+    }
 
     @Test
-    fun downloadModel_should_resolveFailed_When_meteredStateIsUnknown() =
+    fun downloadModel_should_resolveFailed_When_meteredStateIsUnknown() = runTest {
         assertDownloadResolvesFailed(NetworkSnapshot(online = true, isMetered = null), "skipped: unknown-network")
+    }
 }

@@ -67,7 +67,7 @@ class SyncSingleFlightModelTest {
             delays.forEach { delay ->
                 Thread { spin(delay); outcomes += press(gate) { runHeld(it) }; done.countDown() }.start()
             }
-            assertTrue(done.await(20, TimeUnit.SECONDS), "seed $seed did not finish")
+            assertTrue(done.await(20, TimeUnit.SECONDS), "seed $seed did not finish") // real-clock hang guard: awaits real threads
 
             val coalesced = outcomes.count { it == Outcome.Coalesced }
             assertEquals(pressCount, outcomes.size, "seed $seed: every press must end acquired or coalesced")

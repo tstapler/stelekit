@@ -69,6 +69,7 @@ class SyncMainClaimTest {
 
     private val gitDir get() = File(root, ".git")
 
+    // runBlocking: cross-process claim over real files and threads
     @Test
     fun cliAndApp_should_CoalesceViaOwnerAlive_InBothDirections() = runBlocking {
         val app = instance("app")
@@ -90,7 +91,7 @@ class SyncMainClaimTest {
                 release.await()
             }
         }
-        withTimeout(30_000) { inBody.await() }
+        withTimeout(30_000) { inBody.await() } // real-clock hang guard: awaits real threads
         val verdict = instance("app2").beginOwnedOperation(config, OwnedOperationInfo("sync", SyncOrigin.UiPress)).getOrNull()
         assertEquals(LockVerdict.OwnerAlive, verdict)
         release.complete(Unit)
@@ -98,6 +99,7 @@ class SyncMainClaimTest {
         assertFalse(File(gitDir, JavaIoLockFiles.RECORD_NAME).exists(), "the CLI releases its record when done")
     }
 
+    // runBlocking: cross-process claim over real files and threads
     @Test
     fun runOwned_should_BumpTheRecordHeartbeat_AndEndTheClaimOnFailure() = runBlocking {
         val record = File(gitDir, JavaIoLockFiles.RECORD_NAME)
@@ -105,7 +107,7 @@ class SyncMainClaimTest {
         assertFailsWith<IllegalStateException> {
             runOwned(RepoOpGate(), instance("cli"), config, output, notes, heartbeatIntervalMs = 50) {
                 record.setLastModified(1_000L)
-                withTimeout(30_000) { while (record.lastModified() < 100_000L) yield() }
+                withTimeout(30_000) { while (record.lastModified() < 100_000L) yield() } // real-clock hang guard: awaits real threads
                 stamped = record.lastModified()
                 error("boom")
             }

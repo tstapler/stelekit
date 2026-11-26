@@ -42,6 +42,7 @@ import dev.stapler.stelekit.ui.components.TaskRunLogSource
 import dev.stapler.stelekit.ui.components.rememberTaskRunRowsState
 import dev.stapler.stelekit.ui.components.settings.BackgroundTaskGraph
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.TimeZone
 import org.junit.After
 import org.junit.Rule
@@ -82,6 +83,7 @@ class TaskRunLogRowsTest {
         key: TaskKey = gitKey,
     ) = TaskRunRecord(key, source, null, startedAtMs, result, ConstraintState(true, false, null))
 
+    // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
     private fun append(vararg records: TaskRunRecord) = runBlocking { records.forEach { runLog.append(it) } }
 
     private fun show(source: TaskRunLogSource, query: String = "") {
@@ -208,8 +210,8 @@ class TaskRunLogRowsTest {
     }
 
     @Test
-    fun recentResult_should_beReadFailedWhileRecentStaysEmpty_When_SettingsReadThrows() = runBlocking {
-        append(record(now - minute))
+    fun recentResult_should_beReadFailedWhileRecentStaysEmpty_When_SettingsReadThrows() = runTest {
+        runLog.append(record(now - minute))
         settings.failReads = true
         assertTrue(runLog.recentResult(gitKey) is TaskRunReadResult.ReadFailed)
         assertEquals(emptyList(), runLog.recent(gitKey))

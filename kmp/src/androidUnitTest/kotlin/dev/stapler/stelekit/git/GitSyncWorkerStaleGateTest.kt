@@ -40,7 +40,7 @@ import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -93,6 +93,7 @@ class GitSyncWorkerStaleGateTest {
                 GitSyncAdapterHooks.staleJobReason(graphId, periodic)
         }
         TaskWorkerRuntime.knownScopes = KnownScopes { KnownScopesResult.Unknown }
+        // runBlocking: JUnit @Before is not a coroutine, and nothing here waits on time
         runBlocking { store.write(key, TaskEntry(enabled = true, overrides = null)) }
         registerService()
     }
@@ -141,13 +142,13 @@ class GitSyncWorkerStaleGateTest {
         override fun containsKey(key: String) = store.containsKey(key)
     }
 
-    private fun run(periodic: Boolean = true): ListenableWorker.Result {
+    private suspend fun run(periodic: Boolean = true): ListenableWorker.Result {
         val data = buildList {
             add(GitSyncWorker.KEY_GRAPH_ID to graphId)
             if (periodic) add(GitSyncWorker.KEY_INTERVAL_MINUTES to 15L)
         }
         val worker = TestListenableWorkerBuilder<GitSyncWorker>(context).setInputData(workDataOf(*data.toTypedArray())).build()
-        return runBlocking { worker.doWork() }
+        return worker.doWork()
     }
 
     private fun assertSkipped(reason: String) {
@@ -156,43 +157,43 @@ class GitSyncWorkerStaleGateTest {
     }
 
     @Test
-    fun doWork_should_skipWithoutSync_When_PeriodicTaskDisabled() {
-        runBlocking { store.write(key, TaskEntry(enabled = false, overrides = null)) }
+    fun doWork_should_skipWithoutSync_When_PeriodicTaskDisabled() = runTest {
+        store.write(key, TaskEntry(enabled = false, overrides = null))
         assertIs<ListenableWorker.Result.Success>(run())
         assertSkipped("disabled")
     }
 
     @Test
-    fun doWork_should_skipWithoutSync_When_GraphTombstoned() {
-        runBlocking { store.tombstone(key) }
+    fun doWork_should_skipWithoutSync_When_GraphTombstoned() = runTest {
+        store.tombstone(key)
         assertIs<ListenableWorker.Result.Success>(run())
         assertSkipped("disabled")
     }
 
     @Test
-    fun doWork_should_skipWithoutSync_When_GraphMissingFromKnownScopes() {
+    fun doWork_should_skipWithoutSync_When_GraphMissingFromKnownScopes() = runTest {
         TaskWorkerRuntime.knownScopes = KnownScopes { KnownScopesResult.Known(setOf(TaskScope("other"))) }
         assertIs<ListenableWorker.Result.Success>(run())
         assertSkipped("graph-removed")
     }
 
     @Test
-    fun doWork_should_run_When_KnownScopesUnknown() {
+    fun doWork_should_run_When_KnownScopesUnknown() = runTest {
         assertIs<ListenableWorker.Result.Success>(run())
         assertEquals(1, fetches)
         assertTrue(log.records.single().result !is TaskRunResult.Skipped)
     }
 
     @Test
-    fun doWork_should_run_When_EnabledAndGraphKnown() {
+    fun doWork_should_run_When_EnabledAndGraphKnown() = runTest {
         TaskWorkerRuntime.knownScopes = KnownScopes { KnownScopesResult.Known(setOf(TaskScope(graphId))) }
         assertIs<ListenableWorker.Result.Success>(run())
         assertEquals(1, fetches)
     }
 
     @Test
-    fun doWork_should_run_When_ExplicitOneShotAndTaskDisabled() {
-        runBlocking { store.write(key, TaskEntry(enabled = false, overrides = null)) }
+    fun doWork_should_run_When_ExplicitOneShotAndTaskDisabled() = runTest {
+        store.write(key, TaskEntry(enabled = false, overrides = null))
         assertIs<ListenableWorker.Result.Success>(run(periodic = false))
         assertEquals(1, fetches)
     }

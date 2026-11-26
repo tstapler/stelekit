@@ -74,6 +74,7 @@ class GitSyncServiceAutoCommitTest {
         )
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     private fun GitSyncService.syncOnce(): Either<DomainError.GitError, SyncState.Success> = runBlocking { sync("test-graph") }
 
     @Test

@@ -8,7 +8,7 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.error.SyncOrigin
 import dev.stapler.stelekit.git.testsupport.cloningStub
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import java.io.File
 import java.nio.file.Files
 import kotlin.test.Test
@@ -24,7 +24,7 @@ class CloneEntryPointGateTest {
     private fun key(path: String) = checkNotNull(JvmGitRepository().gateKeyForRoot(path))
 
     @Test
-    fun launcher_should_HoldTheGateDuringCloneAndReleaseAfter() = runBlocking<Unit> {
+    fun launcher_should_HoldTheGateDuringCloneAndReleaseAfter() = runTest {
         var heldDuring = false
         val repo = cloningStub { _, path, _, _ ->
             heldDuring = gate.isHeld(key(path))
@@ -40,7 +40,7 @@ class CloneEntryPointGateTest {
     }
 
     @Test
-    fun launcher_should_ReturnSyncInProgressAndNotClone_When_TheDestinationIsHeld() = runBlocking<Unit> {
+    fun launcher_should_ReturnSyncInProgressAndNotClone_When_TheDestinationIsHeld() = runTest {
         var cloned = false
         val repo = cloningStub { _, _, _, _ -> cloned = true; Unit.right() }
         val hold = checkNotNull(gate.tryAcquire(key(dest.path), SyncOrigin.UiPress))

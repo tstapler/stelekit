@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.nio.file.Files
@@ -59,6 +60,7 @@ class GateKeyResolutionTest {
         gate = gate,
     )
 
+    // runBlocking: real threads/dispatchers do the work under test; virtual time cannot order or await them
     @Test
     fun quiesceKey_should_EqualSyncKey_When_SameGraph() = runBlocking<Unit> {
         val canonicalKey = assertNotNull(RepoOpGate.keyForOrNull(File(real, ".git")))
@@ -70,20 +72,20 @@ class GateKeyResolutionTest {
             val git = BlockingRepository(release)
             val svc = serviceFor(spelling, git)
             val run = scope.async { svc.sync("g") }
-            withTimeout(20_000) { git.entered.await() }
+            withTimeout(20_000) { git.entered.await() } // real-clock hang guard: awaits real threads
 
             assertTrue(gate.isHeld(canonicalKey), "sync under '$spelling' must hold the canonical key")
             assertEquals(canonicalKey, quiesceKeyFor(sampleConfig.copy(repoRoot = RepoRoot(spelling))))
             assertEquals(canonicalKey, RepoOpGate.keyForOrNull(File(File(spelling), ".git")), "clone key for '$spelling'")
 
             release.complete(Unit)
-            withTimeout(20_000) { run.await() }
+            withTimeout(20_000) { run.await() } // real-clock hang guard: awaits real threads
             svc.shutdown()
         }
     }
 
     @Test
-    fun syncKey_should_DifferForDifferentRepositories() = runBlocking<Unit> {
+    fun syncKey_should_DifferForDifferentRepositories() = runTest {
         val other = File(base, "other").apply { mkdirs() }
         val a = assertNotNull(RepoOpGate.keyForOrNull(File(real, ".git")))
         val b = assertNotNull(RepoOpGate.keyForOrNull(File(other, ".git")))

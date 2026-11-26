@@ -19,7 +19,7 @@ import androidx.work.workDataOf
 import dev.stapler.stelekit.git.GitSyncWorker
 import dev.stapler.stelekit.git.GitSyncWorkerBinding
 import dev.stapler.stelekit.jobs.JobKind
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -73,7 +73,7 @@ class WorkManagerTaskSchedulerPauseResumeTest {
     private fun minutes(info: WorkInfo) = TimeUnit.MILLISECONDS.toMinutes(info.periodicityInfo!!.repeatIntervalMillis)
 
     @Test
-    fun resume_should_restoreAppliedInterval_When_PausedAfterApply() = runBlocking<Unit> {
+    fun resume_should_restoreAppliedInterval_When_PausedAfterApply() = runTest {
         scheduler.apply(g1, cfg(45, 0, TaskConstraints(NetworkPolicy.Unmetered)))
         scheduler.pause(g1.scope)
         assertNull(h.active(name1), "pause cancels the work")
@@ -85,7 +85,7 @@ class WorkManagerTaskSchedulerPauseResumeTest {
     }
 
     @Test
-    fun pause_should_cancelOnlyNamedGraph() = runBlocking<Unit> {
+    fun pause_should_cancelOnlyNamedGraph() = runTest {
         scheduler.apply(g1, cfg(45))
         scheduler.apply(g2, cfg(60))
         scheduler.pause(g1.scope)
@@ -94,7 +94,7 @@ class WorkManagerTaskSchedulerPauseResumeTest {
     }
 
     @Test
-    fun resume_should_reenqueueFromLiveWorkInfo_When_NoLedgerOrStoreEntry_PauseTestScenario() = runBlocking<Unit> {
+    fun resume_should_reenqueueFromLiveWorkInfo_When_NoLedgerOrStoreEntry_PauseTestScenario() = runTest {
         h.wm // direct enqueue through the scheduler's seed hook: no ledger, no store entry, no scope tag
         scheduler.seedExternalPeriodic(g1, cfg(15))
         scheduler.pause(g1.scope)
@@ -104,7 +104,7 @@ class WorkManagerTaskSchedulerPauseResumeTest {
     }
 
     @Test
-    fun resume_should_restorePreUpgradeJobWithOriginalIntervalAndConstraints_When_UnmigratedAndUnrecorded() = runBlocking<Unit> {
+    fun resume_should_restorePreUpgradeJobWithOriginalIntervalAndConstraints_When_UnmigratedAndUnrecorded() = runTest {
         scheduler.seedExternalPeriodic(g1, cfg(90, 0, TaskConstraints(NetworkPolicy.Unmetered, requiresCharging = true)))
         scheduler.pause(g1.scope)
         scheduler.resume(g1.scope)
@@ -115,7 +115,7 @@ class WorkManagerTaskSchedulerPauseResumeTest {
     }
 
     @Test
-    fun resume_should_restoreDirectlyEnqueuedGitSyncWorkAsEnqueuedGitSyncWorker_UniqueWorkScenario() = runBlocking<Unit> {
+    fun resume_should_restoreDirectlyEnqueuedGitSyncWorkAsEnqueuedGitSyncWorker_UniqueWorkScenario() = runTest {
         val config = Configuration.Builder()
             .setExecutor(SynchronousExecutor())
             .setClock(FixedClock())
@@ -142,7 +142,7 @@ class WorkManagerTaskSchedulerPauseResumeTest {
     }
 
     @Test
-    fun resume_should_enqueueFromStore_When_NoSnapshotAndNoLedger() = runBlocking<Unit> {
+    fun resume_should_enqueueFromStore_When_NoSnapshotAndNoLedger() = runTest {
         store.write(g1, TaskEntry(true, TaskOverrides(Schedule.of(30, 0), TaskConstraints())))
         scheduler.resume(g1.scope)
         // Nothing was paused: resume only restores what a pause took.
@@ -150,7 +150,7 @@ class WorkManagerTaskSchedulerPauseResumeTest {
     }
 
     @Test
-    fun resume_should_enqueueNothing_When_StoreSaysDisabledEvenWithSnapshot() = runBlocking<Unit> {
+    fun resume_should_enqueueNothing_When_StoreSaysDisabledEvenWithSnapshot() = runTest {
         scheduler.apply(g1, cfg(45))
         scheduler.pause(g1.scope)
         store.write(g1, TaskEntry(false, null))
@@ -159,7 +159,7 @@ class WorkManagerTaskSchedulerPauseResumeTest {
     }
 
     @Test
-    fun resume_should_restoreSnapshot_When_StoreEntryEnabled() = runBlocking<Unit> {
+    fun resume_should_restoreSnapshot_When_StoreEntryEnabled() = runTest {
         scheduler.apply(g1, cfg(45))
         store.write(g1, TaskEntry(true, TaskOverrides(Schedule.of(120, 0), TaskConstraints())))
         scheduler.pause(g1.scope)
@@ -168,7 +168,7 @@ class WorkManagerTaskSchedulerPauseResumeTest {
     }
 
     @Test
-    fun resume_should_consumeSnapshot_When_Restored() = runBlocking<Unit> {
+    fun resume_should_consumeSnapshot_When_Restored() = runTest {
         scheduler.apply(g1, cfg(45))
         scheduler.pause(g1.scope)
         scheduler.resume(g1.scope)
@@ -179,7 +179,7 @@ class WorkManagerTaskSchedulerPauseResumeTest {
     }
 
     @Test
-    fun pause_should_notOverwriteSnapshot_When_SecondPauseFindsNonPeriodicWork() = runBlocking<Unit> {
+    fun pause_should_notOverwriteSnapshot_When_SecondPauseFindsNonPeriodicWork() = runTest {
         scheduler.apply(g1, cfg(45))
         scheduler.pause(g1.scope)
         val ledger = AppliedConfigLedger(ledgerSettings)
@@ -194,7 +194,7 @@ class WorkManagerTaskSchedulerPauseResumeTest {
     }
 
     @Test
-    fun pause_should_cancelAndResumeFromMemory_When_SnapshotWriteThrows() = runBlocking<Unit> {
+    fun pause_should_cancelAndResumeFromMemory_When_SnapshotWriteThrows() = runTest {
         scheduler.apply(g1, cfg(45))
         ledgerSettings.failWrites = true
         scheduler.pause(g1.scope)
@@ -204,7 +204,7 @@ class WorkManagerTaskSchedulerPauseResumeTest {
     }
 
     @Test
-    fun apply_should_updateSnapshotAndEnqueueNothing_When_PausedThenResumeRestoresNewConfig() = runBlocking<Unit> {
+    fun apply_should_updateSnapshotAndEnqueueNothing_When_PausedThenResumeRestoresNewConfig() = runTest {
         scheduler.apply(g1, cfg(45))
         scheduler.pause(g1.scope)
         scheduler.apply(g1, cfg(90))
@@ -214,7 +214,7 @@ class WorkManagerTaskSchedulerPauseResumeTest {
     }
 
     @Test
-    fun apply_should_clearSnapshot_When_DisabledDuringPause() = runBlocking<Unit> {
+    fun apply_should_clearSnapshot_When_DisabledDuringPause() = runTest {
         scheduler.apply(g1, cfg(45))
         scheduler.pause(g1.scope)
         scheduler.apply(g1, cfg(45).copy(enabled = false))
@@ -224,7 +224,7 @@ class WorkManagerTaskSchedulerPauseResumeTest {
     }
 
     @Test
-    fun resume_should_keepRemainingInitialDelayAndConstraints_When_JitteredWorkWasPaused() = runBlocking<Unit> {
+    fun resume_should_keepRemainingInitialDelayAndConstraints_When_JitteredWorkWasPaused() = runTest {
         scheduler.apply(g1, cfg(60, 6, TaskConstraints(NetworkPolicy.Unmetered)))
         val originalDelay = h.active(name1)!!.initialDelayMillis
         assertTrue(originalDelay > 0, "seeded jitter offset gives an initial delay")

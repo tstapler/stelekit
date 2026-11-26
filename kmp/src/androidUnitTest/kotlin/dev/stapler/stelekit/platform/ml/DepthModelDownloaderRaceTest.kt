@@ -9,8 +9,7 @@ import androidx.work.testing.WorkManagerTestInitHelper
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -55,24 +54,24 @@ class DepthModelDownloaderRaceTest {
     }
 
     @Test
-    fun `SUCCEEDED before the file is visible settles to Ready, never Failed`() = runBlocking<Unit> {
+    fun `SUCCEEDED before the file is visible settles to Ready, never Failed`() = runTest {
         val d = downloader(falseCount = 3)
         val seen = mutableListOf<DepthModelDownloader.ModelState>()
         val collector = async(start = CoroutineStart.UNDISPATCHED) { d.modelState.collect { seen += it } }
 
         d.onWorkSucceeded()
-        withTimeout(5_000) { d.modelState.first { it is DepthModelDownloader.ModelState.Ready } }
+        d.modelState.first { it is DepthModelDownloader.ModelState.Ready }
         collector.cancel()
 
         assertTrue(seen.none { it is DepthModelDownloader.ModelState.Failed }, "emitted Failed during the race: $seen")
     }
 
     @Test
-    fun `SUCCEEDED with the file never appearing eventually emits Failed`() = runBlocking<Unit> {
+    fun `SUCCEEDED with the file never appearing eventually emits Failed`() = runTest {
         val d = downloader(falseCount = 0, alwaysFalse = true)
 
         d.onWorkSucceeded()
-        val failed = withTimeout(5_000) { d.modelState.first { it is DepthModelDownloader.ModelState.Failed } }
+        val failed = d.modelState.first { it is DepthModelDownloader.ModelState.Failed }
 
         assertEquals("The model file went missing after downloading. Try again.", (failed as DepthModelDownloader.ModelState.Failed).reason)
     }

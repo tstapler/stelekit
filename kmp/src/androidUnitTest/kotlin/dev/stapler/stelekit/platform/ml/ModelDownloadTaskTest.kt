@@ -31,8 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -73,14 +72,14 @@ class ModelDownloadTaskTest {
 
     private val scope = CoroutineScope(Dispatchers.Default)
 
-    private fun startDownload(downloader: DepthModelDownloader): Deferred<*> {
+    private suspend fun startDownload(downloader: DepthModelDownloader): Deferred<*> {
         val waiting = scope.async { downloader.downloadModel() }
-        runBlocking { withTimeout(5_000) { downloader.modelState.first { it is DepthModelDownloader.ModelState.Downloading } } }
+        downloader.awaitDownloadingState()
         return waiting
     }
 
     @Test
-    fun run_should_putReadyFileInPlaceAndReportProgress_When_serverServesModel() = runBlocking<Unit> {
+    fun run_should_putReadyFileInPlaceAndReportProgress_When_serverServesModel() = runTest {
         val percents = mutableListOf<Int>()
         val result = ModelDownloadTask(context, server.url, server.sha256).run(
             ModelDownloadTask.KEY, ctx.copy(reportProgress = { percents += it }),
@@ -93,28 +92,28 @@ class ModelDownloadTaskTest {
     }
 
     @Test
-    fun run_should_beRetryableFailure_When_serverErrors() = runBlocking<Unit> {
+    fun run_should_beRetryableFailure_When_serverErrors() = runTest {
         server.status = 503
         val result = ModelDownloadTask(context, server.url, server.sha256).run(ModelDownloadTask.KEY, ctx)
         assertTrue(result is TaskRunResult.Failed && result.retryable, "$result")
     }
 
     @Test
-    fun run_should_failTerminally_When_downloadedFileIsTooSmall() = runBlocking<Unit> {
+    fun run_should_failTerminally_When_downloadedFileIsTooSmall() = runTest {
         server.body = ByteArray(1024)
         val result = ModelDownloadTask(context, server.url, server.sha256).run(ModelDownloadTask.KEY, ctx)
         assertTrue(result is TaskRunResult.Failed && !result.retryable, "$result")
     }
 
     @Test
-    fun run_should_installModel_When_checksumMatches() = runBlocking<Unit> {
+    fun run_should_installModel_When_checksumMatches() = runTest {
         val result = ModelDownloadTask(context, server.url, server.sha256.uppercase()).run(ModelDownloadTask.KEY, ctx)
         assertEquals(TaskRunResult.Success, result)
         assertTrue(DepthModelStorage.isReady(target))
     }
 
     @Test
-    fun run_should_failTerminallyAndLeaveNoFiles_When_checksumMismatches() = runBlocking<Unit> {
+    fun run_should_failTerminallyAndLeaveNoFiles_When_checksumMismatches() = runTest {
         // Same size as a valid model, different bytes: only the checksum can catch it.
         server.body = ByteArray(server.payload.size) { 1 }
         val result = ModelDownloadTask(context, server.url, server.sha256).run(ModelDownloadTask.KEY, ctx)
@@ -141,7 +140,7 @@ class ModelDownloadTaskTest {
     }
 
     @Test
-    fun register_should_beIdempotentAndSupplyDataSyncForeground_When_calledTwice() = runBlocking<Unit> {
+    fun register_should_beIdempotentAndSupplyDataSyncForeground_When_calledTwice() = runTest {
         val registry = TaskRegistry()
         val foreground = TaskForegroundProvider()
         registerModelDownloadTask(registry, context, foreground)
@@ -153,7 +152,7 @@ class ModelDownloadTaskTest {
     }
 
     @Test
-    fun downloadModel_should_tagRequestWithKindAndTitle_AndRequireStorageNotLow() {
+    fun downloadModel_should_tagRequestWithKindAndTitle_AndRequireStorageNotLow() = runTest {
         val downloader = fixture.downloader
         val waiting = startDownload(downloader)
 
@@ -163,11 +162,11 @@ class ModelDownloadTaskTest {
         assertTrue(JobTags.ANY in request.tags)
         assertTrue(request.constraints.requiresStorageNotLow())
         downloader.cancelDownload()
-        runBlocking { waiting.await() }
+        waiting.await()
     }
 
     @Test
-    fun downloadModel_should_useStoredConstraints_NotEnabled() = runBlocking<Unit> {
+    fun downloadModel_should_useStoredConstraints_NotEnabled() = runTest {
         fixture.store.write(
             ModelDownloadTask.KEY,
             TaskEntry(enabled = false, TaskOverrides(schedule = null, constraints = TaskConstraints(NetworkPolicy.Any))),
@@ -188,7 +187,7 @@ class ModelDownloadTaskTest {
     }
 
     @Test
-    fun runOnce_should_keepOrReplace_ByConflictPolicy() = runBlocking<Unit> {
+    fun runOnce_should_keepOrReplace_ByConflictPolicy() = runTest {
         fixture.scheduler.runOnce(ModelDownloadTask.KEY, TaskConstraints(NetworkPolicy.Unmetered), OneShotConflict.Keep)
         val first = activeRequest()
         fixture.scheduler.runOnce(ModelDownloadTask.KEY, TaskConstraints(NetworkPolicy.Any), OneShotConflict.Keep)
@@ -201,7 +200,7 @@ class ModelDownloadTaskTest {
     }
 
     @Test
-    fun downloadModel_should_defaultToUnmetered_When_storeIsEmptyOrUnreadable() = runBlocking<Unit> {
+    fun downloadModel_should_defaultToUnmetered_When_storeIsEmptyOrUnreadable() = runTest {
         assertEquals(NetworkPolicy.Unmetered, ModelDownloadTask.defaultConfig.constraints.network)
         val empty = startDownload(fixture.downloader)
         assertEquals(NetworkType.UNMETERED, activeRequest().constraints.requiredNetworkType)

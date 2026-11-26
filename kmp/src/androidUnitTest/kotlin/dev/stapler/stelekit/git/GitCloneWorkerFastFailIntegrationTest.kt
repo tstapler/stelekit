@@ -96,6 +96,7 @@ class GitCloneWorkerFastFailIntegrationTest {
     // "Permission denied" on the generated .class file, not a length-related error.
     @Test
     fun `doWork() against an auth-always-failing FailureSequenceGitRepository fails after exactly one attempt with no backoff delay`() =
+        // runBlocking: asserts wall-clock elapsed time to prove no backoff; runTest would skip the delays
         runBlocking {
             // "Always fails" is modeled via FailureSequence's onSuccess (not its `failures` list,
             // which is for a bounded "fail N times then succeed" sequence) returning a Left on

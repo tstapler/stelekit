@@ -8,6 +8,9 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.work.Configuration
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -57,7 +60,7 @@ class WorkManagerSyncSchedulerPauseTest {
             .any { it.state == WorkInfo.State.ENQUEUED }
 
     @Test
-    fun pauseFor_should_CancelPeriodicJobBeforeCopyBegins_When_RelocateStarts() {
+    fun pauseFor_should_CancelPeriodicJobBeforeCopyBegins_When_RelocateStarts() = runTest {
         WorkManagerSyncScheduler(context, graphId).schedule(intervalMinutes = 15)
         assertTrue(enqueuedWorkExists(), "sanity check: job should be enqueued before pauseFor runs")
 
@@ -67,7 +70,7 @@ class WorkManagerSyncSchedulerPauseTest {
     }
 
     @Test
-    fun resumeFor_should_RescheduleThePeriodicJob_When_SwitchGraphCompletes() {
+    fun resumeFor_should_RescheduleThePeriodicJob_When_SwitchGraphCompletes() = runTest {
         WorkManagerSyncScheduler(context, graphId).schedule(intervalMinutes = 15)
         WorkManagerSyncScheduler.pauseFor(context, graphId)
         assertFalse(enqueuedWorkExists(), "sanity check: job should be paused before resumeFor runs")
@@ -78,7 +81,20 @@ class WorkManagerSyncSchedulerPauseTest {
     }
 
     @Test
-    fun pauseFor_should_NotAffectAnotherGraphsScheduledJob_When_OnlyOneGraphIsRelocating() {
+    fun resumeFor_should_RestoreThePeriodicJob_When_TheCallerIsAlreadyCancelled() = runTest {
+        WorkManagerSyncScheduler(context, graphId).schedule(intervalMinutes = 15)
+        WorkManagerSyncScheduler.pauseFor(context, graphId)
+
+        launch {
+            cancel()
+            WorkManagerSyncScheduler.resumeFor(context, graphId)
+        }.join()
+
+        assertTrue(enqueuedWorkExists(), "a cancelled caller must not leave periodic sync paused")
+    }
+
+    @Test
+    fun pauseFor_should_NotAffectAnotherGraphsScheduledJob_When_OnlyOneGraphIsRelocating() = runTest {
         val otherGraphId = "g2"
         WorkManagerSyncScheduler(context, graphId).schedule(intervalMinutes = 15)
         WorkManagerSyncScheduler(context, otherGraphId).schedule(intervalMinutes = 15)

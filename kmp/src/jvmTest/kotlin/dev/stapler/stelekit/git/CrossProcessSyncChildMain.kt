@@ -51,6 +51,7 @@ object CrossProcessSyncChildMain {
     private fun configFor(repoDir: File) =
         GitConfig(graphId = GRAPH_ID, repoRoot = RepoRoot(repoDir.absolutePath), wikiSubdir = null, authType = GitAuthType.NONE)
 
+    // runBlocking: cross-process claim over real files and threads
     private fun seed(repoDir: File) = runBlocking {
         val verdict = JvmGitRepository().beginOwnedOperation(configFor(repoDir), OwnedOperationInfo("sync", SyncOrigin.UiPress))
         check(verdict.getOrNull() == LockVerdict.NoLock) { "seed claim was $verdict" }
@@ -69,6 +70,7 @@ object CrossProcessSyncChildMain {
             println("READY")
             System.out.flush()
             while (input.readLine() != "GO") Unit
+            // runBlocking: cross-process claim over real files and threads
             println(runBlocking { runOnce(mode, repoDir) })
             System.out.flush()
         }

@@ -77,7 +77,7 @@ class GitSyncServicePeriodicTest {
     private fun runOneInterval(intervalMinutes: Int) {
         val expected = repo.fetches.get() + 1
         scheduler.advanceTimeBy(intervalMinutes * 60_000L)
-        val deadline = System.nanoTime() + TICK_TIMEOUT_NANOS
+        val deadline = System.nanoTime() + TICK_TIMEOUT_NANOS // real-clock hang guard: awaits real threads
         while (!(repo.fetches.get() >= expected && service?.scheduledSyncStatus?.value?.tickInFlight == false)) {
             assertTrue(System.nanoTime() < deadline, "tick $expected never finished")
             scheduler.runCurrent()

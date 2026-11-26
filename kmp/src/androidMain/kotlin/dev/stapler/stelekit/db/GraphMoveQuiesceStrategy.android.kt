@@ -22,6 +22,7 @@ import dev.stapler.stelekit.model.StorageMoveOperation
 import dev.stapler.stelekit.platform.GitWorktreeLocks
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
@@ -90,8 +91,8 @@ class AndroidGraphMoveQuiesceStrategy(
     private val gate: RepoOpGate,
     private val gateKeyFor: suspend (StorageMoveOperation) -> String?,
     private val shadowWorktreeTarget: (StorageMoveOperation) -> ShadowWorktreeQuiesceTarget?,
-    private val pauseBackgroundSync: (graphId: String) -> Unit = {},
-    private val resumeBackgroundSync: (graphId: String) -> Unit = {},
+    private val pauseBackgroundSync: suspend (graphId: String) -> Unit = {},
+    private val resumeBackgroundSync: suspend (graphId: String) -> Unit = {},
     private val releaseUriPermission: (treeUri: String) -> Unit = {},
 ) : GraphMoveQuiesceStrategy {
 
@@ -112,7 +113,7 @@ class AndroidGraphMoveQuiesceStrategy(
     private val holds = ConcurrentHashMap<String, QuiesceHold>()
 
     override suspend fun quiesce(op: StorageMoveOperation): Either<DomainError.StorageError, Unit> {
-        // The lambda reads WorkInfo with a blocking get(); keep it off the caller's (possibly main) dispatcher.
+        // The lambda touches settings and WorkManager; keep it off the caller's (possibly main) dispatcher.
         withContext(Dispatchers.IO) { pauseBackgroundSync(op.graphId) }
 
         val target = shadowWorktreeTarget(op)
@@ -193,7 +194,7 @@ class AndroidGraphMoveQuiesceStrategy(
 
     override suspend fun release(op: StorageMoveOperation) {
         holds.remove(op.graphId)?.release()
-        withContext(Dispatchers.IO) { resumeBackgroundSync(op.graphId) }
+        withContext(NonCancellable + Dispatchers.IO) { resumeBackgroundSync(op.graphId) }
     }
 
     override suspend fun releaseSourceGrant(source: StorageLocation) {

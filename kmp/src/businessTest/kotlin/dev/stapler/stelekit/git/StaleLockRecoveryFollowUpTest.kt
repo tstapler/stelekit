@@ -12,6 +12,7 @@ import dev.stapler.stelekit.git.testsupport.StubConfigRepository
 import dev.stapler.stelekit.git.testsupport.sampleConfig
 import dev.stapler.stelekit.model.RepoRoot
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.eclipse.jgit.api.Git
 import java.io.File
 import java.nio.file.Files
@@ -47,7 +48,7 @@ class StaleLockRecoveryFollowUpTest {
     }
 
     @Test
-    fun beginChecked_should_EndTheClaim_When_TheHealthCheckRefuses() = runBlocking<Unit> {
+    fun beginChecked_should_EndTheClaim_When_TheHealthCheckRefuses() = runTest {
         val gitDir = tempDir()
         writeDeadOwner(gitDir)
         val registry = ActiveRunRegistry()
@@ -63,7 +64,7 @@ class StaleLockRecoveryFollowUpTest {
     }
 
     @Test
-    fun beginChecked_should_EndTheClaimAndRethrow_When_TheHealthCheckThrows() = runBlocking<Unit> {
+    fun beginChecked_should_EndTheClaimAndRethrow_When_TheHealthCheckThrows() = runTest {
         val gitDir = tempDir()
         writeDeadOwner(gitDir)
         val registry = ActiveRunRegistry()
@@ -77,6 +78,7 @@ class StaleLockRecoveryFollowUpTest {
     }
 
     // The original bug's victims: a leftover index.lock with no owner record.
+    // runBlocking: real lock files and a GitSyncService on its own real dispatchers
     @Test
     fun removeLockFile_should_UnwedgeSync_When_StaleLockHasNoRecord() = runBlocking<Unit> {
         val root = tempDir()
@@ -95,6 +97,7 @@ class StaleLockRecoveryFollowUpTest {
         assertTrue(synced.isRight(), "sync must proceed after the confirmed removal, got $synced")
     }
 
+    // runBlocking: real lock files and a GitSyncService on its own real dispatchers
     @Test
     fun removeLockFile_should_Refuse_When_TheLockIsOnlyMinutesOld() = runBlocking<Unit> {
         val root = tempDir()
@@ -105,6 +108,7 @@ class StaleLockRecoveryFollowUpTest {
         assertTrue(lock.exists())
     }
 
+    // runBlocking: real lock files and a GitSyncService on its own real dispatchers
     @Test
     fun removeLockFileAction_should_SurfaceTheRefusal_When_TheLockIsKept() = runBlocking<Unit> {
         val root = tempDir()
@@ -123,13 +127,14 @@ class StaleLockRecoveryFollowUpTest {
 
             actions.removeLockFile()
 
-            val event = kotlinx.coroutines.withTimeout(20_000) { events.await() }
+            val event = kotlinx.coroutines.withTimeout(20_000) { events.await() } // real-clock hang guard: awaits real threads
             assertIs<dev.stapler.stelekit.ui.SyncUiEvent.LockRemovalRefused>(event)
         } finally {
             scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
         }
     }
 
+    // runBlocking: real lock files and a GitSyncService on its own real dispatchers
     @Test
     fun removeLockFile_should_Refuse_When_TheLockWasJustTouched() = runBlocking<Unit> {
         val root = tempDir()

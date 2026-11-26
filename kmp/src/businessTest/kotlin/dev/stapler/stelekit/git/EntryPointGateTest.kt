@@ -14,7 +14,7 @@ import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.ui.screens.git.CloneMode
 import dev.stapler.stelekit.ui.screens.git.GitSetupFormSnapshot
 import dev.stapler.stelekit.ui.screens.git.testGitConnection
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -56,7 +56,7 @@ class EntryPointGateTest {
     )
 
     @Test
-    fun testGitConnection_should_HoldTheGateDuringFetchAndReleaseAfter() = runBlocking<Unit> {
+    fun testGitConnection_should_HoldTheGateDuringFetchAndReleaseAfter() = runTest {
         val repo = RecordingRepository(gate)
 
         val result = testGitConnection(form(), repo, CredentialStore(), gate)
@@ -67,7 +67,7 @@ class EntryPointGateTest {
     }
 
     @Test
-    fun testGitConnection_should_ReturnSyncInProgressAndNotFetch_When_ASyncHoldsTheRepository() = runBlocking<Unit> {
+    fun testGitConnection_should_ReturnSyncInProgressAndNotFetch_When_ASyncHoldsTheRepository() = runTest {
         val repo = RecordingRepository(gate)
         val hold = checkNotNull(gate.tryAcquire(checkNotNull(repo.gateKeyForRoot("/tmp/entry-point-gate-repo")), SyncOrigin.UiPress))
 
@@ -79,7 +79,7 @@ class EntryPointGateTest {
     }
 
     @Test
-    fun withExclusiveLease_should_RunNothing_When_TheKeyCannotBeResolved() = runBlocking<Unit> {
+    fun withExclusiveLease_should_RunNothing_When_TheKeyCannotBeResolved() = runTest {
         var ran = false
 
         val result = gate.withExclusiveLease(null, SyncOrigin.Clone, DomainError.GitError.CloneFailed("no key")) {
@@ -92,7 +92,7 @@ class EntryPointGateTest {
     }
 
     @Test
-    fun withExclusiveLease_should_ReleaseAndDropAQueuedFollowUp_When_APressCoalescedIntoIt() = runBlocking<Unit> {
+    fun withExclusiveLease_should_ReleaseAndDropAQueuedFollowUp_When_APressCoalescedIntoIt() = runTest {
         val result = gate.withExclusiveLease("k", SyncOrigin.Clone, DomainError.GitError.CloneFailed("x")) {
             assertTrue(gate.requestRerun("k"), "a UI press coalescing into the clone queues one rerun")
             Unit.right()

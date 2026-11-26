@@ -344,6 +344,7 @@ class ScheduledSyncSettingsTest {
         composeTestRule.waitForIdle()
     }
 
+    // runBlocking: seeds or reads state from a non-suspend Compose-rule test, outside any virtual clock
     private fun BackgroundTaskFixture.entryOf(graph: String = "g1") = runBlocking { store.readEntry(gitKey(graph)) }
 
     @Test
@@ -388,6 +389,7 @@ class ScheduledSyncSettingsTest {
         composeTestRule.onNodeWithText("2 hours").performClick()
         composeTestRule.onNodeWithText("Unmetered networks only").performClick()
         composeTestRule.waitForIdle()
+        // runBlocking: seeds or reads state from a non-suspend Compose-rule test, outside any virtual clock
         val stored = runBlocking { fixture.store.read(fixture.gitKey("g1")) }
         assertEquals(120, stored.schedule.intervalMinutes)
         assertEquals(12, stored.schedule.jitterMinutes)
@@ -415,6 +417,7 @@ class ScheduledSyncSettingsTest {
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText(COULDNT_SAVE).assertExists()
         composeTestRule.onNodeWithText("Any network").assertIsSelected()
+        // runBlocking: seeds or reads state from a non-suspend Compose-rule test, outside any virtual clock
         assertEquals(NetworkPolicy.Any, runBlocking { fixture.store.read(fixture.gitKey("g1")) }.constraints.network)
     }
 
@@ -433,6 +436,7 @@ class ScheduledSyncSettingsTest {
     @Test
     fun summary_should_useAdapterGapFieldsAndClamp_When_WorkManagerLikeAdapter() {
         val fixture = BackgroundTaskFixture(BackgroundTaskFixture.ANDROID)
+        // runBlocking: seeds or reads state from a non-suspend Compose-rule test, outside any virtual clock
         runBlocking {
             fixture.store.write(
                 fixture.gitKey("g1"),
@@ -505,6 +509,7 @@ class ScheduledSyncSettingsTest {
     @Test
     fun enable_should_announceFirstCheckInAboutNMin_When_SwitchTurnedOn() {
         val fixture = BackgroundTaskFixture(BackgroundTaskFixture.ANDROID)
+        // runBlocking: seeds or reads state from a non-suspend Compose-rule test, outside any virtual clock
         runBlocking { fixture.store.write(fixture.gitKey("g1"), TaskEntry(false, TaskOverrides(Schedule.of(5, 0), TaskConstraints()))) }
         showPanel(fixture)
         composeTestRule.onNodeWithText(SWITCH_LABEL).performClick()
@@ -516,6 +521,7 @@ class ScheduledSyncSettingsTest {
     @Test
     fun switch_should_turnOffInOneTap_When_AlreadyOn() {
         val fixture = BackgroundTaskFixture(BackgroundTaskFixture.ANDROID)
+        // runBlocking: seeds or reads state from a non-suspend Compose-rule test, outside any virtual clock
         runBlocking { fixture.store.write(fixture.gitKey("g1"), TaskEntry(true, null)) }
         showPanel(fixture)
         composeTestRule.onNodeWithText(SWITCH_LABEL).assertIsEnabled().performClick()
@@ -527,6 +533,7 @@ class ScheduledSyncSettingsTest {
     @Test
     fun resetToDefault_should_clearOverridesKeepEnabledAndApplyOnce_When_CustomRowTapped() {
         val fixture = BackgroundTaskFixture(BackgroundTaskFixture.ANDROID)
+        // runBlocking: seeds or reads state from a non-suspend Compose-rule test, outside any virtual clock
         runBlocking { fixture.store.write(fixture.gitKey("g1"), TaskEntry(true, TaskOverrides(Schedule.of(360, 36), TaskConstraints()))) }
         showPanel(fixture)
         composeTestRule.onNodeWithText("Reset to default").performClick()
@@ -544,6 +551,7 @@ class ScheduledSyncSettingsTest {
     fun resetToDefault_should_keepOverridesAndShowCouldntSave_When_WriteThrows() {
         val fixture = BackgroundTaskFixture(BackgroundTaskFixture.ANDROID)
         val custom = TaskEntry(true, TaskOverrides(Schedule.of(360, 36), TaskConstraints()))
+        // runBlocking: seeds or reads state from a non-suspend Compose-rule test, outside any virtual clock
         runBlocking { fixture.store.write(fixture.gitKey("g1"), custom) }
         showPanel(fixture)
         fixture.settings.failWrites = true
@@ -560,6 +568,7 @@ class ScheduledSyncSettingsTest {
         composeTestRule.onNodeWithText(SWITCH_LABEL).assertDoesNotExist()
         composeTestRule.onNodeWithText("2 hours").performClick()
         composeTestRule.waitForIdle()
+        // runBlocking: seeds or reads state from a non-suspend Compose-rule test, outside any virtual clock
         assertEquals(120, runBlocking { fixture.store.readDefaults(GitSyncTask.KIND) }?.schedule?.intervalMinutes)
         assertTrue(fixture.settings.store.keys.none { it.contains("task_entry") })
         assertTrue(fixture.scheduler.applied.isEmpty())

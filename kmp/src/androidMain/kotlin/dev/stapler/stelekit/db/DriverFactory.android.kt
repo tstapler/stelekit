@@ -143,6 +143,7 @@ actual class DriverFactory actual constructor() {
         }
         if (useLibsql && dbName.startsWith("/")) {
             val driver = AndroidLibsqlDriver(dbName)
+            // runBlocking: same non-suspend createDriver constraint as the AndroidSqliteDriver path below.
             runBlocking {
                 try { SteleDatabase.Schema.create(driver).await() }
                 catch (e: CancellationException) { throw e }
@@ -166,6 +167,8 @@ actual class DriverFactory actual constructor() {
         )
 
         // Apply incremental DDL migrations (idempotent, hash-tracked).
+        // runBlocking: createDriver is a non-suspend expect API and the driver must not be returned unmigrated.
+        // Also reached from the cold git-sync worker (loadGitConfigFromDb), where it holds that worker's thread.
         runBlocking { MigrationRunner.applyAll(driver) }
 
         return driver
@@ -231,6 +234,7 @@ actual class DriverFactory actual constructor() {
                 }
             },
         )
+        // runBlocking: same non-suspend constraint; the driver must not be returned unmigrated.
         runBlocking { TelemetryMigrationRunner.applyAll(driver) }
         return driver
     }

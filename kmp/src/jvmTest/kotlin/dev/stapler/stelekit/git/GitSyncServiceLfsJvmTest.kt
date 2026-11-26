@@ -129,6 +129,7 @@ class GitSyncServiceLfsJvmTest {
 
     private fun remoteCommitCount(): Int = Git.open(origin).use { git -> git.log().call().count() }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun sync_should_PushTextNotesAndNeverTheRawBinary_When_AssetsAreLfsTracked() = runBlocking {
         File(work, "pages").mkdirs()
@@ -155,6 +156,7 @@ class GitSyncServiceLfsJvmTest {
         service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun sync_should_NotCreateEmptyCommits_When_OnlyAHeldFileIsPending() = runBlocking {
         File(work, "assets").mkdirs()
@@ -170,6 +172,7 @@ class GitSyncServiceLfsJvmTest {
         service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun sync_should_PushTheFileAsAPointer_OnceTheRawFileIsReplaced() = runBlocking {
         File(work, "assets").mkdirs()

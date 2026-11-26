@@ -6,7 +6,7 @@ package dev.stapler.stelekit.git
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import dev.stapler.stelekit.git.testsupport.sampleConfig
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -26,7 +26,7 @@ class AndroidGitLegacyConfigSourceTest {
         AndroidGitLegacyConfigSource(context, databaseExists = { exists }, load = load)
 
     @Test
-    fun read_should_beUnavailable_When_DatabaseFileDoesNotExist() = runBlocking {
+    fun read_should_beUnavailable_When_DatabaseFileDoesNotExist() = runTest {
         var loaded = false
         val result = source(exists = false) { loaded = true; null }.read("g1")
         assertEquals(LegacyGitConfigResult.Unavailable, result)
@@ -34,23 +34,23 @@ class AndroidGitLegacyConfigSourceTest {
     }
 
     @Test
-    fun read_should_beUnavailable_When_TheReadThrows() = runBlocking {
+    fun read_should_beUnavailable_When_TheReadThrows() = runTest {
         assertEquals(LegacyGitConfigResult.Unavailable, source { throw IllegalStateException("cannot open") }.read("g1"))
     }
 
     @Test
-    fun read_should_beUnavailable_When_TheRealDatabasePathIsUnopenable() = runBlocking {
+    fun read_should_beUnavailable_When_TheRealDatabasePathIsUnopenable() = runTest {
         // No database exists for this id in the test files dir, so the real existence check reports unavailable.
         assertEquals(LegacyGitConfigResult.Unavailable, AndroidGitLegacyConfigSource(context).read("no-such-graph"))
     }
 
     @Test
-    fun read_should_findNoRemote_When_TheDatabaseHasNoGitConfigRow() = runBlocking {
+    fun read_should_findNoRemote_When_TheDatabaseHasNoGitConfigRow() = runTest {
         assertEquals(LegacyGitConfigResult.Found(hasRemote = false, pollIntervalMinutes = 0), source { null }.read("g1"))
     }
 
     @Test
-    fun read_should_findRemoteAndInterval_When_TheDatabaseHasAGitConfigRow() = runBlocking {
+    fun read_should_findRemoteAndInterval_When_TheDatabaseHasAGitConfigRow() = runTest {
         val result = source { sampleConfig.copy(graphId = it, pollIntervalMinutes = 30) }.read("g1")
         assertEquals(LegacyGitConfigResult.Found(hasRemote = true, pollIntervalMinutes = 30), result)
     }

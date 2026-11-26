@@ -72,6 +72,7 @@ class StelekitViewModelSyncStateTest {
 
     // ── TC-4.3.2-A: Idle + nonzero count → LocalChangesPending ─────────────────
 
+    // runBlocking: StelekitViewModel runs on its own real-dispatcher scope that virtual time cannot drive
     @Test
     fun `TC-4_3_2-A syncState combine emits LocalChangesPending when raw state is Idle and count greater than zero`() = runBlocking {
         val countFlow = MutableStateFlow(0)
@@ -90,6 +91,7 @@ class StelekitViewModelSyncStateTest {
         assertEquals(SyncState.LocalChangesPending(3), observed)
     }
 
+    // runBlocking: StelekitViewModel runs on its own real-dispatcher scope that virtual time cannot drive
     @Test
     fun `TC-4_3_2-A syncState stays Idle when count is zero`() = runBlocking {
         val countFlow = MutableStateFlow(0)
@@ -103,6 +105,7 @@ class StelekitViewModelSyncStateTest {
 
     // ── TC-4.3.2-B: in-progress state is never overridden ──────────────────────
 
+    // runBlocking: StelekitViewModel runs on its own real-dispatcher scope that virtual time cannot drive
     @Test
     fun `TC-4_3_2-B syncState combine never overrides an in-progress state with LocalChangesPending`() = runBlocking {
         // GitRepository whose status() reports local changes but stageSubdir() fails —

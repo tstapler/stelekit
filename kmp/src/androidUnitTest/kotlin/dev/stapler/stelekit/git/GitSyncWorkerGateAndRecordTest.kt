@@ -39,8 +39,7 @@ import dev.stapler.stelekit.platform.NetworkMonitor
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -163,14 +162,14 @@ class GitSyncWorkerGateAndRecordTest {
         override fun containsKey(key: String) = store.containsKey(key)
     }
 
-    private fun run(policy: String? = null, interval: Long? = null): ListenableWorker.Result {
+    private suspend fun run(policy: String? = null, interval: Long? = null): ListenableWorker.Result {
         val data = buildList {
             add(GitSyncWorker.KEY_GRAPH_ID to graphId)
             if (policy != null) add(GitSyncWorker.KEY_NETWORK_POLICY to policy)
             if (interval != null) add(GitSyncWorker.KEY_INTERVAL_MINUTES to interval)
         }
         val worker = TestListenableWorkerBuilder<GitSyncWorker>(context).setInputData(workDataOf(*data.toTypedArray())).build()
-        return runBlocking { worker.doWork() }
+        return worker.doWork()
     }
 
     private fun onlyRecord(): TaskRunRecord {
@@ -182,7 +181,7 @@ class GitSyncWorkerGateAndRecordTest {
     }
 
     @Test
-    fun doWork_should_skipMeteredAndLogOneRecord_When_UnmeteredPolicyOnMeteredNetwork() {
+    fun doWork_should_skipMeteredAndLogOneRecord_When_UnmeteredPolicyOnMeteredNetwork() = runTest {
         registerService(); provider(metered = true)
 
         val result = run(policy = "unmetered")
@@ -193,7 +192,7 @@ class GitSyncWorkerGateAndRecordTest {
     }
 
     @Test
-    fun doWork_should_skipUnknownNetwork_When_UnmeteredPolicyAndMeteringUnknown() {
+    fun doWork_should_skipUnknownNetwork_When_UnmeteredPolicyAndMeteringUnknown() = runTest {
         registerService(); provider(metered = null)
         assertIs<ListenableWorker.Result.Success>(run(policy = "unmetered"))
         assertEquals(TaskRunResult.Skipped("unknown-network"), onlyRecord().result)
@@ -201,7 +200,7 @@ class GitSyncWorkerGateAndRecordTest {
     }
 
     @Test
-    fun doWork_should_skipUnknownNetwork_When_UnmeteredPolicyAndProviderThrows() {
+    fun doWork_should_skipUnknownNetwork_When_UnmeteredPolicyAndProviderThrows() = runTest {
         registerService(); throwingProvider()
         assertIs<ListenableWorker.Result.Success>(run(policy = "unmetered"))
         assertEquals(TaskRunResult.Skipped("unknown-network"), onlyRecord().result)
@@ -209,7 +208,7 @@ class GitSyncWorkerGateAndRecordTest {
     }
 
     @Test
-    fun doWork_should_skipOffline_When_ProviderExplicitlyReportsOffline() {
+    fun doWork_should_skipOffline_When_ProviderExplicitlyReportsOffline() = runTest {
         registerService(); provider(online = false, metered = null)
         assertIs<ListenableWorker.Result.Success>(run(policy = "any"))
         assertEquals(TaskRunResult.Skipped("offline"), onlyRecord().result)
@@ -217,7 +216,7 @@ class GitSyncWorkerGateAndRecordTest {
     }
 
     @Test
-    fun doWork_should_proceed_When_PolicyAnyAndNetworkMetered() {
+    fun doWork_should_proceed_When_PolicyAnyAndNetworkMetered() = runTest {
         registerService(); provider(metered = true)
         assertIs<ListenableWorker.Result.Success>(run(policy = "any"))
         assertEquals(1, fetches)
@@ -225,7 +224,7 @@ class GitSyncWorkerGateAndRecordTest {
     }
 
     @Test
-    fun doWork_should_proceed_When_PolicyKeyAbsentAsInAPreUpgradeJob() {
+    fun doWork_should_proceed_When_PolicyKeyAbsentAsInAPreUpgradeJob() = runTest {
         registerService(); provider(metered = true)
         assertIs<ListenableWorker.Result.Success>(run(policy = null))
         assertEquals(1, fetches)
@@ -233,7 +232,7 @@ class GitSyncWorkerGateAndRecordTest {
     }
 
     @Test
-    fun doWork_should_proceed_When_PolicyAnyAndProviderThrows() {
+    fun doWork_should_proceed_When_PolicyAnyAndProviderThrows() = runTest {
         registerService(); throwingProvider()
         assertIs<ListenableWorker.Result.Success>(run(policy = null))
         assertEquals(1, fetches, "WorkManager's CONNECTED constraint already held, so an unreadable provider proceeds for Any")
@@ -241,7 +240,7 @@ class GitSyncWorkerGateAndRecordTest {
     }
 
     @Test
-    fun doWork_should_logFailedAndReturnFailure_When_FetchFails() {
+    fun doWork_should_logFailedAndReturnFailure_When_FetchFails() = runTest {
         registerService(DomainError.GitError.RetryExhausted(5, DomainError.GitError.FetchFailed("boom")).left())
         provider(metered = false)
 
@@ -252,7 +251,7 @@ class GitSyncWorkerGateAndRecordTest {
     }
 
     @Test
-    fun doWork_should_recordConstraintStateReadAtRunStart_When_Run() {
+    fun doWork_should_recordConstraintStateReadAtRunStart_When_Run() = runTest {
         registerService(); provider(online = true, metered = false)
         run()
         val state = onlyRecord().constraintState
@@ -261,7 +260,7 @@ class GitSyncWorkerGateAndRecordTest {
     }
 
     @Test
-    fun doWork_should_keepResultUnchanged_When_RunLogWriteThrows() {
+    fun doWork_should_keepResultUnchanged_When_RunLogWriteThrows() = runTest {
         registerService(); provider(metered = false)
         GitSyncWorker.runLogOverride = {
             object : TaskRunLog {
@@ -276,14 +275,14 @@ class GitSyncWorkerGateAndRecordTest {
     }
 
     @Test
-    fun doWork_should_keepResultUnchanged_When_RunLogCannotBeBuilt() {
+    fun doWork_should_keepResultUnchanged_When_RunLogCannotBeBuilt() = runTest {
         registerService(); provider(metered = false)
         GitSyncWorker.runLogOverride = { throw IllegalStateException("settings unavailable") }
         assertIs<ListenableWorker.Result.Success>(run())
     }
 
     @Test
-    fun doWork_should_appendExactlyOneRecord_When_SuccessSkipOrFailure() {
+    fun doWork_should_appendExactlyOneRecord_When_SuccessSkipOrFailure() = runTest {
         provider(metered = false)
         registerService()
         run()
@@ -303,7 +302,7 @@ class GitSyncWorkerGateAndRecordTest {
     }
 
     @Test
-    fun doWork_should_runPreRunGateYieldBodyPostRunInOrder_When_CloneRunning() {
+    fun doWork_should_runPreRunGateYieldBodyPostRunInOrder_When_CloneRunning() = runTest {
         WorkManagerTestInitHelper.initializeTestWorkManager(
             context,
             Configuration.Builder().setExecutor(Executors.newCachedThreadPool()).build(),
@@ -312,11 +311,8 @@ class GitSyncWorkerGateAndRecordTest {
         val clone = OneTimeWorkRequestBuilder<BlockedCloneStandIn>().build()
         try {
             WorkManager.getInstance(context).enqueue(clone)
-            runBlocking {
-                withTimeout(CLONE_RUNNING_TIMEOUT_MS) {
-                    WorkManager.getInstance(context).getWorkInfoByIdFlow(clone.id).first { it?.state == WorkInfo.State.RUNNING }
-                }
-            }
+            // No withTimeout: it would run on virtual time while the clone starts on a real thread.
+            WorkManager.getInstance(context).getWorkInfoByIdFlow(clone.id).first { it?.state == WorkInfo.State.RUNNING }
             GitCloneWorkTracker.recordStart(context, graphId, clone.id, System.currentTimeMillis())
             provider(metered = true)
 
@@ -332,7 +328,7 @@ class GitSyncWorkerGateAndRecordTest {
     }
 
     @Test
-    fun doWork_should_runWatchdogThenBodyThenPostRun_When_FetchSucceeds() {
+    fun doWork_should_runWatchdogThenBodyThenPostRun_When_FetchSucceeds() = runTest {
         registerService(); provider(metered = false); recordingHooks()
 
         assertIs<ListenableWorker.Result.Success>(run())
@@ -343,7 +339,7 @@ class GitSyncWorkerGateAndRecordTest {
     }
 
     @Test
-    fun doWork_should_runWatchdogButSkipPostRun_When_NetworkGateSkips() {
+    fun doWork_should_runWatchdogButSkipPostRun_When_NetworkGateSkips() = runTest {
         registerService(); provider(metered = true); recordingHooks()
 
         assertIs<ListenableWorker.Result.Success>(run(policy = "unmetered"))
@@ -353,7 +349,7 @@ class GitSyncWorkerGateAndRecordTest {
     }
 
     @Test
-    fun doWork_should_skipPostRun_When_CloneYieldSkips() {
+    fun doWork_should_skipPostRun_When_CloneYieldSkips() = runTest {
         provider(metered = false); recordingHooks(yield = true)
 
         assertIs<ListenableWorker.Result.Success>(run())
@@ -364,7 +360,7 @@ class GitSyncWorkerGateAndRecordTest {
     }
 
     @Test
-    fun doWork_should_stayRecordedSuccessAndSucceed_When_PostRunThrowsAfterGoodFetch() {
+    fun doWork_should_stayRecordedSuccessAndSucceed_When_PostRunThrowsAfterGoodFetch() = runTest {
         registerService(); provider(metered = false); recordingHooks(postRunFails = true)
 
         val result = run()
@@ -375,13 +371,9 @@ class GitSyncWorkerGateAndRecordTest {
     }
 
     /** Runs the worker with no live service and returns the cumulative record count after asserting the newest skip reason. */
-    private fun runGated(policy: String, expectedReason: String): Int {
+    private suspend fun runGated(policy: String, expectedReason: String): Int {
         assertIs<ListenableWorker.Result.Success>(run(policy = policy))
         assertEquals(TaskRunResult.Skipped(expectedReason), log.records.last().result)
         return log.records.size
-    }
-
-    private companion object {
-        const val CLONE_RUNNING_TIMEOUT_MS = 10_000L
     }
 }

@@ -133,6 +133,7 @@ class GitSyncServiceLfsGuardTest {
         return Fixture(service, repo, fs, settings)
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun sync_should_HoldRawBinaryAndCommitTheRest_When_AssetsAreLfsTracked() = runBlocking {
         val f = fixture(modified = listOf("pages/a.md", photo), files = mapOf("pages/a.md" to "# a".encodeToByteArray(), photo to png))
@@ -149,6 +150,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun sync_should_HoldUntrackedRawBinaryToo_When_FileIsNew() = runBlocking {
         val f = fixture(untracked = listOf(photo), modified = listOf("pages/a.md"), files = mapOf(photo to png))
@@ -159,6 +161,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun sync_should_HoldNothing_When_TrackedFileIsAValidPointer() = runBlocking {
         val f = fixture(modified = listOf(photo), files = mapOf(photo to pointer))
@@ -171,6 +174,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun sync_should_HoldNothing_When_TrackedFileIsEmpty() = runBlocking {
         val f = fixture(modified = listOf(photo), files = mapOf(photo to ByteArray(0)))
@@ -181,6 +185,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun sync_should_SkipTheCommit_When_EverythingStagedWasHeld() = runBlocking {
         val f = fixture(modified = listOf(photo), files = mapOf(photo to png), configure = { it.anythingStaged = false })
@@ -194,6 +199,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun sync_should_NotConsultTheIndexForCommitNeed_When_NothingWasHeld() = runBlocking {
         val f = fixture(modified = listOf("pages/a.md"), files = mapOf("pages/a.md" to "x".encodeToByteArray()), configure = { it.anythingStaged = false })
@@ -204,6 +210,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun sync_should_HonourNestedGitattributes_When_RuleLivesInASubdirectory() = runBlocking {
         val f = fixture(
@@ -222,6 +229,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun sync_should_SeeAnUncommittedGitattributesEdit_When_TheWorkingTreeFileChanged() = runBlocking {
         val f = fixture(modified = listOf(".gitattributes", "x.png"), files = mapOf("x.png" to png), gitattributes = "*.png filter=lfs\n")
@@ -232,6 +240,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun sync_should_RefuseTheWholeCommit_When_HoldBackIsFlippedOff() = runBlocking {
         val coordinator = LfsGuardCoordinator(MemoryFileSystem().also { fs ->
@@ -250,6 +259,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun sync_should_JudgeNothing_When_ThePlatformGuardsInItsOwnWritePath() = runBlocking {
         val coordinator = LfsGuardCoordinator(MemoryFileSystem().also { it.files["/repo/.gitattributes"] = "* filter=lfs\n".encodeToByteArray() }, delegated = true)
@@ -261,6 +271,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun sync_should_NotJudgeTheWorkingFile_When_AutoModeAndACleanFilterIsActive() = runBlocking {
         val f = fixture(
@@ -278,6 +289,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun sync_should_HoldAndUnstage_When_AutoModeFilterLeftRawBytesInTheIndex() = runBlocking {
         val escaped = LfsViolation("assets/b.bin", LfsViolationReason.RawBinary, ".gitattributes:1")
@@ -295,6 +307,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun sync_should_HoldTheWorkingFile_When_ModeIsGuardOnlyEvenIfACleanFilterIsReported() = runBlocking {
         val f = fixture(
@@ -311,6 +324,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun sync_should_FailClosed_When_TheIndexCannotBeVerified() = runBlocking {
         val f = fixture(modified = listOf("pages/a.md"), files = mapOf("pages/a.md" to "x".encodeToByteArray()), configure = { it.stagedThrows = true })
@@ -322,6 +336,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun commitLocalChanges_should_HoldRawBinaryAndStillCommit_When_AssetsAreLfsTracked() = runBlocking {
         val f = fixture(modified = listOf("pages/a.md", photo), files = mapOf(photo to png))
@@ -334,6 +349,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun commitLocalChanges_should_ReturnNullWithoutCommitting_When_OnlyHeldFilesChanged() = runBlocking {
         val f = fixture(modified = listOf(photo), files = mapOf(photo to png), configure = { it.anythingStaged = false })
@@ -345,6 +361,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun resolveConflicts_should_RefuseBeforeMarkResolved_When_SideResolutionLeavesRawBinary() = runBlocking {
         val f = fixture(files = mapOf(photo to png))
@@ -361,6 +378,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun resolveConflicts_should_RefuseBeforeMarkResolved_When_HunkResolutionWritesRawText() = runBlocking {
         val f = fixture(files = mapOf(photo to png))
@@ -376,6 +394,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun resolveConflicts_should_StageAValidPointer_When_ResolvedSideIsAPointer() = runBlocking {
         val f = fixture(files = mapOf(photo to pointer))
@@ -391,6 +410,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun applyJournalMerge_should_RefuseBeforeMarkResolved_When_MergedContentLandsAtATrackedPath() = runBlocking {
         val f = fixture(gitattributes = "journals/** filter=lfs\n")
@@ -403,6 +423,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun sync_should_SurfaceRawBlobsThatWerePushedOutsideTheGuard_When_ThePushAuditFindsThem() = runBlocking {
         val pushed = LfsViolation("assets/sneaky.bin", LfsViolationReason.RawBinaryPushed, ".gitattributes:1")
@@ -415,6 +436,7 @@ class GitSyncServiceLfsGuardTest {
         f.service.shutdown()
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun syncState_should_ReturnToSuccess_When_TheHeldFileIsFixedBeforeTheNextSync() = runBlocking {
         val f = fixture(modified = listOf(photo), files = mapOf(photo to png))

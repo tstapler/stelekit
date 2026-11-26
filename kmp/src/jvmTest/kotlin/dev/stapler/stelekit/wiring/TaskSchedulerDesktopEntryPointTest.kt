@@ -71,12 +71,14 @@ class TaskSchedulerDesktopEntryPointTest {
     @AfterTest
     fun tearDown() {
         headless?.close()
+        // runBlocking: non-suspend JUnit method; bridges a suspend setup, read or teardown call
         fixture?.let { runBlocking { it.close() } }
         dataDir.deleteRecursively()
     }
 
     private fun open(pollMinutes: Int, taskScheduler: dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler? = null) {
         settings.putBoolean(SCHEDULED_SYNC_ENABLED_KEY, true)
+        // runBlocking: non-suspend JUnit method; bridges a suspend setup, read or teardown call
         val wired = runBlocking {
             DesktopWiredAppFixture.desktop(
                 dataDir,
@@ -89,6 +91,7 @@ class TaskSchedulerDesktopEntryPointTest {
         fixture = wired
         graphId = wired.graphManager.graphRegistry.value.activeGraphId!!.value
         val configRepo = wired.graphManager.createGitConfigRepository()!!
+        // runBlocking: non-suspend JUnit method; bridges a suspend setup, read or teardown call
         runBlocking { configRepo.saveConfig(sampleConfig.copy(graphId = graphId, pollIntervalMinutes = pollMinutes)) }
         headless = HeadlessComposition().also { composition ->
             composition.setContent {
@@ -102,6 +105,7 @@ class TaskSchedulerDesktopEntryPointTest {
         }
     }
 
+    // Wall-clock ceiling: the loop is on a virtual scheduler pumped here, but the IO and composition it waits on are real.
     private fun awaitCondition(what: String, timeoutMs: Long = 30_000, condition: () -> Boolean) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (!condition()) {
@@ -142,6 +146,7 @@ class TaskSchedulerDesktopEntryPointTest {
 
         assertEquals(1, repo.fetches.get(), "PeriodicSyncDriver is the one tick source")
         assertEquals(emptyList(), counting.calls.filter { it.startsWith("apply:") }, "apply is reserved for schedulers that run when closed")
+        // runBlocking: non-suspend JUnit method; bridges a suspend setup, read or teardown call
         assertNull(runBlocking { counting.describe(TaskKey(GitSyncTask.KIND, TaskScope(graphId))) })
     }
 
@@ -149,6 +154,7 @@ class TaskSchedulerDesktopEntryPointTest {
     fun inProcessScheduler_should_HaveNoGitSyncWork_When_DesktopLoopRuns() {
         open(pollMinutes = 15)
         awaitCondition("the loop to start") { stack?.gitSyncService?.scheduledSyncStatus?.value?.running == true }
+        // runBlocking: non-suspend JUnit method; bridges a suspend setup, read or teardown call
         assertNull(runBlocking { fixture!!.backgroundTaskScheduler.describe(TaskKey(GitSyncTask.KIND, TaskScope(graphId))) })
     }
 
@@ -162,6 +168,7 @@ class TaskSchedulerDesktopEntryPointTest {
         val key = TaskKey(GitSyncTask.KIND, TaskScope(graphId))
 
         ObservableEffect.assert("in-process-task-tick") {
+            // runBlocking: non-suspend JUnit method; bridges a suspend setup, read or teardown call
             val records = runBlocking { SettingsTaskRunLog(settings).recent(key) }
             assertEquals(1, records.size, "the one in-app tick is the only run-log row")
             assertEquals(RunSource.Foreground, records.single().source)

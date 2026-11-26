@@ -160,6 +160,7 @@ class GitSyncBusyCounterSharedWiringTest {
         return QuiesceHarness(sharedCounter, service, strategy, entered, gate)
     }
 
+    // runBlocking: real threads/dispatchers do the work under test; virtual time cannot order or await them
     @Test
     fun quiesce_should_ObserveBusyState_When_SameGitSyncBusyCounterDrivesRealGitSyncServiceSync() = runBlocking {
         fakeOnlineNetworkMonitor()
@@ -171,7 +172,7 @@ class GitSyncBusyCounterSharedWiringTest {
         assertTrue(!h.sharedCounter.isBusy.value, "precondition: counter starts idle")
 
         val syncJob = launch { h.service.sync("test-graph") }
-        withTimeout(5_000) { h.entered.await() }
+        withTimeout(5_000) { h.entered.await() } // real-clock hang guard: awaits real threads
         assertTrue(h.sharedCounter.isBusy.value, "sync() must mark the shared counter busy while in flight")
 
         var quiesceCompleted = false
@@ -188,8 +189,8 @@ class GitSyncBusyCounterSharedWiringTest {
         // Release sync()'s suspension point — it completes via the DetachedHead error path,
         // decrementing the shared counter in its `finally` block exactly like a real sync.
         h.gate.complete(Unit)
-        withTimeout(5_000) { syncJob.join() }
-        withTimeout(5_000) { quiesceJob.join() }
+        withTimeout(5_000) { syncJob.join() } // real-clock hang guard: awaits real threads
+        withTimeout(5_000) { quiesceJob.join() } // real-clock hang guard: awaits real threads
 
         assertTrue(!h.sharedCounter.isBusy.value, "counter must be idle again once sync() finishes")
         assertTrue(quiesceCompleted, "quiesce() must complete once GitSyncService.sync() ends and decrements the SAME counter")

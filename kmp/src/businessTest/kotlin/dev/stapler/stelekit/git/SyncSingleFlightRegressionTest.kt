@@ -64,6 +64,7 @@ class SyncSingleFlightRegressionTest {
         r.leftOrNull() is DomainError.GitError.SyncInProgress
 
     private fun startFirstSync(): Deferred<Either<DomainError.GitError, SyncState.Success>> =
+        // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
         runBlocking { CoroutineScopeHolder.scope.async(start = CoroutineStart.DEFAULT) { service.sync("g", SyncTrigger.Manual) } }
 
     private fun recordStates(): () -> List<SyncState> {
@@ -71,15 +72,16 @@ class SyncSingleFlightRegressionTest {
         return { collector.cancel(); states.toList() }
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun secondManualSync_should_ReturnSyncInProgress_AndCreateNoLock_When_FirstBlockedInCommit() = runBlocking<Unit> {
         repo.blockAt(FakeGitOp.Commit)
         val first = startFirstSync()
-        withTimeout(TIMEOUT_MS) { repo.awaitBlocked() }
+        withTimeout(TIMEOUT_MS) { repo.awaitBlocked() } // real-clock hang guard: awaits real threads
         val checksBefore = repo.removeStaleLockCalls
         val stop = recordStates()
 
-        val second = withTimeout(TIMEOUT_MS) { service.sync("g", SyncTrigger.Manual) }
+        val second = withTimeout(TIMEOUT_MS) { service.sync("g", SyncTrigger.Manual) } // real-clock hang guard: awaits real threads
         val seen = stop()
 
         assertTrue(isSyncInProgress(second), "second trigger must coalesce, got $second")
@@ -87,57 +89,60 @@ class SyncSingleFlightRegressionTest {
         assertTrue(seen.none { it is SyncState.Error }, "a coalesced trigger must never publish Error, saw $seen")
         assertEquals(1, repo.maxConcurrent, "repository calls must never overlap")
         repo.releaseBlocked()
-        withTimeout(TIMEOUT_MS) { first.await() }
+        withTimeout(TIMEOUT_MS) { first.await() } // real-clock hang guard: awaits real threads
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun liveLockOlderThan60s_should_NotBeDeleted_When_HeldByInFlightRun() = runBlocking<Unit> {
         repo.blockAt(FakeGitOp.Commit)
         val first = startFirstSync()
-        withTimeout(TIMEOUT_MS) { repo.awaitBlocked() }
+        withTimeout(TIMEOUT_MS) { repo.awaitBlocked() } // real-clock hang guard: awaits real threads
         assertTrue(repo.indexLock.setLastModified(System.currentTimeMillis() - 90_000L))
 
-        withTimeout(TIMEOUT_MS) { service.sync("g", SyncTrigger.Manual) }
+        withTimeout(TIMEOUT_MS) { service.sync("g", SyncTrigger.Manual) } // real-clock hang guard: awaits real threads
 
         assertTrue(repo.indexLock.exists(), "a live run's index.lock must survive a second trigger")
         repo.releaseBlocked()
-        withTimeout(TIMEOUT_MS) { first.await() }
+        withTimeout(TIMEOUT_MS) { first.await() } // real-clock hang guard: awaits real threads
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun secondManualSync_should_CoalesceAndLeaveStateUnchanged_When_FirstIsMergingAndRepositoryMidMerge() = runBlocking<Unit> {
         repo.hasRemoteChanges = true
         repo.blockAt(FakeGitOp.Merge)
         val first = startFirstSync()
-        withTimeout(TIMEOUT_MS) { repo.awaitBlocked() }
+        withTimeout(TIMEOUT_MS) { repo.awaitBlocked() } // real-clock hang guard: awaits real threads
         repo.mergeInProgress = true
         assertEquals(SyncState.Merging, service.syncState.value)
 
-        val second = withTimeout(TIMEOUT_MS) { service.sync("g", SyncTrigger.Manual) }
+        val second = withTimeout(TIMEOUT_MS) { service.sync("g", SyncTrigger.Manual) } // real-clock hang guard: awaits real threads
 
         assertTrue(isSyncInProgress(second), "second trigger must coalesce, got $second")
         assertEquals(SyncState.Merging, service.syncState.value, "state must not become Error(RepairNeeded)")
         repo.releaseBlocked()
-        withTimeout(TIMEOUT_MS) { first.await() }
+        withTimeout(TIMEOUT_MS) { first.await() } // real-clock hang guard: awaits real threads
     }
 
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun secondManualSync_should_CoalesceAndLeaveStateUnchanged_When_FirstFetchingAndOfflineAndVaultLocked() = runBlocking<Unit> {
         repo.blockAt(FakeGitOp.Fetch)
         val first = startFirstSync()
-        withTimeout(TIMEOUT_MS) { repo.awaitBlocked() }
+        withTimeout(TIMEOUT_MS) { repo.awaitBlocked() } // real-clock hang guard: awaits real threads
         online = false
         vaultAvailable = false
         assertEquals(SyncState.Fetching, service.syncState.value)
 
-        val second = withTimeout(TIMEOUT_MS) { service.sync("g", SyncTrigger.Manual) }
+        val second = withTimeout(TIMEOUT_MS) { service.sync("g", SyncTrigger.Manual) } // real-clock hang guard: awaits real threads
 
         assertTrue(isSyncInProgress(second), "second trigger must coalesce, got $second")
         assertEquals(SyncState.Fetching, service.syncState.value, "state must not become Error(Offline) or CredentialVaultLocked")
         assertNotNull(second.leftOrNull())
         assertFalse(service.syncState.value is SyncState.Error)
         repo.releaseBlocked()
-        withTimeout(TIMEOUT_MS) { first.await() }
+        withTimeout(TIMEOUT_MS) { first.await() } // real-clock hang guard: awaits real threads
     }
 
     private object CoroutineScopeHolder {

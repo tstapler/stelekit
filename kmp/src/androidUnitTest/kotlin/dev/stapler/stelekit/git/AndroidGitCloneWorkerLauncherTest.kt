@@ -68,6 +68,7 @@ class AndroidGitCloneWorkerLauncherTest {
         WorkManagerTestInitHelper.initializeTestWorkManager(context, config)
     }
 
+    // runBlocking: the launcher's BLOCKED watchdog uses delay(), which runTest would skip
     @Test
     fun `launchClone() enqueues a GitCloneWorker one-off request and suspends until WorkInfo reaches SUCCEEDED`() = runBlocking {
         initTestWorkManager { ListenableWorker.Result.success() }
@@ -87,6 +88,7 @@ class AndroidGitCloneWorkerLauncherTest {
         Unit
     }
 
+    // runBlocking: the launcher's BLOCKED watchdog uses delay(), which runTest would skip
     @Test
     fun `launchClone() translates a WorkInfo State FAILED terminal state into Left rather than hanging or throwing`() = runBlocking {
         initTestWorkManager { ListenableWorker.Result.failure() }
@@ -106,6 +108,7 @@ class AndroidGitCloneWorkerLauncherTest {
         Unit
     }
 
+    // runBlocking: the launcher's BLOCKED watchdog uses delay(), which runTest would skip
     @Test
     fun `launchClone() decodes an auth failure payload into AuthFailed and a NonRetryableFailure state`() = runBlocking {
         val payload = GitCloneWorkerData.encodeFailure(DomainError.GitError.AuthFailed("bad token"), NonRetryableReason.AUTH)
@@ -120,6 +123,7 @@ class AndroidGitCloneWorkerLauncherTest {
         assertEquals(listOf<GitTransportRetryState>(GitTransportRetryState.NonRetryableFailure(NonRetryableReason.AUTH)), states)
     }
 
+    // runBlocking: the launcher's BLOCKED watchdog uses delay(), which runTest would skip
     @Test
     fun `launchClone() decodes a retry-exhausted payload into RetryExhausted and an Exhausted state`() = runBlocking {
         val error = DomainError.GitError.RetryExhausted(5, DomainError.GitError.CloneFailed("net down"))
@@ -136,6 +140,7 @@ class AndroidGitCloneWorkerLauncherTest {
         assertEquals(5, (states.single() as GitTransportRetryState.Exhausted).maxAttempts)
     }
 
+    // runBlocking: the launcher's BLOCKED watchdog uses delay(), which runTest would skip
     @Test
     fun `launchClone() removes transient credentials once the clone terminates`() = runBlocking {
         initTestWorkManager { ListenableWorker.Result.success() }
@@ -152,6 +157,7 @@ class AndroidGitCloneWorkerLauncherTest {
         Unit
     }
 
+    // runBlocking: the launcher's BLOCKED watchdog uses delay(), which runTest would skip
     @Test
     fun `launchClone() displaces a never-finishing same-name predecessor via REPLACE instead of blocking behind it`() = runBlocking {
         initTestWorkManager { ListenableWorker.Result.success() }
@@ -171,6 +177,7 @@ class AndroidGitCloneWorkerLauncherTest {
         Unit
     }
 
+    // runBlocking: the launcher's BLOCKED watchdog uses delay(), which runTest would skip
     @Test
     fun `launchClone() cancels the enqueued worker when the caller is cancelled`() = runBlocking {
         // Real (non-synchronous) executor so the slow worker leaves launchClone suspended.
@@ -185,6 +192,7 @@ class AndroidGitCloneWorkerLauncherTest {
                 ): ListenableWorker? = object : Worker(appContext, workerParameters) {
                     override fun doWork(): Result {
                         started.countDown()
+                        // Real sleep (5 s cap): a non-suspend Worker on a real executor can only poll isStopped.
                         repeat(200) { if (isStopped) return Result.success(); Thread.sleep(25) }
                         return Result.success()
                     }
@@ -200,6 +208,7 @@ class AndroidGitCloneWorkerLauncherTest {
                 graphId, "https://example.invalid/g.git", "/tmp/g", GitAuth.None, {}, {}, null,
             )
         }
+        // Real 10 s ceiling: the latch is the signal; the worker starts on a real executor thread.
         assertTrue(started.await(10, java.util.concurrent.TimeUnit.SECONDS), "worker should start")
         job.cancelAndJoin()
 
