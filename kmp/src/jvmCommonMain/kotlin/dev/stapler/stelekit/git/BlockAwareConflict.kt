@@ -80,6 +80,7 @@ private fun loadGitAttributes(repo: Repository, gitRelativePath: String): GitAtt
         val file = if (dir.isEmpty()) File(workTree, ".gitattributes") else File(File(workTree, dir), ".gitattributes")
         runCatching { if (file.isFile) GitAttributes.parse(file.readText(), dir) else null }.getOrNull()
     }
+    @Suppress("SpreadOperator") // combine() takes vararg; the list is one entry per directory level
     return GitAttributes.combine(*parsed.toTypedArray())
 }
 
@@ -108,7 +109,8 @@ private fun readConflictStages(
     }
     // A file conflicting for a non-content reason (binary, rename/rename, add/add without a
     // common base) won't carry all three stages — nothing for a text merge to work with.
-    if (local == null || remote == null || (base == null && !allowMissingBase)) return null
+    if (local == null || remote == null) return null
+    if (base == null && !allowMissingBase) return null
 
     fun blobText(entry: DirCacheEntry): String? =
         runCatching { repo.open(entry.objectId).bytes.toString(Charsets.UTF_8) }.getOrNull()

@@ -1,8 +1,6 @@
 package dev.stapler.stelekit.performance
 
 import arrow.core.Either
-import arrow.core.left
-import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.model.Block
@@ -13,7 +11,6 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.SearchRepository
 import dev.stapler.stelekit.repository.SearchRequest
 import dev.stapler.stelekit.repository.SearchResult
-import io.opentelemetry.api.trace.StatusCode
 import io.opentelemetry.api.trace.Tracer
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map

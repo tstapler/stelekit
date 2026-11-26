@@ -130,6 +130,7 @@ detekt_test(
         "//kmp/src/commonMain/kotlin:detekt_srcs",
         "//kmp/src/commonMain/kotlin/dev/stapler/stelekit/stats:detekt_srcs",
         "//kmp/src/iosMain/kotlin:detekt_srcs",
+        "//kmp/src/jvmCommonMain/kotlin:detekt_srcs",
         "//kmp/src/jvmMain/kotlin:detekt_srcs",
     ],
     baseline = "config/detekt/baseline.xml",

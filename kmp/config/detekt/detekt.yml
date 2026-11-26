@@ -33,7 +33,7 @@ stelekit:
     excludes: ['**/TypedLazyItems.kt', '**/*Test.kt', '**/test/**', '**/*Spec.kt']
   JvmOnlyApiInCommonMain:
     active: true
-    excludes: ['**/jvmMain/**', '**/jvmTest/**', '**/androidMain/**', '**/androidUnitTest/**',
+    excludes: ['**/jvmCommonMain/**', '**/jvmMain/**', '**/jvmTest/**', '**/androidMain/**', '**/androidUnitTest/**',
                '**/iosMain/**', '**/buildSrc/**']
   IndexWithoutAnalyze:
     active: true

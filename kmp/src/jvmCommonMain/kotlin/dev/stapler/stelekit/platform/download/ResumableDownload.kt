@@ -3,7 +3,6 @@
 
 package dev.stapler.stelekit.platform.download
 
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import java.io.File
 import java.io.IOException
@@ -68,8 +67,6 @@ object ResumableDownload {
                 }
             }
             if (total > 0 && part.length() != total) throw IOException("Truncated download: ${part.length()} of $total bytes")
-        } catch (e: CancellationException) {
-            throw e
         } finally {
             connection.disconnect()
         }
