@@ -17,6 +17,7 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -106,7 +107,10 @@ class WorkManagerTaskScheduler(
         }
     }
 
-    override suspend fun resume(scope: TaskScope) = guarded("resume ${scope.value}") {
+    // NonCancellable: the paused snapshot is consumed before the enqueue, so a cancel in between loses the job.
+    override suspend fun resume(scope: TaskScope) = withContext(NonCancellable) { resumeScope(scope) }
+
+    private suspend fun resumeScope(scope: TaskScope) = guarded("resume ${scope.value}") {
         val candidates = (pausedKeys.filter { it.scope == scope } + defaultKeys(scope)).toSet()
         for (key in candidates) {
             val snapshot = ledger.pausedSnapshot(key)
