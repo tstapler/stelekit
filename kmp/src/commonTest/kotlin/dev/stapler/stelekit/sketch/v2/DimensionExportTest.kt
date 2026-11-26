@@ -5,6 +5,15 @@
 // jvmTest-reason: n/a (commonTest; runs on JVM, Android unit and wasmJs)
 package dev.stapler.stelekit.sketch.v2
 
+import dev.stapler.stelekit.sketch.v2.scene.VerticalAlign
+import dev.stapler.stelekit.sketch.v2.scene.TextAlign
+import dev.stapler.stelekit.sketch.v2.scene.TextElement
+import dev.stapler.stelekit.sketch.v2.scene.GroupId
+import dev.stapler.stelekit.sketch.v2.tools.RectSpec
+import dev.stapler.stelekit.sketch.v2.scene.LayerId
+import dev.stapler.stelekit.sketch.v2.scene.Layer
+import dev.stapler.stelekit.sketch.v2.scene.Arrowhead
+import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import arrow.core.getOrElse
 import dev.stapler.stelekit.sketch.v2.annotation.AnnotationText
 import dev.stapler.stelekit.sketch.v2.annotation.DimensionAnnotationEngine
@@ -224,5 +233,114 @@ class DimensionExportTest {
         val ops = DimensionExport.drawOps(dims, ExportInk.DARK)
         assertEquals(dims.size, ops.filterIsInstance<DrawOp.PathOp>().size)
         assertEquals(dims.map { it.text }, texts(ops))
+    }
+
+    private fun onLayer(id: String, layer: String, group: String? = null) =
+        ElementBase(ElementId(id), LayerId(layer), groupIds = listOfNotNull(group?.let { GroupId(it) }))
+
+    /** A dimension as `build` writes it: a headed arrow and its value text in one group. */
+    private fun mark(id: String, x0: Int, y0: Int, x1: Int, y1: Int, text: String? = "10' 0\"", head: Arrowhead = Arrowhead.Arrow): List<SceneElement> {
+        val arrow = ArrowElement(onLayer("$id.line", "dimensions", id), listOf(sp(x0, y0), sp(x1, y1)), null, null, head, head)
+        val label = text?.let {
+            TextElement(onLayer("$id.text", "dimensions", id), su(x0), su(y0 - 90), su(300), su(80), 0.0, it, it, 64.0, 2, TextAlign.Center, VerticalAlign.Middle)
+        }
+        return listOfNotNull(arrow, label)
+    }
+
+    private fun layered(vararg elements: SceneElement): SketchSceneV2 {
+        val layers = listOf(Layer(LayerId.Default, "Plan", order = 0), Layer(LayerId("openings"), "Openings", order = 1), Layer(LayerId("dimensions"), "Dimensions", order = 2))
+        return elements.fold(SketchSceneV2.empty().withLayers(layers)) { s, e -> s.add(e).getOrNull()!! }
+    }
+
+    private fun values(scene: SketchSceneV2) = DimensionExport.layout(scene).map { it.elementId.value to it.text }
+
+    private val bigRoom = filledRectEl("room", 0, 0, 1920, 1440)
+    private val both = setOf("room" to "10' 0\"", "room" to "7' 6\"")
+
+    private fun roomWith(mark: List<SceneElement>) = values(layered(bigRoom, *mark.toTypedArray())).toSet()
+
+    @Test
+    fun aMarksOwnParts_should_NotBeMeasured() {
+        val extension = LineElement(onLayer("ext", "dimensions", "m"), listOf(sp(0, -48), sp(0, -432)))
+        val ids = values(layered(bigRoom, extension, *mark("m", 0, -384, 1920, -384).toTypedArray())).map { it.first }
+        assertEquals(setOf("room"), ids.toSet())
+    }
+
+    @Test
+    fun aLength_should_NotBeRepeated_When_AMarkStatesIt() {
+        assertEquals(setOf("room" to "7' 6\""), roomWith(mark("north", 0, -384, 1920, -384)))
+        // Drawn right to left, on the other side: still the same stretch.
+        assertEquals(setOf("room" to "7' 6\""), roomWith(mark("south", 1920, 1800, 0, 1800)))
+    }
+
+    @Test
+    fun aLength_should_StillBeShown_When_NoMarkStatesIt() {
+        assertEquals(both, roomWith(mark("short", 0, -384, 960, -384, "5' 0\"")))
+        assertEquals(both, roomWith(mark("shifted", 400, -384, 2320, -384)))
+        assertEquals(both, roomWith(mark("slanted", 0, -384, 1920, -500)))
+        assertEquals(both, roomWith(mark("headless", 0, -384, 1920, -384, head = Arrowhead.None)))
+        assertEquals(both, roomWith(mark("words", 0, -384, 1920, -384, "north wall")))
+        assertEquals(both, roomWith(mark("bare", 0, -384, 1920, -384, text = null)))
+    }
+
+    @Test
+    fun aMark_should_StateOnlyTheShapeItIsBeside() {
+        val below = filledRectEl("below", 0, 6000, 1920, 960)
+        val shown = values(layered(bigRoom, below, *mark("north", 0, -384, 1920, -384).toTypedArray()))
+        assertTrue("below" to "10' 0\"" in shown, "$shown")
+        assertFalse("room" to "10' 0\"" in shown, "$shown")
+    }
+
+    @Test
+    fun aDiagonalLine_should_NotBeRepeated_When_ItsMarkIsOffsetStraightAcross() {
+        val line = LineElement(onLayer("diagonal", "default"), listOf(sp(0, 0), sp(1536, 768)))
+        val value = values(layered(line)).single().second
+        assertTrue(values(layered(line, *mark("m", 0, 384, 1536, 1152, value).toTypedArray())).isEmpty())
+    }
+
+    @Test
+    fun handDrawnLines_should_BeMeasured_OnTheOpeningsAndDimensionsLayers() {
+        val a = LineElement(onLayer("a", "openings"), listOf(sp(0, 0), sp(1920, 0)))
+        val b = LineElement(onLayer("b", "dimensions"), listOf(sp(0, 960), sp(1920, 960)))
+        assertEquals(setOf("a", "b"), values(layered(a, b)).map { it.first }.toSet())
+    }
+
+    @Test
+    fun anOpeningSymbol_should_ShowItsWidthOnce() {
+        val gap = filledRectEl("gap", 400, 1403, 576, 74, RectSpec(layer = LayerId("openings"), group = "door"))
+        val leaf = LineElement(onLayer("leaf", "openings", "door"), listOf(sp(400, 1440), sp(400, 864)))
+        val symbol = values(layered(bigRoom, gap, leaf)).filter { it.first != "room" }
+        assertEquals(listOf("gap" to "3' 0\""), symbol)
+    }
+
+    @Test
+    fun aMarkInsideANeighbour_should_StillStateTheShapeItIsOutsideOf() {
+        val under = filledRectEl("under", 0, 1440, 1920, 960)
+        val beneath = values(layered(bigRoom, under, *mark("n", 0, 1056, 1920, 1056).toTypedArray()))
+        assertFalse("under" to "10' 0\"" in beneath, "$beneath")
+        assertTrue("room" to "10' 0\"" in beneath, "$beneath")
+    }
+
+    @Test
+    fun exportedAnnotations_should_NotBeAnnotatedAgain() {
+        val scene = room()
+        val first = DimensionExport.layout(scene)
+        val written = DimensionExport.withElements(scene, first, ExportInk.DARK)
+        assertEquals(first.map { it.text }.sorted(), DimensionExport.layout(written).map { it.text }.sorted())
+    }
+
+    @Test
+    fun aCirclesOrADiagramsMark_should_NotBeRepeated() {
+        val circle = EllipseElement(ElementBase(ElementId("rug")), su(960), su(960), su(480), su(480))
+        assertTrue(values(layered(circle, *mark("d", 480, 96, 1440, 96, "5' 0\"").toTypedArray())).isEmpty())
+        assertEquals(setOf("room" to "7' 6\""), roomWith(mark("raw", 0, -384, 1920, -384, "1920")))
+    }
+
+    @Test
+    fun anInwardMark_should_NotBeCreditedToADistantShape() {
+        val far = filledRectEl("far", 0, 9000, 1920, 960)
+        val shown = values(layered(bigRoom, far, *mark("in", 0, 384, 1920, 384).toTypedArray()))
+        assertTrue("far" to "10' 0\"" in shown, "$shown")
+        assertFalse("room" to "10' 0\"" in shown, "$shown")
     }
 }

@@ -586,6 +586,7 @@ KMP_MODULES = {
    "commonMain/kotlin/dev/stapler/stelekit/sketch/excalidraw/JsonSpanScanner.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/excalidraw/ParseBudget.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/excalidraw/Sanitizer.kt",
+   "commonMain/kotlin/dev/stapler/stelekit/sketch/v2/annotation/AuthoredDimensions.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/v2/annotation/DimensionAnnotationEngine.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/v2/annotation/DimensionExport.kt",
    "commonMain/kotlin/dev/stapler/stelekit/sketch/v2/annotation/RoomArea.kt",

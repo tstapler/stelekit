@@ -8,6 +8,9 @@ package dev.stapler.stelekit.cli
 
 import arrow.core.Either
 import arrow.core.getOrElse
+import dev.stapler.stelekit.sketch.v2.scene.WallScene
+import dev.stapler.stelekit.sketch.v2.index.ElementBounds
+import dev.stapler.stelekit.sketch.v2.annotation.AuthoredDimensions
 import dev.stapler.stelekit.platform.image.ExifOrientationReader
 import dev.stapler.stelekit.sketch.v2.commands.SetUnderlay
 import dev.stapler.stelekit.sketch.v2.image.ImageHeaderProbe
@@ -74,7 +77,7 @@ internal class SpecOutcome(val doc: SketchDocumentV2?, val issues: SpecIssues, v
 
 /** Layer ids the builder writes; the describer and renderer recognise them by these names. */
 internal object SketchLayers {
-    const val OPENINGS = "openings"
+    const val OPENINGS = AuthoredDimensions.OPENINGS_LAYER_ID
     const val DIMENSIONS = "dimensions"
 }
 
@@ -96,6 +99,7 @@ internal class SketchSpecBuilder(private val root: JsonObject, private val baseD
     private val ids = HashSet<String>()
     private val placed = LinkedHashMap<String, Placed>()
     private val layersUsed = LinkedHashSet<String>()
+    private val roomLabels = ArrayList<Pair<String, Placed>>()
     private var autoId = 0
     private lateinit var reader: SpecReader
     private lateinit var real: SpecReader
@@ -152,6 +156,7 @@ internal class SketchSpecBuilder(private val root: JsonObject, private val baseD
         (root["dimensions"] as? JsonArray)?.forEachIndexed { i, s -> dimension(s, "dimensions[$i]") }
         if (elements.isEmpty() && issues.errors.isEmpty()) issues.error("spec", "nothing to draw: add at least one of shapes, lines, arrows, labels")
         if (issues.errors.isNotEmpty()) return SpecOutcome(null, issues, inchesPerPx)
+        clearRoomLabels()
         val doc = assemble()
         val withPhoto = underlay?.let { spec -> inchesPerPx?.let { withUnderlay(doc, spec, it) } } ?: doc
         if (issues.errors.isNotEmpty()) return SpecOutcome(null, issues, inchesPerPx)
@@ -237,6 +242,7 @@ internal class SketchSpecBuilder(private val root: JsonObject, private val baseD
         }
         add(e)
         placed[id] = Placed(id, kind, x, y, w, h, thickness)
+        if (kind == "rect" && o["label"] is JsonPrimitive) roomLabels += "$id.label" to placed.getValue(id)
         (o["label"] as? JsonPrimitive)?.content?.let { text ->
             val fs = o["fontSize"]?.let { real.length(it, "$path.fontSize") } ?: defaultFont
             val inner = w - thickness
@@ -558,6 +564,40 @@ internal class SketchSpecBuilder(private val root: JsonObject, private val baseD
 
     // Element plumbing
 
+    /** Moves a rect's centred label off whatever was drawn over the centre: furniture, a door swing, another label. */
+    private fun clearRoomLabels() {
+        for ((labelId, room) in roomLabels) {
+            val index = elements.indexOfFirst { it.id.value == labelId }
+            val label = elements.getOrNull(index) as? TextElement ?: continue
+            val others = elements.filter { it.id.value != labelId && it.id.value != room.id }
+                .flatMap(::drawn)
+                .map { ElementBounds.geometry(it) }
+                // Whatever encloses the whole room is its surroundings, not something in the way.
+                .filterNot { it.minX <= room.x && it.minY <= room.y && it.maxX >= room.x + room.w && it.maxY >= room.y + room.h }
+            val w = label.width.value
+            val h = label.height.value
+            fun free(x: Double, y: Double) = others.none { x < it.maxX && x + w > it.minX && y < it.maxY && y + h > it.minY }
+            if (free(label.x.value, label.y.value)) continue
+            val slackX = room.w - room.thickness - w
+            val slackY = room.h - room.thickness - h
+            val spot = LABEL_ROWS.asSequence()
+                .flatMap { fy -> LABEL_COLUMNS.asSequence().map { fx -> (room.x + room.thickness / 2 + fx * slackX) to (room.y + room.thickness / 2 + fy * slackY) } }
+                .firstOrNull { (x, y) -> slackX >= 0 && slackY >= 0 && free(x, y) }
+            if (spot == null) {
+                issues.warn(room.id, "its label overlaps something and there is no clear spot; drop \"label\" and place it with a \"labels\" entry")
+            } else {
+                elements[index] = label.copy(x = u(spot.first), y = u(spot.second))
+            }
+        }
+    }
+
+    /** What [e] puts on the page: a door or window in a wall has no geometry of its own, it comes from the host. */
+    private fun drawn(e: SceneElement): List<SceneElement> {
+        if (e !is OpeningElement) return listOf(e)
+        val host = elements.firstOrNull { it.id == e.hostId } as? WallElement ?: return emptyList()
+        return WallScene.openingLines(host, e)
+    }
+
     private fun labelIn(containerId: String, text: String, cx: Double, cy: Double, fs: Double, maxW: Double, maxH: Double, path: String) {
         val wrapped = wrap(text, maxW, fs)
         val (w, h) = textSize(wrapped, fs)
@@ -747,6 +787,8 @@ internal class SketchSpecBuilder(private val root: JsonObject, private val baseD
         const val DEFAULT_UNDERLAY_PERCENT = 50.0
         const val BYTES_PER_MB = 1_048_576L
         val TRANSPOSING_ORIENTATIONS = 5..8
+        val LABEL_ROWS = listOf(0.5, 0.2, 0.8, 0.05, 0.95)
+        val LABEL_COLUMNS = listOf(0.5, 0.15, 0.85)
         val TOP_KEYS = setOf("spec", "mode", "title", "space", "calibration", "underlay", "wall", "sheetUuid", "shapes", "lines", "walls", "openings", "arrows", "labels", "dimensions")
         val SHAPE_KEYS = setOf("id", "kind", "x", "y", "w", "h", "rightOf", "below", "gap", "label", "fontSize", "fill", "stroke", "thickness", "dashed", "role", "as")
         val WALL_KEYS = setOf("id", "points", "closed", "thickness", "justify", "stroke", "fill", "dashed", "label", "fontSize")
