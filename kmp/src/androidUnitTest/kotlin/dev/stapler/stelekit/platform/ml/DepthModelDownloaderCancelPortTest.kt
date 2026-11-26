@@ -213,6 +213,31 @@ class DepthModelDownloaderCancelPortTest {
     }
 
     @Test
+    fun retry_staysQueued_whenTheGuardCancelIsReleasedBeforeTheUserCancel() = runBlocking<Unit> {
+        val enqueueing = CompletableDeferred<Unit>()
+        val userCancel = CompletableDeferred<Unit>()
+        val guardCancel = CompletableDeferred<Unit>()
+        val scheduler = RecordingScheduler().apply {
+            runOnceGates += enqueueing
+            cancelGates += listOf(userCancel, guardCancel)
+        }
+        val downloader = downloader(scheduler)
+        val original = async(start = CoroutineStart.UNDISPATCHED) { downloader.downloadNowAnyway() }
+        assertEquals(enqueued, scheduler.next())
+        downloader.cancelDownload()
+        val retry = async(start = CoroutineStart.UNDISPATCHED) { downloader.downloadNowAnyway() }
+
+        enqueueing.complete(Unit)
+        withTimeout(5_000) { original.await() }
+        guardCancel.complete(Unit)
+        scheduler.assertQuiet("something ran past the held user cancel")
+        userCancel.complete(Unit)
+        withTimeout(5_000) { retry.await() }
+
+        assertEquals(listOf(cancelled, cancelled, enqueued), List(3) { scheduler.next() })
+    }
+
+    @Test
     fun downloadNowAnyway_doesNothing_whenItCannotSchedule() = runBlocking<Unit> {
         val scheduler = RecordingScheduler()
         val downloader = downloader(scheduler, status = null)
