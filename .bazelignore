@@ -10,3 +10,4 @@ build
 androidApp/build
 buildSrc/build
 kmp/build
+tools/flamegraph/build

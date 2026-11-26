@@ -118,7 +118,7 @@ build:ci --experimental_repository_downloader_retries=5
 common --vendor_dir=vendor
 common --downloader_config=bazel_downloader.cfg
 
-# All concurrent Kotlin compiles share one multiplex worker heap; on a many-core host a cold
+# Concurrent compiles on one Kotlin multiplex worker share its heap; on a many-core host a cold
 # `bazel build //...` ran enough of them at once to hit OutOfMemoryError.
 build --worker_max_multiplex_instances=KotlinCompile=3
 
