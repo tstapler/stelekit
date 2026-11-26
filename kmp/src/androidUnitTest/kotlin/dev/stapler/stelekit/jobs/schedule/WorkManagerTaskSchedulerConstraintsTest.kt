@@ -9,7 +9,7 @@ import dev.stapler.stelekit.git.GitSyncWorkerBinding
 import dev.stapler.stelekit.jobs.JobKind
 import dev.stapler.stelekit.jobs.JobTags
 import dev.stapler.stelekit.platform.ml.DepthModelDownloader
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -63,7 +63,7 @@ class WorkManagerTaskSchedulerConstraintsTest {
         TaskConfig(enabled, Schedule.of(interval, jitter), c)
 
     @Test
-    fun apply_should_enqueuePeriodicWorkWithReadBackIntervalFlexAndUnmetered_When_ConfigApplied() = runBlocking<Unit> {
+    fun apply_should_enqueuePeriodicWorkWithReadBackIntervalFlexAndUnmetered_When_ConfigApplied() = runTest {
         scheduler.apply(g1, cfg(60, 10, TaskConstraints(NetworkPolicy.Unmetered)))
         val infos = h.infos(gitName)
         assertEquals(1, infos.size)
@@ -76,7 +76,7 @@ class WorkManagerTaskSchedulerConstraintsTest {
     }
 
     @Test
-    fun apply_should_mapChargingAndBatteryNotLowConstraints_When_Requested() = runBlocking<Unit> {
+    fun apply_should_mapChargingAndBatteryNotLowConstraints_When_Requested() = runTest {
         scheduler.apply(g1, cfg(60, 0, TaskConstraints(NetworkPolicy.Any, requiresCharging = true, batteryNotLow = true)))
         val c = h.active(gitName)!!.constraints
         assertEquals(NetworkType.CONNECTED, c.requiredNetworkType)
@@ -85,7 +85,7 @@ class WorkManagerTaskSchedulerConstraintsTest {
     }
 
     @Test
-    fun apply_should_keepWorkIdAndName_When_IntervalChanges() = runBlocking<Unit> {
+    fun apply_should_keepWorkIdAndName_When_IntervalChanges() = runTest {
         scheduler.apply(g1, cfg(60, 10))
         val id = h.active(gitName)!!.id
         scheduler.apply(g1, cfg(120, 10))
@@ -95,7 +95,7 @@ class WorkManagerTaskSchedulerConstraintsTest {
     }
 
     @Test
-    fun apply_should_setFlexFromJitterAndInitialDelayFromSeed_When_JitterConfigured() = runBlocking<Unit> {
+    fun apply_should_setFlexFromJitterAndInitialDelayFromSeed_When_JitterConfigured() = runTest {
         scheduler.apply(g1, cfg(60, 6))
         val info = h.active(gitName)!!
         assertEquals(TimeUnit.MINUTES.toMillis(6), info.periodicityInfo!!.flexIntervalMillis)
@@ -109,7 +109,7 @@ class WorkManagerTaskSchedulerConstraintsTest {
     }
 
     @Test
-    fun apply_should_removeWorkAndClearLedger_When_Disabled() = runBlocking<Unit> {
+    fun apply_should_removeWorkAndClearLedger_When_Disabled() = runTest {
         val ledger = AppliedConfigLedger(ContractSettings())
         val s = WorkManagerTaskScheduler(h.context, registry, TaskSettingsStore(ContractSettings(), LegacyConfigSeed.None, registry), ledger, workers = GitSyncWorkerBinding.resolver)
         s.apply(g1, cfg(60))
@@ -124,7 +124,7 @@ class WorkManagerTaskSchedulerConstraintsTest {
     }
 
     @Test
-    fun apply_should_enqueueGitSyncWorkerWithNetworkPolicyInput_When_GitSyncApplied() = runBlocking<Unit> {
+    fun apply_should_enqueueGitSyncWorkerWithNetworkPolicyInput_When_GitSyncApplied() = runTest {
         scheduler.apply(g1, cfg(60, 10, TaskConstraints(NetworkPolicy.Unmetered)))
         val id = h.active(gitName)!!.id
         val (cls, input) = h.spec(id)
@@ -137,7 +137,7 @@ class WorkManagerTaskSchedulerConstraintsTest {
     }
 
     @Test
-    fun apply_should_enqueueTaskWorkerWithKindScopeAndPolicy_When_NonGitKindApplied() = runBlocking<Unit> {
+    fun apply_should_enqueueTaskWorkerWithKindScopeAndPolicy_When_NonGitKindApplied() = runTest {
         scheduler.apply(other, cfg(60, 0, TaskConstraints(NetworkPolicy.Unmetered)))
         val info = h.active(other.workName())!!
         val (cls, input) = h.spec(info.id)
@@ -148,7 +148,7 @@ class WorkManagerTaskSchedulerConstraintsTest {
     }
 
     @Test
-    fun describe_should_reportFlexWindowAndUpdateImmediately_When_ApplyHasJitter() = runBlocking<Unit> {
+    fun describe_should_reportFlexWindowAndUpdateImmediately_When_ApplyHasJitter() = runTest {
         scheduler.apply(g1, cfg(60, 6))
         val d = scheduler.describe(g1)!!
         assertEquals(60, d.effectiveIntervalMinutes)
@@ -160,7 +160,7 @@ class WorkManagerTaskSchedulerConstraintsTest {
     }
 
     @Test
-    fun tags_should_excludeStelekitJobOnPeriodicAndIncludeOnOneShot_When_RequestsBuilt() = runBlocking<Unit> {
+    fun tags_should_excludeStelekitJobOnPeriodicAndIncludeOnOneShot_When_RequestsBuilt() = runTest {
         scheduler.apply(g1, cfg(60))
         val periodic = h.active(gitName)!!.tags
         assertTrue(SchedTags.ANY in periodic)
@@ -186,7 +186,7 @@ class WorkManagerTaskSchedulerConstraintsTest {
     }
 
     @Test
-    fun runOnce_should_keepOrReplacePendingRequest_By_ConflictPolicy() = runBlocking<Unit> {
+    fun runOnce_should_keepOrReplacePendingRequest_By_ConflictPolicy() = runTest {
         val name = DepthModelDownloader.UNIQUE_WORK_NAME
         scheduler.runOnce(download, TaskConstraints(NetworkPolicy.Unmetered))
         val first = h.active(name)!!
@@ -206,7 +206,7 @@ class WorkManagerTaskSchedulerConstraintsTest {
     }
 
     @Test
-    fun runOnce_should_setBackoffOnlyWhenSpecAllowsRetries() = runBlocking<Unit> {
+    fun runOnce_should_setBackoffOnlyWhenSpecAllowsRetries() = runTest {
         scheduler.runOnce(download, TaskConstraints())
         val withRetry = h.active(DepthModelDownloader.UNIQUE_WORK_NAME)!!
         scheduler.cancel(download)
@@ -219,7 +219,7 @@ class WorkManagerTaskSchedulerConstraintsTest {
     }
 
     @Test
-    fun apply_should_skipWithoutCancelling_When_NonPeriodicWorkHoldsTheName() = runBlocking<Unit> {
+    fun apply_should_skipWithoutCancelling_When_NonPeriodicWorkHoldsTheName() = runTest {
         scheduler.runOnce(g1, TaskConstraints()) // stands in for a clone worker under the shared name
         val held = h.active(gitName)!!
         scheduler.apply(g1, cfg(60))

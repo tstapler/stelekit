@@ -7,7 +7,7 @@ import androidx.work.ListenableWorker
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
 import com.sun.net.httpserver.HttpServer
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -53,7 +53,7 @@ class DepthModelDownloadWorkerTest {
         .build()
 
     @Test
-    fun `a successful run puts a ready model file in place and clears the partial`() = runBlocking<Unit> {
+    fun `a successful run puts a ready model file in place and clears the partial`() = runTest {
         val result = worker().doWork()
 
         assertTrue(result is ListenableWorker.Result.Success)
@@ -62,7 +62,7 @@ class DepthModelDownloadWorkerTest {
     }
 
     @Test
-    fun `a server error retries early and fails with a message after the last attempt`() = runBlocking<Unit> {
+    fun `a server error retries early and fails with a message after the last attempt`() = runTest {
         status = 503
         assertTrue(worker(attempt = 0).doWork() is ListenableWorker.Result.Retry)
 
@@ -72,7 +72,7 @@ class DepthModelDownloadWorkerTest {
     }
 
     @Test
-    fun `a model that is already present finishes without touching the network`() = runBlocking<Unit> {
+    fun `a model that is already present finishes without touching the network`() = runTest {
         target.parentFile!!.mkdirs()
         target.writeBytes(ByteArray((DepthModelStorage.MIN_MODEL_BYTES + 1).toInt()))
         server.stop(0)

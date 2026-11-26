@@ -3,7 +3,6 @@ androidApp.test/dev/stapler/stelekit/CaptureActivityTargetTest.kt	Thread.sleep	1
 androidApp.test/dev/stapler/stelekit/CaptureViewModelTest.kt	Thread.sleep	9
 androidInstrumentedTest/dev/stapler/stelekit/console/spike/QueryCancelSpikeAndroidTest.kt	Thread.sleep	4
 androidUnitTest/dev/stapler/stelekit/git/AndroidGitCloneWorkerLauncherTest.kt	Thread.sleep	1
-androidUnitTest/dev/stapler/stelekit/git/WorkManagerSyncSchedulerRetryOwnerTest.kt	Thread.sleep	1
 androidUnitTest/dev/stapler/stelekit/platform/SafChangeDetectorFileObserverTest.kt	real-clock-delay	2
 businessTest/dev/stapler/stelekit/asset/AssetIndexServiceTest.kt	real-clock-delay	2
 businessTest/dev/stapler/stelekit/capture/ShareInboxTest.kt	Thread.sleep	4

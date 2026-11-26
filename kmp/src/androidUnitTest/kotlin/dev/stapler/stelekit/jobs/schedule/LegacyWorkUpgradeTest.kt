@@ -10,7 +10,7 @@ import androidx.work.workDataOf
 import dev.stapler.stelekit.git.GitSyncWorker
 import dev.stapler.stelekit.git.GitSyncWorkerBinding
 import dev.stapler.stelekit.jobs.JobKind
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -54,7 +54,7 @@ class LegacyWorkUpgradeTest {
         .build()
 
     @Test
-    fun apply_should_updateInPlaceKeepingIdPeriodicAndWorkerClass_When_PreUpgradeJobExists() = runBlocking<Unit> {
+    fun apply_should_updateInPlaceKeepingIdPeriodicAndWorkerClass_When_PreUpgradeJobExists() = runTest {
         val legacy = legacyRequest(15)
         h.wm.enqueueUniquePeriodicWork(name, ExistingPeriodicWorkPolicy.UPDATE, legacy).result.get()
         assertTrue(assertNotNull(h.active(name)).tags.none { it.startsWith("stelekit-sched-scope:") }, "precondition: legacy job has no scope tag")
@@ -74,7 +74,7 @@ class LegacyWorkUpgradeTest {
     }
 
     @Test
-    fun apply_should_replaceStaleInputInterval_When_StoredIntervalDiffers() = runBlocking<Unit> {
+    fun apply_should_replaceStaleInputInterval_When_StoredIntervalDiffers() = runTest {
         val legacy = legacyRequest(15)
         h.wm.enqueueUniquePeriodicWork(name, ExistingPeriodicWorkPolicy.UPDATE, legacy).result.get()
         assertEquals(15L, h.spec(legacy.id).second.getLong(GitSyncWorker.KEY_INTERVAL_MINUTES, -1))
@@ -85,7 +85,7 @@ class LegacyWorkUpgradeTest {
     }
 
     @Test
-    fun apply_should_leaveJobEnqueued_When_ConvertingPreUpgradeJob() = runBlocking<Unit> {
+    fun apply_should_leaveJobEnqueued_When_ConvertingPreUpgradeJob() = runTest {
         // The RUNNING-UPDATE outcome (ADR-002 outcome 5) is proven by WorkManagerJitterSpikeTest; here an ENQUEUED legacy job stays active.
         h.wm.enqueueUniquePeriodicWork(name, ExistingPeriodicWorkPolicy.UPDATE, legacyRequest(15)).result.get()
         scheduler.apply(key, TaskConfig(true, Schedule.of(45, 0), TaskConstraints()))

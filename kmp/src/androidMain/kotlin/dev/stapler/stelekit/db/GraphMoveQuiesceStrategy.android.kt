@@ -90,8 +90,8 @@ class AndroidGraphMoveQuiesceStrategy(
     private val gate: RepoOpGate,
     private val gateKeyFor: suspend (StorageMoveOperation) -> String?,
     private val shadowWorktreeTarget: (StorageMoveOperation) -> ShadowWorktreeQuiesceTarget?,
-    private val pauseBackgroundSync: (graphId: String) -> Unit = {},
-    private val resumeBackgroundSync: (graphId: String) -> Unit = {},
+    private val pauseBackgroundSync: suspend (graphId: String) -> Unit = {},
+    private val resumeBackgroundSync: suspend (graphId: String) -> Unit = {},
     private val releaseUriPermission: (treeUri: String) -> Unit = {},
 ) : GraphMoveQuiesceStrategy {
 
@@ -112,7 +112,7 @@ class AndroidGraphMoveQuiesceStrategy(
     private val holds = ConcurrentHashMap<String, QuiesceHold>()
 
     override suspend fun quiesce(op: StorageMoveOperation): Either<DomainError.StorageError, Unit> {
-        // The lambda reads WorkInfo with a blocking get(); keep it off the caller's (possibly main) dispatcher.
+        // The lambda touches settings and WorkManager; keep it off the caller's (possibly main) dispatcher.
         withContext(Dispatchers.IO) { pauseBackgroundSync(op.graphId) }
 
         val target = shadowWorktreeTarget(op)

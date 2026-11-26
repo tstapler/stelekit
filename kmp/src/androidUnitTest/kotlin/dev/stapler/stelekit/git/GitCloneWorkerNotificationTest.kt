@@ -22,7 +22,7 @@ import arrow.core.right
 import com.google.common.util.concurrent.ListenableFuture
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.testsupport.StubGitRepository
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -110,7 +110,7 @@ class GitCloneWorkerNotificationTest {
     }
 
     @Test
-    fun `getForegroundInfo() builds a notification titled Syncing graph display name`() = runBlocking {
+    fun `getForegroundInfo() builds a notification titled Syncing graph display name`() = runTest {
         val worker = buildWorker(StubGitRepository())
 
         val info = worker.getForegroundInfo()
@@ -120,7 +120,7 @@ class GitCloneWorkerNotificationTest {
     }
 
     @Test
-    fun `getForegroundInfo() falls back to your graph when no display name is provided`() = runBlocking {
+    fun `getForegroundInfo() falls back to your graph when no display name is provided`() = runTest {
         val worker = buildWorker(StubGitRepository(), inputData = defaultInputData(graphDisplayName = null))
 
         val info = worker.getForegroundInfo()
@@ -130,7 +130,7 @@ class GitCloneWorkerNotificationTest {
     }
 
     @Test
-    fun `a Retrying state's notification body matches notificationBodyFor exactly`() = runBlocking {
+    fun `a Retrying state's notification body matches notificationBodyFor exactly`() = runTest {
         var captured: Pair<String?, String?>? = null
         val repo = statefulCloningStub { onStateChange ->
             onStateChange(GitTransportRetryState.Retrying(attempt = 2, max = 4, progress = null))
@@ -146,7 +146,7 @@ class GitCloneWorkerNotificationTest {
     }
 
     @Test
-    fun `a terminal Exhausted notification is rebuilt as dismissible tap-to-retry, not staying ongoing`() = runBlocking {
+    fun `a terminal Exhausted notification is rebuilt as dismissible tap-to-retry, not staying ongoing`() = runTest {
         val repo = statefulCloningStub { onStateChange ->
             onStateChange(GitTransportRetryState.Exhausted("network down"))
             DomainError.GitError.RetryExhausted(5, DomainError.GitError.FetchFailed("net down")).left()
@@ -161,7 +161,7 @@ class GitCloneWorkerNotificationTest {
     }
 
     @Test
-    fun `a stable notification ID is used across multiple GitTransportRetryState transitions, not a new notification per event`() = runBlocking {
+    fun `a stable notification ID is used across multiple GitTransportRetryState transitions, not a new notification per event`() = runTest {
         val seenIds = mutableSetOf<Int>()
         val repo = statefulCloningStub { onStateChange ->
             onStateChange(GitTransportRetryState.Attempting(CloneProgress("Receiving objects", 10, 100)))

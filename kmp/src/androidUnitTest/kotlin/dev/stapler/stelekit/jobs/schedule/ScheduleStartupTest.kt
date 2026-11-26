@@ -5,10 +5,10 @@ package dev.stapler.stelekit.jobs.schedule
 
 import dev.stapler.stelekit.git.GitSyncWorkerBinding
 import dev.stapler.stelekit.jobs.JobKind
-import kotlinx.coroutines.runBlocking
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import dev.stapler.stelekit.git.GitCloneWorker
+import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -78,7 +78,7 @@ class ScheduleStartupTest {
     private fun live(key: TaskKey) = h.active(key.workName())
 
     @Test
-    fun run_should_migrateActiveGraphOnlyAndChangeNothingOnSecondStart_When_LegacyFlagTrue() = runBlocking<Unit> {
+    fun run_should_migrateActiveGraphOnlyAndChangeNothingOnSecondStart_When_LegacyFlagTrue() = runTest {
         startup().run()
         assertEquals(listOf(g1), seededKeys, "only the active graph, only periodic kinds, are seeded")
         assertTrue(store().read(g1).enabled)
@@ -97,7 +97,7 @@ class ScheduleStartupTest {
     }
 
     @Test
-    fun run_should_resumeStalePausedSnapshot_When_NoCloneWorkIsLive() = runBlocking<Unit> {
+    fun run_should_resumeStalePausedSnapshot_When_NoCloneWorkIsLive() = runTest {
         val ledger = AppliedConfigLedger(settings)
         ledger.recordApplied(g1, cfg)
         ledger.snapshotPaused(g1, cfg)
@@ -109,7 +109,7 @@ class ScheduleStartupTest {
     }
 
     @Test
-    fun run_should_stayPaused_When_CloneWorkIsLive() = runBlocking<Unit> {
+    fun run_should_stayPaused_When_CloneWorkIsLive() = runTest {
         val ledger = AppliedConfigLedger(settings)
         ledger.recordApplied(g1, cfg)
         ledger.snapshotPaused(g1, cfg)
@@ -121,7 +121,7 @@ class ScheduleStartupTest {
     }
 
     @Test
-    fun reapplyAll_should_enqueueFromLedger_When_ForceStopWipedWorkManager() = runBlocking<Unit> {
+    fun reapplyAll_should_enqueueFromLedger_When_ForceStopWipedWorkManager() = runTest {
         AppliedConfigLedger(settings).recordApplied(g1, cfg)
         assertNull(live(g1))
         val report = startup().run()
@@ -131,7 +131,7 @@ class ScheduleStartupTest {
     }
 
     @Test
-    fun reapplyAll_should_leaveLiveWorkUntouched_When_AlreadyScheduled() = runBlocking<Unit> {
+    fun reapplyAll_should_leaveLiveWorkUntouched_When_AlreadyScheduled() = runTest {
         scheduler().apply(g1, cfg)
         val before = live(g1)!!.id
         val report = startup().run()
@@ -140,7 +140,7 @@ class ScheduleStartupTest {
     }
 
     @Test
-    fun reapplyAll_should_neverCallSeedOrOpenGraphDb_When_LedgerHasEntries() = runBlocking<Unit> {
+    fun reapplyAll_should_neverCallSeedOrOpenGraphDb_When_LedgerHasEntries() = runTest {
         AppliedConfigLedger(settings).recordApplied(g2, cfg)
         startup(active = null).run()
         assertNotNull(live(g2))
@@ -148,7 +148,7 @@ class ScheduleStartupTest {
     }
 
     @Test
-    fun run_should_enqueueNothingAndNotCrash_When_KnownScopesUnknownOrSettingsThrow() = runBlocking<Unit> {
+    fun run_should_enqueueNothingAndNotCrash_When_KnownScopesUnknownOrSettingsThrow() = runTest {
         AppliedConfigLedger(settings).recordApplied(g1, cfg)
         startup(known = KnownScopesResult.Unknown).run()
         assertNull(live(g1))
@@ -165,7 +165,7 @@ class ScheduleStartupTest {
     }
 
     @Test
-    fun run_should_runReconcileFailClosed_When_ReconcileThrows() = runBlocking<Unit> {
+    fun run_should_runReconcileFailClosed_When_ReconcileThrows() = runTest {
         AppliedConfigLedger(settings).recordApplied(g1, cfg)
         val report = startup(reconcile = { error("boom") }).run()
         assertEquals(emptySet(), report.cancelledScopes)
@@ -173,7 +173,7 @@ class ScheduleStartupTest {
     }
 
     @Test
-    fun run_should_cancelOrphansViaReconciler_When_KnownScopesKnown() = runBlocking<Unit> {
+    fun run_should_cancelOrphansViaReconciler_When_KnownScopesKnown() = runTest {
         val s = scheduler()
         s.apply(g1, cfg)
         s.apply(TaskKey(kind, TaskScope("ghost")), cfg)
@@ -185,7 +185,7 @@ class ScheduleStartupTest {
     }
 
     @Test
-    fun run_should_doNothing_When_WorkManagerNotReady() = runBlocking<Unit> {
+    fun run_should_doNothing_When_WorkManagerNotReady() = runTest {
         AppliedConfigLedger(settings).recordApplied(g1, cfg)
         val report = startup(ready = false).run()
         assertEquals(ScheduleStartupReport(), report)
@@ -194,7 +194,7 @@ class ScheduleStartupTest {
     }
 
     @Test
-    fun run_should_openNoNonActiveGraphDbAndMakeNoNetworkCall_When_StartupRuns() = runBlocking<Unit> {
+    fun run_should_openNoNonActiveGraphDbAndMakeNoNetworkCall_When_StartupRuns() = runTest {
         // Startup only touches Settings, the ledger and WorkManager; its constructor takes no graph or network port.
         val report = startup(active = "g1").run()
         assertEquals(setOf(g1), report.migrated)

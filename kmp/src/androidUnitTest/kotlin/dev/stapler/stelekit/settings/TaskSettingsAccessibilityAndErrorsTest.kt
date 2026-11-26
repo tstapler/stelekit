@@ -96,6 +96,7 @@ class TaskSettingsAccessibilityAndErrorsTest {
     @Test
     fun panel_should_keepAnAlreadyOnSwitchOperable_When_GateAppearsAfterEnabling() {
         val fixture = BackgroundTaskFixture(BackgroundTaskFixture.ANDROID)
+        // runBlocking: seeds state from a non-suspend Compose-rule test, outside any virtual clock
         kotlinx.coroutines.runBlocking {
             fixture.store.write(fixture.gitKey("g1"), dev.stapler.stelekit.jobs.schedule.TaskEntry(true, null))
         }

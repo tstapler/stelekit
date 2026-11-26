@@ -42,6 +42,7 @@ class WorkManagerTaskSchedulerConcurrencyTest {
             delegate.putString(key, value)
             if (key.contains(armedFor) && armed.compareAndSet(true, false)) {
                 entered.complete(Unit)
+                // Real 30 s ceiling only if the test fails: blocking the writer thread is the interleaving under test.
                 release.await(30, TimeUnit.SECONDS)
             }
         }
@@ -68,6 +69,7 @@ class WorkManagerTaskSchedulerConcurrencyTest {
 
     private fun cfg(interval: Int) = TaskConfig(true, Schedule.of(interval, 0), TaskConstraints())
 
+    // runBlocking: two real threads and a CountDownLatch-parked write; virtual time cannot interleave them
     @Test
     fun apply_should_leaveLedgerAndLiveWorkInAgreement_When_TwoInstancesApplyConcurrently() = runBlocking<Unit> {
         val shared = ContractSettings()

@@ -16,8 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -47,7 +46,7 @@ class DepthModelDownloaderAbsentRaceTest {
     }
 
     @Test
-    fun staleAbsentSnapshot_should_notOverwriteDownloading_When_downloadStartedAfterItWasComputed() = runBlocking<Unit> {
+    fun staleAbsentSnapshot_should_notOverwriteDownloading_When_downloadStartedAfterItWasComputed() = runTest {
         val reached = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         val written = CompletableDeferred<Unit>()
@@ -68,12 +67,12 @@ class DepthModelDownloaderAbsentRaceTest {
             },
             afterStateWrite = { written.complete(Unit) },
         )
-        withTimeout(10_000) { reached.await() } // snapshot computed as Absent with inFlight == 0; write held
+        reached.await() // snapshot computed as Absent with inFlight == 0; write held
 
         val waiting = scope.async { downloader.downloadModel() }
-        withTimeout(10_000) { downloader.modelState.first { it is DepthModelDownloader.ModelState.Downloading } }
+        downloader.modelState.first { it is DepthModelDownloader.ModelState.Downloading }
         release.complete(Unit)
-        withTimeout(10_000) { written.await() } // the released stale write has been applied (or skipped)
+        written.await() // the released stale write has been applied (or skipped)
 
         assertEquals(DepthModelDownloader.ModelState.Downloading(progress = -1), downloader.modelState.value)
         waiting.cancel()

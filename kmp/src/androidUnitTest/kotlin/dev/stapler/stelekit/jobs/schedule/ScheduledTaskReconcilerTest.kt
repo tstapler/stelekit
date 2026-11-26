@@ -3,7 +3,7 @@
 
 package dev.stapler.stelekit.jobs.schedule
 
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -43,7 +43,7 @@ class ScheduledTaskReconcilerTest {
     private fun live(scope: String) = h.active(TaskKey(git, TaskScope(scope)).workName())
 
     @Test
-    fun reconcile_should_cancelOnlyAbsentScopes_When_KnownNonEmpty() = runBlocking<Unit> {
+    fun reconcile_should_cancelOnlyAbsentScopes_When_KnownNonEmpty() = runTest {
         seed("g1", "ghost")
         val cancelled = ScheduledTaskReconciler(h.context) { KnownScopesResult.Known(setOf(TaskScope("g1"))) }.reconcile()
         assertEquals(setOf(TaskScope("ghost")), cancelled)
@@ -52,7 +52,7 @@ class ScheduledTaskReconcilerTest {
     }
 
     @Test
-    fun reconcile_should_cancelNothingAndWriteNoTombstone_When_Unknown() = runBlocking<Unit> {
+    fun reconcile_should_cancelNothingAndWriteNoTombstone_When_Unknown() = runTest {
         seed("g1", "ghost")
         val cancelled = ScheduledTaskReconciler(h.context) { KnownScopesResult.Unknown }.reconcile()
         assertEquals(emptySet(), cancelled)
@@ -62,7 +62,7 @@ class ScheduledTaskReconcilerTest {
     }
 
     @Test
-    fun reconcile_should_cancelNothing_When_KnownIsEmptyOrSourceThrows() = runBlocking<Unit> {
+    fun reconcile_should_cancelNothing_When_KnownIsEmptyOrSourceThrows() = runTest {
         seed("ghost")
         assertEquals(emptySet(), ScheduledTaskReconciler(h.context) { KnownScopesResult.Known(emptySet()) }.reconcile())
         assertEquals(emptySet(), ScheduledTaskReconciler(h.context) { error("unreadable") }.reconcile())
@@ -70,7 +70,7 @@ class ScheduledTaskReconcilerTest {
     }
 
     @Test
-    fun reconcile_should_neverCancelAppWideScope_When_ScopeEmpty() = runBlocking<Unit> {
+    fun reconcile_should_neverCancelAppWideScope_When_ScopeEmpty() = runTest {
         scheduler().apply(TaskKey(TaskKind("model-download"), TaskScope("")), TaskConfig(true, Schedule.of(60, 0), TaskConstraints()))
         seed("g1")
         ScheduledTaskReconciler(h.context) { KnownScopesResult.Known(setOf(TaskScope("g1"))) }.reconcile()

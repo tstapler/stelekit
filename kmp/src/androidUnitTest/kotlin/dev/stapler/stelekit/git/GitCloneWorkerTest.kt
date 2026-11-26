@@ -22,7 +22,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.error.SyncOrigin
 import dev.stapler.stelekit.git.testsupport.cloningStub
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -97,7 +97,7 @@ class GitCloneWorkerTest {
             .build()
 
     @Test
-    fun `doWork() calls setForeground() with a dataSync-typed ForegroundInfo before invoking clone()`() = runBlocking {
+    fun `doWork() calls setForeground() with a dataSync-typed ForegroundInfo before invoking clone()`() = runTest {
         var setForegroundCalledBeforeClone = false
         val foregroundUpdater = RecordingForegroundUpdater()
         var cloneInvoked = false
@@ -118,7 +118,7 @@ class GitCloneWorkerTest {
     }
 
     @Test
-    fun `doWork() logs the denial, proceeds without foreground promotion, and still completes the clone when setForeground() throws ForegroundServiceStartNotAllowedException`() = runBlocking {
+    fun `doWork() logs the denial, proceeds without foreground promotion, and still completes the clone when setForeground() throws ForegroundServiceStartNotAllowedException`() = runTest {
         var cloneInvoked = false
         val repo = cloningStub { _, _, _, _ -> cloneInvoked = true; Unit.right() }
         val denyingUpdater = DenyingForegroundUpdater(ForegroundServiceStartNotAllowedException("denied"))
@@ -131,7 +131,7 @@ class GitCloneWorkerTest {
     }
 
     @Test
-    fun `doWork() takes the gate for the destination and does not clone when it is already held`() = runBlocking {
+    fun `doWork() takes the gate for the destination and does not clone when it is already held`() = runTest {
         var cloneInvoked = false
         val repo = cloningStub { _, _, _, _ -> cloneInvoked = true; Unit.right() }
         val gate = RepoOpGate()
@@ -148,7 +148,7 @@ class GitCloneWorkerTest {
     }
 
     @Test
-    fun `built via TestListenableWorkerBuilder against a StubGitRepository, doWork() completes end-to-end and returns Result success`() = runBlocking {
+    fun `built via TestListenableWorkerBuilder against a StubGitRepository, doWork() completes end-to-end and returns Result success`() = runTest {
         val worker = buildWorker(cloningStub { _, _, _, onProgress -> onProgress(CloneProgress("Receiving objects", 0, 0)); Unit.right() })
 
         val result = worker.doWork()
@@ -157,7 +157,7 @@ class GitCloneWorkerTest {
     }
 
     @Test
-    fun `doWork() returns Result failure, never Result retry, when clone() returns a Left`() = runBlocking {
+    fun `doWork() returns Result failure, never Result retry, when clone() returns a Left`() = runTest {
         val repo = cloningStub { _, _, _, _ ->
             DomainError.GitError.RetryExhausted(5, DomainError.GitError.FetchFailed("net down")).left()
         }
@@ -170,7 +170,7 @@ class GitCloneWorkerTest {
     }
 
     @Test
-    fun `doWork() returns Result failure, not Result retry, for a non-retryable Left on the very first attempt too`() = runBlocking {
+    fun `doWork() returns Result failure, not Result retry, for a non-retryable Left on the very first attempt too`() = runTest {
         val repo = cloningStub { _, _, _, _ -> DomainError.GitError.AuthFailed("bad token").left() }
         val worker = buildWorker(repo)
 
@@ -181,7 +181,7 @@ class GitCloneWorkerTest {
     }
 
     @Test
-    fun `doWork() removes the transient clone credentials on every terminal path`() = runBlocking {
+    fun `doWork() removes the transient clone credentials on every terminal path`() = runTest {
         val store = InMemoryCredentialAccess()
         val key = GitCloneWorker.httpsTokenCredentialKey("graph-1")
         store.store(key, "secret-pat")
@@ -197,7 +197,7 @@ class GitCloneWorkerTest {
     }
 
     @Test
-    fun `doWork() converts its foreground notification to a dismissible tap-to-retry one on a failed clone, rather than lingering as in-progress`() = runBlocking {
+    fun `doWork() converts its foreground notification to a dismissible tap-to-retry one on a failed clone, rather than lingering as in-progress`() = runTest {
         // Superseded by git-sync-resilience Task 4.1.5c: a terminal failure no longer tears the
         // notification down outright (this test's pre-Epic-4.1 name/assertion) — it rebuilds it as
         // dismissible ("tap to retry" content, setOngoing(false)) instead, per plan.md Story 4.1.5's

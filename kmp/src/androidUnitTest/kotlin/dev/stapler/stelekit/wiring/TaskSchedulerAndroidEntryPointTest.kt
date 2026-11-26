@@ -71,6 +71,7 @@ class TaskSchedulerAndroidEntryPointTest {
         GitSyncWorker.runLogOverride = null
         GitSyncWorker.snapshotProviderOverride = null
         GitSyncWorker.coldPathOverride = null
+        // runBlocking: bridges a non-suspend Compose-rule test or @After; waitUntil needs the real thread
         fixture?.let { runBlocking { it.close() } }
         dataDir.deleteRecursively()
     }
@@ -96,6 +97,7 @@ class TaskSchedulerAndroidEntryPointTest {
             Configuration.Builder().setExecutor(SynchronousExecutor()).build(),
         )
         val settings = FakeSettings().also { it.putBoolean(SCHEDULED_SYNC_ENABLED_KEY, true) }
+        // runBlocking: bridges a non-suspend Compose-rule test or @After; waitUntil needs the real thread
         val wired = runBlocking {
             WiredAppFixture.android(
                 context,
@@ -109,6 +111,7 @@ class TaskSchedulerAndroidEntryPointTest {
 
         composeRule.setContent { rememberGraphContentScheduledSyncControls(wired.deps, null, configRepo, graphId) }
         composeRule.waitForIdle()
+        // Real-clock ceiling: WorkManager and the worker run off the Compose clock, so there is no virtual signal.
         composeRule.waitUntil(10_000) { workInfos().isNotEmpty() }
 
         ObservableEffect.assert("task-work-enqueued") {
@@ -131,6 +134,7 @@ class TaskSchedulerAndroidEntryPointTest {
         GitSyncWorker.runLogOverride = { runLog }
         GitSyncWorker.snapshotProviderOverride = { NetworkSnapshotProvider { NetworkSnapshot(online = true, isMetered = false) } }
         GitSyncWorker.coldPathOverride = ColdPathRunner { TickOutcome.Fetched }
+        // runBlocking: bridges a non-suspend Compose-rule test or @After; waitUntil needs the real thread
         val wired = runBlocking {
             WiredAppFixture.android(
                 context,
@@ -143,6 +147,7 @@ class TaskSchedulerAndroidEntryPointTest {
         val configRepo = StubConfigRepository(Either.Right(sampleConfig.copy(graphId = graphId, pollIntervalMinutes = 30)))
         composeRule.setContent { rememberGraphContentScheduledSyncControls(wired.deps, null, configRepo, graphId) }
         composeRule.waitForIdle()
+        // Real-clock ceiling: WorkManager and the worker run off the Compose clock, so there is no virtual signal.
         composeRule.waitUntil(10_000) { workInfos().isNotEmpty() }
 
         val workId = workInfos().single().id
@@ -150,9 +155,12 @@ class TaskSchedulerAndroidEntryPointTest {
         driver.setAllConstraintsMet(workId)
         driver.setPeriodDelayMet(workId)
         val key = TaskKey(GitSyncTask.KIND, TaskScope(graphId))
+        // runBlocking: bridges a non-suspend Compose-rule test or @After; waitUntil needs the real thread
+        // Real-clock ceiling: WorkManager and the worker run off the Compose clock, so there is no virtual signal.
         composeRule.waitUntil(10_000) { runBlocking { runLog.recent(key).isNotEmpty() } }
 
         ObservableEffect.assert("task-work-enqueued") {
+            // runBlocking: bridges a non-suspend Compose-rule test or @After; waitUntil needs the real thread
             val record = runBlocking { runLog.recent(key) }.first()
             assertEquals(TaskRunResult.Partial("fetched"), record.result)
             assertEquals(graphId, record.key.scope.value)

@@ -11,7 +11,7 @@ import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
 import dev.stapler.stelekit.platform.Settings
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -130,18 +130,17 @@ class TaskWorkerTest {
         *(if (policy != null) arrayOf(TaskWorkKeys.KEY_NETWORK_POLICY to policy) else emptyArray()),
     )
 
-    private fun run(key: TaskKey, policy: String? = null, attempt: Int = 0): Result = runBlocking {
+    private suspend fun run(key: TaskKey, policy: String? = null, attempt: Int = 0): Result =
         TestListenableWorkerBuilder<TaskWorker>(context)
             .setInputData(input(key, policy))
             .setRunAttemptCount(attempt)
             .build()
             .doWork()
-    }
 
     private fun Result.error(): String? = (this as? Result.Failure)?.outputData?.getString(TaskWorkKeys.KEY_ERROR)
 
     @Test
-    fun doWork_should_skipMeteredAndSucceed_When_periodicUnmeteredPolicyOnMeteredNetwork() = runBlocking {
+    fun doWork_should_skipMeteredAndSucceed_When_periodicUnmeteredPolicyOnMeteredNetwork() = runTest {
         registerPeriodic(); enablePeriodic(NetworkPolicy.Unmetered)
         network = NetworkSnapshotProvider { NetworkSnapshot(online = true, isMetered = true) }
         assertEquals(Result.success(), run(periodicKey))
@@ -150,7 +149,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_skipUnknownNetwork_When_providerThrows() = runBlocking {
+    fun doWork_should_skipUnknownNetwork_When_providerThrows() = runTest {
         registerPeriodic(); enablePeriodic(NetworkPolicy.Unmetered)
         network = NetworkSnapshotProvider { throw IllegalStateException("no connectivity manager") }
         assertEquals(Result.success(), run(periodicKey))
@@ -159,7 +158,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_skipUnknownNetwork_When_isMeteredNull() = runBlocking {
+    fun doWork_should_skipUnknownNetwork_When_isMeteredNull() = runTest {
         registerPeriodic(); enablePeriodic(NetworkPolicy.Unmetered)
         network = NetworkSnapshotProvider { NetworkSnapshot(online = true, isMetered = null) }
         assertEquals(Result.success(), run(periodicKey))
@@ -168,7 +167,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_retryBelowCapThenFailTerminal_When_oneShotSkippedForMetered() {
+    fun doWork_should_retryBelowCapThenFailTerminal_When_oneShotSkippedForMetered() = runTest {
         registerOneShot()
         network = NetworkSnapshotProvider { NetworkSnapshot(online = true, isMetered = true) }
         assertEquals(Result.retry(), run(oneShotKey, "unmetered", attempt = 0))
@@ -180,7 +179,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_shareOneBudget_When_skipsThenTransientFailuresMix() {
+    fun doWork_should_shareOneBudget_When_skipsThenTransientFailuresMix() = runTest {
         registerOneShot()
         network = NetworkSnapshotProvider { NetworkSnapshot(online = true, isMetered = true) }
         repeat(3) { assertEquals(Result.retry(), run(oneShotKey, "unmetered", attempt = it)) }
@@ -193,7 +192,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_failClosed_When_oneShotMeteredUnknownEvenIfConstraintSatisfied() {
+    fun doWork_should_failClosed_When_oneShotMeteredUnknownEvenIfConstraintSatisfied() = runTest {
         registerOneShot()
         network = NetworkSnapshotProvider { NetworkSnapshot(online = true, isMetered = null) }
         assertEquals(Result.retry(), run(oneShotKey, "unmetered", attempt = 0))
@@ -202,28 +201,28 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_failWithoutRetry_When_failedNotRetryable() {
+    fun doWork_should_failWithoutRetry_When_failedNotRetryable() = runTest {
         registerOneShot()
         bodyResult = { TaskRunResult.Failed("auth", retryable = false) }
         assertEquals("auth", run(oneShotKey, "any").error())
     }
 
     @Test
-    fun doWork_should_retry_When_oneShotFailedRetryable() {
+    fun doWork_should_retry_When_oneShotFailedRetryable() = runTest {
         registerOneShot()
         bodyResult = { TaskRunResult.Failed("net", retryable = true) }
         assertEquals(Result.retry(), run(oneShotKey, "any"))
     }
 
     @Test
-    fun doWork_should_neverRetry_When_periodicFailedEvenIfRetryable() = runBlocking {
+    fun doWork_should_neverRetry_When_periodicFailedEvenIfRetryable() = runTest {
         registerPeriodic(); enablePeriodic()
         bodyResult = { TaskRunResult.Failed("net", retryable = true) }
         assertTrue(run(periodicKey) is Result.Failure)
     }
 
     @Test
-    fun doWork_should_recordFailedAndReturnFailure_When_bodyThrowsOutOfMemoryError() = runBlocking {
+    fun doWork_should_recordFailedAndReturnFailure_When_bodyThrowsOutOfMemoryError() = runTest {
         registerPeriodic(); enablePeriodic()
         bodyResult = { throw OutOfMemoryError("boom") }
         assertTrue(run(periodicKey) is Result.Failure)
@@ -231,7 +230,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_rethrow_When_bodyThrowsCancellationException() = runBlocking {
+    fun doWork_should_rethrow_When_bodyThrowsCancellationException() = runTest {
         registerPeriodic(); enablePeriodic()
         bodyResult = { throw CancellationException("cancelled") }
         assertFailsWith<CancellationException> { run(periodicKey) }
@@ -239,7 +238,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_recordCancelledRun_When_bodyThrowsCancellationException() = runBlocking {
+    fun doWork_should_recordCancelledRun_When_bodyThrowsCancellationException() = runTest {
         registerPeriodic(); enablePeriodic()
         bodyResult = { throw CancellationException("cancelled") }
         assertFailsWith<CancellationException> { run(periodicKey) }
@@ -247,7 +246,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_truncateErrorToWorkManagerDataLimit_When_failureMessageIsHuge() {
+    fun doWork_should_truncateErrorToWorkManagerDataLimit_When_failureMessageIsHuge() = runTest {
         registerOneShot(cap = 1)
         bodyResult = { TaskRunResult.Failed("x".repeat(50_000), retryable = false) }
         val result = run(oneShotKey, "unmetered")
@@ -257,7 +256,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_redactCredentialsFromOutputAndRecord_When_bodyThrowsWithSecretInMessage() {
+    fun doWork_should_redactCredentialsFromOutputAndRecord_When_bodyThrowsWithSecretInMessage() = runTest {
         registerOneShot(cap = 1)
         bodyResult = { throw IllegalStateException("fetch https://user:hunter2pw@example.com/r.git ghp_AbCdEf0123456789xyz") }
         val result = run(oneShotKey, "unmetered")
@@ -268,13 +267,13 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_succeedWithNotRegisteredRecord_When_registryEmpty() {
+    fun doWork_should_succeedWithNotRegisteredRecord_When_registryEmpty() = runTest {
         assertEquals(Result.success(), run(periodicKey))
         assertEquals(listOf<TaskRunResult>(TaskRunResult.Skipped("task-not-registered")), runLog.results)
     }
 
     @Test
-    fun doWork_should_shortCircuitDisabledWithoutSeed_When_periodicEntryExists() = runBlocking {
+    fun doWork_should_shortCircuitDisabledWithoutSeed_When_periodicEntryExists() = runTest {
         registerPeriodic(); enablePeriodic(enabled = false)
         assertEquals(Result.success(), run(periodicKey))
         assertEquals(0, bodyCalls)
@@ -283,7 +282,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_neverCallSeedForExistingEntry_When_periodicRuns() = runBlocking {
+    fun doWork_should_neverCallSeedForExistingEntry_When_periodicRuns() = runTest {
         registerPeriodic(); enablePeriodic()
         assertEquals(Result.success(), run(periodicKey))
         assertEquals(0, seedCalls)
@@ -291,7 +290,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_callSeedOnce_When_entryAndMarkerBothAbsent() {
+    fun doWork_should_callSeedOnce_When_entryAndMarkerBothAbsent() = runTest {
         registerPeriodic()
         run(periodicKey)
         assertEquals(1, seedCalls)
@@ -299,7 +298,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_runBody_When_oneShotHasNoStoreEntry() {
+    fun doWork_should_runBody_When_oneShotHasNoStoreEntry() = runTest {
         registerOneShot()
         assertEquals(Result.success(), run(oneShotKey, "unmetered"))
         assertEquals(1, bodyCalls)
@@ -307,7 +306,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_runBody_When_oneShotEntryExplicitlyDisabled() = runBlocking {
+    fun doWork_should_runBody_When_oneShotEntryExplicitlyDisabled() = runTest {
         registerOneShot()
         TaskSettingsStore(settings, LegacyConfigSeed.None, registry)
             .write(oneShotKey, TaskEntry(false, TaskOverrides(null, TaskConstraints(NetworkPolicy.Unmetered))))
@@ -317,7 +316,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_useInputPolicyNotStore_When_oneShotInputAnyOverStoredUnmetered() = runBlocking {
+    fun doWork_should_useInputPolicyNotStore_When_oneShotInputAnyOverStoredUnmetered() = runTest {
         registerOneShot()
         TaskSettingsStore(settings, LegacyConfigSeed.None, registry)
             .write(oneShotKey, TaskEntry(true, TaskOverrides(null, TaskConstraints(NetworkPolicy.Unmetered))))
@@ -327,7 +326,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_failClosedToUnmetered_When_oneShotInputPolicyAbsent() {
+    fun doWork_should_failClosedToUnmetered_When_oneShotInputPolicyAbsent() = runTest {
         registerOneShot()
         network = NetworkSnapshotProvider { NetworkSnapshot(online = true, isMetered = true) }
         assertEquals(Result.retry(), run(oneShotKey, policy = null))
@@ -335,7 +334,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_skipSettingsUnreadableAndSetHealth_When_periodicReadFails() = runBlocking {
+    fun doWork_should_skipSettingsUnreadableAndSetHealth_When_periodicReadFails() = runTest {
         registerPeriodic()
         settings.failReads = true
         assertEquals(Result.success(), run(periodicKey))
@@ -345,7 +344,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_clearHealth_When_nextPeriodicReadSucceeds() = runBlocking {
+    fun doWork_should_clearHealth_When_nextPeriodicReadSucceeds() = runTest {
         registerPeriodic(); enablePeriodic()
         health.recordFailure(5L)
         run(periodicKey)
@@ -353,7 +352,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_skipColdPathNotAllowed_When_specDisallowsIt() = runBlocking {
+    fun doWork_should_skipColdPathNotAllowed_When_specDisallowsIt() = runTest {
         registerPeriodic(allowedInColdPath = false); enablePeriodic()
         assertEquals(Result.success(), run(periodicKey))
         assertEquals(0, bodyCalls)
@@ -361,7 +360,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_cancelOwnWorkAndSucceed_When_scopeAbsentFromKnownRegistry() = runBlocking {
+    fun doWork_should_cancelOwnWorkAndSucceed_When_scopeAbsentFromKnownRegistry() = runTest {
         registerPeriodic(); enablePeriodic()
         knownScopes = KnownScopes { KnownScopesResult.Known(setOf(TaskScope("other"))) }
         val ghost = TaskKey(periodicKind, TaskScope("ghost"))
@@ -377,7 +376,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_runTask_When_knownScopesUnknownOrThrowing() = runBlocking {
+    fun doWork_should_runTask_When_knownScopesUnknownOrThrowing() = runTest {
         registerPeriodic()
         val ghost = TaskKey(periodicKind, TaskScope("ghost"))
         TaskSettingsStore(settings, LegacyConfigSeed.None, registry)
@@ -390,7 +389,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_neverCancelAppWideScope_When_knownScopesKnown() {
+    fun doWork_should_neverCancelAppWideScope_When_knownScopesKnown() = runTest {
         registerOneShot()
         knownScopes = KnownScopes { KnownScopesResult.Known(setOf(TaskScope("g1"))) }
         assertEquals(Result.success(), run(oneShotKey, "any"))
@@ -398,7 +397,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_runHooksInOrder_When_periodicKindHasHooks() = runBlocking {
+    fun doWork_should_runHooksInOrder_When_periodicKindHasHooks() = runTest {
         registerPeriodic(); enablePeriodic()
         val order = mutableListOf<String>()
         bodyResult = { order += "body"; TaskRunResult.Success }
@@ -412,7 +411,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_skipCloneRunning_When_preRunYields() = runBlocking {
+    fun doWork_should_skipCloneRunning_When_preRunYields() = runTest {
         registerPeriodic(); enablePeriodic()
         hooks[periodicKind] = object : TaskAdapterHooks {
             override suspend fun preRun(context: Context, key: TaskKey, input: Data): String? = "clone-running"
@@ -423,7 +422,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun doWork_should_neverPromoteToForeground_When_periodicRuns() = runBlocking {
+    fun doWork_should_neverPromoteToForeground_When_periodicRuns() = runTest {
         registerPeriodic(); enablePeriodic()
         val promoted = mutableListOf<TaskKind>()
         val deps = TaskWorkerRuntime.depsOverride!!(context)
@@ -433,7 +432,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun runTaskWork_should_promoteToForeground_When_oneShotRuns() = runBlocking {
+    fun runTaskWork_should_promoteToForeground_When_oneShotRuns() = runTest {
         registerOneShot()
         val promoted = mutableListOf<TaskKind>()
         val deps = TaskWorkerRuntime.depsOverride!!(context)
@@ -442,7 +441,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun recordRun_should_leaveResultUnchangedAndLog_When_runLogThrowsThrowable() = runBlocking {
+    fun recordRun_should_leaveResultUnchangedAndLog_When_runLogThrowsThrowable() = runTest {
         registerPeriodic(); enablePeriodic()
         logOverride = ThrowingLog(OutOfMemoryError("log full"))
         assertEquals(Result.success(), run(periodicKey))
@@ -450,7 +449,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun recordRun_should_swallowThrowableButRethrowCancellation() = runBlocking {
+    fun recordRun_should_swallowThrowableButRethrowCancellation() = runTest {
         val record = TaskRunRecord(periodicKey, RunSource.Background, null, 1L, TaskRunResult.Success, ConstraintState(true, false, null))
         recordRun(ThrowingLog(OutOfMemoryError("x")), record)
         assertFailsWith<CancellationException> { recordRun(ThrowingLog(CancellationException("c")), record) }
@@ -458,7 +457,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun recordRun_should_leaveResultUnchanged_When_realSettingsWriteThrows() = runBlocking {
+    fun recordRun_should_leaveResultUnchanged_When_realSettingsWriteThrows() = runTest {
         registerPeriodic(); enablePeriodic()
         val throwingSettings = MapSettings().also { it.failWrites = true }
         logOverride = SettingsTaskRunLog(throwingSettings)
@@ -467,7 +466,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun decodePolicy_should_failClosed_When_ValueIsUnrecognised() {
+    fun decodePolicy_should_failClosed_When_ValueIsUnrecognised() = runTest {
         assertEquals(NetworkPolicy.Any, TaskWorkKeys.decode(null))
         assertEquals(NetworkPolicy.Any, TaskWorkKeys.decode("any"))
         assertEquals(NetworkPolicy.Unmetered, TaskWorkKeys.decode("unmetered"))

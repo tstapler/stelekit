@@ -166,6 +166,8 @@ actual class DriverFactory actual constructor() {
         )
 
         // Apply incremental DDL migrations (idempotent, hash-tracked).
+        // runBlocking: createDriver is a non-suspend expect API and the driver must not be returned unmigrated.
+        // Also reached from the cold git-sync worker (loadGitConfigFromDb), where it holds that worker's thread.
         runBlocking { MigrationRunner.applyAll(driver) }
 
         return driver

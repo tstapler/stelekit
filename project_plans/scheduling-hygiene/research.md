@@ -5,7 +5,12 @@
 
 ## 1. runBlocking in Production Scheduling Code
 
-**Finding: CLEAN — no `runBlocking` in production scheduling source.**
+**Correction (implementation): the finding below was wrong.** `androidMain/git/WorkManagerSyncScheduler.kt`
+(which also defines `GitSyncWorker`) had four `runBlocking` calls; they were removed by making `schedule`,
+`cancel`, `pauseFor` and `resumeFor` suspend. `DriverFactory.android.kt` also uses `runBlocking`, reached from
+the cold git-sync worker; it stays, with its justification at the call site.
+
+~~Finding: CLEAN — no `runBlocking` in production scheduling source.~~
 
 | File | Result |
 |------|--------|

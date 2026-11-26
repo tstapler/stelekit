@@ -35,8 +35,7 @@ import dev.stapler.stelekit.platform.ml.DepthModelDownloader
 import dev.stapler.stelekit.platform.ml.DepthModelStorage
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -67,10 +66,10 @@ class WorkManagerJobRegistryTest {
         DepthModelStorage.modelFile(context).parentFile?.deleteRecursively()
     }
 
-    private suspend fun WorkManagerJobRegistry.firstJobs() = withTimeout(5_000) { jobs.first { it.isNotEmpty() } }
+    private suspend fun WorkManagerJobRegistry.firstJobs() = jobs.first { it.isNotEmpty() }
 
     @Test
-    fun `a queued depth model download is listed with its kind and title`() = runBlocking<Unit> {
+    fun `a queued depth model download is listed with its kind and title`() = runTest {
         val waiter = async { DepthModelDownloader(context).downloadModel() }
         val registry = WorkManagerJobRegistry(context)
 
@@ -83,44 +82,44 @@ class WorkManagerJobRegistryTest {
     }
 
     @Test
-    fun `cancelling a listed job marks it cancelled`() = runBlocking<Unit> {
+    fun `cancelling a listed job marks it cancelled`() = runTest {
         val waiter = async { DepthModelDownloader(context).downloadModel() }
         val registry = WorkManagerJobRegistry(context)
         val id = registry.firstJobs().single().id
 
         registry.cancel(id)
 
-        val cancelled = withTimeout(5_000) { registry.jobs.first { list -> list.any { it.state is JobState.Cancelled } } }
+        val cancelled = registry.jobs.first { list -> list.any { it.state is JobState.Cancelled } }
         assertEquals(id, cancelled.single().id)
         waiter.cancel()
     }
 
     @Test
-    fun `clearFinished drops finished jobs from the list`() = runBlocking<Unit> {
+    fun `clearFinished drops finished jobs from the list`() = runTest {
         val waiter = async { DepthModelDownloader(context).downloadModel() }
         val registry = WorkManagerJobRegistry(context)
         registry.cancel(registry.firstJobs().single().id)
-        withTimeout(5_000) { registry.jobs.first { list -> list.any { it.state is JobState.Cancelled } } }
+        registry.jobs.first { list -> list.any { it.state is JobState.Cancelled } }
 
         registry.clearFinished()
 
-        withTimeout(5_000) { registry.jobs.first { it.isEmpty() } }
+        registry.jobs.first { it.isEmpty() }
         waiter.cancel()
     }
 
     @Test
-    fun `work without a job kind tag is ignored`() = runBlocking<Unit> {
+    fun `work without a job kind tag is ignored`() = runTest {
         val request = OneTimeWorkRequestBuilder<DepthModelDownloadWorker>().addTag(JobTags.ANY).build()
         WorkManager.getInstance(context).enqueue(request)
 
         val registry = WorkManagerJobRegistry(context)
 
-        assertTrue(withTimeout(5_000) { registry.jobs.first() }.isEmpty())
+        assertTrue(registry.jobs.first().isEmpty())
         assertNotNull(registry)
     }
 
     @Test
-    fun `an enabled periodic graph adds no job row but a one-shot does`() = runBlocking<Unit> {
+    fun `an enabled periodic graph adds no job row but a one-shot does`() = runTest {
         val registry = TaskRegistry()
         val default = TaskConfig(true, Schedule.of(15, 0), TaskConstraints())
         registry.register(
@@ -133,10 +132,10 @@ class WorkManagerJobRegistryTest {
         val jobs = WorkManagerJobRegistry(context)
 
         scheduler.apply(TaskKey(TaskKind("git-sync"), TaskScope("g1")), TaskConfig(true, Schedule.of(60, 0), TaskConstraints()))
-        assertTrue(withTimeout(5_000) { jobs.jobs.first() }.isEmpty(), "periodic work carries no stelekit-job tag")
+        assertTrue(jobs.jobs.first().isEmpty(), "periodic work carries no stelekit-job tag")
 
         scheduler.runOnce(TaskKey(TaskKind("model-download"), TaskScope("")), TaskConstraints())
-        val row = withTimeout(5_000) { jobs.jobs.first { it.isNotEmpty() } }.single()
+        val row = jobs.jobs.first { it.isNotEmpty() }.single()
         assertEquals(JobKind.ModelDownload, row.kind)
         assertEquals("Depth model download", row.title)
     }

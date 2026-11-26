@@ -75,6 +75,7 @@ class WorkManagerJitterSpikeTest {
             workerStoppedDuringRun.set(false)
             try {
                 // Poll so a stop signal from WorkManager is observable.
+                // Real-clock ceiling: a spike worker parked on a real executor thread, released by latch.
                 val deadline = System.currentTimeMillis() + 10_000
                 while (System.currentTimeMillis() < deadline && !release.await(20, TimeUnit.MILLISECONDS)) {
                     if (isStopped) {
@@ -230,6 +231,7 @@ class WorkManagerJitterSpikeTest {
             enqueue(first)
             driver.setAllConstraintsMet(first.id)
             driver.setInitialDelayMet(first.id)
+            // Real 5 s ceiling: the latch is the signal from a real executor thread.
             val ran = started.await(5, TimeUnit.SECONDS)
             val stateWhileRunning = wm.getWorkInfoById(first.id).get().state
             record("running.workerStarted", ran)

@@ -75,10 +75,12 @@ class ModelDownloadUiTest {
     private fun activeRequest() = WorkManager.getInstance(context)
         .getWorkInfosForUniqueWork(DepthModelDownloader.UNIQUE_WORK_NAME).get().first { !it.state.isFinished }
 
+    // runBlocking: drives a Compose rule and polls real WorkManager state, both on real time
     @Test
     fun waitingRow_should_offerDownloadNowAnywayAndReplaceWithAnyNetwork_When_networkIsMetered() = runBlocking<Unit> {
         val downloader = fixture.downloader
         val waiting = scope.async { downloader.downloadModel() }
+        // Real 5 s ceiling: the downloader and WorkManager run on real threads alongside the Compose rule.
         val queued = withTimeout(5_000) {
             downloader.modelState.first { it is DepthModelDownloader.ModelState.Downloading && it.waitingMessage != null }
         }
@@ -100,6 +102,7 @@ class ModelDownloadUiTest {
         rule.onNodeWithContentDescription("Cancel model download").assertExists()
 
         rule.onNodeWithText("Download now anyway").performClick()
+        // Real 5 s ceiling: the downloader and WorkManager run on real threads alongside the Compose rule.
         withTimeout(5_000) {
             while (activeRequest().id == first.id) kotlinx.coroutines.delay(20)
         }

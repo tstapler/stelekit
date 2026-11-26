@@ -8,10 +8,10 @@ package dev.stapler.stelekit.git
  */
 interface BackgroundSyncScheduler {
     /** Schedule periodic sync at the given interval (minimum 15 minutes on Android). */
-    fun schedule(intervalMinutes: Int)
+    suspend fun schedule(intervalMinutes: Int)
 
     /** Cancel any scheduled sync. */
-    fun cancel()
+    suspend fun cancel()
 }
 
 /**
