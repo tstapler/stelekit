@@ -15,7 +15,9 @@ Criteria are the backlog item's eight. `Port` = `DepthModelDownloaderCancelPortT
 
 Added by review, beyond the criteria:
 
-- Port: `runOnce_waitsForAPendingCancel` (ordering regression; must fail without the wait)
+- Port: `runOnce_waitsForAPendingCancel`, `downloadModel_waitsForAPendingCancel` (ordering; fail without the wait)
+- Port: `cancelWhileWaiting_neverEnqueues`, `cancelDuringDownloadNowAnyway_cancelsAgain`,
+  `unavailableWorkManager_returnsLeft`
 
 Not testable here: real-device WorkManager timing, and process death between `cancelDownload()` and the
 launched cancel (accepted risk in `plan.md`).

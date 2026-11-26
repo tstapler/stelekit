@@ -20,6 +20,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -66,8 +67,8 @@ class DepthModelDownloaderCancelPortTest {
     private val cancelled = "cancel ${ModelDownloadTask.KEY.kind.id}"
     private val enqueued = "runOnce ${ModelDownloadTask.KEY.kind.id}"
 
-    private fun downloader(scheduler: BackgroundTaskScheduler) =
-        DepthModelDownloader(context, scheduler = scheduler, workInfoFlow = emptyFlow<List<WorkInfo>>())
+    private fun downloader(scheduler: BackgroundTaskScheduler, status: Flow<List<WorkInfo>>? = emptyFlow()) =
+        DepthModelDownloader(context, scheduler = scheduler, workInfoFlow = { status })
 
     @After
     fun tearDown() {
@@ -110,6 +111,60 @@ class DepthModelDownloaderCancelPortTest {
         withTimeout(5_000) { retry.await() }
 
         assertEquals(listOf(cancelled, enqueued), List(2) { scheduler.next() })
+    }
+
+    @Test
+    fun downloadModel_waitsForAPendingCancel() = runBlocking<Unit> {
+        val gate = CompletableDeferred<Unit>()
+        val scheduler = RecordingScheduler().apply { cancelGate = gate }
+        val downloader = downloader(scheduler)
+        downloader.cancelDownload()
+
+        val retry = async(start = CoroutineStart.UNDISPATCHED) { downloader.downloadModel() }
+        assertTrue(scheduler.calls.tryReceive().isFailure, "enqueued while the cancel was still pending")
+        gate.complete(Unit)
+
+        assertEquals(listOf(cancelled, enqueued), List(2) { scheduler.next() })
+        retry.cancel()
+    }
+
+    @Test
+    fun cancelWhileWaiting_neverEnqueues() = runBlocking<Unit> {
+        val gate = CompletableDeferred<Unit>()
+        val scheduler = RecordingScheduler().apply { cancelGate = gate }
+        val downloader = downloader(scheduler)
+        downloader.cancelDownload()
+        val plain = async(start = CoroutineStart.UNDISPATCHED) { downloader.downloadModel() }
+        val anyway = async(start = CoroutineStart.UNDISPATCHED) { downloader.downloadNowAnyway() }
+
+        downloader.cancelDownload()
+        gate.complete(Unit)
+        assertTrue(withTimeout(5_000) { plain.await() }.isLeft())
+        withTimeout(5_000) { anyway.await() }
+
+        assertEquals(listOf(cancelled, cancelled), List(2) { scheduler.next() })
+        assertTrue(scheduler.calls.tryReceive().isFailure, "a cancelled call enqueued")
+    }
+
+    @Test
+    fun cancelDuringDownloadNowAnyway_cancelsAgain() = runBlocking<Unit> {
+        val scheduler = RecordingScheduler()
+        val downloader = downloader(scheduler)
+        scheduler.onRunOnce = { downloader.cancelDownload() }
+
+        withTimeout(5_000) { downloader.downloadNowAnyway() }
+
+        assertEquals(listOf(enqueued, cancelled, cancelled), List(3) { scheduler.next() })
+    }
+
+    @Test
+    fun unavailableWorkManager_returnsLeft() = runBlocking<Unit> {
+        val scheduler = RecordingScheduler()
+
+        val result = withTimeout(5_000) { downloader(scheduler, status = null).downloadModel() }
+
+        assertTrue(result.isLeft())
+        assertTrue(scheduler.calls.tryReceive().isFailure)
     }
 
     @Test

@@ -66,8 +66,8 @@ class DepthModelDownloader internal constructor(
     /** Test seam: runs between computing a snapshot's state and writing it, to hold the window open deterministically. */
     private val beforeStateWrite: suspend () -> Unit = {},
     private val afterStateWrite: () -> Unit = {},
-    /** Test seam: replaces WorkManager's status stream. */
-    private val workInfoFlow: Flow<List<WorkInfo>>? = null,
+    /** Test seam for WorkManager's status stream; null means WorkManager is unavailable. */
+    private val workInfoFlow: () -> Flow<List<WorkInfo>>? = { uniqueWorkInfoFlow(context) },
 ) {
     constructor(context: Context) : this(context, scheduler = null)
 
@@ -110,14 +110,7 @@ class DepthModelDownloader internal constructor(
     @Volatile private var pendingCancel: Job? = null
 
     /** Null when WorkManager is not initialised: nothing could report a download's outcome. */
-    private val statusFlow: Flow<List<WorkInfo>>? by lazy {
-        workInfoFlow ?: try {
-            WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(UNIQUE_WORK_NAME)
-        } catch (e: IllegalStateException) {
-            logger.warn("WorkManager is not initialised", e)
-            null
-        }
-    }
+    private val statusFlow: Flow<List<WorkInfo>>? by lazy { workInfoFlow() }
 
     init {
         scope.launch { statusFlow?.collect { infos -> apply(infos) } }
@@ -143,6 +136,8 @@ class DepthModelDownloader internal constructor(
         val failuresBefore = failureCount.get()
         try {
             awaitPendingCancel()
+            // Cancelled while waiting: enqueueing now would need a guard-cancel that could kill a newer retry's job.
+            if (cancelGeneration.get() != generation) return cancelledResult()
             taskScheduler.runOnce(ModelDownloadTask.KEY, storedConstraints(), OneShotConflict.Keep)
             // A cancel that landed while runOnce was suspended must not be undone by this late write, and the job
             // runOnce just enqueued is an orphan: cancel it again. A job that already failed (the collector can
@@ -156,7 +151,7 @@ class DepthModelDownloader internal constructor(
             }
             if (cancelGeneration.get() != generation) {
                 requestCancel()
-                return DomainError.SensorError.HardwareUnavailable("Depth model download cancelled").left()
+                return cancelledResult()
             }
             return awaitTerminal()
         } finally {
@@ -175,6 +170,7 @@ class DepthModelDownloader internal constructor(
         val generation = cancelGeneration.get()
         try {
             awaitPendingCancel()
+            if (cancelGeneration.get() != generation) return
             taskScheduler.runOnce(ModelDownloadTask.KEY, ANYWAY_CONSTRAINTS, OneShotConflict.Replace)
             if (cancelGeneration.get() != generation) {
                 requestCancel()
@@ -230,8 +226,11 @@ class DepthModelDownloader internal constructor(
         when (val terminal = modelState.first { it is ModelState.Ready || it is ModelState.Failed || it is ModelState.Absent || it is ModelState.Cancelled }) {
             is ModelState.Ready -> modelFile.right()
             is ModelState.Failed -> DomainError.SensorError.HardwareUnavailable(terminal.reason ?: "Depth model download failed").left()
-            else -> DomainError.SensorError.HardwareUnavailable("Depth model download cancelled").left()
+            else -> cancelledResult()
         }
+
+    private fun cancelledResult(): Either<DomainError, File> =
+        DomainError.SensorError.HardwareUnavailable("Depth model download cancelled").left()
 
     /** Absolute path of the model file. Safe to pass to [ai.onnxruntime.OrtSession]. */
     fun modelFilePath(): String = modelFile.absolutePath
@@ -388,6 +387,13 @@ fun DepthModelDownloader.ModelState.toUiState(): DepthModelUiState =
 /** Pure — testable without WorkManager. -1 for an unknown total size. */
 internal fun computeProgressPercent(bytesDownloaded: Long, totalBytes: Long): Int =
     if (totalBytes <= 0L) -1 else ((bytesDownloaded * 100L) / totalBytes).toInt().coerceIn(0, 100)
+
+private fun uniqueWorkInfoFlow(context: Context): Flow<List<WorkInfo>>? = try {
+    WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(DepthModelDownloader.UNIQUE_WORK_NAME)
+} catch (e: IllegalStateException) {
+    Logger("DepthModelDownloader").warn("WorkManager is not initialised", e)
+    null
+}
 
 private fun areNotificationsOff(context: Context): Boolean = try {
     // Below Android 13 notifications are on by default, and a foreground-service one is shown regardless.

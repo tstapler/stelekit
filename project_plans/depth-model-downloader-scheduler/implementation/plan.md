@@ -10,10 +10,9 @@ Supersedes the triage draft, which `../research/pitfalls.md` showed to be wrong 
 
 ### `DepthModelDownloader` (androidMain)
 
-1. **Status seam.** New last constructor parameter `workInfoFlow: Flow<List<WorkInfo>>? = null`, and
-   `private val statusFlow by lazy { workInfoFlow ?: try { WorkManager.getInstance(context)
-   .getWorkInfosForUniqueWorkFlow(UNIQUE_WORK_NAME) } catch (e: IllegalStateException) { log; null } }`.
-   Declared before `init`; `init` collects `statusFlow` if non-null.
+1. **Status seam.** New last constructor parameter `workInfoFlow: () -> Flow<List<WorkInfo>>?` (a provider, so a test can express "unavailable"; default calls
+   `WorkManager.getInstance`), and
+   `statusFlow` is its lazy result, declared before `init`, which collects it if non-null.
 2. **Availability guard.** `if (!taskScheduler.capabilities.schedulesWork || statusFlow == null) return Left(...)`.
    The second term keeps today's behaviour: `schedulesWork` is a constant `true` on the WorkManager
    adapter and its `runOnce` is a silent no-op without WorkManager, so the flag alone would hang the caller.
@@ -28,7 +27,8 @@ Supersedes the triage draft, which `../research/pitfalls.md` showed to be wrong 
    `downloadModel()` and `downloadNowAnyway()` capture `cancelGeneration`, then (inside their `try`)
    `awaitPendingCancel()` before `runOnce`: `do { val p = pendingCancel; p?.join() } while (p !== pendingCancel)`,
    so a guard-cancel created by an earlier call during the join is waited for too. `pendingCancel` is `@Volatile`.
-   `downloadNowAnyway()` also re-cancels if the generation changed while it was enqueueing.
+   Both return without enqueueing if the generation changed during the wait, and re-cancel if it changed while
+   enqueueing.
    Without the wait, "cancel, then download again" can run the old cancel after the new enqueue and kill it.
    A cancel arriving during the join is caught by the
    existing generation check. `cancelDownload()` stays non-suspend. The launch is on the downloader's
