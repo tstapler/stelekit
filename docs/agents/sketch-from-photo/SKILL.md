@@ -5,11 +5,12 @@ description: Turn a photo of a floor plan, elevation, whiteboard diagram or hand
 
 # Sketch from a photo (SteleKit v2 sketches)
 
-You can see images and edit files; you cannot open the app. `stelekit sketch` closes the loop: you write a small JSON **spec**, the CLI turns it into a valid sheet and draws it, and you **look at the drawing next to the photo** until they agree. 
+You can see images and edit files; you cannot open the app. `stelekit sketch` closes the loop: you write a small JSON **spec**, the CLI turns it into a valid sheet and draws it, and you **look at the drawing next to the photo** until they agree.
 
 ## Setup
 
-- The tool is `stelekit sketch`, part of the installed SteleKit desktop app. Check: `stelekit sketch help`. If that opens the app instead, the install is too old: upgrade it. From a repo checkout, `scripts/sketch-cli` is the same tool (JDK 21).
+- The tool is `stelekit sketch`, part of the installed SteleKit desktop app. Check: `timeout 60 stelekit sketch help` prints a usage line. A release without the subcommand opens the app instead (the timeout ends it): upgrade. From a repo checkout, `scripts/sketch-cli` is the same tool (JDK 21).
+- `stelekit` is on `PATH` after a Homebrew or `install.sh` install. Otherwise call the app's executable: `/opt/stelekit/bin/stelekit` (deb, rpm), the `.AppImage` file itself, or `/Applications/stelekit.app/Contents/MacOS/stelekit` (macOS). On Windows the CLI is untested and may print nothing in a console.
 - Format details: `stelekit sketch format` (units are 1/16 inch, y grows down).
 - Use absolute paths or run from your scratch folder.
 - The graph is the notes folder (it has `pages/` and `journals/`). Sketches live in `<graph>/assets/stelekit-sketch/<slug>/`.

@@ -63,6 +63,24 @@ class SketchAgentCliTest {
     }
 
     @Test
+    fun `only a leading sketch argument dispatches to the CLI`() {
+        assertEquals(listOf("describe", "a.json"), sketchSubcommandArgs(arrayOf("sketch", "describe", "a.json")))
+        assertEquals(emptyList(), sketchSubcommandArgs(arrayOf("sketch")))
+        assertEquals(null, sketchSubcommandArgs(emptyArray()))
+        assertEquals(null, sketchSubcommandArgs(arrayOf("--capture-text", "sketch")))
+    }
+
+    @Test
+    fun `build fails when its render fails`() {
+        val dir = tempDir()
+        val spec = File(dir, "room.spec.json").apply { writeText(ROOM_SPEC) }
+        val out = File(dir, "room.v2.json").path
+        val run = cli("build", spec.path, "--out", out, "--render", File(dir, "x.pdf").path, "--paper", "A4", "--scale", "1:1", "--tile")
+        assertEquals(1, run.code, run.out + run.err)
+        assertTrue("tiling would take" in run.out, run.out)
+    }
+
+    @Test
     fun `room spec builds the golden sheet`() {
         val doc = built(ROOM_SPEC)
         val bytes = encode(doc)

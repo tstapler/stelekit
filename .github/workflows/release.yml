@@ -387,8 +387,10 @@ jobs:
           chmod +x "$APPIMAGE"
 
           # `stelekit sketch` must run headless from the packaged runtime, with its bundled docs.
-          APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE" sketch skill > /dev/null
-          APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE" sketch build docs/reference/sketch-examples/room.spec.json \
+          for doc in skill format schema grid-script; do
+            APPIMAGE_EXTRACT_AND_RUN=1 timeout 120 "$APPIMAGE" sketch "$doc" > /dev/null
+          done
+          APPIMAGE_EXTRACT_AND_RUN=1 timeout 120 "$APPIMAGE" sketch build docs/reference/sketch-examples/room.spec.json \
             --out /tmp/sketch-smoke.v2.json --render /tmp/sketch-smoke.png
           test -s /tmp/sketch-smoke.png
 

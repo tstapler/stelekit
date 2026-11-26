@@ -19,6 +19,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.rememberWindowState
 import dev.stapler.stelekit.capture.CaptureController
 import dev.stapler.stelekit.cli.runSketchCli
+import dev.stapler.stelekit.cli.sketchSubcommandArgs
 import dev.stapler.stelekit.capture.CapturePopupWindow
 import dev.stapler.stelekit.capture.CaptureSocketListener
 import dev.stapler.stelekit.capture.GlobalHotkeyListener
@@ -68,9 +69,9 @@ internal fun defaultMeasurementDeviceFactories(): List<MeasurementDeviceFactory>
 
 fun main(args: Array<String>) {
     // `stelekit sketch <command>`: headless, so it must return before AWT, logging or OTel start.
-    if (args.firstOrNull() == "sketch") {
+    sketchSubcommandArgs(args)?.let {
         System.setProperty("java.awt.headless", "true")
-        exitProcess(runSketchCli(args.drop(1)))
+        exitProcess(runSketchCli(it))
     }
 
     // Headless CLI capture mode: try the socket fast path first (delivers immediately if

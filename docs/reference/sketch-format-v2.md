@@ -21,7 +21,7 @@ stelekit sketch canonicalize hand-edited.json --in-place                     # e
 stelekit sketch place sheet.v2.json --graph ~/notes                          # put it in the graph, print the embed line
 ```
 
-`stelekit sketch` ships inside the desktop app, so an installed release needs no checkout or JDK. `stelekit sketch skill`, `format` and `schema` print the docs bundled with that version. From a checkout, `scripts/sketch-cli <command>` runs the same tool (JDK 21). Command reference: section 9.
+`stelekit sketch` ships inside the desktop app, so an installed release needs no checkout or JDK. `stelekit sketch skill`, `format`, `schema` and `grid-script` print the files bundled with that version. Other file paths in this document (`sketch-examples/`, `project_plans/`, `*.kt`) are in the SteleKit source repository, not in the install; `stelekit sketch schema` prints the schema linked above. Where `stelekit` is not on `PATH`, see the setup section of `stelekit sketch skill`. From a checkout, `scripts/sketch-cli <command>` runs the same tool (JDK 21). Command reference: section 9.
 
 ## 2. How a sheet appears in markdown
 

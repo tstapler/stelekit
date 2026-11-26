@@ -27,6 +27,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.io.File
+import java.io.FileDescriptor
+import java.io.FileOutputStream
+import java.io.PrintStream
 import kotlin.system.exitProcess
 
 /**
@@ -200,8 +203,7 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
         val bytes = (SheetCodecV2.encode(doc) as? Either.Right)?.value ?: run { out("ERROR   the built sheet could not be encoded"); return 1 }
         File(outPath).also { it.absoluteFile.parentFile?.mkdirs() }.writeBytes(bytes)
         out("wrote $outPath (${bytes.size} bytes, ${doc.scene.size} elements, sha256 ${ContentHasher.sha256(bytes)})")
-        p.flag("render")?.let { renderTo(doc, File(it), requestOf(p)) }
-        return 0
+        return p.flag("render")?.let { renderTo(doc, File(it), requestOf(p)) } ?: 0
     }
 
     private fun requestOf(p: Parsed) = RenderRequest(
@@ -493,10 +495,20 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
 
 /** Runs one command against the process streams and returns its exit code; shared with the desktop `stelekit sketch` dispatch. */
 internal fun runSketchCli(args: List<String>): Int {
-    val code = SketchCli({ println(it) }, { System.err.print(it) }).run(args)
-    System.out.flush()
+    // UTF-8 whatever the locale: cron and agent shells often run under C, which would print `m²` as `m?`.
+    val stdout = utf8Stream(FileDescriptor.out)
+    val stderr = utf8Stream(FileDescriptor.err)
+    val code = SketchCli({ stdout.println(it) }, { stderr.print(it) }).run(args)
+    stdout.flush()
+    stderr.flush()
     return code
 }
+
+private fun utf8Stream(fd: FileDescriptor) = PrintStream(FileOutputStream(fd), true, "UTF-8")
+
+/** The CLI arguments when the desktop app was launched as `stelekit sketch ...`, else null (start the app). */
+internal fun sketchSubcommandArgs(args: Array<String>): List<String>? =
+    if (args.firstOrNull() == "sketch") args.drop(1) else null
 
 /** Entry point: `dev.stapler.stelekit.cli.SketchCliKt`. */
 fun main(args: Array<String>) {

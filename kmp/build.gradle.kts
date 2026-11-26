@@ -1169,7 +1169,7 @@ tasks.register<Test>("graphStats") {
     }
 }
 
-// Docs that `stelekit sketch skill|format|schema|grid-script` prints; same resource paths as Bazel's //docs:sketch_cli_docs.
+// Docs that `stelekit sketch skill|format|schema|grid-script` prints; same resource paths as Bazel's //:sketch_cli_docs.
 tasks.named<ProcessResources>("jvmProcessResources") {
     from(rootProject.projectDir) {
         include(
