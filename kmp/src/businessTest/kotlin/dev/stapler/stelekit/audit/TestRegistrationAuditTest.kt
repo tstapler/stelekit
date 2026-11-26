@@ -59,8 +59,10 @@ class TestRegistrationAuditTest {
     fun missingFromBuild(sources: Map<String, String>, buildText: String, moduleSuites: String = ""): List<String> =
         sources.filter { (path, text) -> path.startsWith("commonTest/") && isSketchV2TestFile(path) && hasTests(text) }
             .keys.filter { path ->
-                val name = path.substringAfterLast('/').removeSuffix(".kt")
-                !buildText.contains(path.removePrefix("commonTest/")) && !Regex("""\b$name::class\b""").containsMatchIn(moduleSuites)
+                val relative = path.removePrefix("commonTest/")
+                // Matched by fully qualified import: simple names repeat across packages (NoticeQueueTest).
+                val import = "import " + relative.removeSuffix(".kt").replace('/', '.')
+                !buildText.contains(relative) && moduleSuites.lineSequence().none { it.trim() == import }
             }.sorted()
 
     @Test
@@ -78,7 +80,12 @@ class TestRegistrationAuditTest {
             "commonTest/dev/stapler/stelekit/ui/sketch/v2/MissingTest.kt" to "@Test fun a() {}",
         )
         assertEquals(listOf("commonTest/dev/stapler/stelekit/ui/sketch/v2/MissingTest.kt"), missingFromBuild(common, build))
-        assertEquals(emptyList(), missingFromBuild(common, build, "KnownTest::class,\nMissingTest::class"))
+        val pkg = "import dev.stapler.stelekit"
+        assertEquals(emptyList(), missingFromBuild(common, build, "$pkg.ui.sketch.v2.MissingTest"))
+        assertEquals(
+            listOf("commonTest/dev/stapler/stelekit/ui/sketch/v2/MissingTest.kt"),
+            missingFromBuild(common, build, "$pkg.table.MissingTest\nMissingTest::class"),
+        )
     }
 
     @Test
