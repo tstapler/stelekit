@@ -235,9 +235,10 @@ object DimensionAnnotationEngine {
         val centreX = canvas.width / 2
         val centreY = canvas.height / 2
         val bodyBoxes = bodies.filter { it !is FrameElement }.map { AnnotationBody(it.id, screenBox(it, canvas), (it as? LineElement)?.let { l -> lineSegment(l, canvas) }) }
-        val authored = AuthoredDimensions.lines(bodies, canvas)
+        val authored = AuthoredDimensions(bodies)
+        val stated = authored.stated(canvas, format) { spansOf(it, canvas) }
         val ordered = candidates
-            .filter(AuthoredDimensions::isMeasured)
+            .filter(authored::isMeasured)
             .map { it to screenBox(it, canvas) }
             .sortedWith(compareBy({ hypot(it.second.centreX - centreX, it.second.centreY - centreY) }, { it.first.id.value }))
         val placed = ArrayList<AnnotationPlaced>()
@@ -249,7 +250,7 @@ object DimensionAnnotationEngine {
             val name = ElementNames.nameOf(element)
             var annotated = false
             for (span in spansOf(element, canvas)) {
-                if (AuthoredDimensions.states(authored, span)) continue
+                if (MeasureRef(element.id, span.label, span.tag) in stated) continue
                 val text = valueText(span.label, span.sixteenths, format, span.exact)
                 val (tw, th) = textSize(text, fontScale)
                 val extent = span.textExtent(tw, th)

@@ -8,6 +8,7 @@ package dev.stapler.stelekit.cli
 
 import arrow.core.Either
 import arrow.core.getOrElse
+import dev.stapler.stelekit.sketch.v2.scene.WallScene
 import dev.stapler.stelekit.sketch.v2.index.ElementBounds
 import dev.stapler.stelekit.sketch.v2.annotation.AuthoredDimensions
 import dev.stapler.stelekit.platform.image.ExifOrientationReader
@@ -568,7 +569,8 @@ internal class SketchSpecBuilder(private val root: JsonObject, private val baseD
         for ((labelId, room) in roomLabels) {
             val index = elements.indexOfFirst { it.id.value == labelId }
             val label = elements.getOrNull(index) as? TextElement ?: continue
-            val others = elements.filter { it.id.value != labelId && it.id.value != room.id && it.base.layerId.value != SketchLayers.DIMENSIONS }
+            val others = elements.filter { it.id.value != labelId && it.id.value != room.id }
+                .flatMap(::drawn)
                 .map { ElementBounds.geometry(it) }
                 // Whatever encloses the whole room is its surroundings, not something in the way.
                 .filterNot { it.minX <= room.x && it.minY <= room.y && it.maxX >= room.x + room.w && it.maxY >= room.y + room.h }
@@ -587,6 +589,13 @@ internal class SketchSpecBuilder(private val root: JsonObject, private val baseD
                 elements[index] = label.copy(x = u(spot.first), y = u(spot.second))
             }
         }
+    }
+
+    /** What [e] puts on the page: a door or window in a wall has no geometry of its own, it comes from the host. */
+    private fun drawn(e: SceneElement): List<SceneElement> {
+        if (e !is OpeningElement) return listOf(e)
+        val host = elements.firstOrNull { it.id == e.hostId } as? WallElement ?: return emptyList()
+        return WallScene.openingLines(host, e)
     }
 
     private fun labelIn(containerId: String, text: String, cx: Double, cy: Double, fs: Double, maxW: Double, maxH: Double, path: String) {

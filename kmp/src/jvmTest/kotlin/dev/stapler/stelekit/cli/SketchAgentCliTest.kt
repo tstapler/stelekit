@@ -532,6 +532,26 @@ MAP (coarse; north is up, each cell is about 2 5/8" wide; labels are truncated t
     }
 
     @Test
+    fun roomLabel_should_MoveClear_When_ADoorInAWallSwingsOverTheCentre() {
+        val doc = built(
+            """{"spec":1,"title":"Closet","shapes":[{"id":"room","x":0,"y":0,"w":"6'","h":"5'","label":"Closet","as":"walls"}],
+            "openings":[{"id":"door","type":"door","on":"room","wall":"south","offset":"1' 3\"","width":"3' 6\""}]}""",
+        )
+        val label = doc.element("room.label") as TextElement
+        assertTrue(label.y.value + label.height.value / 2 < 2.5 * 192, "label still under the swing at y=${label.y.value}")
+    }
+
+    @Test
+    fun aDoorElsewhere_should_NotPushALabelStraddlingTheOrigin() {
+        val label = built(
+            """{"spec":1,"title":"Den","shapes":[{"id":"den","x":0,"y":"-5'","w":"10'","h":"10'","label":"Den","as":"walls"},
+            {"id":"far","x":"40'","y":0,"w":"8'","h":"8'","as":"walls"}],
+            "openings":[{"id":"door","type":"door","on":"far","wall":"north","offset":"1'","width":"3'"}]}""",
+        ).element("den.label") as TextElement
+        assertEquals(0.0, label.y.value + label.height.value / 2, 0.01)
+    }
+
+    @Test
     fun roomLabel_should_StayCentred_When_NothingCoversIt() {
         val label = built(kitchen(""",{"id":"bin","role":"furniture","x":"1'","y":"1'","w":"1'","h":"1'"}""")).element("room.label") as TextElement
         assertEquals(7.0 * 192, label.x.value + label.width.value / 2, 0.01)
