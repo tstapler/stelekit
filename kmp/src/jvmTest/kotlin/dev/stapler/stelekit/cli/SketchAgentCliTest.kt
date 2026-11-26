@@ -544,7 +544,7 @@ MAP (coarse; north is up, each cell is about 2 5/8" wide; labels are truncated t
     @Test
     fun aDoorElsewhere_should_NotPushALabelStraddlingTheOrigin() {
         val label = built(
-            """{"spec":1,"title":"Den","shapes":[{"id":"den","x":0,"y":"-5'","w":"10'","h":"10'","label":"Den","as":"walls"},
+            """{"spec":1,"title":"Den","shapes":[{"id":"den","x":0,"y":"-5'","w":"4'","h":"10'","label":"Den","as":"walls"},
             {"id":"far","x":"40'","y":0,"w":"8'","h":"8'","as":"walls"}],
             "openings":[{"id":"door","type":"door","on":"far","wall":"north","offset":"1'","width":"3'"}]}""",
         ).element("den.label") as TextElement
