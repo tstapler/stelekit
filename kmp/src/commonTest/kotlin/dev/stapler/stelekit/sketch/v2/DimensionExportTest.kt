@@ -335,4 +335,12 @@ class DimensionExportTest {
         assertTrue(values(layered(circle, *mark("d", 480, 96, 1440, 96, "5' 0\"").toTypedArray())).isEmpty())
         assertEquals(setOf("room" to "7' 6\""), roomWith(mark("raw", 0, -384, 1920, -384, "1920")))
     }
+
+    @Test
+    fun anInwardMark_should_NotBeCreditedToADistantShape() {
+        val far = filledRectEl("far", 0, 9000, 1920, 960)
+        val shown = values(layered(bigRoom, far, *mark("in", 0, 384, 1920, 384).toTypedArray()))
+        assertTrue("far" to "10' 0\"" in shown, "$shown")
+        assertFalse("room" to "10' 0\"" in shown, "$shown")
+    }
 }

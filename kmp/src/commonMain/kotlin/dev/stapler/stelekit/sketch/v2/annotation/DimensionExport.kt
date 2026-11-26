@@ -222,7 +222,7 @@ object DimensionExport {
         val id = "$ID_PREFIX${d.elementId.value}.${d.kind.name.lowercase()}${if (d.tag.isEmpty()) "" else ".${d.tag}"}"
         val style = ElementStyle(strokeColor = ink, strokeWidth = d.strokeWidth, roughness = 0)
         val opacity = (d.alpha * FULL_OPACITY_PERCENT).toInt().coerceIn(0, FULL_OPACITY_PERCENT)
-        // One group per annotation marks it as a dimension, so a re-imported file is not annotated on top of itself.
+        // One group per annotation marks it as a dimension, so a re-imported file does not measure its strokes.
         fun base(suffix: String, s: ElementStyle = style) = ElementBase(ElementId("$id.$suffix"), layer, groupIds = listOf(GroupId(id)), style = s, opacity = opacity)
         val unit = { v: Double -> SceneUnit.of(v).getOrElse { SceneUnit.ZERO } }
         val lines = d.strokes.mapIndexed { i, s ->

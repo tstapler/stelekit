@@ -37,20 +37,23 @@ internal class AuthoredDimensions(private val bodies: List<SceneElement>) {
 
     /**
      * The measurements a mark already shows. A mark is a headed two-point arrow with a text in its group; it states the one
-     * measurement it is drawn beside whose value that text gives. Shapes it is outside of come before shapes it lies in (an
-     * adjacent room), then the nearest wins, then the larger one.
+     * measurement it is drawn beside whose value that text gives. Shapes it is just outside of come before shapes it lies in
+     * (an adjacent room), which come before distant ones; then the nearest wins, then the larger one. A mark drawn inward
+     * next to a same-sized neighbour is ambiguous and goes to the neighbour.
      */
     fun stated(canvas: AnnotationCanvas, format: LengthFormat, spansOf: (SceneElement) -> List<AnnotationSpan>): Set<MeasureRef> {
         val marks = arrows.filter { it.points.size == TWO_POINT_ARROW && (it.startArrowhead != Arrowhead.None || it.endArrowhead != Arrowhead.None) }
         if (marks.isEmpty()) return emptySet()
         val spans = bodies.filter(::isMeasured).flatMap { e -> spansOf(e).map { Candidate(MeasureRef(e.id, it.label, it.tag), it, writtenAs(it, format)) } }
         val slack = SLACK_UNITS * canvas.dpPerUnit
+        val near = NEAR_UNITS * canvas.dpPerUnit
+        fun tier(gap: Double) = if (gap < -slack) 1 else if (gap <= near) 0 else 2
         return marks.mapNotNullTo(HashSet()) { mark ->
             val shown = texts.filter { t -> t.base.groupIds.any { it in mark.base.groupIds } }.mapTo(HashSet()) { it.originalText.trim() }
             val (a, b) = mark.points.map { canvas.toScreenDp(it.x.value, it.y.value) }.map { AnnotationPoint(it.first, it.second) }
             spans.filter { c -> c.written.any { it in shown } }
                 .mapNotNull { c -> gapBeside(c.span, a, b, slack)?.let { c to it } }
-                .minWithOrNull(compareBy<Pair<Candidate, Double>>({ it.second < -slack }, { abs(it.second) }, { -it.first.span.reach }, { it.first.ref.element.value }))
+                .minWithOrNull(compareBy<Pair<Candidate, Double>>({ tier(it.second) }, { abs(it.second) }, { -it.first.span.reach }, { it.first.ref.element.value }))
                 ?.first?.ref
         }
     }
@@ -96,6 +99,8 @@ internal class AuthoredDimensions(private val bodies: List<SceneElement>) {
         const val OPENINGS_LAYER_ID = "openings"
 
         private const val SLACK_UNITS = 1.0
+        /** Six feet: how far outside a shape a mark still plainly belongs to it. */
+        private const val NEAR_UNITS = 1152.0
         private const val WHOLE_SLACK = 0.01
         private const val TWO_POINT_ARROW = 2
     }
