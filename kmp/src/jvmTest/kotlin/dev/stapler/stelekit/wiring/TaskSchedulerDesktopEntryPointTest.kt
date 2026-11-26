@@ -105,7 +105,7 @@ class TaskSchedulerDesktopEntryPointTest {
         }
     }
 
-    // Real-clock ceiling: the scheduler loop runs on its own real dispatcher and exposes no completion signal.
+    // Wall-clock ceiling: the loop is on a virtual scheduler pumped here, but the IO and composition it waits on are real.
     private fun awaitCondition(what: String, timeoutMs: Long = 30_000, condition: () -> Boolean) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (!condition()) {

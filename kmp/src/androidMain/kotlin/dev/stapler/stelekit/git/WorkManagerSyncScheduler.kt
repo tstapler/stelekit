@@ -67,8 +67,8 @@ class WorkManagerSyncScheduler(
 
     /**
      * Persists intent through the port: jitter and constraints come from [TaskSettingsStore] (the spec
-     * defaults when nothing is stored), the interval is the caller's. The adapter guards every WorkManager
-     * failure itself, so this never throws.
+     * defaults when nothing is stored), the interval is the caller's. WorkManager failures are logged by the
+     * adapter, not thrown; cancellation propagates.
      */
     @Deprecated("Use BackgroundTaskScheduler.apply(TaskKey(git-sync, graphId), config); kept for one release.")
     override suspend fun schedule(intervalMinutes: Int) {

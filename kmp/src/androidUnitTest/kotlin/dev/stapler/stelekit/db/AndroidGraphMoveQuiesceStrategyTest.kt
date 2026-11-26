@@ -314,9 +314,8 @@ class AndroidGraphMoveQuiesceStrategyTest {
         assertFalse(worktreeLock.isLocked, "release must free the worktree lock")
     }
 
-    // runBlocking: quiesce hops to Dispatchers.IO and blocks on real locks; virtual time cannot order it
     @Test
-    fun quiesce_should_CoalesceTriggers_AndNeverSetRerun_While_QuiesceLeaseHeld() = runBlocking {
+    fun quiesce_should_CoalesceTriggers_AndNeverSetRerun_While_QuiesceLeaseHeld() = runTest {
         val gate = RepoOpGate()
         val strategy = gatedStrategy(gate, newTarget(newQueue()) { emptyList() })
 
@@ -351,9 +350,8 @@ class AndroidGraphMoveQuiesceStrategyTest {
         assertTrue(fresh != null, "a fresh sync must acquire after the cancelled quiesce")
     }
 
-    // runBlocking: quiesce hops to Dispatchers.IO and blocks on real locks; virtual time cannot order it
     @Test
-    fun quiesce_should_ReleaseBothOnRelease_When_DrainReturnsError() = runBlocking {
+    fun quiesce_should_ReleaseBothOnRelease_When_DrainReturnsError() = runTest {
         val gate = RepoOpGate()
         val queue = newQueue().also { it.enqueue("pages/foo.md") }
         val flush = FailingFlush(queue) { DomainError.GitError.WorkingTreeConcurrentEditDetected(it) }
@@ -368,9 +366,8 @@ class AndroidGraphMoveQuiesceStrategyTest {
         assertFalse(GitWorktreeLocks.lockFor(target.shadowKey).isLocked)
     }
 
-    // runBlocking: quiesce hops to Dispatchers.IO and blocks on real locks; virtual time cannot order it
     @Test
-    fun quiesce_should_UseNoGate_When_GateKeyUnresolvable() = runBlocking {
+    fun quiesce_should_UseNoGate_When_GateKeyUnresolvable() = runTest {
         val gate = RepoOpGate()
         val strategy = AndroidGraphMoveQuiesceStrategy(
             gitSyncBusyCounter = GitSyncBusyCounter(),

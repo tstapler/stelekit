@@ -52,7 +52,7 @@ class RepoGateSharedEntryPointTest {
 
     @After
     fun tearDown() {
-        // runBlocking: quiesce hops to Dispatchers.IO and blocks on real locks; virtual time cannot order it
+        // runBlocking: non-suspend JUnit @After; bridges the suspend fixture close
         fixture?.let { runBlocking { it.close() } }
         dataDir.deleteRecursively()
     }

@@ -211,7 +211,7 @@ class TaskRunLogRowsTest {
 
     @Test
     fun recentResult_should_beReadFailedWhileRecentStaysEmpty_When_SettingsReadThrows() = runTest {
-        append(record(now - minute))
+        runLog.append(record(now - minute))
         settings.failReads = true
         assertTrue(runLog.recentResult(gitKey) is TaskRunReadResult.ReadFailed)
         assertEquals(emptyList(), runLog.recent(gitKey))

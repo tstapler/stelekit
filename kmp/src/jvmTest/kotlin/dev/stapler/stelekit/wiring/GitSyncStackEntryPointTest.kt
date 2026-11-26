@@ -125,7 +125,7 @@ class GitSyncStackEntryPointTest {
         runBlocking { configRepo.saveConfig(sampleConfig.copy(graphId = graphId, pollIntervalMinutes = minutes)) }
     }
 
-    /** Pumps Compose frames and the virtual scheduler until [condition] holds, failing at [timeoutMs]. */
+    /** Pumps Compose frames and the virtual scheduler until [condition] holds, failing at [timeoutMs] (wall clock: the IO is real). */
     private fun awaitCondition(what: String, timeoutMs: Long = 30_000, condition: () -> Boolean) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (!condition()) {

@@ -368,7 +368,7 @@ class GitSyncServiceSingleFlightTest {
         assertEquals(emptyList(), git.calls)
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
+    // runBlocking: the heartbeat runs on a real-dispatcher scope; its beat and the body delay are real time
     @Test
     fun heartbeat_should_TouchWhileRunningAndStopBeforeTheRecordEnds() = runBlocking<Unit> {
         val events = java.util.concurrent.CopyOnWriteArrayList<String>()

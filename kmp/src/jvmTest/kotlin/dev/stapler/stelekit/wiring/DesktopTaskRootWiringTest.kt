@@ -96,7 +96,8 @@ class DesktopTaskRootWiringTest {
         }
     }
 
-    private fun awaitCondition(what: String, timeoutMs: Long = 30_000, condition: () -> Boolean) { // real clock: the scheduler runs on its own dispatcher, no completion signal
+    // Wall-clock ceiling: the loop is on a virtual scheduler pumped here, but the IO and composition it waits on are real.
+    private fun awaitCondition(what: String, timeoutMs: Long = 30_000, condition: () -> Boolean) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (!condition()) {
             if (System.nanoTime() > deadline) fail("timed out waiting for $what")

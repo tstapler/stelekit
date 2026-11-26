@@ -234,6 +234,7 @@ actual class DriverFactory actual constructor() {
                 }
             },
         )
+        // runBlocking: same non-suspend constraint; the driver must not be returned unmigrated.
         runBlocking { TelemetryMigrationRunner.applyAll(driver) }
         return driver
     }

@@ -113,7 +113,7 @@ class ScheduledSyncOriginE2ETest {
         }
     }
 
-    // Real-clock ceiling: real git processes and scheduler threads give no virtual-time or completion signal.
+    // Wall-clock ceiling: the loop is on a virtual scheduler pumped here, but the git and IO work it waits on are real.
     private fun awaitCondition(what: String, timeoutMs: Long = 60_000, condition: () -> Boolean) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (!condition()) {
