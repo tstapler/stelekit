@@ -14,6 +14,10 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.model.StorageMoveOperation
 import kotlin.test.Test
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CompletableDeferred
+import kotlin.test.assertFalse
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
@@ -275,4 +279,38 @@ class GraphRelocationCoordinatorLinkTest : RelocationCoordinatorTestSupport() {
 
         graphManager.shutdown()
     }
+
+    @Test
+    fun `link should ClearFlag When CancelledDuringRelease`() = runBlocking {
+        val graphManager = newGraphManager()
+        graphManager.openGraph("/test/link-cancel-release-${System.nanoTime()}")
+        val graphId = graphManager.getActiveGraphId()!!
+        val enteredRelease = CompletableDeferred<Unit>()
+        val finishRelease = CompletableDeferred<Unit>()
+        val quiesce = FakeGraphMoveQuiesceStrategy(throwOnQuiesce = IllegalStateException("boom")) {
+            enteredRelease.complete(Unit)
+            finishRelease.await()
+        }
+        val coordinator = GraphRelocationCoordinator(
+            graphManager,
+            FakeRelocationFileSystem(),
+            quiesce,
+            hostLinkStep = FakeHostLinkStep(),
+        )
+        val operation = StorageMoveOperation.Link(
+            graphId = graphId.value,
+            source = StorageLocation.AppOwned(graphId.value),
+            destination = StorageLocation.HostFolder(graphId.value, "Documents"),
+        )
+
+        val collectJob = launch { coordinator.link(operation).collect { } }
+        withTimeout(5_000) { enteredRelease.await() } // real-clock hang guard: awaits real threads
+        collectJob.cancel()
+        finishRelease.complete(Unit)
+        collectJob.join()
+
+        assertFalse(MoveInProgressFlag.isMoveInProgress(graphId.value))
+        graphManager.shutdown()
+    }
 }
+

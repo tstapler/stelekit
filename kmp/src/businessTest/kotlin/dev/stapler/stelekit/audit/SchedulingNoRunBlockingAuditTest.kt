@@ -7,12 +7,19 @@ import dev.stapler.stelekit.wiring.WiringAudit
 import dev.stapler.stelekit.wiring.WiringInputs
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 /** Production scheduling and worker code must not hold a WorkManager or main thread with `runBlocking`. */
 class SchedulingNoRunBlockingAuditTest {
     private val scoped = Regex(
-        """(androidMain|commonMain)/.*/(jobs/schedule/.*|git/(GitSyncWorker|WorkManagerSyncScheduler|BackgroundSyncScheduler)[^/]*|platform/ml/DepthModelDownload[^/]*)""",
+        """(androidMain|commonMain|jvmCommonMain)/.*/(jobs/schedule/.*""" +
+            """|git/(GitSync|GitCloneWorker|AndroidGitCloneWorkerLauncher|AndroidColdPathRunner|ColdSyncRunner|ScheduledSyncRunner""" +
+            """|PeriodicSyncDriver|WorkManagerSyncScheduler|BackgroundSyncScheduler)[^/]*""" +
+            """|platform/ml/(DepthModelDownload|ModelDownload)[^/]*|db/GraphMoveQuiesceStrategy[^/]*)""",
+    )
+
+    private val mustBeCovered = listOf(
+        "TaskWorker.kt", "ScheduleStartup.kt", "WorkManagerSyncScheduler.kt", "GitCloneWorker.kt", "GitSyncTask.kt",
+        "ColdSyncRunner.kt", "DepthModelDownloadWorker.kt", "ModelDownloadTask.kt", "GraphMoveQuiesceStrategy.android.kt",
     )
 
     private fun violations(sources: Map<String, String>): List<String> = sources
@@ -33,7 +40,8 @@ class SchedulingNoRunBlockingAuditTest {
     @Test
     fun noProductionSchedulingSourceUsesRunBlocking() {
         val sources = WiringInputs.productionSources
-        assertTrue(sources.keys.count(scoped::matches) > 10, "scope matched too few files, so the audit would pass vacuously")
+        val covered = sources.keys.filter(scoped::matches).map { it.substringAfterLast('/') }.toSet()
+        assertEquals(emptyList(), mustBeCovered - covered, "scope misses these files, so the audit would pass vacuously")
         assertEquals(emptyList(), violations(sources))
     }
 }
