@@ -24,6 +24,15 @@ class Stelekit < Formula
       # Wrapper script — sets APPIMAGE_EXTRACT_AND_RUN=1 so AppImage works without FUSE
       (bin/"stelekit").write <<~SH
         #!/bin/sh
+        # Extract-and-run shares one directory per version and deletes it on exit, so headless
+        # `sketch` calls get their own, or they would delete a running app's files.
+        if [ "$1" = "sketch" ]; then
+          dir=$(mktemp -d) || exit 2
+          trap 'rm -rf "$dir"' EXIT
+          trap 'exit 130' INT TERM HUP
+          TMPDIR="$dir" APPIMAGE_EXTRACT_AND_RUN=1 "#{libexec}/stelekit.AppImage" "$@"
+          exit $?
+        fi
         exec env APPIMAGE_EXTRACT_AND_RUN=1 "#{libexec}/stelekit.AppImage" "$@"
       SH
       chmod 0755, bin/"stelekit"

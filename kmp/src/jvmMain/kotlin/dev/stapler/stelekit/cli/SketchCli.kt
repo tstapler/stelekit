@@ -27,10 +27,13 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.io.File
+import java.io.FileDescriptor
+import java.io.FileOutputStream
+import java.io.PrintStream
 import kotlin.system.exitProcess
 
 /**
- * `sketch-cli`: headless tools for reading, rendering and authoring SteleKit v2 sketch sheets without the app. Everything
+ * `stelekit sketch` (and the dev wrapper `scripts/sketch-cli`): headless tools for reading, rendering and authoring SteleKit v2 sketch sheets without the app. Everything
  * runs through the app's own codec, renderer and sidecar writer. Output goes to [out] (reports) and [err] (usage problems);
  * exit code 0 is success, 1 means the input has errors the caller should fix, 2 means a usage or file problem.
  */
@@ -42,6 +45,7 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
             return if (command == null) EXIT_USAGE else 0
         }
         val parsed = Parsed.of(args.drop(1)) ?: return usage("could not read the arguments; flags are --name value pairs")
+        BUNDLED_DOCS[command]?.let { return printBundled(it) }
         return try {
             when (command) {
                 "build" -> build(parsed)
@@ -59,7 +63,7 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
         } catch (e: UsageProblem) {
             usage(e.message.orEmpty())
         } catch (e: java.io.IOException) {
-            err("sketch-cli: file problem: ${e.message}\n")
+            err("stelekit sketch: file problem: ${e.message}\n")
             EXIT_USAGE
         }
     }
@@ -98,9 +102,20 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
     }
 
     private fun usage(message: String): Int {
-        err("sketch-cli: $message\n")
+        err("stelekit sketch: $message\n")
         err(USAGE)
         return EXIT_USAGE
+    }
+
+    /** Prints a doc packaged with this build, so the instructions always match the binary that runs them. */
+    internal fun printBundled(path: String): Int {
+        val stream = SketchCli::class.java.classLoader.getResourceAsStream(path)
+        if (stream == null) {
+            err("stelekit sketch: this build is missing $path\n")
+            return EXIT_USAGE
+        }
+        out(stream.use { it.readBytes() }.decodeToString().trimEnd())
+        return 0
     }
 
     private fun read(file: File): ByteArray {
@@ -188,8 +203,7 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
         val bytes = (SheetCodecV2.encode(doc) as? Either.Right)?.value ?: run { out("ERROR   the built sheet could not be encoded"); return 1 }
         File(outPath).also { it.absoluteFile.parentFile?.mkdirs() }.writeBytes(bytes)
         out("wrote $outPath (${bytes.size} bytes, ${doc.scene.size} elements, sha256 ${ContentHasher.sha256(bytes)})")
-        p.flag("render")?.let { renderTo(doc, File(it), requestOf(p)) }
-        return 0
+        return p.flag("render")?.let { renderTo(doc, File(it), requestOf(p)) } ?: 0
     }
 
     private fun requestOf(p: Parsed) = RenderRequest(
@@ -437,8 +451,20 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
         const val EXIT_USAGE = 2
         private val HEX_COLOR = Regex("#[0-9a-fA-F]{6}")
 
+        private val BUNDLED_DOCS = mapOf(
+            "skill" to "docs/agents/sketch-from-photo/SKILL.md",
+            "format" to "docs/reference/sketch-format-v2.md",
+            "schema" to "docs/reference/sketch-scene-v2.schema.json",
+            "grid-script" to "docs/agents/sketch-from-photo/grid.py",
+        )
+
         val USAGE = """
-            |Usage: sketch-cli <command> [args]
+            |Usage: stelekit sketch <command> [args]
+            |
+            |  skill                    print the agent workflow (read this first)
+            |  format                   print the sheet and spec format reference
+            |  schema                   print the sheet JSON Schema
+            |  grid-script              print grid.py, which overlays a labelled pixel grid on a photo (needs Pillow)
             |
             |  build <spec.json> --out <sheet.v2.json> [--render <x.svg|x.png>] [--dimensions|--no-dimensions] [--width N]
             |        expand an authoring spec (rooms, walls, doors, labels, dimensions; feet-inches; photo calibration) into a valid sheet
@@ -467,9 +493,24 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
     }
 }
 
+/** Runs one command against the process streams and returns its exit code; shared with the desktop `stelekit sketch` dispatch. */
+internal fun runSketchCli(args: List<String>): Int {
+    // UTF-8 whatever the locale: cron and agent shells often run under C, which would print `m²` as `m?`.
+    val stdout = utf8Stream(FileDescriptor.out)
+    val stderr = utf8Stream(FileDescriptor.err)
+    val code = SketchCli({ stdout.println(it) }, { stderr.print(it) }).run(args)
+    stdout.flush()
+    stderr.flush()
+    return code
+}
+
+private fun utf8Stream(fd: FileDescriptor) = PrintStream(FileOutputStream(fd), true, "UTF-8")
+
+/** The CLI arguments when the desktop app was launched as `stelekit sketch ...`, else null (start the app). */
+internal fun sketchSubcommandArgs(args: Array<String>): List<String>? =
+    if (args.firstOrNull() == "sketch") args.drop(1) else null
+
 /** Entry point: `dev.stapler.stelekit.cli.SketchCliKt`. */
 fun main(args: Array<String>) {
-    val code = SketchCli({ println(it) }, { System.err.print(it) }).run(args.toList())
-    System.out.flush()
-    exitProcess(code)
+    exitProcess(runSketchCli(args.toList()))
 }
