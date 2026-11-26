@@ -209,21 +209,14 @@ class InlineParser(private val source: CharSequence) {
             currentToken = savedToken
             return TextNode("!")
         }
-        advance() // consume (
-
-        val urlSb = StringBuilder()
-        while (currentToken.type != TokenType.R_PAREN && currentToken.type != TokenType.EOF && currentToken.type != TokenType.NEWLINE) {
-            urlSb.append(currentToken.text(source))
-            advance()
-        }
-        if (currentToken.type != TokenType.R_PAREN) {
+        val url = consumeLinkDestination()
+        if (url == null) {
             lexer.restoreState(savedLexerState)
             currentToken = savedToken
             return TextNode("!")
         }
-        advance() // consume )
 
-        return ImageNode(alt = altSb.toString(), url = urlSb.toString())
+        return ImageNode(alt = altSb.toString(), url = url)
     }
 
     private fun parseAutoLink(): InlineNode {
@@ -330,16 +323,8 @@ class InlineParser(private val source: CharSequence) {
         if (currentToken.type == TokenType.R_BRACKET) {
             advance() // consume ]
             if (currentToken.type == TokenType.L_PAREN) {
-                advance() // consume (
-                val urlSb = StringBuilder()
-                while (currentToken.type != TokenType.R_PAREN && currentToken.type != TokenType.EOF && currentToken.type != TokenType.NEWLINE) {
-                    urlSb.append(currentToken.text(source))
-                    advance()
-                }
-                if (currentToken.type == TokenType.R_PAREN) {
-                    advance() // consume )
-                    return UrlLinkNode(url = urlSb.toString(), text = labelNodes)
-                }
+                val url = consumeLinkDestination()
+                if (url != null) return UrlLinkNode(url = url, text = labelNodes)
             }
         }
         // No match — backtrack
@@ -349,9 +334,9 @@ class InlineParser(private val source: CharSequence) {
     }
 
     /**
-     * Scans forward from [currentToken] for `] ( ... )`, using raw token-type checks only
-     * (no recursive parsing), then restores lexer/token state. Bounded O(remaining tokens)
-     * per call with no fan-out, unlike the real label parse it guards.
+     * Scans forward from [currentToken] for `] ( ... )` without recursive parsing, then
+     * restores lexer/token state. Linear in the remaining line per call with no fan-out,
+     * unlike the real label parse it guards.
      */
     private fun hasMatchingLabelClose(): Boolean {
         val saved = lexer.saveState()
@@ -363,18 +348,50 @@ class InlineParser(private val source: CharSequence) {
         var found = false
         if (currentToken.type == TokenType.R_BRACKET) {
             advance()
-            if (currentToken.type == TokenType.L_PAREN) {
-                advance()
-                while (currentToken.type != TokenType.R_PAREN && currentToken.type != TokenType.EOF && currentToken.type != TokenType.NEWLINE) {
-                    advance()
-                }
-                found = currentToken.type == TokenType.R_PAREN
-            }
+            found = currentToken.type == TokenType.L_PAREN && linkDestinationEnd(currentToken.end) >= 0
         }
 
         lexer.restoreState(saved)
         currentToken = savedToken
         return found
+    }
+
+    /**
+     * With [currentToken] on the `(` opening a link destination, consumes through its closing
+     * paren and returns the destination, or null (consuming nothing) if it is never closed.
+     */
+    private fun consumeLinkDestination(): String? {
+        val start = currentToken.end
+        val end = linkDestinationEnd(start)
+        if (end < 0) return null
+        lexer.restoreState(Lexer.State(end + 1, false))
+        advance()
+        return source.substring(start, end)
+    }
+
+    /**
+     * Index of the `)` closing a destination that starts at [from], or -1. Scans characters
+     * because the lexer merges `))` into one token. Balanced parens belong to the URL. If they
+     * never balance, or a space follows a nested pair and no quoted title does, the first `)`
+     * closes it, so a stray `:)` later in the line cannot swallow the text between.
+     */
+    private fun linkDestinationEnd(from: Int): Int {
+        var depth = 0
+        var firstClose = -1
+        var i = from
+        while (i < source.length && source[i] != '\n') {
+            if (source[i] == '(') {
+                depth++
+            } else if (source[i] == ')') {
+                if (depth == 0) return i
+                depth--
+                if (firstClose < 0) firstClose = i
+            } else if (source[i] == ' ' && firstClose >= 0 && source.getOrNull(i + 1) != '"') {
+                return firstClose
+            }
+            i++
+        }
+        return firstClose
     }
 
     private fun parseBlockRef(_token: Token): InlineNode {

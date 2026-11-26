@@ -170,3 +170,15 @@ Adding two more token-type checks to tight loops has negligible cost — O(1) co
 | Verify block-ref regression | 15 min |
 | Table-cell integration smoke test | 1h |
 | **Total** | **~3.5h** |
+
+---
+
+## Revision during implementation (supersedes Tasks 1, 2 and 4's premise)
+
+Checked against the code before implementing:
+
+- The 8 `(BUG P0)` tests already passed on the base commit (`InlineLinksSpec`: 36 tests, 0 failures). Only their markers were stale.
+- The `BLOCK_REF_CLOSE` push-back in Tasks 1-2 closes the URL at the first `)`, so `.../Foo_(bar)` stays truncated. Observed before the fix: `[W](https://x.org/Foo_(bar)_baz)` gave url `https://x.org/Foo_(bar`.
+- Replacement: one character scan for the matching `)` (`InlineParser.linkDestinationEnd`), shared by the guard, links and images (same loop, same bug). If parens never balance on the line, the first `)` closes, as before. No `Lexer` change.
+- "Root cause 3" in research.md (double advance in the label loop) is not a bug: it is the same advance-then-`parsePrefix` convention `parseExpression` uses.
+- Not covered: `[label](((block-uuid)))` is not parsed as a link, before or after this change.
