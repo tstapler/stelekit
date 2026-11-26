@@ -563,4 +563,15 @@ MAP (coarse; north is up, each cell is about 2 5/8" wide; labels are truncated t
         val result = outcome(kitchen(""",{"id":"slab","role":"furniture","x":"6\"","y":"6\"","w":"13'","h":"10'"}"""))
         assertTrue(result.issues.warnings.any { "no clear spot" in it.toString() }, result.issues.warnings.joinToString())
     }
+
+    @Test
+    fun roomLabel_should_MoveClear_When_ADimensionMarkRunsThroughTheCentre() {
+        val doc = built(
+            """{"spec":1,"title":"Marked","shapes":[{"id":"room","x":0,"y":0,"w":"14'","h":"11'","label":"Kitchen"}],
+            "dimensions":[{"id":"mid","from":[0,"5' 6\""],"to":["14'","5' 6\""],"offset":0}]}""",
+        )
+        val label = doc.element("room.label") as TextElement
+        val line = 5.5 * 192
+        assertTrue(label.y.value > line || label.y.value + label.height.value < line, "label still on the mark at y=${label.y.value}")
+    }
 }
