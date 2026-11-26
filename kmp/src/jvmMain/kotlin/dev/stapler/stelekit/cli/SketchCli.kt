@@ -108,7 +108,7 @@ internal class SketchCli(private val out: (String) -> Unit, private val err: (St
     }
 
     /** Prints a doc packaged with this build, so the instructions always match the binary that runs them. */
-    private fun printBundled(path: String): Int {
+    internal fun printBundled(path: String): Int {
         val stream = SketchCli::class.java.classLoader.getResourceAsStream(path)
         if (stream == null) {
             err("stelekit sketch: this build is missing $path\n")

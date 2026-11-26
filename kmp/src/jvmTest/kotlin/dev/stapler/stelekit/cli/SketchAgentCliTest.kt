@@ -71,6 +71,24 @@ class SketchAgentCliTest {
     }
 
     @Test
+    fun `the process entry point returns the command's exit code`() {
+        assertEquals(0, runSketchCli(listOf("help")))
+        assertEquals(SketchCli.EXIT_USAGE, runSketchCli(listOf("nope")))
+    }
+
+    @Test
+    fun `a build missing a doc or hitting a file problem says so`() {
+        val err = StringBuilder()
+        assertEquals(SketchCli.EXIT_USAGE, SketchCli({}, { err.append(it) }).printBundled("docs/nope.md"))
+        assertTrue("missing docs/nope.md" in err, err.toString())
+        val dir = tempDir()
+        val sheet = File(dir, "room.v2.json").apply { writeBytes(encode(built(ROOM_SPEC))) }
+        val run = cli("canonicalize", sheet.path, "--out", dir.path)
+        assertEquals(SketchCli.EXIT_USAGE, run.code, run.out + run.err)
+        assertTrue("file problem" in run.err, run.err)
+    }
+
+    @Test
     fun `build fails when its render fails`() {
         val dir = tempDir()
         val spec = File(dir, "room.spec.json").apply { writeText(ROOM_SPEC) }
