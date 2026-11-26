@@ -11,6 +11,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import dev.stapler.stelekit.model.EffectiveNotesPath
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.image.ImageTier
+import dev.stapler.stelekit.platform.image.ImageDerivativePaths
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -102,8 +103,14 @@ class TieredImageModelTest {
     @Test
     fun `thumbnail tier waits for a generated thumbnail instead of loading the original`() {
         fs.files["/graph/assets/thumb.png"] = png(600, 400)
+        // Hold the thumbnail lookup so "pending" cannot race the background generation.
+        val gate = CountDownLatch(1)
+        fs.gate = gate
+        fs.blockedPath = ImageDerivativePaths.pathFor(graph, "/graph/assets/thumb.png", ImageTier.THUMBNAIL)
         val state = modelFor("../assets/thumb.png", ImageTier.THUMBNAIL)
+        rule.waitForIdle()
         assertNull(state.value.model, "original must not be handed to Coil while the thumbnail is pending")
+        gate.countDown()
 
         rule.waitUntil(timeoutMillis = 10_000) { state.value.model != null }
         assertTrue(assertNotNull(state.value.model).endsWith(".thumb.jpg"), state.value.toString())
