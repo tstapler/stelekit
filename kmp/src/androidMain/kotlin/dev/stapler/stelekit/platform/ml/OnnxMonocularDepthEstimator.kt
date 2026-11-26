@@ -41,7 +41,7 @@ import java.nio.FloatBuffer
  */
 class OnnxMonocularDepthEstimator(
     private val context: Context,
-    scheduler: BackgroundTaskScheduler,
+    scheduler: BackgroundTaskScheduler?,
 ) : MonocularDepthEstimator, DownloadableDepthModel {
 
     @Volatile private var ortEnv: OrtEnvironment? = null
