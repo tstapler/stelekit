@@ -14,6 +14,7 @@ import dev.stapler.stelekit.sketch.v2.render.TextLine
 import dev.stapler.stelekit.sketch.v2.scene.ElementBase
 import dev.stapler.stelekit.sketch.v2.scene.ElementId
 import dev.stapler.stelekit.sketch.v2.scene.ElementStyle
+import dev.stapler.stelekit.sketch.v2.scene.GroupId
 import dev.stapler.stelekit.sketch.v2.scene.Layer
 import dev.stapler.stelekit.sketch.v2.scene.LayerId
 import dev.stapler.stelekit.sketch.v2.scene.LineElement
@@ -221,7 +222,8 @@ object DimensionExport {
         val id = "$ID_PREFIX${d.elementId.value}.${d.kind.name.lowercase()}${if (d.tag.isEmpty()) "" else ".${d.tag}"}"
         val style = ElementStyle(strokeColor = ink, strokeWidth = d.strokeWidth, roughness = 0)
         val opacity = (d.alpha * FULL_OPACITY_PERCENT).toInt().coerceIn(0, FULL_OPACITY_PERCENT)
-        fun base(suffix: String, s: ElementStyle = style) = ElementBase(ElementId("$id.$suffix"), layer, style = s, opacity = opacity)
+        // One group per annotation marks it as a dimension, so a re-imported file is not annotated on top of itself.
+        fun base(suffix: String, s: ElementStyle = style) = ElementBase(ElementId("$id.$suffix"), layer, groupIds = listOf(GroupId(id)), style = s, opacity = opacity)
         val unit = { v: Double -> SceneUnit.of(v).getOrElse { SceneUnit.ZERO } }
         val lines = d.strokes.mapIndexed { i, s ->
             LineElement(base("s$i"), listOf(ScenePoint(unit(s.a.x), unit(s.a.y)), ScenePoint(unit(s.b.x), unit(s.b.y))))

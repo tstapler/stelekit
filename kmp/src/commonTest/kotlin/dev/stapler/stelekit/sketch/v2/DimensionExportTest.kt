@@ -312,4 +312,27 @@ class DimensionExportTest {
         val symbol = values(layered(bigRoom, gap, leaf)).filter { it.first != "room" }
         assertEquals(listOf("gap" to "3' 0\""), symbol)
     }
+
+    @Test
+    fun aMarkInsideANeighbour_should_StillStateTheShapeItIsOutsideOf() {
+        val under = filledRectEl("under", 0, 1440, 1920, 960)
+        val beneath = values(layered(bigRoom, under, *mark("n", 0, 1056, 1920, 1056).toTypedArray()))
+        assertFalse("under" to "10' 0\"" in beneath, "$beneath")
+        assertTrue("room" to "10' 0\"" in beneath, "$beneath")
+    }
+
+    @Test
+    fun exportedAnnotations_should_NotBeAnnotatedAgain() {
+        val scene = room()
+        val first = DimensionExport.layout(scene)
+        val written = DimensionExport.withElements(scene, first, ExportInk.DARK)
+        assertEquals(first.map { it.text }.sorted(), DimensionExport.layout(written).map { it.text }.sorted())
+    }
+
+    @Test
+    fun aCirclesOrADiagramsMark_should_NotBeRepeated() {
+        val circle = EllipseElement(ElementBase(ElementId("rug")), su(960), su(960), su(480), su(480))
+        assertTrue(values(layered(circle, *mark("d", 480, 96, 1440, 96, "5' 0\"").toTypedArray())).isEmpty())
+        assertEquals(setOf("room" to "7' 6\""), roomWith(mark("raw", 0, -384, 1920, -384, "1920")))
+    }
 }

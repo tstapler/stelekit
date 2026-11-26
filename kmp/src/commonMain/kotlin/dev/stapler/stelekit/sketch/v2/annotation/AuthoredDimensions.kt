@@ -13,7 +13,7 @@ import dev.stapler.stelekit.sketch.v2.scene.TextElement
 import dev.stapler.stelekit.units.LengthFormat
 import kotlin.math.abs
 import kotlin.math.hypot
-import kotlin.math.max
+import kotlin.math.roundToLong
 
 /** Which computed annotation: an element's measurement, and for a wall which segment. */
 internal data class MeasureRef(val element: ElementId, val kind: MeasureKind, val tag: String)
@@ -24,7 +24,8 @@ internal data class MeasureRef(val element: ElementId, val kind: MeasureKind, va
  */
 internal class AuthoredDimensions(private val bodies: List<SceneElement>) {
     private val arrows = bodies.filterIsInstance<ArrowElement>().filter { it.base.layerId.value == DimensionExport.LAYER_ID }
-    private val markGroups = arrows.flatMapTo(HashSet()) { it.base.groupIds }
+    private val texts = bodies.filterIsInstance<TextElement>().filter { it.base.layerId.value == DimensionExport.LAYER_ID }
+    private val markGroups = (arrows + texts).flatMapTo(HashSet()) { it.base.groupIds }
     private val boxedOpenings = bodies.filter { it is RectElement && it.base.layerId.value == OPENINGS_LAYER_ID }.flatMapTo(HashSet()) { it.base.groupIds }
 
     /** False for the parts of a dimension mark, and for the strokes of a door or window symbol whose box gives its width. */
@@ -36,26 +37,42 @@ internal class AuthoredDimensions(private val bodies: List<SceneElement>) {
 
     /**
      * The measurements a mark already shows. A mark is a headed two-point arrow with a text in its group; it states the one
-     * measurement it is drawn beside whose value that text gives, the nearest shape winning (the larger one on a tie).
+     * measurement it is drawn beside whose value that text gives. Shapes it is outside of come before shapes it lies in (an
+     * adjacent room), then the nearest wins, then the larger one.
      */
     fun stated(canvas: AnnotationCanvas, format: LengthFormat, spansOf: (SceneElement) -> List<AnnotationSpan>): Set<MeasureRef> {
         val marks = arrows.filter { it.points.size == TWO_POINT_ARROW && (it.startArrowhead != Arrowhead.None || it.endArrowhead != Arrowhead.None) }
         if (marks.isEmpty()) return emptySet()
-        val texts = bodies.filterIsInstance<TextElement>().filter { it.base.layerId.value == DimensionExport.LAYER_ID }
-        val spans = bodies.filter(::isMeasured).flatMap { e -> spansOf(e).map { MeasureRef(e.id, it.label, it.tag) to it } }
+        val spans = bodies.filter(::isMeasured).flatMap { e -> spansOf(e).map { Candidate(MeasureRef(e.id, it.label, it.tag), it, writtenAs(it, format)) } }
         val slack = SLACK_UNITS * canvas.dpPerUnit
         return marks.mapNotNullTo(HashSet()) { mark ->
             val shown = texts.filter { t -> t.base.groupIds.any { it in mark.base.groupIds } }.mapTo(HashSet()) { it.originalText.trim() }
             val (a, b) = mark.points.map { canvas.toScreenDp(it.x.value, it.y.value) }.map { AnnotationPoint(it.first, it.second) }
-            spans.filter { (_, span) -> listOf(format, LengthFormat.FEET_INCHES).any { AnnotationText.value(span.label, span.sixteenths, it, span.exact) in shown } }
-                .mapNotNull { (ref, span) -> gapBeside(span, a, b, slack)?.let { Triple(ref, it, span.reach) } }
-                .minWithOrNull(compareBy<Triple<MeasureRef, Double, Double>>({ it.second }, { -it.third }, { it.first.element.value }))
-                ?.first
+            spans.filter { c -> c.written.any { it in shown } }
+                .mapNotNull { c -> gapBeside(c.span, a, b, slack)?.let { c to it } }
+                .minWithOrNull(compareBy<Pair<Candidate, Double>>({ it.second < -slack }, { abs(it.second) }, { -it.first.span.reach }, { it.first.ref.element.value }))
+                ?.first?.ref
         }
     }
 
+    private class Candidate(val ref: MeasureRef, val span: AnnotationSpan, val written: Set<String>)
+
+    /** How a mark may write [span]'s value: as the annotation would, in feet and inches, or as a diagram's bare number. */
+    private fun writtenAs(span: AnnotationSpan, format: LengthFormat): Set<String> {
+        // A circle's mark gives the diameter without the symbol.
+        val kind = if (span.label == MeasureKind.Diameter) MeasureKind.Length else span.label
+        val written = hashSetOf<String>()
+        for (f in listOf(format, LengthFormat.FEET_INCHES)) {
+            written += AnnotationText.value(kind, span.sixteenths, f, span.exact)
+            written += AnnotationText.value(span.label, span.sixteenths, f, span.exact)
+        }
+        val whole = span.exact.roundToLong()
+        if (abs(span.exact - whole) < WHOLE_SLACK) written += whole.toString()
+        return written
+    }
+
     /**
-     * How far outside the shape the line [a]-[b] runs, or null unless it is [span] moved sideways: square to it, or straight
+     * How far outside the shape the line [a]-[b] runs (negative inside it), or null unless it is [span] moved sideways: square to it, or straight
      * across (up or down for a mostly horizontal span), which is how `build` offsets a mark.
      */
     private fun gapBeside(span: AnnotationSpan, a: AnnotationPoint, b: AnnotationPoint, slack: Double): Double? {
@@ -71,7 +88,7 @@ internal class AuthoredDimensions(private val bodies: List<SceneElement>) {
         val square = abs(ox * dx + oy * dy) / length <= slack
         val straightAcross = if (abs(dx) >= abs(dy)) abs(ox) <= slack else abs(oy) <= slack
         if (!square && !straightAcross) return null
-        return max(0.0, abs(ox * dy - oy * dx) / length - span.reach)
+        return abs(ox * dy - oy * dx) / length - span.reach
     }
 
     companion object {
@@ -79,6 +96,7 @@ internal class AuthoredDimensions(private val bodies: List<SceneElement>) {
         const val OPENINGS_LAYER_ID = "openings"
 
         private const val SLACK_UNITS = 1.0
+        private const val WHOLE_SLACK = 0.01
         private const val TWO_POINT_ARROW = 2
     }
 }
