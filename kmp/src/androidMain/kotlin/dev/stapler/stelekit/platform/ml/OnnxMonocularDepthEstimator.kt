@@ -14,6 +14,7 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler
 import dev.stapler.stelekit.ui.annotate.DepthModelUiState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -40,6 +41,7 @@ import java.nio.FloatBuffer
  */
 class OnnxMonocularDepthEstimator(
     private val context: Context,
+    scheduler: BackgroundTaskScheduler?,
 ) : MonocularDepthEstimator, DownloadableDepthModel {
 
     @Volatile private var ortEnv: OrtEnvironment? = null
@@ -50,7 +52,7 @@ class OnnxMonocularDepthEstimator(
         FloatBuffer.allocate(INPUT_SIZE * INPUT_SIZE * 3)
     }
 
-    val downloader: DepthModelDownloader = DepthModelDownloader(context)
+    val downloader: DepthModelDownloader = DepthModelDownloader(context, scheduler = scheduler)
 
     /** [DownloadableDepthModel]'s platform-independent mirror of [downloader]'s [DepthModelDownloader.ModelState]. */
     override val modelState: StateFlow<DepthModelUiState> =
