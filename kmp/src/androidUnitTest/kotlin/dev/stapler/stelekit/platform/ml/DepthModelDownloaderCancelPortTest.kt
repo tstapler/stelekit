@@ -24,12 +24,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** The downloader's cancels go through [BackgroundTaskScheduler], and never overtake a later enqueue. */
@@ -45,12 +47,18 @@ class DepthModelDownloaderCancelPortTest {
         var onRunOnce: () -> Unit = {}
         var cancelGate: CompletableDeferred<Unit>? = null
 
+        /** Consumed one per call, before [cancelGate] / after the call is recorded. */
+        val cancelGates = java.util.concurrent.ConcurrentLinkedQueue<CompletableDeferred<Unit>>()
+        val runOnceGates = java.util.concurrent.ConcurrentLinkedQueue<CompletableDeferred<Unit>>()
+
         override suspend fun runOnce(key: TaskKey, constraints: TaskConstraints, onConflict: OneShotConflict) {
             calls.send("runOnce ${key.kind.id}")
             onRunOnce()
+            runOnceGates.poll()?.await()
         }
 
         override suspend fun cancel(key: TaskKey) {
+            cancelGates.poll()?.await()
             cancelGate?.await()
             calls.send("cancel ${key.kind.id}")
         }
@@ -62,6 +70,9 @@ class DepthModelDownloaderCancelPortTest {
         override suspend fun describe(key: TaskKey): TaskScheduleInfo? = null
 
         suspend fun next(): String = withTimeout(5_000) { calls.receive() }
+
+        /** A bounded wait for a call that must not happen; a broken ordering delivers it almost at once. */
+        suspend fun assertQuiet(why: String) = assertNull(withTimeoutOrNull(300) { calls.receive() }, why)
     }
 
     private val cancelled = "cancel ${ModelDownloadTask.KEY.kind.id}"
@@ -93,6 +104,7 @@ class DepthModelDownloaderCancelPortTest {
         val result = withTimeout(5_000) { downloader.downloadModel() }
 
         assertTrue(result.isLeft())
+        assertEquals(DepthModelDownloader.ModelState.Cancelled, downloader.modelState.value)
         // The user's cancel and the guard-cancel for the job runOnce had just enqueued.
         assertEquals(listOf(enqueued, cancelled, cancelled), List(3) { scheduler.next() })
     }
@@ -154,7 +166,61 @@ class DepthModelDownloaderCancelPortTest {
 
         withTimeout(5_000) { downloader.downloadNowAnyway() }
 
+        assertEquals(DepthModelDownloader.ModelState.Cancelled, downloader.modelState.value)
         assertEquals(listOf(enqueued, cancelled, cancelled), List(3) { scheduler.next() })
+    }
+
+    @Test
+    fun aLaterCancel_doesNotOvertakeAnEarlierOne() = runBlocking<Unit> {
+        val first = CompletableDeferred<Unit>()
+        val scheduler = RecordingScheduler().apply { cancelGates += first }
+        val downloader = downloader(scheduler)
+        downloader.cancelDownload()
+        downloader.cancelDownload()
+        val retry = async(start = CoroutineStart.UNDISPATCHED) { downloader.downloadNowAnyway() }
+
+        scheduler.assertQuiet("something ran past the held first cancel")
+        first.complete(Unit)
+        withTimeout(5_000) { retry.await() }
+
+        assertEquals(listOf(cancelled, cancelled, enqueued), List(3) { scheduler.next() })
+    }
+
+    @Test
+    fun retry_alsoWaitsForAGuardCancelRequestedWhileItWaits() = runBlocking<Unit> {
+        val enqueueing = CompletableDeferred<Unit>()
+        val userCancel = CompletableDeferred<Unit>()
+        val guardCancel = CompletableDeferred<Unit>()
+        val scheduler = RecordingScheduler().apply {
+            runOnceGates += enqueueing
+            cancelGates += listOf(userCancel, guardCancel)
+        }
+        val downloader = downloader(scheduler)
+        val original = async(start = CoroutineStart.UNDISPATCHED) { downloader.downloadNowAnyway() }
+        assertEquals(enqueued, scheduler.next())
+        downloader.cancelDownload()
+        val retry = async(start = CoroutineStart.UNDISPATCHED) { downloader.downloadNowAnyway() }
+
+        enqueueing.complete(Unit)
+        withTimeout(5_000) { original.await() } // has now requested its guard-cancel
+        userCancel.complete(Unit)
+        assertEquals(cancelled, scheduler.next())
+        scheduler.assertQuiet("the retry enqueued ahead of the guard-cancel, which would kill its job")
+        guardCancel.complete(Unit)
+        withTimeout(5_000) { retry.await() }
+
+        assertEquals(listOf(cancelled, enqueued), List(2) { scheduler.next() })
+    }
+
+    @Test
+    fun downloadNowAnyway_doesNothing_whenItCannotSchedule() = runBlocking<Unit> {
+        val scheduler = RecordingScheduler()
+        val downloader = downloader(scheduler, status = null)
+
+        downloader.downloadNowAnyway()
+
+        assertEquals(DepthModelDownloader.ModelState.Absent, downloader.modelState.value)
+        assertTrue(scheduler.calls.tryReceive().isFailure)
     }
 
     @Test

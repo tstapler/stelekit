@@ -321,6 +321,7 @@ class SteleKitApplication : Application() {
                 settings, dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime.legacySeed, taskRegistry,
             ),
             ledger = dev.stapler.stelekit.jobs.schedule.AppliedConfigLedger(settings),
+            workers = dev.stapler.stelekit.git.GitSyncWorkerBinding.resolver,
         )
     }
 

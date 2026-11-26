@@ -126,8 +126,7 @@ class DepthModelDownloader internal constructor(
             _modelState.value = ModelState.Ready
             return modelFile.right()
         }
-        // The flag alone is not enough: the WorkManager adapter's runOnce is a silent no-op without WorkManager.
-        if (!taskScheduler.capabilities.schedulesWork || statusFlow == null) {
+        if (!canSchedule()) {
             return DomainError.SensorError.HardwareUnavailable("Background downloads are unavailable right now").left()
         }
         // KEEP: an already queued or running job is left alone; a finished one is replaced by this new run.
@@ -135,10 +134,11 @@ class DepthModelDownloader internal constructor(
         val generation = cancelGeneration.get()
         val failuresBefore = failureCount.get()
         try {
+            val constraints = storedConstraints() // read first: no suspension between the check below and the enqueue
             awaitPendingCancel()
             // Cancelled while waiting: enqueueing now would need a guard-cancel that could kill a newer retry's job.
             if (cancelGeneration.get() != generation) return cancelledResult()
-            taskScheduler.runOnce(ModelDownloadTask.KEY, storedConstraints(), OneShotConflict.Keep)
+            taskScheduler.runOnce(ModelDownloadTask.KEY, constraints, OneShotConflict.Keep)
             // A cancel that landed while runOnce was suspended must not be undone by this late write, and the job
             // runOnce just enqueued is an orphan: cancel it again. A job that already failed (the collector can
             // outrun this line) must keep its Failed state, or awaitTerminal would wait on a finished job.
@@ -165,7 +165,7 @@ class DepthModelDownloader internal constructor(
      * [downloadModel] keeps waiting on the replacement.
      */
     suspend fun downloadNowAnyway() {
-        if (isModelReady()) return
+        if (isModelReady() || !canSchedule()) return
         inFlight.incrementAndGet()
         val generation = cancelGeneration.get()
         try {
@@ -181,6 +181,9 @@ class DepthModelDownloader internal constructor(
             inFlight.decrementAndGet()
         }
     }
+
+    /** The flag alone is not enough: the WorkManager adapter's runOnce is a silent no-op without WorkManager. */
+    private fun canSchedule(): Boolean = taskScheduler.capabilities.schedulesWork && statusFlow != null
 
     /** The user's stored constraints (default from the spec); a failed read never blocks the tap. */
     private suspend fun storedConstraints(): TaskConstraints {
