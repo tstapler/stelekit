@@ -122,6 +122,7 @@ alias(
 
 # ── Detekt linting (ADR-008) ──────────────────────────────────────────────────
 # Run: bazel test //kmp:detekt. Mirrors the `detekt { }` block in build.gradle.kts; keep them in step.
+# "output was not created" means detekt itself crashed (e.g. bad config); run the Gradle task to see why.
 detekt_test(
     name = "detekt",
     srcs = [

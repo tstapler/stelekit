@@ -453,7 +453,8 @@ jobs:
 
   # ── Detekt (ADR-008) ────────────────────────────────────────────────────────
   # Staged rollout (bazel-full-ci-migration plan, Story 1.4): the Gradle `Lint (Detekt)` job in ci.yml
-  # stays the gate. Drop continue-on-error after 3 green runs, then remove the Gradle job.
+  # stays the gate. Drop continue-on-error after 3 green runs. Before removing the Gradle job, move its
+  # baseline ratchet step here and replace its SARIF report (this rule emits none).
   bazel-detekt:
     name: Bazel Detekt
     needs: changes
