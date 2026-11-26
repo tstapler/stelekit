@@ -493,6 +493,26 @@ maven.install(
 
 use_repo(maven, "maven")
 
+# rules_android's own repos are unpinned and resolved by coursier, which ignores --downloader_config;
+# the root module's repositories are merged ahead of rules_android's, putting the mirror first.
+[
+    maven.install(
+        name = name,
+        # Root attributes override rules_android's, so its android settings must be repeated.
+        aar_import_bzl_label = "@rules_android//rules:rules.bzl",
+        use_starlark_android_rules = True,
+        repositories = [
+            "https://maven-central.storage-download.googleapis.com/maven2",
+            "https://maven.google.com",
+            "https://repo1.maven.org/maven2",
+        ],
+    )
+    for name in [
+        "rules_android_maven",
+        "android_ide_common_30_1_3",
+    ]
+]
+
 # Custom android toolchain that uses the Bazel-built unzip (registered before
 # the rules_android default so it wins toolchain resolution for aar_import).
 register_toolchains("//:stelekit_android_toolchain")
