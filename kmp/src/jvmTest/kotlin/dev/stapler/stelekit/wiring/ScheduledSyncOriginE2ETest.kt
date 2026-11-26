@@ -59,7 +59,7 @@ class ScheduledSyncOriginE2ETest {
     @AfterTest
     fun tearDown() {
         headless?.close()
-        // runBlocking: end-to-end over real git and real threads, polled on the wall clock
+        // runBlocking: non-suspend JUnit method; bridges a suspend setup, read or teardown call
         fixture?.let { runBlocking { it.close() } }
         temps.forEach { it.deleteRecursively() }
         dataDir.deleteRecursively()
@@ -70,7 +70,7 @@ class ScheduledSyncOriginE2ETest {
     private fun remoteTwoCommitsAhead(): Remote {
         val origin = BareOriginFixtures.createBareOrigin("scheduled_origin_remote_", "main").also { temps += it }
         val clone = File(createTempDirectory("scheduled_origin_clone_").toFile().also { temps += it }, "repo")
-        // runBlocking: end-to-end over real git and real threads, polled on the wall clock
+        // runBlocking: non-suspend JUnit method; bridges a suspend setup, read or teardown call
         runBlocking { assertTrue(repository.clone(origin.absolutePath, RepoRoot(clone.absolutePath), GitAuth.None, onProgress = {}).isRight()) }
         Git.open(clone).use { BareOriginFixtures.setIdentity(it) }
         BareOriginFixtures.pushCommit(origin, "main", "journals/2026_10_08.md", "- remote one\n", "remote one")
@@ -84,7 +84,7 @@ class ScheduledSyncOriginE2ETest {
 
     private fun open(remote: Remote, firstSyncConfirmed: Boolean) {
         settings.putBoolean(SCHEDULED_SYNC_ENABLED_KEY, true)
-        // runBlocking: end-to-end over real git and real threads, polled on the wall clock
+        // runBlocking: non-suspend JUnit method; bridges a suspend setup, read or teardown call
         val wired = runBlocking {
             DesktopWiredAppFixture.desktop(
                 dataDir,
@@ -98,7 +98,7 @@ class ScheduledSyncOriginE2ETest {
         graphId = wired.graphManager.graphRegistry.value.activeGraphId!!.value
         if (firstSyncConfirmed) settings.putString("git_first_sync_confirmed_$graphId", "origin/main")
         val configRepo = wired.graphManager.createGitConfigRepository()!!
-        // runBlocking: end-to-end over real git and real threads, polled on the wall clock
+        // runBlocking: non-suspend JUnit method; bridges a suspend setup, read or teardown call
         runBlocking { configRepo.saveConfig(remote.config.copy(graphId = graphId)) }
         headless = HeadlessComposition().also { composition ->
             composition.setContent {

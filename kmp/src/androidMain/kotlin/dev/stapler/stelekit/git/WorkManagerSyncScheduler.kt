@@ -45,7 +45,9 @@ import dev.stapler.stelekit.model.RepoRoot
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.SteleKitContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 
 /**
  * Legacy Android entry point for [BackgroundSyncScheduler], now a shim over [WorkManagerTaskScheduler]
@@ -111,7 +113,8 @@ class WorkManagerSyncScheduler(
          * stays off.
          */
         suspend fun resumeFor(context: Context, graphId: String) {
-            legacyAdapter(context).resume(TaskScope(graphId))
+            // NonCancellable: resume consumes the paused snapshot before it enqueues, so a cancel in between loses the job.
+            withContext(NonCancellable) { legacyAdapter(context).resume(TaskScope(graphId)) }
         }
 
         /** The port adapter built from a [Context] and process statics alone (no UI state); also what a cold process can build. */

@@ -5,6 +5,8 @@
 
 ## Summary
 
+**Superseded in part:** the claim below that production code has no `runBlocking` was wrong; see the correction in research.md.
+
 Production scheduling code has no `runBlocking` — that half of the audit is complete and needs
 only a brief confirmation comment in the PR. The work is entirely in the test layer:
 

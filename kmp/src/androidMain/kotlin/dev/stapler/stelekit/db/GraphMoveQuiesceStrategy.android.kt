@@ -22,6 +22,7 @@ import dev.stapler.stelekit.model.StorageMoveOperation
 import dev.stapler.stelekit.platform.GitWorktreeLocks
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
@@ -193,7 +194,7 @@ class AndroidGraphMoveQuiesceStrategy(
 
     override suspend fun release(op: StorageMoveOperation) {
         holds.remove(op.graphId)?.release()
-        withContext(Dispatchers.IO) { resumeBackgroundSync(op.graphId) }
+        withContext(NonCancellable + Dispatchers.IO) { resumeBackgroundSync(op.graphId) }
     }
 
     override suspend fun releaseSourceGrant(source: StorageLocation) {

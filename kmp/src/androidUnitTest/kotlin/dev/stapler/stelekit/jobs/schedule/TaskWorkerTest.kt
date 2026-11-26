@@ -466,7 +466,7 @@ class TaskWorkerTest {
     }
 
     @Test
-    fun decodePolicy_should_failClosed_When_ValueIsUnrecognised() = runTest {
+    fun decodePolicy_should_failClosed_When_ValueIsUnrecognised() {
         assertEquals(NetworkPolicy.Any, TaskWorkKeys.decode(null))
         assertEquals(NetworkPolicy.Any, TaskWorkKeys.decode("any"))
         assertEquals(NetworkPolicy.Unmetered, TaskWorkKeys.decode("unmetered"))

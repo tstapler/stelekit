@@ -143,6 +143,7 @@ actual class DriverFactory actual constructor() {
         }
         if (useLibsql && dbName.startsWith("/")) {
             val driver = AndroidLibsqlDriver(dbName)
+            // runBlocking: same non-suspend createDriver constraint as the AndroidSqliteDriver path below.
             runBlocking {
                 try { SteleDatabase.Schema.create(driver).await() }
                 catch (e: CancellationException) { throw e }

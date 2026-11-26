@@ -57,7 +57,7 @@ class GitSyncSchedulingEntryPointTest {
 
     @After
     fun tearDown() {
-        // runBlocking: bridges a non-suspend Compose-rule test or @After; waitUntil needs the real thread
+        // runBlocking: non-suspend JUnit method; bridges a suspend setup, read or teardown call
         fixture?.let { runBlocking { it.close() } }
         dataDir.deleteRecursively()
     }
@@ -87,7 +87,7 @@ class GitSyncSchedulingEntryPointTest {
             Configuration.Builder().setExecutor(SynchronousExecutor()).build(),
         )
         val settings = FakeSettings().also { it.putBoolean(SCHEDULED_SYNC_ENABLED_KEY, true) }
-        // runBlocking: bridges a non-suspend Compose-rule test or @After; waitUntil needs the real thread
+        // runBlocking: non-suspend JUnit method; bridges a suspend setup, read or teardown call
         val wired = runBlocking {
             WiredAppFixture.android(
                 context,
@@ -131,7 +131,7 @@ class GitSyncSchedulingEntryPointTest {
             context,
             Configuration.Builder().setExecutor(SynchronousExecutor()).build(),
         )
-        // runBlocking: bridges a non-suspend Compose-rule test or @After; waitUntil needs the real thread
+        // runBlocking: non-suspend JUnit method; bridges a suspend setup, read or teardown call
         val wired = runBlocking {
             WiredAppFixture.android(
                 context,

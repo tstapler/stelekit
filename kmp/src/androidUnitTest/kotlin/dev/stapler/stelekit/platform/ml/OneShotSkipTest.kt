@@ -24,7 +24,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -99,8 +98,7 @@ class OneShotSkipTest {
         f.downloader.awaitDownloadingState()
         WorkManagerTestInitHelper.getTestDriver(context)!!.setAllConstraintsMet(id)
 
-        // The terminal state is the signal; runTest's own timeout is the only wall-clock ceiling.
-        f.downloader.modelState.first { it is DepthModelDownloader.ModelState.Failed }
+        // downloadModel() completes on the first terminal modelState, so no timeout of our own is needed.
         val outcome = result.await()
         assertTrue(outcome.isLeft())
         assertEquals(DepthModelDownloader.ModelState.Failed(expectedReason), f.downloader.modelState.value)

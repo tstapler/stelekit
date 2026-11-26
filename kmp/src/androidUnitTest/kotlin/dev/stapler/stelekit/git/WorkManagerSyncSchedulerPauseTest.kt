@@ -8,6 +8,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.work.Configuration
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
@@ -76,6 +78,19 @@ class WorkManagerSyncSchedulerPauseTest {
         WorkManagerSyncScheduler.resumeFor(context, graphId)
 
         assertTrue(enqueuedWorkExists(), "resumeFor must re-schedule the periodic job after switchGraph() completes")
+    }
+
+    @Test
+    fun resumeFor_should_RestoreThePeriodicJob_When_TheCallerIsAlreadyCancelled() = runTest {
+        WorkManagerSyncScheduler(context, graphId).schedule(intervalMinutes = 15)
+        WorkManagerSyncScheduler.pauseFor(context, graphId)
+
+        launch {
+            cancel()
+            WorkManagerSyncScheduler.resumeFor(context, graphId)
+        }.join()
+
+        assertTrue(enqueuedWorkExists(), "a cancelled caller must not leave periodic sync paused")
     }
 
     @Test
