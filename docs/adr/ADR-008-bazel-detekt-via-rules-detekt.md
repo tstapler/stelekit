@@ -43,6 +43,14 @@ Specific implementation choices:
 - `SteleKitRuleSetProvider` must be discoverable via `META-INF/services/`. If the services file is absent from the `buildSrc` source tree (not auto-generated since `@AutoService` is not a dependency), it must be added as a hand-maintained resource file.
 - Detekt silently skips plugin JARs that fail to load — add a smoke-check step locally (`bazel test //kmp:detekt` on a branch with a known-bad rule) to confirm plugin loading.
 
+## As implemented (2026-11-26)
+
+- Custom rules plugin is `//buildSrc:detekt_rules_jar`; Compose rules and `detekt-api` 1.23.8 come from a separate `@detekt_maven` hub, not `@maven`. A newer kotlin-stdlib jar is also listed as a plugin.
+- The toolchain heap is raised to 4 GB (the rules default to 128 MB).
+- It is one target, so any source change re-analyses all sources.
+- If detekt crashes, the rule's wrapper drops the message under `detekt_test`.
+- Staged rollout: the Gradle lint job remains the gate.
+
 ## Compliance
 
 `rules_detekt` is Apache-2.0 licensed. No additional licensing concerns.

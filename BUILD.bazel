@@ -7,6 +7,7 @@ registered here.
 load("@rules_java//java:defs.bzl", "java_library")
 load("@rules_kotlin//kotlin:core.bzl", "define_kt_toolchain", "kt_compiler_plugin", "kt_kotlinc_options")
 load("@rules_android//toolchains/android:toolchain.bzl", "android_toolchain")
+load("@bazel_rules_detekt//detekt:toolchain.bzl", "detekt_toolchain")
 
 # ── Kotlinc options for KMP JVM targets ───────────────────────────────────────
 # KMP source sets (commonMain + jvmCommonMain + jvmMain) are compiled together
@@ -125,4 +126,16 @@ java_library(
         "docs/reference/sketch-scene-v2.schema.json",
     ],
     visibility = ["//kmp:__subpackages__"],
+)
+
+# ── Detekt toolchain (//kmp:detekt) ───────────────────────────────────────────
+detekt_toolchain(
+    name = "detekt_toolchain_impl",
+    jvm_flags = ["-Xms512m", "-Xmx4g"],
+)
+
+toolchain(
+    name = "detekt_toolchain",
+    toolchain = ":detekt_toolchain_impl",
+    toolchain_type = "@bazel_rules_detekt//detekt:toolchain_type",
 )

@@ -8,3 +8,9 @@ filegroup(
     srcs = glob(["**/*.kt"]),
     visibility = ["//kmp/src/businessTest/kotlin:__pkg__"],
 )
+
+filegroup(
+    name = "detekt_srcs",
+    srcs = glob(["**/*.kt"], allow_empty = False),
+    visibility = ["//kmp:__pkg__"],
+)

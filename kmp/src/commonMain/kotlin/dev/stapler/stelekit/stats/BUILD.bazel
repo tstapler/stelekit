@@ -15,3 +15,9 @@ stelekit_kt_common_library(
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
     ],
 )
+
+filegroup(
+    name = "detekt_srcs",
+    srcs = glob(["**/*.kt"], allow_empty = False),
+    visibility = ["//kmp:__pkg__"],
+)
