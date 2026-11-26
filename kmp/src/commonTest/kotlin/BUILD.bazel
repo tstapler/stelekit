@@ -425,6 +425,7 @@ kt_jvm_library(
         "dev/stapler/stelekit/sketch/v2/SceneSemanticsModelTest.kt",
         "dev/stapler/stelekit/sketch/v2/AutoConstrainTest.kt",
         "dev/stapler/stelekit/sketch/v2/ProjectionFusionTest.kt",
+        "dev/stapler/stelekit/sketch/v2/ProvenanceTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/ConstraintPanelModelTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/ConstraintGlyphLayoutTest.kt",
         "dev/stapler/stelekit/ui/sketch/v2/ConstraintTargetPickerModelTest.kt",
