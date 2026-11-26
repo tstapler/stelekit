@@ -207,3 +207,9 @@ exports_files(
     glob(["**/*.kt"]),
     visibility = ["//kmp:__subpackages__"],
 )
+
+filegroup(
+    name = "detekt_srcs",
+    srcs = glob(["**/*.kt"], allow_empty = False),
+    visibility = ["//kmp:__pkg__"],
+)

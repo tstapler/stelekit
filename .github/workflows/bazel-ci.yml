@@ -450,3 +450,43 @@ jobs:
           name: web-dist
           path: bazel-bin/kmp/web_dist.tar.gz
           retention-days: 7
+
+  # ── Detekt (ADR-008) ────────────────────────────────────────────────────────
+  # Staged rollout (bazel-full-ci-migration plan, Story 1.4): the Gradle `Lint (Detekt)` job in ci.yml
+  # stays the gate. Drop continue-on-error after 3 green runs, then remove the Gradle job.
+  bazel-detekt:
+    name: Bazel Detekt
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-bcp
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          bazelisk-version: ""  # use the runner image's Bazelisk; "1.x" needs a GitHub releases lookup that intermittently fails
+          # Shared across the Bazel jobs — see comment on bazel-jvm's setup step.
+          disk-cache: shared
+          repository-cache: true
+          external-cache: true
+          cache-save: ${{ github.event_name != 'pull_request' }}
+
+      - name: Run Detekt
+        run: bazel test //kmp:detekt --config=remote-cache --config=ci --test_output=errors
+
+      - name: Check Detekt covers every source file
+        if: always()
+        run: scripts/ci/check-detekt-srcs.sh
+
+      - name: Upload Detekt report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bazel-detekt-report
+          path: bazel-bin/kmp/detekt_detekt_report.*
+          retention-days: 7

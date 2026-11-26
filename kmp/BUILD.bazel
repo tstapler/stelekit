@@ -12,6 +12,7 @@ Developer commands:
 See CLAUDE.md for the full Gradle → Bazel command equivalence table.
 """
 
+load("@bazel_rules_detekt//detekt:defs.bzl", "detekt_test")
 load("@rules_android//rules:rules.bzl", "android_library")
 load("//kmp:module_tests_manifest.bzl", "KMP_MODULE_BUSINESS_TESTS", "KMP_MODULE_JVM_TESTS")
 
@@ -119,16 +120,29 @@ alias(
     visibility = ["//visibility:public"],
 )
 
-# ── Detekt linting ────────────────────────────────────────────────────────────
-# Option A (plan.md §6.1.1): Detekt runs as a standalone CI step via the Gradle
-# wrapper — not a Bazel target — because Bazel caching does not benefit a fast
-# linter that already has its own incremental cache.
-#
-# CI invocation (in .github/workflows/ci.yml, existing job):
-#   ./gradlew :kmp:detekt
-#
-# The buildSrc custom ruleset (buildSrc.jar) is picked up automatically by the
-# Gradle detekt task. No Bazel rule needed for Detekt at this time (see plan ADR).
-#
-# If Detekt becomes a bottleneck, switch to Option B: genrule that downloads
-# the Detekt CLI JAR via rules_jvm_external and runs it against source directories.
+# ── Detekt linting (ADR-008) ──────────────────────────────────────────────────
+# Run: bazel test //kmp:detekt. Mirrors the `detekt { }` block in build.gradle.kts; keep them in step.
+detekt_test(
+    name = "detekt",
+    srcs = [
+        "//kmp/src/androidMain/kotlin:detekt_srcs",
+        "//kmp/src/commonMain/kotlin:detekt_srcs",
+        "//kmp/src/commonMain/kotlin/dev/stapler/stelekit/stats:detekt_srcs",
+        "//kmp/src/iosMain/kotlin:detekt_srcs",
+        "//kmp/src/jvmMain/kotlin:detekt_srcs",
+    ],
+    baseline = "config/detekt/baseline.xml",
+    build_upon_default_config = True,
+    cfgs = ["config/detekt/detekt.yml"],
+    html_report = True,
+    parallel = True,
+    size = "small",
+    # Detekt does not resolve plugin dependencies, so every jar is listed.
+    plugins = [
+        "//buildSrc:detekt_rules_jar",
+        "@detekt_maven//:io_nlopez_compose_rules_common_detekt",
+        "@detekt_maven//:io_nlopez_compose_rules_detekt",
+        # The Compose rules need a newer stdlib than the one bundled in the detekt CLI.
+        "@detekt_maven//:org_jetbrains_kotlin_kotlin_stdlib",
+    ],
+)
