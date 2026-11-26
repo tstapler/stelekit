@@ -386,6 +386,12 @@ jobs:
           APPIMAGE=$(find kmp/build/compose/binaries/main -name "*.AppImage" | head -1)
           chmod +x "$APPIMAGE"
 
+          # `stelekit sketch` must run headless from the packaged runtime, with its bundled docs.
+          APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE" sketch skill > /dev/null
+          APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE" sketch build docs/reference/sketch-examples/room.spec.json \
+            --out /tmp/sketch-smoke.v2.json --render /tmp/sketch-smoke.png
+          test -s /tmp/sketch-smoke.png
+
           Xvfb :99 -screen 0 1280x720x24 &
           XVFB_PID=$!
           sleep 2

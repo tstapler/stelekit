@@ -77,6 +77,8 @@ kmp_umbrella_library(
         "//kmp/src/commonMain/resources:common_resources",
         # Desktop icon from jvmMain/resources/icons
         "//kmp/src/jvmMain/resources/icons:icon_resource",
+        # Docs printed by `stelekit sketch skill|format|schema|grid-script`
+        "//:sketch_cli_docs",
     ],
 )
 

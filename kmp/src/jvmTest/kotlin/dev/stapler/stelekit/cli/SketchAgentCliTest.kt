@@ -49,6 +49,20 @@ class SketchAgentCliTest {
     private fun tempDir(): File = Files.createTempDirectory("sketch-agent-cli").toFile()
 
     @Test
+    fun `the packaged docs print so an installed app can explain its own format`() {
+        mapOf(
+            "skill" to "# Sketch from a photo",
+            "format" to "# SteleKit sketch format v2",
+            "schema" to "\"\$schema\"",
+            "grid-script" to "PIL",
+        ).forEach { (command, marker) ->
+            val run = cli(command)
+            assertEquals(0, run.code, "$command: ${run.err}")
+            assertTrue(marker in run.out, "$command should contain $marker")
+        }
+    }
+
+    @Test
     fun `room spec builds the golden sheet`() {
         val doc = built(ROOM_SPEC)
         val bytes = encode(doc)

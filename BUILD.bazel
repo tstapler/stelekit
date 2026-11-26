@@ -4,6 +4,7 @@ All sub-packages reference //:compose_compiler_plugin and the toolchain
 registered here.
 """
 
+load("@rules_java//java:defs.bzl", "java_library")
 load("@rules_kotlin//kotlin:core.bzl", "define_kt_toolchain", "kt_compiler_plugin", "kt_kotlinc_options")
 load("@rules_android//toolchains/android:toolchain.bzl", "android_toolchain")
 
@@ -113,3 +114,15 @@ filegroup(
     visibility = ["//kmp:__subpackages__"],
 )
 exports_files(["MODULE.bazel"], visibility = ["//visibility:public"])
+
+# Docs `stelekit sketch skill|format|schema|grid-script` prints, at the same resource paths as the Gradle build.
+java_library(
+    name = "sketch_cli_docs",
+    resources = [
+        "docs/agents/sketch-from-photo/SKILL.md",
+        "docs/agents/sketch-from-photo/grid.py",
+        "docs/reference/sketch-format-v2.md",
+        "docs/reference/sketch-scene-v2.schema.json",
+    ],
+    visibility = ["//kmp:__subpackages__"],
+)

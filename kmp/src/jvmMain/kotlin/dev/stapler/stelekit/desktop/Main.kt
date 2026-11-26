@@ -18,6 +18,7 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.rememberWindowState
 import dev.stapler.stelekit.capture.CaptureController
+import dev.stapler.stelekit.cli.runSketchCli
 import dev.stapler.stelekit.capture.CapturePopupWindow
 import dev.stapler.stelekit.capture.CaptureSocketListener
 import dev.stapler.stelekit.capture.GlobalHotkeyListener
@@ -57,6 +58,7 @@ import dev.stapler.stelekit.performance.OtelSpanRecorder
 import io.opentelemetry.api.trace.Tracer
 import java.awt.KeyboardFocusManager
 import javax.swing.UIManager
+import kotlin.system.exitProcess
 
 /** Measurement transports on Desktop: typed/keyboard-wedge entry; BLE and USB have no desktop implementation. */
 internal fun defaultMeasurementDeviceFactories(): List<MeasurementDeviceFactory> = listOf(
@@ -65,6 +67,12 @@ internal fun defaultMeasurementDeviceFactories(): List<MeasurementDeviceFactory>
 )
 
 fun main(args: Array<String>) {
+    // `stelekit sketch <command>`: headless, so it must return before AWT, logging or OTel start.
+    if (args.firstOrNull() == "sketch") {
+        System.setProperty("java.awt.headless", "true")
+        exitProcess(runSketchCli(args.drop(1)))
+    }
+
     // Headless CLI capture mode: try the socket fast path first (delivers immediately if
     // SteleKit is already running), falling back to the pending-capture queue — reusing the
     // same captureId so a lost ack can't double-record — and exit before any Compose/OTel/

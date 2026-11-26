@@ -5,14 +5,16 @@ description: Turn a photo of a floor plan, elevation, whiteboard diagram or hand
 
 # Sketch from a photo (SteleKit v2 sketches)
 
-You can see images and edit files; you cannot open the app. The `sketch-cli` closes the loop: you write a small JSON **spec**, the CLI turns it into a valid sheet and draws it, and you **look at the drawing next to the photo** until they agree. Format details: `docs/reference/sketch-format-v2.md` in the SteleKit repo (units are 1/16 inch, y grows down).
+You can see images and edit files; you cannot open the app. `stelekit sketch` closes the loop: you write a small JSON **spec**, the CLI turns it into a valid sheet and draws it, and you **look at the drawing next to the photo** until they agree. 
 
 ## Setup
 
-- Repo checkout of SteleKit at `$STELEKIT` (`~/code/github.com/tstapler/stelekit` or wherever it is cloned). The tool is `$STELEKIT/scripts/sketch-cli` (JDK 21 required; the first run builds with Gradle, later runs start in seconds). Check: `$STELEKIT/scripts/sketch-cli help`.
+- The tool is `stelekit sketch`, part of the installed SteleKit desktop app. Check: `stelekit sketch help`. If that opens the app instead, the install is too old: upgrade it. From a repo checkout, `scripts/sketch-cli` is the same tool (JDK 21).
+- Format details: `stelekit sketch format` (units are 1/16 inch, y grows down).
+- Use absolute paths or run from your scratch folder.
 - The graph is the notes folder (it has `pages/` and `journals/`). Sketches live in `<graph>/assets/stelekit-sketch/<slug>/`.
 - Work in a scratch folder, not in the graph, until the last step. Name files `<topic>.spec.json`, `<topic>.v2.json`, `<topic>.png`.
-- `grid.py` (next to this file, needs Pillow) overlays a labelled pixel grid on a photo.
+- `stelekit sketch grid-script > grid.py` gives you a helper (needs Pillow) that overlays a labelled pixel grid on a photo.
 
 ## Workflow: photo to sketch
 
@@ -22,16 +24,16 @@ You can see images and edit files; you cannot open the app. The `sketch-cli` clo
 4. **Write the spec** (`space: "photo"`, `calibration.refs`, shapes in pixels). Start with the outer walls (they are wall centre lines), then openings, furniture, labels, dimensions. Use the owner's names for rooms. See "Spec skeleton" below. Lengths can be written in the unit the source uses: `"12' 6\""`, `"3 1/2\""`, or metric with a unit (`"25.4 mm"`, `"2,5 cm"`, `"1.2 m"`). Metric values are kept to 0.1 mm, not rounded to a sixteenth of an inch. A bare number is still pixels (photo space) or inches (plan).
 5. **Build and render.** Rebuilding an edited spec keeps the same sheet uuid (it comes from `title`, or set `sheetUuid`), so `place` replaces the sheet; give different sketches different titles.
    ```bash
-   $STELEKIT/scripts/sketch-cli build kitchen.spec.json --out kitchen.v2.json --render kitchen.png
+   stelekit sketch build kitchen.spec.json --out kitchen.v2.json --render kitchen.png
    ```
    To see measured sizes next to your authored ones run `render --dimensions` separately. Read the printed `INFO` and `WARNING` lines: the calibration scale (inches per pixel), disagreement between references, labels too big for their shape.
 6. **Look and compare.** Open `kitchen.png` and the original photo, one after the other. Check shape, proportions, positions of doors and windows, which wall each is on, labels. The `--dimensions` overlay prints the measured width and height of every shape: compare each with any length written on the photo or known from the owner. Fix the spec, rebuild, look again. Two or three rounds is normal.
 6a. **Keep the photo under the plan (optional).** Add `"underlay": {"image": "photo.jpg", "opacity": 40}` to the spec: `build` stores the photo by hash on a locked bottom layer at the calibrated scale, so the owner sees the traced plan over their photo in the app. `render` leaves it out of the picture unless you pass `--underlay photo.jpg`; `place --underlay-image photo.jpg` copies the photo into the graph's `assets/`. One scale covers the whole photo, so a tilted photo is only right near the reference (`describe` reports the disagreement of a second reference).
-7. **Read it as text.** `sketch-cli describe kitchen.v2.json` lists every element in feet-inches, which room contains or touches which, and which wall each opening is on. Use it to catch what pictures hide (a window on the south wall that you meant north, a `MISMATCH` in a dimension).
-8. **Validate.** `sketch-cli validate kitchen.v2.json` must end `RESULT: OK` with no warnings you cannot explain.
+7. **Read it as text.** `stelekit sketch describe kitchen.v2.json` lists every element in feet-inches, which room contains or touches which, and which wall each opening is on. Use it to catch what pictures hide (a window on the south wall that you meant north, a `MISMATCH` in a dimension).
+8. **Validate.** `stelekit sketch validate kitchen.v2.json` must end `RESULT: OK` with no warnings you cannot explain.
 9. **Place it in the graph.**
    ```bash
-   $STELEKIT/scripts/sketch-cli place kitchen.v2.json --graph ~/notes --name "Kitchen"
+   stelekit sketch place kitchen.v2.json --graph ~/notes --name "Kitchen"
    ```
    It writes the bundle (`project-model.json` with the right hash, the sheet, `preview.svg`) and prints one line such as `![sketch](../assets/stelekit-sketch/proj-1a2b3c/preview.svg)`. Add that line as (or inside) a block of the page the owner named. Pages and journals both use `../assets/...`.
 10. **Report.** Tell the owner the scale you derived and from which references, anything you estimated, what you could not read from the photo, and where the page and bundle are. Attach the render.
@@ -62,10 +64,16 @@ Rules that matter: numbers are photo pixels, text lengths (`"3'"`) are real; `of
 Use `edit`, not a rebuild: the owner may have drawn on the sheet since, and a rebuild from a guess would lose that.
 
 1. Find it: the page has `![sketch](../assets/stelekit-sketch/<slug>/preview.svg)`. List `<graph>/assets/stelekit-sketch/<slug>/sheets/` and take the `*.v2.json` (several sheets: `project-model.json` names them).
-2. `sketch-cli describe <sheet>` and `sketch-cli render <sheet> --out look.png`; look at it. Never edit blind. Copy the sheet to the scratch folder first.
+2. `stelekit sketch describe <sheet>` and `stelekit sketch render <sheet> --out look.png`; look at it. Never edit blind. Copy the sheet to the scratch folder first.
 3. Write an edits file (`{"agent": "<your name>", "edits": [...]}`; ops are `add`, `move`, `resize`, `relabel`, `delete`, `set-dimension`, `add-wall`, `add-opening`, `set-layer`; see the format doc, section 7a). Name elements by the ids or names `describe` printed. Put `confidence` and `note` on anything you read off a photo.
-4. Try it: `sketch-cli edit copy.v2.json --edits edits.json --dry-run --audit audit.json`. Read the `ok` / `REFUSED` lines and the diff. A refused edit (it would break a constraint, a door does not fit its wall, a name is wrong) writes nothing: fix that edit and run again.
-5. Apply it: `sketch-cli edit copy.v2.json --edits edits.json --in-place --audit audit.json`, then `validate` and render again; compare with the render from step 2. `sketch-cli diff before.v2.json copy.v2.json` shows what changed in words.
+   ```json
+   {"agent": "claude", "edits": [
+     {"op": "move", "id": "sofa", "dx": "5'", "dy": 0},
+     {"op": "relabel", "id": "sofa", "text": "Couch", "confidence": 90, "note": "owner's word"}
+   ]}
+   ```
+4. Try it: `stelekit sketch edit copy.v2.json --edits edits.json --dry-run --audit audit.json`. Read the `ok` / `REFUSED` lines and the diff. A refused edit (it would break a constraint, a door does not fit its wall, a name is wrong) writes nothing: fix that edit and run again.
+5. Apply it: `stelekit sketch edit copy.v2.json --edits edits.json --in-place --audit audit.json`, then `validate` and render again; compare with the render from step 2. `stelekit sketch diff before.v2.json copy.v2.json` shows what changed in words.
 6. `place` the result with the same `--slug`: it replaces the sheet with that uuid and refreshes `preview.svg`. Check `git diff --stat` in the graph: only that bundle should change.
 7. If the owner may have the app open on that graph, say the file changed outside the app so it should reload before editing.
 
