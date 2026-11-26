@@ -122,7 +122,7 @@ class GitSyncServiceRateLimitRetryTest {
             assertEquals(1, counter.value, "must not re-invoke fetchOnly before the stated delay elapses")
 
             // After the delay elapses, exactly one retry should fire.
-            withTimeout(5_000) {
+            withTimeout(5_000) { // real-clock hang guard: awaits real threads
                 while (counter.value < 2) delay(50)
             }
             assertEquals(2, counter.value, "must re-invoke fetchOnly exactly once after the delay")

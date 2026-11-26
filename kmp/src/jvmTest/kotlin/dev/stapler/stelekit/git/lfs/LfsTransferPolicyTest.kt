@@ -65,6 +65,7 @@ class LfsTransferPolicyTest {
         val bytes = Random(size).nextBytes(size)
         File(a, ".gitattributes").writeText("*.bin filter=lfs diff=lfs merge=lfs -text\n")
         File(a, "img.bin").writeBytes(bytes)
+        // runBlocking: blocking JGit and real HTTP against a local server, partly from non-suspend helpers
         runBlocking {
             val config = configFor(a)
             publisher.stageSubdir(config, emptySet())
@@ -87,11 +88,13 @@ class LfsTransferPolicyTest {
         Git.cloneRepository().setURI(origin.toURI().toString()).setDirectory(b).setNoCheckout(true).call().use { git ->
             git.repository.config.setString("lfs", null, "url", server.url)
             git.repository.config.save()
+            // runBlocking: blocking JGit and real HTTP against a local server, partly from non-suspend helpers
             runBlocking { support.afterClone(git, null) }
         }
         return b
     }
 
+    // runBlocking: blocking JGit and real HTTP against a local server, partly from non-suspend helpers
     private fun lastJob() = runBlocking { jobs.jobs.first().single() }
 
     @Test
@@ -138,6 +141,7 @@ class LfsTransferPolicyTest {
 
         assertEquals(before, server.requests.size, "no request may reach the LFS server while metered")
         assertTrue(File(b, ".git/lfs/pending").exists())
+        // runBlocking: blocking JGit and real HTTP against a local server, partly from non-suspend helpers
         assertTrue(runBlocking { jobs.jobs.first() }.isEmpty())
     }
 
@@ -192,6 +196,7 @@ class LfsTransferPolicyTest {
                 git.add().addFilepattern(".").call()
                 git.commit().setMessage("p").call()
 
+                // runBlocking: blocking JGit and real HTTP against a local server, partly from non-suspend helpers
                 runBlocking { support.afterClone(git, null) }
             }
 
@@ -255,6 +260,7 @@ class LfsTransferPolicyTest {
         val gitDir = File(root, "svc").also { it.mkdirs() }
         val http = HttpClient(OkHttp) { configureLfsTimeouts() }
         try {
+            // runBlocking: blocking JGit and real HTTP against a local server, partly from non-suspend helpers
             val result = runBlocking { LfsTransferService(LfsBatchClient(http, server.url, authHeader = null), LfsObjectStore(gitDir), gitDir).download(listOf(pointer)) }
 
             assertEquals(LfsDownloadResult(fetched = 1, skippedOversize = 0), result.getOrNull())
