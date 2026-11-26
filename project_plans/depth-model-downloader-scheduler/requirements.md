@@ -1,5 +1,7 @@
 # Requirements: depth-model-downloader-scheduler
 
+> The backlog item lists 8 criteria; `implementation/validation.md` numbers them. These 5 summarise them.
+
 **Backlog item:** Route DepthModelDownloader through the shared scheduler and port-level cancel  
 **Follow-up from:** #642 (merged as 9656e5e3f6)
 

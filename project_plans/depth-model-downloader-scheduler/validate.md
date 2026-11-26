@@ -1,5 +1,7 @@
 # Validation: depth-model-downloader-scheduler
 
+> Superseded: V1 and V4 are wrong. See `research/pitfalls.md` and `implementation/adversarial-review.md`.
+
 Adversarial review of `plan.md` against the actual codebase.
 
 Sources read:
