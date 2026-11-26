@@ -1,0 +1,29 @@
+{
+  "timestamp": "2026-11-26 20:13:22 UTC",
+  "gitSha": "d48df1847",
+  "branch": "main",
+  "exitReasons": [],
+  "LibraryScroll.javaRetainedMb": 5.5694122314453125,
+  "LibraryScroll.nativeDeltaMb": 92.3641357421875,
+  "LibraryScroll.cacheOverflowBytes": 0,
+  "LibraryScroll.jankyPct": 44.85981308411215,
+  "LibraryScroll.cpuMsPerScreenful": 182.82973621103116,
+  "LibraryScroll.maxDecodeBytes": 388800,
+  "device": {
+    "memoryClass": 192,
+    "largeHeap": false,
+    "sdkInt": 30,
+    "memTotalKb": 2028600,
+    "coilVersion": "3.2.0",
+    "invalidDevice": false
+  },
+  "pid": 2733,
+  "scenarioStartMs": 1795723700903,
+  "Process.survived": 1,
+  "SwitchChurn.editorReferenceCleared": 1,
+  "SwitchChurn.heapSlopeMbPerCycle": -0.01156552731659309,
+  "Export.exportedBitmapBytes": 50331648,
+  "Export.bakePeakMb": 178.23834228515625,
+  "SketchCanvasPan200.frameP50RatioToEmpty": 1.061456103918588,
+  "SketchCanvasPan200.frameP95Ms": 8.166142
+}
