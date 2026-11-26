@@ -10,6 +10,7 @@ import androidx.work.Configuration
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
 import dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler
+import dev.stapler.stelekit.jobs.schedule.WorkManagerTaskScheduler
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -56,7 +57,9 @@ class DepthModelDownloaderAbsentRaceTest {
         val noopScheduler = Proxy.newProxyInstance(
             BackgroundTaskScheduler::class.java.classLoader,
             arrayOf(BackgroundTaskScheduler::class.java),
-        ) { _, _, _ -> null } as BackgroundTaskScheduler
+        ) { _, method, _ ->
+            if (method.name == "getCapabilities") WorkManagerTaskScheduler.CAPABILITIES else null
+        } as BackgroundTaskScheduler
         val downloader = DepthModelDownloader(
             context,
             scheduler = noopScheduler,

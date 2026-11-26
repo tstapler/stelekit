@@ -24,6 +24,7 @@ import dev.stapler.stelekit.jobs.schedule.WorkManagerJitterSpikeTest
 import dev.stapler.stelekit.jobs.schedule.TaskRegistryBothRootsTest
 import dev.stapler.stelekit.jobs.schedule.TaskWorkerTest
 import dev.stapler.stelekit.platform.PlatformEdgeHostsTest
+import dev.stapler.stelekit.platform.ml.DepthModelDownloaderCancelPortTest
 import dev.stapler.stelekit.platform.ml.ModelDownloadEndToEndTest
 import dev.stapler.stelekit.platform.ml.ModelDownloadPresentationTest
 import dev.stapler.stelekit.platform.ml.ModelDownloadTaskTest
@@ -81,6 +82,7 @@ import org.junit.runners.Suite
     TaskWorkerTest::class,
     ModelDownloadPresentationTest::class,
     ModelDownloadTaskTest::class,
+    DepthModelDownloaderCancelPortTest::class,
     ModelDownloadEndToEndTest::class,
     OneShotSkipTest::class,
     AndroidBatterySettingsLauncherTest::class,

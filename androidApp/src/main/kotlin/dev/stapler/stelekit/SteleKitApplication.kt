@@ -267,7 +267,8 @@ class SteleKitApplication : Application() {
             SensorModule.depthSensorProvider = ARCoreDepthProvider(applicationContext)
             SensorModule.cameraLensCatalog = dev.stapler.stelekit.platform.sensor.defaultCameraLensCatalog(applicationContext)
             SensorModule.motionSensorProvider = AndroidMotionSensorProvider(applicationContext)
-            SensorModule.monocularDepthEstimator = OnnxMonocularDepthEstimator(applicationContext)
+            SensorModule.monocularDepthEstimator =
+                OnnxMonocularDepthEstimator(applicationContext, modelDownloadScheduler())
             defaultMeasurementDeviceFactories(applicationContext).forEach(MeasurementDeviceRegistry::register)
             fileSystem = PlatformFileSystem().apply { init(applicationContext) }
             // Activate write-behind when MANAGE_EXTERNAL_STORAGE is not granted.
@@ -308,6 +309,19 @@ class SteleKitApplication : Application() {
                 fileSystem = PlatformFileSystem()
             }
         }
+    }
+
+    /** A second adapter beside [startScheduleStartup]'s is safe: they share WorkManager, the ledger and the lock. */
+    private fun modelDownloadScheduler(): dev.stapler.stelekit.jobs.schedule.BackgroundTaskScheduler {
+        val settings = PlatformSettings()
+        return dev.stapler.stelekit.jobs.schedule.WorkManagerTaskScheduler(
+            context = applicationContext,
+            registry = taskRegistry,
+            store = dev.stapler.stelekit.jobs.schedule.TaskSettingsStore(
+                settings, dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime.legacySeed, taskRegistry,
+            ),
+            ledger = dev.stapler.stelekit.jobs.schedule.AppliedConfigLedger(settings),
+        )
     }
 
     /**

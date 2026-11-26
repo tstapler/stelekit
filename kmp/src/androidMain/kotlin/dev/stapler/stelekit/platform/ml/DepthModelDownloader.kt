@@ -7,6 +7,7 @@ import android.content.Context
 import androidx.core.app.NotificationManagerCompat
 import androidx.work.NetworkType
 import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
@@ -24,7 +25,6 @@ import dev.stapler.stelekit.jobs.schedule.TaskRegistry
 import dev.stapler.stelekit.jobs.schedule.TaskSettingsStore
 import dev.stapler.stelekit.jobs.schedule.TaskWorkerRuntime
 import dev.stapler.stelekit.jobs.schedule.WorkManagerTaskScheduler
-import dev.stapler.stelekit.jobs.workManagerOrNull
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.SteleKitContext
@@ -36,6 +36,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -65,6 +66,8 @@ class DepthModelDownloader internal constructor(
     /** Test seam: runs between computing a snapshot's state and writing it, to hold the window open deterministically. */
     private val beforeStateWrite: suspend () -> Unit = {},
     private val afterStateWrite: () -> Unit = {},
+    /** Test seam: replaces WorkManager's status stream. */
+    private val workInfoFlow: Flow<List<WorkInfo>>? = null,
 ) {
     constructor(context: Context) : this(context, scheduler = null)
 
@@ -104,11 +107,20 @@ class DepthModelDownloader internal constructor(
     // later `= null` initializer would otherwise clobber the job it just stored.
     @Volatile private var settleJob: Job? = null
 
-    init {
-        scope.launch {
-            val workManager = workManagerOrNull(context) ?: return@launch
-            workManager.getWorkInfosForUniqueWorkFlow(UNIQUE_WORK_NAME).collect { infos -> apply(infos) }
+    @Volatile private var pendingCancel: Job? = null
+
+    /** Null when WorkManager is not initialised: nothing could report a download's outcome. */
+    private val statusFlow: Flow<List<WorkInfo>>? by lazy {
+        workInfoFlow ?: try {
+            WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(UNIQUE_WORK_NAME)
+        } catch (e: IllegalStateException) {
+            logger.warn("WorkManager is not initialised", e)
+            null
         }
+    }
+
+    init {
+        scope.launch { statusFlow?.collect { infos -> apply(infos) } }
     }
 
     /**
@@ -121,13 +133,16 @@ class DepthModelDownloader internal constructor(
             _modelState.value = ModelState.Ready
             return modelFile.right()
         }
-        workManagerOrNull(context)
-            ?: return DomainError.SensorError.HardwareUnavailable("Background downloads are unavailable right now").left()
+        // The flag alone is not enough: the WorkManager adapter's runOnce is a silent no-op without WorkManager.
+        if (!taskScheduler.capabilities.schedulesWork || statusFlow == null) {
+            return DomainError.SensorError.HardwareUnavailable("Background downloads are unavailable right now").left()
+        }
         // KEEP: an already queued or running job is left alone; a finished one is replaced by this new run.
         inFlight.incrementAndGet()
         val generation = cancelGeneration.get()
         val failuresBefore = failureCount.get()
         try {
+            awaitPendingCancel()
             taskScheduler.runOnce(ModelDownloadTask.KEY, storedConstraints(), OneShotConflict.Keep)
             // A cancel that landed while runOnce was suspended must not be undone by this late write, and the job
             // runOnce just enqueued is an orphan: cancel it again. A job that already failed (the collector can
@@ -140,7 +155,7 @@ class DepthModelDownloader internal constructor(
                 }
             }
             if (cancelGeneration.get() != generation) {
-                workManagerOrNull(context)?.cancelUniqueWork(UNIQUE_WORK_NAME)
+                requestCancel()
                 return DomainError.SensorError.HardwareUnavailable("Depth model download cancelled").left()
             }
             return awaitTerminal()
@@ -157,8 +172,14 @@ class DepthModelDownloader internal constructor(
     suspend fun downloadNowAnyway() {
         if (isModelReady()) return
         inFlight.incrementAndGet()
+        val generation = cancelGeneration.get()
         try {
+            awaitPendingCancel()
             taskScheduler.runOnce(ModelDownloadTask.KEY, ANYWAY_CONSTRAINTS, OneShotConflict.Replace)
+            if (cancelGeneration.get() != generation) {
+                requestCancel()
+                return
+            }
             if (_modelState.value !is ModelState.Downloading) _modelState.value = ModelState.Downloading(progress = -1)
         } finally {
             inFlight.decrementAndGet()
@@ -182,9 +203,27 @@ class DepthModelDownloader internal constructor(
     fun cancelDownload() {
         cancelGeneration.incrementAndGet()
         settleJob?.cancel()
-        workManagerOrNull(context)?.cancelUniqueWork(UNIQUE_WORK_NAME)
+        requestCancel()
         runCatching { File(modelFile.parentFile, "${modelFile.name}.part").delete() }
         if (!isModelReady()) _modelState.value = ModelState.Cancelled
+    }
+
+    /** Cancels through the port, on [scope] so a cancelled caller cannot skip it. */
+    @Synchronized
+    private fun requestCancel() {
+        val previous = pendingCancel
+        pendingCancel = scope.launch {
+            previous?.join()
+            taskScheduler.cancel(ModelDownloadTask.KEY)
+        }
+    }
+
+    /** Must precede every enqueue, or a late cancel kills the new job. Loops for cancels requested while waiting. */
+    private suspend fun awaitPendingCancel() {
+        do {
+            val pending = pendingCancel
+            pending?.join()
+        } while (pending !== pendingCancel)
     }
 
     private suspend fun awaitTerminal(): Either<DomainError, File> =
