@@ -95,9 +95,7 @@ class LfsBatchClient(
             }.fold({ return it.left() }, { it })
             val parsed = try {
                 json.decodeFromString<BatchResponse>(response)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
+            } catch (e: IllegalArgumentException) { // includes SerializationException
                 return DomainError.GitError.FetchFailed("Git LFS returned an unreadable response").left()
             }
             parsed.objects.forEach { byOid[it.oid] = it }
