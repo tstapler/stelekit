@@ -12,6 +12,7 @@ import dev.stapler.stelekit.git.testsupport.StubConfigRepository
 import dev.stapler.stelekit.git.testsupport.sampleConfig
 import dev.stapler.stelekit.model.RepoRoot
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.eclipse.jgit.api.Git
 import java.io.File
 import java.nio.file.Files
@@ -46,9 +47,8 @@ class StaleLockRecoveryFollowUpTest {
         File(gitDir, "index.lock").apply { writeText(""); setLastModified(System.currentTimeMillis() - 60_000) }
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
-    fun beginChecked_should_EndTheClaim_When_TheHealthCheckRefuses() = runBlocking<Unit> {
+    fun beginChecked_should_EndTheClaim_When_TheHealthCheckRefuses() = runTest {
         val gitDir = tempDir()
         writeDeadOwner(gitDir)
         val registry = ActiveRunRegistry()
@@ -63,9 +63,8 @@ class StaleLockRecoveryFollowUpTest {
         assertEquals(Either.Right(LockVerdict.NoLock), next, "the next claim must not see SyncInProgress")
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
-    fun beginChecked_should_EndTheClaimAndRethrow_When_TheHealthCheckThrows() = runBlocking<Unit> {
+    fun beginChecked_should_EndTheClaimAndRethrow_When_TheHealthCheckThrows() = runTest {
         val gitDir = tempDir()
         writeDeadOwner(gitDir)
         val registry = ActiveRunRegistry()
@@ -79,7 +78,7 @@ class StaleLockRecoveryFollowUpTest {
     }
 
     // The original bug's victims: a leftover index.lock with no owner record.
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: real lock files and a GitSyncService on its own real dispatchers
     @Test
     fun removeLockFile_should_UnwedgeSync_When_StaleLockHasNoRecord() = runBlocking<Unit> {
         val root = tempDir()
@@ -98,7 +97,7 @@ class StaleLockRecoveryFollowUpTest {
         assertTrue(synced.isRight(), "sync must proceed after the confirmed removal, got $synced")
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: real lock files and a GitSyncService on its own real dispatchers
     @Test
     fun removeLockFile_should_Refuse_When_TheLockIsOnlyMinutesOld() = runBlocking<Unit> {
         val root = tempDir()
@@ -109,7 +108,7 @@ class StaleLockRecoveryFollowUpTest {
         assertTrue(lock.exists())
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: real lock files and a GitSyncService on its own real dispatchers
     @Test
     fun removeLockFileAction_should_SurfaceTheRefusal_When_TheLockIsKept() = runBlocking<Unit> {
         val root = tempDir()
@@ -135,7 +134,7 @@ class StaleLockRecoveryFollowUpTest {
         }
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: real lock files and a GitSyncService on its own real dispatchers
     @Test
     fun removeLockFile_should_Refuse_When_TheLockWasJustTouched() = runBlocking<Unit> {
         val root = tempDir()

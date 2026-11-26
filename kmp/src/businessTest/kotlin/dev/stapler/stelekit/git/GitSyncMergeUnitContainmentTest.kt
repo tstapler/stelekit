@@ -61,7 +61,7 @@ class GitSyncMergeUnitContainmentTest {
             graphLoader = GraphLoader(fs, InMemoryPageRepository(), InMemoryBlockRepository()),
         )
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun reload_should_ChunkAtMost200AndSetReloadIncomplete_When_BeginGitMergeThrows() = runBlocking<Unit> {
         val seen = AtomicInteger()
@@ -85,7 +85,7 @@ class GitSyncMergeUnitContainmentTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun reload_should_LogProgressPerChunkAndStayComplete_When_ThousandPathsReload() = runBlocking<Unit> {
         val svc = service(pages(1000), StubFileSystem())

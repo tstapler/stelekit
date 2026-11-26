@@ -42,6 +42,7 @@ import dev.stapler.stelekit.ui.components.TaskRunLogSource
 import dev.stapler.stelekit.ui.components.rememberTaskRunRowsState
 import dev.stapler.stelekit.ui.components.settings.BackgroundTaskGraph
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.TimeZone
 import org.junit.After
 import org.junit.Rule
@@ -208,9 +209,8 @@ class TaskRunLogRowsTest {
         rule.onNodeWithText("Git sync / Work notes / success").assertExists()
     }
 
-    // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
     @Test
-    fun recentResult_should_beReadFailedWhileRecentStaysEmpty_When_SettingsReadThrows() = runBlocking {
+    fun recentResult_should_beReadFailedWhileRecentStaysEmpty_When_SettingsReadThrows() = runTest {
         append(record(now - minute))
         settings.failReads = true
         assertTrue(runLog.recentResult(gitKey) is TaskRunReadResult.ReadFailed)

@@ -132,7 +132,7 @@ class DesktopTaskRootWiringTest {
             val scheduler = createDesktopTaskScheduler(registry, shared)
             val key = TaskKey(GitSyncTask.KIND, TaskScope("g1"))
             try {
-                // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
+                // runBlocking: the scheduler runs on its own real dispatcher; polled on the wall clock
                 runBlocking {
                     scheduler.runOnce(key, TaskConstraints())
                     val deadline = System.nanoTime() + 10_000_000_000L // real clock: the scheduler runs on its own dispatcher, no completion signal

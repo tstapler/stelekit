@@ -74,7 +74,7 @@ class GitSyncServiceAutoCommitTest {
         )
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     private fun GitSyncService.syncOnce(): Either<DomainError.GitError, SyncState.Success> = runBlocking { sync("test-graph") }
 
     @Test

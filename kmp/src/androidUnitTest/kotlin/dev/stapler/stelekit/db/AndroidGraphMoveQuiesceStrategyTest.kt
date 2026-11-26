@@ -20,6 +20,7 @@ import kotlinx.coroutines.yield
 import dev.stapler.stelekit.model.StorageLocation
 import dev.stapler.stelekit.model.StorageMoveOperation
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -86,6 +87,25 @@ class AndroidGraphMoveQuiesceStrategyTest {
             queue.dequeue("pages/foo.md")
             return emptyList()
         }
+    }
+
+    @Test
+    fun release_should_ResumeBackgroundSync_When_TheCallerIsAlreadyCancelled() = runTest {
+        var resumed = false
+        val strategy = AndroidGraphMoveQuiesceStrategy(
+            gitSyncBusyCounter = GitSyncBusyCounter(),
+            gate = RepoOpGate(),
+            gateKeyFor = { null },
+            shadowWorktreeTarget = { null },
+            resumeBackgroundSync = { resumed = true },
+        )
+
+        launch {
+            cancel()
+            strategy.release(op)
+        }.join()
+
+        assertTrue(resumed, "a cancelled caller must still resume background sync")
     }
 
     @Test

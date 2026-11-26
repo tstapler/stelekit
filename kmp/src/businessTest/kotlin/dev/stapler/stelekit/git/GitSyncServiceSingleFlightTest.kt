@@ -20,6 +20,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.nio.file.Files
@@ -91,7 +92,7 @@ class GitSyncServiceSingleFlightTest {
         override suspend fun abortMerge(config: GitConfig) = Unit.right().also { calls += "abort" }
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun everyMutatingEntryPoint_should_RunWithTheGateHeld_When_RepositoryAssertsIt() = runBlocking<Unit> {
         val git = GateAssertingGitRepository(OkRepository(), gate, keyFor = { c -> checkNotNull(RepoOpGate.keyForOrNull("${c.repoRoot.value}/.git") { File(it).canonicalFile.path }) })
@@ -119,7 +120,7 @@ class GitSyncServiceSingleFlightTest {
         assertFalse(gate.isHeld(key()), "every entry point must release")
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun gate_should_BeFreeAndSyncRunnable_When_BeginOwnedOperationThrows() = runBlocking<Unit> {
         val git = OkRepository().apply { onBegin = { throw IllegalStateException("record write failed") } }
@@ -133,7 +134,7 @@ class GitSyncServiceSingleFlightTest {
         assertTrue(svc.sync("g").isRight(), "a fresh sync must acquire and run")
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun gate_should_BeFree_When_EndOwnedOperationThrowsAnything() = runBlocking<Unit> {
         for (failure in listOf<() -> Throwable>({ RuntimeException("boom") }, { CancellationException("cancelled") })) {
@@ -148,7 +149,7 @@ class GitSyncServiceSingleFlightTest {
         }
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun gate_should_BeFreeAndSyncRunnable_When_RunIsCancelledMidCommit() = runBlocking<Unit> {
         val git = GateAwareFakeGitRepository(gitDir)
@@ -169,7 +170,7 @@ class GitSyncServiceSingleFlightTest {
         assertTrue(withTimeout(20_000) { svc.sync("g") }.isRight()) // real-clock hang guard: awaits real threads
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun secondPress_should_LeaveInFlightAndStateUnchanged_When_FirstIsCommitting() = runBlocking<Unit> {
         val git = GateAwareFakeGitRepository(gitDir)
@@ -205,7 +206,7 @@ class GitSyncServiceSingleFlightTest {
         git, StubConfigRepository(Either.Right(config)), SyncStalenessStore(MapSettings()), gate, { key() }, { 1L },
     )
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun servicePress_should_CoalesceAndNotInterruptTheFetch_When_AColdRunHoldsTheGate() = runBlocking<Unit> {
         val cold = OkRepository().apply { fetchGate = kotlinx.coroutines.CompletableDeferred() }
@@ -224,7 +225,7 @@ class GitSyncServiceSingleFlightTest {
         assertEquals(listOf("fetch"), cold.calls)
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun coldRun_should_ReturnBusyWithoutWaiting_When_ALiveSyncHoldsTheGate() = runBlocking<Unit> {
         val live = OkRepository().apply { fetchGate = kotlinx.coroutines.CompletableDeferred() }
@@ -241,7 +242,7 @@ class GitSyncServiceSingleFlightTest {
         withTimeout(20_000) { first.await() } // real-clock hang guard: awaits real threads
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun claim_should_RefuseWithSyncInProgressAndRunNothing_When_OwnerAlive() = runBlocking<Unit> {
         val git = OkRepository().apply { verdict = LockVerdict.OwnerAlive }
@@ -256,7 +257,7 @@ class GitSyncServiceSingleFlightTest {
         assertFalse(gate.isHeld(key()))
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun claim_should_PublishStaleLockFileWithVerdictAndDeleteNothing_When_OwnerUnknown() = runBlocking<Unit> {
         val verdict = LockVerdict.OwnerUnknown(UnknownReason.RecoveryLockUnsupported)
@@ -272,7 +273,7 @@ class GitSyncServiceSingleFlightTest {
         assertFalse(gate.isHeld(key()))
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun record_should_BeEndedExactlyOncePerClaimedRun_AndNeverForACoalescedCall() = runBlocking<Unit> {
         val git = OkRepository()
@@ -301,7 +302,7 @@ class GitSyncServiceSingleFlightTest {
         return first
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun threeUiPresses_should_YieldExactlyOneFollowUp_AndScheduledIsDropped() = runBlocking<Unit> {
         val git = OkRepository()
@@ -320,7 +321,7 @@ class GitSyncServiceSingleFlightTest {
         assertFalse(gate.isHeld(key()))
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun scheduledAlone_should_NotQueueAFollowUp() = runBlocking<Unit> {
         val git = OkRepository()
@@ -335,7 +336,7 @@ class GitSyncServiceSingleFlightTest {
         assertEquals(1, git.calls.count { it == "fetch" })
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun liftedPress_should_BeRefusedAndNeverQueueAFollowUp() = runBlocking<Unit> {
         val git = OkRepository()
@@ -351,7 +352,7 @@ class GitSyncServiceSingleFlightTest {
         assertEquals(1, git.calls.count { it == "fetch" }, "the lift flag must not ride a rerun")
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun pressAgainstQuiesceHold_should_NeverSetTheRerunBit() = runBlocking<Unit> {
         val git = OkRepository()
@@ -367,7 +368,7 @@ class GitSyncServiceSingleFlightTest {
         assertEquals(emptyList(), git.calls)
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun heartbeat_should_TouchWhileRunningAndStopBeforeTheRecordEnds() = runBlocking<Unit> {
         val events = java.util.concurrent.CopyOnWriteArrayList<String>()
@@ -392,7 +393,7 @@ class GitSyncServiceSingleFlightTest {
         assertEquals(1, events.count { it == "end" })
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun inFlight_should_CarryFollowUpQueuedOnlyForAQueuedUiPress() = runBlocking<Unit> {
         val git = OkRepository()
@@ -415,9 +416,8 @@ class GitSyncServiceSingleFlightTest {
         assertNull(svc.inFlight.value)
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
-    fun isGateHeld_should_FollowTheRepositoryGate_IncludingAForeignHolder() = runBlocking<Unit> {
+    fun isGateHeld_should_FollowTheRepositoryGate_IncludingAForeignHolder() = runTest {
         val flight = SyncSingleFlight(
             gate, OkRepository(), StubConfigRepository(Either.Right(config)), GitSyncBusyCounter(),
             kotlinx.coroutines.flow.MutableStateFlow(null), { 0L }, publishError = {},
@@ -456,7 +456,7 @@ class GitSyncServiceSingleFlightTest {
             gate = gate,
         ).also { services += it }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun confirmDialog_should_NotHoldGate_When_AwaitingUserConfirm() = runBlocking<Unit> {
         val git = AbortRepository()
@@ -476,7 +476,7 @@ class GitSyncServiceSingleFlightTest {
         assertFalse(gate.isHeld(key()))
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun abort_should_RefuseAndResetNothing_When_FilesChangeWhileTheDialogIsOpen() = runBlocking<Unit> {
         val git = AbortRepository()

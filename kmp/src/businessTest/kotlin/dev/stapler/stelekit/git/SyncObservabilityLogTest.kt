@@ -67,7 +67,7 @@ class SyncObservabilityLogTest {
 
     private fun logged(fragment: String) = lines.any { fragment in it }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun everyLockVerdict_should_LogOneLockVerdictLine() = runBlocking {
         val verdicts = listOf(
@@ -83,14 +83,14 @@ class SyncObservabilityLogTest {
         }
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun startedDecision_should_BeLogged_When_TheClaimSucceeds() = runBlocking {
         service(ScriptedRepository(LockVerdict.NoLock)).sync("g")
         assertTrue(logged("sync origin=UiPress decision=started"), "$lines")
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun skippedDecision_should_BeLogged_When_TheOwnerIsUnknown() = runBlocking {
         val result = service(ScriptedRepository(LockVerdict.OwnerUnknown(UnknownReason.TornRecord))).sync("g")
@@ -98,7 +98,7 @@ class SyncObservabilityLogTest {
         assertTrue(logged("sync origin=UiPress decision=skipped reason=StaleLockFile"), "$lines")
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun coalescedDecision_should_BeLogged_When_AnotherRunHoldsTheGate() = runBlocking {
         val repo = ScriptedRepository(LockVerdict.NoLock)

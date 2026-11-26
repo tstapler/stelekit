@@ -33,6 +33,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import kotlin.test.Test
@@ -139,9 +140,8 @@ class GitSyncCoordinatorTest {
         h.close()
     }
 
-    // runBlocking: the coordinator runs on a real Dispatchers.Default scope the test has to wait on
     @Test
-    fun `openSyncDetails_should_DoNothing_When_StateHasNoDetailSurface`() = runBlocking {
+    fun `openSyncDetails_should_DoNothing_When_StateHasNoDetailSurface`() = runTest {
         val h = Harness(Spy())
 
         h.coordinator.safety.openSyncDetails()
@@ -231,9 +231,8 @@ class GitSyncCoordinatorTest {
         h.close()
     }
 
-    // runBlocking: the coordinator runs on a real Dispatchers.Default scope the test has to wait on
     @Test
-    fun `dismissals_should_CloseTheirDialogs`() = runBlocking {
+    fun `dismissals_should_CloseTheirDialogs`() = runTest {
         val h = Harness(Spy())
         h.uiState.value = AppState(repairNeededVisible = true, massChangeConfirmVisible = true)
 

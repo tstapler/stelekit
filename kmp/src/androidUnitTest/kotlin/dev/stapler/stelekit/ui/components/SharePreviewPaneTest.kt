@@ -59,7 +59,7 @@ class SharePreviewPaneTest {
     // compute runs on a background dispatcher, so idle-waiting alone can return before it finishes.
     @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
     private fun waitForText(text: String) {
-        composeRule.waitUntilAtLeastOneExists(androidx.compose.ui.test.hasText(text), 5_000)
+        composeRule.waitUntilAtLeastOneExists(androidx.compose.ui.test.hasText(text, substring = true), 5_000)
     }
 
     private fun androidx.compose.ui.test.SemanticsNodeInteraction.assertDoesNotExistOrFail() = assertDoesNotExist()
@@ -86,10 +86,8 @@ class SharePreviewPaneTest {
         composeRule.onNodeWithText("Copy").assertIsNotEnabled() // loading while the 600-block export is pending
         composeRule.onNodeWithText("Copy").assertExists()
         gate.complete(Unit)
-        composeRule.waitUntil(5_000) { computeThread != null }
-        composeRule.waitForIdle()
+        waitForText("- block 600") // computeThread is set before the gate, so it cannot signal completion
         composeRule.onNodeWithText("Copy").assertIsEnabled()
         assertEquals(true, computeThread !== mainThread, "compute ran on the main thread")
-        composeRule.onNodeWithText("- block 600", substring = true).assertExists()
     }
 }

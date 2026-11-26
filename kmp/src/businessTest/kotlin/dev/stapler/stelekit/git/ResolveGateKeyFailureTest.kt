@@ -79,7 +79,7 @@ class ResolveGateKeyFailureTest {
 
     private fun repoKey(): String = checkNotNull(RepoOpGate.keyForOrNull("${gitDir.absolutePath}/.git") { File(it).canonicalFile.path })
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun resolveGateKey_should_FailClosedAndMakeNoGitCall_When_ConfigReadThrowsTwice() = runBlocking<Unit> {
         val git = RecordingRepository { repoKey() }
@@ -97,7 +97,7 @@ class ResolveGateKeyFailureTest {
         gate.releaseOrHandOff(holder)
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun resolveGateKey_should_FailClosed_When_ConfigReadReturnsLeftTwice() = runBlocking<Unit> {
         val git = RecordingRepository { repoKey() }
@@ -112,7 +112,7 @@ class ResolveGateKeyFailureTest {
         assertEquals(emptyList(), git.calls)
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun resolveGateKey_should_Resolve_When_OnlyTheFirstReadFails() = runBlocking<Unit> {
         val git = RecordingRepository { repoKey() }
@@ -123,7 +123,7 @@ class ResolveGateKeyFailureTest {
         assertTrue("fetch" in git.calls)
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun resolveGateKey_should_FailClosedAndMakeNoGitCall_When_GitDirCannotBeCanonicalised() = runBlocking<Unit> {
         val git = RecordingRepository { null }
@@ -135,7 +135,7 @@ class ResolveGateKeyFailureTest {
         assertEquals(emptyList(), git.calls)
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun resolveGateKey_should_FailClosedAndMakeNoGitCall_When_CanonicalisationThrows() = runBlocking<Unit> {
         val git = RecordingRepository { throw java.io.IOException("canonicalisation failed") }
@@ -145,7 +145,7 @@ class ResolveGateKeyFailureTest {
         assertEquals(emptyList(), git.calls)
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun resolveGateKey_should_Coalesce_When_ServiceIsRunningAndConfigBecomesUnreadable() = runBlocking<Unit> {
         val git = GateAwareFakeGitRepository(gitDir)
@@ -166,7 +166,7 @@ class ResolveGateKeyFailureTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun resolveGateKey_should_RethrowCancellation_When_ConfigReadIsCancelled() = runBlocking<Unit> {
         val git = RecordingRepository { repoKey() }

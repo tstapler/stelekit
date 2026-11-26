@@ -64,7 +64,7 @@ class SyncSingleFlightRegressionTest {
         r.leftOrNull() is DomainError.GitError.SyncInProgress
 
     private fun startFirstSync(): Deferred<Either<DomainError.GitError, SyncState.Success>> =
-        // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+        // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
         runBlocking { CoroutineScopeHolder.scope.async(start = CoroutineStart.DEFAULT) { service.sync("g", SyncTrigger.Manual) } }
 
     private fun recordStates(): () -> List<SyncState> {
@@ -72,7 +72,7 @@ class SyncSingleFlightRegressionTest {
         return { collector.cancel(); states.toList() }
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun secondManualSync_should_ReturnSyncInProgress_AndCreateNoLock_When_FirstBlockedInCommit() = runBlocking<Unit> {
         repo.blockAt(FakeGitOp.Commit)
@@ -92,7 +92,7 @@ class SyncSingleFlightRegressionTest {
         withTimeout(TIMEOUT_MS) { first.await() } // real-clock hang guard: awaits real threads
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun liveLockOlderThan60s_should_NotBeDeleted_When_HeldByInFlightRun() = runBlocking<Unit> {
         repo.blockAt(FakeGitOp.Commit)
@@ -107,7 +107,7 @@ class SyncSingleFlightRegressionTest {
         withTimeout(TIMEOUT_MS) { first.await() } // real-clock hang guard: awaits real threads
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun secondManualSync_should_CoalesceAndLeaveStateUnchanged_When_FirstIsMergingAndRepositoryMidMerge() = runBlocking<Unit> {
         repo.hasRemoteChanges = true
@@ -125,7 +125,7 @@ class SyncSingleFlightRegressionTest {
         withTimeout(TIMEOUT_MS) { first.await() } // real-clock hang guard: awaits real threads
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun secondManualSync_should_CoalesceAndLeaveStateUnchanged_When_FirstFetchingAndOfflineAndVaultLocked() = runBlocking<Unit> {
         repo.blockAt(FakeGitOp.Fetch)

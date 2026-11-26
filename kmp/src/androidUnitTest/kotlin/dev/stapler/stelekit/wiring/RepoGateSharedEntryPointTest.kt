@@ -84,7 +84,7 @@ class RepoGateSharedEntryPointTest {
         return outcome
     }
 
-    // runBlocking: quiesce hops to Dispatchers.IO and blocks on real locks; virtual time cannot order it
+    // runBlocking: builds the real app fixture, which opens a graph on real dispatchers
     @Test
     fun the_fixture_gate_is_the_one_in_the_platform_integrations() = runBlocking {
         val f = WiredAppFixture.android(context, dataDir).also { fixture = it }

@@ -115,7 +115,7 @@ class GitSyncCancelBoundaryTest {
         latch.await()
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun cancelDuringFetch_should_NotMerge_AndCancelBeforeCommitShouldNotCommit() = runBlocking<Unit> {
         val entered = CompletableDeferred<Unit>()
@@ -148,7 +148,7 @@ class GitSyncCancelBoundaryTest {
         assertFalse(gate.isHeld(key()))
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun cancelThenImmediateRepress_should_NotOverlap_When_BlockingCallStillRunning() = runBlocking<Unit> {
         val entered = CompletableDeferred<Unit>()
@@ -174,7 +174,7 @@ class GitSyncCancelBoundaryTest {
         assertEquals(0, git.count("fetch"), "the pipeline stops before fetch after the cancel")
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun commit_should_CompleteAndPipelineStopBeforeFetch_When_CancelRequestedDuringCommit() = runBlocking<Unit> {
         val entered = CompletableDeferred<Unit>()
@@ -201,7 +201,7 @@ class GitSyncCancelBoundaryTest {
         rawContent = "<<<<<<< LOCAL\n- a\n=======\n- b\n>>>>>>> REMOTE\n",
     )
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun mergeUnit_should_NotFallThroughToPush_When_ConflictOrCommitFailureExitsInsideNonCancellable() = runBlocking<Unit> {
         val conflicted = Repo(remoteChanges = true).apply {
@@ -222,7 +222,7 @@ class GitSyncCancelBoundaryTest {
         assertEquals(1, failing.count("abort"))
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun mergeUnit_should_ReloadEveryChangedPathBeforeStopping_When_CancelArrivesRightAfterMerge() = runBlocking<Unit> {
         val reloaded = CopyOnWriteArrayList<String>()
@@ -257,7 +257,7 @@ class GitSyncCancelBoundaryTest {
         return reloaded to (GraphLoader(fs, InMemoryPageRepository(), InMemoryBlockRepository()) to fs)
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun resolveConflicts_should_ReloadResolvedFiles_When_CancelArrivesRightAfterCommit() = runBlocking<Unit> {
         val (reloaded, loaderAndFs) = reloadingFixture()
@@ -278,7 +278,7 @@ class GitSyncCancelBoundaryTest {
         assertFalse(gate.isHeld(key()))
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun applyJournalMerge_should_ReloadTheFile_When_CancelArrivesRightAfterCommit() = runBlocking<Unit> {
         val (reloaded, loaderAndFs) = reloadingFixture()
@@ -295,7 +295,7 @@ class GitSyncCancelBoundaryTest {
         assertFalse(gate.isHeld(key()))
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun commitLocalChanges_should_FinishTheCommit_When_CancelRequestedDuringIt() = runBlocking<Unit> {
         val entered = CompletableDeferred<Unit>()
@@ -313,7 +313,7 @@ class GitSyncCancelBoundaryTest {
         assertFalse(gate.isHeld(key()))
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun reloadMergedFiles_should_FlagReloadIncomplete_When_CancelledMidReload() = runBlocking<Unit> {
         val fs = object : StubFileSystem() {
@@ -329,7 +329,7 @@ class GitSyncCancelBoundaryTest {
     }
 
     // PR #683 round 2 (C1): only the caller's wait is bounded; the lease and record stay until the unit really ends.
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun resolveConflicts_should_KeepTheLease_UntilALateCommitFinishes_ThenReleaseAndClearTheFlag() = runBlocking<Unit> {
         val late = CompletableDeferred<Unit>()
@@ -354,7 +354,7 @@ class GitSyncCancelBoundaryTest {
         assertFalse(svc.reloadIncomplete.value, "the sentinel clears when the abandoned unit ends")
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun sync_should_KeepTheLeaseAndNotFlagReload_When_TheMainCommitOutlivesTheWait() = runBlocking<Unit> {
         val late = CompletableDeferred<Unit>()
@@ -373,7 +373,7 @@ class GitSyncCancelBoundaryTest {
     }
 
     // PR #683 review m1: a later complete reload of other files must not clear an earlier incomplete one.
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun reloadIncomplete_should_StaySticky_UntilTheFailedPathsReloadCompletely() = runBlocking<Unit> {
         val failing = java.util.concurrent.atomic.AtomicBoolean(true)
@@ -416,7 +416,7 @@ class GitSyncCancelBoundaryTest {
         override fun observeConfig(graphId: String) = kotlinx.coroutines.flow.flowOf<Either<DomainError, GitConfig?>>(Either.Right(byGraph[graphId]))
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun abandonedUnit_should_HoldOnlyItsOwnRunsLease_AndEndEverythingExactlyOnce() = runBlocking<Unit> {
         val dirB = Files.createTempDirectory("cancel_boundary_b_").toFile()

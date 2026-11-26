@@ -94,7 +94,7 @@ class LfsTransferPolicyTest {
         return b
     }
 
-    // runBlocking: blocking JGit and real HTTP against a local server, partly from non-suspend helpers
+    // runBlocking: reads a flow from a non-suspend helper or test body
     private fun lastJob() = runBlocking { jobs.jobs.first().single() }
 
     @Test
@@ -141,7 +141,7 @@ class LfsTransferPolicyTest {
 
         assertEquals(before, server.requests.size, "no request may reach the LFS server while metered")
         assertTrue(File(b, ".git/lfs/pending").exists())
-        // runBlocking: blocking JGit and real HTTP against a local server, partly from non-suspend helpers
+        // runBlocking: reads a flow from a non-suspend helper or test body
         assertTrue(runBlocking { jobs.jobs.first() }.isEmpty())
     }
 

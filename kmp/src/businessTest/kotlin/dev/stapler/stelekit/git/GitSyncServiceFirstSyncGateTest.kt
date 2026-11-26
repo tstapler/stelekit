@@ -71,7 +71,7 @@ class GitSyncServiceFirstSyncGateTest {
         return Fixture(service, firstSync, fetchCalls)
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `automatic sync is skipped while a first-sync review is pending and leaves state untouched`() = runBlocking {
         val f = fixture(reviewPending = true)
@@ -86,7 +86,7 @@ class GitSyncServiceFirstSyncGateTest {
         f.service.shutdown()
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `manual sync is not blocked by a pending review`() = runBlocking {
         val f = fixture(reviewPending = true)
@@ -98,7 +98,7 @@ class GitSyncServiceFirstSyncGateTest {
         f.service.shutdown()
     }
 
-    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
+    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `automatic sync resumes once the review is confirmed`() = runBlocking {
         val f = fixture(reviewPending = true)
