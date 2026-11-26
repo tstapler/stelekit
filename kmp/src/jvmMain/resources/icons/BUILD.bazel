@@ -12,6 +12,8 @@ genrule(
     name = "icon_icns",
     srcs = ["icon.png"],
     outs = ["icon.icns"],
+    # sips and iconutil exist only on macOS; this lets `bazel build //...` skip it elsewhere.
+    target_compatible_with = ["@platforms//os:macos"],
     cmd = """
         set -e
         ICONSET=$$(mktemp -d)/icon.iconset

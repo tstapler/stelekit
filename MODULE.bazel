@@ -513,6 +513,21 @@ use_repo(maven, "maven")
     ]
 ]
 
+# detekt-api for //buildSrc:detekt_rules (ADR-008). A separate hub so detekt's old Kotlin
+# compiler cannot move any version on the app classpath. Version matches buildSrc/build.gradle.kts.
+# Repin: REPIN=1 bazel run @detekt_maven//:pin
+maven.install(
+    name = "detekt_maven",
+    artifacts = ["io.gitlab.arturbosch.detekt:detekt-api:1.23.7"],
+    lock_file = "//:rules_jvm_external++maven+detekt_maven_install.json",
+    fetch_sources = False,
+    repositories = [
+        "https://maven-central.storage-download.googleapis.com/maven2",
+        "https://repo1.maven.org/maven2",
+    ],
+)
+use_repo(maven, "detekt_maven")
+
 # Custom android toolchain that uses the Bazel-built unzip (registered before
 # the rules_android default so it wins toolchain resolution for aar_import).
 register_toolchains("//:stelekit_android_toolchain")

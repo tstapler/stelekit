@@ -1,3 +1,13 @@
 site/node_modules
 e2e/node_modules
 scripts/sketch-goldens/node_modules
+
+# Agent worktrees are full checkouts (with their own vendor/ trees).
+.claude/worktrees
+
+# Gradle output: processResources copies BUILD files into it, which Bazel would load as packages.
+build
+androidApp/build
+buildSrc/build
+kmp/build
+tools/flamegraph/build
