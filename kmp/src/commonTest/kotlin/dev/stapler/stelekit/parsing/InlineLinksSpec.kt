@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.parsing
 
+import dev.stapler.stelekit.parser.MarkdownParser
 import dev.stapler.stelekit.parsing.ast.*
 import kotlin.test.Ignore
 import kotlin.test.Test
@@ -218,97 +219,224 @@ class InlineLinksSpec {
     }
 
     // -------------------------------------------------------------------------
-    // Markdown links  [text](url)  — KNOWN BUG P0 (intentionally failing)
-    // Currently parseLink() returns TextNode("[") for non-wiki bracket sequences.
+    // Markdown links  [text](url)  — IMPLEMENTED
     // -------------------------------------------------------------------------
 
     @Test
-    fun `markdown-link - basic link does not reduce to bare bracket TextNode (BUG P0)`() {
-        // Bug P0: parseLink returns TextNode("[") for non-wiki links.
-        // Expected: a link node carrying both label "Visit Google" and url.
+    fun `markdown-link - basic link does not reduce to bare bracket TextNode`() {
         val result = parse("[Visit Google](https://google.com)")
         assertFalse(
             result.size == 1 && result[0] is TextNode && (result[0] as TextNode).content == "[",
-            "Bug P0: parser must not reduce a full markdown link to a bare '[' TextNode"
+            "parser must not reduce a full markdown link to a bare '[' TextNode"
         )
     }
 
     @Test
-    fun `markdown-link - label and url are preserved in link node (BUG P0)`() {
-        // When implemented, expect a node (UrlLinkNode or similar) that carries
-        // the label "Click here" and the url "https://example.com".
+    fun `markdown-link - label and url are preserved in link node`() {
         val result = parse("[Click here](https://example.com)")
         val urlNodes = result.filterIsInstance<UrlLinkNode>()
-        assertEquals(1, urlNodes.size, "Bug P0: no UrlLinkNode produced for markdown link")
+        assertEquals(1, urlNodes.size, "no UrlLinkNode produced for markdown link")
         assertEquals("https://example.com", urlNodes[0].url)
         val labelText = urlNodes[0].text.filterIsInstance<TextNode>().joinToString("") { it.content }
         assertEquals("Click here", labelText)
     }
 
     @Test
-    fun `markdown-link - https url scheme (BUG P0)`() {
+    fun `markdown-link - https url scheme`() {
         val result = parse("[Docs](https://docs.example.com/page)")
         assertFalse(
             result.size == 1 && result[0] is TextNode && (result[0] as TextNode).content == "[",
-            "Bug P0: https link collapsed to bare '['"
+            "https link collapsed to bare '['"
         )
         val urlNodes = result.filterIsInstance<UrlLinkNode>()
-        assertEquals(1, urlNodes.size, "Bug P0: no UrlLinkNode for https link")
+        assertEquals(1, urlNodes.size, "no UrlLinkNode for https link")
     }
 
     @Test
-    fun `markdown-link - http url scheme (BUG P0)`() {
+    fun `markdown-link - http url scheme`() {
         val result = parse("[Legacy](http://old.example.com)")
         assertFalse(
             result.size == 1 && result[0] is TextNode && (result[0] as TextNode).content == "[",
-            "Bug P0: http link collapsed to bare '['"
+            "http link collapsed to bare '['"
         )
+        assertEquals("http://old.example.com", result.filterIsInstance<UrlLinkNode>().single().url)
     }
 
     @Test
-    fun `markdown-link - unicode label (BUG P0)`() {
+    fun `markdown-link - unicode label`() {
         val result = parse("[日本語ページ](https://ja.example.com)")
         assertFalse(
             result.size == 1 && result[0] is TextNode && (result[0] as TextNode).content == "[",
-            "Bug P0: unicode-label link collapsed to bare '['"
+            "unicode-label link collapsed to bare '['"
         )
         val urlNodes = result.filterIsInstance<UrlLinkNode>()
-        assertEquals(1, urlNodes.size, "Bug P0: no UrlLinkNode for unicode-label link")
+        assertEquals(1, urlNodes.size, "no UrlLinkNode for unicode-label link")
     }
 
     @Test
-    fun `markdown-link - inline code in label (BUG P0)`() {
+    fun `markdown-link - inline code in label`() {
         // Label contains backtick-quoted code: [`fn()`](https://api.example.com)
         val result = parse("[`fn()`](https://api.example.com)")
         assertFalse(
             result.size == 1 && result[0] is TextNode && (result[0] as TextNode).content == "[",
-            "Bug P0: code-label link collapsed to bare '['"
+            "code-label link collapsed to bare '['"
         )
         val urlNodes = result.filterIsInstance<UrlLinkNode>()
-        assertEquals(1, urlNodes.size, "Bug P0: no UrlLinkNode for code-label link")
-        // When implemented, label should contain a CodeNode child
+        assertEquals(1, urlNodes.size, "no UrlLinkNode for code-label link")
         assertTrue(
             urlNodes.firstOrNull()?.text?.any { it is CodeNode } == true,
-            "Bug P0: label CodeNode not preserved inside UrlLinkNode"
+            "label CodeNode not preserved inside UrlLinkNode"
         )
     }
 
     @Test
-    fun `markdown-link - embedded in surrounding text (BUG P0)`() {
+    fun `markdown-link - embedded in surrounding text`() {
         val result = parse("Read [the guide](https://example.com/guide) for more.")
         assertFalse(
             result.all { it is TextNode },
-            "Bug P0: entire string reduced to TextNodes — markdown link not parsed"
+            "entire string reduced to TextNodes — markdown link not parsed"
         )
         val urlNodes = result.filterIsInstance<UrlLinkNode>()
-        assertEquals(1, urlNodes.size, "Bug P0: no UrlLinkNode when link is mid-sentence")
+        assertEquals(1, urlNodes.size, "no UrlLinkNode when link is mid-sentence")
     }
 
     @Test
-    fun `markdown-link - two links on one line (BUG P0)`() {
+    fun `markdown-link - two links on one line`() {
         val result = parse("[A](https://a.com) and [B](https://b.com)")
         val urlNodes = result.filterIsInstance<UrlLinkNode>()
-        assertEquals(2, urlNodes.size, "Bug P0: expected two UrlLinkNodes for two markdown links")
+        assertEquals(2, urlNodes.size, "expected two UrlLinkNodes for two markdown links")
+    }
+
+    // -------------------------------------------------------------------------
+    // Parentheses around and inside a link destination
+    // -------------------------------------------------------------------------
+
+    private val kichler = "https://www.kichler.com/customer-care/newsroom/landscape-lighting-just-got-reinvented"
+
+    private fun link(label: String, url: String) = UrlLinkNode(url = url, text = listOf(TextNode(label)))
+
+    @Test
+    fun `markdown-link - bare Kichler link`() {
+        assertEquals(listOf<InlineNode>(link("Kichler", kichler)), parse("[Kichler]($kichler)"))
+    }
+
+    @Test
+    fun `markdown-link - wrapped in parentheses`() {
+        // The two closing parens lex as one BLOCK_REF_CLOSE token.
+        assertEquals(
+            listOf(TextNode("("), link("Kichler", kichler), TextNode(")")),
+            parse("([Kichler]($kichler))")
+        )
+    }
+
+    @Test
+    fun `markdown-link - balanced parentheses stay in the url`() {
+        for (url in listOf("https://en.wikipedia.org/wiki/Foo_(bar)", "https://x.org/Foo_(bar)_baz", "https://x.org/((a))")) {
+            assertEquals(listOf<InlineNode>(link("W", url)), parse("[W]($url)"), url)
+            assertEquals(listOf(TextNode("("), link("W", url), TextNode(")")), parse("([W]($url))"), "wrapped $url")
+        }
+    }
+
+    @Test
+    fun `markdown-link - unbalanced open paren in url still closes at the first paren`() {
+        val result = parse("[a](https://x.org/(foo) tail")
+        assertEquals(link("a", "https://x.org/(foo"), result.first())
+    }
+
+    @Test
+    fun `markdown-link - unclosed destination stays plain text`() {
+        assertTrue(parse("[a](https://x.org\n)").none { it is UrlLinkNode })
+    }
+
+    @Test
+    fun `markdown-link - stray closing paren later in the line does not swallow a second link`() {
+        val result = parse("[a](x/(foo) then [b](y) :)")
+        assertEquals(listOf("x/(foo", "y"), result.filterIsInstance<UrlLinkNode>().map { it.url })
+    }
+
+    @Test
+    fun `markdown-link - quoted title with parentheses stays inside the destination`() {
+        val link = parse("[a](u \"t (x y)\")").single() as UrlLinkNode
+        assertEquals("u \"t (x y)\"", link.url)
+    }
+
+    @Test
+    fun `markdown-link - block ref destination is still not a link`() {
+        val result = parse("[a](((uuid-1)))")
+        assertTrue(result.none { it is UrlLinkNode })
+        assertEquals(1, result.filterIsInstance<BlockRefNode>().size)
+    }
+
+    @Test
+    fun `markdown-link - source ranges split the double closing paren`() {
+        val ranges = InlineParser("([a](u))").parseWithRanges().map { it.second }
+        assertEquals(listOf(0 until 1, 1 until 7, 7 until 8), ranges)
+    }
+
+    @Test
+    fun `markdown-link - wrapped link survives the load-time content rebuild`() {
+        val source = "([Kichler]($kichler)) and ([W](https://x.org/Foo_(bar)_baz))"
+        val block = MarkdownParser().parsePage("- $source").blocks.single()
+        assertEquals(source, block.content)
+    }
+
+    @Test
+    fun `image - wrapped in parentheses`() {
+        assertEquals(
+            listOf(TextNode("("), ImageNode(alt = "a", url = "https://x.org/i.png"), TextNode(")")),
+            parse("(![a](https://x.org/i.png))")
+        )
+    }
+
+    @Test
+    fun `markdown-link - title is kept whole after a url with parentheses`() {
+        for (dest in listOf("x_(b) \"t\"", "x_(b) \"My title\"", "x \"My (nice) title\"", "x \"a ) b\"")) {
+            assertEquals(listOf<InlineNode>(link("a", dest)), parse("[a]($dest)"), dest)
+        }
+    }
+
+    @Test
+    fun `markdown-link - unbalanced paren at end of line closes at the first paren`() {
+        assertEquals(listOf<InlineNode>(link("a", "x/(foo")), parse("[a](x/(foo)"))
+        assertEquals("x((1", (parse("[a](x((1)(2) t").first() as UrlLinkNode).url)
+    }
+
+    @Test
+    fun `markdown-link - unbalanced paren does not swallow an adjacent link`() {
+        val urls = parse("[a](x/(foo),see[b](y):)").filterIsInstance<UrlLinkNode>().map { it.url }
+        assertEquals(listOf("x/(foo", "y"), urls)
+    }
+
+    @Test
+    fun `markdown-link - text right after a link is not read as a bullet`() {
+        assertTrue(TextNode("-") in parse("[a](u)- x"))
+    }
+
+    @Test
+    fun `image - unclosed destination is not an image`() {
+        assertTrue(parse("![a](x").none { it is ImageNode })
+    }
+
+    @Test
+    fun `markdown-link - many nested open brackets parse without exponential backtracking`() {
+        // Each of these takes minutes or more if failed labels are retried.
+        for (tail in listOf("](u))", "](f())", "](u)", "`](u))`")) {
+            parse("[a ".repeat(60) + tail)
+        }
+    }
+
+    @Test
+    fun `markdown-link - label equal to url is not rewritten as an autolink on load`() {
+        for (source in listOf("(see [README.md](README.md))", "see (the [spec](spec)).", "[a](a)", "see <https://x.org>")) {
+            assertEquals(source, MarkdownParser().parsePage("- $source").blocks.single().content)
+        }
+    }
+
+    @Test
+    fun `markdown-link - wrapped page alias keeps its page reference`() {
+        val block = MarkdownParser().parsePage("- ([my label]([[Page]]))").blocks.single()
+        assertEquals("([my label]([[Page]]))", block.content)
+        assertEquals(listOf("Page"), block.references)
     }
 
     // -------------------------------------------------------------------------

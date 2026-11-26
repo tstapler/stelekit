@@ -20,6 +20,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.ui.components.settings.TABLE_WRAP_LABEL
 import dev.stapler.stelekit.ui.components.settings.TableSettingsRows
@@ -148,7 +149,11 @@ class TableBlockLayoutTest {
         assertEquals(TableOverflow.SCROLL, holder.prefs.overflow)
     }
 
-    private fun showLinks(opened: MutableList<String>, edits: MutableList<Unit>) = rule.setContent {
+    private fun showLinks(
+        opened: MutableList<String>,
+        edits: MutableList<Unit>,
+        content: String = LINK_TABLE,
+    ) = rule.setContent {
         val handler = object : UriHandler {
             override fun openUri(uri: String) { opened += uri }
         }
@@ -156,7 +161,7 @@ class TableBlockLayoutTest {
             MaterialTheme {
                 Surface {
                     Box(Modifier.width(phoneWidth)) {
-                        TableBlock(content = LINK_TABLE, onStartEditing = { edits += Unit }, prefs = TableDisplayPrefs(numericRightAlign = false))
+                        TableBlock(content = content, onStartEditing = { edits += Unit }, prefs = TableDisplayPrefs(numericRightAlign = false))
                     }
                 }
             }
@@ -171,6 +176,22 @@ class TableBlockLayoutTest {
         rule.onNodeWithText("the docs", useUnmergedTree = true).performTouchInput { click(Offset(8f, 8f)) }
         rule.onNodeWithText("https://example.org/spec", useUnmergedTree = true).performTouchInput { click(Offset(8f, 8f)) }
         assertEquals(listOf("https://example.com/docs", "https://example.org/spec"), opened)
+        assertEquals(0, edits.size, "tapping a link must not enter edit mode")
+    }
+
+    @Test
+    fun aParenthesisedLinkInACellRendersUnderlinedAndTappable() {
+        val url = "https://www.kichler.com/customer-care/newsroom/landscape-lighting-just-got-reinvented"
+        val opened = mutableListOf<String>()
+        val edits = mutableListOf<Unit>()
+        showLinks(opened, edits, "| Source |\n|---|\n| ([Kichler]($url)) |")
+        val result = layout("(Kichler)").second
+        val text = result.layoutInput.text
+        val underlined = text.spanStyles.filter { it.item.textDecoration?.contains(TextDecoration.Underline) == true }
+        assertEquals(listOf("Kichler"), underlined.map { text.substring(it.start, it.end) })
+        val box = result.getBoundingBox(text.indexOf('K') + 2)
+        rule.onNodeWithText("(Kichler)", useUnmergedTree = true).performTouchInput { click(box.center) }
+        assertEquals(listOf(url), opened)
         assertEquals(0, edits.size, "tapping a link must not enter edit mode")
     }
 

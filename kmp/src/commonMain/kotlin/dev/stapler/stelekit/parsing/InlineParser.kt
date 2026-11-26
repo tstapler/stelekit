@@ -7,6 +7,9 @@ class InlineParser(private val source: CharSequence) {
     private val lexer = Lexer(source)
     private var currentToken = lexer.nextToken()
 
+    // A failed `[` fails the same way on every retry; without this, nested ones are exponential.
+    private val failedLinkStarts = mutableSetOf<Int>()
+
     fun parse(): List<InlineNode> = parseSlots().map { it.node }
 
     /**
@@ -77,7 +80,7 @@ class InlineParser(private val source: CharSequence) {
 
     private fun parsePrefix(token: Token): InlineNode {
         return when (token.type) {
-            TokenType.TEXT -> parseTextOrTaskMarker(token)
+            TokenType.TEXT -> parseTextOrTaskMarker(source, token)
             TokenType.WS, TokenType.COLON, TokenType.NEWLINE -> TextNode(token.text(source).toString())
             TokenType.L_BRACKET -> parseLink(token)
             TokenType.L_PAREN -> TextNode("(") // Was parseBlockRef, now handled by BLOCK_REF_OPEN
@@ -109,15 +112,6 @@ class InlineParser(private val source: CharSequence) {
             TokenType.PIPE, TokenType.R_ANGLE, TokenType.L_BRACE, TokenType.R_BRACE -> TextNode(token.text(source).toString())
             else -> TextNode(token.text(source).toString())
         }
-    }
-
-    private fun parseTextOrTaskMarker(token: Token): InlineNode {
-        val text = token.text(source).toString()
-        val taskMarkers = setOf("TODO", "DONE", "NOW", "LATER", "WAITING", "CANCELLED", "DOING", "WAIT", "STARTED")
-        if (text in taskMarkers) {
-            return TaskMarkerNode(text)
-        }
-        return TextNode(text)
     }
 
     private fun parseInfix(left: InlineNode, _token: Token): InlineNode {
@@ -209,21 +203,14 @@ class InlineParser(private val source: CharSequence) {
             currentToken = savedToken
             return TextNode("!")
         }
-        advance() // consume (
-
-        val urlSb = StringBuilder()
-        while (currentToken.type != TokenType.R_PAREN && currentToken.type != TokenType.EOF && currentToken.type != TokenType.NEWLINE) {
-            urlSb.append(currentToken.text(source))
-            advance()
-        }
-        if (currentToken.type != TokenType.R_PAREN) {
+        val url = consumeLinkDestination()
+        if (url == null) {
             lexer.restoreState(savedLexerState)
             currentToken = savedToken
             return TextNode("!")
         }
-        advance() // consume )
 
-        return ImageNode(alt = altSb.toString(), url = urlSb.toString())
+        return ImageNode(alt = altSb.toString(), url = url)
     }
 
     private fun parseAutoLink(): InlineNode {
@@ -244,7 +231,7 @@ class InlineParser(private val source: CharSequence) {
         advance() // consume >
 
         val url = urlSb.toString()
-        return UrlLinkNode(url = url, text = listOf(TextNode(url)))
+        return UrlLinkNode(url = url, text = listOf(TextNode(url)), isAutoLink = true)
     }
 
     private fun parseSuperscript(): InlineNode {
@@ -258,7 +245,7 @@ class InlineParser(private val source: CharSequence) {
         return SuperscriptNode(children)
     }
 
-    private fun parseLink(_token: Token): InlineNode {
+    private fun parseLink(token: Token): InlineNode {
         // Handle [[WikiLink]] or [label](url)
         if (currentToken.type == TokenType.L_BRACKET) {
             // [[ detected — wiki-link path
@@ -314,7 +301,7 @@ class InlineParser(private val source: CharSequence) {
         // many unmatched `[` (e.g. typing "[[MOP (" mid-link) is exponential — every `[`
         // encountered while scanning for the label's `]` triggers a fresh recursive
         // parseLink call that itself rescans the remaining text.
-        if (!hasMatchingLabelClose()) {
+        if (token.start in failedLinkStarts || !hasMatchingLabelClose()) {
             return TextNode("[")
         }
         val labelSaved = lexer.saveState()
@@ -330,28 +317,21 @@ class InlineParser(private val source: CharSequence) {
         if (currentToken.type == TokenType.R_BRACKET) {
             advance() // consume ]
             if (currentToken.type == TokenType.L_PAREN) {
-                advance() // consume (
-                val urlSb = StringBuilder()
-                while (currentToken.type != TokenType.R_PAREN && currentToken.type != TokenType.EOF && currentToken.type != TokenType.NEWLINE) {
-                    urlSb.append(currentToken.text(source))
-                    advance()
-                }
-                if (currentToken.type == TokenType.R_PAREN) {
-                    advance() // consume )
-                    return UrlLinkNode(url = urlSb.toString(), text = labelNodes)
-                }
+                val url = consumeLinkDestination()
+                if (url != null) return UrlLinkNode(url = url, text = labelNodes)
             }
         }
         // No match — backtrack
+        failedLinkStarts.add(token.start)
         lexer.restoreState(labelSaved)
         currentToken = labelToken
         return TextNode("[")
     }
 
     /**
-     * Scans forward from [currentToken] for `] ( ... )`, using raw token-type checks only
-     * (no recursive parsing), then restores lexer/token state. Bounded O(remaining tokens)
-     * per call with no fan-out, unlike the real label parse it guards.
+     * Scans forward from [currentToken] for `] ( ... )` without recursive parsing, then
+     * restores lexer/token state. Linear in the remaining line per call with no fan-out,
+     * unlike the real label parse it guards.
      */
     private fun hasMatchingLabelClose(): Boolean {
         val saved = lexer.saveState()
@@ -363,18 +343,25 @@ class InlineParser(private val source: CharSequence) {
         var found = false
         if (currentToken.type == TokenType.R_BRACKET) {
             advance()
-            if (currentToken.type == TokenType.L_PAREN) {
-                advance()
-                while (currentToken.type != TokenType.R_PAREN && currentToken.type != TokenType.EOF && currentToken.type != TokenType.NEWLINE) {
-                    advance()
-                }
-                found = currentToken.type == TokenType.R_PAREN
-            }
+            found = currentToken.type == TokenType.L_PAREN && linkDestinationEnd(source, currentToken.end) >= 0
         }
 
         lexer.restoreState(saved)
         currentToken = savedToken
         return found
+    }
+
+    /**
+     * With [currentToken] on the `(` opening a link destination, consumes through its closing
+     * paren and returns the destination, or null (consuming nothing) if it is never closed.
+     */
+    private fun consumeLinkDestination(): String? {
+        val start = currentToken.end
+        val end = linkDestinationEnd(source, start)
+        if (end < 0) return null
+        lexer.restoreState(Lexer.State(end + 1, false))
+        advance()
+        return source.substring(start, end)
     }
 
     private fun parseBlockRef(_token: Token): InlineNode {
@@ -529,4 +516,65 @@ class InlineParser(private val source: CharSequence) {
     private fun advance() {
         currentToken = lexer.nextToken()
     }
+}
+
+/**
+ * Index of the `)` closing a link destination that starts at [from], or -1 if there is none.
+ * A wrapped page alias, `([label]([[Page]]))`, is not a link, so `[[Page]]` stays a page reference.
+ */
+private fun linkDestinationEnd(source: CharSequence, from: Int): Int {
+    val end = matchingParen(source, from)
+    val isWrappedPageAlias = source.startsWith("[[", from) && source.getOrNull(end + 1) == ')'
+    return if (isWrappedPageAlias) -1 else end
+}
+
+/**
+ * Scans characters because the lexer merges `))` into one token. Balanced parens and quoted
+ * titles belong to the destination. If parens never balance, or a nested pair is followed by
+ * `](` or by a space with no title, the first `)` closes it so later text is not swallowed.
+ */
+private fun matchingParen(source: CharSequence, from: Int): Int {
+    var depth = 0
+    var firstClose = -1
+    var i = from
+    while (i < source.length && source[i] != '\n') {
+        val c = source[i]
+        val next = source.getOrNull(i + 1)
+        if (c == '(') {
+            depth++
+        } else if (c == ')') {
+            if (depth == 0) return i
+            depth--
+            if (firstClose < 0) firstClose = i
+        } else if (c == '"' && source[i - 1] == ' ') {
+            i = closingQuote(source, i)
+        } else if (firstClose >= 0 && endsDestination(c, next)) {
+            return firstClose
+        }
+        i++
+    }
+    return firstClose
+}
+
+/** A space with no title after it, or the start of another link's destination. */
+private fun endsDestination(c: Char, next: Char?): Boolean =
+    (c == ' ' && next != '"') || (c == ']' && next == '(')
+
+/** Index of the quote closing the one at [open] on the same line, or [open] if unclosed. */
+private fun closingQuote(source: CharSequence, open: Int): Int {
+    var i = open + 1
+    while (i < source.length && source[i] != '\n') {
+        if (source[i] == '"') return i
+        i++
+    }
+    return open
+}
+
+private fun parseTextOrTaskMarker(source: CharSequence, token: Token): InlineNode {
+    val text = token.text(source).toString()
+    val taskMarkers = setOf("TODO", "DONE", "NOW", "LATER", "WAITING", "CANCELLED", "DOING", "WAIT", "STARTED")
+    if (text in taskMarkers) {
+        return TaskMarkerNode(text)
+    }
+    return TextNode(text)
 }
