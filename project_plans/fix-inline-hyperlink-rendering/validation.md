@@ -41,3 +41,7 @@
 - Layer 4 skipped (no `design/ux.md`); a 360dp Robolectric render of a table cell was checked by eye.
 - Not run: full `jvmTest` (UI) locally, a physical device, web.
 - Follow-up (predates this change): `MarkdownParser.reconstructContent` rewrites `[x](x)` as `<x>` and `_i_` in link labels as `*i*`; wrapped links now reach that path too.
+
+### PR review rounds
+
+Three independent lenses, then a fresh convergence pass (PASS, no MUST FIX). Fixed: `[x](x)` rewritten as `<x>`, wrapped page alias losing its reference, exponential retry of `[`, title truncation. Deferred (older bugs): unclosed `((` gaining `))` on load; emphasis markers in labels backtracking exponentially.
