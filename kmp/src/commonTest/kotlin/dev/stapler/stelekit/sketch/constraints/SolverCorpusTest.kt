@@ -18,7 +18,8 @@ import kotlin.time.TimeSource
  */
 class SolverCorpusTest {
     private val onJvm: Boolean = !1e-9.toString().contains('e')
-    private val barMillis = if (onJvm) 50.0 else 150.0
+    // Owner-approved headroom over the 50 ms design target: shared CI runners have measured 58 ms on a healthy solver.
+    private val barMillis = if (onJvm) 100.0 else 150.0
     private val platform = if (onJvm) "jvm" else "wasm-or-js"
 
     private fun bestOf(solver: Solver, case: SolverCorpus.Case): Pair<SolveResult, Double> {
