@@ -78,6 +78,8 @@ class SolverCorpusTest {
         val t0 = TimeSource.Monotonic.markNow()
         val res = solver.solve(case.problem, case.start)
         val coldMs = t0.elapsedNow().inWholeMicroseconds / 1000.0
+        // After the cold sample: without this the "steady" runs can be timed while the JIT is still compiling.
+        repeat(WARMUPS) { solver.solve(case.problem, case.start) }
         val (_, steadyMs) = bestOf(solver, case)
         println("SOLVER seed1 platform=$platform cold_ms=$coldMs steady_best_ms=$steadyMs iterations=${res.iterations} dof=${res.dof}")
         println("SOLVER seed1 solution=" + res.x.joinToString(",") { it.toString() })
