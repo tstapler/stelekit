@@ -49,6 +49,56 @@ class SketchAgentCliTest {
     private fun tempDir(): File = Files.createTempDirectory("sketch-agent-cli").toFile()
 
     @Test
+    fun `the packaged docs print so an installed app can explain its own format`() {
+        mapOf(
+            "skill" to "# Sketch from a photo",
+            "format" to "# SteleKit sketch format v2",
+            "schema" to "\"\$schema\"",
+            "grid-script" to "PIL",
+        ).forEach { (command, marker) ->
+            val run = cli(command)
+            assertEquals(0, run.code, "$command: ${run.err}")
+            assertTrue(marker in run.out, "$command should contain $marker")
+        }
+    }
+
+    @Test
+    fun `only a leading sketch argument dispatches to the CLI`() {
+        assertEquals(listOf("describe", "a.json"), sketchSubcommandArgs(arrayOf("sketch", "describe", "a.json")))
+        assertEquals(emptyList(), sketchSubcommandArgs(arrayOf("sketch")))
+        assertEquals(null, sketchSubcommandArgs(emptyArray()))
+        assertEquals(null, sketchSubcommandArgs(arrayOf("--capture-text", "sketch")))
+    }
+
+    @Test
+    fun `the process entry point returns the command's exit code`() {
+        assertEquals(0, runSketchCli(listOf("help")))
+        assertEquals(SketchCli.EXIT_USAGE, runSketchCli(listOf("nope")))
+    }
+
+    @Test
+    fun `a build missing a doc or hitting a file problem says so`() {
+        val err = StringBuilder()
+        assertEquals(SketchCli.EXIT_USAGE, SketchCli({}, { err.append(it) }).printBundled("docs/nope.md"))
+        assertTrue("missing docs/nope.md" in err, err.toString())
+        val dir = tempDir()
+        val sheet = File(dir, "room.v2.json").apply { writeBytes(encode(built(ROOM_SPEC))) }
+        val run = cli("canonicalize", sheet.path, "--out", dir.path)
+        assertEquals(SketchCli.EXIT_USAGE, run.code, run.out + run.err)
+        assertTrue("file problem" in run.err, run.err)
+    }
+
+    @Test
+    fun `build fails when its render fails`() {
+        val dir = tempDir()
+        val spec = File(dir, "room.spec.json").apply { writeText(ROOM_SPEC) }
+        val out = File(dir, "room.v2.json").path
+        val run = cli("build", spec.path, "--out", out, "--render", File(dir, "x.pdf").path, "--paper", "A4", "--scale", "1:1", "--tile")
+        assertEquals(1, run.code, run.out + run.err)
+        assertTrue("tiling would take" in run.out, run.out)
+    }
+
+    @Test
     fun `room spec builds the golden sheet`() {
         val doc = built(ROOM_SPEC)
         val bytes = encode(doc)

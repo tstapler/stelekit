@@ -2,16 +2,16 @@
 class Stelekit < Formula
   desc "Markdown-based outliner and note-taking app (Kotlin Multiplatform)"
   homepage "https://github.com/tstapler/stelekit"
-  version "0.126.0"
+  version "0.127.0"
 
   on_linux do
     url "https://github.com/tstapler/stelekit/releases/download/v#{version}/SteleKit-v#{version}-linux.AppImage"
-    sha256 "b7e94220292429606812d55c29e60996e01064ee64c1a8df0b9ac08d1236c153"
+    sha256 "0a254102e3556be7764c11ee93519b4caa68ccaffca92e35d03423ad456f77f4"
   end
 
   on_macos do
     url "https://github.com/tstapler/stelekit/releases/download/v#{version}/SteleKit-v#{version}-macos.dmg"
-    sha256 "75bae46c52bba97fe037c59d6175d95b6101dc8138afc34cf62ae0df260e26b2"
+    sha256 "f8c1124dfe0ea69e613461750437ce50695484fcf16cc4ad49d691f46dc240f2"
   end
 
   def install
@@ -24,6 +24,15 @@ class Stelekit < Formula
       # Wrapper script — sets APPIMAGE_EXTRACT_AND_RUN=1 so AppImage works without FUSE
       (bin/"stelekit").write <<~SH
         #!/bin/sh
+        # Extract-and-run shares one directory per version and deletes it on exit, so headless
+        # `sketch` calls get their own, or they would delete a running app's files.
+        if [ "$1" = "sketch" ]; then
+          dir=$(mktemp -d) || exit 2
+          trap 'rm -rf "$dir"' EXIT
+          trap 'exit 130' INT TERM HUP
+          TMPDIR="$dir" APPIMAGE_EXTRACT_AND_RUN=1 "#{libexec}/stelekit.AppImage" "$@"
+          exit $?
+        fi
         exec env APPIMAGE_EXTRACT_AND_RUN=1 "#{libexec}/stelekit.AppImage" "$@"
       SH
       chmod 0755, bin/"stelekit"

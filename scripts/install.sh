@@ -56,6 +56,15 @@ echo "Installed AppImage: ${APPIMAGE_PATH}"
 # Install wrapper script — sets APPIMAGE_EXTRACT_AND_RUN=1 so AppImage works without FUSE
 cat > "${INSTALL_PATH}" <<WRAPPER
 #!/bin/sh
+# Extract-and-run shares one directory per version and deletes it on exit, so headless
+# "sketch" calls get their own, or they would delete a running app's files.
+if [ "\$1" = "sketch" ]; then
+  dir=\$(mktemp -d) || exit 2
+  trap 'rm -rf "\$dir"' EXIT
+  trap 'exit 130' INT TERM HUP
+  TMPDIR="\$dir" APPIMAGE_EXTRACT_AND_RUN=1 "${APPIMAGE_PATH}" "\$@"
+  exit \$?
+fi
 exec env APPIMAGE_EXTRACT_AND_RUN=1 "${APPIMAGE_PATH}" "\$@"
 WRAPPER
 chmod +x "${INSTALL_PATH}"

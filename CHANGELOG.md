@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.127.0](https://github.com/tstapler/stelekit/compare/v0.126.0...v0.127.0) (2026-11-26)
+
+
+### Features
+
+* **sketch:** ship the sketch CLI in the desktop app as 'stelekit sketch' ([#762](https://github.com/tstapler/stelekit/issues/762)) ([2b79db4](https://github.com/tstapler/stelekit/commit/2b79db40dcc0c8558abb118815f0ba97840d5f4d))
+
 ## [0.126.0](https://github.com/tstapler/stelekit/compare/v0.125.0...v0.126.0) (2026-11-25)
 
 

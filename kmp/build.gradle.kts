@@ -1169,6 +1169,18 @@ tasks.register<Test>("graphStats") {
     }
 }
 
+// Docs that `stelekit sketch skill|format|schema|grid-script` prints; same resource paths as Bazel's //:sketch_cli_docs.
+tasks.named<ProcessResources>("jvmProcessResources") {
+    from(rootProject.projectDir) {
+        include(
+            "docs/agents/sketch-from-photo/SKILL.md",
+            "docs/agents/sketch-from-photo/grid.py",
+            "docs/reference/sketch-format-v2.md",
+            "docs/reference/sketch-scene-v2.schema.json",
+        )
+    }
+}
+
 compose.desktop {
     application {
         mainClass = "dev.stapler.stelekit.desktop.MainKt"

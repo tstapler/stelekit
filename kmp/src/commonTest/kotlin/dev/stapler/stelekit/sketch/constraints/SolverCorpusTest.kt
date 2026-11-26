@@ -5,6 +5,7 @@ import kotlin.math.max
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
 /**
@@ -78,6 +79,10 @@ class SolverCorpusTest {
         val t0 = TimeSource.Monotonic.markNow()
         val res = solver.solve(case.problem, case.start)
         val coldMs = t0.elapsedNow().inWholeMicroseconds / 1000.0
+        // After the cold sample: without this the "steady" runs can be timed while the JIT is still compiling.
+        // Timed, not counted: JIT compiles in the background, and on CI 6 solves were not enough.
+        val warmupStart = TimeSource.Monotonic.markNow()
+        while (warmupStart.elapsedNow() < WARMUP_TIME) solver.solve(case.problem, case.start)
         val (_, steadyMs) = bestOf(solver, case)
         println("SOLVER seed1 platform=$platform cold_ms=$coldMs steady_best_ms=$steadyMs iterations=${res.iterations} dof=${res.dof}")
         println("SOLVER seed1 solution=" + res.x.joinToString(",") { it.toString() })
@@ -89,6 +94,7 @@ class SolverCorpusTest {
     private companion object {
         const val REPEATS = 5
         const val WARMUPS = 3
+        val WARMUP_TIME = 1.seconds
         const val DOGLEG_TAIL_ITERATIONS = 10
         const val LM_PLATEAU_ITERATIONS = 40
     }
