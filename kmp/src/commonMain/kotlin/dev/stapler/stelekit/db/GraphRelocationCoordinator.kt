@@ -236,8 +236,11 @@ class GraphRelocationCoordinator(
         suspend fun releaseOnce() {
             if (released) return
             released = true
-            quiesceStrategy.release(operation)
-            MoveInProgressFlag.setMoveInProgress(graphIdValue, false)
+            // NonCancellable: a cancel here would skip the flag clear, and `released` stops finally from retrying.
+            withContext(NonCancellable) {
+                quiesceStrategy.release(operation)
+                MoveInProgressFlag.setMoveInProgress(graphIdValue, false)
+            }
         }
 
         logMoveStarted(operation)
@@ -387,8 +390,11 @@ class GraphRelocationCoordinator(
         suspend fun releaseOnce() {
             if (released) return
             released = true
-            quiesceStrategy.release(operation)
-            MoveInProgressFlag.setMoveInProgress(graphIdValue, false)
+            // NonCancellable: a cancel here would skip the flag clear, and `released` stops finally from retrying.
+            withContext(NonCancellable) {
+                quiesceStrategy.release(operation)
+                MoveInProgressFlag.setMoveInProgress(graphIdValue, false)
+            }
         }
 
         MoveInProgressFlag.setMoveInProgress(graphIdValue, true)
