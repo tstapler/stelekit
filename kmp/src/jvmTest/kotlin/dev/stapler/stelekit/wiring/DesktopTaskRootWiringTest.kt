@@ -60,12 +60,14 @@ class DesktopTaskRootWiringTest {
     @AfterTest
     fun tearDown() {
         headless?.close()
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         fixture?.let { runBlocking { it.close() } }
         dataDir.deleteRecursively()
     }
 
     private fun open(pollMinutes: Int) {
         settings.putBoolean(SCHEDULED_SYNC_ENABLED_KEY, true)
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         val wired = runBlocking {
             DesktopWiredAppFixture.desktop(
                 dataDir,
@@ -76,6 +78,7 @@ class DesktopTaskRootWiringTest {
         }
         fixture = wired
         graphId = wired.graphManager.graphRegistry.value.activeGraphId!!.value
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         runBlocking { wired.graphManager.createGitConfigRepository()!!.saveConfig(sampleConfig.copy(graphId = graphId, pollIntervalMinutes = pollMinutes)) }
         headless = HeadlessComposition().also { composition ->
             composition.setContent {
@@ -93,7 +96,7 @@ class DesktopTaskRootWiringTest {
         }
     }
 
-    private fun awaitCondition(what: String, timeoutMs: Long = 30_000, condition: () -> Boolean) {
+    private fun awaitCondition(what: String, timeoutMs: Long = 30_000, condition: () -> Boolean) { // real clock: the scheduler runs on its own dispatcher, no completion signal
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (!condition()) {
             if (System.nanoTime() > deadline) fail("timed out waiting for $what")
@@ -129,16 +132,19 @@ class DesktopTaskRootWiringTest {
             val scheduler = createDesktopTaskScheduler(registry, shared)
             val key = TaskKey(GitSyncTask.KIND, TaskScope("g1"))
             try {
+                // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
                 runBlocking {
                     scheduler.runOnce(key, TaskConstraints())
-                    val deadline = System.nanoTime() + 10_000_000_000L
+                    val deadline = System.nanoTime() + 10_000_000_000L // real clock: the scheduler runs on its own dispatcher, no completion signal
                     while (SettingsTaskRunLog(shared).recent(key).isEmpty() && System.nanoTime() < deadline) kotlinx.coroutines.delay(20)
                 }
             } finally {
                 scheduler.stop()
             }
+            // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
             assertTrue(runBlocking { SettingsTaskRunLog(shared).recent(key) }.isNotEmpty(), "the instance the UI reads sees the scheduler's run record")
             assertTrue(
+                // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
                 runBlocking { SettingsTaskRunLog(separate).recent(key) }.isEmpty(),
                 "a second PlatformSettings holds its own stale copy, which is why the root must share one",
             )
@@ -157,9 +163,11 @@ class DesktopTaskRootWiringTest {
         val controller = tasksState!!.controller
         val key = TaskKey(GitSyncTask.KIND, TaskScope(graphId))
 
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         assertEquals(SaveResult.Saved, runBlocking { controller.edit(key, PanelEdit.Interval(15)) })
         awaitCondition("the running loop to take the 15 minute interval") { (nextCheckInMinutes() ?: -1L) in 14L..16L }
 
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         assertEquals(SaveResult.Saved, runBlocking { controller.edit(key, PanelEdit.Enabled(false)) })
         awaitCondition("the running loop to stop") { stack?.gitSyncService?.scheduledSyncStatus?.value?.running == false }
     }

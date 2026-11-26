@@ -127,7 +127,7 @@ class ScheduledSyncStackE2ETest {
     private fun runOneInterval(svc: GitSyncService) {
         val expected = repo.fetches.get() + 1
         scheduler.advanceTimeBy(INTERVAL_MINUTES * MINUTE_MS)
-        val deadline = System.nanoTime() + TICK_TIMEOUT_NANOS
+        val deadline = System.nanoTime() + TICK_TIMEOUT_NANOS // real-clock hang guard: awaits real threads
         while (!(repo.fetches.get() >= expected && svc.scheduledSyncStatus.value.tickInFlight == false)) {
             assertTrue(System.nanoTime() < deadline, "tick $expected never finished")
             scheduler.runCurrent()
@@ -192,7 +192,7 @@ class ScheduledSyncStackE2ETest {
         scheduler.runCurrent()
 
         scheduler.advanceTimeBy(INTERVAL_MINUTES * MINUTE_MS)
-        val deadline = System.nanoTime() + TICK_TIMEOUT_NANOS
+        val deadline = System.nanoTime() + TICK_TIMEOUT_NANOS // real-clock hang guard: awaits real threads
         while (svc.scheduledSyncStatus.value.lastAttemptAtMs == null || svc.scheduledSyncStatus.value.tickInFlight) {
             assertTrue(System.nanoTime() < deadline, "tick never ran")
             scheduler.runCurrent()

@@ -103,6 +103,7 @@ class GitSyncServiceChangeGuardsTest {
 
     private val mutating = setOf("stage", "commit", "merge", "push")
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun `sync in MERGING state returns RepairNeeded before any stage commit merge or push`() = runBlocking {
         val spy = Spy(health = RepositoryHealth(false, "MERGING"))
@@ -116,6 +117,7 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun `a service built over an unsafe repository refuses even as a fresh instance`() = runBlocking {
         val spy = Spy(health = RepositoryHealth(false, "UNMERGED_PATHS"))
@@ -127,6 +129,7 @@ class GitSyncServiceChangeGuardsTest {
         fresh.shutdown()
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun `staged conflict markers refuse the commit and nothing is committed or pushed`() = runBlocking {
         val spy = Spy(markers = mutableMapOf(GuardScope.Staged to MarkerScan.Found(listOf("journals/2026_10_08.md"))))
@@ -142,6 +145,7 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun `an incomplete marker scan fails closed`() = runBlocking {
         val spy = Spy(markers = mutableMapOf(GuardScope.Staged to MarkerScan.Incomplete("big.md is larger than 2048 KiB")))
@@ -152,6 +156,7 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun `markers in an existing local commit refuse the push even with a clean tree`() = runBlocking {
         val spy = Spy(dirty = false, markers = mutableMapOf(GuardScope.NetPush to MarkerScan.Found(listOf("a.md"))))
@@ -164,6 +169,7 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun `a clean scan lets sync commit and push`() = runBlocking {
         val spy = Spy()
@@ -174,6 +180,7 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun `mass deletion above the default threshold blocks the commit`() = runBlocking {
         val spy = Spy(deletions = mutableMapOf(GuardScope.Staged to deletions(21, treeSize = 100)))
@@ -187,6 +194,7 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun `mass deletion at the push step blocks the push`() = runBlocking {
         val spy = Spy(deletions = mutableMapOf(GuardScope.NetPush to deletions(30, treeSize = 100)))
@@ -197,6 +205,7 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun `deletions within the threshold pass`() = runBlocking {
         val spy = Spy(deletions = mutableMapOf(GuardScope.Staged to deletions(20, treeSize = 100)))
@@ -220,6 +229,7 @@ class GitSyncServiceChangeGuardsTest {
         assertEquals(10, blocked?.threshold)
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun `overridden thresholds change the verdict in both directions`() = runBlocking {
         val lowered = MapSettings().apply { putString(MassChangeThresholds.KEY_MIN_FILES, "3"); putString(MassChangeThresholds.KEY_PERCENT, "1") }
@@ -244,6 +254,7 @@ class GitSyncServiceChangeGuardsTest {
         assertEquals(MassChangeThresholds(), MassChangeThresholds.from(settings))
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun `a foreground confirm lifts the mass-change guard once and a scheduled run cannot`() = runBlocking {
         val spy = Spy(deletions = mutableMapOf(GuardScope.Staged to deletions(40, treeSize = 100)))
@@ -259,6 +270,7 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun `commitLocalChanges is guarded by state markers and mass change`() = runBlocking {
         val unsafe = Spy(health = RepositoryHealth(false, "MERGING"))
@@ -280,6 +292,7 @@ class GitSyncServiceChangeGuardsTest {
         massSvc.shutdown()
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun `resolveConflicts refuses to commit staged markers and still runs in MERGING`() = runBlocking {
         val spy = Spy(health = RepositoryHealth(false, "MERGING"), markers = mutableMapOf(GuardScope.Staged to MarkerScan.Found(listOf("x.md"))))
@@ -292,6 +305,7 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun `resolveConflicts commits in MERGING when the staged diff is clean`() = runBlocking {
         val spy = Spy(health = RepositoryHealth(false, "MERGING"))
@@ -302,6 +316,7 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun `applyJournalMerge guards the commit and the push`() = runBlocking {
         val commitBlocked = Spy(markers = mutableMapOf(GuardScope.Staged to MarkerScan.Found(listOf("j.md"))))

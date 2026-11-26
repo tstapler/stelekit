@@ -99,6 +99,7 @@ class BackgroundTasksSectionTest {
     fun list_should_showOneSummaryLinePerKindAndUsingDefaultOrCustomRows_When_25Graphs() {
         val fixture = BackgroundTaskFixture(BackgroundTaskFixture.ANDROID)
         val all = graphs(25)
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         runBlocking {
             all.filterIndexed { i, _ -> i % 2 == 0 }.forEach {
                 fixture.store.write(fixture.gitKey(it.id), TaskEntry(true, TaskOverrides(Schedule.of(360, 36), TaskConstraints())))
@@ -138,6 +139,7 @@ class BackgroundTasksSectionTest {
     @Test
     fun graphRow_should_exposeOneMergedNodeWithExactDescription_When_SemanticsRead() {
         val fixture = BackgroundTaskFixture(BackgroundTaskFixture.ANDROID)
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         runBlocking {
             fixture.store.write(fixture.gitKey("g1"), TaskEntry(true, TaskOverrides(Schedule.of(60, 6), TaskConstraints(network = NetworkPolicy.Unmetered))))
         }
@@ -154,6 +156,7 @@ class BackgroundTasksSectionTest {
     @Test
     fun defaultRow_should_showAppliesToNGraphsAndWriteDefaultsNotAScope_When_Edited() {
         val fixture = BackgroundTaskFixture(BackgroundTaskFixture.ANDROID)
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         runBlocking { fixture.store.write(fixture.gitKey("g2"), TaskEntry(true, TaskOverrides(Schedule.of(360, 36), TaskConstraints()))) }
         show(fixture, graphs(3))
         rule.onNodeWithText("Git sync", substring = true).performClick()
@@ -161,7 +164,9 @@ class BackgroundTasksSectionTest {
         rule.onNodeWithText("Default for new graphs", substring = true).performClick()
         rule.onNodeWithText("2 hours").performClick()
         rule.waitForIdle()
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         assertEquals(120, runBlocking { fixture.store.readDefaults(GitSyncTask.KIND) }?.schedule?.intervalMinutes)
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         assertNull(runBlocking { fixture.store.readEntry(fixture.gitKey("g1")) }.overrides)
     }
 
@@ -176,6 +181,7 @@ class BackgroundTasksSectionTest {
         rule.onNodeWithText("1 hour").assertDoesNotExist()
         rule.onNodeWithText("Any network").performClick()
         rule.waitForIdle()
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         val entry = runBlocking { fixture.store.readEntry(BackgroundTaskFixture.MODEL_DOWNLOAD_KEY) }
         assertEquals(false, entry.enabled)
         assertNull(entry.overrides?.schedule)

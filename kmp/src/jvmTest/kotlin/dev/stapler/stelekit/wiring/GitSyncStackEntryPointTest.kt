@@ -87,12 +87,14 @@ class GitSyncStackEntryPointTest {
     fun tearDown() {
         sinkHandle.close()
         headless?.close()
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         fixture?.let { runBlocking { it.close() } }
         dataDir.deleteRecursively()
     }
 
     private fun open(flagOn: Boolean, pollMinutes: Int) {
         settings.putBoolean(SCHEDULED_SYNC_ENABLED_KEY, flagOn)
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         val wired = runBlocking {
             DesktopWiredAppFixture.desktop(
                 dataDir,
@@ -119,6 +121,7 @@ class GitSyncStackEntryPointTest {
 
     private fun saveInterval(minutes: Int) {
         val configRepo = fixture!!.graphManager.createGitConfigRepository()!!
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         runBlocking { configRepo.saveConfig(sampleConfig.copy(graphId = graphId, pollIntervalMinutes = minutes)) }
     }
 

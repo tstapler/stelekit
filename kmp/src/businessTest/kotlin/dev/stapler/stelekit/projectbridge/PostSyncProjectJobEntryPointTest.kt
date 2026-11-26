@@ -104,7 +104,7 @@ class PostSyncProjectJobEntryPointTest {
     // runTest burns the barrier's virtual-time attempts while the sync still runs, so wait in real time. Safe only
     // because runSync keeps the sync off the test thread (blocking it here would starve the sync's own cleanup).
     private fun awaitSyncIdle(): Boolean {
-        val deadline = System.nanoTime() + 5_000_000_000L
+        val deadline = System.nanoTime() + 5_000_000_000L // real-clock hang guard: awaits real threads
         while (busyCounter.isBusy.value && System.nanoTime() < deadline) java.util.concurrent.locks.LockSupport.parkNanos(2_000_000L)
         return busyCounter.isBusy.value
     }

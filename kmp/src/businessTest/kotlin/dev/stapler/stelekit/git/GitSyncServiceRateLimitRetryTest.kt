@@ -97,6 +97,7 @@ class GitSyncServiceRateLimitRetryTest {
     @Test
     fun `scheduleRateLimitRetry does not re-invoke fetchOnly before retryAfterSeconds elapses, then fires exactly once`() {
         requireOnline()
+        // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
         runBlocking {
             val counter = CallCounter()
             val repo = countingFetchRepo(counter) { count ->
@@ -139,6 +140,7 @@ class GitSyncServiceRateLimitRetryTest {
     @Test
     fun `shutdown cancels a pending scheduled retry before it fires`() {
         requireOnline()
+        // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
         runBlocking {
             val counter = CallCounter()
             val repo = countingFetchRepo(counter) { DomainError.GitError.RateLimited(retryAfterSeconds = 1).left() }
@@ -160,6 +162,7 @@ class GitSyncServiceRateLimitRetryTest {
     @Test
     fun `a manual fetchOnly call before the delay elapses cancels the pending scheduled retry - no double-fire`() {
         requireOnline()
+        // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
         runBlocking {
             val counter = CallCounter()
             // First call: rate limited (schedules a retry). Every subsequent call: success.
@@ -193,6 +196,7 @@ class GitSyncServiceRateLimitRetryTest {
     @Test
     fun `sync when commit returns RateLimited schedules a retry that re-invokes sync, reaching commit again`() {
         requireOnline()
+        // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
         runBlocking {
             var commitCallCount = 0
             val repo = object : StubGitRepository() {
@@ -211,7 +215,7 @@ class GitSyncServiceRateLimitRetryTest {
             service.sync("test-graph")
             assertEquals(1, commitCallCount)
 
-            withTimeout(5_000) {
+            withTimeout(5_000) { // real-clock hang guard: awaits real threads
                 while (commitCallCount < 2) delay(50)
             }
             assertEquals(2, commitCallCount, "the scheduled retry must re-invoke sync(), reaching commit() again")

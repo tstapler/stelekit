@@ -85,6 +85,7 @@ class StelekitViewModelSyncStateIntegrationTest {
         }
     }
 
+    // runBlocking: StelekitViewModel runs on its own real-dispatcher scope that virtual time cannot drive
     @Test
     fun `IT-4_3_2-A syncState mirrors GitSyncService state exactly when localChangesCountFlow is null`() = runBlocking {
         val gitRepository = object : StubGitRepository() {

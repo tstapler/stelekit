@@ -63,6 +63,7 @@ class GitSyncServicePublishFailureTest {
         )
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     private fun stateAfter(step: Step, error: DomainError.GitError, config: GitConfig = sampleConfig): SyncState = runBlocking {
         val svc = service(FailingAt(step, error), config)
         svc.sync("test-graph")
@@ -103,6 +104,7 @@ class GitSyncServicePublishFailureTest {
         assertEquals(listOf("a.md"), (state as SyncState.ConflictPending).conflicts.map { it.filePath })
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun `fetchOnly publishes rate limit and expiry the same way`() = runBlocking {
         val limited = service(FailingAt(Step.Fetch, DomainError.GitError.RateLimited(3600)))

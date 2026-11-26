@@ -76,33 +76,35 @@ class SyncSingleFlightCancellationTest {
         gitDir.deleteRecursively()
     }
 
+    // runBlocking: real threads/dispatchers do the work under test; virtual time cannot order or await them
     @Test
     fun sync_should_EndTheOwnedOperation_When_CancelledWhileTheClaimIsInFlight() = runBlocking<Unit> {
         val job = scope.launch { service.sync("g", SyncTrigger.Manual) }
-        withTimeout(TIMEOUT_MS) { entered.await() }
+        withTimeout(TIMEOUT_MS) { entered.await() } // real-clock hang guard: awaits real threads
 
         job.cancel()
         latch.countDown()
-        withTimeout(TIMEOUT_MS) { job.join() }
+        withTimeout(TIMEOUT_MS) { job.join() } // real-clock hang guard: awaits real threads
 
         assertTrue(began.get() == 1, "the claim must have completed")
         assertEquals(1, ended.get(), "a claim that completed must be ended even though the caller was cancelled")
     }
 
     // PR #682 review M2: a hung push must not hold the gate forever once the sync is cancelled.
+    // runBlocking: real threads/dispatchers do the work under test; virtual time cannot order or await them
     @Test
     fun sync_should_ReleaseTheGate_When_CancelledDuringAHungPush() = runBlocking<Unit> {
         latch.countDown()
         pushHangs = true
         val job = scope.launch { service.sync("g", SyncTrigger.Manual) }
-        withTimeout(TIMEOUT_MS) { pushEntered.await() }
+        withTimeout(TIMEOUT_MS) { pushEntered.await() } // real-clock hang guard: awaits real threads
 
         job.cancel()
-        withTimeout(TIMEOUT_MS) { job.join() }
+        withTimeout(TIMEOUT_MS) { job.join() } // real-clock hang guard: awaits real threads
 
         assertEquals(1, ended.get())
         pushHangs = false
-        val again = withTimeout(TIMEOUT_MS) { service.sync("g", SyncTrigger.Manual) }
+        val again = withTimeout(TIMEOUT_MS) { service.sync("g", SyncTrigger.Manual) } // real-clock hang guard: awaits real threads
         assertTrue(again.leftOrNull() !is DomainError.GitError.SyncInProgress, "gate must be free again, got $again")
     }
 

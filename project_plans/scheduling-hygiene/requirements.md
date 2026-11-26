@@ -51,6 +51,13 @@ pattern appears in `GitSyncWorkerGateAndRecordTest` (10 s) and
 - Non-scheduling coroutine uses of `runBlocking` elsewhere in the codebase
 - Robolectric test configuration or WorkManager test harness rewrites
 
+## Test scope (settled during review)
+
+"Scheduling and worker tests" means any test of `jobs.schedule`, workers, schedulers, git-sync runs
+(service, coordinator, single-flight, repo gate), background-sync quiesce and model download, in every test
+source set. Out of scope: `GraphRelocationCoordinator*`, `SidecarReconcileTest`, `ThreeStateSubscriptionTest`,
+`StelekitViewModelShareExportTest`, `GitRepositoryUnshallowTest` (none schedules or runs background work).
+
 ## Acceptance Criteria
 
 1. No `runBlocking` exists in any production scheduling/worker source file

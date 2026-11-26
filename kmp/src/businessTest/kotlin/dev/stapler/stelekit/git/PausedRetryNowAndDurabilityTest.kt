@@ -225,8 +225,9 @@ class PausedRetryNowAndDurabilityTest {
             pausedRetryPolicy = PausedRetryPolicy(delays.toList()),
         ).also { services += it }
 
-    private suspend fun until(check: () -> Boolean) = withTimeout(20_000) { while (!check()) delay(10) }
+    private suspend fun until(check: () -> Boolean) = withTimeout(20_000) { while (!check()) delay(10) } // real-clock hang guard: awaits real threads
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun service_should_RetryTwiceAutomaticallyThenStayFailedWithTheLockError() = runBlocking<Unit> {
         val repo = Repo()
@@ -242,6 +243,7 @@ class PausedRetryNowAndDurabilityTest {
         assertIs<SyncState.Error>(svc.syncState.value)
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun service_should_ClearPausedAndSync_When_TheOwnerBecomesKnownBeforeTheRetry() = runBlocking<Unit> {
         val repo = Repo()
@@ -252,6 +254,7 @@ class PausedRetryNowAndDurabilityTest {
         until { svc.pausedRetry.value == null && svc.syncState.value !is SyncState.Error }
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun retryNow_should_RunExtraAttemptsWithoutMovingTheTryNumber() = runBlocking<Unit> {
         val repo = Repo()
@@ -269,6 +272,7 @@ class PausedRetryNowAndDurabilityTest {
         assertIs<DomainError.GitError.StaleLockFile>((svc.syncState.value as SyncState.Error).error)
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun rebuiltService_should_HaveNoPausedStateAndClaimAgain() = runBlocking<Unit> {
         val repo = Repo()

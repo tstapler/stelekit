@@ -6,6 +6,9 @@
 
 ### AC-1: Production code has no runBlocking
 
+**Correction:** the verification below was wrong. `androidMain/git/WorkManagerSyncScheduler.kt` had four
+`runBlocking` calls, removed during implementation (see research.md).
+
 VERIFIED by search:
 - `ScheduleStartup.run()` is `suspend fun` — no `runBlocking`.
 - `TaskWorker.doWork()` is a suspend function (`CoroutineWorker`) — no `runBlocking`.

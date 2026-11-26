@@ -81,7 +81,7 @@ class GitSyncCoordinatorCoalesceTest {
     private suspend fun holdTheGate() {
         coordinator.triggerFetchOnly()
         entered.await()
-        withTimeout(5_000) { while (coordinator.syncState.value != SyncState.Fetching) yield() }
+        withTimeout(5_000) { while (coordinator.syncState.value != SyncState.Fetching) yield() } // real-clock hang guard: awaits real threads
     }
 
     private fun collectEvents(): MutableList<SyncUiEvent> {
@@ -91,9 +91,10 @@ class GitSyncCoordinatorCoalesceTest {
     }
 
     private suspend fun awaitEvent(seen: List<SyncUiEvent>) {
-        withTimeout(5_000) { while (seen.isEmpty()) yield() }
+        withTimeout(5_000) { while (seen.isEmpty()) yield() } // real-clock hang guard: awaits real threads
     }
 
+    // runBlocking: the coordinator runs on a real Dispatchers.Default scope the test has to wait on
     @Test
     fun triggerSync_should_EmitOneAlreadySyncing_AndChangeNoState_When_ARunHoldsTheGate() = runBlocking {
         val seen = collectEvents()
@@ -109,6 +110,7 @@ class GitSyncCoordinatorCoalesceTest {
         assertFalse(jobs.jobs.first().any { it.state is JobState.Failed }, "a coalesced press is not a failed job")
     }
 
+    // runBlocking: the coordinator runs on a real Dispatchers.Default scope the test has to wait on
     @Test
     fun triggerFetchOnly_should_EmitAlreadySyncing_When_ARunHoldsTheGate() = runBlocking {
         val seen = collectEvents()
@@ -121,6 +123,7 @@ class GitSyncCoordinatorCoalesceTest {
         assertEquals(1, fetches.get())
     }
 
+    // runBlocking: the coordinator runs on a real Dispatchers.Default scope the test has to wait on
     @Test
     fun confirmMassChangeSync_should_BeRefusedAndKeepTheDialog_When_ARunIsInFlight() = runBlocking {
         val seen = collectEvents()
@@ -136,6 +139,7 @@ class GitSyncCoordinatorCoalesceTest {
         assertEquals(1, fetches.get(), "the lifted press must never be carried through a coalesce or queued")
     }
 
+    // runBlocking: the coordinator runs on a real Dispatchers.Default scope the test has to wait on
     @Test
     fun confirmMassChangeSync_should_CloseTheDialogWithoutRefusal_When_NothingIsInFlight() = runBlocking {
         release.complete(Unit)

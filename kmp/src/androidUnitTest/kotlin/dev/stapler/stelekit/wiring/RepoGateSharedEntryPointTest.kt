@@ -52,6 +52,7 @@ class RepoGateSharedEntryPointTest {
 
     @After
     fun tearDown() {
+        // runBlocking: quiesce hops to Dispatchers.IO and blocks on real locks; virtual time cannot order it
         fixture?.let { runBlocking { it.close() } }
         dataDir.deleteRecursively()
     }
@@ -83,6 +84,7 @@ class RepoGateSharedEntryPointTest {
         return outcome
     }
 
+    // runBlocking: quiesce hops to Dispatchers.IO and blocks on real locks; virtual time cannot order it
     @Test
     fun the_fixture_gate_is_the_one_in_the_platform_integrations() = runBlocking {
         val f = WiredAppFixture.android(context, dataDir).also { fixture = it }
@@ -91,6 +93,7 @@ class RepoGateSharedEntryPointTest {
         }
     }
 
+    // runBlocking: quiesce hops to Dispatchers.IO and blocks on real locks; virtual time cannot order it
     @Test
     fun a_quiesce_hold_on_the_shared_gate_makes_the_cold_run_skip_as_busy() = runBlocking {
         val f = WiredAppFixture.android(context, dataDir).also { fixture = it }
@@ -103,7 +106,7 @@ class RepoGateSharedEntryPointTest {
         )
         val quiesce = async { strategy.quiesce(op) }
         f.repoOpGate.releaseOrHandOff(earlier)
-        withTimeout(QUIESCE_WAIT_MS) { quiesce.await() }
+        withTimeout(QUIESCE_WAIT_MS) { quiesce.await() } // real-clock hang guard: awaits real threads
 
         ObservableEffect.assert("repo-gate-shared") {
             assertEquals(SyncOrigin.Quiesce, f.repoOpGate.heldBy(key))

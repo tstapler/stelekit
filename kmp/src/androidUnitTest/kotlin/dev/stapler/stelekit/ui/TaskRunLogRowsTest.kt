@@ -82,6 +82,7 @@ class TaskRunLogRowsTest {
         key: TaskKey = gitKey,
     ) = TaskRunRecord(key, source, null, startedAtMs, result, ConstraintState(true, false, null))
 
+    // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
     private fun append(vararg records: TaskRunRecord) = runBlocking { records.forEach { runLog.append(it) } }
 
     private fun show(source: TaskRunLogSource, query: String = "") {
@@ -207,6 +208,7 @@ class TaskRunLogRowsTest {
         rule.onNodeWithText("Git sync / Work notes / success").assertExists()
     }
 
+    // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
     @Test
     fun recentResult_should_beReadFailedWhileRecentStaysEmpty_When_SettingsReadThrows() = runBlocking {
         append(record(now - minute))

@@ -37,12 +37,14 @@ class WiredAppFixtureTest {
 
     @After
     fun tearDown() {
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         fixture?.let { runBlocking { it.close() } }
         dataDir.deleteRecursively()
     }
 
     @Test
     fun wiredAppFixtureAndroid_should_ComposeRealStackFilesWithoutThrowing_And_LeaveNoServiceRegistered_When_BackendIsInMemory() {
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         val wired = runBlocking {
             WiredAppFixture.android(ApplicationProvider.getApplicationContext<Context>(), dataDir)
         }

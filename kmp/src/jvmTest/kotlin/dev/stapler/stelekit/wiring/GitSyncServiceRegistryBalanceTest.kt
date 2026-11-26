@@ -31,6 +31,7 @@ class GitSyncServiceRegistryBalanceTest {
     @AfterTest
     fun tearDown() {
         compositions.forEach { it.close() }
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         fixture?.let { runBlocking { it.close() } }
         GitSyncServiceRegistry.registeredGraphIds().toList().forEach { GitSyncServiceRegistry.unregister(it) }
         dataDir.deleteRecursively()
@@ -45,6 +46,7 @@ class GitSyncServiceRegistryBalanceTest {
 
     @Test
     fun gitSyncServiceRegistry_should_HoldOnlyActiveGraphService_When_FiveSwitchGraphCalls() {
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         val wired = runBlocking { DesktopWiredAppFixture.desktop(dataDir, graphPath = "/test/graph-a") }
         fixture = wired
         val paths = listOf("/test/graph-b", "/test/graph-a", "/test/graph-b", "/test/graph-a", "/test/graph-b")
@@ -56,6 +58,7 @@ class GitSyncServiceRegistryBalanceTest {
 
         var lastService: GitSyncService = first
         for (path in paths) {
+            // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
             runBlocking { wired.graphManager.openGraph(path) }
             // The app swaps GraphContent under key(activeGraphId): new graph composes, then the old one leaves.
             val (next, nextStack) = compose(wired)
@@ -74,6 +77,7 @@ class GitSyncServiceRegistryBalanceTest {
 
     @Test
     fun registry_should_KeepNewerRegistration_When_OldServiceUnregistersLate() {
+        // runBlocking: non-suspend UI/headless JUnit test; bridges a suspend setup, read or teardown call
         val wired = runBlocking { DesktopWiredAppFixture.desktop(dataDir) }
         fixture = wired
         val (first, firstStack) = compose(wired)

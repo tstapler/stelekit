@@ -71,6 +71,7 @@ class GitSyncServiceChangeBackTest {
         return service to configRepo
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun `change back is refused when the previous branch is still not on the remote`() = runBlocking {
         val (service, configRepo) = repairedService(remoteBranches = listOf("master"))
@@ -82,6 +83,7 @@ class GitSyncServiceChangeBackTest {
         service.shutdown()
     }
 
+    // runBlocking: GitSyncService runs on its own real-dispatcher scope and bounds commit units with a caller-side withTimeout that virtual time would expire
     @Test
     fun `change back succeeds once the previous branch exists on the remote`() = runBlocking {
         val (service, configRepo) = repairedService(remoteBranches = listOf("master", "main"))

@@ -15,7 +15,7 @@ import dev.stapler.stelekit.git.testsupport.sampleConfig
 import dev.stapler.stelekit.platform.Settings
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -60,7 +60,7 @@ class ColdSyncRunnerTest {
     ) = ColdSyncRunner(spy, StubConfigRepository(config.right()), staleness, gate, keyFor) { now }
 
     @Test
-    fun `exactly one fetch runs and no tree-touching call is made, whatever state the tree is in`() = runBlocking {
+    fun `exactly one fetch runs and no tree-touching call is made, whatever state the tree is in`() = runTest {
         val spy = Spy(FetchResult(true, 3).right())
 
         val outcome = runner(spy).run(sampleConfig.graphId)
@@ -70,7 +70,7 @@ class ColdSyncRunnerTest {
     }
 
     @Test
-    fun `the behind count, fetch time and fetch-only reason are persisted`() = runBlocking {
+    fun `the behind count, fetch time and fetch-only reason are persisted`() = runTest {
         runner(Spy(FetchResult(true, 5).right())).run(sampleConfig.graphId)
 
         val s = staleness.read(sampleConfig.graphId)
@@ -81,13 +81,13 @@ class ColdSyncRunnerTest {
     }
 
     @Test
-    fun `a fetch with nothing new records zero behind`() = runBlocking {
+    fun `a fetch with nothing new records zero behind`() = runTest {
         runner(Spy(FetchResult(false, 0).right())).run(sampleConfig.graphId)
         assertEquals(0, staleness.read(sampleConfig.graphId).behindCount)
     }
 
     @Test
-    fun `a typed fetch error is recorded as the outcome and returned, never swallowed`() = runBlocking {
+    fun `a typed fetch error is recorded as the outcome and returned, never swallowed`() = runTest {
         val error = DomainError.GitError.RemoteBranchNotFound("origin", "main", emptyList())
         val spy = Spy(error.left())
 
@@ -101,14 +101,14 @@ class ColdSyncRunnerTest {
     }
 
     @Test
-    fun `no git config means nothing to fetch`() = runBlocking {
+    fun `no git config means nothing to fetch`() = runTest {
         val spy = Spy()
         assertEquals(ColdSyncOutcome.NoConfig, runner(spy, config = null).run("g"))
         assertEquals(emptyList(), spy.calls)
     }
 
     @Test
-    fun `concurrent runs for the same repository never overlap and the losers are SyncInProgress`() = runBlocking {
+    fun `concurrent runs for the same repository never overlap and the losers are SyncInProgress`() = runTest {
         var inFlight = 0
         var maxInFlight = 0
         val spy = object : StubGitRepository() {
@@ -132,7 +132,7 @@ class ColdSyncRunnerTest {
     }
 
     @Test
-    fun `a held gate makes the run a busy outcome with no fetch and no staleness write`() = runBlocking {
+    fun `a held gate makes the run a busy outcome with no fetch and no staleness write`() = runTest {
         val spy = Spy()
         val lease = gate.tryAcquire("repo-key", SyncOrigin.UiPress)!!
 
@@ -146,7 +146,7 @@ class ColdSyncRunnerTest {
     }
 
     @Test
-    fun `an unresolvable git dir fails closed without fetching`() = runBlocking {
+    fun `an unresolvable git dir fails closed without fetching`() = runTest {
         val spy = Spy()
         val outcome = runner(spy, keyFor = { null }).run(sampleConfig.graphId)
         assertEquals(ColdSyncOutcome.Error(DomainError.GitError.SyncInProgress(null)), outcome)
@@ -154,7 +154,7 @@ class ColdSyncRunnerTest {
     }
 
     @Test
-    fun `a throwing fetch still releases the gate`() = runBlocking {
+    fun `a throwing fetch still releases the gate`() = runTest {
         val boom = object : StubGitRepository() {
             override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> = error("boom")
         }

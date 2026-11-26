@@ -305,7 +305,7 @@ class WorkManagerJitterSpikeTest {
         record("api.WorkInfo.periodicityInfo", "available (WorkInfo.periodicityInfo.repeatIntervalMillis/flexIntervalMillis)")
         record("api.WorkInfo.nextScheduleTimeMillis", "available")
         record("api.WorkInfo.initialDelayMillis", "available")
-        val target = clock.currentTimeMillis() + min(33)
+        val target = clock.currentTimeMillis() + min(33) // fake clock offset, not a wait
         overrideNext = target
         driver.setInitialDelayMet(id)
         driver.setAllConstraintsMet(id)

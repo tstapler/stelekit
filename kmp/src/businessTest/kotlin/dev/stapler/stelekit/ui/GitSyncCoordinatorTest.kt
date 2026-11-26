@@ -116,12 +116,13 @@ class GitSyncCoordinatorTest {
     }
 
     private suspend fun eventually(what: String, condition: () -> Boolean) {
-        withTimeout(AWAIT_MILLIS) { while (!condition()) yield() }
+        withTimeout(AWAIT_MILLIS) { while (!condition()) yield() } // real-clock hang guard: awaits real threads
         assertTrue(condition(), what)
     }
 
     private fun manyDeletions() = DeletionSummary(List(30) { "pages/p$it.md" }, previousTreeSize = 100)
 
+    // runBlocking: the coordinator runs on a real Dispatchers.Default scope the test has to wait on
     @Test
     fun `openSyncDetails_should_OpenTheRepairDialog_When_StateIsRepairNeeded`() = runBlocking {
         val h = Harness(Spy().apply { health = RepositoryHealth(false, "MERGING") })
@@ -138,6 +139,7 @@ class GitSyncCoordinatorTest {
         h.close()
     }
 
+    // runBlocking: the coordinator runs on a real Dispatchers.Default scope the test has to wait on
     @Test
     fun `openSyncDetails_should_DoNothing_When_StateHasNoDetailSurface`() = runBlocking {
         val h = Harness(Spy())
@@ -148,6 +150,7 @@ class GitSyncCoordinatorTest {
         h.close()
     }
 
+    // runBlocking: the coordinator runs on a real Dispatchers.Default scope the test has to wait on
     @Test
     fun `abortInterruptedMerge_should_AbortAndCloseTheDialog_AndAllowTheNextSync`() = runBlocking {
         val h = Harness(Spy().apply { health = RepositoryHealth(false, "MERGING") })
@@ -164,6 +167,7 @@ class GitSyncCoordinatorTest {
         h.close()
     }
 
+    // runBlocking: the coordinator runs on a real Dispatchers.Default scope the test has to wait on
     @Test
     fun `abortInterruptedMerge_should_ListUnrelatedEditsAndAbortOnlyAfterConfirmation_ThenRestoreThem`() = runBlocking {
         val spy = Spy().apply { health = RepositoryHealth(false, "MERGING"); workingFiles["notes.md"] = "mine".encodeToByteArray() }
@@ -185,6 +189,7 @@ class GitSyncCoordinatorTest {
         h.close()
     }
 
+    // runBlocking: the coordinator runs on a real Dispatchers.Default scope the test has to wait on
     @Test
     fun `abortInterruptedMerge_should_LeaveTheMergeAndTheDialogInPlace_WhenTheUserCancels`() = runBlocking {
         val spy = Spy().apply { health = RepositoryHealth(false, "MERGING"); workingFiles["notes.md"] = "mine".encodeToByteArray() }
@@ -203,6 +208,7 @@ class GitSyncCoordinatorTest {
         h.close()
     }
 
+    // runBlocking: the coordinator runs on a real Dispatchers.Default scope the test has to wait on
     @Test
     fun `confirmMassChangeSync_should_LiftTheGuardForOneManualRun_AndCloseTheConfirm`() = runBlocking {
         val h = Harness(Spy().apply { deletions = manyDeletions() })
@@ -225,6 +231,7 @@ class GitSyncCoordinatorTest {
         h.close()
     }
 
+    // runBlocking: the coordinator runs on a real Dispatchers.Default scope the test has to wait on
     @Test
     fun `dismissals_should_CloseTheirDialogs`() = runBlocking {
         val h = Harness(Spy())

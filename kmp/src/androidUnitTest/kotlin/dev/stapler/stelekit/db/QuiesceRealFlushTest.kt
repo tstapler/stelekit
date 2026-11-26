@@ -66,6 +66,7 @@ class QuiesceRealFlushTest {
         deleteSourceAfterVerify = true,
     )
 
+    // runBlocking: quiesce hops to Dispatchers.IO and blocks on real locks; virtual time cannot order it
     @Test
     fun quiesce_should_NotSelfDeadlock_When_RealGitShadowFlushActorFlushRunsInDrain() = runBlocking {
         val worktree = GitShadowWorktree(context, "quiesce-real-${System.nanoTime()}", safRoot)
@@ -85,7 +86,7 @@ class QuiesceRealFlushTest {
             },
         )
 
-        withTimeout(10_000) { strategy.quiesce(op) }
+        withTimeout(10_000) { strategy.quiesce(op) } // real-clock hang guard: awaits real threads
 
         assertTrue(queue.isEmpty(), "the drain must empty the write-back queue")
         assertEquals("shadow content", fs.written["$safRoot/pages/Foo.md"])
