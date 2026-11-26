@@ -52,10 +52,18 @@ class TestRegistrationAuditTest {
                 }
         }.sorted()
 
-    /** commonTest `sketch/v2` test files absent from the BUILD file text. */
-    fun missingFromBuild(sources: Map<String, String>, buildText: String): List<String> =
+    /**
+     * commonTest `sketch/v2` test files absent from the BUILD file text. A class homed in a module suite
+     * ([moduleSuites], the generated `kmp/modules/All*ModuleTests.kt`) is deliberately kept out of the umbrella list.
+     */
+    fun missingFromBuild(sources: Map<String, String>, buildText: String, moduleSuites: String = ""): List<String> =
         sources.filter { (path, text) -> path.startsWith("commonTest/") && isSketchV2TestFile(path) && hasTests(text) }
-            .keys.filter { path -> !buildText.contains(path.removePrefix("commonTest/")) }.sorted()
+            .keys.filter { path ->
+                val relative = path.removePrefix("commonTest/")
+                // Matched by fully qualified import: simple names repeat across packages (NoticeQueueTest).
+                val import = "import " + relative.removeSuffix(".kt").replace('/', '.')
+                !buildText.contains(relative) && moduleSuites.lineSequence().none { it.trim() == import }
+            }.sorted()
 
     @Test
     fun testRegistrationAudit_should_NameTheFile_When_ASketchV2TestIsInNoSuite() {
@@ -72,6 +80,12 @@ class TestRegistrationAuditTest {
             "commonTest/dev/stapler/stelekit/ui/sketch/v2/MissingTest.kt" to "@Test fun a() {}",
         )
         assertEquals(listOf("commonTest/dev/stapler/stelekit/ui/sketch/v2/MissingTest.kt"), missingFromBuild(common, build))
+        val pkg = "import dev.stapler.stelekit"
+        assertEquals(emptyList(), missingFromBuild(common, build, "$pkg.ui.sketch.v2.MissingTest"))
+        assertEquals(
+            listOf("commonTest/dev/stapler/stelekit/ui/sketch/v2/MissingTest.kt"),
+            missingFromBuild(common, build, "$pkg.table.MissingTest\nMissingTest::class"),
+        )
     }
 
     @Test
@@ -114,7 +128,9 @@ class TestRegistrationAuditTest {
     fun testRegistrationAudit_should_PassAtHead_When_EverySketchV2CommonTestFileIsInTheBuildFile() {
         Assume.assumeTrue("BUILD.bazel is not bundled into the Bazel resources; the check runs under Gradle", WiringInputs.mode == "gradle-disk")
         val build = DocRepoLocator.repoRoot.resolve("kmp/src/commonTest/kotlin/BUILD.bazel").readText()
-        val missing = missingFromBuild(WiringInputs.testSources, build)
+        val moduleSuites = DocRepoLocator.repoRoot.resolve("kmp/modules").listFiles { f -> f.name.matches(Regex("""All\w+ModuleTests\.kt""")) }
+            .orEmpty().joinToString("\n") { it.readText() }
+        val missing = missingFromBuild(WiringInputs.testSources, build, moduleSuites)
         assertTrue(missing.isEmpty(), "add to kmp/src/commonTest/kotlin/BUILD.bazel:\n  ${missing.joinToString("\n  ")}")
     }
 
