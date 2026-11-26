@@ -28,8 +28,9 @@ Supersedes the triage draft, which `../research/pitfalls.md` showed to be wrong 
    `downloadModel()` and `downloadNowAnyway()` capture `cancelGeneration`, then (inside their `try`)
    `awaitPendingCancel()` before `runOnce`: `do { val p = pendingCancel; p?.join() } while (p !== pendingCancel)`,
    so a guard-cancel created by an earlier call during the join is waited for too. `pendingCancel` is `@Volatile`.
-   `downloadNowAnyway()` also re-cancels if the generation changed while it was enqueueing. Without this, "cancel, then download again" can run the
-   old cancel after the new enqueue and kill it. A cancel arriving during the join is caught by the
+   `downloadNowAnyway()` also re-cancels if the generation changed while it was enqueueing.
+   Without the wait, "cancel, then download again" can run the old cancel after the new enqueue and kill it.
+   A cancel arriving during the join is caught by the
    existing generation check. `cancelDownload()` stays non-suspend. The launch is on the downloader's
    scope, so a cancelled caller cannot skip the guard-cancel.
 
