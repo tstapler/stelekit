@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.127.1](https://github.com/tstapler/stelekit/compare/v0.127.0...v0.127.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **sketch:** no duplicate dimension annotations; keep room labels clear of furniture ([#766](https://github.com/tstapler/stelekit/issues/766)) ([6c52a3b](https://github.com/tstapler/stelekit/commit/6c52a3b7a187aedefab85ec33c031785103fbeeb))
+
 ## [0.127.0](https://github.com/tstapler/stelekit/compare/v0.126.0...v0.127.0) (2026-11-26)
 
 
