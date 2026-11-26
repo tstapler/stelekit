@@ -76,6 +76,7 @@ import dev.stapler.stelekit.asset.pipeline.CloudStructuralAuditTest
 import dev.stapler.stelekit.asset.pipeline.GrantedConsentMintSiteAuditTest
 import dev.stapler.stelekit.audit.EgressSurfaceAuditTest
 import dev.stapler.stelekit.audit.NonCancellableReturnAuditTest
+import dev.stapler.stelekit.audit.SchedulingNoRunBlockingAuditTest
 import dev.stapler.stelekit.llm.AnthropicMessagesClientCharacterizationTest
 import dev.stapler.stelekit.asset.pipeline.AssetPluginsControllerTest
 import dev.stapler.stelekit.asset.pipeline.PluginRegistryTest
@@ -298,6 +299,7 @@ import org.junit.runners.Suite
     GateBeforeWorktreeOrderTest::class,
     SyncInProgressUiConsumersTest::class,
     GitSyncOneShotConflictAuditTest::class,
+    SchedulingNoRunBlockingAuditTest::class,
     NoGateFallbackAuditTest::class,
     GitGateAuditTest::class,
     NewCodeAuditTest::class,

@@ -18,12 +18,12 @@ import dev.stapler.stelekit.git.testsupport.sampleConfig
 import dev.stapler.stelekit.platform.NetworkMonitor
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
-import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import org.junit.Assume.assumeTrue
+import kotlinx.coroutines.test.runTest
 
 /** A tree left half-merged must never be committed: that pushed `<<<<<<<` into the remote wiki. */
 class GitSyncServiceConflictMarkerGuardTest {
@@ -74,9 +74,8 @@ class GitSyncServiceConflictMarkerGuardTest {
         )
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `sync refuses to commit or push a file that still has conflict markers`() = runBlocking {
+    fun `sync refuses to commit or push a file that still has conflict markers`() = runTest {
         assumeTrue("Skipped: requires network access for the NetworkMonitor.isOnline check", NetworkMonitor().isOnline)
         val calls = mutableListOf<String>()
         val svc = service(markered, calls)
@@ -89,9 +88,8 @@ class GitSyncServiceConflictMarkerGuardTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `sync commits normally when the changed file has no conflict markers`() = runBlocking {
+    fun `sync commits normally when the changed file has no conflict markers`() = runTest {
         assumeTrue("Skipped: requires network access for the NetworkMonitor.isOnline check", NetworkMonitor().isOnline)
         val calls = mutableListOf<String>()
         val svc = service("- clean\n", calls)
@@ -123,9 +121,8 @@ class GitSyncServiceConflictMarkerGuardTest {
         assertEquals(null, clean.findUnresolved(sampleConfig, status))
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `applyJournalMerge refuses merged content that still has conflict markers`() = runBlocking {
+    fun `applyJournalMerge refuses merged content that still has conflict markers`() = runTest {
         val calls = mutableListOf<String>()
         val svc = service("", calls)
 
@@ -136,9 +133,8 @@ class GitSyncServiceConflictMarkerGuardTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `resolveConflicts refuses to commit when a resolved file still has conflict markers`() = runBlocking {
+    fun `resolveConflicts refuses to commit when a resolved file still has conflict markers`() = runTest {
         val calls = mutableListOf<String>()
         val svc = service(markered, calls)
 

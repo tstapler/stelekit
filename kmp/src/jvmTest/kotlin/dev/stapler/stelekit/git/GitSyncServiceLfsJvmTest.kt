@@ -22,7 +22,6 @@ import dev.stapler.stelekit.git.testsupport.StubFileSystem
 import dev.stapler.stelekit.platform.NetworkMonitor
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
-import kotlinx.coroutines.runBlocking
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.revwalk.RevWalk
@@ -37,6 +36,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 
 /**
  * End to end on the JVM sync path: real [GitSyncService] + real [JvmGitRepository] + a real bare origin.
@@ -129,9 +129,8 @@ class GitSyncServiceLfsJvmTest {
 
     private fun remoteCommitCount(): Int = Git.open(origin).use { git -> git.log().call().count() }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun sync_should_PushTextNotesAndNeverTheRawBinary_When_AssetsAreLfsTracked() = runBlocking {
+    fun sync_should_PushTextNotesAndNeverTheRawBinary_When_AssetsAreLfsTracked() = runTest {
         File(work, "pages").mkdirs()
         File(work, "assets").mkdirs()
         File(work, "pages/a.md").writeText("- a note\n")
@@ -156,9 +155,8 @@ class GitSyncServiceLfsJvmTest {
         service.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun sync_should_NotCreateEmptyCommits_When_OnlyAHeldFileIsPending() = runBlocking {
+    fun sync_should_NotCreateEmptyCommits_When_OnlyAHeldFileIsPending() = runTest {
         File(work, "assets").mkdirs()
         File(work, "assets/photo.png").writeBytes(png)
         val service = service()
@@ -172,9 +170,8 @@ class GitSyncServiceLfsJvmTest {
         service.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun sync_should_PushTheFileAsAPointer_OnceTheRawFileIsReplaced() = runBlocking {
+    fun sync_should_PushTheFileAsAPointer_OnceTheRawFileIsReplaced() = runTest {
         File(work, "assets").mkdirs()
         File(work, "assets/photo.png").writeBytes(png)
         val service = service()

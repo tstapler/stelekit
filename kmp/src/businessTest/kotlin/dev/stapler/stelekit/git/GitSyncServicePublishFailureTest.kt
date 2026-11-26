@@ -19,9 +19,10 @@ import dev.stapler.stelekit.git.testsupport.sampleConfig
 import dev.stapler.stelekit.platform.NetworkMonitor
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
-import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 
 /** How a failed git step reaches [GitSyncService.syncState]: rate limit, expired credentials, or the plain error. */
 class GitSyncServicePublishFailureTest {
@@ -63,7 +64,7 @@ class GitSyncServicePublishFailureTest {
         )
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
+    // runBlocking: non-test helper that bridges a suspend call for its callers
     private fun stateAfter(step: Step, error: DomainError.GitError, config: GitConfig = sampleConfig): SyncState = runBlocking {
         val svc = service(FailingAt(step, error), config)
         svc.sync("test-graph")
@@ -104,9 +105,8 @@ class GitSyncServicePublishFailureTest {
         assertEquals(listOf("a.md"), (state as SyncState.ConflictPending).conflicts.map { it.filePath })
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `fetchOnly publishes rate limit and expiry the same way`() = runBlocking {
+    fun `fetchOnly publishes rate limit and expiry the same way`() = runTest {
         val limited = service(FailingAt(Step.Fetch, DomainError.GitError.RateLimited(3600)))
         limited.fetchOnly("test-graph")
         assertEquals(SyncState.RateLimited(3600), limited.syncState.value)

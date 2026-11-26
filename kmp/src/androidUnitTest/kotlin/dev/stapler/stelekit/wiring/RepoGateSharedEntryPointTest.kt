@@ -93,7 +93,7 @@ class RepoGateSharedEntryPointTest {
         }
     }
 
-    // runBlocking: quiesce hops to Dispatchers.IO and blocks on real locks; virtual time cannot order it
+    // runBlocking: the real-time withTimeout/polling guards would expire early on virtual time
     @Test
     fun a_quiesce_hold_on_the_shared_gate_makes_the_cold_run_skip_as_busy() = runBlocking {
         val f = WiredAppFixture.android(context, dataDir).also { fixture = it }

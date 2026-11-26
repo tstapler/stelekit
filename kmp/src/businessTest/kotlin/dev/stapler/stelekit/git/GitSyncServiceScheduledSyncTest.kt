@@ -28,6 +28,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 
 /** [GitSyncService.runScheduledSync]: policy plus sync or fetch, against a call-recording fake repository. */
 class GitSyncServiceScheduledSyncTest {
@@ -144,9 +145,8 @@ class GitSyncServiceScheduledSyncTest {
 
     private fun policySkip(reason: ScheduledSkipReason) = TickOutcome.Skip(SkipReason.Policy(reason))
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `a held EditLock skips the tick with no repository call`() = runBlocking {
+    fun `a held EditLock skips the tick with no repository call`() = runTest {
         val h = Harness().also { it.confirmFirstSync() }
         h.editLock.beginEdit()
         val svc = h.service()
@@ -158,9 +158,8 @@ class GitSyncServiceScheduledSyncTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `a busy counter, a locked vault and being offline each skip with no repository call`() = runBlocking {
+    fun `a busy counter, a locked vault and being offline each skip with no repository call`() = runTest {
         val busy = Harness().also { it.confirmFirstSync(); it.busy.begin() }
         val busySvc = busy.service()
         assertEquals(TickOutcome.Skip(SkipReason.Busy), busySvc.scheduled.run("test-graph"))
@@ -180,9 +179,8 @@ class GitSyncServiceScheduledSyncTest {
         offlineSvc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `an in-memory conflict skips further ticks without touching the repository`() = runBlocking {
+    fun `an in-memory conflict skips further ticks without touching the repository`() = runTest {
         val h = Harness().also { it.confirmFirstSync() }
         h.spy.remoteChanges = true
         h.spy.mergeConflicts = listOf(ConflictFile("/repo/journals/a.md", "journals/a.md", emptyList(), rawContent = "x"))
@@ -198,9 +196,8 @@ class GitSyncServiceScheduledSyncTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `a fresh service over a MERGING repository skips with only a fetch`() = runBlocking {
+    fun `a fresh service over a MERGING repository skips with only a fetch`() = runTest {
         val h = Harness().also { it.confirmFirstSync() }
         h.spy.health = RepositoryHealth(false, "MERGING")
         val svc = h.service()
@@ -213,9 +210,8 @@ class GitSyncServiceScheduledSyncTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `a fetch error while skipping for repo state is reported as a failure`() = runBlocking {
+    fun `a fetch error while skipping for repo state is reported as a failure`() = runTest {
         val h = Harness().also { it.confirmFirstSync() }
         h.spy.health = RepositoryHealth(false, "MERGING")
         h.spy.fetchResult = DomainError.GitError.FetchFailed("boom").left()
@@ -225,9 +221,8 @@ class GitSyncServiceScheduledSyncTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `an unconfirmed first sync fetches only and never merges commits or pushes`() = runBlocking {
+    fun `an unconfirmed first sync fetches only and never merges commits or pushes`() = runTest {
         val h = Harness()
         h.spy.dirty = true
         val svc = h.service()
@@ -240,9 +235,8 @@ class GitSyncServiceScheduledSyncTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `a confirmation stored by an earlier build is read unchanged and the next tick runs`() = runBlocking {
+    fun `a confirmation stored by an earlier build is read unchanged and the next tick runs`() = runTest {
         val h = Harness()
         h.settings.putString("git_first_sync_confirmed_test-graph", "origin/main")
         val svc = h.service()
@@ -252,9 +246,8 @@ class GitSyncServiceScheduledSyncTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `changing the branch re-arms the first sync gate`() = runBlocking {
+    fun `changing the branch re-arms the first sync gate`() = runTest {
         val h = Harness().also { it.confirmFirstSync() }
         h.config = h.config.copy(remoteBranch = "master")
         val svc = h.service()
@@ -264,9 +257,8 @@ class GitSyncServiceScheduledSyncTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `a pending first-sync review blocks even a matching confirmation`() = runBlocking {
+    fun `a pending first-sync review blocks even a matching confirmation`() = runTest {
         val h = Harness().also { it.confirmFirstSync() }
         FirstSyncConfirmation(h.settings).markReviewPending("test-graph", "main")
         val svc = h.service()
@@ -275,9 +267,8 @@ class GitSyncServiceScheduledSyncTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `a SAF graph, or one whose predicate throws, gets exactly one fetch`() = runBlocking {
+    fun `a SAF graph, or one whose predicate throws, gets exactly one fetch`() = runTest {
         for (predicate in listOf<(RepoRoot) -> Boolean>({ false }, { error("unresolvable saf uri") })) {
             val h = Harness(appOwned = predicate).also { it.confirmFirstSync() }
             h.spy.dirty = true
@@ -293,9 +284,8 @@ class GitSyncServiceScheduledSyncTest {
         }
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `the default path predicate treats saf and content uris as not app-owned`() = runBlocking {
+    fun `the default path predicate treats saf and content uris as not app-owned`() = runTest {
         for (root in listOf("saf://tree/notes", "content://com.android/tree/x")) {
             val h = Harness(config = sampleConfig.copy(repoRoot = RepoRoot(root))).also { it.confirmFirstSync() }
             val svc = GitSyncService(
@@ -317,9 +307,8 @@ class GitSyncServiceScheduledSyncTest {
         }
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `all clear runs sync once and merges the remote commits`() = runBlocking {
+    fun `all clear runs sync once and merges the remote commits`() = runTest {
         val h = Harness().also { it.confirmFirstSync() }
         h.spy.remoteChanges = true
         val svc = h.service()
@@ -334,9 +323,8 @@ class GitSyncServiceScheduledSyncTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `a merged sync records lastMerged and zero behind while a fetch-only tick records only the fetch`() = runBlocking {
+    fun `a merged sync records lastMerged and zero behind while a fetch-only tick records only the fetch`() = runTest {
         val h = Harness(appOwned = { false }).also { it.confirmFirstSync() }
         h.spy.remoteChanges = true
         val saf = h.service()
@@ -360,9 +348,8 @@ class GitSyncServiceScheduledSyncTest {
         live.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `an app-closed marker left by the worker is cleared when the service starts`() = runBlocking {
+    fun `an app-closed marker left by the worker is cleared when the service starts`() = runTest {
         val h = Harness()
         SyncStalenessStore(h.settings).setFetchOnlyReason("test-graph", FetchOnlyReason.AppClosed)
         val svc = h.service()
@@ -370,9 +357,8 @@ class GitSyncServiceScheduledSyncTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `the review badge covers every unconfirmed config, not only a pending repair`() = runBlocking {
+    fun `the review badge covers every unconfirmed config, not only a pending repair`() = runTest {
         val unconfirmed = Harness().service()
         unconfirmed.refreshLocalStatus("test-graph")
         assertTrue(unconfirmed.firstSyncReviewPending.value, "first run after upgrade has no confirmation")
@@ -391,9 +377,8 @@ class GitSyncServiceScheduledSyncTest {
         rebranched.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `autoCommit off with a dirty tree fetches only and commits nothing`() = runBlocking {
+    fun `autoCommit off with a dirty tree fetches only and commits nothing`() = runTest {
         val h = Harness(config = sampleConfig.copy(autoCommit = false)).also { it.confirmFirstSync() }
         h.spy.dirty = true
         val svc = h.service()
@@ -404,9 +389,8 @@ class GitSyncServiceScheduledSyncTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `autoCommit off with a clean tree still syncs`() = runBlocking {
+    fun `autoCommit off with a clean tree still syncs`() = runTest {
         val h = Harness(config = sampleConfig.copy(autoCommit = false)).also { it.confirmFirstSync() }
         val svc = h.service()
 
@@ -415,9 +399,8 @@ class GitSyncServiceScheduledSyncTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `a failed sync backs off the next ticks and the delay doubles`() = runBlocking {
+    fun `a failed sync backs off the next ticks and the delay doubles`() = runTest {
         val h = Harness().also { it.confirmFirstSync() }
         h.spy.pushResult = DomainError.GitError.PushFailed("rejected").left()
         val svc = h.service()
@@ -442,9 +425,8 @@ class GitSyncServiceScheduledSyncTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `a scheduled run can never lift the mass-change guard`() = runBlocking {
+    fun `a scheduled run can never lift the mass-change guard`() = runTest {
         val h = Harness().also { it.confirmFirstSync() }
         h.spy.dirty = true
         h.spy.deletions = DeletionSummary((1..40).map { "notes/$it.md" }, previousTreeSize = 100)
@@ -458,9 +440,8 @@ class GitSyncServiceScheduledSyncTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `a missing git config falls back to a harmless fetch tick`() = runBlocking {
+    fun `a missing git config falls back to a harmless fetch tick`() = runTest {
         val spy = Spy()
         val fs = StubFileSystem()
         val svc = GitSyncService(
@@ -481,9 +462,8 @@ class GitSyncServiceScheduledSyncTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `a vault provider that throws counts as available, like sync`() = runBlocking {
+    fun `a vault provider that throws counts as available, like sync`() = runTest {
         val h = Harness(vaultProvider = { error("keystore unavailable") }).also { it.confirmFirstSync() }
         val svc = h.service()
 
@@ -492,9 +472,8 @@ class GitSyncServiceScheduledSyncTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `going offline between the policy check and the sync is a skip, not a failure`() = runBlocking {
+    fun `going offline between the policy check and the sync is a skip, not a failure`() = runTest {
         val answers = ArrayDeque(listOf(true, true))
         val h = Harness(isOnline = { answers.removeFirstOrNull() ?: false }).also { it.confirmFirstSync() }
         val svc = h.service()
@@ -504,7 +483,7 @@ class GitSyncServiceScheduledSyncTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
+    // runBlocking: this test times or races work on real dispatchers; virtual time would not wait for it
     @Test
     fun `a review that becomes pending between the policy check and the sync is a first-sync skip`() = runBlocking {
         val gate = object : MapSettings() {

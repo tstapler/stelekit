@@ -227,7 +227,7 @@ class PausedRetryNowAndDurabilityTest {
 
     private suspend fun until(check: () -> Boolean) = withTimeout(20_000) { while (!check()) delay(10) } // real-clock hang guard: awaits real threads
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
+    // runBlocking: this test times or races work on real dispatchers; virtual time would not wait for it
     @Test
     fun service_should_RetryTwiceAutomaticallyThenStayFailedWithTheLockError() = runBlocking<Unit> {
         val repo = Repo()
@@ -243,7 +243,7 @@ class PausedRetryNowAndDurabilityTest {
         assertIs<SyncState.Error>(svc.syncState.value)
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
+    // runBlocking: until's withTimeout must run on the real clock while the retry fires on a real dispatcher
     @Test
     fun service_should_ClearPausedAndSync_When_TheOwnerBecomesKnownBeforeTheRetry() = runBlocking<Unit> {
         val repo = Repo()
@@ -254,7 +254,7 @@ class PausedRetryNowAndDurabilityTest {
         until { svc.pausedRetry.value == null && svc.syncState.value !is SyncState.Error }
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
+    // runBlocking: this test times or races work on real dispatchers; virtual time would not wait for it
     @Test
     fun retryNow_should_RunExtraAttemptsWithoutMovingTheTryNumber() = runBlocking<Unit> {
         val repo = Repo()
@@ -272,9 +272,8 @@ class PausedRetryNowAndDurabilityTest {
         assertIs<DomainError.GitError.StaleLockFile>((svc.syncState.value as SyncState.Error).error)
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun rebuiltService_should_HaveNoPausedStateAndClaimAgain() = runBlocking<Unit> {
+    fun rebuiltService_should_HaveNoPausedStateAndClaimAgain() = runTest {
         val repo = Repo()
         val dead = service(repo, 60_000, 120_000)
         dead.sync("g")
