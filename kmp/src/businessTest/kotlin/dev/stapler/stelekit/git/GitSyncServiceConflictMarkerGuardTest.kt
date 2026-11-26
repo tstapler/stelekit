@@ -74,7 +74,6 @@ class GitSyncServiceConflictMarkerGuardTest {
         )
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `sync refuses to commit or push a file that still has conflict markers`() = runTest {
         assumeTrue("Skipped: requires network access for the NetworkMonitor.isOnline check", NetworkMonitor().isOnline)
@@ -89,7 +88,6 @@ class GitSyncServiceConflictMarkerGuardTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `sync commits normally when the changed file has no conflict markers`() = runTest {
         assumeTrue("Skipped: requires network access for the NetworkMonitor.isOnline check", NetworkMonitor().isOnline)
@@ -123,7 +121,6 @@ class GitSyncServiceConflictMarkerGuardTest {
         assertEquals(null, clean.findUnresolved(sampleConfig, status))
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `applyJournalMerge refuses merged content that still has conflict markers`() = runTest {
         val calls = mutableListOf<String>()
@@ -136,7 +133,6 @@ class GitSyncServiceConflictMarkerGuardTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `resolveConflicts refuses to commit when a resolved file still has conflict markers`() = runTest {
         val calls = mutableListOf<String>()

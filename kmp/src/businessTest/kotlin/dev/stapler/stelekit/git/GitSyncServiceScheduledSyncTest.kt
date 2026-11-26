@@ -23,7 +23,6 @@ import dev.stapler.stelekit.platform.security.CredentialAccess
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -483,9 +482,8 @@ class GitSyncServiceScheduledSyncTest {
         svc.shutdown()
     }
 
-    // runBlocking: this test times or races work on real dispatchers; virtual time would not wait for it
     @Test
-    fun `a review that becomes pending between the policy check and the sync is a first-sync skip`() = runBlocking {
+    fun `a review that becomes pending between the policy check and the sync is a first-sync skip`() = runTest {
         val gate = object : MapSettings() {
             var pendingReads = 0
             override fun getBoolean(key: String, defaultValue: Boolean): Boolean =

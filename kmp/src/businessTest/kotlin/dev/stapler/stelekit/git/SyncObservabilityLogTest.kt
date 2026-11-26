@@ -67,7 +67,6 @@ class SyncObservabilityLogTest {
 
     private fun logged(fragment: String) = lines.any { fragment in it }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun everyLockVerdict_should_LogOneLockVerdictLine() = runTest {
         val verdicts = listOf(
@@ -83,14 +82,12 @@ class SyncObservabilityLogTest {
         }
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun startedDecision_should_BeLogged_When_TheClaimSucceeds() = runTest {
         service(ScriptedRepository(LockVerdict.NoLock)).sync("g")
         assertTrue(logged("sync origin=UiPress decision=started"), "$lines")
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun skippedDecision_should_BeLogged_When_TheOwnerIsUnknown() = runTest {
         val result = service(ScriptedRepository(LockVerdict.OwnerUnknown(UnknownReason.TornRecord))).sync("g")
@@ -98,7 +95,6 @@ class SyncObservabilityLogTest {
         assertTrue(logged("sync origin=UiPress decision=skipped reason=StaleLockFile"), "$lines")
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun coalescedDecision_should_BeLogged_When_AnotherRunHoldsTheGate() = runTest {
         val repo = ScriptedRepository(LockVerdict.NoLock)

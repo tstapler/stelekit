@@ -222,9 +222,8 @@ class GitSyncCancelBoundaryTest {
         assertEquals(1, failing.count("abort"))
     }
 
-    // runBlocking: this test times or races work on real dispatchers; virtual time would not wait for it
     @Test
-    fun mergeUnit_should_ReloadEveryChangedPathBeforeStopping_When_CancelArrivesRightAfterMerge() = runBlocking<Unit> {
+    fun mergeUnit_should_ReloadEveryChangedPathBeforeStopping_When_CancelArrivesRightAfterMerge() = runTest {
         val reloaded = CopyOnWriteArrayList<String>()
         val fs = object : StubFileSystem() {
             override fun invalidateShadow(path: String) { reloaded += path }
@@ -257,9 +256,8 @@ class GitSyncCancelBoundaryTest {
         return reloaded to (GraphLoader(fs, InMemoryPageRepository(), InMemoryBlockRepository()) to fs)
     }
 
-    // runBlocking: this test times or races work on real dispatchers; virtual time would not wait for it
     @Test
-    fun resolveConflicts_should_ReloadResolvedFiles_When_CancelArrivesRightAfterCommit() = runBlocking<Unit> {
+    fun resolveConflicts_should_ReloadResolvedFiles_When_CancelArrivesRightAfterCommit() = runTest {
         val (reloaded, loaderAndFs) = reloadingFixture()
         val jobRef = AtomicReference<Job>()
         val git = Repo().apply { onCommit = { jobRef.get().cancel() } }
@@ -278,9 +276,8 @@ class GitSyncCancelBoundaryTest {
         assertFalse(gate.isHeld(key()))
     }
 
-    // runBlocking: this test times or races work on real dispatchers; virtual time would not wait for it
     @Test
-    fun applyJournalMerge_should_ReloadTheFile_When_CancelArrivesRightAfterCommit() = runBlocking<Unit> {
+    fun applyJournalMerge_should_ReloadTheFile_When_CancelArrivesRightAfterCommit() = runTest {
         val (reloaded, loaderAndFs) = reloadingFixture()
         val jobRef = AtomicReference<Job>()
         val git = Repo().apply { onCommit = { jobRef.get().cancel() } }
@@ -313,9 +310,8 @@ class GitSyncCancelBoundaryTest {
         assertFalse(gate.isHeld(key()))
     }
 
-    // runBlocking: this test times or races work on real dispatchers; virtual time would not wait for it
     @Test
-    fun reloadMergedFiles_should_FlagReloadIncomplete_When_CancelledMidReload() = runBlocking<Unit> {
+    fun reloadMergedFiles_should_FlagReloadIncomplete_When_CancelledMidReload() = runTest {
         val fs = object : StubFileSystem() {
             override fun invalidateShadow(path: String) { throw CancellationException("cancelled mid reload") }
         }
@@ -373,9 +369,8 @@ class GitSyncCancelBoundaryTest {
     }
 
     // PR #683 review m1: a later complete reload of other files must not clear an earlier incomplete one.
-    // runBlocking: this test times or races work on real dispatchers; virtual time would not wait for it
     @Test
-    fun reloadIncomplete_should_StaySticky_UntilTheFailedPathsReloadCompletely() = runBlocking<Unit> {
+    fun reloadIncomplete_should_StaySticky_UntilTheFailedPathsReloadCompletely() = runTest {
         val failing = java.util.concurrent.atomic.AtomicBoolean(true)
         val fs = object : StubFileSystem() {
             override fun invalidateShadow(path: String) { if (failing.get() && path == "/repo/a.md") throw CancellationException("reload interrupted") }

@@ -103,7 +103,6 @@ class GitSyncServiceChangeGuardsTest {
 
     private val mutating = setOf("stage", "commit", "merge", "push")
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `sync in MERGING state returns RepairNeeded before any stage commit merge or push`() = runTest {
         val spy = Spy(health = RepositoryHealth(false, "MERGING"))
@@ -117,7 +116,6 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `a service built over an unsafe repository refuses even as a fresh instance`() = runTest {
         val spy = Spy(health = RepositoryHealth(false, "UNMERGED_PATHS"))
@@ -129,7 +127,6 @@ class GitSyncServiceChangeGuardsTest {
         fresh.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `staged conflict markers refuse the commit and nothing is committed or pushed`() = runTest {
         val spy = Spy(markers = mutableMapOf(GuardScope.Staged to MarkerScan.Found(listOf("journals/2026_10_08.md"))))
@@ -145,7 +142,6 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `an incomplete marker scan fails closed`() = runTest {
         val spy = Spy(markers = mutableMapOf(GuardScope.Staged to MarkerScan.Incomplete("big.md is larger than 2048 KiB")))
@@ -156,7 +152,6 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `markers in an existing local commit refuse the push even with a clean tree`() = runTest {
         val spy = Spy(dirty = false, markers = mutableMapOf(GuardScope.NetPush to MarkerScan.Found(listOf("a.md"))))
@@ -169,7 +164,6 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `a clean scan lets sync commit and push`() = runTest {
         val spy = Spy()
@@ -180,7 +174,6 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `mass deletion above the default threshold blocks the commit`() = runTest {
         val spy = Spy(deletions = mutableMapOf(GuardScope.Staged to deletions(21, treeSize = 100)))
@@ -194,7 +187,6 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `mass deletion at the push step blocks the push`() = runTest {
         val spy = Spy(deletions = mutableMapOf(GuardScope.NetPush to deletions(30, treeSize = 100)))
@@ -205,7 +197,6 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `deletions within the threshold pass`() = runTest {
         val spy = Spy(deletions = mutableMapOf(GuardScope.Staged to deletions(20, treeSize = 100)))
@@ -229,7 +220,6 @@ class GitSyncServiceChangeGuardsTest {
         assertEquals(10, blocked?.threshold)
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `overridden thresholds change the verdict in both directions`() = runTest {
         val lowered = MapSettings().apply { putString(MassChangeThresholds.KEY_MIN_FILES, "3"); putString(MassChangeThresholds.KEY_PERCENT, "1") }
@@ -254,7 +244,6 @@ class GitSyncServiceChangeGuardsTest {
         assertEquals(MassChangeThresholds(), MassChangeThresholds.from(settings))
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `a foreground confirm lifts the mass-change guard once and a scheduled run cannot`() = runTest {
         val spy = Spy(deletions = mutableMapOf(GuardScope.Staged to deletions(40, treeSize = 100)))
@@ -270,7 +259,6 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `commitLocalChanges is guarded by state markers and mass change`() = runTest {
         val unsafe = Spy(health = RepositoryHealth(false, "MERGING"))
@@ -292,7 +280,6 @@ class GitSyncServiceChangeGuardsTest {
         massSvc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `resolveConflicts refuses to commit staged markers and still runs in MERGING`() = runTest {
         val spy = Spy(health = RepositoryHealth(false, "MERGING"), markers = mutableMapOf(GuardScope.Staged to MarkerScan.Found(listOf("x.md"))))
@@ -305,7 +292,6 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `resolveConflicts commits in MERGING when the staged diff is clean`() = runTest {
         val spy = Spy(health = RepositoryHealth(false, "MERGING"))
@@ -316,7 +302,6 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
     fun `applyJournalMerge guards the commit and the push`() = runTest {
         val commitBlocked = Spy(markers = mutableMapOf(GuardScope.Staged to MarkerScan.Found(listOf("j.md"))))
