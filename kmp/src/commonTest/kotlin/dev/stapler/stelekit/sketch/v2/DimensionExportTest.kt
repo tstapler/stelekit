@@ -5,6 +5,11 @@
 // jvmTest-reason: n/a (commonTest; runs on JVM, Android unit and wasmJs)
 package dev.stapler.stelekit.sketch.v2
 
+import dev.stapler.stelekit.sketch.v2.tools.RectSpec
+import dev.stapler.stelekit.sketch.v2.scene.LayerId
+import dev.stapler.stelekit.sketch.v2.scene.Layer
+import dev.stapler.stelekit.sketch.v2.scene.Arrowhead
+import dev.stapler.stelekit.sketch.v2.scene.ArrowElement
 import arrow.core.getOrElse
 import dev.stapler.stelekit.sketch.v2.annotation.AnnotationText
 import dev.stapler.stelekit.sketch.v2.annotation.DimensionAnnotationEngine
@@ -224,5 +229,50 @@ class DimensionExportTest {
         val ops = DimensionExport.drawOps(dims, ExportInk.DARK)
         assertEquals(dims.size, ops.filterIsInstance<DrawOp.PathOp>().size)
         assertEquals(dims.map { it.text }, texts(ops))
+    }
+
+    private fun onLayer(id: String, layer: String) = ElementBase(ElementId(id), LayerId(layer))
+
+    private fun mark(id: String, x0: Int, y0: Int, x1: Int, y1: Int, head: Arrowhead = Arrowhead.Arrow) =
+        ArrowElement(onLayer(id, "dimensions"), listOf(sp(x0, y0), sp(x1, y1)), null, null, head, head)
+
+    private fun layered(vararg elements: SceneElement): SketchSceneV2 {
+        val layers = listOf(Layer(LayerId.Default, "Plan", order = 0), Layer(LayerId("openings"), "Openings", order = 1), Layer(LayerId("dimensions"), "Dimensions", order = 2))
+        return elements.fold(SketchSceneV2.empty().withLayers(layers)) { s, e -> s.add(e).getOrNull()!! }
+    }
+
+    private fun values(scene: SketchSceneV2) = DimensionExport.layout(scene).map { it.elementId.value to it.text }
+
+    private val bigRoom = filledRectEl("room", 0, 0, 1920, 1440)
+
+    @Test
+    fun authoredMarks_should_NotBeMeasuredThemselves() {
+        val extension = LineElement(onLayer("ext", "dimensions"), listOf(sp(0, -48), sp(0, -432)))
+        val ids = values(layered(bigRoom, extension, mark("line", 0, -384, 1920, -384))).map { it.first }
+        assertEquals(setOf("room"), ids.toSet())
+    }
+
+    @Test
+    fun aLength_should_NotBeRepeated_When_AnAuthoredArrowStatesIt() {
+        assertEquals(listOf("room" to "7' 6\""), values(layered(bigRoom, mark("north", 0, -384, 1920, -384))))
+        // Drawn right to left, on the other side: still the same stretch.
+        assertEquals(listOf("room" to "7' 6\""), values(layered(bigRoom, mark("south", 1920, 1800, 0, 1800))))
+    }
+
+    @Test
+    fun aLength_should_StillBeShown_When_TheArrowCoversAnotherStretchOrHasNoHead() {
+        val both = setOf("10' 0\"", "7' 6\"")
+        assertEquals(both, values(layered(bigRoom, mark("short", 0, -384, 960, -384))).map { it.second }.toSet())
+        assertEquals(both, values(layered(bigRoom, mark("shifted", 400, -384, 2320, -384))).map { it.second }.toSet())
+        assertEquals(both, values(layered(bigRoom, mark("slanted", 0, -384, 1920, -500))).map { it.second }.toSet())
+        assertEquals(both, values(layered(bigRoom, mark("headless", 0, -384, 1920, -384, Arrowhead.None))).map { it.second }.toSet())
+    }
+
+    @Test
+    fun anOpeningSymbol_should_ShowItsWidthOnce() {
+        val gap = filledRectEl("gap", 400, 1403, 576, 74, RectSpec(layer = LayerId("openings")))
+        val leaf = LineElement(onLayer("leaf", "openings"), listOf(sp(400, 1440), sp(400, 864)))
+        val symbol = values(layered(bigRoom, gap, leaf)).filter { it.first != "room" }
+        assertEquals(listOf("gap" to "3' 0\""), symbol)
     }
 }

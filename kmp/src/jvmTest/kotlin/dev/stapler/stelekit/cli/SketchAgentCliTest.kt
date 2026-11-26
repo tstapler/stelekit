@@ -5,6 +5,8 @@
 // jvmTest-reason: desktop-only (the CLI lives in jvmMain; the PNG case needs the desktop Skia raster)
 package dev.stapler.stelekit.cli
 
+import dev.stapler.stelekit.sketch.v2.scene.RectElement
+import dev.stapler.stelekit.sketch.v2.scene.TextElement
 import dev.stapler.stelekit.sketch.MetricScene
 import arrow.core.Either
 import dev.stapler.stelekit.projectbridge.SidecarCodec
@@ -508,5 +510,37 @@ MAP (coarse; north is up, each cell is about 2 5/8" wide; labels are truncated t
 {"id":"b","type":"rect","x":0,"y":0,"width":160,"height":96},
 {"id":"t","type":"text","x":0,"y":0,"w":50,"h":25,"text":"Hi","ta":"center","container":"ghost"}
 ]}"""
+    }
+
+    private fun overlap(a: TextElement, b: RectElement): Boolean =
+        a.x.value < b.x.value + b.width.value && a.x.value + a.width.value > b.x.value &&
+            a.y.value < b.y.value + b.height.value && a.y.value + a.height.value > b.y.value
+
+    private fun kitchen(furniture: String, asWalls: String = "") = """{"spec":1,"title":"Labels","shapes":[
+        {"id":"room","x":0,"y":0,"w":"14'","h":"11'","label":"Kitchen"$asWalls}$furniture]}"""
+
+    private fun SketchDocumentV2.element(id: String) = scene.elementsInOrder.first { it.id.value == id }
+
+    @Test
+    fun roomLabel_should_MoveClear_When_FurnitureCoversTheCentre() {
+        for (asWalls in listOf("", ""","as":"walls"""")) {
+            val doc = built(kitchen(""",{"id":"island","role":"furniture","x":"4'","y":"4'","w":"6'","h":"3'","label":"Island"}""", asWalls))
+            val label = doc.element("room.label") as TextElement
+            assertTrue(!overlap(label, doc.element("island") as RectElement), "label still on the island ($asWalls)")
+            assertTrue(label.x.value > 0 && label.y.value > 0 && label.x.value + label.width.value < 14 * 192 && label.y.value + label.height.value < 11 * 192, "label left the room")
+        }
+    }
+
+    @Test
+    fun roomLabel_should_StayCentred_When_NothingCoversIt() {
+        val label = built(kitchen(""",{"id":"bin","role":"furniture","x":"1'","y":"1'","w":"1'","h":"1'"}""")).element("room.label") as TextElement
+        assertEquals(7.0 * 192, label.x.value + label.width.value / 2, 0.01)
+        assertEquals(5.5 * 192, label.y.value + label.height.value / 2, 0.01)
+    }
+
+    @Test
+    fun build_should_Warn_When_ARoomHasNoClearSpotForItsLabel() {
+        val result = outcome(kitchen(""",{"id":"slab","role":"furniture","x":"6\"","y":"6\"","w":"13'","h":"10'"}"""))
+        assertTrue(result.issues.warnings.any { "no clear spot" in it.toString() }, result.issues.warnings.joinToString())
     }
 }

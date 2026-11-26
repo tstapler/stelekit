@@ -145,7 +145,7 @@ object DimensionExport {
 
     /** The median of the shorter sides of the shapes that carry a dimension (a line's length), so one big room does not hide every piece of furniture. */
     private fun typicalSpan(visible: List<SceneElement>): Double? {
-        val spans = visible.mapNotNull { e ->
+        val spans = visible.filter(AuthoredDimensions::isMeasured).mapNotNull { e ->
             when {
                 e is WallElement -> WallGeometry.segments(e).minOf { it.length }
                 Measurements.of(e).isEmpty() -> null
