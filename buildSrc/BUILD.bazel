@@ -6,7 +6,7 @@ load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 # neverlink = True means the JAR is on the compile classpath but NOT the runtime classpath.
 java_library(
     name = "detekt_api_neverlink",
-    exports = ["@maven//:io_gitlab_arturbosch_detekt_detekt_api"],
+    exports = ["@detekt_maven//:io_gitlab_arturbosch_detekt_detekt_api"],
     neverlink = True,
 )
 
@@ -14,7 +14,7 @@ kt_jvm_library(
     name = "detekt_rules",
     srcs = glob(["src/main/kotlin/dev/stapler/detekt/**/*.kt"]),
     deps = [
-        # Use the neverlink wrapper — NOT @maven//:io_gitlab_arturbosch_detekt_detekt_api directly.
+        # Use the neverlink wrapper — NOT @detekt_maven//:io_gitlab_arturbosch_detekt_detekt_api directly.
         ":detekt_api_neverlink",
     ],
     # resources includes the META-INF/services file so Detekt can discover SteleKitRuleSetProvider.
