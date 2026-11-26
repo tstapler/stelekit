@@ -388,6 +388,57 @@ class InlineLinksSpec {
         )
     }
 
+    @Test
+    fun `markdown-link - title is kept whole after a url with parentheses`() {
+        for (dest in listOf("x_(b) \"t\"", "x_(b) \"My title\"", "x \"My (nice) title\"", "x \"a ) b\"")) {
+            assertEquals(listOf<InlineNode>(link("a", dest)), parse("[a]($dest)"), dest)
+        }
+    }
+
+    @Test
+    fun `markdown-link - unbalanced paren at end of line closes at the first paren`() {
+        assertEquals(listOf<InlineNode>(link("a", "x/(foo")), parse("[a](x/(foo)"))
+        assertEquals("x((1", (parse("[a](x((1)(2) t").first() as UrlLinkNode).url)
+    }
+
+    @Test
+    fun `markdown-link - unbalanced paren does not swallow an adjacent link`() {
+        val urls = parse("[a](x/(foo),see[b](y):)").filterIsInstance<UrlLinkNode>().map { it.url }
+        assertEquals(listOf("x/(foo", "y"), urls)
+    }
+
+    @Test
+    fun `markdown-link - text right after a link is not read as a bullet`() {
+        assertTrue(TextNode("-") in parse("[a](u)- x"))
+    }
+
+    @Test
+    fun `image - unclosed destination is not an image`() {
+        assertTrue(parse("![a](x").none { it is ImageNode })
+    }
+
+    @Test
+    fun `markdown-link - many nested open brackets parse without exponential backtracking`() {
+        // Each of these takes minutes or more if failed labels are retried.
+        for (tail in listOf("](u))", "](f())", "](u)", "`](u))`")) {
+            parse("[a ".repeat(60) + tail)
+        }
+    }
+
+    @Test
+    fun `markdown-link - label equal to url is not rewritten as an autolink on load`() {
+        for (source in listOf("(see [README.md](README.md))", "see (the [spec](spec)).", "[a](a)", "see <https://x.org>")) {
+            assertEquals(source, MarkdownParser().parsePage("- $source").blocks.single().content)
+        }
+    }
+
+    @Test
+    fun `markdown-link - wrapped page alias keeps its page reference`() {
+        val block = MarkdownParser().parsePage("- ([my label]([[Page]]))").blocks.single()
+        assertEquals("([my label]([[Page]]))", block.content)
+        assertEquals(listOf("Page"), block.references)
+    }
+
     // -------------------------------------------------------------------------
     // Auto-links  <url>  — NOT IMPLEMENTED (P2)
     // -------------------------------------------------------------------------

@@ -168,11 +168,7 @@ class MarkdownParser {
                     }
                 }
                 is UrlLinkNode -> {
-                    // Detect autolink form: text is a single TextNode equal to url
-                    val isAutoLink = node.text.size == 1 &&
-                        node.text[0] is TextNode &&
-                        (node.text[0] as TextNode).content == node.url
-                    if (isAutoLink) {
+                    if (node.isAutoLink) {
                         sb.append("<")
                         sb.append(node.url)
                         sb.append(">")

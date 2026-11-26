@@ -56,7 +56,9 @@ data class ImageNode(
  */
 data class UrlLinkNode(
     val url: String,
-    val text: List<InlineNode>
+    val text: List<InlineNode>,
+    /** Written as `<url>`. `[x](x)` is not: it must serialize back as written. */
+    val isAutoLink: Boolean = false
 ) : InlineNode()
 
 // ── Logseq-specific ───────────────────────────────────────────────────────────

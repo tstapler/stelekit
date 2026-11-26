@@ -106,10 +106,7 @@ class MarkdownExporter : PageExporter {
             }
             is CodeNode -> append("`${node.content}`")
             is UrlLinkNode -> {
-                val isAutoLink = node.text.size == 1 &&
-                    node.text[0] is TextNode &&
-                    (node.text[0] as TextNode).content == node.url
-                if (isAutoLink) {
+                if (node.isAutoLink) {
                     append("<${node.url}>")
                 } else {
                     append("[")
