@@ -77,7 +77,7 @@ class InlineParser(private val source: CharSequence) {
 
     private fun parsePrefix(token: Token): InlineNode {
         return when (token.type) {
-            TokenType.TEXT -> parseTextOrTaskMarker(token)
+            TokenType.TEXT -> parseTextOrTaskMarker(source, token)
             TokenType.WS, TokenType.COLON, TokenType.NEWLINE -> TextNode(token.text(source).toString())
             TokenType.L_BRACKET -> parseLink(token)
             TokenType.L_PAREN -> TextNode("(") // Was parseBlockRef, now handled by BLOCK_REF_OPEN
@@ -109,15 +109,6 @@ class InlineParser(private val source: CharSequence) {
             TokenType.PIPE, TokenType.R_ANGLE, TokenType.L_BRACE, TokenType.R_BRACE -> TextNode(token.text(source).toString())
             else -> TextNode(token.text(source).toString())
         }
-    }
-
-    private fun parseTextOrTaskMarker(token: Token): InlineNode {
-        val text = token.text(source).toString()
-        val taskMarkers = setOf("TODO", "DONE", "NOW", "LATER", "WAITING", "CANCELLED", "DOING", "WAIT", "STARTED")
-        if (text in taskMarkers) {
-            return TaskMarkerNode(text)
-        }
-        return TextNode(text)
     }
 
     private fun parseInfix(left: InlineNode, _token: Token): InlineNode {
@@ -348,7 +339,7 @@ class InlineParser(private val source: CharSequence) {
         var found = false
         if (currentToken.type == TokenType.R_BRACKET) {
             advance()
-            found = currentToken.type == TokenType.L_PAREN && linkDestinationEnd(currentToken.end) >= 0
+            found = currentToken.type == TokenType.L_PAREN && linkDestinationEnd(source, currentToken.end) >= 0
         }
 
         lexer.restoreState(saved)
@@ -362,36 +353,11 @@ class InlineParser(private val source: CharSequence) {
      */
     private fun consumeLinkDestination(): String? {
         val start = currentToken.end
-        val end = linkDestinationEnd(start)
+        val end = linkDestinationEnd(source, start)
         if (end < 0) return null
         lexer.restoreState(Lexer.State(end + 1, false))
         advance()
         return source.substring(start, end)
-    }
-
-    /**
-     * Index of the `)` closing a destination that starts at [from], or -1. Scans characters
-     * because the lexer merges `))` into one token. Balanced parens belong to the URL. If they
-     * never balance, or a space follows a nested pair and no quoted title does, the first `)`
-     * closes it, so a stray `:)` later in the line cannot swallow the text between.
-     */
-    private fun linkDestinationEnd(from: Int): Int {
-        var depth = 0
-        var firstClose = -1
-        var i = from
-        while (i < source.length && source[i] != '\n') {
-            if (source[i] == '(') {
-                depth++
-            } else if (source[i] == ')') {
-                if (depth == 0) return i
-                depth--
-                if (firstClose < 0) firstClose = i
-            } else if (source[i] == ' ' && firstClose >= 0 && source.getOrNull(i + 1) != '"') {
-                return firstClose
-            }
-            i++
-        }
-        return firstClose
     }
 
     private fun parseBlockRef(_token: Token): InlineNode {
@@ -546,4 +512,38 @@ class InlineParser(private val source: CharSequence) {
     private fun advance() {
         currentToken = lexer.nextToken()
     }
+}
+
+/**
+ * Index of the `)` closing a destination that starts at [from], or -1. Scans characters
+ * because the lexer merges `))` into one token. Balanced parens belong to the URL. If they
+ * never balance, or a space follows a nested pair and no quoted title does, the first `)`
+ * closes it, so a stray `:)` later in the line cannot swallow the text between.
+ */
+private fun linkDestinationEnd(source: CharSequence, from: Int): Int {
+    var depth = 0
+    var firstClose = -1
+    var i = from
+    while (i < source.length && source[i] != '\n') {
+        if (source[i] == '(') {
+            depth++
+        } else if (source[i] == ')') {
+            if (depth == 0) return i
+            depth--
+            if (firstClose < 0) firstClose = i
+        } else if (source[i] == ' ' && firstClose >= 0 && source.getOrNull(i + 1) != '"') {
+            return firstClose
+        }
+        i++
+    }
+    return firstClose
+}
+
+private fun parseTextOrTaskMarker(source: CharSequence, token: Token): InlineNode {
+    val text = token.text(source).toString()
+    val taskMarkers = setOf("TODO", "DONE", "NOW", "LATER", "WAITING", "CANCELLED", "DOING", "WAIT", "STARTED")
+    if (text in taskMarkers) {
+        return TaskMarkerNode(text)
+    }
+    return TextNode(text)
 }

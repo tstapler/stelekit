@@ -33,3 +33,11 @@
 1. Does `hasMatchingLabelClose` need to handle `BLOCK_REF_CLOSE` in the label-scanning phase too (before the `]`)? A label containing `))` would stop the scan early. Likely not a real use case, but worth confirming with a test.
 2. Is there a property-based test opportunity here? `Arb.string()` restricted to URL-safe chars wrapped in various paren patterns (`()`, `(())`, etc.) could catch combinatorial edge cases the hand-written tests miss.
 3. The `TableParser.splitRow` function splits on literal `|` without escaping inside URLs. This is a secondary defect tracked separately — confirm it is out of scope for this item.
+
+## Verification result
+
+- `./gradlew :kmp:jvmTest --tests 'dev.stapler.stelekit.parsing.*'`, `./gradlew :kmp:testDebugUnitTest`, `scripts/bazel-lowprio.sh test //kmp:business_tests` (18/18), `./gradlew detekt`: all pass.
+- Layers 1-2 ran as one independent reviewer (single-file production diff). Fixed: unbalanced `(` swallowing a later link, a wrong nesting-depth test, a weak assertion. The follow-up edits were covered by tests, not re-reviewed.
+- Layer 4 skipped (no `design/ux.md`); a 360dp Robolectric render of a table cell was checked by eye.
+- Not run: full `jvmTest` (UI) locally, a physical device, web.
+- Follow-up (predates this change): `MarkdownParser.reconstructContent` rewrites `[x](x)` as `<x>` and `_i_` in link labels as `*i*`; wrapped links now reach that path too.
