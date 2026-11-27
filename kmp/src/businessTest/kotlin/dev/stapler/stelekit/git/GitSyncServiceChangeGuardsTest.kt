@@ -18,12 +18,12 @@ import dev.stapler.stelekit.platform.NetworkMonitor
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
-import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 
 /** Repository-state, conflict-marker and mass-change guards on every commit and push path (dev plan Tasks 2.3e, 2.3f). */
 class GitSyncServiceChangeGuardsTest {
@@ -103,9 +103,8 @@ class GitSyncServiceChangeGuardsTest {
 
     private val mutating = setOf("stage", "commit", "merge", "push")
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `sync in MERGING state returns RepairNeeded before any stage commit merge or push`() = runBlocking {
+    fun `sync in MERGING state returns RepairNeeded before any stage commit merge or push`() = runTest {
         val spy = Spy(health = RepositoryHealth(false, "MERGING"))
         val svc = service(spy)
 
@@ -117,9 +116,8 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `a service built over an unsafe repository refuses even as a fresh instance`() = runBlocking {
+    fun `a service built over an unsafe repository refuses even as a fresh instance`() = runTest {
         val spy = Spy(health = RepositoryHealth(false, "UNMERGED_PATHS"))
         val first = service(spy).also { it.shutdown() }
         val fresh = service(spy)
@@ -129,9 +127,8 @@ class GitSyncServiceChangeGuardsTest {
         fresh.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `staged conflict markers refuse the commit and nothing is committed or pushed`() = runBlocking {
+    fun `staged conflict markers refuse the commit and nothing is committed or pushed`() = runTest {
         val spy = Spy(markers = mutableMapOf(GuardScope.Staged to MarkerScan.Found(listOf("journals/2026_10_08.md"))))
         val svc = service(spy)
 
@@ -145,9 +142,8 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `an incomplete marker scan fails closed`() = runBlocking {
+    fun `an incomplete marker scan fails closed`() = runTest {
         val spy = Spy(markers = mutableMapOf(GuardScope.Staged to MarkerScan.Incomplete("big.md is larger than 2048 KiB")))
         val svc = service(spy)
 
@@ -156,9 +152,8 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `markers in an existing local commit refuse the push even with a clean tree`() = runBlocking {
+    fun `markers in an existing local commit refuse the push even with a clean tree`() = runTest {
         val spy = Spy(dirty = false, markers = mutableMapOf(GuardScope.NetPush to MarkerScan.Found(listOf("a.md"))))
         val svc = service(spy)
 
@@ -169,9 +164,8 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `a clean scan lets sync commit and push`() = runBlocking {
+    fun `a clean scan lets sync commit and push`() = runTest {
         val spy = Spy()
         val svc = service(spy)
 
@@ -180,9 +174,8 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `mass deletion above the default threshold blocks the commit`() = runBlocking {
+    fun `mass deletion above the default threshold blocks the commit`() = runTest {
         val spy = Spy(deletions = mutableMapOf(GuardScope.Staged to deletions(21, treeSize = 100)))
         val svc = service(spy)
 
@@ -194,9 +187,8 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `mass deletion at the push step blocks the push`() = runBlocking {
+    fun `mass deletion at the push step blocks the push`() = runTest {
         val spy = Spy(deletions = mutableMapOf(GuardScope.NetPush to deletions(30, treeSize = 100)))
         val svc = service(spy)
 
@@ -205,9 +197,8 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `deletions within the threshold pass`() = runBlocking {
+    fun `deletions within the threshold pass`() = runTest {
         val spy = Spy(deletions = mutableMapOf(GuardScope.Staged to deletions(20, treeSize = 100)))
         val svc = service(spy)
 
@@ -229,9 +220,8 @@ class GitSyncServiceChangeGuardsTest {
         assertEquals(10, blocked?.threshold)
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `overridden thresholds change the verdict in both directions`() = runBlocking {
+    fun `overridden thresholds change the verdict in both directions`() = runTest {
         val lowered = MapSettings().apply { putString(MassChangeThresholds.KEY_MIN_FILES, "3"); putString(MassChangeThresholds.KEY_PERCENT, "1") }
         val blockedSpy = Spy(deletions = mutableMapOf(GuardScope.Staged to deletions(5, treeSize = 100)))
         val blockedSvc = service(blockedSpy, lowered)
@@ -254,9 +244,8 @@ class GitSyncServiceChangeGuardsTest {
         assertEquals(MassChangeThresholds(), MassChangeThresholds.from(settings))
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `a foreground confirm lifts the mass-change guard once and a scheduled run cannot`() = runBlocking {
+    fun `a foreground confirm lifts the mass-change guard once and a scheduled run cannot`() = runTest {
         val spy = Spy(deletions = mutableMapOf(GuardScope.Staged to deletions(40, treeSize = 100)))
         val svc = service(spy)
 
@@ -270,9 +259,8 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `commitLocalChanges is guarded by state markers and mass change`() = runBlocking {
+    fun `commitLocalChanges is guarded by state markers and mass change`() = runTest {
         val unsafe = Spy(health = RepositoryHealth(false, "MERGING"))
         val unsafeSvc = service(unsafe)
         assertIs<DomainError.GitError.RepairNeeded>((unsafeSvc.commitLocalChanges("test-graph") as Either.Left).value)
@@ -292,9 +280,8 @@ class GitSyncServiceChangeGuardsTest {
         massSvc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `resolveConflicts refuses to commit staged markers and still runs in MERGING`() = runBlocking {
+    fun `resolveConflicts refuses to commit staged markers and still runs in MERGING`() = runTest {
         val spy = Spy(health = RepositoryHealth(false, "MERGING"), markers = mutableMapOf(GuardScope.Staged to MarkerScan.Found(listOf("x.md"))))
         val svc = service(spy)
 
@@ -305,9 +292,8 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `resolveConflicts commits in MERGING when the staged diff is clean`() = runBlocking {
+    fun `resolveConflicts commits in MERGING when the staged diff is clean`() = runTest {
         val spy = Spy(health = RepositoryHealth(false, "MERGING"))
         val svc = service(spy)
 
@@ -316,9 +302,8 @@ class GitSyncServiceChangeGuardsTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `applyJournalMerge guards the commit and the push`() = runBlocking {
+    fun `applyJournalMerge guards the commit and the push`() = runTest {
         val commitBlocked = Spy(markers = mutableMapOf(GuardScope.Staged to MarkerScan.Found(listOf("j.md"))))
         val commitSvc = service(commitBlocked)
         assertIs<DomainError.GitError.ConflictMarkersPresent>(

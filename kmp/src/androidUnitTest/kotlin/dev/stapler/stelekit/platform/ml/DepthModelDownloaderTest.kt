@@ -52,10 +52,6 @@ class DepthModelDownloaderTest {
 
     private fun jobs() = WorkManager.getInstance(context).getWorkInfosForUniqueWork(DepthModelDownloader.UNIQUE_WORK_NAME).get()
 
-    private suspend fun DepthModelDownloader.awaitDownloading() {
-        modelState.first { it is DepthModelDownloader.ModelState.Downloading }
-    }
-
     @Test
     fun `a ready model short-circuits without enqueueing`() = runTest {
         val file = DepthModelStorage.modelFile(context).also { it.parentFile!!.mkdirs() }
@@ -69,7 +65,7 @@ class DepthModelDownloaderTest {
     fun `a second caller re-attaches to the queued job instead of enqueueing another`() = runTest {
         val downloader = DepthModelDownloader(context)
         val first = async { downloader.downloadModel() }
-        downloader.awaitDownloading()
+        downloader.awaitDownloadingState()
         val second = async { downloader.downloadModel() }
         repeat(SETTLE_YIELDS) { yield() }
 
@@ -83,10 +79,10 @@ class DepthModelDownloaderTest {
     fun `a fresh instance after a restart sees the job that is still queued`() = runTest {
         val before = DepthModelDownloader(context)
         val waiting = async { before.downloadModel() }
-        before.awaitDownloading()
+        before.awaitDownloadingState()
 
         val afterRestart = DepthModelDownloader(context)
-        afterRestart.awaitDownloading()
+        afterRestart.awaitDownloadingState()
         assertTrue(jobs().single().state in setOf(WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED, WorkInfo.State.RUNNING))
 
         before.cancelDownload()
@@ -97,7 +93,7 @@ class DepthModelDownloaderTest {
     fun `cancel resolves a waiting caller and surfaces Cancelled`() = runTest {
         val downloader = DepthModelDownloader(context)
         val waiting = async { downloader.downloadModel() }
-        downloader.awaitDownloading()
+        downloader.awaitDownloadingState()
 
         downloader.cancelDownload()
 

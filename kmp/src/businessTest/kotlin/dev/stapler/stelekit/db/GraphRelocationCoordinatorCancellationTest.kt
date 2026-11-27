@@ -124,4 +124,27 @@ class GraphRelocationCoordinatorCancellationTest : RelocationCoordinatorTestSupp
         // addGraph() left it: registered but never switched to.
         assertNull(graphManager.activeRepositorySet.value)
     }
+
+    @Test
+    fun `relocate should ClearFlag When CancelledDuringRelease`() = runBlocking {
+        val graphManager = newGraphManager()
+        val graphId = graphManager.addGraph("/test/cancel-release-${System.nanoTime()}")
+        val enteredRelease = CompletableDeferred<Unit>()
+        val finishRelease = CompletableDeferred<Unit>()
+        // A failing quiesce takes the normal-exit release path; the cancel lands while release is suspended.
+        val quiesce = FakeGraphMoveQuiesceStrategy(throwOnQuiesce = IllegalStateException("boom")) {
+            enteredRelease.complete(Unit)
+            finishRelease.await()
+        }
+        val coordinator = GraphRelocationCoordinator(graphManager, FakeRelocationFileSystem(), quiesce)
+
+        val collectJob = launch { coordinator.relocate(operationFor(graphId)).collect { } }
+        withTimeout(5_000) { enteredRelease.await() }
+        collectJob.cancel()
+        finishRelease.complete(Unit)
+        collectJob.join()
+
+        assertFalse(MoveInProgressFlag.isMoveInProgress(graphId.value))
+        graphManager.shutdown()
+    }
 }

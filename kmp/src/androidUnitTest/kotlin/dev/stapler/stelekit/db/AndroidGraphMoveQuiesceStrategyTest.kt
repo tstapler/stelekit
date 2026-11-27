@@ -284,7 +284,7 @@ class AndroidGraphMoveQuiesceStrategyTest {
         withTimeout(5_000) { while (!condition()) yield() } // real-clock hang guard: awaits real threads
     }
 
-    // runBlocking: quiesce hops to Dispatchers.IO and blocks on real locks; virtual time cannot order it
+    // runBlocking: the real-time withTimeout/polling guards would expire early on virtual time
     @Test
     fun quiesce_should_WaitForGateWithoutHoldingWorktreeLock_AndCompleteAfterSync() = runBlocking {
         val gate = RepoOpGate()
@@ -329,7 +329,7 @@ class AndroidGraphMoveQuiesceStrategyTest {
         assertEquals(null, gate.releaseOrHandOff(checkNotNull(gate.tryAcquire(gateKey, SyncOrigin.UiPress))), "no follow-up fires after release")
     }
 
-    // runBlocking: quiesce hops to Dispatchers.IO and blocks on real locks; virtual time cannot order it
+    // runBlocking: the real-time withTimeout/polling guards would expire early on virtual time
     @Test
     fun quiesce_should_ReleaseLease_When_CancelledWhileWaitingForWorktreeMutex() = runBlocking {
         val gate = RepoOpGate()

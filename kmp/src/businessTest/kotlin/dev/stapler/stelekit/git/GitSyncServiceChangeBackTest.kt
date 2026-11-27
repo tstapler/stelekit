@@ -19,10 +19,10 @@ import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlinx.coroutines.test.runTest
 
 /** "Change back" must re-check the remote instead of trusting that the previous branch exists. */
 class GitSyncServiceChangeBackTest {
@@ -71,9 +71,8 @@ class GitSyncServiceChangeBackTest {
         return service to configRepo
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `change back is refused when the previous branch is still not on the remote`() = runBlocking {
+    fun `change back is refused when the previous branch is still not on the remote`() = runTest {
         val (service, configRepo) = repairedService(remoteBranches = listOf("master"))
 
         val result = service.changeBackBranch()
@@ -83,9 +82,8 @@ class GitSyncServiceChangeBackTest {
         service.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `change back succeeds once the previous branch exists on the remote`() = runBlocking {
+    fun `change back succeeds once the previous branch exists on the remote`() = runTest {
         val (service, configRepo) = repairedService(remoteBranches = listOf("master", "main"))
 
         val result = service.changeBackBranch()

@@ -17,12 +17,12 @@ import dev.stapler.stelekit.platform.NetworkMonitor
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
-import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 
 /** The "review first sync" gate: automatic triggers wait for consent, manual sync is the consent. */
 class GitSyncServiceFirstSyncGateTest {
@@ -71,9 +71,8 @@ class GitSyncServiceFirstSyncGateTest {
         return Fixture(service, firstSync, fetchCalls)
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `automatic sync is skipped while a first-sync review is pending and leaves state untouched`() = runBlocking {
+    fun `automatic sync is skipped while a first-sync review is pending and leaves state untouched`() = runTest {
         val f = fixture(reviewPending = true)
         val before = f.service.syncState.value
 
@@ -86,9 +85,8 @@ class GitSyncServiceFirstSyncGateTest {
         f.service.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `manual sync is not blocked by a pending review`() = runBlocking {
+    fun `manual sync is not blocked by a pending review`() = runTest {
         val f = fixture(reviewPending = true)
 
         val result = f.service.sync(graphId)
@@ -98,9 +96,8 @@ class GitSyncServiceFirstSyncGateTest {
         f.service.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun `automatic sync resumes once the review is confirmed`() = runBlocking {
+    fun `automatic sync resumes once the review is confirmed`() = runTest {
         val f = fixture(reviewPending = true)
         f.firstSync.confirm(graphId, sampleConfig.remoteName, sampleConfig.remoteBranch)
 

@@ -19,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.nio.file.Files
@@ -79,9 +80,8 @@ class ResolveGateKeyFailureTest {
 
     private fun repoKey(): String = checkNotNull(RepoOpGate.keyForOrNull("${gitDir.absolutePath}/.git") { File(it).canonicalFile.path })
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun resolveGateKey_should_FailClosedAndMakeNoGitCall_When_ConfigReadThrowsTwice() = runBlocking<Unit> {
+    fun resolveGateKey_should_FailClosedAndMakeNoGitCall_When_ConfigReadThrowsTwice() = runTest {
         val git = RecordingRepository { repoKey() }
         val configs = FlakyConfigRepository(config, failures = 2) { IllegalStateException("db exploded") }
         val gate = RepoOpGate()
@@ -97,9 +97,8 @@ class ResolveGateKeyFailureTest {
         gate.releaseOrHandOff(holder)
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun resolveGateKey_should_FailClosed_When_ConfigReadReturnsLeftTwice() = runBlocking<Unit> {
+    fun resolveGateKey_should_FailClosed_When_ConfigReadReturnsLeftTwice() = runTest {
         val git = RecordingRepository { repoKey() }
         val configs = FlakyConfigRepository(config, failures = 2) { null }
         val svc = service(configs, git)
@@ -112,9 +111,8 @@ class ResolveGateKeyFailureTest {
         assertEquals(emptyList(), git.calls)
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun resolveGateKey_should_Resolve_When_OnlyTheFirstReadFails() = runBlocking<Unit> {
+    fun resolveGateKey_should_Resolve_When_OnlyTheFirstReadFails() = runTest {
         val git = RecordingRepository { repoKey() }
         val configs = FlakyConfigRepository(config, failures = 1) { IllegalStateException("transient") }
         val svc = service(configs, git)
@@ -123,9 +121,8 @@ class ResolveGateKeyFailureTest {
         assertTrue("fetch" in git.calls)
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun resolveGateKey_should_FailClosedAndMakeNoGitCall_When_GitDirCannotBeCanonicalised() = runBlocking<Unit> {
+    fun resolveGateKey_should_FailClosedAndMakeNoGitCall_When_GitDirCannotBeCanonicalised() = runTest {
         val git = RecordingRepository { null }
         val svc = service(StubConfigRepository(Either.Right(config)), git)
 
@@ -135,9 +132,8 @@ class ResolveGateKeyFailureTest {
         assertEquals(emptyList(), git.calls)
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun resolveGateKey_should_FailClosedAndMakeNoGitCall_When_CanonicalisationThrows() = runBlocking<Unit> {
+    fun resolveGateKey_should_FailClosedAndMakeNoGitCall_When_CanonicalisationThrows() = runTest {
         val git = RecordingRepository { throw java.io.IOException("canonicalisation failed") }
         val svc = service(StubConfigRepository(Either.Right(config)), git)
 
@@ -145,7 +141,7 @@ class ResolveGateKeyFailureTest {
         assertEquals(emptyList(), git.calls)
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
+    // runBlocking: this test times or races work on real dispatchers; virtual time would not wait for it
     @Test
     fun resolveGateKey_should_Coalesce_When_ServiceIsRunningAndConfigBecomesUnreadable() = runBlocking<Unit> {
         val git = GateAwareFakeGitRepository(gitDir)
@@ -166,9 +162,8 @@ class ResolveGateKeyFailureTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun resolveGateKey_should_RethrowCancellation_When_ConfigReadIsCancelled() = runBlocking<Unit> {
+    fun resolveGateKey_should_RethrowCancellation_When_ConfigReadIsCancelled() = runTest {
         val git = RecordingRepository { repoKey() }
         val configs = FlakyConfigRepository(config, failures = 1) { CancellationException("cancelled") }
         val svc = service(configs, git)

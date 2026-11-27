@@ -22,6 +22,7 @@ import kotlinx.coroutines.awaitCancellation
 class FakeGraphMoveQuiesceStrategy(
     private val neverCompletes: Boolean = false,
     private val throwOnQuiesce: Throwable? = null,
+    private val onRelease: suspend () -> Unit = {},
 ) : GraphMoveQuiesceStrategy {
     val quiesceCalls = mutableListOf<StorageMoveOperation>()
     val releaseCalls = mutableListOf<StorageMoveOperation>()
@@ -36,6 +37,7 @@ class FakeGraphMoveQuiesceStrategy(
 
     override suspend fun release(op: StorageMoveOperation) {
         releaseCalls += op
+        onRelease()
     }
 
     override suspend fun releaseSourceGrant(source: StorageLocation) {

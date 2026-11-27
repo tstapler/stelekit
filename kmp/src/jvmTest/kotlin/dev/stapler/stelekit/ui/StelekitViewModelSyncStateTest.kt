@@ -28,6 +28,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -91,9 +92,8 @@ class StelekitViewModelSyncStateTest {
         assertEquals(SyncState.LocalChangesPending(3), observed)
     }
 
-    // runBlocking: StelekitViewModel runs on its own real-dispatcher scope that virtual time cannot drive
     @Test
-    fun `TC-4_3_2-A syncState stays Idle when count is zero`() = runBlocking {
+    fun `TC-4_3_2-A syncState stays Idle when count is zero`() = runTest {
         val countFlow = MutableStateFlow(0)
         val vm = makeViewModel(
             activeGitSyncService = MutableStateFlow(null),

@@ -15,7 +15,6 @@ import dev.stapler.stelekit.logging.LogEntry
 import dev.stapler.stelekit.logging.LogManager
 import dev.stapler.stelekit.logging.LogSink
 import dev.stapler.stelekit.model.RepoRoot
-import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList
@@ -24,6 +23,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 
 /** Story 1.8 AC "Log lines present": every sync decision and every lock verdict reaches the Logs sink as one line. */
 class SyncObservabilityLogTest {
@@ -67,9 +67,8 @@ class SyncObservabilityLogTest {
 
     private fun logged(fragment: String) = lines.any { fragment in it }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun everyLockVerdict_should_LogOneLockVerdictLine() = runBlocking {
+    fun everyLockVerdict_should_LogOneLockVerdictLine() = runTest {
         val verdicts = listOf(
             LockVerdict.NoLock, LockVerdict.ClearedOwn, LockVerdict.ClearedDeadOwner, LockVerdict.OwnerAlive,
             LockVerdict.OwnerUnknown(UnknownReason.TornRecord), LockVerdict.NoRecord,
@@ -83,24 +82,21 @@ class SyncObservabilityLogTest {
         }
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun startedDecision_should_BeLogged_When_TheClaimSucceeds() = runBlocking {
+    fun startedDecision_should_BeLogged_When_TheClaimSucceeds() = runTest {
         service(ScriptedRepository(LockVerdict.NoLock)).sync("g")
         assertTrue(logged("sync origin=UiPress decision=started"), "$lines")
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun skippedDecision_should_BeLogged_When_TheOwnerIsUnknown() = runBlocking {
+    fun skippedDecision_should_BeLogged_When_TheOwnerIsUnknown() = runTest {
         val result = service(ScriptedRepository(LockVerdict.OwnerUnknown(UnknownReason.TornRecord))).sync("g")
         assertIs<Either.Left<*>>(result)
         assertTrue(logged("sync origin=UiPress decision=skipped reason=StaleLockFile"), "$lines")
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun coalescedDecision_should_BeLogged_When_AnotherRunHoldsTheGate() = runBlocking {
+    fun coalescedDecision_should_BeLogged_When_AnotherRunHoldsTheGate() = runTest {
         val repo = ScriptedRepository(LockVerdict.NoLock)
         val svc = service(repo)
         val key = checkNotNull(repo.gateKeyFor(config))

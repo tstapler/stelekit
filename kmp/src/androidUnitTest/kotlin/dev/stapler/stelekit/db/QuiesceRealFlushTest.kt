@@ -66,7 +66,7 @@ class QuiesceRealFlushTest {
         deleteSourceAfterVerify = true,
     )
 
-    // runBlocking: quiesce hops to Dispatchers.IO and blocks on real locks; virtual time cannot order it
+    // runBlocking: the real-time withTimeout/polling guards would expire early on virtual time
     @Test
     fun quiesce_should_NotSelfDeadlock_When_RealGitShadowFlushActorFlushRunsInDrain() = runBlocking {
         val worktree = GitShadowWorktree(context, "quiesce-real-${System.nanoTime()}", safRoot)

@@ -10,7 +10,6 @@ import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.git.testsupport.StubConfigRepository
 import dev.stapler.stelekit.git.testsupport.sampleConfig
 import dev.stapler.stelekit.model.RepoRoot
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
@@ -64,15 +63,14 @@ class SyncSingleFlightRegressionTest {
         r.leftOrNull() is DomainError.GitError.SyncInProgress
 
     private fun startFirstSync(): Deferred<Either<DomainError.GitError, SyncState.Success>> =
-        // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
-        runBlocking { CoroutineScopeHolder.scope.async(start = CoroutineStart.DEFAULT) { service.sync("g", SyncTrigger.Manual) } }
+        CoroutineScopeHolder.scope.async { service.sync("g", SyncTrigger.Manual) }
 
     private fun recordStates(): () -> List<SyncState> {
         val collector = CoroutineScopeHolder.scope.async { service.syncState.collect { states += it } }
         return { collector.cancel(); states.toList() }
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
+    // runBlocking: this test times or races work on real dispatchers; virtual time would not wait for it
     @Test
     fun secondManualSync_should_ReturnSyncInProgress_AndCreateNoLock_When_FirstBlockedInCommit() = runBlocking<Unit> {
         repo.blockAt(FakeGitOp.Commit)
@@ -92,7 +90,7 @@ class SyncSingleFlightRegressionTest {
         withTimeout(TIMEOUT_MS) { first.await() } // real-clock hang guard: awaits real threads
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
+    // runBlocking: this test times or races work on real dispatchers; virtual time would not wait for it
     @Test
     fun liveLockOlderThan60s_should_NotBeDeleted_When_HeldByInFlightRun() = runBlocking<Unit> {
         repo.blockAt(FakeGitOp.Commit)
@@ -107,7 +105,7 @@ class SyncSingleFlightRegressionTest {
         withTimeout(TIMEOUT_MS) { first.await() } // real-clock hang guard: awaits real threads
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
+    // runBlocking: this test times or races work on real dispatchers; virtual time would not wait for it
     @Test
     fun secondManualSync_should_CoalesceAndLeaveStateUnchanged_When_FirstIsMergingAndRepositoryMidMerge() = runBlocking<Unit> {
         repo.hasRemoteChanges = true
@@ -125,7 +123,7 @@ class SyncSingleFlightRegressionTest {
         withTimeout(TIMEOUT_MS) { first.await() } // real-clock hang guard: awaits real threads
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
+    // runBlocking: this test times or races work on real dispatchers; virtual time would not wait for it
     @Test
     fun secondManualSync_should_CoalesceAndLeaveStateUnchanged_When_FirstFetchingAndOfflineAndVaultLocked() = runBlocking<Unit> {
         repo.blockAt(FakeGitOp.Fetch)

@@ -17,11 +17,11 @@ import dev.stapler.stelekit.git.testsupport.sampleConfig
 import dev.stapler.stelekit.platform.NetworkMonitor
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
-import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlinx.coroutines.runBlocking
 
 /** Task 2.4d: a manual `sync()` honors `GitConfig.autoCommit`; with it off, a dirty tree is fetched but never committed or merged. */
 class GitSyncServiceAutoCommitTest {
@@ -74,7 +74,7 @@ class GitSyncServiceAutoCommitTest {
         )
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
+    // runBlocking: non-test helper that bridges a suspend call for its callers
     private fun GitSyncService.syncOnce(): Either<DomainError.GitError, SyncState.Success> = runBlocking { sync("test-graph") }
 
     @Test

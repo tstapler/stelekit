@@ -16,7 +16,6 @@ import dev.stapler.stelekit.logging.LogManager
 import dev.stapler.stelekit.logging.LogSink
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
-import kotlinx.coroutines.runBlocking
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.AfterTest
@@ -24,6 +23,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 
 /** Task 1.5b: the merge unit's reload is chunked, observable, and contains any non-cancellation failure. */
 class GitSyncMergeUnitContainmentTest {
@@ -61,9 +61,8 @@ class GitSyncMergeUnitContainmentTest {
             graphLoader = GraphLoader(fs, InMemoryPageRepository(), InMemoryBlockRepository()),
         )
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun reload_should_ChunkAtMost200AndSetReloadIncomplete_When_BeginGitMergeThrows() = runBlocking<Unit> {
+    fun reload_should_ChunkAtMost200AndSetReloadIncomplete_When_BeginGitMergeThrows() = runTest {
         val seen = AtomicInteger()
         val fs = object : StubFileSystem() {
             // An Error is not an Exception, so reloadFiles' per-file guard lets it through, as a closed driver would.
@@ -85,9 +84,8 @@ class GitSyncMergeUnitContainmentTest {
         svc.shutdown()
     }
 
-    // runBlocking: GitSyncService does its work on its own real-dispatcher scope, which virtual time cannot drive
     @Test
-    fun reload_should_LogProgressPerChunkAndStayComplete_When_ThousandPathsReload() = runBlocking<Unit> {
+    fun reload_should_LogProgressPerChunkAndStayComplete_When_ThousandPathsReload() = runTest {
         val svc = service(pages(1000), StubFileSystem())
 
         svc.sync("g")
