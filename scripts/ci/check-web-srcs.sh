@@ -4,7 +4,7 @@ set -euo pipefail
 export LC_ALL=C
 cd "$(dirname "$0")/../.."
 
-tracked=$(git ls-files kmp/src/commonMain kmp/src/wasmJsMain | grep -vE '/BUILD\.bazel$|^kmp/src/commonMain/bazel_stubs/' | sort)
+tracked=$(git -c core.quotePath=false ls-files kmp/src/commonMain kmp/src/wasmJsMain | grep -vE '/BUILD\.bazel$|^kmp/src/commonMain/bazel_stubs/' | sort)
 query=$(bazel query 'labels(srcs, labels(srcs, //kmp:web_dist))')
 declared=$(sed -e 's|^//||' -e 's|^:||' -e 's|:|/|' <<<"$query" | sort)
 missing=$(comm -23 <(echo "$tracked") <(echo "$declared"))

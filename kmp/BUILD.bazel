@@ -119,6 +119,8 @@ genrule(
         ":web_srcs",
         "//:web_build_files",
         "//buildSrc:web_build_files",
+        "//androidApp:web_build_files",
+        "//tools/flamegraph:web_build_files",
         "//kmp/src/commonMain/kotlin:web_srcs",
         "//kmp/src/commonMain/kotlin/dev/stapler/stelekit/stats:web_srcs",
         "//kmp/src/commonMain/resources:web_srcs",
