@@ -10,11 +10,14 @@ Then: replay_gradle_wasm.py gradle-debug.log <kotlin_home> <java> <work_dir>
   java: a JDK 21 launcher
 Also writes <work_dir>/wasmjs-klib-closure.tsv. Libraries and generated sources still come from Gradle.
 """
-import filecmp, hashlib, pathlib, subprocess, sys, time
+import filecmp, hashlib, pathlib, shutil, subprocess, sys, time
 
 log, kotlin_home, java, work = sys.argv[1:]
 work = pathlib.Path(work).resolve()
 work.mkdir(parents=True, exist_ok=True)
+for stale in ("klib", "link"):
+    shutil.rmtree(work / stale, ignore_errors=True)
+(work / "optimized.wasm").unlink(missing_ok=True)
 lines = pathlib.Path(log).read_text(errors="replace").split("\n")
 gradle_out = pathlib.Path("kmp/build/compileSync/wasmJs/main/productionExecutable").resolve()
 
@@ -60,25 +63,37 @@ def kotlinc(name, task):
 
 
 klib_args = kotlinc("klib", ":kmp:compileKotlinWasmJs")
-kotlinc("link", ":kmp:compileProductionExecutableKotlinWasmJs")
+link_args = kotlinc("link", ":kmp:compileProductionExecutableKotlinWasmJs")
 
 opt = next(
     l.split("Command: ", 1)[1] for l in lines if "Starting process" in l and "wasm-opt" in l).split()
 flags = [a for a in opt[1:opt.index("-o")] if a.startswith("-")]
 run("wasm-opt", [opt[0], *flags, str(work / "link/stelekit-kmp.wasm"), "-o", str(work / "optimized.wasm")])
 
-libraries = klib_args[klib_args.index("-libraries") + 1].split(":")
+
+
+def libraries(args):
+    return set(args[args.index("-libraries") + 1].split(":"))
+
+
+compile_libs, link_libs = libraries(klib_args), libraries(link_args)
 rows = []
-for path in map(pathlib.Path, libraries):
+for name in compile_libs | link_libs:
+    path = pathlib.Path(name)
     group, artifact, version = path.parts[-5:-2]
-    rows.append(f"{group}:{artifact}:{version}\t{path.name}\t{hashlib.sha256(path.read_bytes()).hexdigest()}")
+    scope = "+".join(s for s, used in (("compile", compile_libs), ("link", link_libs)) if name in used)
+    rows.append(f"{group}:{artifact}:{version}\t{path.name}\t{scope}\t{hashlib.sha256(path.read_bytes()).hexdigest()}")
 (work / "wasmjs-klib-closure.tsv").write_text("\n".join(sorted(rows)) + "\n")
-print(f"libraries: {len(rows)}")
+print(f"libraries: {len(compile_libs)} compile, {len(link_libs)} link, {len(rows)} in all")
 
 pairs = [(gradle_out / "kotlin" / n, work / "link" / n) for n in
          ("stelekit-kmp.wasm", "stelekit-kmp.mjs", "stelekit-kmp.import-object.mjs", "stelekit-kmp.js-builtins.mjs")]
 pairs.append((gradle_out / "optimized/stelekit-kmp.wasm", work / "optimized.wasm"))
 different = 0
+klib_gradle = pathlib.Path("kmp/build/classes/kotlin/wasmJs/main").resolve()
+klib_same = subprocess.run(["diff", "-rq", str(klib_gradle), str(work / "klib")]).returncode == 0
+different += not klib_same
+print(f"{'identical' if klib_same else 'DIFFERENT'}  klib/")
 for gradle, ours in pairs:
     same = filecmp.cmp(gradle, ours, shallow=False)
     different += not same

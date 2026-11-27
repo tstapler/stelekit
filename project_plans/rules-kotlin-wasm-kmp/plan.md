@@ -1,7 +1,7 @@
 # Plan: Kotlin wasmJs (and JS) compilation under Bazel for SteleKit, carried as a rules_kotlin patch
 
 Status: plan only, no repo changes besides this file. Date of research: 2026-11-21.
-Update 2026-11-27: W0, S1, S2, S4 and S7 done; compile, link and wasm-opt reproduce Gradle byte for byte outside Gradle. See `research/W0-S1-results.md`.
+Update 2026-11-27: S1 passed and parts of W0, S2, S4 and S7 are answered; compiler and `wasm-opt` runs reproduce outside Gradle using Gradle's arguments and inputs. See `research/W0-S1-results.md`.
 Goal: replace the `//kmp:web_dist` genrule (`kmp/BUILD.bazel:72-101`, shells out to `./gradlew :kmp:wasmJsBrowserDistribution`) with native Bazel actions. Spike scope first: commonMain + wasmJsMain compiled to a klib / Wasm for the `wasmJs` target with a hand-written dependency list, diffed against the Gradle output. Native/iOS out of scope.
 
 Evidence labels: **VERIFIED** = I opened the source or ran the command (cited). **INFERRED** = reasoned from verified facts. **UNVERIFIED** = needs a spike.
