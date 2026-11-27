@@ -493,25 +493,51 @@ maven.install(
 
 use_repo(maven, "maven")
 
-# rules_android's own repos are unpinned and resolved by coursier, which ignores --downloader_config;
-# the root module's repositories are merged ahead of rules_android's, putting the mirror first.
-[
-    maven.install(
-        name = name,
-        # Root attributes override rules_android's, so its android settings must be repeated.
-        aar_import_bzl_label = "@rules_android//rules:rules.bzl",
-        use_starlark_android_rules = True,
-        repositories = [
-            "https://maven-central.storage-download.googleapis.com/maven2",
-            "https://maven.google.com",
-            "https://repo1.maven.org/maven2",
-        ],
-    )
-    for name in [
-        "rules_android_maven",
-        "android_ide_common_30_1_3",
-    ]
+# Maven repos that dependency modules declare without a lock file. Unpinned, Coursier resolves them
+# against Maven Central on every cold fetch, ignores --downloader_config and gets 429s in CI. Pinned,
+# Bazel downloads them itself. Enforced by scripts/ci/check-maven-pinned.sh.
+# Repin: REPIN=1 bazel run @<name>//:pin
+_MIRRORED_REPOSITORIES = [
+    "https://maven-central.storage-download.googleapis.com/maven2",
+    "https://maven.google.com",
+    "https://repo1.maven.org/maven2",
 ]
+
+maven.install(
+    name = "rules_android_maven",
+    known_contributing_modules = ["rules_android", "stelekit"],
+    # Root attributes override rules_android's, so its android settings must be repeated.
+    aar_import_bzl_label = "@rules_android//rules:rules.bzl",
+    use_starlark_android_rules = True,
+    lock_file = "//:rules_jvm_external++maven+rules_android_maven_install.json",
+    repositories = _MIRRORED_REPOSITORIES,
+)
+
+maven.install(
+    name = "android_ide_common_30_1_3",
+    known_contributing_modules = ["rules_android", "stelekit"],
+    # Root attributes override rules_android's, so its android settings must be repeated.
+    aar_import_bzl_label = "@rules_android//rules:rules.bzl",
+    use_starlark_android_rules = True,
+    lock_file = "//:rules_jvm_external++maven+android_ide_common_30_1_3_install.json",
+    repositories = _MIRRORED_REPOSITORIES,
+)
+
+maven.install(
+    name = "bazel_worker_maven",
+    known_contributing_modules = ["bazel_worker_java", "stelekit"],
+    lock_file = "//:rules_jvm_external++maven+bazel_worker_maven_install.json",
+    repositories = _MIRRORED_REPOSITORIES,
+)
+
+maven.install(
+    name = "test_deps",
+    known_contributing_modules = ["bazel_worker_java", "stelekit"],
+    lock_file = "//:rules_jvm_external++maven+test_deps_install.json",
+    repositories = _MIRRORED_REPOSITORIES,
+)
+
+use_repo(maven, "android_ide_common_30_1_3", "bazel_worker_maven", "rules_android_maven", "test_deps")
 
 # Detekt plugin deps for //kmp:detekt (ADR-008). A separate hub so detekt's old Kotlin
 # compiler cannot move any version on the app classpath. detekt-api matches the runtime in rules_detekt
