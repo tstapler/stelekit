@@ -21,3 +21,13 @@ filegroup(
     srcs = glob(["**/*.kt"], allow_empty = False),
     visibility = ["//kmp:__pkg__"],
 )
+
+filegroup(
+    name = "web_srcs",
+    srcs = glob(
+        ["**/*"],
+        exclude = ["BUILD.bazel"],
+        allow_empty = False,
+    ),
+    visibility = ["//kmp:__pkg__"],
+)

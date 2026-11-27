@@ -99,9 +99,32 @@ filegroup(
 #
 # Build: bazel build //kmp:web_app
 # Output: bazel-bin/kmp/web_dist.tar.gz  (unpack to serve the browser bundle)
+# Everything Gradle reads for the bundle. Without these Bazel never re-ran the action after an edit.
+# scripts/ci/check-web-srcs.sh fails if a file under commonMain or wasmJsMain is missing.
+filegroup(
+    name = "web_srcs",
+    srcs = [
+        "build.gradle.kts",
+        "gradle.properties",
+    ] + glob([
+        "src/commonMain/composeResources/**",
+        "src/commonMain/sqldelight/**",
+        "src/commonMain/sqldelightTelemetry/**",
+    ]),
+)
+
 genrule(
     name = "web_dist",
-    srcs = [],
+    srcs = [
+        ":web_srcs",
+        "//:web_build_files",
+        "//buildSrc:web_build_files",
+        "//kmp/src/commonMain/kotlin:web_srcs",
+        "//kmp/src/commonMain/kotlin/dev/stapler/stelekit/stats:web_srcs",
+        "//kmp/src/commonMain/resources:web_srcs",
+        "//kmp/src/wasmJsMain/kotlin:web_srcs",
+        "//kmp/src/wasmJsMain/resources:web_srcs",
+    ],
     outs = ["web_dist.tar.gz"],
     cmd = """
         WORKSPACE=$$(dirname $$(realpath gradlew)) && \

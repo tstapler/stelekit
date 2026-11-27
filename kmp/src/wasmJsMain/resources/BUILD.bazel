@@ -15,3 +15,13 @@ sh_test(
     ],
     tags = ["web"],
 )
+
+filegroup(
+    name = "web_srcs",
+    srcs = glob(
+        ["**/*"],
+        exclude = ["BUILD.bazel"],
+        allow_empty = False,
+    ),
+    visibility = ["//kmp:__pkg__"],
+)
