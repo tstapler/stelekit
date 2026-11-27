@@ -1,8 +1,6 @@
 package dev.stapler.stelekit.performance
 
 import arrow.core.Either
-import arrow.core.left
-import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.model.Page
@@ -16,6 +14,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.CancellationException
 import kotlinx.datetime.LocalDate
 
+@Suppress("TooManyFunctions") // one delegate per PageRepository method
 class InstrumentedPageRepository(
     private val delegate: PageRepository,
     private val tracer: Tracer

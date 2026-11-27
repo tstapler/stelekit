@@ -11,6 +11,7 @@ package dev.stapler.stelekit.db.libsql
  * - JVM desktop: extracted from classpath resource `native/<os-arch>/libstelekit_libsql.{so,dylib,dll}`
  * - Android: loaded via [System.loadLibrary] from the APK's `jniLibs/<abi>/` directory
  */
+@Suppress("TooManyFunctions") // one external fun per native entry point
 object LibsqlJni {
 
     const val SQLITE_BUSY_SNAPSHOT = 517

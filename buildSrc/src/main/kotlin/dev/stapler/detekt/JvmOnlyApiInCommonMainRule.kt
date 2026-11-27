@@ -20,8 +20,8 @@ import org.jetbrains.kotlin.psi.KtSimpleNameExpression
  * - `bytes.toString(Charsets.UTF_8)` → `bytes.decodeToString()`
  * - `content.toByteArray(Charsets.UTF_8)` → `content.encodeToByteArray()`
  *
- * The rule fires on any `Charsets` name reference. JVM-only source sets (`jvmMain`, `jvmTest`,
- * `androidMain`, `androidUnitTest`) are excluded via `detekt.yml` — they are valid hosts for
+ * The rule fires on any `Charsets` name reference. JVM-only source sets (`jvmCommonMain`, `jvmMain`,
+ * `jvmTest`, `androidMain`, `androidUnitTest`) are excluded via `detekt.yml` — they are valid hosts for
  * JVM-specific APIs.
  *
  * **Why types can't close this gap**: `Charsets` is a JVM stdlib class; there is no

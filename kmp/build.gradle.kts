@@ -1280,6 +1280,7 @@ detekt {
     // Analyse all KMP source sets; generated SQLDelight code is excluded via config
     source.setFrom(
         "src/commonMain/kotlin",
+        "src/jvmCommonMain/kotlin",
         "src/jvmMain/kotlin",
         "src/androidMain/kotlin",
         "src/iosMain/kotlin",

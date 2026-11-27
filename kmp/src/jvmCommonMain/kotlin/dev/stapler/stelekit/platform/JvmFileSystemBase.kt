@@ -12,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Base class for JVM file system implementations.
  */
+@Suppress("TooManyFunctions") // the shared half of the FileSystem interface
 abstract class JvmFileSystemBase {
     private val logger = Logger("FileSystem")
     companion object {
