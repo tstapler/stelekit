@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 ext=$(bazel mod show_extension @rules_jvm_external//:extensions.bzl%maven)
-repos=$(sed -n 's/^  - \([A-Za-z0-9_.-]*\) (imported by .*/\1/p' <<<"$ext" | grep -v '^unpinned_')
+repos=$(sed -n 's/^  - \([A-Za-z0-9_.-]*\) (imported by .*/\1/p' <<<"$ext" | grep -v '^unpinned_' || true)
 [ -n "$repos" ] || { echo "No Maven repositories found in the module graph"; exit 1; }
 
 unpinned=()
