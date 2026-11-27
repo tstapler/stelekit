@@ -15,3 +15,13 @@ filegroup(
     srcs = glob(["**/*.kt"]),
     visibility = ["//kmp/src/businessTest/kotlin:__pkg__"],
 )
+
+filegroup(
+    name = "web_srcs",
+    srcs = glob(
+        ["**/*"],
+        exclude = ["BUILD.bazel"],
+        allow_empty = False,
+    ),
+    visibility = ["//kmp:__pkg__"],
+)

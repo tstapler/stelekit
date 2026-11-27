@@ -423,6 +423,9 @@ jobs:
           external-cache: true
           cache-save: ${{ github.event_name != 'pull_request' }}
 
+      - name: Check the web bundle declares every source file
+        run: scripts/ci/check-web-srcs.sh
+
       - name: Build web bundle
         # nick-fields/retry absorbs transient Bazel external-repository fetch
         # failures — see bazel-jvm's "Build JVM target" step comment.

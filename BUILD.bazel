@@ -139,3 +139,18 @@ toolchain(
     toolchain = ":detekt_toolchain_impl",
     toolchain_type = "@bazel_rules_detekt//detekt:toolchain_type",
 )
+
+# Gradle inputs of //kmp:web_dist.
+filegroup(
+    name = "web_build_files",
+    srcs = [
+        "build.gradle.kts",
+        "gradle.properties",
+        "gradle/wrapper/gradle-wrapper.jar",
+        "gradle/wrapper/gradle-wrapper.properties",
+        "gradlew",
+        "settings.gradle.kts",
+        "version.txt",
+    ],
+    visibility = ["//kmp:__pkg__"],
+)

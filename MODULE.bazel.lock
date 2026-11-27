@@ -267,7 +267,7 @@
   "moduleExtensions": {
     "@@pybind11_bazel+//:internal_configure.bzl%internal_configure_extension": {
       "general": {
-        "bzlTransitiveDigest": "NRXra7941UfmNUyIxnLt82V5hULluVGL2nBsijTl4j4=",
+        "bzlTransitiveDigest": "BsgERqYptkJeeC8wFaLj251IoTZTSy/58WA6kVp0q8I=",
         "usagesDigest": "D1r3lfzMuUBFxgG8V6o0bQTLMk3GkaGOaPzw53wrwyw=",
         "recordedInputs": [
           "REPO_MAPPING:pybind11_bazel+,bazel_tools bazel_tools",
@@ -289,8 +289,8 @@
     },
     "@@rules_android+//bzlmod_extensions:apksig.bzl%apksig_extension": {
       "general": {
-        "bzlTransitiveDigest": "qEcqhUuyYlPmvAtyYRqS+4Y7cRHA2Vho3JIBJZJJX+s=",
-        "usagesDigest": "zr/niBQ/s2fHozWAsg4vI70wAxcuFjG+QtM15qGkq9o=",
+        "bzlTransitiveDigest": "ZESI1GTm8zRsdU/InVvmpbo66PIBj41/6gPM33RrIns=",
+        "usagesDigest": "wLrLUdBOQnztFcFQraEsWu+M4xtuF82/ZGmnhyxO5/Q=",
         "recordedInputs": [
           "REPO_MAPPING:rules_android+,bazel_tools bazel_tools"
         ],
@@ -298,7 +298,10 @@
           "apksig": {
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
             "attributes": {
-              "url": "https://android.googlesource.com/platform/tools/apksig/+archive/24e3075e68ebe17c0b529bb24bfda819db5e2f3b.tar.gz",
+              "urls": [
+                "https://mirror.bazel.build/android.googlesource.com/platform/tools/apksig/+archive/24e3075e68ebe17c0b529bb24bfda819db5e2f3b.tar.gz"
+              ],
+              "sha256": "12e44fdbd219c5e1cc62099c2a01d775957603d2d4f693f8285f9d95d9a04e77",
               "build_file": "@@rules_android+//bzlmod_extensions:apksig.BUILD"
             }
           }
@@ -358,6 +361,28 @@
               "urls": [
                 "https://github.com/detekt/detekt/releases/download/v1.23.8/detekt-cli-1.23.8-all.jar"
               ]
+            }
+          }
+        }
+      }
+    },
+    "@@rules_pmd+//pmd:extensions.bzl%pmd": {
+      "general": {
+        "bzlTransitiveDigest": "xcAYfqNJ9ffB8fxtJFuNErE4kBXIYLfFeysKPoZcMSw=",
+        "usagesDigest": "D/ifXkc9TXqizjh+7qDgY1iuQU0EBFbbpTY6LO6S5Tk=",
+        "recordedInputs": [
+          "REPO_MAPPING:rules_pmd+,bazel_tools bazel_tools"
+        ],
+        "generatedRepoSpecs": {
+          "net_sourceforge_pmd": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "urls": [
+                "https://github.com/pmd/pmd/releases/download/pmd_releases/6.55.0/pmd-bin-6.55.0.zip"
+              ],
+              "strip_prefix": "pmd-bin-6.55.0/lib",
+              "sha256": "21acf96d43cb40d591cacccc1c20a66fc796eaddf69ea61812594447bac7a11d",
+              "build_file": "@@rules_pmd+//pmd:BUILD.pmd.bazel"
             }
           }
         }
@@ -2081,7 +2106,7 @@
     },
     "@@rules_rust+//crate_universe/private:internal_extensions.bzl%cu_nr": {
       "general": {
-        "bzlTransitiveDigest": "dMJWH2WCQrT+aYq42RmjRKSORveFZAN/YLvDyYPx8CM=",
+        "bzlTransitiveDigest": "J9jP2gbnClV7dLxh4bkz1gp576p3133vdeLm93R8BY4=",
         "usagesDigest": "ZmL90WEq2B6/NJ8rtHAqdnDPn+/9xG/GWR5K4UU4tyo=",
         "recordedInputs": [
           "REPO_MAPPING:bazel_features+,bazel_features_globals bazel_features++version_extension+bazel_features_globals",

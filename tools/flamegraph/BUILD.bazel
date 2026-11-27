@@ -1,0 +1,6 @@
+# Configured by every Gradle run, so an input of //kmp:web_dist.
+filegroup(
+    name = "web_build_files",
+    srcs = ["build.gradle.kts"],
+    visibility = ["//kmp:__pkg__"],
+)
