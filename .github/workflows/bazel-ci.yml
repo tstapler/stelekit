@@ -156,6 +156,9 @@ jobs:
           external-cache: true
           cache-save: ${{ github.event_name != 'pull_request' }}
 
+      - name: Check every Maven repository is pinned
+        run: scripts/ci/check-maven-pinned.sh
+
       - name: Install git-lfs
         # GitAttributesDifferentialTest compares the .gitattributes matcher with `git check-attr` and
         # confirms git-lfs stores empty files raw; LFS_DIFFERENTIAL_REQUIRED (below) turns a missing
