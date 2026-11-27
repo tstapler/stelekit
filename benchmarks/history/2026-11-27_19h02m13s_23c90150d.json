@@ -1,0 +1,122 @@
+{
+  "timestamp": "2026-11-27 19:02:13 UTC",
+  "gitSha": "23c90150d",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 0,
+  "phase2Ms": 0,
+  "phase3Ms": 1,
+  "totalMs": 1,
+  "jankBaselineP50Ms": 1,
+  "jankBaselineP95Ms": 22,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.05,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 1029,
+      "pct": 33.9
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 229,
+      "pct": 7.6
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 198,
+      "pct": 6.5
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 149,
+      "pct": 4.9
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 125,
+      "pct": 4.1
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 70,
+      "pct": 2.3
+    },
+    {
+      "frame": "char[]_[k]",
+      "samples": 66,
+      "pct": 2.2
+    },
+    {
+      "frame": "org.jacoco.agent.rt.internal_aeaf9ab.asm.SymbolTable$Entry_[k]",
+      "samples": 60,
+      "pct": 2.0
+    },
+    {
+      "frame": "dev.stapler.stelekit.parsing.lexer.Token_[k]",
+      "samples": 52,
+      "pct": 1.7
+    },
+    {
+      "frame": "java.util.regex.Matcher_[k]",
+      "samples": 48,
+      "pct": 1.6
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 35054,
+      "pct": 98.4
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-8006957e-0676-4c95-9624-0ae61ba7eac6-libsqlitejdbc.so",
+      "samples": 217,
+      "pct": 0.6
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 61,
+      "pct": 0.2
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 36,
+      "pct": 0.1
+    },
+    {
+      "frame": "prctl",
+      "samples": 23,
+      "pct": 0.1
+    },
+    {
+      "frame": "syscall",
+      "samples": 13,
+      "pct": 0.0
+    },
+    {
+      "frame": "munmap",
+      "samples": 8,
+      "pct": 0.0
+    },
+    {
+      "frame": "sem_post",
+      "samples": 4,
+      "pct": 0.0
+    },
+    {
+      "frame": "malloc",
+      "samples": 4,
+      "pct": 0.0
+    },
+    {
+      "frame": "jbyte_disjoint_arraycopy_avx3",
+      "samples": 3,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": []
+}
