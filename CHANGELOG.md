@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.127.2](https://github.com/tstapler/stelekit/compare/v0.127.1...v0.127.2) (2026-11-27)
+
+
+### Bug Fixes
+
+* **bazel:** rebuild //kmp:web_app when its sources change ([#776](https://github.com/tstapler/stelekit/issues/776)) ([23c9015](https://github.com/tstapler/stelekit/commit/23c90150d64fd22810fb435134884c4a27b74350))
+* **scheduling:** follow-up to [#771](https://github.com/tstapler/stelekit/issues/771) — accurate runBlocking reasons and two cancel-safety fixes ([#774](https://github.com/tstapler/stelekit/issues/774)) ([aa3d31d](https://github.com/tstapler/stelekit/commit/aa3d31d71d62a8bece0f71f0dd7c71d60ba87b49))
+* **scheduling:** remove runBlocking from sync scheduler and make scheduling tests deterministic ([#771](https://github.com/tstapler/stelekit/issues/771)) ([5e67595](https://github.com/tstapler/stelekit/commit/5e67595d93450309f95abd43cbd36687e101a94e))
+
 ## [0.127.1](https://github.com/tstapler/stelekit/compare/v0.127.0...v0.127.1) (2026-11-26)
 
 
